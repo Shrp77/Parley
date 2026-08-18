@@ -1,0 +1,77 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{json,yml,yaml,csproj,props,targets,slnx}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+max_line_length = 100
+
+# ---- usings ----
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+csharp_using_directive_placement = outside_namespace:error
+
+# ---- modern language features ----
+# File-scoped namespaces and expression-bodied members are used throughout; making these
+# errors keeps a mixed style from creeping in one file at a time.
+csharp_style_namespace_declarations = file_scoped:error
+csharp_style_prefer_primary_constructors = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_prefer_braces = true:error
+csharp_using_directive_placement = outside_namespace:error
+csharp_style_prefer_pattern_matching = true:suggestion
+csharp_style_prefer_not_pattern = true:suggestion
+csharp_style_var_elsewhere = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+
+# ---- correctness rules promoted to errors ----
+# CA1305/CA1310: culture-sensitive string and number handling. Agent names and pair keys are
+# compared ordinally on purpose; a culture-sensitive comparison slipping into a lock key
+# would be a correctness bug rather than a formatting quirk, so the analyzer enforces it.
+dotnet_diagnostic.CA1305.severity = error
+dotnet_diagnostic.CA1307.severity = error
+dotnet_diagnostic.CA1310.severity = error
+
+# CA2007: ConfigureAwait(false) in library code. The broker is a service, not a UI app.
+dotnet_diagnostic.CA2007.severity = error
+
+# CA2100: SQL built from non-constant strings. There is exactly one interpolation in this
+# codebase (a PRAGMA taking an int parsed from an embedded resource name); everything else
+# must stay parameterised.
+dotnet_diagnostic.CA2100.severity = error
+
+# IDE0005: unnecessary usings.
+dotnet_diagnostic.IDE0005.severity = error
+
+# ---- naming ----
+dotnet_naming_rule.private_fields_underscore.severity = error
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_camel
+
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_symbols.private_fields.required_modifiers = readonly
+
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+dotnet_naming_style.underscore_camel.required_prefix = _
+
+[tests/**/*.cs]
+# Test method names are full sentences describing the rule under test, so the usual
+# PascalCase-without-underscores convention does not apply.
+dotnet_diagnostic.CA1707.severity = none
+# Tests deliberately construct malformed rows and raw connections to prove the constraints
+# catch them.
+dotnet_diagnostic.CA2100.severity = none
+dotnet_diagnostic.CA2007.severity = none

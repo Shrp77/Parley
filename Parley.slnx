@@ -1,0 +1,22 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="LICENSE" />
+    <File Path="NOTICE" />
+    <File Path="README.md" />
+    <File Path="SPEC.md" />
+    <File Path=".github/workflows/build.yml" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Parley.Core/Parley.Core.csproj" />
+    <Project Path="src/Parley.Store/Parley.Store.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Parley.Core.Tests/Parley.Core.Tests.csproj" />
+    <Project Path="tests/Parley.Store.Tests/Parley.Store.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,67 @@
+<Project>
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+
+    <!--
+      Transitive pinning. Without this, a vulnerable package pulled in indirectly can only be
+      patched by adding a direct PackageReference to it, which lies about the dependency
+      graph: the project does not use the package, it merely needs a newer copy of it than
+      its parent asked for. With this enabled, a PackageVersion entry alone is enough to
+      raise the floor, and no fake direct reference is required.
+    -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <!-- ==== Direct dependencies ==== -->
+
+  <ItemGroup Label="Data access">
+    <!--
+      10.0.11 floors SQLitePCLRaw at 2.1.12. Bumping this parent is preferable to pinning the
+      SQLitePCLRaw packages individually: they ship as a matched set (core, bundle, provider,
+      lib) and Microsoft.Data.Sqlite is what knows which combination it was tested against.
+    -->
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <!-- Referenced so the Dapper.AOT generator can see the call sites; interceptors replace
+         most of it at build time. -->
+    <PackageVersion Include="Dapper" Version="2.1.79" />
+    <PackageVersion Include="Dapper.AOT" Version="1.0.52" />
+  </ItemGroup>
+
+  <!--
+    xUnit v3. The entire v2 package family (xunit, xunit.core, xunit.assert) is marked
+    deprecated on NuGet: legacy, security fixes only, all feature work moved to v3. The
+    package name carries the product version in v3 so the package version itself can follow
+    SemVer, which is why xunit.v3 is at 4.x rather than 3.x.
+
+    Microsoft.NET.Test.Sdk and xunit.runner.visualstudio are deliberately absent. Both belong
+    to the VSTest era, and the .NET 10 SDK no longer runs Microsoft.Testing.Platform tests
+    through the VSTest target. xunit.v3 hosts its own MTP runner, so the test projects need
+    nothing else. The runner is selected in global.json, under a "test" section alongside
+    "sdk" — not in dotnet.config, whose INI format was dropped during .NET 10 RC2.
+  -->
+  <ItemGroup Label="Testing">
+    <PackageVersion Include="xunit.v3" Version="4.0.0" />
+  </ItemGroup>
+
+  <!-- ==== Transitive pins ====
+
+    Entries in the group below are NOT referenced directly by any project. They exist to
+    raise the resolved version of a package that arrives through someone else's dependency
+    graph, almost always to clear a security advisory.
+
+    Every entry must record why it exists and when it can be removed. A pin with no
+    justification becomes permanent by default, and the project silently accumulates version
+    floors that nobody dares touch. Remove a pin once the parent package's own floor has
+    caught up; listing transitive packages will show whether it still binds.
+
+    Format for each entry, as a comment directly above it:
+      reason:  NU1903 (high) via Parent.Package 4.5.6, advisory GHSA-xxxx-xxxx-xxxx
+      remove:  when Parent.Package reaches 4.6.0, which floors it itself
+
+    NOTE: a double hyphen cannot appear anywhere inside an XML comment. Write CLI flags in
+    docs/ or the README instead of here, or MSBuild will reject this whole file as invalid
+    with an error that does not say why.
+  -->
+
+</Project>

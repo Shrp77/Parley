@@ -1,0 +1,66 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build and test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The transport targets named pipes on Windows and Unix domain sockets
+        # elsewhere through the same .NET API. That claim is only worth making if
+        # it is tested on all three.
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore
+
+      # Warnings are errors, documentation is enforced, and NuGetAudit fails the
+      # build on high or critical advisories. A green build here means all three
+      # passed, so no separate lint step is required.
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test --no-build --configuration Release --verbosity normal
+
+  dependencies:
+    name: dependency health
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore
+
+      # Advisories are published continuously, so a package that was clean at merge
+      # can be vulnerable a week later without anything in the repository changing.
+      - name: Vulnerable packages
+        run: dotnet list package --vulnerable --include-transitive
+
+      # Deprecation produces no build warning at all. The xUnit v2 deprecation was
+      # only caught by looking; this makes it visible without looking.
+      - name: Deprecated packages
+        run: dotnet list package --deprecated
