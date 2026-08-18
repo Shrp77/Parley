@@ -427,3 +427,17 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# SQLite (WAL sidecars will bite you)
+*.db
+*.db-wal
+*.db-shm
+
+# Local agent manifest with real repo paths
+agents.local.yaml
+*.local.yaml
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+.env
