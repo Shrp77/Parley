@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      xUnit v3 test projects are stand-alone executables, not libraries. This is the single
+      biggest structural change from v2: dependencies resolve at build time rather than
+      runtime, and each test assembly runs in its own process for real isolation. Omitting
+      this produces a project that builds but discovers no tests.
+    -->
+    <OutputType>Exe</OutputType>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+
+    <!--
+      Test classes are public but form no consumable API surface, so CS1591 would be noise
+      here. Documentation remains enforced across src/.
+    -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Parley.Core\Parley.Core.csproj" />
+    <ProjectReference Include="..\..\src\Parley.Store\Parley.Store.csproj" />
+  </ItemGroup>
+
+  <!-- Versions are centralised in Directory.Packages.props. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+</Project>

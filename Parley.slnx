@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Parley.Core/Parley.Core.csproj" />
+    <Project Path="src/Parley.Store/Parley.Store.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Parley.Core.Tests/Parley.Core.Tests.csproj" />
+  </Folder>
+</Solution>

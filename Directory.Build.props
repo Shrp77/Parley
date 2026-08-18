@@ -1,0 +1,53 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!--
+    Documentation is enforced, not encouraged. GenerateDocumentationFile turns on CS1591
+    ("missing XML comment for publicly visible type or member"), and TreatWarningsAsErrors
+    above turns that into a build failure. An undocumented public API does not compile.
+  -->
+  <PropertyGroup>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    Vulnerability auditing. NuGetAuditMode=all covers the transitive graph, not just packages
+    we reference by name — which is where most advisories actually live. NuGetAuditLevel=low
+    means we hear about everything rather than only the alarming ones.
+
+    Severity is deliberately split against TreatWarningsAsErrors:
+      NU1901 low       -> warning
+      NU1902 moderate  -> warning
+      NU1903 high      -> ERROR
+      NU1904 critical  -> ERROR
+      NU1905 no source -> warning (audit source unreachable, e.g. offline build)
+
+    Rationale: a new advisory can land against a package with no patched version yet. Making
+    every severity fatal means an unrelated disclosure can block all work with no action
+    available to unblock it, and the predictable response is that someone switches the whole
+    audit off. Low and moderate stay loud but non-fatal; high and critical stop the build.
+  -->
+  <PropertyGroup>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1905</WarningsNotAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Authors>Arvind Knudsen</Authors>
+    <Copyright>Copyright 2026 Arvind Knudsen</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+</Project>
