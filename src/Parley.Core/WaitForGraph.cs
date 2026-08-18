@@ -84,11 +84,12 @@ public sealed class WaitForGraph
     /// <param name="asker">The agent that wants to ask, and would therefore start waiting.</param>
     /// <param name="answerer">The agent that would owe the answer.</param>
     /// <param name="cyclePath">
-    /// When this method returns <see langword="true"/>, the agents forming the cycle,
-    /// beginning at <paramref name="asker"/> and running through
-    /// <paramref name="answerer"/> back around. Returned so the broker can tell the asker
-    /// which knot it hit, rather than issuing a bare refusal it cannot act on. Empty when
-    /// the method returns <see langword="false"/>.
+    /// When this method returns <see langword="true"/>, the agents forming the cycle in the
+    /// order they block one another, beginning at <paramref name="asker"/> and running
+    /// through <paramref name="answerer"/>. The path lists each agent once and does not
+    /// repeat the start to close the loop — the caller renders the wrap-around. Returned so
+    /// the broker can hand the asker something actionable rather than a bare refusal it
+    /// cannot act on. Empty when the method returns <see langword="false"/>.
     /// </param>
     /// <returns>
     /// <see langword="true"/> if admitting the question would create a cycle; otherwise
@@ -104,8 +105,15 @@ public sealed class WaitForGraph
     {
         if (TryFindPath(answerer, asker, out var path))
         {
-            var full = new List<AgentName>(path.Count + 1) { asker };
-            full.AddRange(path);
+            // path runs answerer -> ... -> asker, so its final element is asker itself.
+            // Prepending asker and keeping that terminal entry would name the asker twice;
+            // the loop is implied by the sequence, not spelled out.
+            var full = new List<AgentName>(path.Count) { asker };
+            for (var i = 0; i < path.Count - 1; i++)
+            {
+                full.Add(path[i]);
+            }
+
             cyclePath = full;
             return true;
         }

@@ -441,3 +441,7 @@ agents.local.yaml
 .claude/settings.local.json
 
 .env
+
+# Transient session handoff. Untracked by design: it carries the originating
+# project name list used by the pre-commit check, which must never be committed.
+HANDOFF.md

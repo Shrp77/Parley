@@ -33,11 +33,15 @@
     deprecated on NuGet: legacy, security fixes only, all feature work moved to v3. The
     package name carries the product version in v3 so the package version itself can follow
     SemVer, which is why xunit.v3 is at 4.x rather than 3.x.
+
+    Microsoft.NET.Test.Sdk and xunit.runner.visualstudio are deliberately absent. Both belong
+    to the VSTest era, and the .NET 10 SDK no longer runs Microsoft.Testing.Platform tests
+    through the VSTest target. xunit.v3 hosts its own MTP runner, so the test projects need
+    nothing else. The runner is selected in global.json, under a "test" section alongside
+    "sdk" — not in dotnet.config, whose INI format was dropped during .NET 10 RC2.
   -->
   <ItemGroup Label="Testing">
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
     <PackageVersion Include="xunit.v3" Version="4.0.0" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
   </ItemGroup>
 
   <!-- ==== Transitive pins ====
@@ -59,9 +63,5 @@
     docs/ or the README instead of here, or MSBuild will reject this whole file as invalid
     with an error that does not say why.
   -->
-
-  <ItemGroup Label="Transitive pins">
-	  <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
-  </ItemGroup>
 
 </Project>

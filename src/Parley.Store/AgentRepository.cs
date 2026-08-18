@@ -114,22 +114,25 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <summary>
     /// Loads every registered agent, ordered by name.
     /// </summary>
+    /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>All agents in the registry, whatever their status.</returns>
-    public async Task<IReadOnlyList<AgentRecord>> GetAllAsync()
+    public async Task<IReadOnlyList<AgentRecord>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         var rows = await _connection.QueryAsync<AgentRow>(
-            """
-            SELECT name           AS Name,
-                   adapter        AS Adapter,
-                   tier           AS Tier,
-                   workspace      AS Workspace,
-                   session_ref    AS SessionRef,
-                   credential_ref AS CredentialRef,
-                   last_seen_utc  AS LastSeenUtc,
-                   status         AS Status
-            FROM agents
-            ORDER BY name;
-            """).ConfigureAwait(false);
+            new CommandDefinition(
+                """
+                SELECT name           AS Name,
+                       adapter        AS Adapter,
+                       tier           AS Tier,
+                       workspace      AS Workspace,
+                       session_ref    AS SessionRef,
+                       credential_ref AS CredentialRef,
+                       last_seen_utc  AS LastSeenUtc,
+                       status         AS Status
+                FROM agents
+                ORDER BY name;
+                """,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return [.. rows.Select(r => r.ToDomain())];
     }
@@ -138,6 +141,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// Registers an agent, or updates its configuration if already registered.
     /// </summary>
     /// <param name="agent">The agent to register.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>The number of rows affected.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="agent"/> is <see langword="null"/>.</exception>
     /// <remarks>
@@ -147,46 +151,52 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// used to compute its change summary. Use <see cref="MarkLiveAsync"/> and
     /// <see cref="MarkAllOfflineAsync"/> for those.
     /// </remarks>
-    public async Task<int> UpsertAsync(AgentRecord agent)
+    public async Task<int> UpsertAsync(AgentRecord agent, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(agent);
 
         return await _connection.ExecuteAsync(
-            """
-            INSERT INTO agents (name, adapter, tier, workspace, session_ref, credential_ref,
-                                last_seen_utc, status)
-            VALUES (@Name, @Adapter, @Tier, @Workspace, @SessionRef, @CredentialRef,
-                    @LastSeenUtc, @Status)
-            ON CONFLICT(name) DO UPDATE SET
-                adapter        = excluded.adapter,
-                tier           = excluded.tier,
-                workspace      = excluded.workspace,
-                credential_ref = excluded.credential_ref;
-            """,
-            new
-            {
-                Name = agent.Name.Value,
-                agent.Adapter,
-                Tier = FormatTier(agent.Tier),
-                agent.Workspace,
-                agent.SessionRef,
-                agent.CredentialRef,
-                LastSeenUtc = agent.LastSeenUtc is { } t ? ExchangeRow.FormatTimestamp(t) : null,
-                Status = FormatStatus(agent.Status)
-            }).ConfigureAwait(false);
+            new CommandDefinition(
+                """
+                INSERT INTO agents (name, adapter, tier, workspace, session_ref, credential_ref,
+                                    last_seen_utc, status)
+                VALUES (@Name, @Adapter, @Tier, @Workspace, @SessionRef, @CredentialRef,
+                        @LastSeenUtc, @Status)
+                ON CONFLICT(name) DO UPDATE SET
+                    adapter        = excluded.adapter,
+                    tier           = excluded.tier,
+                    workspace      = excluded.workspace,
+                    credential_ref = excluded.credential_ref;
+                """,
+                new
+                {
+                    Name = agent.Name.Value,
+                    agent.Adapter,
+                    Tier = FormatTier(agent.Tier),
+                    agent.Workspace,
+                    agent.SessionRef,
+                    agent.CredentialRef,
+                    LastSeenUtc = agent.LastSeenUtc is { } t ? ExchangeRow.FormatTimestamp(t) : null,
+                    Status = FormatStatus(agent.Status)
+                },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Marks every agent offline.
     /// </summary>
+    /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>The number of agents updated.</returns>
     /// <remarks>
     /// Called once during broker start-up. No adapter can still be attached across a process
     /// restart, so recorded liveness from the previous run is stale by definition and must be
     /// cleared before any of it is trusted.
     /// </remarks>
-    public async Task<int> MarkAllOfflineAsync() =>
-        await _connection.ExecuteAsync("UPDATE agents SET status = 'offline';").ConfigureAwait(false);
+    public async Task<int> MarkAllOfflineAsync(CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE agents SET status = 'offline';",
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>
     /// Marks an agent live and records that it has just communicated.
@@ -196,27 +206,34 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// A new session handle to store, or <see langword="null"/> to keep the existing one.
     /// </param>
     /// <param name="nowUtc">The current instant, in UTC.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>The number of rows affected: one on success, zero if the agent is unknown.</returns>
     /// <remarks>
     /// Passing <see langword="null"/> for <paramref name="sessionRef"/> preserves the stored
     /// handle rather than clearing it, so a routine liveness update cannot destroy the value
     /// that makes session resumption possible.
     /// </remarks>
-    public async Task<int> MarkLiveAsync(AgentName name, string? sessionRef, DateTimeOffset nowUtc) =>
+    public async Task<int> MarkLiveAsync(
+        AgentName name,
+        string? sessionRef,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default) =>
         await _connection.ExecuteAsync(
-            """
-            UPDATE agents
-               SET status        = 'live',
-                   session_ref   = COALESCE(@SessionRef, session_ref),
-                   last_seen_utc = @Now
-             WHERE name = @Name;
-            """,
-            new
-            {
-                Name = name.Value,
-                SessionRef = sessionRef,
-                Now = ExchangeRow.FormatTimestamp(nowUtc)
-            }).ConfigureAwait(false);
+            new CommandDefinition(
+                """
+                UPDATE agents
+                   SET status        = 'live',
+                       session_ref   = COALESCE(@SessionRef, session_ref),
+                       last_seen_utc = @Now
+                 WHERE name = @Name;
+                """,
+                new
+                {
+                    Name = name.Value,
+                    SessionRef = sessionRef,
+                    Now = ExchangeRow.FormatTimestamp(nowUtc)
+                },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     private static string FormatTier(AgentTier tier) => tier switch
     {

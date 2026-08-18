@@ -1,4 +1,3 @@
-using Parley.Core;
 using Xunit;
 
 namespace Parley.Core.Tests;
@@ -77,14 +76,17 @@ public sealed class WaitForGraphTests
     [Fact]
     public void Clarify_reverses_the_edge()
     {
-        // While the asker owes a clarification reply, it is the answerer that waits.
+        // While the answerer holds the turn, the asker waits. A clarification hands the turn
+        // back, so it is now the answerer that waits on the asker.
         var exchange = Open(1, Orders, Billing);
         exchange.Clarify(Billing, T0);
 
         var graph = WaitForGraph.FromOpenExchanges([exchange]);
 
-        // Billing now waits on Orders, so Orders asking Billing would close a cycle.
-        Assert.True(graph.WouldDeadlock(Billing, Orders, out _));
+        // Billing now waits on Orders. Orders asking Billing would therefore close the loop;
+        // Billing asking Orders would not, because Billing is already the waiting party.
+        Assert.True(graph.WouldDeadlock(Orders, Billing, out _));
+        Assert.False(graph.WouldDeadlock(Billing, Orders, out _));
     }
 
     [Fact]

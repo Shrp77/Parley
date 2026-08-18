@@ -163,6 +163,34 @@ public sealed class Exchange
     public bool IsDecision { get; private set; }
 
     /// <summary>
+    /// Gets the optimistic concurrency stamp last read from or written to storage.
+    /// </summary>
+    /// <value>
+    /// Zero for an exchange that has never been saved; otherwise the value held by the
+    /// stored row at the time this instance was loaded.
+    /// </value>
+    /// <remarks>
+    /// This is frankly a persistence concern rather than a domain one, and it lives on the
+    /// aggregate only because it has to round-trip with it. It exists because two paths that
+    /// both load, transition, and save would otherwise silently lose one transition, and the
+    /// transition most likely to be lost is a <see cref="ClarifyDepth"/> increment — which
+    /// would quietly turn <see cref="ClarifyDepthCap"/> into a suggestion. Never interpret
+    /// it as domain state.
+    /// </remarks>
+    public long Version { get; private set; }
+
+    /// <summary>
+    /// Records that this instance has been persisted, adopting the stamp the store assigned.
+    /// </summary>
+    /// <param name="version">The concurrency stamp now held by the stored row.</param>
+    /// <remarks>
+    /// Called by the persistence layer immediately after a successful save, so that a second
+    /// save of the same instance carries the current stamp rather than a stale one. Calling
+    /// this from anywhere else will defeat concurrency detection.
+    /// </remarks>
+    public void MarkSaved(long version) => Version = version;
+
+    /// <summary>
     /// Determines whether an agent is a participant in this exchange.
     /// </summary>
     /// <param name="agent">The agent to test.</param>
@@ -435,6 +463,7 @@ public sealed class Exchange
     /// <param name="expiresUtc">The current deadline.</param>
     /// <param name="closedUtc">The closing timestamp, if closed.</param>
     /// <param name="isDecision">Whether the answer was flagged for promotion.</param>
+    /// <param name="version">The optimistic concurrency stamp held by the stored row.</param>
     /// <returns>The reconstructed exchange.</returns>
     /// <remarks>
     /// Intended for the persistence layer only. This bypasses every transition guard, so the
@@ -453,7 +482,8 @@ public sealed class Exchange
         DateTimeOffset openedUtc,
         DateTimeOffset expiresUtc,
         DateTimeOffset? closedUtc,
-        bool isDecision)
+        bool isDecision,
+        long version = 0)
     {
         var exchange = new Exchange(id, asker, answerer, ttl, clarifyDepthCap, openedUtc)
         {
@@ -462,7 +492,8 @@ public sealed class Exchange
             ClarifyDepth = clarifyDepth,
             ExpiresUtc = expiresUtc,
             ClosedUtc = closedUtc,
-            IsDecision = isDecision
+            IsDecision = isDecision,
+            Version = version
         };
 
         return exchange;

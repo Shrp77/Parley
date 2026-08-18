@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using Microsoft.Data.Sqlite;
@@ -43,6 +44,15 @@ public static class SchemaMigrator
     /// Idempotent and safe to call on every start-up. Migrations already recorded in
     /// <c>user_version</c> are skipped.
     /// </remarks>
+    [SuppressMessage(
+        "Security",
+        "CA2100:Review SQL queries for security vulnerabilities",
+        Justification =
+            "Neither statement can carry user input. The migration body is read from an " +
+            "embedded resource compiled into this assembly, and the user_version value is an " +
+            "int parsed from that resource's file name. PRAGMA does not accept parameters, so " +
+            "interpolation is the only option for the version bump. Every other statement in " +
+            "this assembly is parameterised, and CA2100 remains an error to keep it that way.")]
     public static int Migrate(SqliteConnection connection)
     {
         ArgumentNullException.ThrowIfNull(connection);

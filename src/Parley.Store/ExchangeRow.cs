@@ -48,8 +48,15 @@ public sealed class ExchangeRow
     /// <summary>Gets the <c>clarify_depth_cap</c> column: the clarification request limit.</summary>
     public int ClarifyDepthCap { get; init; }
 
-    /// <summary>Gets the <c>ttl_seconds</c> column: the inactivity window, in whole seconds.</summary>
-    public long TtlSeconds { get; init; }
+    /// <summary>
+    /// Gets the <c>ttl_ms</c> column: the inactivity window, in whole milliseconds.
+    /// </summary>
+    /// <remarks>
+    /// Milliseconds rather than seconds so a rehydrated exchange can reproduce its own
+    /// deadline. Seconds truncated the stored window while <c>expires_utc</c> retained full
+    /// precision, leaving the two mutually inconsistent for any non-integral TTL.
+    /// </remarks>
+    public long TtlMs { get; init; }
 
     /// <summary>Gets the <c>opened_utc</c> column: the creation timestamp, round-trip formatted.</summary>
     public string OpenedUtc { get; init; } = "";
@@ -76,6 +83,11 @@ public sealed class ExchangeRow
     public string? DecisionRef { get; init; }
 
     /// <summary>
+    /// Gets the <c>version</c> column: the optimistic concurrency stamp.
+    /// </summary>
+    public long Version { get; init; }
+
+    /// <summary>
     /// Translates this row into the domain aggregate.
     /// </summary>
     /// <returns>The rehydrated exchange.</returns>
@@ -83,7 +95,8 @@ public sealed class ExchangeRow
     /// A stored agent name does not satisfy the <see cref="AgentName"/> grammar.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// The stored state is not a recognised value.
+    /// The stored state is not a recognised value, or the stored pair key is not the one
+    /// derived from the two participants.
     /// </exception>
     /// <exception cref="FormatException">
     /// A stored timestamp is not in round-trip format.
@@ -91,21 +104,41 @@ public sealed class ExchangeRow
     /// <remarks>
     /// The exceptions above indicate a corrupted or externally modified database rather than
     /// ordinary bad input. The schema's <c>CHECK</c> constraints and foreign keys are the
-    /// first line of defence; this is the second.
+    /// first line of defence; this is the second. The pair key is verified rather than
+    /// ignored because <c>ux_open_pair</c> constrains the stored value, so a key that does
+    /// not match its participants would let two exchanges be open for the same real pair.
     /// </remarks>
-    public Exchange ToDomain() => Exchange.Rehydrate(
-        Id,
-        AgentName.Create(Asker),
-        AgentName.Create(Answerer),
-        AgentName.Create(OwedBy),
-        ParseState(State),
-        ClarifyDepth,
-        ClarifyDepthCap,
-        TimeSpan.FromSeconds(TtlSeconds),
-        ParseTimestamp(OpenedUtc),
-        ParseTimestamp(ExpiresUtc),
-        ClosedUtc is null ? null : ParseTimestamp(ClosedUtc),
-        IsDecision != 0);
+    public Exchange ToDomain()
+    {
+        var asker = AgentName.Create(Asker);
+        var answerer = AgentName.Create(Answerer);
+
+        var stored = Core.PairKey.FromStorage(PairKey);
+        var derived = Core.PairKey.For(asker, answerer);
+
+        if (stored != derived)
+        {
+            throw new InvalidOperationException(
+                $"Exchange {Id} has pair key '{stored}', which is not the key derived from " +
+                $"'{asker}' and '{answerer}' ('{derived}'). The row predates the derivation " +
+                "constraint or was modified outside the application.");
+        }
+
+        return Exchange.Rehydrate(
+            Id,
+            asker,
+            answerer,
+            AgentName.Create(OwedBy),
+            ParseState(State),
+            ClarifyDepth,
+            ClarifyDepthCap,
+            TimeSpan.FromMilliseconds(TtlMs),
+            ParseTimestamp(OpenedUtc),
+            ParseTimestamp(ExpiresUtc),
+            ClosedUtc is null ? null : ParseTimestamp(ClosedUtc),
+            IsDecision != 0,
+            Version);
+    }
 
     /// <summary>
     /// Formats an instant for storage.
@@ -135,7 +168,7 @@ public sealed class ExchangeRow
             value,
             "O",
             CultureInfo.InvariantCulture,
-            DateTimeStyles.RoundtripKind | DateTimeStyles.AssumeUniversal);
+            DateTimeStyles.RoundtripKind);
 
     /// <summary>
     /// Formats a lifecycle state for storage.

@@ -269,56 +269,118 @@ reads tool descriptions on every call and reads documentation approximately neve
 
 ## 9. Persistence
 
-SQLite, WAL mode, single file.
+SQLite, WAL mode, single file. The store assumes the bundled `e_sqlite3` build, which
+includes the JSON1 extension used by the payload constraint.
+
+### 9.1 Opening a connection
+
+Connections MUST be obtained from the store's connection factory, never constructed
+directly. Several settings the protocol depends on — foreign key enforcement above all — are
+**per-connection** in SQLite and default to off. A hand-opened connection accepts an exchange
+referencing an unregistered agent without error, and the failure surfaces much later as a
+rehydration fault against a row that should never have existed.
+
+The factory also restricts the database file to the owning user on Unix. It holds the full
+text of every question and answer exchanged between agents, which is a running record of a
+project's architectural decisions.
+
+### 9.2 Schema
 
 ```sql
 CREATE TABLE agents (
-  name            TEXT PRIMARY KEY,        -- logical name, NOT a session id
-  adapter         TEXT NOT NULL,
+  name            TEXT    PRIMARY KEY,     -- logical name, NOT a session id
+  adapter         TEXT    NOT NULL,
+  tier            TEXT    NOT NULL,        -- full | pull | headless
   workspace       TEXT,
   session_ref     TEXT,                    -- adapter-specific resume handle
   credential_ref  TEXT,                    -- pointer, never a secret (see §12)
   last_seen_utc   TEXT,
-  status          TEXT NOT NULL            -- registered | live | offline
-);
+  status          TEXT    NOT NULL,        -- registered | live | offline
+
+  CHECK (credential_ref IS NULL
+         OR credential_ref LIKE 'env:_%'
+         OR credential_ref LIKE 'keychain:_%'
+         OR credential_ref LIKE 'file:_%')
+) STRICT;
 
 CREATE TABLE exchanges (
-  id              INTEGER PRIMARY KEY,
-  pair_key        TEXT NOT NULL,
-  asker           TEXT NOT NULL REFERENCES agents(name),
-  answerer        TEXT NOT NULL REFERENCES agents(name),
-  owed_by         TEXT NOT NULL REFERENCES agents(name),
-  state           TEXT NOT NULL,           -- OPEN | CLOSED | ORPHANED
-  clarify_depth   INTEGER NOT NULL DEFAULT 0,
-  opened_utc      TEXT NOT NULL,
-  expires_utc     TEXT NOT NULL,
-  closed_utc      TEXT,
-  is_decision     INTEGER NOT NULL DEFAULT 0,
-  decision_ref    TEXT
-);
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  pair_key          TEXT    NOT NULL,
+  asker             TEXT    NOT NULL REFERENCES agents(name),
+  answerer          TEXT    NOT NULL REFERENCES agents(name),
+  owed_by           TEXT    NOT NULL REFERENCES agents(name),
+  state             TEXT    NOT NULL,      -- OPEN | CLOSED | ORPHANED
+  clarify_depth     INTEGER NOT NULL DEFAULT 0,
+  clarify_depth_cap INTEGER NOT NULL DEFAULT 3,
+  ttl_ms            INTEGER NOT NULL,
+  opened_utc        TEXT    NOT NULL,
+  expires_utc       TEXT    NOT NULL,
+  closed_utc        TEXT,
+  is_decision       INTEGER NOT NULL DEFAULT 0,
+  decision_ref      TEXT,
+  version           INTEGER NOT NULL DEFAULT 0,
 
--- Enforces the core invariant in storage, not in application code.
+  CHECK (owed_by IN (asker, answerer)),
+  CHECK (clarify_depth >= 0 AND clarify_depth <= clarify_depth_cap),
+  CHECK (ttl_ms > 0),
+  CHECK (pair_key = min(asker, answerer) || char(31) || max(asker, answerer))
+) STRICT;
+
 CREATE UNIQUE INDEX ux_open_pair
   ON exchanges(pair_key) WHERE state = 'OPEN';
 
 CREATE TABLE messages (
-  id              INTEGER PRIMARY KEY,
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
   exchange_id     INTEGER REFERENCES exchanges(id),  -- NULL for Notify
-  type            TEXT NOT NULL,           -- question | clarify | answer | notify
-  from_agent      TEXT NOT NULL,
-  to_agent        TEXT NOT NULL,
-  responder_model TEXT,                    -- see §11.3
-  payload_json    TEXT NOT NULL,
-  created_utc     TEXT NOT NULL,
-  delivered_utc   TEXT
-);
+  type            TEXT    NOT NULL,       -- question | clarify | answer | notify
+  from_agent      TEXT    NOT NULL REFERENCES agents(name),
+  to_agent        TEXT    NOT NULL REFERENCES agents(name),
+  responder_model TEXT,                   -- see §11.3
+  payload_json    TEXT    NOT NULL,
+  created_utc     TEXT    NOT NULL,
+  delivered_utc   TEXT,
 
-CREATE INDEX ix_inbox ON messages(to_agent, delivered_utc);
+  CHECK ((type = 'notify') = (exchange_id IS NULL)),
+  CHECK (length(payload_json) <= 2000),
+  CHECK (json_valid(payload_json)),
+  CHECK (type <> 'answer' OR responder_model IS NOT NULL)
+) STRICT;
 ```
 
-The partial unique index on `pair_key WHERE state='OPEN'` enforces the
-one-open-exchange-per-pair invariant in the database. Correctness survives bugs in
-the broker.
+### 9.3 Invariants enforced by storage
+
+Rules that application code could otherwise route around live in the schema, so correctness
+survives bugs in the broker:
+
+- **One open exchange per pair.** The partial unique index on `pair_key`.
+- **`pair_key` is genuinely derived from its participants.** The index above is only as good
+  as the value it constrains; a mismatched key would have uniqueness enforced against the
+  wrong string, permitting two simultaneously open exchanges for one real pair.
+- **Message size cap.** Terseness is the context-poisoning defence (rule 8.5), so 2,000
+  characters is a constraint rather than a guideline.
+- **Answers name their responder.** §11.3 is a MUST. A broker-forced unknown, produced when
+  the clarify cap breaks, records `parley:broker`.
+- **`credential_ref` is a pointer.** §12 claims the manifest is safe to commit; restricting
+  the column to known schemes makes a pasted secret impossible rather than discouraged. It
+  prevents the careless case, not a determined one.
+
+**Key on agent name, not session ID.** Session IDs churn on every restart; repository
+identity does not. This is what makes orphan recovery and lazy spawning work.
+
+**Optimistic concurrency.** Every exchange row carries a `version` stamp, incremented on each
+write and checked on update. Without it, two paths that both load, transition, and save lose
+one transition — most damagingly a `clarify_depth` increment, which would quietly turn the
+depth cap into a suggestion.
+
+**Admission control runs in an `IMMEDIATE` transaction.** A deferred transaction takes a read
+snapshot on its first `SELECT` and upgrades to a write lock only at the `INSERT`. If another
+connection commits in between, WAL mode refuses the upgrade with `SQLITE_BUSY_SNAPSHOT`,
+which the busy timeout cannot resolve — waiting never makes a stale snapshot fresh. Taking
+the write lock up front is what makes the pair and cycle checks sound.
+
+**Timestamps are stored in round-trip format.** Lexicographic order then matches chronological
+order, which is what allows the reaper's `expires_utc <= ?` predicate to be a plain string
+comparison and still be correct.
 
 ## 10. Operations
 
