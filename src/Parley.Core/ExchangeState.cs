@@ -22,8 +22,10 @@ public enum ExchangeState
     /// <remarks>
     /// Orphaning releases the pair slot so a vanished agent cannot hold a lock indefinitely,
     /// while keeping the question so it is not silently lost. When the owing agent
-    /// re-registers, the exchange is resumed and the pending question replayed into its
-    /// inbox.
+    /// re-registers, the exchange becomes eligible for replay into its inbox — eligible,
+    /// not guaranteed: SPEC.md section 14 makes resumption a configured policy gated by the
+    /// broker, because a restart carries no evidence of whether the operator wanted the
+    /// conversation stopped or continued.
     /// </remarks>
     Orphaned = 2
 }

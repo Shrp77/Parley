@@ -131,6 +131,8 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// Called when an agent re-registers after a restart, so its pending questions can be
     /// resumed and replayed into its inbox instead of being lost. This works because
     /// exchanges are keyed on logical agent name rather than on a session identifier.
+    /// Returning an exchange here does not authorise replaying it: whether a restart resumes
+    /// anything at all is the operator's configured policy, per SPEC.md section 14.
     /// </para>
     /// <para>
     /// The result may contain several orphans sharing one pair, because <c>ux_open_pair</c>
