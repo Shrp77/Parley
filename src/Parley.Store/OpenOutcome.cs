@@ -31,25 +31,15 @@ public enum OpenRejection
 /// The result of attempting to open an exchange, carrying either the new exchange or enough
 /// context for the caller to act on the refusal.
 /// </summary>
-/// <param name="Exchange">
-/// The newly opened exchange, or <see langword="null"/> if the attempt was refused.
-/// </param>
-/// <param name="Rejection">
-/// Why the attempt was refused, or <see cref="OpenRejection.None"/> on success.
-/// </param>
-/// <param name="ReciprocalDebt">
-/// On <see cref="OpenRejection.PairBusy"/> where the asker is the party that owes a
-/// response: the exchange it must resolve first. Otherwise <see langword="null"/>.
-/// </param>
-/// <param name="Blocking">
-/// On <see cref="OpenRejection.PairBusy"/> where the asker is already waiting on this peer:
-/// the exchange it is waiting on. Otherwise <see langword="null"/>.
-/// </param>
-/// <param name="CyclePath">
-/// On <see cref="OpenRejection.WouldDeadlock"/>: the agents forming the cycle, starting with
-/// the asker. Empty otherwise.
-/// </param>
 /// <remarks>
+/// <para>
+/// The constructor is private and the named factories below are the only way to build one.
+/// A public constructor would accept combinations that contradict themselves — a refusal
+/// carrying an exchange, or <see cref="Succeeded"/> reporting true with
+/// <see cref="Exchange"/> null. Callers read <see cref="Succeeded"/> and then dereference
+/// <see cref="Exchange"/> without a null check, so that pairing is an invariant they rely
+/// on rather than a convention, and only the factories can establish it.
+/// </para>
 /// <para>
 /// The two flavours of <see cref="OpenRejection.PairBusy"/> matter because they call for
 /// completely different responses. When the asker owes a debt, the broker returns the
@@ -63,13 +53,66 @@ public enum OpenRejection
 /// what it is waiting on instead.
 /// </para>
 /// </remarks>
-public sealed record OpenOutcome(
-    Exchange? Exchange,
-    OpenRejection Rejection,
-    Exchange? ReciprocalDebt,
-    Exchange? Blocking,
-    IReadOnlyList<AgentName> CyclePath)
+public sealed record OpenOutcome
 {
+    private OpenOutcome(
+        Exchange? exchange,
+        OpenRejection rejection,
+        Exchange? reciprocalDebt,
+        Exchange? blocking,
+        IReadOnlyList<AgentName> cyclePath)
+    {
+        Exchange = exchange;
+        Rejection = rejection;
+        ReciprocalDebt = reciprocalDebt;
+        Blocking = blocking;
+        CyclePath = cyclePath;
+    }
+
+    /// <summary>
+    /// Gets the newly opened exchange.
+    /// </summary>
+    /// <value>
+    /// The exchange, or <see langword="null"/> if the attempt was refused. Non-null exactly
+    /// when <see cref="Succeeded"/> is <see langword="true"/>.
+    /// </value>
+    public Exchange? Exchange { get; }
+
+    /// <summary>
+    /// Gets the reason the attempt was refused.
+    /// </summary>
+    /// <value>
+    /// The refusal reason, or <see cref="OpenRejection.None"/> on success.
+    /// </value>
+    public OpenRejection Rejection { get; }
+
+    /// <summary>
+    /// Gets the exchange the asker must resolve before it may ask.
+    /// </summary>
+    /// <value>
+    /// On <see cref="OpenRejection.PairBusy"/> where the asker is the party that owes a
+    /// response: the exchange it must resolve first. Otherwise <see langword="null"/>.
+    /// </value>
+    public Exchange? ReciprocalDebt { get; }
+
+    /// <summary>
+    /// Gets the exchange the asker is already waiting on.
+    /// </summary>
+    /// <value>
+    /// On <see cref="OpenRejection.PairBusy"/> where the asker is already waiting on this
+    /// peer: the exchange it is waiting on. Otherwise <see langword="null"/>.
+    /// </value>
+    public Exchange? Blocking { get; }
+
+    /// <summary>
+    /// Gets the agents forming the cycle the question would have closed.
+    /// </summary>
+    /// <value>
+    /// On <see cref="OpenRejection.WouldDeadlock"/>: the agents in the order they block one
+    /// another, starting with the asker. Empty otherwise.
+    /// </value>
+    public IReadOnlyList<AgentName> CyclePath { get; }
+
     /// <summary>
     /// Gets a value indicating whether the exchange was opened.
     /// </summary>
@@ -84,16 +127,24 @@ public sealed record OpenOutcome(
     /// </summary>
     /// <param name="exchange">The newly opened exchange.</param>
     /// <returns>An outcome carrying <paramref name="exchange"/>.</returns>
-    public static OpenOutcome Opened(Exchange exchange) =>
-        new(exchange, OpenRejection.None, null, null, []);
+    /// <exception cref="ArgumentNullException"><paramref name="exchange"/> is <see langword="null"/>.</exception>
+    public static OpenOutcome Opened(Exchange exchange)
+    {
+        ArgumentNullException.ThrowIfNull(exchange);
+        return new(exchange, OpenRejection.None, null, null, []);
+    }
 
     /// <summary>
     /// Creates a refusal indicating the asker must answer the peer before it may ask.
     /// </summary>
     /// <param name="debt">The exchange the asker owes a response to.</param>
     /// <returns>A refusal carrying the outstanding debt.</returns>
-    public static OpenOutcome OweFirst(Exchange debt) =>
-        new(null, OpenRejection.PairBusy, debt, null, []);
+    /// <exception cref="ArgumentNullException"><paramref name="debt"/> is <see langword="null"/>.</exception>
+    public static OpenOutcome OweFirst(Exchange debt)
+    {
+        ArgumentNullException.ThrowIfNull(debt);
+        return new(null, OpenRejection.PairBusy, debt, null, []);
+    }
 
     /// <summary>
     /// Creates a refusal indicating the asker already has a question outstanding with this
@@ -101,14 +152,22 @@ public sealed record OpenOutcome(
     /// </summary>
     /// <param name="blocking">The exchange the asker is currently waiting on.</param>
     /// <returns>A refusal carrying the blocking exchange.</returns>
-    public static OpenOutcome AlreadyWaiting(Exchange blocking) =>
-        new(null, OpenRejection.PairBusy, null, blocking, []);
+    /// <exception cref="ArgumentNullException"><paramref name="blocking"/> is <see langword="null"/>.</exception>
+    public static OpenOutcome AlreadyWaiting(Exchange blocking)
+    {
+        ArgumentNullException.ThrowIfNull(blocking);
+        return new(null, OpenRejection.PairBusy, null, blocking, []);
+    }
 
     /// <summary>
     /// Creates a refusal indicating the question would deadlock.
     /// </summary>
     /// <param name="cyclePath">The agents forming the cycle, starting with the asker.</param>
     /// <returns>A refusal carrying the cycle path.</returns>
-    public static OpenOutcome Deadlock(IReadOnlyList<AgentName> cyclePath) =>
-        new(null, OpenRejection.WouldDeadlock, null, null, cyclePath);
+    /// <exception cref="ArgumentNullException"><paramref name="cyclePath"/> is <see langword="null"/>.</exception>
+    public static OpenOutcome Deadlock(IReadOnlyList<AgentName> cyclePath)
+    {
+        ArgumentNullException.ThrowIfNull(cyclePath);
+        return new(null, OpenRejection.WouldDeadlock, null, null, cyclePath);
+    }
 }

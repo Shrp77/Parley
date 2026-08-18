@@ -64,6 +64,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         ("$opened", Opened), ("$expires", Expires), ("$closed", Closed));
 
 
+
     // ---- one open exchange per pair ----
 
     [Fact]

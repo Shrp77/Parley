@@ -81,6 +81,19 @@ public sealed class ExchangeRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task Negative_clarify_depth_cap_is_rejected_as_an_argument()
+    {
+        // Without the up-front check this reached the schema and surfaced as a
+        // SqliteException, leaking the storage layer through an API whose documented
+        // failures are argument exceptions. The caller cannot act differently on the two,
+        // and only one of them names the parameter at fault.
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => _exchanges.TryOpenAsync(
+                Orders, Billing, T0, Ttl, clarifyDepthCap: -1,
+                cancellationToken: TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task Reverse_question_on_a_busy_pair_returns_the_debt()
     {
         await _exchanges.TryOpenAsync(

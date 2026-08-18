@@ -172,7 +172,10 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// <exception cref="ArgumentException">
     /// <paramref name="asker"/> and <paramref name="answerer"/> are the same agent.
     /// </exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="ttl"/> is not positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="ttl"/> is not positive, or <paramref name="clarifyDepthCap"/> is
+    /// negative.
+    /// </exception>
     /// <remarks>
     /// <para>
     /// The transaction is <c>IMMEDIATE</c>, not deferred. This matters: a deferred
@@ -204,6 +207,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         }
 
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(ttl, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfNegative(clarifyDepthCap);
 
         // Synchronous BeginTransaction, deliberately. The async overloads do not expose the
         // deferred flag, and getting IMMEDIATE is the whole point here. Beginning a

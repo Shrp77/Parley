@@ -185,10 +185,12 @@ public sealed class Exchange
     /// <param name="version">The concurrency stamp now held by the stored row.</param>
     /// <remarks>
     /// Called by the persistence layer immediately after a successful save, so that a second
-    /// save of the same instance carries the current stamp rather than a stale one. Calling
-    /// this from anywhere else will defeat concurrency detection.
+    /// save of the same instance carries the current stamp rather than a stale one. Adopting
+    /// a stamp anywhere else silently defeats the optimistic concurrency check, which is why
+    /// this is internal and reachable only through the <c>InternalsVisibleTo</c> grant to
+    /// Parley.Store rather than left public with a warning attached to it.
     /// </remarks>
-    public void MarkSaved(long version) => Version = version;
+    internal void MarkSaved(long version) => Version = version;
 
     /// <summary>
     /// Determines whether an agent is a participant in this exchange.
