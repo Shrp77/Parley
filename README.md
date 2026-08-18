@@ -103,8 +103,28 @@ restarts, an agent registry, and heterogeneous participants.
 
 ## Status and contributing
 
-Early. The spec is stabilising; the implementation is not. Issues and discussion are
-welcome — particularly on the open questions at the end of SPEC.md.
+Early. The spec is stabilising; the implementation is not.
+
+**Built.** The exchange state machine, pair serialisation, and wait-for cycle
+detection, over a SQLite store: schema, migrations, and the exchange and agent
+repositories. The domain layer has no I/O and no package dependencies, and its tests
+do not reference the storage assembly — the absent dependency is checked by the build
+rather than left as a convention. The protocol's invariants are enforced by schema
+constraints rather than by the code that calls them.
+
+**Next, in order.**
+
+1. **Messages repository.** The table and its constraints exist; nothing reads or
+   writes them yet. This is where the trust envelope (SPEC §13), per-sender rate
+   limits, and deduplication are implemented — currently prose with no code.
+2. **Reaper.** Orphans expired exchanges on a timer, releasing their pair slots so a
+   vanished agent cannot block its peers indefinitely.
+3. **Broker service.** The long-lived host owning the registry, admission, and
+   lifecycle.
+4. **Transport**, then **adapters**.
+
+Issues and discussion are welcome — particularly on the open questions at the end of
+SPEC.md.
 
 ## License
 
