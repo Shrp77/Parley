@@ -61,8 +61,10 @@ language model to "retry in a bit" produces either a token-burning loop or silen
 abandonment.
 
 **Durable.** Exchanges live in SQLite. Agents are keyed on logical name, not session
-ID, so a reboot orphans exchanges rather than losing them — and they're replayed when
-the agent comes back.
+ID, so a reboot orphans exchanges rather than losing them. Whether they're then replayed
+is your call, not ours: killing the process is how you stop two agents burning a quota,
+and a forced update at the weekend is how you lose one you wanted to keep. The broker
+cannot tell those apart, so resumption is configured rather than assumed.
 
 **Terseness is enforced, not requested.** Message size caps are a poisoning defence.
 An unbounded channel between agents recreates the shared-docs problem in a new medium.

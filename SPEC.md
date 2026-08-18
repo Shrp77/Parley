@@ -506,8 +506,52 @@ that stay idle. The broker instantiates an agent on the first inbound Question,
 resuming from the stored `session_ref` where the adapter supports it.
 
 **Reboot sequence.** Broker starts → loads registry → marks all agents `offline` →
-open exchanges become `ORPHANED` → the first inbound traffic for an orphaned exchange
-instantiates the owning agent and replays the pending Question into its inbox.
+open exchanges become `ORPHANED` → the broker consults the **resume gate** → where the
+gate permits it, the first inbound traffic for an orphaned exchange instantiates the
+owning agent and replays the pending Question into its inbox.
+
+**Resume is a user decision, not a protocol rule.** Two restarts that are byte-identical
+to the broker carry opposite intent, and the broker cannot tell them apart:
+
+- An operator watching two chatty agents burn through a quota kills the process
+  *specifically to stop them*. Resuming on restart overrides the one control they
+  reached for.
+- An unattended machine takes a forced update at the weekend. The operator expects to
+  return to work that continued, and silently dropping the exchanges wastes the whole
+  window.
+
+Nothing in the restart itself distinguishes these, so the broker MUST NOT infer.
+Implementations MUST support a configured resume policy:
+
+| Policy | Behaviour on restart |
+|---|---|
+| `always` | Orphaned exchanges are replayed as described above. |
+| `never` | Orphans are retained but never replayed. They stay visible and resumable by explicit operator action. |
+| `ask` | The broker surfaces the pending exchanges and replays only those confirmed. |
+
+`never` is the safe default for interactive use, and `always` for unattended use;
+implementations SHOULD make the choice explicit at configuration time rather than
+picking one silently.
+
+**The resume gate.** Beyond the policy, the broker MUST consult a **resume gate**
+before replaying, and MUST NOT replay when the gate declines. The gate exists so that
+an operator can express "resume, but not if it will cost me too much" without that
+condition being written into the protocol.
+
+The gate is deliberately defined by its contract, not its implementation: it is asked
+whether resuming is permitted and answers yes or no. A budget guard that declines above
+some fraction of a token quota is the motivating implementation, but it is *an*
+implementation. The protocol does not name tokens, because usage means different things
+across the tiers it must serve — a metered API key, a subscription seat, and a local
+model whose marginal cost is zero are not comparable, and a percentage threshold is
+meaningless for the third. Encoding a token threshold in the protocol would import a
+vendor-shaped assumption that Headless and local responders cannot honour.
+
+**Replay is re-delivery, not re-sending.** Replaying a pending Question marks the
+existing message undelivered again rather than writing a new one. A new row would be
+byte-identical to the original and is liable to be discarded by the deduplication in
+§13 — the replay path would defeat itself. It also keeps the message log a record of
+what was said, not of how many times delivery was attempted.
 
 **Staleness guard.** A resumed agent's understanding of its repository is stale if
 commits landed while it was offline. Adapters SHOULD inject a change summary since
@@ -553,3 +597,15 @@ Cheap to collect, disproportionately useful:
 4. The clarify depth cap of 3 is a guess. Instrument before tuning.
 5. Should `ask` support a deadline, so a caller can prefer a fast `unknown` over a
    slow `answered`?
+6. Where does resume gate state live, and who reports the usage a budget gate reads?
+   The broker has no view of token consumption today, so it would have to be
+   adapter-reported — which makes it a term in the adapter contract (§14) rather than
+   broker-local configuration.
+7. What becomes of an orphan that is never resumed under a `never` policy? Retaining
+   it forever holds a claim on nothing, since orphans release their pair slot, but
+   discarding it on a timer loses the question that orphaning exists to preserve.
+8. Under `always`, an orphan releases its pair slot, so the asker may re-ask and open a
+   second exchange on that pair before the original is replayed. Which one survives is
+   undecided: the replay preserves clarify depth and history, the re-ask reflects
+   current intent, and resolving it by discarding the orphan lets an agent reset the
+   depth cap by cycling through restarts.
