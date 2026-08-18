@@ -63,6 +63,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         ("$pair", pairKey), ("$asker", asker), ("$answerer", answerer), ("$state", state),
         ("$opened", Opened), ("$expires", Expires), ("$closed", Closed));
 
+
     // ---- one open exchange per pair ----
 
     [Fact]
@@ -150,6 +151,57 @@ public sealed class SchemaIntegrityTests : IDisposable
             VALUES ($pair, 'orders', 'orders', 'orders', 'OPEN', 900000, $opened, $expires);
             """,
             ("$pair", "orders\u001Forders"), ("$opened", Opened), ("$expires", Expires)));
+    }
+
+    // ---- agent names obey the grammar every other constraint rests on ----
+
+    [Theory]
+    [InlineData("shipping")]
+    [InlineData("a")]
+    [InlineData("web-api-2")]
+    [InlineData("abcdefghijklmnopqrstuvwxyz012345")]   // 32 characters, the limit
+    public void Names_matching_the_grammar_are_accepted(string name)
+    {
+        Execute(
+            """
+            INSERT INTO agents (name, adapter, tier, status)
+            VALUES ($name, 'test', 'full', 'registered');
+            """,
+            ("$name", name));
+    }
+
+    [Theory]
+    [InlineData("Shipping")]                            // uppercase
+    [InlineData("1shipping")]                           // leading digit
+    [InlineData("-shipping")]                           // leading hyphen
+    [InlineData("ship_ping")]                           // underscore
+    [InlineData("ship ping")]                           // space
+    [InlineData("")]
+    [InlineData("abcdefghijklmnopqrstuvwxyz0123456")]   // 33 characters
+    public void Names_breaking_the_grammar_are_rejected(string name)
+    {
+        Assert.Throws<SqliteException>(() => Execute(
+            """
+            INSERT INTO agents (name, adapter, tier, status)
+            VALUES ($name, 'test', 'full', 'registered');
+            """,
+            ("$name", name)));
+    }
+
+    [Fact]
+    public void A_name_containing_the_pair_separator_is_rejected()
+    {
+        // The attack this closes. pair_key is min(asker, answerer) || char(31) || max(...),
+        // so a name holding char(31) makes that derivation ambiguous: ('a', 'b<US>c') and
+        // ('a<US>b', 'c') produce one identical key. ux_open_pair would then hold one slot
+        // against two unrelated pairs, and the pair_key CHECK could not tell, because the
+        // key it recomputes is ambiguous in exactly the same way.
+        Assert.Throws<SqliteException>(() => Execute(
+            """
+            INSERT INTO agents (name, adapter, tier, status)
+            VALUES ($name, 'test', 'full', 'registered');
+            """,
+            ("$name", "b\u001Fc")));
     }
 
     // ---- credential_ref holds pointers, never secrets ----

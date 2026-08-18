@@ -22,7 +22,25 @@ CREATE TABLE agents (
     CHECK (credential_ref IS NULL
            OR credential_ref LIKE 'env:_%'
            OR credential_ref LIKE 'keychain:_%'
-           OR credential_ref LIKE 'file:_%')
+           OR credential_ref LIKE 'file:_%'),
+
+    -- The agent name grammar, mirroring AgentName's ^[a-z][a-z0-9-]{0,31}$. Every other
+    -- constraint in this schema is built on this column: asker, answerer, owed_by and both
+    -- message endpoints are foreign keys to it, and pair_key is derived by concatenating two
+    -- of these values around char(31).
+    --
+    -- That derivation is only unambiguous while a name cannot itself contain char(31).
+    -- Permit one and ('a', 'b<US>c') and ('a<US>b', 'c') collapse to the same pair_key, so
+    -- ux_open_pair serialises two unrelated pairs against one slot while letting a genuine
+    -- pair open twice. The pair_key CHECK below would not notice: the key it recomputes is
+    -- equally ambiguous.
+    --
+    -- GLOB rather than LIKE because LIKE is case-insensitive for ASCII in SQLite, which
+    -- would admit the uppercase names the grammar excludes. Inside a GLOB class a trailing
+    -- hyphen is a literal, not a range.
+    CHECK (length(name) BETWEEN 1 AND 32
+           AND name GLOB '[a-z]*'
+           AND name NOT GLOB '*[^a-z0-9-]*')
 ) STRICT;
 
 CREATE TABLE exchanges (

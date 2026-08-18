@@ -127,9 +127,18 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>Orphaned exchanges owed by <paramref name="agent"/>.</returns>
     /// <remarks>
+    /// <para>
     /// Called when an agent re-registers after a restart, so its pending questions can be
     /// resumed and replayed into its inbox instead of being lost. This works because
     /// exchanges are keyed on logical agent name rather than on a session identifier.
+    /// </para>
+    /// <para>
+    /// The result may contain several orphans sharing one pair, because <c>ux_open_pair</c>
+    /// is partial over open rows and a pair can be orphaned, reopened, and orphaned again.
+    /// At most one of them can be resumed; saving a second throws. A caller replaying this
+    /// list must therefore choose per pair rather than resuming all of it, and deciding
+    /// which one wins is broker policy that does not exist yet.
+    /// </para>
     /// </remarks>
     public async Task<IReadOnlyList<Exchange>> GetOrphanedOwedByAsync(
         AgentName agent,
@@ -269,7 +278,20 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// writer changed the row first, or the row no longer exists.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="exchange"/> is <see langword="null"/>.</exception>
+    /// <exception cref="SqliteException">
+    /// The write would put two open exchanges on one pair, violating <c>ux_open_pair</c>.
+    /// Reachable when resuming: that index is partial over open rows, so a pair may hold
+    /// several orphans at once, and only the first of them can be resumed. See
+    /// <see cref="GetOrphanedOwedByAsync"/>.
+    /// </exception>
     /// <remarks>
+    /// <para>
+    /// A pair conflict throws rather than returning <see langword="false"/>, because the two
+    /// mean different things to a caller. <see langword="false"/> says "you are stale, reload
+    /// and decide again"; a caller that did so here would reload, find the transition still
+    /// legal, and retry forever, since nothing about reloading frees the slot another
+    /// exchange holds.
+    /// </para>
     /// <para>
     /// The update is guarded on <see cref="Exchange.Version"/>. A <see langword="false"/>
     /// return means this instance is stale and its transition was not applied; the caller

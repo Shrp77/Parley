@@ -243,6 +243,47 @@ public sealed class ExchangeRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task Resuming_a_second_orphan_for_the_same_pair_is_refused()
+    {
+        // ux_open_pair is a partial index over open rows only, so a pair can accumulate more
+        // than one orphan: orphan the first, open a second on the freed slot, orphan that
+        // too. Both are then returned by GetOrphanedOwedByAsync, and replaying the inbox on
+        // re-registration would try to resume both.
+        var first = (await _exchanges.TryOpenAsync(
+            Orders, Billing, T0, Ttl,
+            cancellationToken: TestContext.Current.CancellationToken)).Exchange!;
+        first.Orphan(T0.AddMinutes(20));
+        Assert.True(await _exchanges.SaveAsync(
+            first, cancellationToken: TestContext.Current.CancellationToken));
+
+        var second = (await _exchanges.TryOpenAsync(
+            Orders, Billing, T0.AddHours(1), Ttl,
+            cancellationToken: TestContext.Current.CancellationToken)).Exchange!;
+        second.Orphan(T0.AddHours(2));
+        Assert.True(await _exchanges.SaveAsync(
+            second, cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(2, (await _exchanges.GetOrphanedOwedByAsync(
+            Billing, TestContext.Current.CancellationToken)).Count);
+
+        // The first resume takes the pair slot back.
+        first.Resume(T0.AddHours(3));
+        Assert.True(await _exchanges.SaveAsync(
+            first, cancellationToken: TestContext.Current.CancellationToken));
+
+        // The second cannot, and the schema is what stops it. This surfaces as an exception
+        // rather than a false return: false means "you are stale, reload and decide again",
+        // which would send a caller that retried into a loop, since reloading changes
+        // nothing about the pair already being held.
+        second.Resume(T0.AddHours(3));
+        var ex = await Assert.ThrowsAsync<SqliteException>(
+            () => _exchanges.SaveAsync(
+                second, cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Contains("UNIQUE", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Expiry_scan_finds_only_overdue_open_exchanges()
     {
         await _exchanges.TryOpenAsync(
