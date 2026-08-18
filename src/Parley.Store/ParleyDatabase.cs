@@ -53,16 +53,29 @@ public static class ParleyDatabase
             Mode = SqliteOpenMode.ReadWriteCreate
         }.ToString());
 
-        var configured = Configured(connection);
-
         try
         {
+            connection.Open();
+
+            // Restrict before configuring, not after. Enabling WAL is what creates the -wal
+            // and -shm sidecars, and SQLite mints them from the mode the main database file
+            // carries at that moment. Configuring first derives both sidecars from the
+            // default umask and leaves them group-readable, even though the main file is
+            // tightened a moment later — which defeats the protection for the most recently
+            // written pages, the ones most likely to matter.
             RestrictPermissions(path);
-            return configured;
+
+            SchemaMigrator.Configure(connection);
+
+            // Again, so the sidecars are covered whether or not they inherited, and so a
+            // database carrying sidecars from an earlier run is corrected on open.
+            RestrictPermissions(path);
+
+            return connection;
         }
         catch
         {
-            configured.Dispose();
+            connection.Dispose();
             throw;
         }
     }
@@ -139,18 +152,27 @@ public static class ParleyDatabase
     /// </summary>
     /// <param name="path">Path to the database file.</param>
     /// <remarks>
-    /// Applied after the connection is opened, because SQLite creates the file itself. The
-    /// sidecars may not exist yet on a fresh database; they are created with the same mode as
-    /// the main file, so restricting it covers them. Windows is left to directory ACLs, which
+    /// Applied after the connection is opened, because SQLite creates the files itself. The
+    /// sidecars are named explicitly rather than assumed to inherit: SQLite derives their
+    /// mode from the main database file when it creates them, so inheritance delivers the
+    /// intended mode only if the main file was already restricted at that point. Naming all
+    /// three means the guarantee does not rest on that ordering, or on the inheritance
+    /// behaviour surviving a future SQLite release. Windows is left to directory ACLs, which
     /// is the platform-idiomatic mechanism.
     /// </remarks>
     private static void RestrictPermissions(string path)
     {
-        if (OperatingSystem.IsWindows() || !File.Exists(path))
+        if (OperatingSystem.IsWindows())
         {
             return;
         }
 
-        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        foreach (var file in new[] { path, path + "-wal", path + "-shm" })
+        {
+            if (File.Exists(file))
+            {
+                File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+        }
     }
 }

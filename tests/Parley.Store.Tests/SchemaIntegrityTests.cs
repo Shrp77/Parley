@@ -318,7 +318,7 @@ public sealed class SchemaIntegrityTests : IDisposable
     }
 
     [Fact]
-    public void Database_file_is_owner_only_on_unix()
+    public void Database_and_wal_sidecars_are_owner_only_on_unix()
     {
         if (OperatingSystem.IsWindows())
         {
@@ -327,18 +327,30 @@ public sealed class SchemaIntegrityTests : IDisposable
         }
 
         var path = Path.Combine(Path.GetTempPath(), $"parley-{Guid.NewGuid():N}.db");
+        var owner = UnixFileMode.UserRead | UnixFileMode.UserWrite;
 
         try
         {
+            // Asserted while the connection is still open. SQLite removes the sidecars on a
+            // clean close of the last connection, so checking after the using block would
+            // pass by finding nothing left to check.
             using (var connection = ParleyDatabase.OpenAndMigrate(path))
             {
                 Assert.Equal(ConnectionState.Open, connection.State);
-            }
 
-            // The database holds the full text of every question and answer between agents.
-            Assert.Equal(
-                UnixFileMode.UserRead | UnixFileMode.UserWrite,
-                File.GetUnixFileMode(path));
+                // The database holds the full text of every question and answer between
+                // agents. The write-ahead log holds the most recent of them, so restricting
+                // only the main file protects everything except the newest writes.
+                Assert.Equal(owner, File.GetUnixFileMode(path));
+
+                foreach (var sidecar in new[] { path + "-wal", path + "-shm" })
+                {
+                    Assert.True(
+                        File.Exists(sidecar),
+                        $"expected '{sidecar}' to exist while a WAL connection is open");
+                    Assert.Equal(owner, File.GetUnixFileMode(sidecar));
+                }
+            }
         }
         finally
         {
