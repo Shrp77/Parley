@@ -286,6 +286,10 @@ project's architectural decisions.
 
 ### 9.2 Schema
 
+The schema requires **SQLite 3.38 or later**. It uses `STRICT` tables (3.37), generated
+columns (3.31), and `unixepoch()` (3.38). An older engine fails at `CREATE TABLE` with an
+error that does not explain itself, so the floor is stated here rather than discovered.
+
 ```sql
 CREATE TABLE agents (
   name            TEXT    PRIMARY KEY,     -- logical name, NOT a session id
@@ -344,16 +348,20 @@ CREATE TABLE messages (
   to_agent        TEXT    NOT NULL REFERENCES agents(name),
   responder_model TEXT    NOT NULL,       -- see §11.3
   payload_json    TEXT    NOT NULL,
-  content_hash    TEXT    NOT NULL,       -- see §13
-  dedup_bucket    INTEGER NOT NULL,       -- see §13
+  content_hash    TEXT    NOT NULL,       -- see §13.1
   created_utc     TEXT    NOT NULL,
+  dedup_bucket    INTEGER GENERATED ALWAYS AS (unixepoch(created_utc) / 60) STORED,
   delivered_utc   TEXT,
 
   CHECK (from_agent <> to_agent),
   CHECK ((type = 'notify') = (exchange_id IS NULL)),
   CHECK (length(payload_json) <= 2000),
   CHECK (json_valid(payload_json)),
-  CHECK (length(responder_model) > 0)
+  CHECK (length(responder_model) BETWEEN 1 AND 64
+         AND responder_model NOT GLOB '*[^a-zA-Z0-9._:/-]*'),
+  CHECK (length(content_hash) = 64
+         AND content_hash NOT GLOB '*[^0-9a-f]*'),
+  CHECK (unixepoch(created_utc) IS NOT NULL)
 ) STRICT;
 
 CREATE UNIQUE INDEX ux_message_dedup
@@ -466,8 +474,19 @@ scheme rather than assuming a model name:
 | `human:<name>` | a person answering directly |
 
 The column is not constrained to these, because model identifiers cannot be
-enumerated in advance. It is constrained to be present and non-empty, which is what
-makes an unattributed message impossible rather than merely discouraged.
+enumerated in advance. It is constrained to be present, which is what makes an
+unattributed message impossible rather than merely discouraged, and to a character set
+and a length.
+
+That last constraint is a trust-boundary control rather than tidiness. Responder
+identity is rendered into the envelope **header** in §13, which is the broker-authored
+region outside the payload delimiters — and the delimiter token defends the payload
+block, not the header. An adapter reporting an identity containing newlines and
+plausible framing would inject text reading as though the broker wrote it, which is the
+same forgery a fixed separator allows, reached through a different field. The permitted
+set covers real identifiers and the forms above while excluding what is needed to
+fabricate envelope structure. The length bound matters for the same reason: only the
+payload is otherwise capped, so an unbounded identity is an unbounded header.
 
 ### 11.4 Rule enforcement degrades by tier
 
@@ -560,8 +579,14 @@ Additional controls:
 ### 13.1 Deduplication
 
 Identity is the message's content together with its routing: `exchange_id`, `type`,
-`from_agent`, `to_agent`, and `payload_json`. The same text to a different peer, or on
-a different exchange, is a different message. The envelope is not part of the hash,
+`from_agent`, `to_agent`, and `payload_json`, hashed with **SHA-256** and stored as
+lowercase hex. The algorithm is named so that independent implementations sharing a
+database agree on what a duplicate is. The same text to a different peer, or on a
+different exchange, is a different message.
+
+The schema cannot compute this hash, so it constrains the shape instead. A broker
+writing an empty or truncated value would make unrelated messages collide, and
+over-deduplication discards real traffic while the index still looks healthy. The envelope is not part of the hash,
 which is a second reason it is rendered at delivery: a per-delivery token would
 otherwise make every message unique and defeat the mechanism entirely.
 
@@ -573,6 +598,21 @@ The window is enforced twice, following the same pattern as admission control in
   bucket is `created_utc` truncated to the window. It is coarser than the real rule —
   two identical messages either side of a bucket boundary both survive it — but it
   holds against a writer that skips the check, which the exact rule alone cannot.
+
+`created_utc` must be parseable, because the bucket is derived from it. `unixepoch()`
+yields NULL for text it cannot read, and SQLite treats NULLs as distinct in a unique
+index — so a malformed timestamp does not mis-bucket a row, it removes that row from the
+index altogether and byte-identical messages both store while the index reports no
+conflict. The constraint closes a hole that the derived bucket would otherwise open.
+
+The bucket is **derived by the schema, never supplied**. An index is only as good as the
+value it constrains: a bucket disagreeing with its `created_utc` would disable
+deduplication for that row while leaving the index looking healthy, exactly as a
+`pair_key` not derived from its participants would have defeated `ux_open_pair`.
+Computing it in the schema means a broker cannot write a wrong one, which is stronger
+than checking that it did not. The window is therefore a schema fact rather than
+configuration: changing it changes the meaning of every bucket already stored, so it
+should cost a migration.
 
 The window is **60 seconds** by default. Like the clarify cap in §17, this number is a
 starting estimate: it is meant to absorb transport retries, not to police an agent

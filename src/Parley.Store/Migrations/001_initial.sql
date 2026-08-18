@@ -1,5 +1,9 @@
 -- Parley schema, migration 001.
 -- Applied inside a transaction by SchemaMigrator; do not add BEGIN/COMMIT here.
+--
+-- Requires SQLite 3.38 or later: STRICT tables (3.37), generated columns (3.31), and
+-- unixepoch() (3.38). An older engine fails at the first CREATE TABLE with an error that
+-- does not say which feature it objected to. See SPEC.md section 9.2.
 
 CREATE TABLE agents (
     name            TEXT    PRIMARY KEY,
@@ -108,8 +112,18 @@ CREATE TABLE messages (
     payload_json    TEXT    NOT NULL,
     -- Deduplication identity and window. See SPEC.md section 13.1.
     content_hash    TEXT    NOT NULL,
-    dedup_bucket    INTEGER NOT NULL,
     created_utc     TEXT    NOT NULL,
+    -- Derived, never supplied. ux_message_dedup below is only as good as the value it
+    -- constrains: a bucket that does not match created_utc silently disables deduplication
+    -- for that row, in exactly the way a pair_key that did not match its participants would
+    -- have disabled ux_open_pair. Computing it in the schema means the broker cannot write a
+    -- wrong one, which is stronger than checking that it did not. SQLite rejects an INSERT
+    -- that supplies a value for this column at all.
+    --
+    -- The 60 is the window from SPEC.md section 13.1 and is deliberately a schema fact:
+    -- changing it changes the meaning of every bucket already stored, so it should cost a
+    -- migration rather than a configuration edit.
+    dedup_bucket    INTEGER GENERATED ALWAYS AS (unixepoch(created_utc) / 60) STORED,
     delivered_utc   TEXT,
 
     CHECK (from_agent <> to_agent),
@@ -133,9 +147,34 @@ CREATE TABLE messages (
     -- Not every responder is a model: section 11.2 admits scripts and humans, which use the
     -- 'script:' and 'human:' forms, and a broker forced answer records 'parley:broker'. The
     -- column is not restricted to known schemes the way credential_ref is, because model
-    -- identifiers cannot be enumerated in advance. Requiring it to be present and non-empty
-    -- is what makes an unattributed message impossible rather than discouraged.
-    CHECK (length(responder_model) > 0)
+    -- identifiers cannot be enumerated in advance. Requiring it to be present is what makes
+    -- an unattributed message impossible rather than discouraged.
+    --
+    -- The character restriction is a second trust-boundary control, not tidiness. This value
+    -- is rendered into the section 13 envelope header, which is the broker-authored region
+    -- outside the payload delimiters. The delimiter token defends the payload block; it does
+    -- nothing for the header. An adapter reporting a responder containing newlines and
+    -- plausible framing would inject text that reads as though the broker wrote it, which is
+    -- the same forgery the fixed '---' separator allowed, reached through another field. The
+    -- permitted set covers real model identifiers and the script:, human: and parley: forms
+    -- while excluding everything needed to fabricate envelope structure. The length bound
+    -- also stops an unbounded header, since only the payload is otherwise capped.
+    CHECK (length(responder_model) BETWEEN 1 AND 64
+           AND responder_model NOT GLOB '*[^a-zA-Z0-9._:/-]*'),
+
+    -- SHA-256 as lowercase hex. Unlike dedup_bucket the schema cannot compute this, so the
+    -- shape is constrained instead: a broker writing an empty or truncated hash would make
+    -- unrelated messages collide, and over-deduplication silently discards real traffic while
+    -- the index looks perfectly healthy.
+    CHECK (length(content_hash) = 64
+           AND content_hash NOT GLOB '*[^0-9a-f]*'),
+
+    -- created_utc must be parseable, because dedup_bucket is derived from it. unixepoch()
+    -- returns NULL for text it cannot read, and SQLite treats NULLs as distinct in a unique
+    -- index — so a single malformed timestamp does not merely mis-bucket one row, it removes
+    -- that row from ux_message_dedup altogether. Byte-identical messages would then both
+    -- store, silently, with the index still reporting no conflict.
+    CHECK (unixepoch(created_utc) IS NOT NULL)
 ) STRICT;
 
 -- Deduplication backstop. SPEC.md section 13.1 requires byte-identical messages to be
