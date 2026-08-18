@@ -104,8 +104,11 @@ CREATE TABLE messages (
     from_agent      TEXT    NOT NULL REFERENCES agents(name),
     to_agent        TEXT    NOT NULL REFERENCES agents(name),
     -- Which model actually produced this. See SPEC.md section 11.3.
-    responder_model TEXT,
+    responder_model TEXT    NOT NULL,
     payload_json    TEXT    NOT NULL,
+    -- Deduplication identity and window. See SPEC.md section 13.1.
+    content_hash    TEXT    NOT NULL,
+    dedup_bucket    INTEGER NOT NULL,
     created_utc     TEXT    NOT NULL,
     delivered_utc   TEXT,
 
@@ -120,12 +123,29 @@ CREATE TABLE messages (
     -- The column is named _json and the readers parse it as such.
     CHECK (json_valid(payload_json)),
 
-    -- SPEC.md section 11.3 makes responder identity a MUST for answers specifically: an
+    -- SPEC.md section 11.3 makes responder identity a MUST, and not only for answers: an
     -- unattributed 'unknown' from a weak local model is indistinguishable from a considered
-    -- 'unknown' from a frontier model, and the asker acts on both identically. A broker
-    -- forced answer (clarify cap breach) records 'parley:broker'.
-    CHECK (type <> 'answer' OR responder_model IS NOT NULL)
+    -- 'unknown' from a frontier model, and the asker acts on both identically. The same
+    -- calibration applies to a question, and the section 13 envelope renders the identity on
+    -- every delivered message, so a nullable column would leave the envelope a hole the
+    -- schema itself permitted.
+    --
+    -- Not every responder is a model: section 11.2 admits scripts and humans, which use the
+    -- 'script:' and 'human:' forms, and a broker forced answer records 'parley:broker'. The
+    -- column is not restricted to known schemes the way credential_ref is, because model
+    -- identifiers cannot be enumerated in advance. Requiring it to be present and non-empty
+    -- is what makes an unattributed message impossible rather than discouraged.
+    CHECK (length(responder_model) > 0)
 ) STRICT;
+
+-- Deduplication backstop. SPEC.md section 13.1 requires byte-identical messages to be
+-- refused within a short window. A moving window is not expressible as a unique index, so
+-- the broker checks the exact window inside the write transaction and this index catches
+-- what a broker that skipped the check would otherwise store. It is deliberately coarser
+-- than the rule: two identical messages either side of a bucket boundary both survive it.
+-- The exact rule needs the broker; this needs nothing, which is the point.
+CREATE UNIQUE INDEX ux_message_dedup
+    ON messages (content_hash, dedup_bucket);
 
 CREATE INDEX ix_inbox
     ON messages (to_agent, id) WHERE delivered_utc IS NULL;

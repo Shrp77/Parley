@@ -65,6 +65,28 @@ public sealed class SchemaIntegrityTests : IDisposable
 
 
 
+    // Supplies every required column so a test that expects a rejection cannot pass on a
+    // NOT NULL failure it did not mean to trigger. Each test overrides only what it exercises.
+    private void InsertMessage(
+        string type,
+        string from,
+        string to,
+        object? exchangeId = null,
+        object? responderModel = null,
+        string payload = "{}",
+        object? contentHash = null,
+        long dedupBucket = 0) => Execute(
+        """
+        INSERT INTO messages
+            (exchange_id, type, from_agent, to_agent, responder_model, payload_json,
+             content_hash, dedup_bucket, created_utc)
+        VALUES ($exchange, $type, $from, $to, $responder, $payload, $hash, $bucket, $created);
+        """,
+        ("$exchange", exchangeId ?? 1L), ("$type", type), ("$from", from), ("$to", to),
+        ("$responder", responderModel ?? "claude-opus-5"), ("$payload", payload),
+        ("$hash", contentHash ?? Guid.NewGuid().ToString("N")), ("$bucket", dedupBucket),
+        ("$created", Opened));
+
     // ---- one open exchange per pair ----
 
     [Fact]
@@ -244,12 +266,12 @@ public sealed class SchemaIntegrityTests : IDisposable
     {
         InsertExchange(OrdersBilling, "orders", "billing");
 
-        Assert.Throws<SqliteException>(() => Execute(
-            """
-            INSERT INTO messages (exchange_id, type, from_agent, to_agent, payload_json, created_utc)
-            VALUES (1, 'question', 'orders', 'billing', $payload, $created);
-            """,
-            ("$payload", $$"""{"text":"{{new string('x', 2000)}}"}"""), ("$created", Opened)));
+        var ex = Assert.Throws<SqliteException>(() => InsertMessage(
+            "question", "orders", "billing",
+            payload: $$"""{"text":"{{new string('x', 2000)}}"}"""));
+
+        // Valid JSON, only too long, so json_valid cannot be what refused it.
+        Assert.Contains("CHECK", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -257,12 +279,11 @@ public sealed class SchemaIntegrityTests : IDisposable
     {
         InsertExchange(OrdersBilling, "orders", "billing");
 
-        Assert.Throws<SqliteException>(() => Execute(
-            """
-            INSERT INTO messages (exchange_id, type, from_agent, to_agent, payload_json, created_utc)
-            VALUES (1, 'question', 'orders', 'billing', 'not json at all', $created);
-            """,
-            ("$created", Opened)));
+        var ex = Assert.Throws<SqliteException>(() => InsertMessage(
+            "question", "orders", "billing", payload: "not json at all"));
+
+        // Well under the cap, so length cannot be what refused it.
+        Assert.Contains("CHECK", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -272,55 +293,90 @@ public sealed class SchemaIntegrityTests : IDisposable
 
         // Notify opens no exchange and claims no pair slot, so an exchange reference on one
         // would be a lie about which rules applied to it.
-        Assert.Throws<SqliteException>(() => Execute(
-            """
-            INSERT INTO messages (exchange_id, type, from_agent, to_agent, payload_json, created_utc)
-            VALUES (1, 'notify', 'orders', 'billing', '{}', $created);
-            """,
-            ("$created", Opened)));
+        var ex = Assert.Throws<SqliteException>(() => InsertMessage(
+            "notify", "orders", "billing", exchangeId: 1L));
+
+        Assert.Contains("CHECK", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void Answers_must_name_their_responder()
+    public void Notify_without_an_exchange_is_accepted()
+    {
+        InsertMessage("notify", "orders", "billing", exchangeId: DBNull.Value);
+    }
+
+    [Theory]
+    [InlineData("question")]
+    [InlineData("clarify")]
+    [InlineData("answer")]
+    [InlineData("notify")]
+    public void Every_message_must_name_its_responder(string type)
     {
         InsertExchange(OrdersBilling, "orders", "billing");
 
-        // An unattributed 'unknown' from a weak local model reads identically to a considered
-        // 'unknown' from a frontier model, and the asker acts on both the same way.
-        Assert.Throws<SqliteException>(() => Execute(
-            """
-            INSERT INTO messages (exchange_id, type, from_agent, to_agent, payload_json, created_utc)
-            VALUES (1, 'answer', 'billing', 'orders', '{}', $created);
-            """,
-            ("$created", Opened)));
+        // SPEC 11.3 is a MUST and is not limited to answers. An unattributed 'unknown' from a
+        // weak local model reads identically to a considered one from a frontier model, and
+        // the same calibration applies to a question. The section 13 envelope renders the
+        // identity on every delivered message, so a nullable column would leave the envelope
+        // a hole the schema itself permitted.
+        Assert.Throws<SqliteException>(() => InsertMessage(
+            type, "orders", "billing",
+            exchangeId: type == "notify" ? DBNull.Value : 1L,
+            responderModel: DBNull.Value));
     }
 
     [Fact]
-    public void Broker_forced_answers_record_the_broker_as_responder()
+    public void An_empty_responder_is_not_attribution()
     {
         InsertExchange(OrdersBilling, "orders", "billing");
 
-        Execute(
-            """
-            INSERT INTO messages
-                (exchange_id, type, from_agent, to_agent, responder_model, payload_json, created_utc)
-            VALUES (1, 'answer', 'billing', 'orders', 'parley:broker',
-                    '{"resolution":"unknown"}', $created);
-            """,
-            ("$created", Opened));
+        // NOT NULL alone would let the empty string through and call it attributed.
+        var ex = Assert.Throws<SqliteException>(() => InsertMessage(
+            "answer", "billing", "orders", responderModel: ""));
+
+        Assert.Contains("CHECK", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("claude-opus-5")]      // a model
+    [InlineData("parley:broker")]      // broker forced answer, clarify cap breached
+    [InlineData("script:contracts")]   // deterministic responder
+    [InlineData("human:arvind")]       // escalation to a person
+    public void Recognised_responder_forms_are_accepted(string responder)
+    {
+        InsertExchange(OrdersBilling, "orders", "billing");
+
+        // Unlike credential_ref, this is not restricted to known schemes: model identifiers
+        // cannot be enumerated in advance. Presence is the enforceable part.
+        InsertMessage("answer", "billing", "orders", responderModel: responder);
+    }
+
+    // ---- deduplication backstop (SPEC 13.1) ----
+
+    [Fact]
+    public void Identical_content_in_one_window_is_stored_once()
+    {
+        InsertExchange(OrdersBilling, "orders", "billing");
+
+        InsertMessage("question", "orders", "billing", contentHash: "abc123", dedupBucket: 0);
+
+        var ex = Assert.Throws<SqliteException>(() => InsertMessage(
+            "question", "orders", "billing", contentHash: "abc123", dedupBucket: 0));
+
+        Assert.Contains("UNIQUE", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void Questions_may_omit_a_responder()
+    public void The_backstop_is_coarser_than_the_rule_it_backs()
     {
         InsertExchange(OrdersBilling, "orders", "billing");
 
-        Execute(
-            """
-            INSERT INTO messages (exchange_id, type, from_agent, to_agent, payload_json, created_utc)
-            VALUES (1, 'question', 'orders', 'billing', '{}', $created);
-            """,
-            ("$created", Opened));
+        // Documented rather than hidden: two identical messages either side of a bucket
+        // boundary both survive the index. The broker's exact-window check is what refuses
+        // them; this index only catches a writer that skipped it. Asserting the looseness
+        // keeps it a known limit rather than a surprise found later.
+        InsertMessage("question", "orders", "billing", contentHash: "abc123", dedupBucket: 0);
+        InsertMessage("question", "orders", "billing", contentHash: "abc123", dedupBucket: 1);
     }
 
     [Fact]
