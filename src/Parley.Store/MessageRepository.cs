@@ -172,10 +172,10 @@ public sealed class MessageRepository(SqliteConnection connection)
                 new CommandDefinition(
                     """
                     SELECT count(*) AS Total,
-                           (SELECT inner.conversation_id
-                              FROM messages AS inner
-                             WHERE inner.exchange_id = @Exchange
-                             ORDER BY inner.id
+                           (SELECT earliest.conversation_id
+                              FROM messages AS earliest
+                             WHERE earliest.exchange_id = @Exchange
+                             ORDER BY earliest.id
                              LIMIT 1) AS Conversation
                       FROM messages
                      WHERE exchange_id = @Exchange;
@@ -189,9 +189,13 @@ public sealed class MessageRepository(SqliteConnection connection)
                 if (conversationId is not null && conversationId != prior.Conversation)
                 {
                     throw new ArgumentException(
-                        $"Exchange {exchange} already belongs to conversation " +
-                        $"'{prior.Conversation ?? "(none)"}'. A clarification or answer inherits " +
-                        "its exchange's conversation and cannot declare a different one.",
+                        prior.Conversation is null
+                            ? $"Exchange {exchange} was opened without a conversation, and the " +
+                              "question is what chooses one. A later message cannot enrol it in " +
+                              $"'{conversationId}'."
+                            : $"Exchange {exchange} belongs to conversation " +
+                              $"'{prior.Conversation}'. A clarification or answer inherits its " +
+                              $"exchange's conversation and cannot declare '{conversationId}'.",
                         nameof(conversationId));
                 }
 

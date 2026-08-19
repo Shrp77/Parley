@@ -506,6 +506,14 @@ rather than an arbitrary age.
 **The age cap.** Nothing outlives the configured maximum age, whatever the idle rule
 concludes. This bounds a conversation that never falls silent long enough to trip it.
 
+The floor still wins, and that has a consequence worth stating rather than discovering: an
+exchange orphaned and never resumed holds its messages past the age cap indefinitely,
+because §14 may still replay them. Under a `never` resume policy nothing ever clears such
+an exchange, so the age cap is not in fact absolute. Whether an unresumed orphan should
+eventually be abandoned is open question 7 in §17, and answering it is what would make
+this bound hold. Until then a deployment using `never` should expect its floor, not its
+age cap, to determine how long the oldest messages live.
+
 **Nothing is exempt.** There is no retain-forever flag, because the log is a channel and
 a permanent corner of it would be the store §16 says this is not. An operator who wants
 to keep a discussion exports it (§10.2); the export is a file they own, outside the
@@ -848,10 +856,13 @@ Cheap to collect, disproportionately useful:
 - **Not a task queue.** Parley coordinates *understanding*, not work. Agents do not
   delegate implementation to each other.
 - **Not a shared context store.** No agent can read the log: §10.1 exposes no history
-  or search operation, so there is no shared memory to poison. Traffic is
-  pruned once it is operationally spent (§9.4). An operator may export a discussion
-  before it ages out, but the export is a file they own — the log itself keeps nothing
-  permanently, and no agent can read it at any age.
+  or search operation, so there is no shared memory to poison, and that holds at any
+  retention length. Traffic is pruned once it is operationally spent (§9.4), and an
+  operator who wants to keep a discussion exports it to a file they own rather than
+  making a corner of the log permanent. One case does outlive the age cap — an exchange
+  orphaned and never resumed, which the retention floor holds so §14 can still replay it.
+  That is an acknowledged gap in §9.4 rather than a second store, since nothing can read
+  it either.
 - **Not a replacement for committed contracts.** Most cross-repository questions
   should be *lookups* against contracts and decision records. Parley handles the
   residue where the contract genuinely does not cover the case — and feeds the answer

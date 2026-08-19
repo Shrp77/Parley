@@ -366,6 +366,23 @@ public sealed class MessageRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task An_exchange_that_began_alone_cannot_be_joined_to_a_conversation()
+    {
+        // SPEC 5.0 gives the choice to the question, which means a reply cannot retroactively
+        // enrol an exchange that started without one. Pinned because the alternative reading —
+        // that a null conversation is simply unset and free to fill in — is equally plausible
+        // from the code, and the two differ in whether an agent can annexe an exchange after
+        // the fact.
+        await Append(type: MessageType.Question);
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => Append(
+            type: MessageType.Clarify, from: Billing, to: Orders,
+            payload: """{"text":"gross or net?"}""", conversationId: "pricing-boundary"));
+
+        Assert.Equal("conversationId", ex.ParamName);
+    }
+
+    [Fact]
     public async Task A_reply_may_restate_the_conversation_it_already_belongs_to()
     {
         // Agreeing with the exchange is not a conflict, so a caller that threads the identifier
