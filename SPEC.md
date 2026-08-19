@@ -359,19 +359,29 @@ CREATE TABLE agents (
   tier            TEXT    NOT NULL,        -- full | pull | headless
   workspace       TEXT,
   session_ref     TEXT,                    -- adapter-specific resume handle
-  credential_ref  TEXT,                    -- pointer, never a secret (see §12)
+  adapter_config  TEXT,                    -- opaque to the broker (see §12)
   last_seen_utc   TEXT,
   status          TEXT    NOT NULL,        -- registered | live | offline | unreachable
 
-  CHECK (credential_ref IS NULL
-         OR credential_ref LIKE 'env:_%'
-         OR credential_ref LIKE 'keychain:_%'
-         OR credential_ref LIKE 'file:_%'),
+  CHECK (adapter_config IS NULL
+         OR (json_valid(adapter_config) AND length(adapter_config) <= 4000)),
 
   -- mirrors the AgentName grammar; see §9.3
   CHECK (length(name) BETWEEN 1 AND 32
          AND name GLOB '[a-z]*'
          AND name NOT GLOB '*[^a-z0-9-]*')
+) STRICT;
+
+CREATE TABLE agent_credentials (
+  agent     TEXT NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  name      TEXT NOT NULL,                -- the adapter's name for it: api_key, org_token
+  reference TEXT NOT NULL,
+
+  PRIMARY KEY (agent, name),
+  CHECK (length(name) BETWEEN 1 AND 64 AND name NOT GLOB '*[^a-z0-9_]*'),
+  CHECK (reference LIKE 'env:_%'
+         OR reference LIKE 'keychain:_%'
+         OR reference LIKE 'file:_%')
 ) STRICT;
 
 CREATE TABLE exchanges (
@@ -453,9 +463,16 @@ survives bugs in the broker:
 - **A duplicate cannot be stored twice in one window.** The unique index on
   `(content_hash, dedup_bucket)` in §13. The broker also checks the exact window, but the
   index is what survives a broker that forgets to.
-- **`credential_ref` is a pointer.** §12 claims the manifest is safe to commit; restricting
-  the column to known schemes makes a pasted secret impossible rather than discouraged. It
-  prevents the careless case, not a determined one.
+- **Credentials are pointers.** §12 claims a manifest is safe to commit; restricting
+  `agent_credentials.reference` to known schemes makes a pasted secret impossible rather than
+  discouraged. It prevents the careless case, not a determined one.
+
+  A row per credential rather than a JSON object on `agents`, because the constraint has to
+  reach every value. SQLite prohibits subqueries in `CHECK` constraints, and reaching inside a
+  JSON document needs `json_each`, which is one — so a JSON column could assert only that it
+  was JSON, never that its contents were references. A trigger could do it; a row per
+  reference gets the same guarantee with the plain `CHECK` used everywhere else here, and is
+  plural by construction.
 
 **Key on agent name, not session ID.** Session IDs churn on every restart; repository
 identity does not. This is what makes orphan recovery and lazy spawning work.
@@ -646,41 +663,109 @@ Headless agents receive the rules as a prompt preamble instead — weaker, and p
 decay over long runs. This is an accepted limitation. Measure it through the
 `out_of_scope` rate and clarify-depth telemetry in §14.
 
-## 12. Credentials
+## 12. Registration and credentials
 
-**The broker never stores secrets.** The registry holds *references*, which the
-broker resolves at invocation time, passes into the child process environment, and
-neither persists nor logs.
+**Most agents need no credential from Parley at all.** An agent attached through a vendor
+CLI authenticates once, out of band, and that CLI keeps and refreshes its own token. The
+broker spawning it injects nothing and holds nothing. This is the common case, and the one
+to design for: a deployment of twenty agents behind the same vendor CLI has twenty agents
+Parley holds no secret for.
+
+Credentials are a **Headless-tier concern** (§11.2) — the broker calling a model API
+itself, or invoking a script that needs a token. There the broker genuinely needs a secret,
+and the rule is that it stores a *reference*, resolves it at invocation, and neither
+persists nor logs what it resolved.
 
 ```yaml
 agents:
+  # The common case: the CLI is already authenticated. Nothing to register.
   - name: orders
     adapter: <vendor-cli>
     workspace: /src/acme-orders
-    # no credential_ref — this agent manages its own authentication
 
+  # Headless: the broker makes the call, so the broker needs the key.
   - name: inventory
     adapter: <vendor-api>
-    credential_ref: env:VENDOR_API_KEY
-
-  - name: billing
-    adapter: <vendor-api>
-    credential_ref: keychain:parley/billing
+    config:
+      model: <model-identifier>
+      endpoint: https://api.example.invalid
+    credentials:
+      api_key: env:VENDOR_API_KEY
 ```
 
-Supported reference schemes: `env:`, `keychain:` (OS credential store), `file:`
-(path to a file readable only by the broker's user).
+Supported reference schemes: `env:`, `file:` (a path readable only by the broker's user),
+and `keychain:` (an OS credential store — declared, but see §12.2).
 
 Rationale:
 
 1. A public repository with an inline `api_key:` field will produce committed
    secrets. Reliably, repeatedly.
 2. Concentrating multiple vendors' credentials in one long-lived daemon creates a
-   target.
+   target. Holding none for most agents is better than holding them carefully.
 3. Vendor authentication quirks — token refresh, regional endpoints, org scoping —
-   become the broker's support burden.
+   become the broker's support burden. Letting each CLI keep its own avoids that
+   entirely.
 
 Because the manifest holds only references, it is safe to commit.
+
+**Expiry needs no special handling.** When an agent's own authentication lapses, spawning
+it fails; repeated failures mark it `unreachable` (§14), so questions to it are refused
+with a reason instead of each burning an inactivity window. The operator re-authenticates
+out of band and a restart clears the mark. The path already exists and no credential
+machinery is involved.
+
+### 12.1 What an adapter needs, and who decides
+
+`config` is whatever the named adapter needs in order to invoke this agent: a model
+identifier, an endpoint, a timeout, a notification channel for a human responder. The
+broker stores it and hands it back at invocation, and **never interprets it**. That
+opacity is what makes the registry vendor-agnostic in structure rather than in intent —
+the alternative is a fixed set of columns that quietly assumes every responder is a
+directory on disk, which three of the five responder kinds in §11.2 are not.
+
+An adapter therefore **declares what it needs**: for each parameter, a name, whether it
+is required, and whether it is a secret. Registration collects exactly that. The broker
+learns nothing about any vendor, and a new adapter needs no schema change.
+
+`config` is free-form because it carries no invariant. Credentials are the opposite case,
+which is why they are not in it: a single constrained place for secrets is a stronger
+guarantee than any check applied after the fact.
+
+Credential parameter names are lowercase, digits and underscore, up to 64 characters —
+`api_key`, `org_token`. Worth stating, because an adapter declaring `apiKey` is refused at
+registration by a constraint rather than at review by a person.
+
+### 12.2 Which schemes are implemented, and why not the third
+
+`env:` and `file:` are sufficient for the cases that need a credential at all, and cost
+nothing to support: the broker already has an environment, and reading an owner-only file
+is the same permission discipline §9.1 applies to the database.
+
+`keychain:` is **declared but not implemented**. .NET exposes no API for OS credential
+stores, so supporting it means a package on the secrets path, hand-written interop across
+three platforms, or shelling out to per-platform helpers — each a larger commitment than
+the schema-versioning dependency §9 already declined, in service of a minority of a
+minority. It stays in the grammar so that a deployment that needs it is not blocked by a
+schema change, and so the decision to implement it can be made on evidence.
+
+Should it ever be implemented, two constraints are known in advance and are easy to get
+wrong. Availability depends on **how the broker is launched**, not on what is installed: a
+Windows service running as LocalSystem has a different store from the operator who
+registered, a macOS login keychain is not unlocked under launchd, and the Linux Secret
+Service needs a session bus a daemon does not have. And the store must be chosen when the
+agent is registered and **recorded in the scheme**, never re-decided at invocation — a
+broker that probed for whichever store the machine offers today would resolve differently
+depending on how it started, and a store appearing later would silently shadow the
+reference that was working.
+
+That determinism is why `file:` means read that file, and nothing else. A store that
+becomes unavailable produces a resolution failure rather than a quiet fallback to a stale
+copy elsewhere, which would leave two secrets with no rule for which is authoritative and
+a rotated key ignored because the other answered first.
+
+Removing a credential from the registry removes the *pointer*. Whatever store holds the
+value is untouched: the broker did not put it there, and deleting from someone's keychain
+on the strength of a registry edit is not its decision.
 
 ## 13. Trust boundary
 
@@ -930,7 +1015,11 @@ Cheap to collect, disproportionately useful:
 7. What becomes of an orphan that is never resumed under a `never` policy? Retaining
    it forever holds a claim on nothing, since orphans release their pair slot, but
    discarding it on a timer loses the question that orphaning exists to preserve.
-8. Under `always`, an orphan releases its pair slot, so the asker may re-ask and open a
+8. *(Closed.)* Which credential-store implementation to depend on: none. Most agents
+   authenticate out of band and need nothing from the broker, and the rest are served by
+   `env:` and `file:`, which require no dependency. `keychain:` remains declared and
+   unimplemented; see §12.2.
+9. Under `always`, an orphan releases its pair slot, so the asker may re-ask and open a
    second exchange on that pair before the original is replayed. Which one survives is
    undecided: the replay preserves clarify depth and history, the re-ask reflects
    current intent, and resolving it by discarding the orphan lets an agent reset the

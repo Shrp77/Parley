@@ -11,9 +11,14 @@ CREATE TABLE agents (
     tier            TEXT    NOT NULL CHECK (tier IN ('full', 'pull', 'headless')),
     workspace       TEXT,
     session_ref     TEXT,
-    -- A pointer such as 'env:VENDOR_API_KEY' or 'keychain:parley/billing', resolved at
-    -- invocation time and never persisted after resolution. See SPEC.md section 12.
-    credential_ref  TEXT,
+    -- Whatever the named adapter needs to invoke this agent: a model identifier, an endpoint,
+    -- a timeout, a notification channel. Opaque here by design — the broker stores it and
+    -- hands it back at invocation, and only the adapter interprets it. That opacity is what
+    -- makes the registry vendor-agnostic in structure rather than merely in intent.
+    --
+    -- Free-form because it has no invariant. Credentials are the opposite case and live in
+    -- agent_credentials below, where each one can be constrained. See SPEC.md section 12.
+    adapter_config  TEXT,
     last_seen_utc   TEXT,
     status          TEXT    NOT NULL
                     -- 'unreachable' is not a worse 'offline'. Offline is the ordinary resting
@@ -22,16 +27,11 @@ CREATE TABLE agents (
                     -- and failed repeatedly, so routing here only burns a TTL. See SPEC.md 14.
                     CHECK (status IN ('registered', 'live', 'offline', 'unreachable')),
 
-    -- SPEC.md section 12 claims the registry holds pointers and never secret values, and
-    -- that this is what makes the manifest safe to commit. A claim the storage layer does
-    -- not enforce is a convention, and conventions lose to one tired paste of an API key,
-    -- which then lands in backups and in any diagnostic that dumps the registry. Restricting
-    -- the column to known reference schemes makes that accident impossible rather than
-    -- merely discouraged.
-    CHECK (credential_ref IS NULL
-           OR credential_ref LIKE 'env:_%'
-           OR credential_ref LIKE 'keychain:_%'
-           OR credential_ref LIKE 'file:_%'),
+    -- The column is named _config and readers parse it as JSON. Capped because an adapter
+    -- configuration is a handful of settings, not a payload, and an unbounded one would be a
+    -- place to hide things.
+    CHECK (adapter_config IS NULL
+           OR (json_valid(adapter_config) AND length(adapter_config) <= 4000)),
 
     -- The agent name grammar, mirroring AgentName's ^[a-z][a-z0-9-]{0,31}$. Every other
     -- constraint in this schema is built on this column: asker, answerer, owed_by and both
@@ -50,6 +50,41 @@ CREATE TABLE agents (
     CHECK (length(name) BETWEEN 1 AND 32
            AND name GLOB '[a-z]*'
            AND name NOT GLOB '*[^a-z0-9-]*')
+) STRICT;
+
+-- Credentials are references, never values. SPEC.md section 12 claims the registry holds
+-- pointers only, and that this is what makes a manifest safe to commit; a claim the storage
+-- layer does not enforce is a convention, and conventions lose to one tired paste of an API
+-- key, which then lands in backups and in any diagnostic that dumps the registry.
+--
+-- A row per credential rather than a JSON object on agents, because the constraint has to
+-- reach every value. SQLite prohibits subqueries in CHECK constraints, and reaching inside a
+-- JSON document needs json_each, which is one — so a JSON column could assert only that it
+-- was JSON, not that its contents were references. A trigger could do it, but a row per
+-- reference gets the same guarantee with the plain CHECK used everywhere else in this schema.
+--
+-- Plural by construction. An adapter needing an API key and an organisation token has two
+-- rows, each addressable by the name its descriptor used, which is what the invocation path
+-- looks them up by.
+CREATE TABLE agent_credentials (
+    -- Cascades because a credential row is a pointer that means nothing without its agent,
+    -- and retiring an agent should not fail on an uninformative foreign key error. Nothing is
+    -- lost that matters: the secret itself lives in a store Parley did not write to in the
+    -- general case and does not delete from here, so what goes is the registration, which is
+    -- recreated by registering again.
+    agent       TEXT NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+    -- The adapter's name for it: 'api_key', 'org_token'. Not the secret's name in the store.
+    name        TEXT NOT NULL,
+    reference   TEXT NOT NULL,
+
+    PRIMARY KEY (agent, name),
+
+    CHECK (length(name) BETWEEN 1 AND 64
+           AND name NOT GLOB '*[^a-z0-9_]*'),
+
+    CHECK (reference LIKE 'env:_%'
+           OR reference LIKE 'keychain:_%'
+           OR reference LIKE 'file:_%')
 ) STRICT;
 
 CREATE TABLE exchanges (
@@ -158,7 +193,7 @@ CREATE TABLE messages (
     --
     -- Not every responder is a model: section 11.2 admits scripts and humans, which use the
     -- 'script:' and 'human:' forms, and a broker forced answer records 'parley:broker'. The
-    -- column is not restricted to known schemes the way credential_ref is, because model
+    -- column is not restricted to known schemes the way a credential reference is, because model
     -- identifiers cannot be enumerated in advance. Requiring it to be present is what makes
     -- an unattributed message impossible rather than discouraged.
     --
