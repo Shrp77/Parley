@@ -77,19 +77,44 @@
       reason:  NU1903 (high) via Parent.Package 4.5.6, advisory GHSA-xxxx-xxxx-xxxx
       remove:  when Parent.Package reaches 4.6.0, which floors it itself
 
+    Packages that ship as a matched set and can only move together take one shared entry
+    above the group rather than one apiece. Three copies of a justification drift apart, and
+    the first one edited becomes the one that is wrong.
+
     NOTE: a double hyphen cannot appear anywhere inside an XML comment. Write CLI flags in
     docs/ or the README instead of here, or MSBuild will reject this whole file as invalid
     with an error that does not say why.
 
-    NOTE: SQLitePCLRaw.lib.e_sqlite3 numbers its package independently of the SQLite it
-    carries. Package 2.1.12 ships SQLite 3.53.3, so a pin reading 3.53.3 is pinning a package
-    version that merely looks like a SQLite version, and removing such a pin changes the
-    package while leaving the engine alone. Check sqlite_version() rather than the graph
-    before concluding anything about either.
+    NOTE: SQLitePCLRaw renamed and restructured its native payload between major lines, so
+    the package that carries the engine is not the same package on both. On the 2.x line the
+    engine is SQLitePCLRaw.lib.e_sqlite3, versioned independently of the SQLite inside it
+    (package 2.1.12 ships engine 3.53.3). On the 3.x line bundle_e_sqlite3 no longer references
+    that package at all: it depends on SQLitePCLRaw.config.e_sqlite3 and on a package named
+    plainly SQLite, versioned as the engine is. Pinning lib.e_sqlite3 alongside a 3.x bundle
+    therefore resolves a package that nothing loads, and the pin reads as effective while
+    changing nothing. Confirm which package supplies the engine before pinning, and confirm
+    the engine itself with sqlite_version() rather than by reading version numbers.
 
     NOTE: verify a pin by restoring before you read the graph. Editing this file and running
     a query against the dependency graph in the same breath reports the previous restore's
     answer, which will agree with whatever you just changed and tell you nothing.
   -->
+
+  <!--
+    reason:  moves the engine off the 2.x line, whose only advisory to date, GHSA-2m69-gcr7-jv3q
+             (high), is recorded with no patched version. Microsoft.Data.Sqlite 10.0.11 floors
+             SQLitePCLRaw at 2.1.12, one release above the affected range, so the graph is clean
+             and this is not a fix for a live finding. It is a move off a line where a future
+             engine advisory has nowhere published to go. On 3.x the affected package leaves the
+             graph entirely, replaced by SQLite 3.53.4, which is also the newer engine.
+    remove:  when Microsoft.Data.Sqlite floors SQLitePCLRaw.core at 3.x itself. Its 10.0.11
+             nuspec still declares 2.1.12, so these three pins are what carry the whole family
+             across together. They are a matched set and must move as one.
+  -->
+  <ItemGroup Label="Transitive pins">
+    <PackageVersion Include="SQLitePCLRaw.core" Version="3.0.5" />
+    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+    <PackageVersion Include="SQLitePCLRaw.provider.e_sqlite3" Version="3.0.5" />
+  </ItemGroup>
 
 </Project>
