@@ -13,7 +13,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 ```
 src/Parley.Core     Domain. No I/O, no dependencies. AgentName, PairKey, Exchange,
                     WaitForGraph, and the enums.
-src/Parley.Store    Persistence. SQLite via Dapper.AOT. ParleyDatabase (connection
+src/Parley.Store    Persistence. SQLite via Dapper. ParleyDatabase (connection
                     factory), SchemaMigrator, ExchangeRepository, AgentRepository.
 tests/Parley.Core.Tests   Domain tests. Deliberately does NOT reference Parley.Store —
                           the absent dependency is the point. Keep it that way.

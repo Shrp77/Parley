@@ -22,10 +22,28 @@
       lib) and Microsoft.Data.Sqlite is what knows which combination it was tested against.
     -->
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.11" />
-    <!-- Referenced so the Dapper.AOT generator can see the call sites; interceptors replace
-         most of it at build time. -->
+    <!--
+      Dapper materialises rows by building a dynamic method per query shape on first use. That
+      is runtime IL emission, so this assembly is neither trimmable nor ahead-of-time
+      compilable, and it says so rather than claiming otherwise.
+
+      Dapper.AOT was referenced to remove exactly that, and did nothing. Its generator
+      intercepts the simple overloads; every call here passes a CommandDefinition, because
+      that is what carries the CancellationToken, and those are skipped silently — no
+      interceptor was emitted anywhere in the assembly. Cancellation is a correctness property
+      and native compilation is a packaging convenience, so the package went rather than the
+      tokens. Self-contained publish gives runtime independence without constraining how
+      queries are written.
+
+      Removing it did cost something, and less than it appears. The package also ships
+      build-time SQL analyzers, so those went too — but they are built on a T-SQL parser, and
+      nothing here ever declared the SQLite dialect, so what they were validating was this
+      project's SQL read as somebody else's language. STRICT tables, RETURNING, json_valid,
+      partial indexes and GLOB are all outside what that parser describes. Anyone reinstating
+      the package should set the dialect first and expect to see diagnostics that were
+      previously silent.
+    -->
     <PackageVersion Include="Dapper" Version="2.1.79" />
-    <PackageVersion Include="Dapper.AOT" Version="1.0.52" />
   </ItemGroup>
 
   <!--
