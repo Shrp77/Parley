@@ -361,7 +361,7 @@ CREATE TABLE agents (
   session_ref     TEXT,                    -- adapter-specific resume handle
   credential_ref  TEXT,                    -- pointer, never a secret (see §12)
   last_seen_utc   TEXT,
-  status          TEXT    NOT NULL,        -- registered | live | offline
+  status          TEXT    NOT NULL,        -- registered | live | offline | unreachable
 
   CHECK (credential_ref IS NULL
          OR credential_ref LIKE 'env:_%'
@@ -563,6 +563,7 @@ any of these into an agent's tool set would breach §10.1 and, through it, §16.
 |---|---|
 | `export(conversation_id)` | Emit every message in a conversation. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
+| `retire(agent)` | Resolve an unreachable agent's outstanding exchanges and remove it. See §14. |
 
 `export` exists because the log has legitimate operator uses the protocol should not
 obstruct. Comparing how different model pairings converge on the same question is one:
@@ -829,6 +830,48 @@ caps in §13 and the telemetry in §15 measuring conversation rather than plumbi
 replay landing inside the deduplication window of §13.1 would additionally be discarded
 outright, so on a fast restart the replay path could defeat itself; after a longer
 outage it would instead succeed and quietly double the record.
+
+**An agent whose workspace is gone.** A repository can be deleted, moved, or renamed
+while its agent is still registered and still owed answers. The broker discovers this by
+failing to spawn it, and after a threshold of consecutive failures marks it
+`unreachable`.
+
+That state exists because `offline` cannot carry the meaning. Offline is the ordinary
+condition of a lazily-spawned agent between questions, and treating it as a fault would
+refuse the traffic that is supposed to wake it. Unreachable says something different:
+spawning was attempted and failed, repeatedly, so there is no point routing here.
+
+Two things follow, and only two. New questions to an unreachable agent are **refused at
+admission** rather than accepted and left to expire — without this a dead repository
+absorbs a full TTL per question, forever, and no asker ever learns why. And the state is
+**visible in `agents()`**, so a peer or an operator can see it rather than infer it from
+silence.
+
+What does *not* follow is any automatic resolution of what is already outstanding. The
+broker marks and reports; it does not close. An operator retires the agent (§10.2), and
+that is what force-closes its exchanges with `unknown` and `parley:broker` — the same
+mechanism the clarify cap uses, for the same reason: no answer is coming and the asker
+deserves to be told so rather than left waiting.
+
+The division is deliberate. A deleted repository is frequently temporary — a re-clone, a
+moved worktree, a restored backup — and an automatic force-close would discard real
+questions to save a human a decision they are better placed to make. The cost is that an
+unattended deployment stalls on those exchanges until someone acts. The churn stops
+immediately either way, which is the harm worth stopping automatically.
+
+**Recovery is not automatic on its own terms.** Refusing to route to an unreachable agent
+means nothing ever tries to spawn it, so on its own the state would be a one-way door: the
+agent can never demonstrate that it is back. What reopens it is the reboot sequence above,
+which marks every agent `offline` and so clears the judgement of the previous run along
+with its stale liveness. The next question then routes, the spawn is attempted, and an
+agent whose repository has returned goes `live` with no operator involvement.
+
+That is why start-up does not spare unreachable agents from being reset. Carrying the mark
+across a restart would preserve a conclusion the restart itself may have invalidated —
+reinstalling or re-cloning a repository is exactly the kind of thing that happens between
+runs. The cost is one threshold's worth of churn per restart for an agent that is still
+gone, which is bounded, visible, and the price of not requiring a human to notice a
+recovery.
 
 **Staleness guard.** A resumed agent's understanding of its repository is stale if
 commits landed while it was offline. Adapters SHOULD inject a change summary since

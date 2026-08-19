@@ -190,7 +190,12 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// backstop.
     /// </para>
     /// <para>
-    /// The pair check runs before the cycle check deliberately. It is the more specific
+    /// Reachability is checked first, because no other check can express it: a deleted
+    /// repository leaves its agent registered and its pair slot free, so admission would
+    /// otherwise succeed and the question would sit until it expired.
+    /// </para>
+    /// <para>
+    /// The pair check then runs before the cycle check deliberately. It is the more specific
     /// condition, and it is the only one that can return useful work rather than a bare
     /// refusal.
     /// </para>
@@ -215,6 +220,23 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         // deferred flag, and getting IMMEDIATE is the whole point here. Beginning a
         // transaction is a fast local operation with no I/O to await.
         using var transaction = _connection.BeginTransaction(IsolationLevel.Serializable, deferred: false);
+
+        // Checked before the pair and the cycle because it is the one condition none of them
+        // can express. A dead repository leaves its agent registered and its pair slot free,
+        // so every other check passes and the question is admitted, waits a full inactivity
+        // window, and orphans unanswered — costing the same again on every retry while nobody
+        // learns why.
+        var reachable = await _connection.ExecuteScalarAsync<long>(
+            new CommandDefinition(
+                "SELECT count(*) FROM agents WHERE name = @Name AND status = 'unreachable';",
+                new { Name = answerer.Value },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        if (reachable > 0)
+        {
+            return OpenOutcome.Unreachable();
+        }
 
         var open = await GetOpenAsync(transaction, cancellationToken).ConfigureAwait(false);
         var pairKey = PairKey.For(asker, answerer);

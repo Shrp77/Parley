@@ -111,7 +111,9 @@ Early. The spec is stabilising; the implementation is not.
 detection, over a SQLite store: schema, migrations, and the exchange, agent and message
 repositories, including the trust envelope and message deduplication. Expired exchanges
 are reaped, releasing the pair slot and the wait-for edge a vanished agent would
-otherwise hold forever. The domain layer has no I/O and no package dependencies, and its tests
+otherwise hold forever. An agent whose repository has been deleted is marked unreachable
+and questions to it are refused at admission, rather than each one waiting out a full
+inactivity window to learn nothing. The domain layer has no I/O and no package dependencies, and its tests
 do not reference the storage assembly — the absent dependency is checked by the build
 rather than left as a convention. The protocol's invariants are enforced by schema
 constraints rather than by the code that calls them.
@@ -121,14 +123,18 @@ constraints rather than by the code that calls them.
 1. **Per-sender rate limits.** The last unbuilt control in SPEC §13. Message volume
    between a pair is already bounded by the state machine — one open exchange per pair,
    a clarification cap — so this is really about `Notify`, which has no such guard.
-2. **Retention pruning.** The reaper orphans expired exchanges today; it does not yet
+2. **Operator retirement.** The broker marks an unreachable agent and stops routing to
+   it, but never resolves what is already outstanding — that is an operator's decision,
+   because a deleted repository is often a re-clone away from returning. `retire` is not
+   implemented yet, so those exchanges currently wait.
+3. **Retention pruning.** The reaper orphans expired exchanges today; it does not yet
    apply the retention policy that keeps the message log from becoming the shared
    context store Parley is not.
-3. **Broker service.** The long-lived host owning the registry, admission, and
+4. **Broker service.** The long-lived host owning the registry, admission, and
    lifecycle. Independent projects do not share one: each gets its own database and
    endpoint, so agent names collide freely across projects and no query can cross
    between them. One service process may host several.
-4. **Transport**, then **adapters**.
+5. **Transport**, then **adapters**.
 
 Issues and discussion are welcome — particularly on the open questions at the end of
 SPEC.md.

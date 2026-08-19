@@ -24,7 +24,20 @@ public enum OpenRejection
     /// Admitting the question would close a cycle in the wait-for graph, deadlocking every
     /// agent in it. See <see cref="OpenOutcome.CyclePath"/> for the agents involved.
     /// </summary>
-    WouldDeadlock
+    WouldDeadlock,
+
+    /// <summary>
+    /// The answerer could not be spawned and is not being routed to.
+    /// </summary>
+    /// <remarks>
+    /// Usually a repository that was deleted, moved, or renamed while its agent was still
+    /// registered. This is the one refusal that hands back no work, because there is none to
+    /// hand back — and saying so immediately is the point. Accepting the question instead
+    /// would cost a full inactivity window before it orphaned unanswered, teaching the asker
+    /// nothing and costing the same again on every retry. An asker seeing this should tell its
+    /// principal, not try later.
+    /// </remarks>
+    AnswererUnreachable
 }
 
 /// <summary>
@@ -158,6 +171,18 @@ public sealed record OpenOutcome
         ArgumentNullException.ThrowIfNull(blocking);
         return new(null, OpenRejection.PairBusy, null, blocking, []);
     }
+
+    /// <summary>
+    /// Creates a refusal indicating the answerer cannot be reached.
+    /// </summary>
+    /// <returns>A refusal carrying no work, because there is none.</returns>
+    /// <remarks>
+    /// Every other refusal returns something the asker can act on — the debt it owes, the
+    /// exchange it waits on, the cycle it would close. This one cannot, and that absence is
+    /// itself the information: nothing is coming from this peer, so stop asking.
+    /// </remarks>
+    public static OpenOutcome Unreachable() =>
+        new(null, OpenRejection.AnswererUnreachable, null, null, []);
 
     /// <summary>
     /// Creates a refusal indicating the question would deadlock.
