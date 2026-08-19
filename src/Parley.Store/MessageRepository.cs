@@ -36,7 +36,6 @@ public sealed class MessageRepository(SqliteConnection connection)
                to_agent        AS ToAgent,
                responder_model AS ResponderModel,
                payload_json    AS PayloadJson,
-               content_hash    AS ContentHash,
                created_utc     AS CreatedUtc,
                delivered_utc   AS DeliveredUtc
         FROM messages
@@ -66,9 +65,13 @@ public sealed class MessageRepository(SqliteConnection connection)
     /// An outcome carrying either the appended message or the earlier one that made this a
     /// duplicate.
     /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="responderModel"/> or <paramref name="payloadJson"/> is
+    /// <see langword="null"/>.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="from"/> and <paramref name="to"/> are the same agent, or
-    /// <paramref name="responderModel"/> or <paramref name="payloadJson"/> is null or empty.
+    /// <paramref name="responderModel"/> or <paramref name="payloadJson"/> is empty.
     /// </exception>
     /// <exception cref="SqliteException">
     /// The row violates a schema constraint — an over-length payload, a payload that is not
@@ -168,26 +171,54 @@ public sealed class MessageRepository(SqliteConnection connection)
     /// Loads the messages awaiting delivery to an agent, oldest first.
     /// </summary>
     /// <param name="agent">The recipient.</param>
+    /// <param name="limit">
+    /// The most messages to return, oldest first, or <see langword="null"/> for all of them.
+    /// </param>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>Pending messages in the order they were appended.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="limit"/> is not positive.</exception>
     /// <remarks>
+    /// <para>
     /// Ordered by identity rather than timestamp. Two messages can share a timestamp at the
     /// resolution stored, and an inbox that reordered them would present an answer before the
     /// clarification it answers. The <c>ix_inbox</c> index is on <c>(to_agent, id)</c> for
     /// this reason.
+    /// </para>
+    /// <para>
+    /// <strong>Callers delivering into an agent's context should pass a limit.</strong> The
+    /// 2,000-character cap bounds one message; nothing bounds a backlog. An agent offline for
+    /// a day, or one peer sending steadily, produces an inbox whose total size is limited only
+    /// by how long it went undrained — and injecting that wholesale recreates the
+    /// context-poisoning problem the per-message cap exists to prevent, just in aggregate.
+    /// SPEC.md §13 names per-sender rate limits as the control for this, and they are not
+    /// implemented yet, so until they are the limit here is the only thing standing in the
+    /// way.
+    /// </para>
+    /// <para>
+    /// The default is unbounded because the repository does not know what the caller intends.
+    /// A reaper or an audit wants everything; a delivery path wants a page. Truncating by
+    /// default would silently hide messages from the callers that need them all.
+    /// </para>
     /// </remarks>
     public async Task<IReadOnlyList<Message>> GetPendingAsync(
         AgentName agent,
+        int? limit = null,
         CancellationToken cancellationToken = default)
     {
+        if (limit is { } max)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(max, 0);
+        }
+
         var rows = await _connection.QueryAsync<MessageRow>(
             new CommandDefinition(
                 $"""
                 {SelectColumns}
                 WHERE to_agent = @Agent AND delivered_utc IS NULL
-                ORDER BY id;
+                ORDER BY id
+                LIMIT @Limit;
                 """,
-                new { Agent = agent.Value },
+                new { Agent = agent.Value, Limit = limit ?? -1 },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return [.. rows.Select(r => r.ToDomain())];

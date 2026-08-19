@@ -111,6 +111,20 @@ public sealed class MessageIdentityTests
     }
 
     [Fact]
+    public void The_canonical_form_is_pinned()
+    {
+        // A golden value. SPEC 13.1 names SHA-256 and the fields, but not the byte-level
+        // canonical form, and the digest depends on it entirely: reorder the fields, change
+        // the separator, or format a null exchange differently and every hash already stored
+        // becomes unreachable. Deduplication would then stop matching history without any
+        // test failing and without the column shape changing. It also fixes the value an
+        // independent implementation must reproduce to share a database.
+        Assert.Equal(
+            "0f2c4119625dd1f9c2b1096faa2b137d3fc35f04eed51c311691fd399fb329c6",
+            MessageIdentity.Compute(1, MessageType.Question, Orders, Billing, "{}"));
+    }
+
+    [Fact]
     public void The_window_is_the_one_the_schema_buckets_by()
     {
         // The generated dedup_bucket column divides by sixty. If these drift apart, the

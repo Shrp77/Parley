@@ -10,8 +10,10 @@ namespace Parley.Store;
 /// Mirrors <see cref="ExchangeRow"/>, and for the same reason: <see cref="AgentName"/> is a
 /// validated value type with a private constructor, so materialising a query result straight
 /// into the domain type would route around the validation. The row stays primitive and the
-/// translation stays visible. <c>dedup_bucket</c> is absent because the schema derives it; a
-/// reader has no use for it and a writer is not permitted to supply one.
+/// translation stays visible. <c>dedup_bucket</c> and <c>content_hash</c> are both absent:
+/// the schema derives the bucket and a writer may not supply one, and the hash is
+/// deduplication machinery that <see cref="Message"/> deliberately does not carry, so
+/// surfacing it here would put a storage concern back into the shape callers read.
 /// </remarks>
 public sealed class MessageRow
 {
@@ -37,9 +39,6 @@ public sealed class MessageRow
 
     /// <summary>Gets the <c>payload_json</c> column.</summary>
     public string PayloadJson { get; init; } = "";
-
-    /// <summary>Gets the <c>content_hash</c> column: the deduplication identity.</summary>
-    public string ContentHash { get; init; } = "";
 
     /// <summary>Gets the <c>created_utc</c> column, round-trip formatted.</summary>
     public string CreatedUtc { get; init; } = "";

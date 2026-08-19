@@ -95,7 +95,7 @@ public sealed class MessageRepositoryTests : IDisposable
         // what the retry collided with.
         Assert.Equal(first.Message.Id, second.Message.Id);
 
-        var pending = await _messages.GetPendingAsync(Billing, TestContext.Current.CancellationToken);
+        var pending = await _messages.GetPendingAsync(Billing, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Single(pending);
     }
 
@@ -209,14 +209,14 @@ public sealed class MessageRepositoryTests : IDisposable
         var toBilling = await Append();
         await Append(to: Inventory, exchangeId: null, type: MessageType.Notify);
 
-        Assert.Single(await _messages.GetPendingAsync(Billing, TestContext.Current.CancellationToken));
-        Assert.Single(await _messages.GetPendingAsync(Inventory, TestContext.Current.CancellationToken));
-        Assert.Empty(await _messages.GetPendingAsync(Orders, TestContext.Current.CancellationToken));
+        Assert.Single(await _messages.GetPendingAsync(Billing, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Single(await _messages.GetPendingAsync(Inventory, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Empty(await _messages.GetPendingAsync(Orders, cancellationToken: TestContext.Current.CancellationToken));
 
         Assert.True(await _messages.MarkDeliveredAsync(
             toBilling.Message.Id, T0.AddMinutes(1), TestContext.Current.CancellationToken));
 
-        Assert.Empty(await _messages.GetPendingAsync(Billing, TestContext.Current.CancellationToken));
+        Assert.Empty(await _messages.GetPendingAsync(Billing, cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -228,11 +228,40 @@ public sealed class MessageRepositoryTests : IDisposable
         var second = await Append(type: MessageType.Notify, exchangeId: null, payload: """{"n":2}""");
         var third = await Append(type: MessageType.Notify, exchangeId: null, payload: """{"n":3}""");
 
-        var pending = await _messages.GetPendingAsync(Billing, TestContext.Current.CancellationToken);
+        var pending = await _messages.GetPendingAsync(Billing, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(
             [first.Message.Id, second.Message.Id, third.Message.Id],
             pending.Select(m => m.Id));
+    }
+
+    [Fact]
+    public async Task A_limited_drain_returns_the_oldest_messages_only()
+    {
+        // The per-message cap bounds one message; nothing bounds a backlog. Until per-sender
+        // rate limits exist, this limit is the only thing between an undrained inbox and a
+        // context window, so it has to take from the oldest end rather than an arbitrary one.
+        var ids = new List<long>();
+        for (var i = 0; i < 5; i++)
+        {
+            var outcome = await Append(
+                type: MessageType.Notify, exchangeId: null, payload: $$"""{"n":{{i}}}""");
+            ids.Add(outcome.Message.Id);
+        }
+
+        var page = await _messages.GetPendingAsync(
+            Billing, limit: 2, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(ids.Take(2), page.Select(m => m.Id));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task A_non_positive_drain_limit_is_rejected(int limit)
+    {
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _messages.GetPendingAsync(
+            Billing, limit, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -272,7 +301,7 @@ public sealed class MessageRepositoryTests : IDisposable
         Assert.True(await _messages.RedeliverAsync(
             outcome.Message.Id, TestContext.Current.CancellationToken));
 
-        var pending = await _messages.GetPendingAsync(Billing, TestContext.Current.CancellationToken);
+        var pending = await _messages.GetPendingAsync(Billing, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Single(pending);
         Assert.Equal(outcome.Message.Id, pending[0].Id);
@@ -291,7 +320,7 @@ public sealed class MessageRepositoryTests : IDisposable
 
         await _messages.RedeliverAsync(outcome.Message.Id, TestContext.Current.CancellationToken);
 
-        var all = await _messages.GetPendingAsync(Billing, TestContext.Current.CancellationToken);
+        var all = await _messages.GetPendingAsync(Billing, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Single(all);
     }
 
