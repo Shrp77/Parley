@@ -123,7 +123,9 @@ constraints rather than by the code that calls them.
    vanished agent cannot block its peers indefinitely, and applies the retention policy
    that keeps the message log from becoming the shared context store Parley is not.
 3. **Broker service.** The long-lived host owning the registry, admission, and
-   lifecycle.
+   lifecycle. Independent projects do not share one: each gets its own database and
+   endpoint, so agent names collide freely across projects and no query can cross
+   between them. One service process may host several.
 4. **Transport**, then **adapters**.
 
 Issues and discussion are welcome — particularly on the open questions at the end of

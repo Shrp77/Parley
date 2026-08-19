@@ -112,10 +112,13 @@ CREATE TABLE messages (
     payload_json    TEXT    NOT NULL,
     -- Deduplication identity and window. See SPEC.md section 13.1.
     content_hash    TEXT    NOT NULL,
-    -- Operator tag grouping traffic for export, and marking it as worth keeping. NULL is the
-    -- normal case: ordinary traffic is ephemeral and pruned once operationally spent. A tag
-    -- is set only by the operator, never by an agent — see SPEC.md sections 9.4 and 10.2.
-    session_tag     TEXT,
+    -- Agent-declared grouping of exchanges belonging to one line of discussion. NULL is the
+    -- common case: an exchange that stands alone. The agent supplies it because the agent is
+    -- the only participant that knows whether this question continues the last one, and a
+    -- broker inferring that from a timeout would be guessing exactly where it matters. It is
+    -- a grouping key and nothing more — it confers no privileges and changes no routing.
+    -- See SPEC.md sections 5.0 and 9.4.
+    conversation_id TEXT,
     created_utc     TEXT    NOT NULL,
     -- Derived, never supplied. ux_message_dedup below is only as good as the value it
     -- constrains: a bucket that does not match created_utc silently disables deduplication
@@ -180,13 +183,13 @@ CREATE TABLE messages (
     -- store, silently, with the index still reporting no conflict.
     CHECK (unixepoch(created_utc) IS NOT NULL),
 
-    -- Same character set as responder_model, and for a related reason. A tag names an export
-    -- and is likely to reach a filename, a report heading, or a console; the restriction keeps
-    -- newlines and path separators out of a value that travels into those places. Bounded so a
-    -- tag cannot become a payload in its own right.
-    CHECK (session_tag IS NULL
-           OR (length(session_tag) BETWEEN 1 AND 64
-               AND session_tag NOT GLOB '*[^a-zA-Z0-9._:/-]*'))
+    -- Same character set as responder_model, and for a related reason. This value is agent
+    -- supplied and names an export, so it is likely to reach a filename, a report heading or a
+    -- console; the restriction keeps newlines and path separators out of somewhere they would
+    -- do damage. Bounded so an identifier cannot become a payload in its own right.
+    CHECK (conversation_id IS NULL
+           OR (length(conversation_id) BETWEEN 1 AND 64
+               AND conversation_id NOT GLOB '*[^a-zA-Z0-9._:/-]*'))
 ) STRICT;
 
 -- Deduplication backstop. SPEC.md section 13.1 requires byte-identical messages to be
@@ -198,11 +201,10 @@ CREATE TABLE messages (
 CREATE UNIQUE INDEX ux_message_dedup
     ON messages (content_hash, dedup_bucket);
 
--- Export and retention both scan by tag: export gathers a session, and the retention sweep
--- must exclude tagged rows from pruning. Partial, because the overwhelming majority of rows
--- are untagged and indexing those would cost space to record an absence.
-CREATE INDEX ix_message_session
-    ON messages (session_tag, id) WHERE session_tag IS NOT NULL;
+-- Export and the retention idle rule both gather a conversation. Partial, because most rows
+-- carry no identifier and indexing those would spend space recording an absence.
+CREATE INDEX ix_message_conversation
+    ON messages (conversation_id, id) WHERE conversation_id IS NOT NULL;
 
 CREATE INDEX ix_inbox
     ON messages (to_agent, id) WHERE delivered_utc IS NULL;

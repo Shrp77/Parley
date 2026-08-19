@@ -16,9 +16,10 @@ namespace Parley.Core;
 /// answers, and rendered into the trust envelope.
 /// </param>
 /// <param name="PayloadJson">The payload document, capped at 2,000 characters by the schema.</param>
-/// <param name="SessionTag">
-/// The operator tag in force when this was appended, or <see langword="null"/> for ordinary
-/// untagged traffic. Set by the operator, never by an agent. See SPEC.md §9.4.
+/// <param name="ConversationId">
+/// The discussion this message belongs to, or <see langword="null"/> for an exchange that
+/// stands alone. Chosen by the agent, since only the agent knows whether a question
+/// continues the previous one. See SPEC.md §5.0.
 /// </param>
 /// <param name="CreatedUtc">When the message was appended.</param>
 /// <param name="DeliveredUtc">
@@ -46,7 +47,7 @@ public sealed record Message(
     AgentName To,
     string ResponderModel,
     string PayloadJson,
-    string? SessionTag,
+    string? ConversationId,
     DateTimeOffset CreatedUtc,
     DateTimeOffset? DeliveredUtc)
 {
@@ -59,16 +60,4 @@ public sealed record Message(
     /// </value>
     public bool IsPending => DeliveredUtc is null;
 
-    /// <summary>
-    /// Gets a value indicating whether this message carries an operator session tag.
-    /// </summary>
-    /// <value>
-    /// <see langword="true"/> when <see cref="SessionTag"/> is set.
-    /// </value>
-    /// <remarks>
-    /// Named for what it observes rather than what follows from it. SPEC.md §9.4 makes a tag
-    /// the thing that exempts a message from pruning, but no retention sweep exists yet, so a
-    /// property called <c>IsRetained</c> would promise a guarantee nothing currently provides.
-    /// </remarks>
-    public bool IsTagged => SessionTag is not null;
 }

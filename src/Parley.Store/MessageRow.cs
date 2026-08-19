@@ -41,9 +41,10 @@ public sealed class MessageRow
     public string PayloadJson { get; init; } = "";
 
     /// <summary>
-    /// Gets the <c>session_tag</c> column, or <see langword="null"/> for untagged traffic.
+    /// Gets the <c>conversation_id</c> column, or <see langword="null"/> for an exchange that
+    /// stands alone.
     /// </summary>
-    public string? SessionTag { get; init; }
+    public string? ConversationId { get; init; }
 
     /// <summary>Gets the <c>created_utc</c> column, round-trip formatted.</summary>
     public string CreatedUtc { get; init; } = "";
@@ -78,7 +79,7 @@ public sealed class MessageRow
         AgentName.Create(ToAgent),
         ResponderModel,
         PayloadJson,
-        SessionTag,
+        ConversationId,
         ExchangeRow.ParseTimestamp(CreatedUtc),
         DeliveredUtc is null ? null : ExchangeRow.ParseTimestamp(DeliveredUtc));
 }
