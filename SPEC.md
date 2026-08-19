@@ -57,7 +57,7 @@ what language they are written in.
 | **Broker** | The single long-lived process that owns routing, state, locking, and lifecycle. |
 | **Adapter** | The vendor-specific glue that attaches an agent to the broker. |
 | **Exchange** | One question and its resolution, including any clarifications. |
-| **Pair** | An unordered set of exactly two agents. All traffic between them is serialised. |
+| **Pair** | An unordered set of exactly two agents. Identifies traffic between them; see §7.1. |
 
 Agent names match `^[a-z][a-z0-9-]{0,31}$`. They are **logical names, not repository
 paths and not session identifiers** — this separation is what makes recovery and
@@ -84,7 +84,7 @@ lazy spawning work.
                  └─────────────────┘
 ```
 
-**Broker.** Owns the registry, all exchange state, pair locks, cycle detection, TTL
+**Broker.** Owns the registry, all exchange state, admission control, cycle detection, deadline
 reaping, and agent spawning. Holds no conversation context of its own. Long-lived:
 a Windows Service, systemd unit, or launchd agent.
 
@@ -130,17 +130,44 @@ template units make it nearly free; Windows requires a separate service registra
 instance, so a single service hosting several brokers is the configuration with
 cross-platform parity.
 
+### 4.2 Nothing waits
+
+**Every operation returns immediately. No agent ever blocks on another.** `ask` hands back
+an exchange identifier or a refusal; it never hands back an answer. Answers arrive later
+through `inbox()`, carrying the identifier of the exchange they belong to.
+
+This is not an implementation convenience. Answering a cross-repository question can mean
+real work — reading a test suite, running one, checking what a service actually returns —
+and an agent that blocks while its peer does that is an agent doing nothing for its own
+human for as long as it takes. Both sides must stay free to work throughout.
+
+Two things follow, and they shape most of what comes after.
+
+**Deadlock is not the failure mode.** Nothing holds a resource while waiting for another
+holder to release it, so the classic hazard cannot occur. What *can* occur is a set of
+questions none of which can ever be answered, which is a different problem needing a
+different justification — see §7.2.
+
+**The asker's context will have moved on.** Hours may pass, during which the agent has done
+unrelated work and may have been compacted or restarted. An identifier alone is worthless to
+it: exchange 47 means nothing to a model that no longer remembers asking. So a delivered
+Answer carries the original `intent`, `sub_questions` and `consequences` back with it. The
+asker wrote `consequences` to scope the answer for its peer (§5.1); on delivery it does a
+second job, as the asker's own note to itself about what it meant to do with each outcome.
+Reconstituting that is the broker's responsibility and not something an agent is asked to
+remember, because remembering is the thing that failed.
+
 ## 5. Message types
 
 Four types. No others — agents do not engage in social conversation, and every
 additional type is a new way to waste tokens.
 
-| Type | Opens exchange | Takes pair slot | Expects reply | Direction |
-|---|---|---|---|---|
-| **Question** | Yes | Yes | Yes | asker → answerer |
-| **Clarify** | No | No | Yes | flips `owed_by` within exchange |
-| **Answer** | No (closes it) | Releases | No | answerer → asker |
-| **Notify** | No | No | No | any → any |
+| Type | Opens exchange | Expects reply | Direction |
+|---|---|---|---|
+| **Question** | Yes | Yes | asker → answerer |
+| **Clarify** | No | Yes | flips `owed_by` within exchange |
+| **Answer** | No (closes it) | No | answerer → asker |
+| **Notify** | No | No | any → any |
 
 ### 5.0 Conversations
 
@@ -200,7 +227,7 @@ Two fields do the heavy lifting:
 The answerer cannot answer without something from the asker. Clarify **does not open
 a new exchange and does not take a slot** — if it did, it would deadlock inside the
 deadlock fix, since the pair's only slot is held by the very question being
-clarified. It flips `owed_by`, resets the TTL, and stays in place.
+clarified. It flips `owed_by`, renews the working window (§6), and stays in place.
 
 Clarify depth is capped (default 3). On breach the broker forces an Answer with
 `resolution: "unknown"` and flags the exchange. Models will otherwise ping-pong
@@ -208,8 +235,7 @@ toward mutual precision indefinitely.
 
 ### 5.3 Answer
 
-Closes the exchange and releases the pair slot. Carries a per-sub-question
-resolution:
+Closes the exchange. Carries a per-sub-question resolution:
 
 | `resolution` | Meaning |
 |---|---|
@@ -224,8 +250,10 @@ is a defect you would otherwise never notice.
 
 ### 5.4 Notify
 
-Fire-and-forget. No slot, no reply, no exchange. *"The `OrderLine` contract gained a
-`PriceSnapshot` field."* Not chit-chat — an event. Likely the highest-volume and
+**No reply expected.** Every message type is fire-and-forget in the sense that the sender
+does not wait (§4.2); what distinguishes Notify is that nothing is owed in return. It opens
+no exchange, takes no slot, and creates no debt for anybody. *"The `OrderLine` contract
+gained a `PriceSnapshot` field."* Not chit-chat — an event. Likely the highest-volume and
 highest-value traffic in a mature deployment.
 
 ## 6. Exchange state machine
@@ -235,10 +263,10 @@ highest-value traffic in a mature deployment.
                      │
                      ▼
               ┌─────────────┐
-              │    OPEN     │◄──── Clarify (flips owed_by, resets TTL,
-              │ owed_by = B │      depth++, no new slot)
+              │    OPEN     │◄──── Clarify (flips owed_by, renews the
+              │ owed_by = B │      window, depth++)
               └──────┬──────┘
-        Answer       │        TTL expiry / peer disconnect
+        Answer       │        window elapsed / peer disconnect
            ┌─────────┴─────────┐
            ▼                   ▼
       ┌─────────┐        ┌──────────┐
@@ -248,63 +276,164 @@ highest-value traffic in a mature deployment.
 
 Invariants:
 
-- Exactly one `OPEN` exchange per unordered pair at any time.
+- At most `max_open_per_pair` `OPEN` exchanges from one agent to another, counted
+  directionally. See §7.1.
 - Only the party named in `owed_by` may send Clarify or Answer.
-- The other party may send Notify, or wait. It may not send Question.
-- Every `OPEN` exchange has a TTL (default 15 minutes) and a reaper. An agent that
-  disappears mid-question must not hold a pair lock forever.
+- The other party may send Notify, or open a further Question within the cap. It may not
+  Clarify or Answer out of turn.
+- Every `OPEN` exchange has a deadline and a reaper. An agent that disappears mid-question
+  must not hold a wait-for edge forever.
 
-## 7. Concurrency control
+**Two windows, not one deadline.** A single inactivity timer cannot distinguish an agent
+that never received the question from one that received it and is doing the work. Both look
+like silence, and under §4.2 the second is expected to last hours — building, running a
+test suite, collecting results. So the deadline is set in two phases:
 
-### 7.1 Pair serialisation
+| Window | Runs from | Length | Means |
+|---|---|---|---|
+| Delivery | the Question being written | short (default 15 minutes) | Nobody picked it up. The agent never spawned, or died on the way. |
+| Working | the Question being delivered | long (default 4 hours) | It was picked up, so the agent was alive and holds it. Give it room. |
 
-All traffic between two agents shares a queue keyed on the **unordered** pair, so
+Delivery is already recorded — an inbox drain marks the message delivered — so this needs no
+acknowledgement message and no heartbeat. Crossing from one window to the other is an
+observation the broker already makes.
+
+Getting this wrong in the single-timer direction is expensive in both directions at once: a
+timer short enough to catch a dead agent quickly will orphan a working one mid-task, and a
+timer long enough to let real work finish leaves a vanished agent holding its edge for hours.
+Splitting on delivery is what lets both be tuned for the case they actually describe.
+
+## 7. Admission control
+
+Nothing in this section serialises anything. Under §4.2 no agent waits on another, so there
+is no concurrency to control in the usual sense — what these rules govern is which Questions
+are admitted at all, and every refusal happens at the moment of asking rather than later.
+
+### 7.1 Pair identity and the question cap
+
+Traffic between two agents is identified by the **unordered** pair, so
 `key(a,b) == key(b,a)`:
 
 ```
 pair_key(a, b) = ordinal_min(a,b) + U+001F + ordinal_max(a,b)
 ```
 
-Use ordinal sort-and-concatenate. Do not multiply or XOR hashes — collisions in a
-lock key are a correctness bug, not a performance one.
+Use ordinal sort-and-concatenate. Do not multiply or XOR hashes — a collision here makes two
+unrelated pairs indistinguishable to every rule built on this key, which is a correctness
+bug rather than a performance one.
 
-This resolves the two-party case entirely: if `orders` asks `billing` while `billing`
-is asking `orders`, the second Question is refused.
+The key is an identity, not a lock. Under §4.2 nothing blocks, so serialising a pair would
+buy nothing and cost a great deal: an agent with one question outstanding to a peer would be
+unable to ask it anything else for as long as the answer took, which is now measured in
+hours. It could not even add to its own outstanding question, since only the party in
+`owed_by` may Clarify. Its sole remaining channel to that peer would be Notify.
+
+**The cap.** An agent may hold at most `max_open_per_pair` open exchanges *to* a given peer,
+counted directionally, default 5. Beyond that a Question is refused.
+
+The bound exists because terseness is a security control (principle 2.2) and an unbounded question
+stream recreates the poisoning problem it defends against: fifty questions is a context
+flood whether or not any single one is terse. Counting directionally keeps the two flows
+independent, so a busy `orders → billing` cannot exhaust what `billing → orders` may open —
+they are unrelated lines of enquiry and coupling them would refuse one for the sins of the
+other.
+
+**Distinctness.** A Question whose content matches one already open between the same two
+agents is refused, and the refusal returns the exchange already carrying it.
+
+This is a separate rule from the cap and does different work. The cap bounds *volume*; it
+says nothing about repetition, and would happily admit the same question five times. Under
+the old one-open-exchange-per-pair rule repetition was structurally impossible — there was
+nowhere to put a second question — so removing that rule removes a guard that was never
+written down as one, and it has to be restated deliberately or it is simply lost.
+
+Enforced by a partial unique index on `(asker, answerer, question_hash)` over open rows, not
+by the broker and not by a trigger. That matters for the same reason the cap's trigger is
+weaker than the index it replaced: an index constrains every path that can produce an open
+row, so the case where a resumed orphan meets an identical re-ask is refused without anyone
+having thought to write that case down.
+
+Identity is the content hash of §13.1. The scope is different, though, and deliberately so:
+deduplication there guards *delivery* over a window of seconds, absorbing transport retries.
+This guards *intent* for as long as the exchange stays open, which under §6 may be hours. An
+agent that asks, forgets it asked, and asks again an hour later is the case this catches, and
+it is a case the delivery window is far too short to see.
+
+**What this does not bound.** A per-pair cap limits any single peer, not the total. Ten
+agents each asking `billing` five questions puts fifty in its inbox while every one of them
+is individually well-behaved. That residue is accepted rather than solved: a per-answerer cap
+would refuse an agent that had asked nothing, for a saturation it did not cause and cannot
+see, and a refusal an agent cannot act on is worse than the load. It is instead a telemetry
+signal (§15) — sustained inbox depth on one agent means the ownership map has made it a
+bottleneck, which is a design defect to fix rather than a rate to limit.
 
 ### 7.2 Cycle detection
 
-**Pairwise locking does not prevent a 3-cycle.** `orders → billing`,
-`billing → inventory`, `inventory → orders`: every pair lock is free, every pair
-holds exactly one Question, and all three agents are blocked. With more than two
-agents this is not theoretical — it is the natural shape of a genuinely cross-cutting
-question.
+Under §4.2 a cycle is not a deadlock. `orders → billing`, `billing → inventory`,
+`inventory → orders`: nobody is blocked, and all three agents carry on working for their
+own humans throughout. The hazard is subtler and survives the async reframe intact.
 
-The broker already holds the wait-for graph implicitly: every `OPEN` exchange is an
-edge `owed_by → asker`. On insert of a new Question `X → Y`, walk from `Y`; reject if
-`X` is reachable.
+**A cycle is a set of questions none of which can be answered.** Each agent needs something
+it cannot determine without an answer that depends, transitively, on itself. Left admitted,
+all three burn their working windows, orphan together, and produce three ghosted answers and
+no information — having spent real tokens discovering that in the slowest possible way. The
+agents were never stuck; the questions always were.
 
-**Pair locking plus cycle-detection-on-insert is complete for all cycle lengths.**
+Refusing at admission converts that into an immediate, actionable refusal carrying the cycle
+path, so the asker can pick a different peer or escalate to its human while the question is
+still worth asking. That is why this is worth detecting even though nothing is at risk of
+hanging.
 
-### 7.3 Refusal returns work, not a retry instruction
+The broker already holds the wait-for graph implicitly. Every `OPEN` exchange contributes one
+edge **from the party that is waiting to the party named in `owed_by`** — read it as *waits
+for*. For a fresh Question that is `asker → answerer`; after a Clarify, `owed_by` flips and
+so does the edge, because the answerer is now the one waiting.
 
-When a Question is refused because the pair is occupied, the broker does **not** tell
-the asker to try again later. Instructing a language model to retry produces either a
-token-burning loop or silent abandonment; models are unreliable at "remember to do
-this later" without a mechanism.
+On insert of a new Question `X → Y`, walk from `Y`; reject if `X` is reachable.
 
-Instead the broker returns **the pending Question the asker owes an answer to**:
+The direction matters and is easy to state backwards. Edges pointing the other way,
+`owed_by → asker`, produce a graph in which no cycle is ever reachable from the walk above,
+so admission accepts everything and the check silently does nothing. Nothing fails; the
+refusals simply never happen.
 
-> You owe `billing` an answer before you may ask. Their question is below. Answer it,
-> then reconsider whether your question still needs asking — the exchange may have
-> already resolved it.
+Several open exchanges between the same two agents contribute the same edge, which is
+recorded once. Reachability is a property of the pair, not of how many questions are
+outstanding across it, so the cap in §7.1 does not interact with this section at all.
 
-This is the adults-with-manners behaviour: you answer the question you were asked
-before you ask your own. It converts a block into forward progress, and it exploits
-the fact that the second question is frequently made irrelevant or reshaped by the
-answer to the first.
+**Cycle-detection-on-insert is complete for all cycle lengths**, including the two-party case
+that pair serialisation used to absorb. That case is no longer special: `orders` asking
+`billing` while `billing` is asking `orders` is a 2-cycle, and the same walk refuses it.
 
-For cycle rejection, where no reciprocal debt exists, the broker returns the cycle
-path so the asker can choose a different peer or escalate to the human.
+### 7.3 Debts are delivered first, and refusals return work
+
+Models are unreliable at "remember to do this later" without a mechanism. Any design whose
+correct behaviour depends on an agent choosing to come back to something will fail on turn
+forty, so wherever this protocol wants an ordering it imposes one rather than requesting it.
+
+**`inbox()` returns what the caller owes before what it is newly asked.** An agent draining
+its inbox meets the questions it has not answered ahead of anything else, on every drain.
+That is the adults-with-manners behaviour — you answer what you were asked before you ask
+your own — and it exploits the fact that a pending question is frequently reshaped or made
+irrelevant by the answer to one already owed.
+
+This was previously a refusal payload, returned when a Question was refused because the pair
+was occupied. Under §4.2 and §7.1 that refusal no longer exists, and an ordering is the
+better home for the idea regardless: it applies on every drain rather than only on the
+unlucky call that happened to collide, and it costs an agent nothing.
+
+**A refusal returns work, never a retry instruction.** Telling a model to try again later
+produces either a token-burning loop or silent abandonment. So each refusal carries something
+the asker can act on immediately:
+
+| Refusal | What comes back |
+|---|---|
+| Cycle | The cycle path, so the asker can choose a different peer or escalate to its human. |
+| Pair cap reached (§7.1) | The open exchanges it already holds with that peer, so it can see what it is waiting on and whether this question is among them. |
+| Answerer unreachable (§14) | That the peer cannot be reached, so the asker stops rather than burning a window. |
+| Duplicate of a live question | The exchange already carrying it. |
+
+None of these ask the agent to do anything later. Each either resolves the question or
+redirects it now.
 
 ## 8. Rules of engagement
 
@@ -319,8 +448,10 @@ reads tool descriptions on every call and reads documentation approximately neve
    ownership* — never *how your repository implements something*. This is the single
    rule most responsible for preventing context poisoning. An agent that learns a
    peer's internals will start designing around them.
-4. **Batch.** One Question with five sub-questions costs one round trip; five
-   Questions cost five, serialised.
+4. **Batch.** One Question with five sub-questions costs your peer one context load;
+   five Questions cost it five. Nothing is serialised any more (§4.2), so this is no longer
+   about round trips — it is about the only currency that still matters, which is the
+   context you spend on the other end.
 5. **Hard size cap.** 2,000 characters per message, enforced by the broker.
    Truncation is a protocol error, not a warning.
 6. **Answer from authority, not inference.** If you are guessing about your own
@@ -328,6 +459,10 @@ reads tool descriptions on every call and reads documentation approximately neve
 7. **Decisions get promoted.** An Answer marked `decision: true` emits a decision
    record into the project's coordination repository. Otherwise the same decision is
    re-derived weeks later at full cost — the failure this protocol exists to prevent.
+8. **Never wait for an answer.** `ask` returns an identifier, not an answer (§4.2). Carry
+   on with your own work; the answer will arrive in your inbox with the question attached.
+   Polling for it, or holding your turn until it comes, wastes the tokens the asynchrony
+   exists to save — and your peer may legitimately take hours.
 
 ## 9. Persistence
 
@@ -393,24 +528,49 @@ CREATE TABLE exchanges (
   state             TEXT    NOT NULL,      -- OPEN | CLOSED | ORPHANED
   clarify_depth     INTEGER NOT NULL DEFAULT 0,
   clarify_depth_cap INTEGER NOT NULL DEFAULT 3,
-  ttl_ms            INTEGER NOT NULL,
+  open_pair_cap     INTEGER NOT NULL DEFAULT 5
+                    CHECK (open_pair_cap BETWEEN 1 AND 50),
+  delivery_window_ms INTEGER NOT NULL,
+  working_window_ms  INTEGER NOT NULL,
   opened_utc        TEXT    NOT NULL,
   expires_utc       TEXT    NOT NULL,
   closed_utc        TEXT,
   is_decision       INTEGER NOT NULL DEFAULT 0,
   decision_ref      TEXT,
+  question_hash     TEXT    NOT NULL,      -- content identity, §13.1
   version           INTEGER NOT NULL DEFAULT 0,
 
   CHECK (asker <> answerer),
   CHECK (owed_by IN (asker, answerer)),
   CHECK (clarify_depth >= 0 AND clarify_depth <= clarify_depth_cap),
-  CHECK (ttl_ms > 0),
+  CHECK (delivery_window_ms > 0 AND working_window_ms > 0),
   CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
   CHECK (pair_key = min(asker, answerer) || char(31) || max(asker, answerer))
 ) STRICT;
 
-CREATE UNIQUE INDEX ux_open_pair
-  ON exchanges(pair_key) WHERE state = 'OPEN';
+CREATE TRIGGER tr_open_pair_cap BEFORE INSERT ON exchanges WHEN NEW.state = 'OPEN'
+BEGIN
+  SELECT RAISE(ABORT, 'open_pair_cap reached')
+   WHERE (SELECT count(*) FROM exchanges
+           WHERE state = 'OPEN' AND asker = NEW.asker AND answerer = NEW.answerer)
+         >= NEW.open_pair_cap;
+END;
+
+-- Distinctness (§7.1). An index rather than a trigger: it is declarative, and it covers
+-- every path that can produce an OPEN row, including the UPDATE that resumes an orphan.
+CREATE UNIQUE INDEX ux_open_question
+  ON exchanges(asker, answerer, question_hash) WHERE state = 'OPEN';
+
+-- Resuming an orphan is an UPDATE, which the trigger above never sees. Both are required.
+CREATE TRIGGER tr_open_pair_cap_resume BEFORE UPDATE ON exchanges
+WHEN NEW.state = 'OPEN' AND OLD.state <> 'OPEN'
+BEGIN
+  SELECT RAISE(ABORT, 'open_pair_cap reached on resume')
+   WHERE (SELECT count(*) FROM exchanges
+           WHERE state = 'OPEN' AND asker = NEW.asker AND answerer = NEW.answerer
+                 AND id <> NEW.id)
+         >= NEW.open_pair_cap;
+END;
 
 CREATE TABLE messages (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -449,10 +609,37 @@ CREATE UNIQUE INDEX ux_message_dedup
 Rules that application code could otherwise route around live in the schema, so correctness
 survives bugs in the broker:
 
-- **One open exchange per pair.** The partial unique index on `pair_key`.
-- **`pair_key` is genuinely derived from its participants.** The index above is only as good
-  as the value it constrains; a mismatched key would have uniqueness enforced against the
-  wrong string, permitting two simultaneously open exchanges for one real pair.
+- **The open-question cap is itself bounded.** The cap is supplied per row, as
+  `clarify_depth_cap` already is, so the triggers below are only as strong as the value the
+  broker writes into them. A bug that wrote a large number would disable the cap while leaving
+  every constraint satisfied and nothing to notice. The column is therefore range-checked, so
+  the worst a broker bug can do is pick a bad value inside a sane band rather than switch the
+  rule off. `clarify_depth_cap` has the same shape and no such bound; that is a gap, not a
+  precedent to copy.
+- **The open-question cap (§7.1).** A `BEFORE INSERT` trigger, because a cap of *n* cannot be
+  written as a `CHECK`: reaching it requires counting other rows, `CHECK` forbids subqueries,
+  and no index expresses "at most five" the way a partial unique index expresses "at most
+  one".
+
+  This is a real weakening and worth naming rather than discovering. The index it replaces was
+  the strongest constraint in this schema — declarative, unroutable, and impossible to get
+  subtly wrong. A trigger is still storage-level and still survives a broker bug, but it is
+  procedural code that must itself be correct, and it constrains only the statements it is
+  written against rather than being a property of the table.
+
+  That distinction is not hypothetical. **Two triggers are required, not one.** A unique index
+  constrains every path that can produce a row; a `BEFORE INSERT` trigger constrains inserts,
+  and resuming an orphan (§14) reaches `OPEN` by `UPDATE`. With only the insert trigger, a
+  pair at its cap accepts a resume and goes over — verified, not reasoned about. Anything
+  later that moves an exchange into `OPEN` by some third route needs the same treatment, and
+  nothing will remind whoever writes it.
+
+  It is kept in the schema rather than moved into the broker for the same reason everything
+  else here is: admission is precisely where a broker bug would do the most damage, and a rule
+  the storage layer cannot enforce is a rule that decays.
+- **`pair_key` is genuinely derived from its participants.** Cycle detection (§7.2) and the
+  retention rules both key on it, and a mismatched key would make two unrelated pairs
+  indistinguishable to every rule built on it.
 - **Message size cap.** Terseness is the context-poisoning defence (rule 8.5), so 2,000
   characters is a constraint rather than a guideline.
 - **Every message names its responder.** §11.3 is a MUST and is not limited to answers: the
@@ -486,7 +673,10 @@ depth cap into a suggestion.
 snapshot on its first `SELECT` and upgrades to a write lock only at the `INSERT`. If another
 connection commits in between, WAL mode refuses the upgrade with `SQLITE_BUSY_SNAPSHOT`,
 which the busy timeout cannot resolve — waiting never makes a stale snapshot fresh. Taking
-the write lock up front is what makes the pair and cycle checks sound.
+the write lock up front is what makes the cap, distinctness and cycle checks sound. All three
+read other rows before writing one, and all three are wrong if a concurrent writer commits
+between the read and the write. This applies to the cap triggers in §9.3 as much as to the
+broker's own checks: a trigger's `count(*)` is only a bound if nothing can insert behind it.
 
 **Timestamps are stored in round-trip format.** Lexicographic order then matches chronological
 order, which is what allows the reaper's `expires_utc <= ?` predicate to be a plain string
@@ -553,11 +743,11 @@ is no shared memory to poison; §10.1 is what makes that true.
 | Operation | Description |
 |---|---|
 | `agents()` | List registered agents, their adapters, and liveness. |
-| `ask(to, intent, sub_questions, consequences)` | Open an exchange. Returns an answer, a reciprocal-debt payload, or a cycle rejection. |
+| `ask(to, intent, sub_questions, consequences)` | Open an exchange. Returns its identifier, or a refusal (§7.3). Never returns an answer. |
 | `clarify(exchange_id, text)` | Request detail within an open exchange you owe. |
 | `answer(exchange_id, resolutions, decision?)` | Close an exchange. |
 | `notify(to, text)` | Fire-and-forget event. |
-| `inbox()` | Drain pending messages. |
+| `inbox()` | Drain pending messages, debts first (§7.3). Answers arrive here, carrying the identifier `ask` returned and the question they answer (§4.2). |
 
 How these are surfaced to an agent is the adapter's concern.
 
@@ -844,7 +1034,8 @@ conflict. The constraint closes a hole that the derived bucket would otherwise o
 The bucket is **derived by the schema, never supplied**. An index is only as good as the
 value it constrains: a bucket disagreeing with its `created_utc` would disable
 deduplication for that row while leaving the index looking healthy, exactly as a
-`pair_key` not derived from its participants would have defeated `ux_open_pair`.
+`pair_key` not derived from its participants would have made unrelated pairs
+indistinguishable to every rule built on it.
 Computing it in the schema means a broker cannot write a wrong one, which is stronger
 than checking that it did not. The window is therefore a schema fact rather than
 configuration: changing it changes the meaning of every bucket already stored, so it
@@ -855,10 +1046,12 @@ starting estimate: it is meant to absorb transport retries, not to police an age
 repeating itself minutes later, and it should be tuned against real traffic rather
 than argued about in advance.
 
-Deduplication guards *delivery*, not intent. A repeated question is already refused by
-the pair slot in §9.3, a repeated clarify by the turn check, and a repeated answer by
-the exchange no longer being open. `Notify` is the one type with no such guard, and is
-where this control does the most work.
+Deduplication guards *delivery*, not intent, and the two need different scopes. A repeated
+question is refused by the distinctness rule in §7.1, which shares this section's content
+hash but applies it for as long as the exchange stays open rather than for sixty seconds. A
+repeated clarify is refused by the turn check, and a repeated answer by the exchange no
+longer being open. `Notify` is the one type with no such guard, and is where this control
+does the most work.
 
 ## 14. Lifecycle and recovery
 
@@ -964,8 +1157,9 @@ commits landed while it was offline. Adapters SHOULD inject a change summary sin
 outdated code.
 
 **Liveness is free.** For Full and Pull-only tiers, adapter connection state *is* the
-health check. No heartbeat protocol is required. Disconnect releases pair locks and
-marks open exchanges `ORPHANED`.
+health check. No heartbeat protocol is required. Disconnect marks that agent's open
+exchanges `ORPHANED`, releasing their wait-for edges, without waiting out either window in
+§6 — a disconnect is direct evidence of what those windows exist to infer.
 
 ## 15. Telemetry
 
@@ -978,11 +1172,31 @@ Cheap to collect, disproportionately useful:
   record.
 - Exchanges per promoted decision → how much talk produces durable output.
 - `resolution` breakdown by `responder_model` → adapter tier quality.
+- Inbox depth per agent, sustained → the ownership map has made this agent a bottleneck.
+  §7.1 caps questions per pair and deliberately does not cap them per answerer, so this is
+  the signal that replaces the constraint that was not imposed. It is a design defect to fix
+  rather than a rate to limit: an agent everyone must ask owns too much.
+- Refusals by reason → each one means something different and they should not be pooled.
+  Cycles indicate a knot; cap refusals indicate a peer being over-asked; distinctness
+  refusals (§7.1) indicate agents forgetting what they already asked, which is a context
+  problem in the asker rather than anything about the peer.
 
 ## 16. Non-goals
 
 - **Not a task queue.** Parley coordinates *understanding*, not work. Agents do not
   delegate implementation to each other.
+
+  §4.2 makes this harder to see than it used to be. Submit, walk away, collect the result
+  later is exactly the shape of a job queue, and the resemblance is now structural rather
+  than superficial. The distinction is in the payload, not the timing: a Question asks what
+  is true within someone else's boundary, and the answer is information the asker then acts
+  on itself. It never asks a peer to *do* anything, and there is no operation that could.
+  An agent may spend hours establishing an answer — that is work in service of answering,
+  not work delegated.
+
+  The test is whether the answer changes the answerer's repository. If a Question could be
+  satisfied by the peer making a change, it is delegation wearing a question mark, and it
+  belongs in an issue tracker.
 - **Not a shared context store.** No agent can read the log: §10.1 exposes no history
   or search operation, so there is no shared memory to poison, and that holds at any
   retention length. Traffic is pruned once it is operationally spent (§9.4), and an
@@ -1013,14 +1227,21 @@ Cheap to collect, disproportionately useful:
    adapter-reported — which makes it a term in the adapter contract (§14) rather than
    broker-local configuration.
 7. What becomes of an orphan that is never resumed under a `never` policy? Retaining
-   it forever holds a claim on nothing, since orphans release their pair slot, but
+   it forever holds a claim on nothing, since orphans release their wait-for edge, but
    discarding it on a timer loses the question that orphaning exists to preserve.
 8. *(Closed.)* Which credential-store implementation to depend on: none. Most agents
    authenticate out of band and need nothing from the broker, and the rest are served by
    `env:` and `file:`, which require no dependency. `keychain:` remains declared and
    unimplemented; see §12.2.
-9. Under `always`, an orphan releases its pair slot, so the asker may re-ask and open a
-   second exchange on that pair before the original is replayed. Which one survives is
-   undecided: the replay preserves clarify depth and history, the re-ask reflects
-   current intent, and resolving it by discarding the orphan lets an agent reset the
-   depth cap by cycling through restarts.
+9. Under `always`, an asker may re-ask a question whose original is still orphaned and
+   awaiting replay. The collision itself is now resolved: §7.1's distinctness index refuses
+   the resume when an identical question is already open, so the re-ask survives and the
+   orphan stays orphaned until §14 disposes of it. A re-ask with *different* content is a
+   genuinely different question and both coexist within the cap.
+
+   What remains open is the incentive that creates. The surviving re-ask starts at clarify
+   depth zero while the orphan held the accumulated depth, so an agent that cycles through
+   orphan and re-ask gets a fresh budget for going in circles — which is precisely what
+   `Resume` preserving `clarify_depth` exists to prevent. Carrying depth forward onto a
+   re-ask would fix it, but requires deciding what "the same question, asked again" means
+   when the content differs enough to be admitted at all.
