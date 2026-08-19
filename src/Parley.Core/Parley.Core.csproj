@@ -1,6 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <!--
+      True, and checked by the absence of reflection rather than asserted. This assembly has
+      no I/O, no package dependencies, and nothing that inspects a type at runtime: the one
+      pattern that would, AgentName's grammar, uses a source-generated regex precisely so it
+      does not. The setting also stamps IsTrimmable into the assembly, which is a promise made
+      to whoever trims it, so it is only kept where it holds.
+    -->
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 

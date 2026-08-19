@@ -1,8 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <IsAotCompatible>true</IsAotCompatible>
-  </PropertyGroup>
+  <!--
+    Deliberately not IsAotCompatible. That setting stamps IsTrimmable into the assembly, which
+    tells whoever trims it that doing so is safe, and here it is not: Dapper materialises rows
+    by emitting IL at runtime, and SchemaMigrator enumerates embedded resources through
+    reflection. Neither is a fault — both are the right implementation for this layer — but
+    neither survives trimming or ahead-of-time compilation, and the analyzers cannot see it
+    because Dapper's methods carry no RequiresDynamicCode annotation. A claim the build cannot
+    check and the code does not honour is worse than no claim. See Directory.Packages.props.
+  -->
 
   <ItemGroup>
     <ProjectReference Include="..\Parley.Core\Parley.Core.csproj" />
@@ -12,7 +18,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="Dapper" />
-    <PackageReference Include="Dapper.AOT" />
   </ItemGroup>
 
   <ItemGroup>
