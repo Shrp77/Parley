@@ -84,9 +84,10 @@ plain model API call, a local model, a script that greps a contracts directory, 
 human with a notification — anything that takes a bounded question and returns text
 can participate.
 
-Credentials are never stored. The registry holds references (`env:`, `keychain:`,
-`file:`) that the broker resolves at invocation time, so the manifest is safe to
-commit.
+Most agents need no credential from Parley: the CLI behind them authenticates once, out
+of band, and keeps its own token. Where the broker genuinely needs a secret — calling a
+model API itself, or running a script — the registry holds a *reference* (`env:`,
+`file:`) rather than a value, so the manifest is safe to commit.
 
 ## Specification
 

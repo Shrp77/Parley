@@ -135,10 +135,16 @@ public sealed record AgentRecord(
 /// descriptor declared. Not the secret's name in whatever store holds it.
 /// </param>
 /// <param name="Reference">
-/// Where the secret lives: <c>env:</c>, <c>keychain:</c> or <c>file:</c>. The scheme is part
+/// Where the secret lives: <c>env:</c>, <c>file:</c>, or <c>keychain:</c>. The scheme is part
 /// of the stored value, so resolution follows what was recorded rather than probing whatever
 /// the machine happens to offer today.
 /// </param>
+/// <remarks>
+/// The grammar accepts <c>keychain:</c>, but nothing resolves it yet — see SPEC.md §12.2.
+/// It is stored so a deployment needing it is not blocked behind a schema change; a broker
+/// asked to resolve one should fail rather than guess. Most agents need no credential at all,
+/// because the CLI behind them authenticates out of band and keeps its own token.
+/// </remarks>
 public sealed record AgentCredential(string Name, string Reference);
 
 /// <summary>

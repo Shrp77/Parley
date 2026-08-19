@@ -665,17 +665,25 @@ decay over long runs. This is an accepted limitation. Measure it through the
 
 ## 12. Registration and credentials
 
-**The broker never stores secrets.** The registry holds *references*, which the
-broker resolves at invocation time, passes into the child process environment, and
-neither persists nor logs.
+**Most agents need no credential from Parley at all.** An agent attached through a vendor
+CLI authenticates once, out of band, and that CLI keeps and refreshes its own token. The
+broker spawning it injects nothing and holds nothing. This is the common case, and the one
+to design for: a deployment of twenty agents behind the same vendor CLI has twenty agents
+Parley holds no secret for.
+
+Credentials are a **Headless-tier concern** (§11.2) — the broker calling a model API
+itself, or invoking a script that needs a token. There the broker genuinely needs a secret,
+and the rule is that it stores a *reference*, resolves it at invocation, and neither
+persists nor logs what it resolved.
 
 ```yaml
 agents:
+  # The common case: the CLI is already authenticated. Nothing to register.
   - name: orders
     adapter: <vendor-cli>
     workspace: /src/acme-orders
-    # no credentials — this agent manages its own authentication
 
+  # Headless: the broker makes the call, so the broker needs the key.
   - name: inventory
     adapter: <vendor-api>
     config:
@@ -683,27 +691,28 @@ agents:
       endpoint: https://api.example.invalid
     credentials:
       api_key: env:VENDOR_API_KEY
-
-  - name: billing
-    adapter: <vendor-api>
-    credentials:
-      api_key:   keychain:parley/billing
-      org_token: keychain:parley/billing-org
 ```
 
-Supported reference schemes: `env:`, `keychain:` (OS credential store), `file:`
-(path to a file readable only by the broker's user).
+Supported reference schemes: `env:`, `file:` (a path readable only by the broker's user),
+and `keychain:` (an OS credential store — declared, but see §12.2).
 
 Rationale:
 
 1. A public repository with an inline `api_key:` field will produce committed
    secrets. Reliably, repeatedly.
 2. Concentrating multiple vendors' credentials in one long-lived daemon creates a
-   target.
+   target. Holding none for most agents is better than holding them carefully.
 3. Vendor authentication quirks — token refresh, regional endpoints, org scoping —
-   become the broker's support burden.
+   become the broker's support burden. Letting each CLI keep its own avoids that
+   entirely.
 
 Because the manifest holds only references, it is safe to commit.
+
+**Expiry needs no special handling.** When an agent's own authentication lapses, spawning
+it fails; repeated failures mark it `unreachable` (§14), so questions to it are refused
+with a reason instead of each burning an inactivity window. The operator re-authenticates
+out of band and a restart clears the mark. The path already exists and no credential
+machinery is involved.
 
 ### 12.1 What an adapter needs, and who decides
 
@@ -718,64 +727,45 @@ An adapter therefore **declares what it needs**: for each parameter, a name, whe
 is required, and whether it is a secret. Registration collects exactly that. The broker
 learns nothing about any vendor, and a new adapter needs no schema change.
 
-Credential parameter names are lowercase, digits and underscore, up to 64 characters —
-`api_key`, `org_token`. The restriction is small but worth stating, because an adapter
-declaring `apiKey` is refused at registration by a constraint rather than at review by a
-person, and the author deserves to know that before writing the descriptor rather than
-after.
-
 `config` is free-form because it carries no invariant. Credentials are the opposite case,
-which is why they are not in it: a single constrained place for secrets, and a flow that
-never offers to put one anywhere else, is a stronger guarantee than any check applied
-after the fact.
+which is why they are not in it: a single constrained place for secrets is a stronger
+guarantee than any check applied after the fact.
 
-### 12.2 Registration is a flow, and it chooses a store
+Credential parameter names are lowercase, digits and underscore, up to 64 characters —
+`api_key`, `org_token`. Worth stating, because an adapter declaring `apiKey` is refused at
+registration by a constraint rather than at review by a person.
 
-Registration is interactive. It reads the adapter's declaration, asks for each parameter,
-takes any secret without echoing it, writes that secret to a credential store, and emits
-the manifest entry above — carrying the *reference* it just created, never the value. The
-flow does not replace the manifest; it produces one.
+### 12.2 Which schemes are implemented, and why not the third
 
-**Which store depends on how the broker will run, not on how the flow is running.** Those
-are different processes in different contexts, and only the first matters:
+`env:` and `file:` are sufficient for the cases that need a credential at all, and cost
+nothing to support: the broker already has an environment, and reading an owner-only file
+is the same permission discipline §9.1 applies to the database.
 
-| Platform | Store | Constraint |
-|---|---|---|
-| Windows | Credential Manager | Per-user. A service running as LocalSystem has a different store from the operator who registered. |
-| macOS | Keychain | A login keychain is not unlocked in a headless launchd context. |
-| Linux | Secret Service, else `file:` | The D-Bus session bus exists for a desktop login and not for a daemon. |
+`keychain:` is **declared but not implemented**. .NET exposes no API for OS credential
+stores, so supporting it means a package on the secrets path, hand-written interop across
+three platforms, or shelling out to per-platform helpers — each a larger commitment than
+the schema-versioning dependency §9 already declined, in service of a minority of a
+minority. It stays in the grammar so that a deployment that needs it is not blocked by a
+schema change, and so the decision to implement it can be made on evidence.
 
-The failing sequence is registering at a desktop and then daemonising: the secret goes
-somewhere the service cannot read, and the first symptom is an agent that will not spawn.
-So the flow **asks** which context the broker will run in, and **defaults to the answer
-that resolves everywhere**. An operator accepting the default gets `file:` with owner-only
-permissions; choosing an OS store is a deliberate act by someone who knows their broker
-has access to it. The weaker protection is never chosen silently, and the stronger one is
-never chosen on the flow's behalf.
+Should it ever be implemented, two constraints are known in advance and are easy to get
+wrong. Availability depends on **how the broker is launched**, not on what is installed: a
+Windows service running as LocalSystem has a different store from the operator who
+registered, a macOS login keychain is not unlocked under launchd, and the Linux Secret
+Service needs a session bus a daemon does not have. And the store must be chosen when the
+agent is registered and **recorded in the scheme**, never re-decided at invocation — a
+broker that probed for whichever store the machine offers today would resolve differently
+depending on how it started, and a store appearing later would silently shadow the
+reference that was working.
 
-### 12.3 Resolution follows the reference, and nothing else
-
-The scheme is part of the stored value, so resolution is deterministic: `file:` means read
-that file. The broker never probes for whichever store the machine happens to offer today.
-
-Two consequences, both deliberate:
-
-- A store installed **after** registration changes nothing. The reference still says what
-  it said, and still resolves. There is no moment where the broker notices a better store
-  and finds it empty.
-- A store that becomes **unavailable** produces a resolution failure, not a silent
-  fallback to a stale copy somewhere else. Falling back would mean two secrets with no
-  rule for which is authoritative, and a rotated key ignored because the other answered
-  first.
-
-Moving a secret between stores is therefore an explicit operation, never automatic. An
-automatic migration would rewrite an operator-owned manifest, and — because Secret Service
-availability depends on launch context rather than installation — could strand itself on
-the next headless boot.
+That determinism is why `file:` means read that file, and nothing else. A store that
+becomes unavailable produces a resolution failure rather than a quiet fallback to a stale
+copy elsewhere, which would leave two secrets with no rule for which is authoritative and
+a rotated key ignored because the other answered first.
 
 Removing a credential from the registry removes the *pointer*. Whatever store holds the
-value is untouched: the broker did not put it there in the general case, and deleting from
-someone's keychain on the strength of a registry edit is not its decision.
+value is untouched: the broker did not put it there, and deleting from someone's keychain
+on the strength of a registry edit is not its decision.
 
 ## 13. Trust boundary
 
@@ -1025,11 +1015,10 @@ Cheap to collect, disproportionately useful:
 7. What becomes of an orphan that is never resumed under a `never` policy? Retaining
    it forever holds a claim on nothing, since orphans release their pair slot, but
    discarding it on a timer loses the question that orphaning exists to preserve.
-8. Which credential-store implementation to depend on. Native access means a package,
-   hand-rolled P/Invoke across three platforms, or shelling out to `security`, `cmdkey`
-   and `secret-tool`. §9 argues against a schema-versioning dependency on the grounds
-   that the broker ships as a single self-contained binary; this is a larger commitment
-   than that one, and `file:` works everywhere without it.
+8. *(Closed.)* Which credential-store implementation to depend on: none. Most agents
+   authenticate out of band and need nothing from the broker, and the rest are served by
+   `env:` and `file:`, which require no dependency. `keychain:` remains declared and
+   unimplemented; see §12.2.
 9. Under `always`, an orphan releases its pair slot, so the asker may re-ask and open a
    second exchange on that pair before the original is replayed. Which one survives is
    undecided: the replay preserves clarify depth and history, the re-ask reflects

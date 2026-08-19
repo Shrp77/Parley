@@ -162,11 +162,11 @@ public sealed class AgentRepositoryTests : IDisposable
         await _agents.SetCredentialAsync(Orders,
             new AgentCredential("api_key", "env:OLD"), TestContext.Current.CancellationToken);
         await _agents.SetCredentialAsync(Orders,
-            new AgentCredential("api_key", "keychain:parley/new"), TestContext.Current.CancellationToken);
+            new AgentCredential("api_key", "file:/etc/parley/new.token"), TestContext.Current.CancellationToken);
 
         var creds = await _agents.GetCredentialsAsync(Orders, TestContext.Current.CancellationToken);
 
-        Assert.Equal("keychain:parley/new", Assert.Single(creds).Reference);
+        Assert.Equal("file:/etc/parley/new.token", Assert.Single(creds).Reference);
     }
 
     [Fact]
