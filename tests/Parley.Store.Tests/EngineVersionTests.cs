@@ -31,11 +31,19 @@ public sealed class EngineVersionTests : IDisposable
         await using var command = _connection.CreateCommand();
         command.CommandText = "SELECT sqlite_version();";
 
-        var reported = (string)(await command.ExecuteScalarAsync(
-            TestContext.Current.CancellationToken))!;
+        var reported = await command.ExecuteScalarAsync(
+            TestContext.Current.CancellationToken) as string;
+
+        // Parsed rather than asserted directly, and reported rather than thrown through.
+        // This test exists to replace an opaque failure with a legible one, so letting it
+        // die inside Version.Parse on an unexpected string would reproduce the problem it
+        // was written to remove.
+        Assert.True(
+            Version.TryParse(reported, out var engine),
+            $"sqlite_version() returned something unparseable: '{reported ?? "<null>"}'");
 
         Assert.True(
-            Version.Parse(reported) >= Required,
-            $"schema requires SQLite {Required} or later, engine reports {reported}");
+            engine >= Required,
+            $"schema requires SQLite {Required} or later, engine reports {engine}");
     }
 }

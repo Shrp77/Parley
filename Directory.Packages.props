@@ -77,6 +77,10 @@
       reason:  NU1903 (high) via Parent.Package 4.5.6, advisory GHSA-xxxx-xxxx-xxxx
       remove:  when Parent.Package reaches 4.6.0, which floors it itself
 
+    Packages that ship as a matched set and can only move together take one shared entry
+    above the group rather than one apiece. Three copies of a justification drift apart, and
+    the first one edited becomes the one that is wrong.
+
     NOTE: a double hyphen cannot appear anywhere inside an XML comment. Write CLI flags in
     docs/ or the README instead of here, or MSBuild will reject this whole file as invalid
     with an error that does not say why.
