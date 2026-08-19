@@ -349,6 +349,7 @@ CREATE TABLE messages (
   responder_model TEXT    NOT NULL,       -- see §11.3
   payload_json    TEXT    NOT NULL,
   content_hash    TEXT    NOT NULL,       -- see §13.1
+  session_tag     TEXT,                   -- operator tag, see §9.4
   created_utc     TEXT    NOT NULL,
   dedup_bucket    INTEGER GENERATED ALWAYS AS (unixepoch(created_utc) / 60) STORED,
   delivered_utc   TEXT,
@@ -361,7 +362,10 @@ CREATE TABLE messages (
          AND responder_model NOT GLOB '*[^a-zA-Z0-9._:/-]*'),
   CHECK (length(content_hash) = 64
          AND content_hash NOT GLOB '*[^0-9a-f]*'),
-  CHECK (unixepoch(created_utc) IS NOT NULL)
+  CHECK (unixepoch(created_utc) IS NOT NULL),
+  CHECK (session_tag IS NULL
+         OR (length(session_tag) BETWEEN 1 AND 64
+             AND session_tag NOT GLOB '*[^a-zA-Z0-9._:/-]*'))
 ) STRICT;
 
 CREATE UNIQUE INDEX ux_message_dedup
@@ -409,7 +413,56 @@ the write lock up front is what makes the pair and cycle checks sound.
 order, which is what allows the reaper's `expires_utc <= ?` predicate to be a plain string
 comparison and still be correct.
 
+### 9.4 Retention
+
+Parley is a channel, not a store (§16), so the message log is operational rather than a
+record: it exists to deliver, to deduplicate, to rate-limit and to feed telemetry. Left
+unbounded it becomes something the design explicitly is not — and the file already
+carries the full text of every question and answer between agents, restricted to its
+owner for that reason (§9.1). A log that grows forever grows the blast radius of a
+leaked database forever with it.
+
+Retention is nonetheless **configurable**, because the operator uses in §10.2 are real
+and the isolation guarantee does not depend on the log being short. Two rules prune, and
+a floor overrides both.
+
+**The floor.** Regardless of configuration, a message is never removed while it is:
+
+- undelivered — it is somebody's inbox;
+- attached to an exchange that is open or orphaned — §14 may still replay it;
+- inside the deduplication window (§13.1) or the rate-limit window;
+- carrying a session tag.
+
+An operator configuring aggressive retention must not be able to break deduplication as
+a side effect. The floor is what makes the dial safe to turn.
+
+**The idle rule.** Once an exchange is closed and its pair has been silent for the
+configured idle period, that conversation is finished and its messages are prunable.
+This targets what the operator would recognise as a completed exchange of views, rather
+than an arbitrary age.
+
+**The age cap.** Nothing untagged outlives the configured maximum age, whatever the idle
+rule concludes. This bounds a pair that never falls silent long enough to trip the idle
+rule.
+
+**Tags are how data survives.** A tagged session is exempt from both rules and is
+removed only when the operator deletes it. Tagging is therefore two things at once:
+grouping traffic for export, and marking it as worth keeping. Untagged traffic is
+ephemeral by default, which is the behaviour §16 describes; tagged traffic is the
+deliberate exception, and the operator who created it is the one who ends it.
+
+Messages are the retention target because messages hold the text. Exchange rows carry
+no free prose — participants, timings, resolution, clarify depth — and are what §15
+telemetry is computed from, so they outlive the messages they once carried. Pruning the
+text while keeping the skeleton is what lets a deployment answer "how often does this
+pair disagree" a year later without retaining a year of what they actually said.
+
 ## 10. Operations
+
+There are two surfaces, and the distance between them is load-bearing. §16 claims there
+is no shared memory to poison; §10.1 is what makes that true.
+
+### 10.1 Agent operations
 
 | Operation | Description |
 |---|---|
@@ -421,6 +474,45 @@ comparison and still be correct.
 | `inbox()` | Drain pending messages. |
 
 How these are surfaced to an agent is the adapter's concern.
+
+There is deliberately **no history and no search operation**, and none may be added. An
+agent cannot read the log because nothing exposes it: `inbox()` returns only what is
+pending and addressed to the caller, and `ask` returns only the answer to the question
+just asked. This is the mechanism behind the isolation in §1 — `billing` never learns
+what `orders` told `inventory` because it has no way to ask.
+
+Retention length is therefore irrelevant to that guarantee. A ninety-day log is exactly
+as unreadable to an agent as a ten-minute one, which is why §9.4 can be configured
+freely. The dial is retention; the guarantee is this table.
+
+### 10.2 Operator operations
+
+Available to the person running the broker, never to an agent. An adapter that surfaced
+any of these into an agent's tool set would breach §10.1 and, through it, §16.
+
+| Operation | Description |
+|---|---|
+| `session start(label)` | Tag subsequent traffic with `label`. See §9.4. |
+| `session end()` | Stop tagging. |
+| `export(label)` | Emit every message carrying `label`. |
+| `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
+
+Sessions exist because the log has legitimate operator uses the protocol should not
+obstruct. Comparing how different model pairings converge on the same question is one:
+run the exchange with `claude`↔`gpt`, tag it, run it again with `gpt`↔`deepseek`, tag
+that, and analyse the two. Nothing about that reaches into an agent's context, so
+nothing about it weakens §16.
+
+A tag is a deliberate act, not an inferred one. The broker does not guess where a
+conversation started or ended from a timeout, because the operator setting up run three
+of seven already knows.
+
+A session is **broker-wide, not scoped to a pair**. While one is active every message
+the broker handles carries the tag, including traffic between agents that have nothing
+to do with the experiment. That is the right default for a broker hosting a study, and
+the wrong one for a broker also carrying production work — where tagging will sweep up
+real exchanges and exempt them from retention along with everything else. Run studies on
+their own broker, or expect to filter the export by participant afterwards.
 
 ## 11. Adapters
 
@@ -705,8 +797,10 @@ Cheap to collect, disproportionately useful:
 
 - **Not a task queue.** Parley coordinates *understanding*, not work. Agents do not
   delegate implementation to each other.
-- **Not a shared context store.** Nothing accumulates. There is no shared memory to
-  poison.
+- **Not a shared context store.** No agent can read the log: §10.1 exposes no history
+  or search operation, so there is no shared memory to poison. Untagged traffic is
+  pruned once it is operationally spent (§9.4), and what an operator deliberately
+  retains is readable by them, never by an agent.
 - **Not a replacement for committed contracts.** Most cross-repository questions
   should be *lookups* against contracts and decision records. Parley handles the
   residue where the contract genuinely does not cover the case — and feeds the answer

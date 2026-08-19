@@ -36,6 +36,7 @@ public sealed class MessageRepository(SqliteConnection connection)
                to_agent        AS ToAgent,
                responder_model AS ResponderModel,
                payload_json    AS PayloadJson,
+               session_tag     AS SessionTag,
                created_utc     AS CreatedUtc,
                delivered_utc   AS DeliveredUtc
         FROM messages
@@ -60,6 +61,11 @@ public sealed class MessageRepository(SqliteConnection connection)
     /// </param>
     /// <param name="payloadJson">The payload document.</param>
     /// <param name="nowUtc">The current instant, in UTC.</param>
+    /// <param name="sessionTag">
+    /// The operator's current session tag, or <see langword="null"/> for untagged traffic.
+    /// Supplied by the broker from operator state, never by an agent: an agent able to tag
+    /// its own traffic could exempt it from retention. See SPEC.md §9.4 and §10.2.
+    /// </param>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>
     /// An outcome carrying either the appended message or the earlier one that made this a
@@ -87,6 +93,12 @@ public sealed class MessageRepository(SqliteConnection connection)
     /// up front is what makes the duplicate check sound rather than advisory.
     /// </para>
     /// <para>
+    /// The session tag is deliberately not part of the identity. It is operator metadata
+    /// rather than message content, and hashing it would make the same message sent inside
+    /// and outside a session count as two — so starting a recording would quietly disable
+    /// deduplication for its duration.
+    /// </para>
+    /// <para>
     /// The check here is the exact window; the unique index on
     /// <c>(content_hash, dedup_bucket)</c> is the backstop and is deliberately coarser. Two
     /// identical messages twenty seconds apart but either side of a bucket boundary pass the
@@ -101,6 +113,7 @@ public sealed class MessageRepository(SqliteConnection connection)
         string responderModel,
         string payloadJson,
         DateTimeOffset nowUtc,
+        string? sessionTag = null,
         CancellationToken cancellationToken = default)
     {
         if (from == to)
@@ -142,9 +155,9 @@ public sealed class MessageRepository(SqliteConnection connection)
                 """
                 INSERT INTO messages
                     (exchange_id, type, from_agent, to_agent, responder_model, payload_json,
-                     content_hash, created_utc)
+                     content_hash, session_tag, created_utc)
                 VALUES
-                    (@ExchangeId, @Type, @From, @To, @Responder, @Payload, @Hash, @Created)
+                    (@ExchangeId, @Type, @From, @To, @Responder, @Payload, @Hash, @Tag, @Created)
                 RETURNING id;
                 """,
                 new
@@ -156,6 +169,7 @@ public sealed class MessageRepository(SqliteConnection connection)
                     Responder = responderModel,
                     Payload = payloadJson,
                     Hash = hash,
+                    Tag = sessionTag,
                     Created = created
                 },
                 transaction,
@@ -164,7 +178,8 @@ public sealed class MessageRepository(SqliteConnection connection)
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return AppendOutcome.Appended(new Message(
-            id, exchangeId, type, from, to, responderModel, payloadJson, nowUtc, null));
+            id, exchangeId, type, from, to, responderModel, payloadJson, sessionTag, nowUtc,
+            null));
     }
 
     /// <summary>
@@ -219,6 +234,45 @@ public sealed class MessageRepository(SqliteConnection connection)
                 LIMIT @Limit;
                 """,
                 new { Agent = agent.Value, Limit = limit ?? -1 },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return [.. rows.Select(r => r.ToDomain())];
+    }
+
+    /// <summary>
+    /// Loads every message carrying a session tag, oldest first.
+    /// </summary>
+    /// <param name="sessionTag">The tag to gather.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The tagged messages in the order they were appended.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="sessionTag"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="sessionTag"/> is empty.</exception>
+    /// <remarks>
+    /// <para>
+    /// This is the export in SPEC.md §10.2, and it is an operator operation. It reads across
+    /// agents by design, which is precisely why it must never be surfaced into an agent's tool
+    /// set: it is the one query that would breach the isolation §10.1 exists to enforce.
+    /// </para>
+    /// <para>
+    /// Deliberately unbounded, unlike the inbox drain. An export that silently truncated would
+    /// present a partial record as a complete one, and the caller is an operator reading their
+    /// own data rather than a context window with a budget.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<Message>> GetBySessionAsync(
+        string sessionTag,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(sessionTag);
+
+        var rows = await _connection.QueryAsync<MessageRow>(
+            new CommandDefinition(
+                $"""
+                {SelectColumns}
+                WHERE session_tag = @Tag
+                ORDER BY id;
+                """,
+                new { Tag = sessionTag },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return [.. rows.Select(r => r.ToDomain())];

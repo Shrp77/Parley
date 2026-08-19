@@ -48,7 +48,8 @@ public sealed class MessageRepositoryTests : IDisposable
         AgentName? from = null,
         AgentName? to = null,
         DateTimeOffset? at = null,
-        long? exchangeId = -1) =>
+        long? exchangeId = -1,
+        string? sessionTag = null) =>
         _messages.AppendAsync(
             exchangeId == -1 ? _exchangeId : exchangeId,
             type,
@@ -57,6 +58,7 @@ public sealed class MessageRepositoryTests : IDisposable
             Model,
             payload,
             at ?? T0,
+            sessionTag,
             TestContext.Current.CancellationToken);
 
     [Fact]
@@ -176,7 +178,7 @@ public sealed class MessageRepositoryTests : IDisposable
         // fault, which a SqliteException does not.
         await Assert.ThrowsAnyAsync<ArgumentException>(() => _messages.AppendAsync(
             _exchangeId, MessageType.Question, Orders, Billing, model!, Payload, T0,
-            TestContext.Current.CancellationToken));
+            cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -287,6 +289,73 @@ public sealed class MessageRepositoryTests : IDisposable
             9999, T0, TestContext.Current.CancellationToken));
     }
 
+    // ---- operator sessions (SPEC 9.4, 10.2) ----
+
+    [Fact]
+    public async Task Tagged_traffic_is_gathered_by_its_tag()
+    {
+        // The export in SPEC 10.2. It reads across agents, which is why it is an operator
+        // operation and must never reach an agent's tool set.
+        var tagged1 = await Append(payload: """{"n":1}""", type: MessageType.Notify,
+            exchangeId: null, sessionTag: "claude-v-gpt-run3");
+        await Append(payload: """{"n":2}""", type: MessageType.Notify, exchangeId: null);
+        var tagged2 = await Append(payload: """{"n":3}""", type: MessageType.Notify,
+            exchangeId: null, sessionTag: "claude-v-gpt-run3");
+        await Append(payload: """{"n":4}""", type: MessageType.Notify, exchangeId: null,
+            sessionTag: "claude-v-gpt-run4");
+
+        var session = await _messages.GetBySessionAsync(
+            "claude-v-gpt-run3", TestContext.Current.CancellationToken);
+
+        Assert.Equal([tagged1.Message.Id, tagged2.Message.Id], session.Select(m => m.Id));
+        Assert.All(session, m => Assert.True(m.IsTagged));
+    }
+
+    [Fact]
+    public async Task Untagged_traffic_carries_no_tag()
+    {
+        // The ordinary case. Untagged traffic is ephemeral, which is the behaviour SPEC 16
+        // describes; tagging is the deliberate exception.
+        var outcome = await Append();
+
+        Assert.Null(outcome.Message.SessionTag);
+        Assert.False(outcome.Message.IsTagged);
+        Assert.Empty(await _messages.GetBySessionAsync(
+            "never-used", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task The_tag_is_not_part_of_deduplication_identity()
+    {
+        // Hashing the tag would mean the same message sent inside and outside a session
+        // counted as two, so starting a recording would quietly disable deduplication for its
+        // duration. The tag is operator metadata, not message content.
+        var first = await Append();
+        var second = await Append(at: T0.AddSeconds(10), sessionTag: "run1");
+
+        Assert.True(first.Stored);
+        Assert.False(second.Stored);
+    }
+
+    [Theory]
+    [InlineData("run 3")]
+    [InlineData("run`3")]
+    [InlineData("")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public async Task A_tag_that_could_travel_badly_is_rejected(string tag)
+    {
+        // A tag names an export and is likely to reach a filename, a report heading or a
+        // console. Same restriction as responder_model, for a related reason.
+        await Assert.ThrowsAsync<SqliteException>(() => Append(sessionTag: tag));
+    }
+
+    [Fact]
+    public async Task Exporting_without_a_tag_is_rejected()
+    {
+        await Assert.ThrowsAnyAsync<ArgumentException>(
+            () => _messages.GetBySessionAsync("", TestContext.Current.CancellationToken));
+    }
+
     // ---- replay ----
 
     [Fact]
@@ -337,6 +406,7 @@ public sealed class MessageRepositoryTests : IDisposable
         await cancelled.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => _messages.AppendAsync(
-            _exchangeId, MessageType.Question, Orders, Billing, Model, Payload, T0, cancelled.Token));
+            _exchangeId, MessageType.Question, Orders, Billing, Model, Payload, T0,
+            cancellationToken: cancelled.Token));
     }
 }

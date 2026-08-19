@@ -112,6 +112,10 @@ CREATE TABLE messages (
     payload_json    TEXT    NOT NULL,
     -- Deduplication identity and window. See SPEC.md section 13.1.
     content_hash    TEXT    NOT NULL,
+    -- Operator tag grouping traffic for export, and marking it as worth keeping. NULL is the
+    -- normal case: ordinary traffic is ephemeral and pruned once operationally spent. A tag
+    -- is set only by the operator, never by an agent — see SPEC.md sections 9.4 and 10.2.
+    session_tag     TEXT,
     created_utc     TEXT    NOT NULL,
     -- Derived, never supplied. ux_message_dedup below is only as good as the value it
     -- constrains: a bucket that does not match created_utc silently disables deduplication
@@ -174,7 +178,15 @@ CREATE TABLE messages (
     -- index — so a single malformed timestamp does not merely mis-bucket one row, it removes
     -- that row from ux_message_dedup altogether. Byte-identical messages would then both
     -- store, silently, with the index still reporting no conflict.
-    CHECK (unixepoch(created_utc) IS NOT NULL)
+    CHECK (unixepoch(created_utc) IS NOT NULL),
+
+    -- Same character set as responder_model, and for a related reason. A tag names an export
+    -- and is likely to reach a filename, a report heading, or a console; the restriction keeps
+    -- newlines and path separators out of a value that travels into those places. Bounded so a
+    -- tag cannot become a payload in its own right.
+    CHECK (session_tag IS NULL
+           OR (length(session_tag) BETWEEN 1 AND 64
+               AND session_tag NOT GLOB '*[^a-zA-Z0-9._:/-]*'))
 ) STRICT;
 
 -- Deduplication backstop. SPEC.md section 13.1 requires byte-identical messages to be
@@ -185,6 +197,12 @@ CREATE TABLE messages (
 -- The exact rule needs the broker; this needs nothing, which is the point.
 CREATE UNIQUE INDEX ux_message_dedup
     ON messages (content_hash, dedup_bucket);
+
+-- Export and retention both scan by tag: export gathers a session, and the retention sweep
+-- must exclude tagged rows from pruning. Partial, because the overwhelming majority of rows
+-- are untagged and indexing those would cost space to record an absence.
+CREATE INDEX ix_message_session
+    ON messages (session_tag, id) WHERE session_tag IS NOT NULL;
 
 CREATE INDEX ix_inbox
     ON messages (to_agent, id) WHERE delivered_utc IS NULL;
