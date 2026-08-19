@@ -132,6 +132,114 @@ public sealed class AgentRepositoryTests : IDisposable
         Assert.Equal(AgentStatus.Offline, (await Load(Orders)).Status);
     }
 
+    // ---- credentials ----
+
+    [Fact]
+    public async Task Credentials_round_trip_by_name()
+    {
+        await Register(Orders);
+
+        await _agents.SetCredentialAsync(Orders,
+            new AgentCredential("api_key", "env:VENDOR_API_KEY"), TestContext.Current.CancellationToken);
+        await _agents.SetCredentialAsync(Orders,
+            new AgentCredential("org_token", "keychain:parley/org"), TestContext.Current.CancellationToken);
+
+        var creds = await _agents.GetCredentialsAsync(Orders, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            [new AgentCredential("api_key", "env:VENDOR_API_KEY"),
+             new AgentCredential("org_token", "keychain:parley/org")],
+            creds);
+    }
+
+    [Fact]
+    public async Task Setting_a_credential_twice_replaces_the_reference()
+    {
+        // Rotation moves the secret in its store; if it also moved store, the reference has to
+        // follow. Two rows for one name would leave which one wins undefined.
+        await Register(Orders);
+
+        await _agents.SetCredentialAsync(Orders,
+            new AgentCredential("api_key", "env:OLD"), TestContext.Current.CancellationToken);
+        await _agents.SetCredentialAsync(Orders,
+            new AgentCredential("api_key", "keychain:parley/new"), TestContext.Current.CancellationToken);
+
+        var creds = await _agents.GetCredentialsAsync(Orders, TestContext.Current.CancellationToken);
+
+        Assert.Equal("keychain:parley/new", Assert.Single(creds).Reference);
+    }
+
+    [Fact]
+    public async Task A_secret_value_cannot_be_stored_as_a_reference()
+    {
+        // The guarantee SPEC 12 rests on. The schema refuses, so it does not depend on every
+        // caller remembering to.
+        await Register(Orders);
+
+        await Assert.ThrowsAsync<SqliteException>(() => _agents.SetCredentialAsync(
+            Orders, new AgentCredential("api_key", "sk-live-1a2b3c4d"),
+            TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Removing_a_credential_reports_whether_there_was_one()
+    {
+        await Register(Orders);
+        await _agents.SetCredentialAsync(Orders,
+            new AgentCredential("api_key", "env:VENDOR_API_KEY"), TestContext.Current.CancellationToken);
+
+        Assert.True(await _agents.RemoveCredentialAsync(
+            Orders, "api_key", TestContext.Current.CancellationToken));
+        Assert.False(await _agents.RemoveCredentialAsync(
+            Orders, "api_key", TestContext.Current.CancellationToken));
+        Assert.Empty(await _agents.GetCredentialsAsync(Orders, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Credentials_are_scoped_to_their_agent()
+    {
+        await Register(Orders);
+        await Register(Billing);
+        await _agents.SetCredentialAsync(Orders,
+            new AgentCredential("api_key", "env:ORDERS_KEY"), TestContext.Current.CancellationToken);
+
+        Assert.Empty(await _agents.GetCredentialsAsync(Billing, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Reloading_a_manifest_leaves_credentials_alone()
+    {
+        // Upsert carries configuration. Credentials are not configuration in that sense: they
+        // are registered once, and a manifest reload that dropped them would break invocation
+        // for every agent on the next start.
+        await Register(Orders);
+        await _agents.SetCredentialAsync(Orders,
+            new AgentCredential("api_key", "env:VENDOR_API_KEY"), TestContext.Current.CancellationToken);
+
+        await Register(Orders);
+
+        Assert.Single(await _agents.GetCredentialsAsync(Orders, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Adapter_configuration_round_trips()
+    {
+        const string config = """{"model":"claude-opus-5","timeout_ms":30000}""";
+
+        await _agents.UpsertAsync(
+            new AgentRecord(Orders, "test", AgentTier.Headless, null, null, config, null, AgentStatus.Registered),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(config, (await Load(Orders)).AdapterConfig);
+    }
+
+    [Fact]
+    public async Task A_null_credential_is_rejected()
+    {
+        await Assert.ThrowsAsync<ArgumentNullException>(() => _agents.SetCredentialAsync(
+            Orders, null!, TestContext.Current.CancellationToken));
+    }
+
     [Fact]
     public async Task Agents_are_listed_in_name_order()
     {

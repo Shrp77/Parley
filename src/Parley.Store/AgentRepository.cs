@@ -94,11 +94,12 @@ public enum AgentStatus
 /// An adapter-specific handle for resuming a previous session, or <see langword="null"/> if
 /// none exists yet. Mutable: reassigned whenever the agent is spawned or resumed.
 /// </param>
-/// <param name="CredentialRef">
-/// A pointer such as <c>env:VENDOR_API_KEY</c> or <c>keychain:parley/billing</c>, resolved at
-/// invocation time and passed into the child process environment. Never a secret value, and
-/// never logged or persisted after resolution — which is what makes the registry manifest
-/// safe to commit.
+/// <param name="AdapterConfig">
+/// Whatever the named adapter needs to invoke this agent — a model identifier, an endpoint, a
+/// timeout, a notification channel — as a JSON document, or <see langword="null"/> if it needs
+/// nothing. Opaque to the broker by design: it is stored and handed back at invocation, and
+/// only the adapter interprets it. Credentials do not belong here; see
+/// <see cref="AgentRepository.SetCredentialAsync"/>.
 /// </param>
 /// <param name="LastSeenUtc">
 /// When the agent last communicated, or <see langword="null"/> if it never has. Used to
@@ -106,15 +107,39 @@ public enum AgentStatus
 /// code that moved while it was away.
 /// </param>
 /// <param name="Status">The agent's current registration and liveness state.</param>
+/// <remarks>
+/// Credentials are deliberately not a field here, and should not become one. This record is
+/// what <see cref="AgentRepository.UpsertAsync"/> writes from a manifest reload, and anything
+/// carried on it is overwritten by that reload. Credentials are registered once and must
+/// survive it — folding them in would mean a reload silently dropped every agent's
+/// references and broke invocation on the next start. They are read and written separately,
+/// through <see cref="AgentRepository.GetCredentialsAsync"/> and
+/// <see cref="AgentRepository.SetCredentialAsync"/>, so that the two lifecycles cannot be
+/// confused by accident.
+/// </remarks>
 public sealed record AgentRecord(
     AgentName Name,
     string Adapter,
     AgentTier Tier,
     string? Workspace,
     string? SessionRef,
-    string? CredentialRef,
+    string? AdapterConfig,
     DateTimeOffset? LastSeenUtc,
     AgentStatus Status);
+
+/// <summary>
+/// One credential an adapter needs, as a reference rather than a value.
+/// </summary>
+/// <param name="Name">
+/// The adapter's name for it — <c>api_key</c>, <c>org_token</c> — matching what its
+/// descriptor declared. Not the secret's name in whatever store holds it.
+/// </param>
+/// <param name="Reference">
+/// Where the secret lives: <c>env:</c>, <c>keychain:</c> or <c>file:</c>. The scheme is part
+/// of the stored value, so resolution follows what was recorded rather than probing whatever
+/// the machine happens to offer today.
+/// </param>
+public sealed record AgentCredential(string Name, string Reference);
 
 /// <summary>
 /// Reads and writes the agent registry.
@@ -147,7 +172,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                        tier           AS Tier,
                        workspace      AS Workspace,
                        session_ref    AS SessionRef,
-                       credential_ref AS CredentialRef,
+                       adapter_config AS AdapterConfig,
                        last_seen_utc  AS LastSeenUtc,
                        status         AS Status
                 FROM agents
@@ -167,7 +192,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <exception cref="ArgumentNullException"><paramref name="agent"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// On conflict this updates configuration only — adapter, tier, workspace, and credential
-    /// reference. Session handle, liveness, and last-seen timestamp are deliberately left
+    /// configuration. Session handle, liveness, and last-seen timestamp are deliberately left
     /// alone, so reloading a manifest cannot sever a live agent's session or reset the window
     /// used to compute its change summary. Use <see cref="MarkLiveAsync"/> and
     /// <see cref="MarkAllOfflineAsync"/> for those.
@@ -179,15 +204,15 @@ public sealed class AgentRepository(SqliteConnection connection)
         return await _connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                INSERT INTO agents (name, adapter, tier, workspace, session_ref, credential_ref,
+                INSERT INTO agents (name, adapter, tier, workspace, session_ref, adapter_config,
                                     last_seen_utc, status)
-                VALUES (@Name, @Adapter, @Tier, @Workspace, @SessionRef, @CredentialRef,
+                VALUES (@Name, @Adapter, @Tier, @Workspace, @SessionRef, @AdapterConfig,
                         @LastSeenUtc, @Status)
                 ON CONFLICT(name) DO UPDATE SET
                     adapter        = excluded.adapter,
                     tier           = excluded.tier,
                     workspace      = excluded.workspace,
-                    credential_ref = excluded.credential_ref;
+                    adapter_config = excluded.adapter_config;
                 """,
                 new
                 {
@@ -196,7 +221,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                     Tier = FormatTier(agent.Tier),
                     agent.Workspace,
                     agent.SessionRef,
-                    agent.CredentialRef,
+                    agent.AdapterConfig,
                     LastSeenUtc = agent.LastSeenUtc is { } t ? ExchangeRow.FormatTimestamp(t) : null,
                     Status = FormatStatus(agent.Status)
                 },
@@ -306,6 +331,106 @@ public sealed class AgentRepository(SqliteConnection connection)
                 new { Name = name.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
+    /// <summary>
+    /// Records where one of an agent's secrets lives, replacing any reference of that name.
+    /// </summary>
+    /// <param name="agent">The agent the credential belongs to.</param>
+    /// <param name="credential">The credential's name and reference.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The number of rows affected.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="credential"/> is <see langword="null"/>.</exception>
+    /// <exception cref="SqliteException">
+    /// The reference is not one of the recognised schemes, or the agent is not registered.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// Takes a reference, never a secret, and there is deliberately no overload that takes
+    /// one. The broker resolves references at invocation and neither persists nor logs what
+    /// it resolved; a method here accepting a value would make SPEC.md §12's claim — that a
+    /// manifest is safe to commit — depend on nobody calling it.
+    /// </para>
+    /// <para>
+    /// Which store a reference points at is decided once, when the agent is registered, and
+    /// recorded in the scheme. It is not re-decided at invocation: a store appearing on the
+    /// machine later does not silently take over, and one disappearing produces a resolution
+    /// failure rather than a quiet fallback to a stale copy somewhere else.
+    /// </para>
+    /// </remarks>
+    public async Task<int> SetCredentialAsync(
+        AgentName agent,
+        AgentCredential credential,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(credential);
+
+        return await _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                INSERT INTO agent_credentials (agent, name, reference)
+                VALUES (@Agent, @Name, @Reference)
+                ON CONFLICT(agent, name) DO UPDATE SET reference = excluded.reference;
+                """,
+                new { Agent = agent.Value, credential.Name, credential.Reference },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Loads every credential reference registered for an agent, ordered by name.
+    /// </summary>
+    /// <param name="agent">The agent to load.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The references, which the caller resolves. Empty if the agent needs none.</returns>
+    /// <remarks>
+    /// Returns references, so this is safe to log and safe to show. Resolving them is the
+    /// broker's job at invocation, and what comes back from that resolution is not.
+    /// </remarks>
+    public async Task<IReadOnlyList<AgentCredential>> GetCredentialsAsync(
+        AgentName agent,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await _connection.QueryAsync<AgentCredential>(
+            new CommandDefinition(
+                """
+                SELECT name AS Name, reference AS Reference
+                FROM agent_credentials
+                WHERE agent = @Agent
+                ORDER BY name;
+                """,
+                new { Agent = agent.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return [.. rows];
+    }
+
+    /// <summary>
+    /// Removes one of an agent's credential references.
+    /// </summary>
+    /// <param name="agent">The agent the credential belongs to.</param>
+    /// <param name="name">The adapter's name for the credential.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>
+    /// <see langword="true"/> if a reference was removed; <see langword="false"/> if there
+    /// was none by that name.
+    /// </returns>
+    /// <remarks>
+    /// Removes the pointer, not the secret. Whatever store holds the value is untouched,
+    /// because the broker did not put it there and deleting from someone's keychain on the
+    /// strength of a registry edit is not a decision this layer gets to make.
+    /// </remarks>
+    public async Task<bool> RemoveCredentialAsync(
+        AgentName agent,
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        var affected = await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "DELETE FROM agent_credentials WHERE agent = @Agent AND name = @Name;",
+                new { Agent = agent.Value, Name = name },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return affected == 1;
+    }
+
     private static string FormatTier(AgentTier tier) => tier switch
     {
         AgentTier.Full => "full",
@@ -336,7 +461,7 @@ public sealed class AgentRepository(SqliteConnection connection)
 
         public string? SessionRef { get; init; }
 
-        public string? CredentialRef { get; init; }
+        public string? AdapterConfig { get; init; }
 
         public string? LastSeenUtc { get; init; }
 
@@ -354,7 +479,7 @@ public sealed class AgentRepository(SqliteConnection connection)
             },
             Workspace,
             SessionRef,
-            CredentialRef,
+            AdapterConfig,
             LastSeenUtc is null ? null : ExchangeRow.ParseTimestamp(LastSeenUtc),
             Status switch
             {

@@ -236,19 +236,18 @@ public sealed class SchemaIntegrityTests : IDisposable
             ("$name", "b\u001Fc")));
     }
 
-    // ---- credential_ref holds pointers, never secrets ----
+    // ---- credentials are pointers, never secrets ----
 
     [Theory]
     [InlineData("env:VENDOR_API_KEY")]
     [InlineData("keychain:parley/billing")]
     [InlineData("file:/etc/parley/billing.token")]
-    [InlineData(null)]
-    public void Recognised_credential_references_are_accepted(string? reference)
+    public void Recognised_credential_references_are_accepted(string reference)
     {
         Execute(
             """
-            INSERT INTO agents (name, adapter, tier, status, credential_ref)
-            VALUES ('shipping', 'test', 'headless', 'registered', $ref);
+            INSERT INTO agent_credentials (agent, name, reference)
+            VALUES ('billing', 'api_key', $ref);
             """,
             ("$ref", reference));
     }
@@ -260,12 +259,116 @@ public sealed class SchemaIntegrityTests : IDisposable
     [InlineData("")]
     public void Literal_credential_values_are_rejected(string reference)
     {
-        Assert.Throws<SqliteException>(() => Execute(
+        // Asserting on the message, because this insert has other constraints to satisfy and a
+        // bare Throws would pass just as happily if the column were renamed out from under it.
+        var ex = Assert.Throws<SqliteException>(() => Execute(
             """
-            INSERT INTO agents (name, adapter, tier, status, credential_ref)
-            VALUES ('shipping', 'test', 'headless', 'registered', $ref);
+            INSERT INTO agent_credentials (agent, name, reference)
+            VALUES ('billing', 'api_key', $ref);
             """,
             ("$ref", reference)));
+
+        Assert.Contains("CHECK", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void An_agent_may_hold_several_credentials()
+    {
+        // The reason this is a table rather than a column. An adapter needing an API key and an
+        // organisation token has two, each addressable by the name its descriptor used.
+        Execute(
+            """
+            INSERT INTO agent_credentials (agent, name, reference) VALUES
+                ('billing', 'api_key',   'env:VENDOR_API_KEY'),
+                ('billing', 'org_token', 'keychain:parley/billing-org');
+            """);
+    }
+
+    [Fact]
+    public void One_credential_per_name_per_agent()
+    {
+        Execute("""
+            INSERT INTO agent_credentials (agent, name, reference)
+            VALUES ('billing', 'api_key', 'env:ONE');
+            """);
+
+        var ex = Assert.Throws<SqliteException>(() => Execute("""
+            INSERT INTO agent_credentials (agent, name, reference)
+            VALUES ('billing', 'api_key', 'env:TWO');
+            """));
+
+        Assert.Contains("UNIQUE", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void A_credential_for_an_unregistered_agent_is_rejected()
+    {
+        var ex = Assert.Throws<SqliteException>(() => Execute("""
+            INSERT INTO agent_credentials (agent, name, reference)
+            VALUES ('shipping', 'api_key', 'env:VENDOR_API_KEY');
+            """));
+
+        Assert.Contains("FOREIGN KEY", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Removing_an_agent_removes_its_credential_pointers()
+    {
+        // Retirement removes an agent; without the cascade it would fail on a bare foreign key
+        // error that does not say which table objected. What goes is the pointer — the secret
+        // lives in a store this schema never wrote to and does not delete from.
+        Execute("""
+            INSERT INTO agent_credentials (agent, name, reference)
+            VALUES ('billing', 'api_key', 'env:VENDOR_API_KEY');
+            """);
+
+        Execute("DELETE FROM agents WHERE name = 'billing';");
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT count(*) FROM agent_credentials;";
+        Assert.Equal(0L, Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture));
+    }
+
+    // ---- adapter_config is free-form, because it has no invariant ----
+
+    [Theory]
+    [InlineData("""{"model":"claude-opus-5","endpoint":"https://example.invalid"}""")]
+    [InlineData("""{"timeout_ms":30000}""")]
+    [InlineData("{}")]
+    [InlineData(null)]
+    public void Adapter_configuration_is_accepted_as_json(string? config)
+    {
+        Execute(
+            """
+            INSERT INTO agents (name, adapter, tier, status, adapter_config)
+            VALUES ('shipping', 'test', 'headless', 'registered', $config);
+            """,
+            ("$config", config));
+    }
+
+    [Fact]
+    public void Adapter_configuration_must_be_json()
+    {
+        // The column is named _config and readers parse it as such. Storing prose here would
+        // fail at invocation, in a different process, long after the mistake was made.
+        Assert.Throws<SqliteException>(() => Execute(
+            """
+            INSERT INTO agents (name, adapter, tier, status, adapter_config)
+            VALUES ('shipping', 'test', 'headless', 'registered', 'model=claude-opus-5');
+            """));
+    }
+
+    [Fact]
+    public void Adapter_configuration_is_capped()
+    {
+        // A handful of settings, not a payload. An unbounded blob beside a constrained
+        // credentials table would be the obvious place to hide the thing the table forbids.
+        Assert.Throws<SqliteException>(() => Execute(
+            """
+            INSERT INTO agents (name, adapter, tier, status, adapter_config)
+            VALUES ('shipping', 'test', 'headless', 'registered', $config);
+            """,
+            ("$config", $$"""{"note":"{{new string('x', 4000)}}"}""")));
     }
 
     // ---- message integrity ----

@@ -359,19 +359,29 @@ CREATE TABLE agents (
   tier            TEXT    NOT NULL,        -- full | pull | headless
   workspace       TEXT,
   session_ref     TEXT,                    -- adapter-specific resume handle
-  credential_ref  TEXT,                    -- pointer, never a secret (see §12)
+  adapter_config  TEXT,                    -- opaque to the broker (see §12)
   last_seen_utc   TEXT,
   status          TEXT    NOT NULL,        -- registered | live | offline | unreachable
 
-  CHECK (credential_ref IS NULL
-         OR credential_ref LIKE 'env:_%'
-         OR credential_ref LIKE 'keychain:_%'
-         OR credential_ref LIKE 'file:_%'),
+  CHECK (adapter_config IS NULL
+         OR (json_valid(adapter_config) AND length(adapter_config) <= 4000)),
 
   -- mirrors the AgentName grammar; see §9.3
   CHECK (length(name) BETWEEN 1 AND 32
          AND name GLOB '[a-z]*'
          AND name NOT GLOB '*[^a-z0-9-]*')
+) STRICT;
+
+CREATE TABLE agent_credentials (
+  agent     TEXT NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  name      TEXT NOT NULL,                -- the adapter's name for it: api_key, org_token
+  reference TEXT NOT NULL,
+
+  PRIMARY KEY (agent, name),
+  CHECK (length(name) BETWEEN 1 AND 64 AND name NOT GLOB '*[^a-z0-9_]*'),
+  CHECK (reference LIKE 'env:_%'
+         OR reference LIKE 'keychain:_%'
+         OR reference LIKE 'file:_%')
 ) STRICT;
 
 CREATE TABLE exchanges (
@@ -453,9 +463,16 @@ survives bugs in the broker:
 - **A duplicate cannot be stored twice in one window.** The unique index on
   `(content_hash, dedup_bucket)` in §13. The broker also checks the exact window, but the
   index is what survives a broker that forgets to.
-- **`credential_ref` is a pointer.** §12 claims the manifest is safe to commit; restricting
-  the column to known schemes makes a pasted secret impossible rather than discouraged. It
-  prevents the careless case, not a determined one.
+- **Credentials are pointers.** §12 claims a manifest is safe to commit; restricting
+  `agent_credentials.reference` to known schemes makes a pasted secret impossible rather than
+  discouraged. It prevents the careless case, not a determined one.
+
+  A row per credential rather than a JSON object on `agents`, because the constraint has to
+  reach every value. SQLite prohibits subqueries in `CHECK` constraints, and reaching inside a
+  JSON document needs `json_each`, which is one — so a JSON column could assert only that it
+  was JSON, never that its contents were references. A trigger could do it; a row per
+  reference gets the same guarantee with the plain `CHECK` used everywhere else here, and is
+  plural by construction.
 
 **Key on agent name, not session ID.** Session IDs churn on every restart; repository
 identity does not. This is what makes orphan recovery and lazy spawning work.
@@ -646,7 +663,7 @@ Headless agents receive the rules as a prompt preamble instead — weaker, and p
 decay over long runs. This is an accepted limitation. Measure it through the
 `out_of_scope` rate and clarify-depth telemetry in §14.
 
-## 12. Credentials
+## 12. Registration and credentials
 
 **The broker never stores secrets.** The registry holds *references*, which the
 broker resolves at invocation time, passes into the child process environment, and
@@ -657,15 +674,21 @@ agents:
   - name: orders
     adapter: <vendor-cli>
     workspace: /src/acme-orders
-    # no credential_ref — this agent manages its own authentication
+    # no credentials — this agent manages its own authentication
 
   - name: inventory
     adapter: <vendor-api>
-    credential_ref: env:VENDOR_API_KEY
+    config:
+      model: <model-identifier>
+      endpoint: https://api.example.invalid
+    credentials:
+      api_key: env:VENDOR_API_KEY
 
   - name: billing
     adapter: <vendor-api>
-    credential_ref: keychain:parley/billing
+    credentials:
+      api_key:   keychain:parley/billing
+      org_token: keychain:parley/billing-org
 ```
 
 Supported reference schemes: `env:`, `keychain:` (OS credential store), `file:`
@@ -681,6 +704,78 @@ Rationale:
    become the broker's support burden.
 
 Because the manifest holds only references, it is safe to commit.
+
+### 12.1 What an adapter needs, and who decides
+
+`config` is whatever the named adapter needs in order to invoke this agent: a model
+identifier, an endpoint, a timeout, a notification channel for a human responder. The
+broker stores it and hands it back at invocation, and **never interprets it**. That
+opacity is what makes the registry vendor-agnostic in structure rather than in intent —
+the alternative is a fixed set of columns that quietly assumes every responder is a
+directory on disk, which three of the five responder kinds in §11.2 are not.
+
+An adapter therefore **declares what it needs**: for each parameter, a name, whether it
+is required, and whether it is a secret. Registration collects exactly that. The broker
+learns nothing about any vendor, and a new adapter needs no schema change.
+
+Credential parameter names are lowercase, digits and underscore, up to 64 characters —
+`api_key`, `org_token`. The restriction is small but worth stating, because an adapter
+declaring `apiKey` is refused at registration by a constraint rather than at review by a
+person, and the author deserves to know that before writing the descriptor rather than
+after.
+
+`config` is free-form because it carries no invariant. Credentials are the opposite case,
+which is why they are not in it: a single constrained place for secrets, and a flow that
+never offers to put one anywhere else, is a stronger guarantee than any check applied
+after the fact.
+
+### 12.2 Registration is a flow, and it chooses a store
+
+Registration is interactive. It reads the adapter's declaration, asks for each parameter,
+takes any secret without echoing it, writes that secret to a credential store, and emits
+the manifest entry above — carrying the *reference* it just created, never the value. The
+flow does not replace the manifest; it produces one.
+
+**Which store depends on how the broker will run, not on how the flow is running.** Those
+are different processes in different contexts, and only the first matters:
+
+| Platform | Store | Constraint |
+|---|---|---|
+| Windows | Credential Manager | Per-user. A service running as LocalSystem has a different store from the operator who registered. |
+| macOS | Keychain | A login keychain is not unlocked in a headless launchd context. |
+| Linux | Secret Service, else `file:` | The D-Bus session bus exists for a desktop login and not for a daemon. |
+
+The failing sequence is registering at a desktop and then daemonising: the secret goes
+somewhere the service cannot read, and the first symptom is an agent that will not spawn.
+So the flow **asks** which context the broker will run in, and **defaults to the answer
+that resolves everywhere**. An operator accepting the default gets `file:` with owner-only
+permissions; choosing an OS store is a deliberate act by someone who knows their broker
+has access to it. The weaker protection is never chosen silently, and the stronger one is
+never chosen on the flow's behalf.
+
+### 12.3 Resolution follows the reference, and nothing else
+
+The scheme is part of the stored value, so resolution is deterministic: `file:` means read
+that file. The broker never probes for whichever store the machine happens to offer today.
+
+Two consequences, both deliberate:
+
+- A store installed **after** registration changes nothing. The reference still says what
+  it said, and still resolves. There is no moment where the broker notices a better store
+  and finds it empty.
+- A store that becomes **unavailable** produces a resolution failure, not a silent
+  fallback to a stale copy somewhere else. Falling back would mean two secrets with no
+  rule for which is authoritative, and a rotated key ignored because the other answered
+  first.
+
+Moving a secret between stores is therefore an explicit operation, never automatic. An
+automatic migration would rewrite an operator-owned manifest, and — because Secret Service
+availability depends on launch context rather than installation — could strand itself on
+the next headless boot.
+
+Removing a credential from the registry removes the *pointer*. Whatever store holds the
+value is untouched: the broker did not put it there in the general case, and deleting from
+someone's keychain on the strength of a registry edit is not its decision.
 
 ## 13. Trust boundary
 
@@ -930,7 +1025,12 @@ Cheap to collect, disproportionately useful:
 7. What becomes of an orphan that is never resumed under a `never` policy? Retaining
    it forever holds a claim on nothing, since orphans release their pair slot, but
    discarding it on a timer loses the question that orphaning exists to preserve.
-8. Under `always`, an orphan releases its pair slot, so the asker may re-ask and open a
+8. Which credential-store implementation to depend on. Native access means a package,
+   hand-rolled P/Invoke across three platforms, or shelling out to `security`, `cmdkey`
+   and `secret-tool`. §9 argues against a schema-versioning dependency on the grounds
+   that the broker ships as a single self-contained binary; this is a larger commitment
+   than that one, and `file:` works everywhere without it.
+9. Under `always`, an orphan releases its pair slot, so the asker may re-ask and open a
    second exchange on that pair before the original is replayed. Which one survives is
    undecided: the replay preserves clarify depth and history, the re-ask reflects
    current intent, and resolving it by discarding the orphan lets an agent reset the
