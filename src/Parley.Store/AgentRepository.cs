@@ -52,7 +52,28 @@ public enum AgentStatus
     /// Previously live, now disconnected. Its open exchanges are orphaned and its pair slots
     /// released.
     /// </summary>
-    Offline = 2
+    Offline = 2,
+
+    /// <summary>
+    /// Spawning was attempted and failed repeatedly, so the agent is not worth routing to.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Deliberately not a worse <see cref="Offline"/>. Offline is the ordinary resting state
+    /// of a lazily spawned agent between questions, and must stay routable — refusing traffic
+    /// to an offline agent would refuse the very traffic meant to wake it. This says something
+    /// else: the broker tried, and there was nothing there.
+    /// </para>
+    /// <para>
+    /// The usual cause is a repository that was deleted, moved, or renamed while its agent was
+    /// still registered. Questions to such an agent are refused at admission, because
+    /// accepting them costs a full TTL each and tells the asker nothing. Resolving what is
+    /// already outstanding is the operator's decision, not the broker's: a deleted repository
+    /// is often temporary, and force-closing on the broker's initiative would discard real
+    /// questions to save a human a judgement they are better placed to make.
+    /// </para>
+    /// </remarks>
+    Unreachable = 3
 }
 
 /// <summary>
@@ -188,9 +209,19 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>The number of agents updated.</returns>
     /// <remarks>
+    /// <para>
     /// Called once during broker start-up. No adapter can still be attached across a process
     /// restart, so recorded liveness from the previous run is stale by definition and must be
     /// cleared before any of it is trusted.
+    /// </para>
+    /// <para>
+    /// This deliberately resets <see cref="AgentStatus.Unreachable"/> too, and that is what
+    /// makes the state recoverable rather than a one-way door. Nothing spawns an agent the
+    /// broker refuses to route to, so an unreachable agent can never demonstrate that it is
+    /// back; clearing the mark at start-up gives it that chance. Carrying the mark across a
+    /// restart would preserve a conclusion the restart may have invalidated, since re-cloning
+    /// a repository is exactly the kind of thing that happens between runs.
+    /// </para>
     /// </remarks>
     public async Task<int> MarkAllOfflineAsync(CancellationToken cancellationToken = default) =>
         await _connection.ExecuteAsync(
@@ -235,6 +266,46 @@ public sealed class AgentRepository(SqliteConnection connection)
                 },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
+    /// <summary>
+    /// Records that an agent could not be spawned and should not be routed to.
+    /// </summary>
+    /// <param name="name">The agent to mark.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The number of rows affected: one on success, zero if the agent is unknown.</returns>
+    /// <remarks>
+    /// <para>
+    /// Called by the broker after a threshold of consecutive failed spawns, not after the
+    /// first: a single failure is as likely to be a slow clone or a transient lock as a
+    /// deleted repository. How many failures constitute a threshold is broker policy, and the
+    /// count itself is deliberately not stored — a restart should retry, because a restart is
+    /// often precisely when the situation has changed.
+    /// </para>
+    /// <para>
+    /// This does not resolve the agent's outstanding exchanges. It stops new ones being
+    /// admitted and makes the state visible; deciding what becomes of the questions already
+    /// asked is the operator's, through retirement. See SPEC.md §14.
+    /// </para>
+    /// <para>
+    /// The session handle is left intact, so an agent that reappears can resume rather than
+    /// start cold.
+    /// </para>
+    /// <para>
+    /// This is a routing kill-switch and belongs to the broker alone. §10.1 exposes nothing
+    /// like it, and nothing like it may be added: an agent able to mark a peer unreachable
+    /// could silence it — every question to that peer refused, indefinitely, on one agent's
+    /// say-so. No agent has authority over another, and this is one of the places that would
+    /// be easy to give away by accident.
+    /// </para>
+    /// </remarks>
+    public async Task<int> MarkUnreachableAsync(
+        AgentName name,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE agents SET status = 'unreachable' WHERE name = @Name;",
+                new { Name = name.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
     private static string FormatTier(AgentTier tier) => tier switch
     {
         AgentTier.Full => "full",
@@ -248,6 +319,7 @@ public sealed class AgentRepository(SqliteConnection connection)
         AgentStatus.Registered => "registered",
         AgentStatus.Live => "live",
         AgentStatus.Offline => "offline",
+        AgentStatus.Unreachable => "unreachable",
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
     };
 
@@ -289,6 +361,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                 "registered" => AgentStatus.Registered,
                 "live" => AgentStatus.Live,
                 "offline" => AgentStatus.Offline,
+                "unreachable" => AgentStatus.Unreachable,
                 _ => throw new InvalidOperationException($"Unrecognised status '{Status}'.")
             });
     }

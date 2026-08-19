@@ -123,6 +123,77 @@ public sealed class ExchangeRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task A_question_to_an_unreachable_agent_is_refused_immediately()
+    {
+        // The failure this exists for: a repository is deleted while its agent is still
+        // registered. The agent row survives, so the foreign key is satisfied and the pair slot
+        // is free — every other admission check passes. Without this the question is accepted,
+        // waits a full inactivity window, orphans unanswered, and costs the same again on the
+        // next attempt, forever, while nobody learns why.
+        var agents = new AgentRepository(_connection);
+        Assert.Equal(1, await agents.MarkUnreachableAsync(
+            Billing, TestContext.Current.CancellationToken));
+
+        var outcome = await _exchanges.TryOpenAsync(
+            Orders, Billing, T0, Ttl, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(OpenRejection.AnswererUnreachable, outcome.Rejection);
+        Assert.False(outcome.Succeeded);
+
+        // The one refusal that hands back no work, because there is none to hand back.
+        Assert.Null(outcome.Exchange);
+        Assert.Null(outcome.ReciprocalDebt);
+        Assert.Null(outcome.Blocking);
+        Assert.Empty(outcome.CyclePath);
+
+        // And nothing was written, so no slot is consumed by a question that cannot land.
+        Assert.Empty(await _exchanges.GetOpenAsync(
+            cancellationToken: TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task An_offline_agent_is_still_routable()
+    {
+        // Offline is the ordinary resting state of a lazily spawned agent, not a fault.
+        // Refusing here would refuse the very traffic meant to wake it.
+        var agents = new AgentRepository(_connection);
+        Assert.Equal(3, await agents.MarkAllOfflineAsync(TestContext.Current.CancellationToken));
+
+        var outcome = await _exchanges.TryOpenAsync(
+            Orders, Billing, T0, Ttl, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.True(outcome.Succeeded);
+    }
+
+    [Fact]
+    public async Task An_agent_that_comes_back_is_routable_again()
+    {
+        var agents = new AgentRepository(_connection);
+        await agents.MarkUnreachableAsync(Billing, TestContext.Current.CancellationToken);
+        await agents.MarkLiveAsync(Billing, null, T0, TestContext.Current.CancellationToken);
+
+        var outcome = await _exchanges.TryOpenAsync(
+            Orders, Billing, T0, Ttl, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.True(outcome.Succeeded);
+    }
+
+    [Fact]
+    public async Task An_unreachable_asker_may_still_ask()
+    {
+        // The state describes whether the broker can reach an agent, not whether it may speak.
+        // An agent running well enough to ask is evidently reachable, and refusing it here
+        // would strand it on a stale mark until something else cleared it.
+        var agents = new AgentRepository(_connection);
+        await agents.MarkUnreachableAsync(Orders, TestContext.Current.CancellationToken);
+
+        var outcome = await _exchanges.TryOpenAsync(
+            Orders, Billing, T0, Ttl, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.True(outcome.Succeeded);
+    }
+
+    [Fact]
     public async Task Three_cycle_is_rejected_with_a_path()
     {
         await _exchanges.TryOpenAsync(

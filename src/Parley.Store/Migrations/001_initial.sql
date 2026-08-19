@@ -15,7 +15,12 @@ CREATE TABLE agents (
     -- invocation time and never persisted after resolution. See SPEC.md section 12.
     credential_ref  TEXT,
     last_seen_utc   TEXT,
-    status          TEXT    NOT NULL CHECK (status IN ('registered', 'live', 'offline')),
+    status          TEXT    NOT NULL
+                    -- 'unreachable' is not a worse 'offline'. Offline is the ordinary resting
+                    -- state of a lazily spawned agent and must stay routable, or the traffic
+                    -- meant to wake it would be refused. Unreachable means spawning was tried
+                    -- and failed repeatedly, so routing here only burns a TTL. See SPEC.md 14.
+                    CHECK (status IN ('registered', 'live', 'offline', 'unreachable')),
 
     -- SPEC.md section 12 claims the registry holds pointers and never secret values, and
     -- that this is what makes the manifest safe to commit. A claim the storage layer does
