@@ -80,6 +80,16 @@
     NOTE: a double hyphen cannot appear anywhere inside an XML comment. Write CLI flags in
     docs/ or the README instead of here, or MSBuild will reject this whole file as invalid
     with an error that does not say why.
+
+    NOTE: SQLitePCLRaw.lib.e_sqlite3 numbers its package independently of the SQLite it
+    carries. Package 2.1.12 ships SQLite 3.53.3, so a pin reading 3.53.3 is pinning a package
+    version that merely looks like a SQLite version, and removing such a pin changes the
+    package while leaving the engine alone. Check sqlite_version() rather than the graph
+    before concluding anything about either.
+
+    NOTE: verify a pin by restoring before you read the graph. Editing this file and running
+    a query against the dependency graph in the same breath reports the previous restore's
+    answer, which will agree with whatever you just changed and tell you nothing.
   -->
 
 </Project>
