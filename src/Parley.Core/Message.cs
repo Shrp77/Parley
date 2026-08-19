@@ -16,6 +16,11 @@ namespace Parley.Core;
 /// answers, and rendered into the trust envelope.
 /// </param>
 /// <param name="PayloadJson">The payload document, capped at 2,000 characters by the schema.</param>
+/// <param name="ConversationId">
+/// The discussion this message belongs to, or <see langword="null"/> for an exchange that
+/// stands alone. Chosen by the agent, since only the agent knows whether a question
+/// continues the previous one. See SPEC.md §5.0.
+/// </param>
 /// <param name="CreatedUtc">When the message was appended.</param>
 /// <param name="DeliveredUtc">
 /// When the message was handed to the recipient, or <see langword="null"/> while it is still
@@ -42,6 +47,7 @@ public sealed record Message(
     AgentName To,
     string ResponderModel,
     string PayloadJson,
+    string? ConversationId,
     DateTimeOffset CreatedUtc,
     DateTimeOffset? DeliveredUtc)
 {
@@ -53,4 +59,5 @@ public sealed record Message(
     /// the inbox index is built on.
     /// </value>
     public bool IsPending => DeliveredUtc is null;
+
 }

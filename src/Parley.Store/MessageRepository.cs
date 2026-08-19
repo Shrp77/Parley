@@ -36,6 +36,7 @@ public sealed class MessageRepository(SqliteConnection connection)
                to_agent        AS ToAgent,
                responder_model AS ResponderModel,
                payload_json    AS PayloadJson,
+               conversation_id AS ConversationId,
                created_utc     AS CreatedUtc,
                delivered_utc   AS DeliveredUtc
         FROM messages
@@ -43,6 +44,14 @@ public sealed class MessageRepository(SqliteConnection connection)
 
     private readonly SqliteConnection _connection =
         connection ?? throw new ArgumentNullException(nameof(connection));
+
+    /// <summary>Result of asking what conversation an exchange already belongs to.</summary>
+    private sealed class ConversationProbe
+    {
+        public long Total { get; init; }
+
+        public string? Conversation { get; init; }
+    }
 
     /// <summary>
     /// Appends a message unless an identical one was written inside the deduplication window.
@@ -60,6 +69,11 @@ public sealed class MessageRepository(SqliteConnection connection)
     /// </param>
     /// <param name="payloadJson">The payload document.</param>
     /// <param name="nowUtc">The current instant, in UTC.</param>
+    /// <param name="conversationId">
+    /// The discussion this message belongs to, or <see langword="null"/> for an exchange that
+    /// stands alone. Supplied by the agent on a question or a notification; a clarification or
+    /// answer inherits the identifier of the exchange it belongs to. See SPEC.md §5.0.
+    /// </param>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>
     /// An outcome carrying either the appended message or the earlier one that made this a
@@ -87,6 +101,12 @@ public sealed class MessageRepository(SqliteConnection connection)
     /// up front is what makes the duplicate check sound rather than advisory.
     /// </para>
     /// <para>
+    /// The conversation identifier is deliberately not part of the identity. It groups
+    /// messages, it is not one of them, and hashing it would make the same text count as two
+    /// different messages depending on which discussion an agent said it belonged to — so an
+    /// agent could defeat deduplication simply by varying the identifier.
+    /// </para>
+    /// <para>
     /// The check here is the exact window; the unique index on
     /// <c>(content_hash, dedup_bucket)</c> is the backstop and is deliberately coarser. Two
     /// identical messages twenty seconds apart but either side of a bucket boundary pass the
@@ -101,6 +121,7 @@ public sealed class MessageRepository(SqliteConnection connection)
         string responderModel,
         string payloadJson,
         DateTimeOffset nowUtc,
+        string? conversationId = null,
         CancellationToken cancellationToken = default)
     {
         if (from == to)
@@ -135,6 +156,53 @@ public sealed class MessageRepository(SqliteConnection connection)
             return AppendOutcome.Duplicate(existing.ToDomain());
         }
 
+        // A clarification or answer inherits its exchange's conversation rather than declaring
+        // one, per SPEC.md 5.0. Enforced here because nothing else can: a CHECK cannot read
+        // another row, and a clarification carrying a different identifier from its question
+        // would split one discussion across two exports, or quietly graft it onto somebody
+        // else's. The first message on an exchange is the question, and it alone chooses.
+        var conversation = conversationId;
+
+        if (exchangeId is { } exchange)
+        {
+            // One round trip: the count distinguishes an exchange with no messages yet from
+            // one whose first message simply carries no identifier, which a bare SELECT of the
+            // column could not.
+            var prior = await _connection.QuerySingleAsync<ConversationProbe>(
+                new CommandDefinition(
+                    """
+                    SELECT count(*) AS Total,
+                           (SELECT earliest.conversation_id
+                              FROM messages AS earliest
+                             WHERE earliest.exchange_id = @Exchange
+                             ORDER BY earliest.id
+                             LIMIT 1) AS Conversation
+                      FROM messages
+                     WHERE exchange_id = @Exchange;
+                    """,
+                    new { Exchange = exchange },
+                    transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+            if (prior.Total > 0)
+            {
+                if (conversationId is not null && conversationId != prior.Conversation)
+                {
+                    throw new ArgumentException(
+                        prior.Conversation is null
+                            ? $"Exchange {exchange} was opened without a conversation, and the " +
+                              "question is what chooses one. A later message cannot enrol it in " +
+                              $"'{conversationId}'."
+                            : $"Exchange {exchange} belongs to conversation " +
+                              $"'{prior.Conversation}'. A clarification or answer inherits its " +
+                              $"exchange's conversation and cannot declare '{conversationId}'.",
+                        nameof(conversationId));
+                }
+
+                conversation = prior.Conversation;
+            }
+        }
+
         var created = ExchangeRow.FormatTimestamp(nowUtc);
 
         var id = await _connection.ExecuteScalarAsync<long>(
@@ -142,9 +210,9 @@ public sealed class MessageRepository(SqliteConnection connection)
                 """
                 INSERT INTO messages
                     (exchange_id, type, from_agent, to_agent, responder_model, payload_json,
-                     content_hash, created_utc)
+                     content_hash, conversation_id, created_utc)
                 VALUES
-                    (@ExchangeId, @Type, @From, @To, @Responder, @Payload, @Hash, @Created)
+                    (@ExchangeId, @Type, @From, @To, @Responder, @Payload, @Hash, @Conversation, @Created)
                 RETURNING id;
                 """,
                 new
@@ -156,6 +224,7 @@ public sealed class MessageRepository(SqliteConnection connection)
                     Responder = responderModel,
                     Payload = payloadJson,
                     Hash = hash,
+                    Conversation = conversation,
                     Created = created
                 },
                 transaction,
@@ -164,7 +233,8 @@ public sealed class MessageRepository(SqliteConnection connection)
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return AppendOutcome.Appended(new Message(
-            id, exchangeId, type, from, to, responderModel, payloadJson, nowUtc, null));
+            id, exchangeId, type, from, to, responderModel, payloadJson, conversation, nowUtc,
+            null));
     }
 
     /// <summary>
@@ -219,6 +289,45 @@ public sealed class MessageRepository(SqliteConnection connection)
                 LIMIT @Limit;
                 """,
                 new { Agent = agent.Value, Limit = limit ?? -1 },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return [.. rows.Select(r => r.ToDomain())];
+    }
+
+    /// <summary>
+    /// Loads every message in a conversation, oldest first.
+    /// </summary>
+    /// <param name="conversationId">The discussion to gather.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The conversation's messages in the order they were appended.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="conversationId"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="conversationId"/> is empty.</exception>
+    /// <remarks>
+    /// <para>
+    /// This is the export in SPEC.md §10.2, and it is an operator operation. It reads across
+    /// agents by design, which is precisely why it must never be surfaced into an agent's tool
+    /// set: it is the one query that would breach the isolation §10.1 exists to enforce.
+    /// </para>
+    /// <para>
+    /// Deliberately unbounded, unlike the inbox drain. An export that silently truncated would
+    /// present a partial record as a complete one, and the caller is an operator reading their
+    /// own data rather than a context window with a budget.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<Message>> GetConversationAsync(
+        string conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        var rows = await _connection.QueryAsync<MessageRow>(
+            new CommandDefinition(
+                $"""
+                {SelectColumns}
+                WHERE conversation_id = @Conversation
+                ORDER BY id;
+                """,
+                new { Conversation = conversationId },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return [.. rows.Select(r => r.ToDomain())];

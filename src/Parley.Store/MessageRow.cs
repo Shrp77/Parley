@@ -40,6 +40,12 @@ public sealed class MessageRow
     /// <summary>Gets the <c>payload_json</c> column.</summary>
     public string PayloadJson { get; init; } = "";
 
+    /// <summary>
+    /// Gets the <c>conversation_id</c> column, or <see langword="null"/> for an exchange that
+    /// stands alone.
+    /// </summary>
+    public string? ConversationId { get; init; }
+
     /// <summary>Gets the <c>created_utc</c> column, round-trip formatted.</summary>
     public string CreatedUtc { get; init; } = "";
 
@@ -73,6 +79,7 @@ public sealed class MessageRow
         AgentName.Create(ToAgent),
         ResponderModel,
         PayloadJson,
+        ConversationId,
         ExchangeRow.ParseTimestamp(CreatedUtc),
         DeliveredUtc is null ? null : ExchangeRow.ParseTimestamp(DeliveredUtc));
 }

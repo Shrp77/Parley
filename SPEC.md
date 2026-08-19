@@ -94,6 +94,42 @@ integration surface and the Parley wire protocol. See §11.
 **Store.** SQLite in WAL mode. Single file, transactional, no service dependency,
 survives hard power loss. The transport carries no state.
 
+### 4.1 Projects are a deployment concept
+
+Independent projects do not share a broker. Each gets its own database file and its own
+transport endpoint:
+
+```
+parley --config parley.yaml
+├── broker "alpha"  → alpha.db   → endpoint A   (22 agents)
+├── broker "beta"   → beta.db    → endpoint B   (4 agents)
+└── broker "gamma"  → gamma.db   → endpoint C   (2 agents)
+```
+
+**The protocol has no concept of a project, and must not acquire one.** Membership is
+which endpoint an agent connects to. There is no group column, no scoped query, and no
+`WHERE` clause anyone can forget: a broker's connection cannot see another's file. This
+is the same argument the schema makes everywhere else — a rule the machine enforces beats
+a rule the code remembers — applied one level up.
+
+It also means agent names collide freely across projects. Two projects may each have an
+`orders` agent, because they are different files. A single shared registry would have
+forced a global naming convention across unrelated codebases, which is exactly the
+coupling §1 exists to prevent.
+
+**One process may host many brokers.** Separate databases do not imply separate
+processes. A single service constructs one broker per configured project, each with its
+own connection and endpoint, and the isolation is unaffected — it lives in the storage
+layer, not the process boundary. A failing project must be contained: a corrupt database
+or a failed migration stops that broker and is logged, while the others keep running.
+Only a process-fatal fault takes everything, which is the risk any single service
+carries.
+
+Running one process per project is a deployment choice, not a protocol one. systemd
+template units make it nearly free; Windows requires a separate service registration per
+instance, so a single service hosting several brokers is the configuration with
+cross-platform parity.
+
 ## 5. Message types
 
 Four types. No others — agents do not engage in social conversation, and every
@@ -105,6 +141,32 @@ additional type is a new way to waste tokens.
 | **Clarify** | No | No | Yes | flips `owed_by` within exchange |
 | **Answer** | No (closes it) | Releases | No | answerer → asker |
 | **Notify** | No | No | No | any → any |
+
+### 5.0 Conversations
+
+A `conversation_id` optionally accompanies a Question or a Notify. It is an opaque
+identifier chosen by the **agent**, grouping exchanges that belong to one line of
+discussion. Clarifications and Answers inherit it from the exchange they belong to;
+they never carry their own.
+
+The agent chooses it because the agent is the only participant that knows. Whether the
+question just asked continues the previous one or opens something unrelated is a fact
+about intent, and a broker inferring it from a timeout would be guessing at exactly the
+moment the answer matters. Absent an identifier, each exchange stands alone, which is
+the common case.
+
+It is a grouping key and nothing more. It confers no privileges, changes no routing, and
+does not affect what any agent can read: §10.1 still exposes no way to fetch a
+conversation, so an agent cannot retrieve one it participated in, let alone one it did
+not. Its uses are operator-side export (§10.2) and the retention rules in §9.4.
+
+An identifier is a **claim by the sender, not a verified fact**. An agent may name a
+discussion it was not part of, and its message will then appear in that export. The claim
+is bounded rather than prevented: an agent can only assert one on a message it actually
+sends, and a Clarify or Answer takes its exchange's identifier regardless of what its
+sender says — so nobody can reassign an exchange, only add to a conversation. An operator
+reading an export should treat grouping as the participants' account of what belongs
+together, which is what makes it useful, and check the participants when that matters.
 
 ### 5.1 Question
 
@@ -349,6 +411,7 @@ CREATE TABLE messages (
   responder_model TEXT    NOT NULL,       -- see §11.3
   payload_json    TEXT    NOT NULL,
   content_hash    TEXT    NOT NULL,       -- see §13.1
+  conversation_id TEXT,                   -- agent-declared grouping, see §5.0
   created_utc     TEXT    NOT NULL,
   dedup_bucket    INTEGER GENERATED ALWAYS AS (unixepoch(created_utc) / 60) STORED,
   delivered_utc   TEXT,
@@ -361,7 +424,10 @@ CREATE TABLE messages (
          AND responder_model NOT GLOB '*[^a-zA-Z0-9._:/-]*'),
   CHECK (length(content_hash) = 64
          AND content_hash NOT GLOB '*[^0-9a-f]*'),
-  CHECK (unixepoch(created_utc) IS NOT NULL)
+  CHECK (unixepoch(created_utc) IS NOT NULL),
+  CHECK (conversation_id IS NULL
+         OR (length(conversation_id) BETWEEN 1 AND 64
+             AND conversation_id NOT GLOB '*[^a-zA-Z0-9._:/-]*'))
 ) STRICT;
 
 CREATE UNIQUE INDEX ux_message_dedup
@@ -409,7 +475,63 @@ the write lock up front is what makes the pair and cycle checks sound.
 order, which is what allows the reaper's `expires_utc <= ?` predicate to be a plain string
 comparison and still be correct.
 
+### 9.4 Retention
+
+Parley is a channel, not a store (§16), so the message log is operational rather than a
+record: it exists to deliver, to deduplicate, to rate-limit and to feed telemetry. Left
+unbounded it becomes something the design explicitly is not — and the file already
+carries the full text of every question and answer between agents, restricted to its
+owner for that reason (§9.1). A log that grows forever grows the blast radius of a
+leaked database forever with it.
+
+Retention is nonetheless **configurable**, because the operator uses in §10.2 are real
+and the isolation guarantee does not depend on the log being short. Two rules prune, and
+a floor overrides both.
+
+**The floor.** Regardless of configuration, a message is never removed while it is:
+
+- undelivered — it is somebody's inbox;
+- attached to an exchange that is open or orphaned — §14 may still replay it;
+- inside the deduplication window (§13.1) or the rate-limit window.
+
+An operator configuring aggressive retention must not be able to break deduplication as
+a side effect. The floor is what makes the dial safe to turn.
+
+**The idle rule.** Once every exchange in a conversation is closed and nothing has been
+added to it for the configured idle period, the discussion is over and its messages are
+prunable. Messages with no `conversation_id` are treated as a conversation of one
+exchange. This targets what a reader would recognise as a finished exchange of views
+rather than an arbitrary age.
+
+**The age cap.** Nothing outlives the configured maximum age, whatever the idle rule
+concludes. This bounds a conversation that never falls silent long enough to trip it.
+
+The floor still wins, and that has a consequence worth stating rather than discovering: an
+exchange orphaned and never resumed holds its messages past the age cap indefinitely,
+because §14 may still replay them. Under a `never` resume policy nothing ever clears such
+an exchange, so the age cap is not in fact absolute. Whether an unresumed orphan should
+eventually be abandoned is open question 7 in §17, and answering it is what would make
+this bound hold. Until then a deployment using `never` should expect its floor, not its
+age cap, to determine how long the oldest messages live.
+
+**Nothing is exempt.** There is no retain-forever flag, because the log is a channel and
+a permanent corner of it would be the store §16 says this is not. An operator who wants
+to keep a discussion exports it (§10.2); the export is a file they own, outside the
+retention policy entirely, and the log is free to forget. Retention that can be switched
+off per-conversation drifts back into being a context store one exception at a time.
+
+Messages are the retention target because messages hold the text. Exchange rows carry
+no free prose — participants, timings, resolution, clarify depth — and are what §15
+telemetry is computed from, so they outlive the messages they once carried. Pruning the
+text while keeping the skeleton is what lets a deployment answer "how often does this
+pair disagree" a year later without retaining a year of what they actually said.
+
 ## 10. Operations
+
+There are two surfaces, and the distance between them is load-bearing. §16 claims there
+is no shared memory to poison; §10.1 is what makes that true.
+
+### 10.1 Agent operations
 
 | Operation | Description |
 |---|---|
@@ -421,6 +543,34 @@ comparison and still be correct.
 | `inbox()` | Drain pending messages. |
 
 How these are surfaced to an agent is the adapter's concern.
+
+There is deliberately **no history and no search operation**, and none may be added. An
+agent cannot read the log because nothing exposes it: `inbox()` returns only what is
+pending and addressed to the caller, and `ask` returns only the answer to the question
+just asked. This is the mechanism behind the isolation in §1 — `billing` never learns
+what `orders` told `inventory` because it has no way to ask.
+
+Retention length is therefore irrelevant to that guarantee. A ninety-day log is exactly
+as unreadable to an agent as a ten-minute one, which is why §9.4 can be configured
+freely. The dial is retention; the guarantee is this table.
+
+### 10.2 Operator operations
+
+Available to the person running the broker, never to an agent. An adapter that surfaced
+any of these into an agent's tool set would breach §10.1 and, through it, §16.
+
+| Operation | Description |
+|---|---|
+| `export(conversation_id)` | Emit every message in a conversation. |
+| `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
+
+`export` exists because the log has legitimate operator uses the protocol should not
+obstruct. Comparing how different model pairings converge on the same question is one:
+run the discussion with one pairing, run it again with another, and analyse both. That
+reads across agents, which is exactly why it is an operator operation — it is the one
+query that would breach §10.1 if an adapter ever surfaced it.
+
+Neither operation reaches into an agent's context, so neither weakens §16.
 
 ## 11. Adapters
 
@@ -705,8 +855,14 @@ Cheap to collect, disproportionately useful:
 
 - **Not a task queue.** Parley coordinates *understanding*, not work. Agents do not
   delegate implementation to each other.
-- **Not a shared context store.** Nothing accumulates. There is no shared memory to
-  poison.
+- **Not a shared context store.** No agent can read the log: §10.1 exposes no history
+  or search operation, so there is no shared memory to poison, and that holds at any
+  retention length. Traffic is pruned once it is operationally spent (§9.4), and an
+  operator who wants to keep a discussion exports it to a file they own rather than
+  making a corner of the log permanent. One case does outlive the age cap — an exchange
+  orphaned and never resumed, which the retention floor holds so §14 can still replay it.
+  That is an acknowledged gap in §9.4 rather than a second store, since nothing can read
+  it either.
 - **Not a replacement for committed contracts.** Most cross-repository questions
   should be *lookups* against contracts and decision records. Parley handles the
   residue where the contract genuinely does not cover the case — and feeds the answer

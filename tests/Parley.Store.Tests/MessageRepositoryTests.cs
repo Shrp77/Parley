@@ -48,7 +48,8 @@ public sealed class MessageRepositoryTests : IDisposable
         AgentName? from = null,
         AgentName? to = null,
         DateTimeOffset? at = null,
-        long? exchangeId = -1) =>
+        long? exchangeId = -1,
+        string? conversationId = null) =>
         _messages.AppendAsync(
             exchangeId == -1 ? _exchangeId : exchangeId,
             type,
@@ -57,6 +58,7 @@ public sealed class MessageRepositoryTests : IDisposable
             Model,
             payload,
             at ?? T0,
+            conversationId,
             TestContext.Current.CancellationToken);
 
     [Fact]
@@ -176,7 +178,7 @@ public sealed class MessageRepositoryTests : IDisposable
         // fault, which a SqliteException does not.
         await Assert.ThrowsAnyAsync<ArgumentException>(() => _messages.AppendAsync(
             _exchangeId, MessageType.Question, Orders, Billing, model!, Payload, T0,
-            TestContext.Current.CancellationToken));
+            cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -287,6 +289,131 @@ public sealed class MessageRepositoryTests : IDisposable
             9999, T0, TestContext.Current.CancellationToken));
     }
 
+    // ---- conversations (SPEC 5.0, 10.2) ----
+
+    [Fact]
+    public async Task A_conversation_is_gathered_by_its_identifier()
+    {
+        // The export in SPEC 10.2. It reads across agents, which is why it is an operator
+        // operation and must never reach an agent's tool set.
+        var first = await Append(payload: """{"n":1}""", type: MessageType.Notify,
+            exchangeId: null, conversationId: "pricing-boundary");
+        await Append(payload: """{"n":2}""", type: MessageType.Notify, exchangeId: null);
+        var second = await Append(payload: """{"n":3}""", type: MessageType.Notify,
+            exchangeId: null, conversationId: "pricing-boundary");
+        await Append(payload: """{"n":4}""", type: MessageType.Notify, exchangeId: null,
+            conversationId: "invoice-rounding");
+
+        var conversation = await _messages.GetConversationAsync(
+            "pricing-boundary", TestContext.Current.CancellationToken);
+
+        Assert.Equal([first.Message.Id, second.Message.Id], conversation.Select(m => m.Id));
+    }
+
+    [Fact]
+    public async Task An_exchange_may_stand_alone()
+    {
+        // The common case. Most exchanges belong to no wider discussion, and an agent that
+        // says nothing about grouping is not asked to invent one.
+        var outcome = await Append();
+
+        Assert.Null(outcome.Message.ConversationId);
+        Assert.Empty(await _messages.GetConversationAsync(
+            "never-used", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task The_identifier_is_not_part_of_deduplication_identity()
+    {
+        // It groups messages; it is not one of them. Hashing it would let an agent defeat
+        // deduplication by varying which discussion it claimed the message belonged to.
+        var first = await Append();
+        var second = await Append(at: T0.AddSeconds(10), conversationId: "pricing-boundary");
+
+        Assert.True(first.Stored);
+        Assert.False(second.Stored);
+    }
+
+    [Fact]
+    public async Task A_clarification_inherits_its_exchange_conversation()
+    {
+        // SPEC 5.0: the question chooses, everything after it on that exchange follows.
+        await Append(type: MessageType.Question, conversationId: "pricing-boundary");
+
+        var clarify = await Append(type: MessageType.Clarify, from: Billing, to: Orders,
+            payload: """{"text":"gross or net of tax?"}""");
+
+        Assert.Equal("pricing-boundary", clarify.Message.ConversationId);
+
+        var conversation = await _messages.GetConversationAsync(
+            "pricing-boundary", TestContext.Current.CancellationToken);
+        Assert.Equal(2, conversation.Count);
+    }
+
+    [Fact]
+    public async Task A_reply_cannot_reassign_its_exchange_to_another_conversation()
+    {
+        // Without this, a clarification could split one discussion across two exports or graft
+        // it onto somebody else's. A CHECK cannot catch it, because it would have to read
+        // another row.
+        await Append(type: MessageType.Question, conversationId: "pricing-boundary");
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => Append(
+            type: MessageType.Clarify, from: Billing, to: Orders,
+            payload: """{"text":"gross or net?"}""", conversationId: "invoice-rounding"));
+
+        Assert.Equal("conversationId", ex.ParamName);
+    }
+
+    [Fact]
+    public async Task An_exchange_that_began_alone_cannot_be_joined_to_a_conversation()
+    {
+        // SPEC 5.0 gives the choice to the question, which means a reply cannot retroactively
+        // enrol an exchange that started without one. Pinned because the alternative reading —
+        // that a null conversation is simply unset and free to fill in — is equally plausible
+        // from the code, and the two differ in whether an agent can annexe an exchange after
+        // the fact.
+        await Append(type: MessageType.Question);
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => Append(
+            type: MessageType.Clarify, from: Billing, to: Orders,
+            payload: """{"text":"gross or net?"}""", conversationId: "pricing-boundary"));
+
+        Assert.Equal("conversationId", ex.ParamName);
+    }
+
+    [Fact]
+    public async Task A_reply_may_restate_the_conversation_it_already_belongs_to()
+    {
+        // Agreeing with the exchange is not a conflict, so a caller that threads the identifier
+        // through every call is not punished for it.
+        await Append(type: MessageType.Question, conversationId: "pricing-boundary");
+
+        var clarify = await Append(type: MessageType.Clarify, from: Billing, to: Orders,
+            payload: """{"text":"gross or net?"}""", conversationId: "pricing-boundary");
+
+        Assert.Equal("pricing-boundary", clarify.Message.ConversationId);
+    }
+
+    [Theory]
+    [InlineData("run 3")]
+    [InlineData("run`3")]
+    [InlineData("")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public async Task An_identifier_that_could_travel_badly_is_rejected(string id)
+    {
+        // Agent-supplied and it names an export, so it is likely to reach a filename, a report
+        // heading or a console. Same restriction as responder_model, for the same reason.
+        await Assert.ThrowsAsync<SqliteException>(() => Append(conversationId: id));
+    }
+
+    [Fact]
+    public async Task Exporting_without_an_identifier_is_rejected()
+    {
+        await Assert.ThrowsAnyAsync<ArgumentException>(
+            () => _messages.GetConversationAsync("", TestContext.Current.CancellationToken));
+    }
+
     // ---- replay ----
 
     [Fact]
@@ -337,6 +464,7 @@ public sealed class MessageRepositoryTests : IDisposable
         await cancelled.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => _messages.AppendAsync(
-            _exchangeId, MessageType.Question, Orders, Billing, Model, Payload, T0, cancelled.Token));
+            _exchangeId, MessageType.Question, Orders, Billing, Model, Payload, T0,
+            cancellationToken: cancelled.Token));
     }
 }
