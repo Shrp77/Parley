@@ -173,8 +173,13 @@ additional type is a new way to waste tokens.
 
 A `conversation_id` optionally accompanies a Question or a Notify. It is an opaque
 identifier chosen by the **agent**, grouping exchanges that belong to one line of
-discussion. Clarifications and Answers inherit it from the exchange they belong to;
-they never carry their own.
+discussion.
+
+Declared on a Question, it is recorded on the **exchange**, not on the message. Everything
+in that exchange — the question, its clarifications, its answer — is then in the conversation
+by belonging to the exchange, rather than by each message carrying a copy that could
+disagree. A Notify has no exchange, so it is the one message type that carries the
+identifier itself.
 
 The agent chooses it because the agent is the only participant that knows. Whether the
 question just asked continues the previous one or opens something unrelated is a fact
@@ -182,18 +187,99 @@ about intent, and a broker inferring it from a timeout would be guessing at exac
 moment the answer matters. Absent an identifier, each exchange stands alone, which is
 the common case.
 
-It is a grouping key and nothing more. It confers no privileges, changes no routing, and
-does not affect what any agent can read: §10.1 still exposes no way to fetch a
-conversation, so an agent cannot retrieve one it participated in, let alone one it did
-not. Its uses are operator-side export (§10.2) and the retention rules in §9.4.
+**A conversation grants no visibility.** This is the part that must not be misread. Two
+agents in one conversation see exactly what two agents in no conversation see: their own
+exchanges and nothing else. §10.1 exposes no way to fetch a conversation, so an agent cannot
+retrieve one it participated in, let alone one it did not.
 
-An identifier is a **claim by the sender, not a verified fact**. An agent may name a
-discussion it was not part of, and its message will then appear in that export. The claim
-is bounded rather than prevented: an agent can only assert one on a message it actually
-sends, and a Clarify or Answer takes its exchange's identifier regardless of what its
-sender says — so nobody can reassign an exchange, only add to a conversation. An operator
-reading an export should treat grouping as the participants' account of what belongs
-together, which is what makes it useful, and check the participants when that matters.
+The distinction is between *membership* and *a room*. A conversation is a set of pairwise
+exchanges that its participants say belong together; it is not a channel everyone reads. The
+alternative — everyone sees everything posted to the conversation — is the shared
+documentation repository from §1 with lower latency, where "every agent that reads it
+inhales every other repository's implementation detail". Isolation is the product
+(principle 2.1), and a conversation that leaked context would trade the product for a
+convenience.
+
+So a conversation is visible in aggregate to the **operator** (§10.2) and to nobody inside
+it. That asymmetry is deliberate: the human coordinating several repositories has a
+legitimate need to see the whole shape of a discussion, and no agent does.
+
+**Membership grows.** A conversation may begin between two agents and end with several.
+`orders` asks `billing`; `orders` then asks `inventory` under the same identifier; later
+`billing` and `inventory` exchange one too. Three participants, one conversation, and still
+only pairwise traffic — no message ever addresses more than one peer, and no agent learns
+what the others said. Membership is derived rather than declared: an agent is a participant
+because it is party to an exchange carrying the identifier.
+
+An identifier remains a **claim by the sender, not a verified fact**. An agent may name a
+discussion it was not part of and thereby join it. That claim now has a consequence it did
+not have before, because participants are polled when a conversation closes (below) and can
+decline — so an agent could in principle hold open a discussion it gate-crashed.
+
+The existing mechanisms bound this without a new rule. Joining requires opening a real
+exchange with a real peer, which costs a slot against the §7.1 cap and must pass the
+distinctness check. Only participants holding *open* exchanges are polled, so keeping the
+veto alive means keeping an exchange open, which the windows in §6 will eventually close.
+The cost of gate-crashing is therefore continuous and visible, while the benefit is delaying
+a closure that §9.4's idle rule reaches anyway.
+
+A Clarify or Answer takes its exchange's identifier regardless of what its sender says, so
+nobody can reassign an exchange — only add to a conversation. An operator reading an export
+should treat grouping as the participants' account of what belongs together, which is what
+makes it useful, and check the participants when that matters.
+
+**Ending a conversation.** A conversation ends in one of two ways, and both are needed.
+
+*By silence.* Every exchange in it is closed and nothing has been added for the configured
+idle period (§9.4). This requires no cooperation and is how most conversations end.
+
+*By consensus.* A participant proposes closure and the others agree. This exists because
+"we concluded" and "nobody spoke for a while" are different facts, and a log that records
+only the second cannot distinguish a discussion that reached an answer from one that was
+abandoned. §15's `exchanges per promoted decision` is only meaningful if that distinction
+survives.
+
+The poll works as follows.
+
+- **Any participant may propose. Nobody moderates.** The broker runs the poll; no agent
+  runs it, and no agent's proposal carries more weight than another's. An agent that could
+  conclude a discussion on everyone's behalf would be the lead that principle 2.6 forbids.
+- **Only participants holding open exchanges are polled.** An agent whose exchanges are all
+  closed has already said what it had to say, and under §14's lazy spawn, polling it would
+  instantiate an idle agent purely to ask whether it was finished. At the scale this protocol
+  targets that is most of the roster, woken to answer a question about nothing.
+- **Silence assents.** A participant that does not answer within the same window §14 uses to
+  abandon an orphan is taken to agree. Without this one unreachable agent could hold a
+  discussion open indefinitely.
+- **A decline blocks.** Closure requires that no polled participant declined. An agent with
+  a live concern is not outvoted, because a majority that can conclude over an objection is
+  authority over another agent by a different name.
+
+Two consequences follow from a decline blocking, and both are mechanical rather than
+matters of etiquette.
+
+**The broker re-asks; the agent need not remember.** A decline is durable, but when the
+conversation next falls idle the closure question is re-delivered to the declining agent's
+inbox. Anything else would depend on that agent choosing to revisit the subject unprompted,
+which §7.3 says plainly does not work. The agent never has to remember; it only has to
+answer.
+
+**A decline lapses with its holder.** An agent marked `unreachable` or `retired` (§14) no
+longer blocks closure. A judgement is only worth honouring while the agent that made it can
+still act on it, and a discussion held open by a repository that no longer exists is the
+churn §14 exists to stop.
+
+**The poll leaks nothing.** It is strictly bilateral: each participant is asked whether it
+is finished, and told nothing about who else is in the conversation, how many there are, or
+how anyone answered. Membership is exactly the kind of thing an agent should not learn — if
+`billing` brought `inventory` into a discussion, `orders` has no business knowing that, and
+a tally of "three of four agree" discloses the roster size as surely as naming it would. The
+broker holds the count; no participant does.
+
+**A closed conversation stays closed.** A Question naming a concluded conversation is
+refused, and the refusal says so. Reopening is not a special case because it is not a real
+one: a discussion worth resuming after everyone agreed it was over is a new discussion, and
+it gets a new identifier at no cost.
 
 ### 5.1 Question
 
@@ -431,6 +517,7 @@ the asker can act on immediately:
 | Pair cap reached (§7.1) | The open exchanges it already holds with that peer, so it can see what it is waiting on and whether this question is among them. |
 | Answerer unreachable (§14) | That the peer cannot be reached, so the asker stops rather than burning a window. |
 | Duplicate of a live question | The exchange already carrying it. |
+| Conversation concluded (§5.0) | That the discussion is closed, so the asker opens a new one rather than reviving a settled thread. |
 
 None of these ask the agent to do anything later. Each either resolves the question or
 redirects it now.
@@ -538,6 +625,7 @@ CREATE TABLE exchanges (
   is_decision       INTEGER NOT NULL DEFAULT 0,
   decision_ref      TEXT,
   question_hash     TEXT    NOT NULL,      -- content identity, §13.1
+  conversation_id   TEXT    REFERENCES conversations(id),
   version           INTEGER NOT NULL DEFAULT 0,
 
   CHECK (asker <> answerer),
@@ -546,6 +634,39 @@ CREATE TABLE exchanges (
   CHECK (delivery_window_ms > 0 AND working_window_ms > 0),
   CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
   CHECK (pair_key = min(asker, answerer) || char(31) || max(asker, answerer))
+) STRICT;
+
+-- A conversation exists as a row so that it can carry a state. While it was only a string
+-- on messages, no rule could ask whether a discussion was over without reconstructing it
+-- from the traffic, and §9.4's idle rule could not be evaluated at all: it reasons about the
+-- exchanges in a conversation, and exchanges did not carry the identifier.
+CREATE TABLE conversations (
+  id          TEXT PRIMARY KEY,
+  state       TEXT NOT NULL CHECK (state IN ('OPEN', 'CLOSING', 'CLOSED')),
+  opened_utc  TEXT NOT NULL,
+  closed_utc  TEXT,
+
+  CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
+  CHECK (length(id) BETWEEN 1 AND 64 AND id NOT GLOB '*[^a-zA-Z0-9._:/-]*')
+) STRICT;
+
+-- Membership is derived, not declared: a row appears when an agent first becomes party to
+-- an exchange carrying the identifier. The vote column is the closure poll of §5.0. NULL
+-- means not yet asked or not yet answered, which are the same thing to the rule that reads
+-- it, since silence assents.
+CREATE TABLE conversation_participants (
+  conversation_id TEXT NOT NULL REFERENCES conversations(id),
+  agent           TEXT NOT NULL REFERENCES agents(name),
+  joined_utc      TEXT NOT NULL,
+  vote            TEXT CHECK (vote IN ('done', 'not_done')),
+  polled_utc      TEXT,
+  voted_utc       TEXT,
+
+  PRIMARY KEY (conversation_id, agent),
+
+  -- A vote without a poll is an agent answering a question nobody asked.
+  CHECK (vote IS NULL OR polled_utc IS NOT NULL),
+  CHECK ((vote IS NULL) = (voted_utc IS NULL))
 ) STRICT;
 
 CREATE TRIGGER tr_open_pair_cap BEFORE INSERT ON exchanges WHEN NEW.state = 'OPEN'
@@ -581,7 +702,7 @@ CREATE TABLE messages (
   responder_model TEXT    NOT NULL,       -- see §11.3
   payload_json    TEXT    NOT NULL,
   content_hash    TEXT    NOT NULL,       -- see §13.1
-  conversation_id TEXT,                   -- agent-declared grouping, see §5.0
+  conversation_id TEXT,                   -- Notify only; see below and §5.0
   created_utc     TEXT    NOT NULL,
   dedup_bucket    INTEGER GENERATED ALWAYS AS (unixepoch(created_utc) / 60) STORED,
   delivered_utc   TEXT,
@@ -597,7 +718,13 @@ CREATE TABLE messages (
   CHECK (unixepoch(created_utc) IS NOT NULL),
   CHECK (conversation_id IS NULL
          OR (length(conversation_id) BETWEEN 1 AND 64
-             AND conversation_id NOT GLOB '*[^a-zA-Z0-9._:/-]*'))
+             AND conversation_id NOT GLOB '*[^a-zA-Z0-9._:/-]*')),
+
+  -- A message belonging to an exchange takes that exchange's conversation and stores none of
+  -- its own. Two columns holding the same fact eventually hold different facts, and the one
+  -- that gets edited is not reliably the one that gets read. Only Notify, which has no
+  -- exchange, carries the identifier itself.
+  CHECK (conversation_id IS NULL OR exchange_id IS NULL)
 ) STRICT;
 
 CREATE UNIQUE INDEX ux_message_dedup
@@ -710,6 +837,19 @@ prunable. Messages with no `conversation_id` are treated as a conversation of on
 exchange. This targets what a reader would recognise as a finished exchange of views
 rather than an arbitrary age.
 
+Evaluating it requires that exchanges carry the identifier, which is why §9.2 puts
+`conversation_id` on `exchanges` and not only on `messages`. While it lived only on
+messages this rule could not be computed as written: an exchange belonged to a conversation
+only by inference from the traffic it carried, and one that had exchanged no messages yet
+belonged to none.
+
+**Explicit closure short-circuits the idle period.** A conversation closed by consensus
+(§5.0) is prunable from the moment it closes, without waiting out the idle window. The
+participants have said the discussion is over, which is better evidence than silence and
+arrives sooner. The idle rule remains for everything else, which is most conversations —
+agreeing to conclude is a courtesy, not an obligation, and nothing degrades if nobody
+bothers.
+
 **The age cap.** Nothing outlives the configured maximum age, whatever the idle rule
 concludes. This bounds a conversation that never falls silent long enough to trip it.
 
@@ -747,15 +887,31 @@ is no shared memory to poison; §10.1 is what makes that true.
 | `clarify(exchange_id, text)` | Request detail within an open exchange you owe. |
 | `answer(exchange_id, resolutions, decision?)` | Close an exchange. |
 | `notify(to, text)` | Fire-and-forget event. |
-| `inbox()` | Drain pending messages, debts first (§7.3). Answers arrive here, carrying the identifier `ask` returned and the question they answer (§4.2). |
+| `inbox()` | Drain pending messages, debts first (§7.3). Answers arrive here, carrying the identifier `ask` returned and the question they answer (§4.2). Also surfaces any closure poll outstanding for the caller (§5.0). |
+| `conclude(conversation_id, finished)` | Say whether you are finished with a discussion. The first call opens a poll; later calls answer one. |
+
+`conclude` is one operation rather than two because proposing and answering are the same
+statement. An agent that says it is finished has proposed closure if nobody had yet, and has
+answered the poll if somebody had; nothing distinguishes those from the agent's side, and
+splitting them would ask it to know which situation it was in.
+
+A closure poll is surfaced through `inbox()` rather than as a message, because §5 admits four
+message types and no others. A fifth type carrying broker questions would also make the
+broker a participant that agents address, which it is not.
 
 How these are surfaced to an agent is the adapter's concern.
 
 There is deliberately **no history and no search operation**, and none may be added. An
-agent cannot read the log because nothing exposes it: `inbox()` returns only what is
-pending and addressed to the caller, and `ask` returns only the answer to the question
-just asked. This is the mechanism behind the isolation in §1 — `billing` never learns
-what `orders` told `inventory` because it has no way to ask.
+agent cannot read the log because nothing exposes it: `inbox()` returns only what is pending
+and addressed to the caller, and `ask` returns only an identifier for the exchange it just
+opened (§4.2). This is the mechanism behind the isolation in §1 — `billing` never learns what
+`orders` told `inventory` because it has no way to ask.
+
+`conclude` does not weaken this, and is worth checking against it rather than assuming. It
+reads nothing: it states the caller's own position on a discussion the caller is already in,
+and the poll it may raise says only whether the caller is finished — never who else
+participates, how many do, or how any of them answered (§5.0). An agent learns nothing from
+it that it did not supply.
 
 Retention length is therefore irrelevant to that guarantee. A ninety-day log is exactly
 as unreadable to an agent as a ten-minute one, which is why §9.4 can be configured
@@ -768,9 +924,16 @@ any of these into an agent's tool set would breach §10.1 and, through it, §16.
 
 | Operation | Description |
 |---|---|
-| `export(conversation_id)` | Emit every message in a conversation. |
+| `export(conversation_id)` | Emit every message in a conversation. The one query that reads across agents, which is why it is here and not in §10.1. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
 | `retire(agent)` | Resolve an unreachable agent's outstanding exchanges and remove it. See §14. |
+| `conclude(conversation)` | Close a conversation regardless of its participants' votes. |
+
+Operator `conclude` exists because a decline blocks closure indefinitely (§5.0) and the
+agent holding it may simply be wrong. That is a deliberate asymmetry rather than a hole in
+principle 2.6: no agent may conclude over another's objection, and the person running the
+broker is not an agent. It is the same division as `retire` — the broker never overrules a
+participant, and the operator always may.
 
 `export` exists because the log has legitimate operator uses the protocol should not
 obstruct. Comparing how different model pairings converge on the same question is one:
@@ -1199,7 +1362,9 @@ Cheap to collect, disproportionately useful:
   belongs in an issue tracker.
 - **Not a shared context store.** No agent can read the log: §10.1 exposes no history
   or search operation, so there is no shared memory to poison, and that holds at any
-  retention length. Traffic is pruned once it is operationally spent (§9.4), and an
+  retention length. Conversations (§5.0) do not weaken this and are the place it would
+  most plausibly have been weakened: a conversation is a grouping the operator can read
+  whole and no participant can read at all, not a channel its members share. Traffic is pruned once it is operationally spent (§9.4), and an
   operator who wants to keep a discussion exports it to a file they own rather than
   making a corner of the log permanent. One case does outlive the age cap — an exchange
   orphaned and never resumed, which the retention floor holds so §14 can still replay it.
