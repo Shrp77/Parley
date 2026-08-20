@@ -250,6 +250,25 @@ public sealed class MessageRepository(SqliteConnection connection)
     /// default would silently hide messages from the callers that need them all.
     /// </para>
     /// </remarks>
+    /// <remarks>
+    /// <para>
+    /// Debts first, then by age. SPEC.md §7.3 requires that an agent draining its inbox meets
+    /// the questions it has not answered ahead of anything else — the adults-with-manners
+    /// ordering, which exploits the fact that a pending question is frequently reshaped or made
+    /// irrelevant by the answer to one already owed.
+    /// </para>
+    /// <para>
+    /// Ordered in the query rather than by the caller, and there is deliberately no unordered
+    /// overload. The ordering is a protocol rule, and a rule with a convenient way around it is
+    /// a suggestion — the caller that reached for the unordered version would be the one under
+    /// time pressure, which is exactly when the ordering earns its keep.
+    /// </para>
+    /// <para>
+    /// A debt is a message whose exchange this agent owes a response on. An answer to its own
+    /// question is not a debt and sorts after, and a Notify has no exchange at all so it sorts
+    /// with them.
+    /// </para>
+    /// </remarks>
     public async Task<IReadOnlyList<Message>> GetPendingAsync(
         AgentName agent,
         int? limit = null,
@@ -265,7 +284,13 @@ public sealed class MessageRepository(SqliteConnection connection)
                 $"""
                 {SelectColumns}
                 WHERE to_agent = @Agent AND delivered_utc IS NULL
-                ORDER BY id
+                ORDER BY CASE
+                             WHEN EXISTS (SELECT 1 FROM exchanges e
+                                           WHERE e.id = messages.exchange_id
+                                             AND e.owed_by = @Agent)
+                             THEN 0 ELSE 1
+                         END,
+                         id
                 LIMIT @Limit;
                 """,
                 new { Agent = agent.Value, Limit = limit ?? -1 },
