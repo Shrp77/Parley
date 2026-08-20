@@ -594,11 +594,23 @@ weaker than the index it replaced: an index constrains every path that can produ
 row, so the case where a resumed orphan meets an identical re-ask is refused without anyone
 having thought to write that case down.
 
-Identity is the content hash of §13.1. The scope is different, though, and deliberately so:
-deduplication there guards *delivery* over a window of seconds, absorbing transport retries.
-This guards *intent* for as long as the exchange stays open, which under §6 may be hours. An
-agent that asks, forgets it asked, and asks again an hour later is the case this catches, and
-it is a case the delivery window is far too short to see.
+Identity is the content hash of §13.1, computed **with the exchange identifier excluded**.
+It has to be: the value is written as the exchange is created, so there is no identifier yet,
+and folding one in afterwards would make every question hash unique and silently disable this
+index. That is the `dedup_bucket` failure of §13.1 reached from the other direction — two
+agents asking the same thing would both be admitted while the index reported no conflict — and
+it is the reason the exclusion is stated here rather than left to an implementation to infer.
+
+The whole payload is hashed, not the question text alone. Rule 1 makes an asker state what it
+will do with each possible answer, and that statement is part of what is being asked: the same
+words with different consequences ask the answerer to weigh different things. Hashing only the
+text would also require the store to know the payload's shape, which is the adapter's concern.
+
+The scope is different from §13.1, though, and deliberately so: deduplication there guards
+*delivery* over a window of seconds, absorbing transport retries. This guards *intent* for as
+long as the exchange stays open, which under §6 may be hours. An agent that asks, forgets it
+asked, and asks again an hour later is the case this catches, and it is a case the delivery
+window is far too short to see.
 
 **What this does not bound.** A per-pair cap limits any single peer, not the total. Ten
 agents each asking `billing` five questions puts fifty in its inbox while every one of them
@@ -1280,6 +1292,16 @@ splitting them would ask it to know which situation it was in.
 A closure poll is surfaced through `inbox()` rather than as a message, because §5 admits four
 message types and no others. A fifth type carrying broker questions would also make the
 broker a participant that agents address, which it is not.
+
+`ask`, `clarify` and `answer` each move an exchange and write a message, and each **MUST**
+commit both or neither. This is a requirement rather than an implementation note because the
+database is shared: an implementation doing it as two commits leaves artefacts every other
+implementation can see. A question refused by the schema after its exchange is committed leaves
+an exchange open with nothing in it, holding a pair slot under §7.1 and an entry in the
+distinctness index, until §6's windows run out and §14 reports it to the asker as `ghosted` —
+nobody came, when nobody was ever asked. The reverse order is worse on `answer`: an exchange
+closed `answered` whose answer was never written tells the asker its question is settled and
+leaves it no way to discover the settlement, in a terminal state no replay reaches.
 
 How these are surfaced to an agent is the adapter's concern.
 

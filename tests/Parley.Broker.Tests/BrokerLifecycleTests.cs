@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -71,7 +71,7 @@ public sealed class BrokerLifecycleTests : IDisposable
 
         foreach (var id in new[] { first.Id, second.Id })
         {
-            var loaded = await _exchanges.GetAsync(id, TestContext.Current.CancellationToken);
+            var loaded = await _exchanges.GetAsync(id, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(ExchangeState.Orphaned, loaded!.State);
         }
     }
@@ -197,7 +197,7 @@ public sealed class BrokerLifecycleTests : IDisposable
 
         Assert.Equal(1, result.Orphaned);
 
-        var loaded = await _exchanges.GetAsync(exchange.Id, TestContext.Current.CancellationToken);
+        var loaded = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ExchangeState.Orphaned, loaded!.State);
     }
 

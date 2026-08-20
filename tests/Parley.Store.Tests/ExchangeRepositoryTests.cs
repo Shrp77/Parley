@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Xunit;
 
@@ -55,7 +55,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
         Assert.True(outcome.Succeeded);
 
         var loaded = await _exchanges.GetAsync(
-            outcome.Exchange!.Id, TestContext.Current.CancellationToken);
+            outcome.Exchange!.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Equal(Orders, loaded.Asker);
@@ -88,7 +88,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
             cancellationToken: TestContext.Current.CancellationToken);
 
         var loaded = await _exchanges.GetAsync(
-            outcome.Exchange!.Id, TestContext.Current.CancellationToken);
+            outcome.Exchange!.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Equal(odd, loaded.DeliveryWindow);
@@ -369,7 +369,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
         Assert.True(await _exchanges.SaveAsync(
             exchange, cancellationToken: TestContext.Current.CancellationToken));
 
-        var loaded = await _exchanges.GetAsync(exchange.Id, TestContext.Current.CancellationToken);
+        var loaded = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Equal(Orders, loaded.OwedBy);
@@ -406,8 +406,8 @@ public sealed class ExchangeRepositoryTests : IDisposable
         var id = opened.Exchange!.Id;
 
         // Two independent instances of the same row, as two broker code paths would hold.
-        var a = await _exchanges.GetAsync(id, TestContext.Current.CancellationToken);
-        var b = await _exchanges.GetAsync(id, TestContext.Current.CancellationToken);
+        var a = await _exchanges.GetAsync(id, cancellationToken: TestContext.Current.CancellationToken);
+        var b = await _exchanges.GetAsync(id, cancellationToken: TestContext.Current.CancellationToken);
 
         a!.Clarify(Billing, T0);
         Assert.True(await _exchanges.SaveAsync(
@@ -418,7 +418,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
         Assert.False(await _exchanges.SaveAsync(
             b, cancellationToken: TestContext.Current.CancellationToken));
 
-        var reloaded = await _exchanges.GetAsync(id, TestContext.Current.CancellationToken);
+        var reloaded = await _exchanges.GetAsync(id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(1, reloaded!.ClarifyDepth);
         Assert.Equal(1L, reloaded.Version);
     }

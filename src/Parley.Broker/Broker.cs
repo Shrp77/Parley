@@ -1,3 +1,4 @@
+﻿using System.Data;
 using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
@@ -46,6 +47,7 @@ namespace Parley.Broker;
 /// </remarks>
 public sealed class Broker
 {
+    private readonly SqliteConnection _connection;
     private readonly AgentRepository _agents;
     private readonly ExchangeRepository _exchanges;
     private readonly MessageRepository _messages;
@@ -80,6 +82,7 @@ public sealed class Broker
         _options = options ?? BrokerOptions.Default;
         _options.Validate();
 
+        _connection = connection;
         _agents = new AgentRepository(connection);
         _exchanges = new ExchangeRepository(connection);
         _messages = new MessageRepository(connection);
@@ -95,6 +98,307 @@ public sealed class Broker
     /// elapsed while nothing could possibly have resumed them.
     /// </remarks>
     public DateTimeOffset? StartedUtc { get; private set; }
+
+    /// <summary>
+    /// Opens an exchange and says the question in it, as one act.
+    /// </summary>
+    /// <param name="from">The agent asking.</param>
+    /// <param name="to">The agent expected to answer.</param>
+    /// <param name="responderModel">
+    /// What produced this question. Required on every message, not only answers; see
+    /// SPEC.md §11.3.
+    /// </param>
+    /// <param name="payloadJson">
+    /// The question document. Rule 1 requires it to state what the asker will do with each
+    /// possible answer, and rule 8.5 caps it at 2,000 characters; both are enforced in storage,
+    /// so a payload breaking either arrives here as a <see cref="SqliteException"/> and nothing
+    /// is written.
+    /// </param>
+    /// <param name="nowUtc">The instant of the ask.</param>
+    /// <param name="conversationId">
+    /// The discussion this question continues, or <see langword="null"/> if it stands alone.
+    /// See SPEC.md §5.0.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the ask.</param>
+    /// <returns>
+    /// The exchange and the question, or the refusal with whatever the asker can act on.
+    /// </returns>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="from"/> and <paramref name="to"/> are the same agent, or
+    /// <paramref name="responderModel"/> or <paramref name="payloadJson"/> is empty.
+    /// </exception>
+    /// <exception cref="SqliteException">
+    /// The question violates a storage constraint. Nothing is written, including the exchange.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// One transaction spanning both writes, and that is the whole reason this method exists
+    /// rather than leaving callers to make the two calls themselves. SPEC.md §10.1 has
+    /// <c>ask</c> as one operation; done as two commits, a question the schema refuses leaves
+    /// an exchange open with nothing in it, holding a pair slot and an entry in the
+    /// distinctness index. It waits out its delivery window and is finally reported to the
+    /// asker as <c>ghosted</c> — nobody came — when nobody was ever asked. Five of them
+    /// saturate the pair under §7.1 and lock it out.
+    /// </para>
+    /// <para>
+    /// The policy comes from <see cref="BrokerOptions.ExchangePolicy"/> and there is
+    /// deliberately no parameter for it. This is the agent-facing surface, and §7.1's caps are
+    /// controls rather than tuning knobs: a control the controlled party selects is not a
+    /// control. An operator configures the broker; an agent takes the terms it is given.
+    /// </para>
+    /// <para>
+    /// Admission runs before the question is written, so a refused ask writes nothing at all —
+    /// not even the question that was refused. That is deliberate, and it is the one place
+    /// where the log is not a complete record of what agents tried to say. Storing refused
+    /// questions would make the message table a place an agent can write to without an exchange
+    /// to hold it, which §5 forbids by making <c>exchange_id</c> mandatory for every type but
+    /// <c>notify</c>.
+    /// </para>
+    /// </remarks>
+    public async Task<AskOutcome> AskAsync(
+        AgentName from,
+        AgentName to,
+        string responderModel,
+        string payloadJson,
+        DateTimeOffset nowUtc,
+        string? conversationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(payloadJson);
+
+        using var transaction = _connection.BeginTransaction(
+            IsolationLevel.Serializable, deferred: false);
+
+        var admission = await _exchanges.TryOpenAsync(
+            from,
+            to,
+            nowUtc,
+            MessageIdentity.ComputeQuestion(from, to, payloadJson),
+            _options.ExchangePolicy,
+            conversationId,
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+
+        if (!admission.Succeeded)
+        {
+            return AskOutcome.Refused(admission);
+        }
+
+        var appended = await _messages.AppendAsync(
+            admission.Exchange!.Id,
+            MessageType.Question,
+            from,
+            to,
+            responderModel,
+            payloadJson,
+            nowUtc,
+            conversationId,
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+
+        transaction.Commit();
+
+        // Stored is always true here, and the flag is passed through rather than asserted. A
+        // question cannot collide in the deduplication window because its identity includes the
+        // exchange it belongs to, and this exchange was created a few lines ago. The repeated
+        // question is caught by the distinctness index instead, which refuses the admission
+        // above rather than the append here. Passing the flag through keeps a caller correct if
+        // that identity ever changes; asserting it would turn such a change into a crash.
+        return AskOutcome.Asked(admission, appended.Message, appended.Stored);
+    }
+
+    /// <summary>
+    /// Requests detail within an open exchange, or supplies detail that was requested.
+    /// </summary>
+    /// <param name="exchangeId">The exchange, as returned by <see cref="AskAsync"/>.</param>
+    /// <param name="from">The agent speaking. Must hold the turn.</param>
+    /// <param name="responderModel">What produced this message; see SPEC.md §11.3.</param>
+    /// <param name="payloadJson">The clarification document.</param>
+    /// <param name="nowUtc">The instant of the clarification.</param>
+    /// <param name="cancellationToken">Cancels the clarification.</param>
+    /// <returns>The message as stored, or why the exchange refused it.</returns>
+    /// <exception cref="ArgumentException"><paramref name="payloadJson"/> is empty.</exception>
+    /// <exception cref="SqliteException">
+    /// The message violates a storage constraint. Nothing is written, including the transition.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// One operation covering both directions, because SPEC.md §10.1 has one. Which direction
+    /// this is depends only on who is speaking, and the exchange already knows: a request from
+    /// the answerer increments the depth against §7's cap, while the asker supplying what was
+    /// asked for does not, since that is not a new round.
+    /// </para>
+    /// <para>
+    /// A breach of the clarify cap is refused here rather than closing the exchange. SPEC.md §7
+    /// has the broker call <see cref="Exchange.ForceUnknown"/> at that point, which is a
+    /// decision this method does not make on the agent's behalf — an agent that has exhausted
+    /// its budget should learn that, not have the exchange closed underneath it by the same
+    /// call it was refused by.
+    /// </para>
+    /// </remarks>
+    public Task<SayOutcome> ClarifyAsync(
+        long exchangeId,
+        AgentName from,
+        string responderModel,
+        string payloadJson,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default) =>
+        SayAsync(
+            exchangeId,
+            from,
+            MessageType.Clarify,
+            responderModel,
+            payloadJson,
+            nowUtc,
+            (exchange, speaker) => exchange.Clarify(speaker, nowUtc),
+            cancellationToken);
+
+    /// <summary>
+    /// Closes an open exchange with an answer, releasing its pair slot.
+    /// </summary>
+    /// <param name="exchangeId">The exchange, as returned by <see cref="AskAsync"/>.</param>
+    /// <param name="from">
+    /// The agent answering. Must be the exchange's answerer and must hold the turn.
+    /// </param>
+    /// <param name="responderModel">What produced this answer; see SPEC.md §11.3.</param>
+    /// <param name="payloadJson">
+    /// The answer document, carrying the per-sub-question resolutions.
+    /// </param>
+    /// <param name="nowUtc">The instant of the answer.</param>
+    /// <param name="resolution">
+    /// The rolled-up outcome, taking the least resolved of the per-sub-question resolutions.
+    /// <see cref="Core.Resolution.Ghosted"/> is refused: only the broker records that.
+    /// </param>
+    /// <param name="isDecision">
+    /// <see langword="true"/> if this answer settles something worth promoting to a durable
+    /// decision record.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the answer.</param>
+    /// <returns>The answer as stored, or why the exchange refused it.</returns>
+    /// <exception cref="ArgumentException"><paramref name="payloadJson"/> is empty.</exception>
+    /// <exception cref="SqliteException">
+    /// The message violates a storage constraint. Nothing is written, including the closure.
+    /// </exception>
+    /// <remarks>
+    /// The atomicity matters more here than anywhere else. Closing the exchange and writing the
+    /// answer as two commits admits a failure in which the exchange is closed <c>answered</c>
+    /// and the answer itself was never written — so the asker learns its question is settled
+    /// and has no way to find out what the settlement was, with the exchange in a terminal
+    /// state no replay reaches. SPEC.md §14's grace period cannot help: it disposes of
+    /// exchanges nobody answered, and this one was answered.
+    /// </remarks>
+    public Task<SayOutcome> AnswerAsync(
+        long exchangeId,
+        AgentName from,
+        string responderModel,
+        string payloadJson,
+        DateTimeOffset nowUtc,
+        Resolution resolution = Resolution.Answered,
+        bool isDecision = false,
+        CancellationToken cancellationToken = default) =>
+        SayAsync(
+            exchangeId,
+            from,
+            MessageType.Answer,
+            responderModel,
+            payloadJson,
+            nowUtc,
+            (exchange, speaker) => exchange.Answer(speaker, nowUtc, resolution, isDecision),
+            cancellationToken);
+
+    /// <summary>
+    /// Applies a transition to an open exchange and writes the message announcing it, as one act.
+    /// </summary>
+    /// <param name="exchangeId">The exchange to move.</param>
+    /// <param name="from">The agent speaking.</param>
+    /// <param name="type">The message kind to write.</param>
+    /// <param name="responderModel">What produced the message.</param>
+    /// <param name="payloadJson">The message document.</param>
+    /// <param name="nowUtc">The instant of the move.</param>
+    /// <param name="transition">The domain transition to attempt.</param>
+    /// <param name="cancellationToken">Cancels the move.</param>
+    /// <returns>The message as stored, or why the move was refused.</returns>
+    /// <remarks>
+    /// <para>
+    /// The read is inside the transaction, not before it. Deciding whether a move is legal
+    /// against a row another writer can change in between is the mistake the version stamp
+    /// exists to catch, and catching it there costs a wasted round trip the write lock avoids.
+    /// </para>
+    /// <para>
+    /// The recipient is derived rather than passed. Both message types travel to whichever
+    /// participant is not speaking, and a caller that could name the recipient could address a
+    /// message on this exchange to somebody outside it — which the schema would accept, since
+    /// its foreign keys check that both agents are registered, not that either is in this
+    /// exchange.
+    /// </para>
+    /// <para>
+    /// The conversation identifier is not passed either. An exchange already belongs to one, and
+    /// SPEC.md §5.0 makes a clarification or answer inherit it rather than declare it; the
+    /// composite foreign key on <c>messages</c> would refuse a different one, but the reason to
+    /// leave it null here is that a participant does not get to decide which discussion the
+    /// exchange it is answering belongs to.
+    /// </para>
+    /// </remarks>
+    private async Task<SayOutcome> SayAsync(
+        long exchangeId,
+        AgentName from,
+        MessageType type,
+        string responderModel,
+        string payloadJson,
+        DateTimeOffset nowUtc,
+        Func<Exchange, AgentName, TransitionResult> transition,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(payloadJson);
+
+        using var scope = _connection.BeginTransaction(
+            IsolationLevel.Serializable, deferred: false);
+
+        var exchange = await _exchanges.GetAsync(exchangeId, scope, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (exchange is null)
+        {
+            // Reported as "not open" rather than "no such exchange", so an agent cannot use this
+            // to find out which identifiers exist. See SayOutcome.
+            return SayOutcome.Refused(TransitionError.ExchangeNotOpen);
+        }
+
+        // Decided before anything is written: the recipient below is derived from participants
+        // this establishes are real, and an agent outside the exchange is refused here.
+        var moved = transition(exchange, from);
+
+        if (!moved.Succeeded)
+        {
+            return SayOutcome.Refused(moved.Error);
+        }
+
+        var to = from == exchange.Asker ? exchange.Answerer : exchange.Asker;
+
+        var appended = await _messages.AppendAsync(
+            exchangeId,
+            type,
+            from,
+            to,
+            responderModel,
+            payloadJson,
+            nowUtc,
+            conversationId: null,
+            scope,
+            cancellationToken).ConfigureAwait(false);
+
+        if (!await _exchanges.SaveAsync(
+                exchange, decisionRef: null, scope, cancellationToken).ConfigureAwait(false))
+        {
+            // Another writer moved the row between the read and here, so this decision was made
+            // against a state that no longer holds. Rolling back discards the message too,
+            // which is right: it announced a transition that did not happen.
+            return SayOutcome.Overtaken();
+        }
+
+        scope.Commit();
+        return SayOutcome.Said(appended.Message, appended.Stored);
+    }
 
     /// <summary>
     /// Runs the reboot sequence.
@@ -315,7 +619,8 @@ public sealed class Broker
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken)
     {
-        var exchange = await _exchanges.GetAsync(exchangeId, cancellationToken).ConfigureAwait(false);
+        var exchange = await _exchanges.GetAsync(
+            exchangeId, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (exchange is null || !exchange.Deliver(nowUtc).Succeeded)
         {

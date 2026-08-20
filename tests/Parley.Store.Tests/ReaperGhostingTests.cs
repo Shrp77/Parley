@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Xunit;
 
@@ -72,7 +72,7 @@ public sealed class ReaperGhostingTests : IDisposable
             T0 + Delivery + Grace, LongAgo, TestContext.Current.CancellationToken);
         Assert.Equal(1, ghosting.Ghosted);
 
-        var loaded = await _exchanges.GetAsync(exchange.Id, TestContext.Current.CancellationToken);
+        var loaded = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ExchangeState.Closed, loaded!.State);
         Assert.Equal(Resolution.Ghosted, loaded.Resolution);
     }
@@ -112,7 +112,7 @@ public sealed class ReaperGhostingTests : IDisposable
         var exchange = await Open();
         await _reaper.SweepAsync(T0 + Delivery, LongAgo, TestContext.Current.CancellationToken);
 
-        var orphan = await _exchanges.GetAsync(exchange.Id, TestContext.Current.CancellationToken);
+        var orphan = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(orphan!.Resume(T0.AddHours(1)).Succeeded);
         Assert.True(await _exchanges.SaveAsync(
             orphan, cancellationToken: TestContext.Current.CancellationToken));
@@ -173,7 +173,7 @@ public sealed class ReaperGhostingTests : IDisposable
 
         Assert.Equal(ReapResult.Nothing, result);
 
-        var loaded = await _exchanges.GetAsync(exchange.Id, TestContext.Current.CancellationToken);
+        var loaded = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(Resolution.Answered, loaded!.Resolution);
     }
 
@@ -197,7 +197,7 @@ public sealed class ReaperGhostingTests : IDisposable
         Assert.Equal(1, result.Orphaned);
         Assert.Equal(1, result.Ghosted);
 
-        var loadedFirst = await _exchanges.GetAsync(first.Id, TestContext.Current.CancellationToken);
+        var loadedFirst = await _exchanges.GetAsync(first.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(Resolution.Ghosted, loadedFirst!.Resolution);
     }
 

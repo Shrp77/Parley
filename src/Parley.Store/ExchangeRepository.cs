@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Parley.Core;
@@ -58,17 +58,26 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// Loads a single exchange by its identity.
     /// </summary>
     /// <param name="id">The exchange's primary key.</param>
+    /// <param name="transaction">
+    /// The transaction to read within, or <see langword="null"/> to read outside one. Pass the
+    /// ambient transaction when the result will inform a write, so the row cannot shift between
+    /// the decision and the write that acts on it.
+    /// </param>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>
     /// The exchange in whatever state it currently holds, or <see langword="null"/> if no
     /// row exists with that identity.
     /// </returns>
-    public async Task<Exchange?> GetAsync(long id, CancellationToken cancellationToken = default)
+    public async Task<Exchange?> GetAsync(
+        long id,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
     {
         var row = await _connection.QuerySingleOrDefaultAsync<ExchangeRow>(
             new CommandDefinition(
                 $"{SelectColumns} WHERE id = @Id;",
                 new { Id = id },
+                transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return row?.ToDomain();
@@ -216,6 +225,11 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// The terms to admit under, or <see langword="null"/> for
     /// <see cref="ExchangePolicy.Default"/>. Resolved, never named.
     /// </param>
+    /// <param name="transaction">
+    /// A transaction to enlist in, or <see langword="null"/> to own one. Supplied when this
+    /// write is one step of a larger operation that must commit or fail whole; see
+    /// <c>WriteScope</c>. A borrowed transaction is not committed here.
+    /// </param>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>
     /// An outcome carrying either the opened exchange, the debt the asker must settle first,
@@ -256,6 +270,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         string questionHash,
         ExchangePolicy? policy = null,
         string? conversationId = null,
+        SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
         if (asker == answerer)
@@ -272,10 +287,9 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         var terms = policy ?? ExchangePolicy.Default;
         terms.Validate();
 
-        // Synchronous BeginTransaction, deliberately. The async overloads do not expose the
-        // deferred flag, and getting IMMEDIATE is the whole point here. Beginning a
-        // transaction is a fast local operation with no I/O to await.
-        using var transaction = _connection.BeginTransaction(IsolationLevel.Serializable, deferred: false);
+        // Owns a transaction when called alone, joins one when composed into a larger
+        // operation. See WriteScope for why an ask cannot be two commits.
+        using var scope = WriteScope.Begin(_connection, transaction);
 
         // Checked before the pair and the cycle because it is the one condition none of them
         // can express. A dead repository leaves its agent registered and its pair slot free,
@@ -286,7 +300,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
             new CommandDefinition(
                 "SELECT count(*) FROM agents WHERE name = @Name AND status = 'unreachable';",
                 new { Name = answerer.Value },
-                transaction,
+                scope.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         if (reachable > 0)
@@ -294,7 +308,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
             return OpenOutcome.Unreachable();
         }
 
-        var open = await GetOpenAsync(transaction, cancellationToken).ConfigureAwait(false);
+        var open = await GetOpenAsync(scope.Transaction, cancellationToken).ConfigureAwait(false);
         var pairKey = PairKey.For(asker, answerer);
 
         // Owing this peer an answer no longer blocks asking it something: a pair may carry
@@ -318,7 +332,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                  LIMIT 1;
                 """,
                 new { Asker = asker.Value, Answerer = answerer.Value, QuestionHash = questionHash },
-                transaction,
+                scope.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         var outstanding = open
@@ -358,7 +372,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                     ON CONFLICT (id) DO NOTHING;
                     """,
                     new { Id = conversationId, Opened = ExchangeRow.FormatTimestamp(nowUtc) },
-                    transaction,
+                    scope.Transaction,
                     cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
 
@@ -392,10 +406,10 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                     QuestionHash = questionHash,
                     ConversationId = conversationId
                 },
-                transaction,
+                scope.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        scope.Complete();
 
         return OpenOutcome.Opened(
             Exchange.Rehydrate(
@@ -414,6 +428,11 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// </param>
     /// <param name="decisionRef">
     /// A pointer to the promoted decision record, when the closing answer produced one.
+    /// </param>
+    /// <param name="transaction">
+    /// A transaction to enlist in, or <see langword="null"/> to own one. Supplied when this
+    /// write is one step of a larger operation that must commit or fail whole; see
+    /// <c>WriteScope</c>. A borrowed transaction is not committed here.
     /// </param>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>
@@ -447,10 +466,19 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// saved continues to hold its pair slot and its wait-for edge, since both are derived
     /// from stored state.
     /// </para>
+    /// <para>
+    /// Within a borrowed transaction, a <see langword="true"/> return means the row was
+    /// updated, not that the update is durable — the caller may still roll back. The version
+    /// stamp on <paramref name="exchange"/> has already advanced by then, so an instance whose
+    /// save was rolled back is ahead of storage and every later save through it will report
+    /// stale. Discard it and reload rather than reusing it, which is what a caller composing
+    /// several writes should do with all of them after a failure.
+    /// </para>
     /// </remarks>
     public async Task<bool> SaveAsync(
         Exchange exchange,
         string? decisionRef = null,
+        SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(exchange);
@@ -488,6 +516,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                     ExpectedVersion = exchange.Version,
                     NextVersion = nextVersion
                 },
+                transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         if (affected == 0)
