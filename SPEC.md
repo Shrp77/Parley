@@ -356,7 +356,7 @@ Closes the exchange. Carries a per-sub-question resolution:
 | `resolution` | Meaning | Written by |
 |---|---|---|
 | `answered` | Resolved within this agent's authority | the answerer |
-| `out_of_scope` | Not this agent's boundary — `redirect_to` names the right one | the answerer |
+| `out_of_scope` | Not this agent's boundary — `redirect_to` names who owns it | the answerer |
 | `unknown` | Within scope, but genuinely undetermined | the answerer |
 | `ghosted` | Nobody ever answered, and nobody is going to | the broker (§14) |
 
@@ -364,6 +364,86 @@ Closes the exchange. Carries a per-sub-question resolution:
 it must be distinguishable, because it is the system's best diagnostic signal. A
 cluster of `out_of_scope` between two agents means the ownership map is wrong. That
 is a defect you would otherwise never notice.
+
+#### Referral
+
+```jsonc
+{
+  "type": "answer",
+  "exchange_id": 47,
+  "resolutions": [
+    { "id": "q1", "resolution": "answered",
+      "text": "No. Invoice freezes whatever the order supplied." },
+    { "id": "q2", "resolution": "out_of_scope",
+      "redirect_to": ["inventory", "pricing"],
+      "text": "Stock reservation is inventory's; the discount ladder is pricing's." }
+  ]
+}
+```
+
+`redirect_to` carries **a list, not a single name**, and referral is a first-class outcome
+rather than a failure to answer. A sub-question may turn out to span two other boundaries, and
+an answerer that can name both should. An answer may mix resolutions freely: `answered` for
+what it owns, `out_of_scope` with referrals for what it does not.
+
+**Refer; do not relay.** An answerer that discovers a peer holds part of the answer must not
+go and ask on the asker's behalf. It names the owner and stops.
+
+This is the same argument §11.3 already makes for responder identity, applied one hop further
+out. §11.3 requires every message to name who produced it, because an unattributed `unknown`
+from a weak local model is indistinguishable from a considered one from a frontier model and
+the asker acts on both identically. A relayed answer has exactly that defect and worse: it
+arrives wearing the relayer's identity, so the asker cannot tell whose claim it is, how
+confident that peer was, or whether two peers disagreed. Summarisation compresses hedges
+first — *"probably, but I have not checked since the refactor"* and *"definitely not"* both
+become *"that is handled"* — and the asker cannot tell what it was not told, because silence
+and consensus look identical.
+
+A relayer also applies the asker's `consequences` on its behalf, which is the field §5.1 calls
+the highest-leverage in the protocol. It is meant to be read by the peer whose boundary the
+question concerns, and a relay hands it to the wrong reader.
+
+Referral avoids all of this at no cost, because nothing waits (§4.2). The asker opens fresh
+exchanges with the named owners, using its own framing and its own consequences, and receives
+each answer under its author's identity — so it can see for itself that one peer hedged and
+another did not.
+
+**The test for whether to refer is mechanical: is the third party in the registry?** A
+registered agent is a peer, and the asker is entitled to be introduced to it. Anything else is
+the answerer's own implementation — a service it calls, a library it wraps, a colleague it
+messages — and must never be named at all, because naming it is describing internals (rule 3).
+That distinction sounds like judgement and is not: the broker knows the registry, and so does
+every agent, since §10.1 exposes `agents()`.
+
+That last point is also why referral leaks nothing. `agents()` already lists every registered
+agent, so a referral tells the asker who owns something, not that someone exists.
+
+**A referral must name a registered agent, and the schema enforces it** (§9.3). An
+unregistered name is either a typo or, more importantly, an internal leaking out — rule 3 is
+the single rule most responsible for preventing context poisoning, and this is the one place
+it can be checked mechanically rather than trusted, because a referral is the one part of an
+answer that must be a name from the registry rather than free prose. A referral to a `retired` or `unreachable` agent (§14) is
+permitted and delivered with that status attached, so the asker learns the boundary *and* that
+nobody currently holds it, rather than discovering the second fact one refused question later.
+Refusing such a referral outright would be worse: the answerer would have to guess at its
+peers' liveness to answer a question about ownership, which is not something it knows or should
+have to.
+
+**An agent may not refer to itself, and the schema refuses it** (§9.3). `out_of_scope` says
+the boundary is not mine and a referral says whose it is; naming yourself asserts both at once.
+It is worth refusing rather than ignoring because the plausible cause is not a typo — an agent
+that answers this way has misread the question as being about something it owns, and silently
+accepting it would send the asker back to the peer that just declined, which is the retry loop
+§7.3 exists to prevent, arrived at by a different route.
+
+Referring back to the **asker** is a different matter and is allowed. *"That is your call, not
+mine"* is a legitimate answer to a misdirected question, and one an asker genuinely needs when
+it has mistaken its own boundary for someone else's.
+
+**A referral chain does not become a relay.** Nothing stops the newly asked peer referring
+onward, and that is legitimate — but it is bounded by the same rules as any other traffic: each
+hop is an ordinary exchange against the §7.1 cap, and the asker chooses whether to follow. No
+agent accumulates a chain on another's behalf, because no agent ever asks on another's behalf.
 
 These are per sub-question. The exchange also carries a single rolled-up resolution (§9.2),
 which is the least resolved of them — an exchange is `answered` only if every sub-question was.
@@ -380,13 +460,14 @@ That matters because the exchange-level resolution outlives the message text (§
 what §15 reads when diagnosing an unhealthy deployment. An agent able to write `ghosted` could
 report its own answered exchanges as abandoned — making the infrastructure look broken, or
 disguising a peer as unreachable — and by the time anyone looked, the messages proving
-otherwise may have been pruned. It is the broker reporting that an
-exchange was abandoned, and it is distinct from `unknown` for the reason `out_of_scope` is
-distinct from `answered`: both close an exchange without resolving it, but one means a peer
-considered the question and could not settle it, and the other means no peer ever engaged
-with it at all. Collapsing them would hide an infrastructure failure inside a legitimate
-answer, and the asker would treat "your peer does not know" and "your peer never replied" as
-the same fact when they call for completely different responses.
+otherwise may have been pruned.
+
+It is distinct from `unknown` for the reason `out_of_scope` is distinct from `answered`. Both
+close an exchange without resolving it, but one means a peer considered the question and could
+not settle it, and the other means no peer ever engaged with it at all. Collapsing them would
+hide an infrastructure failure inside a legitimate answer, and the asker would treat "your peer
+does not know" and "your peer never replied" as the same fact when they call for completely
+different responses.
 
 ### 5.4 Notify
 
@@ -595,8 +676,11 @@ reads tool descriptions on every call and reads documentation approximately neve
    context you spend on the other end.
 5. **Hard size cap.** 2,000 characters per message, enforced by the broker.
    Truncation is a protocol error, not a warning.
-6. **Answer from authority, not inference.** If you are guessing about your own
-   domain, `resolution: "unknown"` beats a confident fabrication the peer will act on.
+6. **Answer from authority, not inference.** Three outcomes, and choosing correctly between
+   them is most of what makes an answer useful. If you own it and know, answer. If you own it
+   and do not know, `unknown` beats a confident fabrication the peer will act on. If you do
+   not own it, `out_of_scope` and name who does — guessing about a peer's boundary is the
+   worst of the three, because it is wrong *and* attributed to you.
 7. **Decisions get promoted.** An Answer marked `decision: true` emits a decision
    record into the project's coordination repository. Otherwise the same decision is
    re-derived weeks later at full cost — the failure this protocol exists to prevent.
@@ -604,6 +688,12 @@ reads tool descriptions on every call and reads documentation approximately neve
    on with your own work; the answer will arrive in your inbox with the question attached.
    Polling for it, or holding your turn until it comes, wastes the tokens the asynchrony
    exists to save — and your peer may legitimately take hours.
+9. **Refer, do not relay.** If a peer owns part of the answer, name them and stop. Do not go
+   and ask on the asker's behalf: you would return their claim under your identity, having
+   applied consequences that were not written for you to apply. Referring costs the asker
+   nothing, because nothing waits.
+10. **Tag the conversation** when a question continues an existing line of discussion (§5.0).
+   You are the only participant who knows whether it does.
 
 ## 9. Persistence
 
@@ -772,6 +862,38 @@ END;
 CREATE UNIQUE INDEX ux_open_question
   ON exchanges(asker, answerer, question_hash) WHERE state = 'OPEN';
 
+-- Every referral names a registered agent. A trigger rather than a CHECK because reaching
+-- inside a JSON array needs json_tree, which is a subquery: CHECK forbids those, triggers
+-- permit them.
+--
+-- The key test is deliberately two-sided. json_tree reports an array element under a path
+-- containing redirect_to, but a bare string under the parent's path with redirect_to as its
+-- key, so matching on path alone silently ignores a malformed scalar — and a malformed value
+-- that disables a guard is exactly how a rule becomes decorative. Verified against both forms.
+--
+-- Not restricted to answers, although only an answer carries a referral today. A redirect_to
+-- in any other message type is inert, and inert data is how a guard lapses: the day something
+-- reads it, the check that was scoped to the old reader is silently absent. The same mistake
+-- as scoping the cap trigger to INSERT and meeting the resume path an UPDATE later.
+CREATE TRIGGER tr_referral_targets_exist BEFORE INSERT ON messages
+BEGIN
+  SELECT RAISE(ABORT, 'redirect_to names an agent that is not registered')
+   WHERE EXISTS (
+     SELECT 1 FROM json_tree(NEW.payload_json) t
+      WHERE (t.path LIKE '%redirect_to%' OR t.key = 'redirect_to')
+        AND t.type = 'text'
+        AND t.value NOT IN (SELECT name FROM agents));
+
+  -- A sender referring to itself asserts both halves of a contradiction in one message:
+  -- out_of_scope says the boundary is not mine, and the referral says it is. Checked against
+  -- every entry rather than the first, so one cannot hide among valid targets.
+  SELECT RAISE(ABORT, 'redirect_to names the sender')
+   WHERE EXISTS (
+     SELECT 1 FROM json_tree(NEW.payload_json) t
+      WHERE (t.path LIKE '%redirect_to%' OR t.key = 'redirect_to')
+        AND t.type = 'text' AND t.value = NEW.from_agent);
+END;
+
 -- A ghost asserts that nobody answered (§14), so an exchange carrying an answer cannot be
 -- one. Structural rather than textual: it does not inspect the answer, only whether one
 -- exists, so there is nothing to word around.
@@ -852,6 +974,11 @@ CREATE UNIQUE INDEX ux_message_dedup
 Rules that application code could otherwise route around live in the schema, so correctness
 survives bugs in the broker:
 
+- **A referral names a registered agent, and never the sender.** The trigger below. Rule 3
+  forbids describing internals and is otherwise unenforceable — prose cannot be checked — but a
+  referral is a name, and a name can be looked up. It is the only part of rule 3 the storage
+  layer can hold, which is reason enough to hold it. The second clause catches a message that
+  contradicts itself, saying the boundary is not the sender's while naming the sender.
 - **`ghosted` is the broker's to write, not an agent's.** The trigger above. This is one of
   the two forgeries §15's health signals are worth committing, and the only one the schema can
   refuse — the other, an adapter claiming the reserved `parley:` responder prefix (§11.3),
@@ -1599,6 +1726,12 @@ Cheap to collect, disproportionately useful:
   §7.1 caps questions per pair and deliberately does not cap them per answerer, so this is
   the signal that replaces the constraint that was not imposed. It is a design defect to fix
   rather than a rate to limit: an agent everyone must ask owns too much.
+- Referral rate per pair, and referral depth → a question that must fan out to three peers
+  every time it is asked describes a boundary drawn in the wrong place. Referral is the right
+  behaviour (§5.3) and a high rate of it is still a finding: the fix belongs in the ownership
+  map, not in the traffic. Referrals that consistently land on the same third agent are the
+  clearest form of this — two peers repeatedly pointing at a third means the question was
+  never really theirs.
 - Refusals by reason → each one means something different and they should not be pooled.
   Cycles indicate a knot; cap refusals indicate a peer being over-asked; distinctness
   refusals (§7.1) indicate agents forgetting what they already asked, which is a context
