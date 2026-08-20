@@ -150,11 +150,13 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// anything at all is the operator's configured policy, per SPEC.md section 14.
     /// </para>
     /// <para>
-    /// The result may contain several orphans sharing one pair, because <c>ux_open_pair</c>
-    /// is partial over open rows and a pair can be orphaned, reopened, and orphaned again.
-    /// At most one of them can be resumed; saving a second throws. A caller replaying this
-    /// list must therefore choose per pair rather than resuming all of it, and deciding
-    /// which one wins is broker policy that does not exist yet.
+    /// The result may contain several orphans sharing one pair, which is now ordinary rather
+    /// than a hazard: a pair may hold several open exchanges provided they carry different
+    /// questions. What still cannot be resumed is an orphan whose question is already open
+    /// again — <c>ux_open_question</c> is partial over open rows, so an identical re-ask
+    /// refuses the replay. That resolves the collision half of §17 open question 9; what
+    /// remains open there is the incentive, since the surviving re-ask starts at clarify
+    /// depth zero while the orphan held the accumulated depth.
     /// </para>
     /// </remarks>
     public async Task<IReadOnlyList<Exchange>> GetOrphanedOwedByAsync(
@@ -168,6 +170,43 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return [.. rows.Select(r => r.ToDomain())];
+    }
+
+    /// <summary>
+    /// Loads orphans whose grace period has elapsed and which may therefore be ghosted.
+    /// </summary>
+    /// <param name="nowUtc">The instant to evaluate against.</param>
+    /// <param name="brokerStartUtc">When the broker most recently started.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The orphans that may be closed as ghosted.</returns>
+    /// <remarks>
+    /// <para>
+    /// The clock runs from the later of orphaning and broker start, which is why this cannot
+    /// be a plain predicate on <c>expires_utc</c>. A broker that was down overnight returns to
+    /// exchanges whose grace period elapsed while nothing could possibly have resumed them, and
+    /// a wall-clock rule would ghost every one of them within a second of start-up.
+    /// </para>
+    /// <para>
+    /// <c>Orphan</c> restamps <c>expires_utc</c> with the instant of orphaning, so that column
+    /// carries the start of the grace period rather than the deadline it originally held.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<Exchange>> GetGhostableAsync(
+        DateTimeOffset nowUtc,
+        DateTimeOffset brokerStartUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await _connection.QueryAsync<ExchangeRow>(
+            new CommandDefinition(
+                $"{SelectColumns} WHERE state = 'ORPHANED';",
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        // Filtered in memory rather than in SQL. The predicate mixes a stored timestamp, a
+        // stored duration and a value only the host knows, and expressing that in SQL means
+        // arithmetic on text timestamps that the domain already does correctly. The set is
+        // bounded by the number of registered pairs rather than by history.
+        return [.. rows.Select(r => r.ToDomain())
+            .Where(e => e.IsGhostableAt(nowUtc, brokerStartUtc))];
     }
 
     /// <summary>

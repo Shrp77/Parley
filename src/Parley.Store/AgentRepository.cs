@@ -73,7 +73,19 @@ public enum AgentStatus
     /// questions to save a human a judgement they are better placed to make.
     /// </para>
     /// </remarks>
-    Unreachable = 3
+    Unreachable = 3,
+
+    /// <summary>
+    /// Retired by an operator: the repository is gone for good.
+    /// </summary>
+    /// <remarks>
+    /// The only status the broker never sets on its own evidence. <see cref="Unreachable"/> is
+    /// the broker reporting that it tried and failed, which a re-clone or a restored backup can
+    /// invalidate at any moment; this is a person saying it will not come back. Start-up clears
+    /// every other status as stale liveness and leaves this one, because it is a judgement
+    /// rather than an observation.
+    /// </remarks>
+    Retired
 }
 
 /// <summary>
@@ -257,7 +269,11 @@ public sealed class AgentRepository(SqliteConnection connection)
     public async Task<int> MarkAllOfflineAsync(CancellationToken cancellationToken = default) =>
         await _connection.ExecuteAsync(
             new CommandDefinition(
-                "UPDATE agents SET status = 'offline';",
+                // Retired is excluded because it is not stale liveness: it is an operator's
+                // judgement that a repository is gone for good, and a restart is no evidence
+                // against it. Every other status is what the previous run observed, which the
+                // restart itself may well have invalidated.
+                "UPDATE agents SET status = 'offline' WHERE status <> 'retired';",
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>
@@ -334,6 +350,70 @@ public sealed class AgentRepository(SqliteConnection connection)
         await _connection.ExecuteAsync(
             new CommandDefinition(
                 "UPDATE agents SET status = 'unreachable' WHERE name = @Name;",
+                new { Name = name.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>
+    /// Retires an agent whose repository is gone for good.
+    /// </summary>
+    /// <param name="name">The agent to retire.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>The number of rows changed: one if the agent existed, zero otherwise.</returns>
+    /// <remarks>
+    /// <para>
+    /// The operator operation from SPEC.md section 10.2, and the only status the broker never
+    /// sets on its own evidence. <see cref="AgentStatus.Unreachable"/> is the broker reporting
+    /// that it tried and failed, which a re-clone or a restored backup can invalidate at any
+    /// moment; this is a person saying it will not come back.
+    /// </para>
+    /// <para>
+    /// It marks rather than deletes, and section 10.2 previously said "remove". The schema does
+    /// not permit removal and should not: <c>exchanges</c> and <c>messages</c> both reference
+    /// <c>agents(name)</c>, and section 9.4 keeps exchange rows after pruning their message text
+    /// precisely so that telemetry outlives the traffic. Deleting the agent would cascade to
+    /// that skeleton and take every counterparty history of dealing with it along too, so the
+    /// pair-level questions section 15 is built on would be answerable for every agent except
+    /// the ones that had gone wrong.
+    /// </para>
+    /// <para>
+    /// Nothing here touches the outstanding exchanges. They take the ordinary path: their
+    /// windows elapse, they orphan, and the grace period ghosts them. Retiring neither waits
+    /// for that nor accelerates it.
+    /// </para>
+    /// </remarks>
+    public async Task<int> RetireAsync(
+        AgentName name,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE agents SET status = 'retired' WHERE name = @Name;",
+                new { Name = name.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>
+    /// Withdraws a retirement, returning the agent to service.
+    /// </summary>
+    /// <param name="name">The agent to reinstate.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>The number of rows changed: one if the agent was retired, zero otherwise.</returns>
+    /// <remarks>
+    /// The counterpart to <see cref="RetireAsync"/>, and deliberately not something
+    /// <see cref="UpsertAsync"/> does. The registry is reloaded from the manifest at every
+    /// start-up, so clearing retirement on registration would undo it on the next restart and
+    /// every restart after — an operator who retires an agent and finds it live again the
+    /// following morning has been given a control that does not hold.
+    ///
+    /// It returns the agent to <see cref="AgentStatus.Offline"/> rather than
+    /// <see cref="AgentStatus.Live"/>, because offline is the ordinary resting state of a
+    /// lazily spawned agent and nothing has yet demonstrated that this one can be reached.
+    /// </remarks>
+    public async Task<int> ReinstateAsync(
+        AgentName name,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE agents SET status = 'offline' " +
+                "WHERE name = @Name AND status = 'retired';",
                 new { Name = name.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
@@ -451,6 +531,7 @@ public sealed class AgentRepository(SqliteConnection connection)
         AgentStatus.Live => "live",
         AgentStatus.Offline => "offline",
         AgentStatus.Unreachable => "unreachable",
+        AgentStatus.Retired => "retired",
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
     };
 
@@ -493,6 +574,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                 "live" => AgentStatus.Live,
                 "offline" => AgentStatus.Offline,
                 "unreachable" => AgentStatus.Unreachable,
+                "retired" => AgentStatus.Retired,
                 _ => throw new InvalidOperationException($"Unrecognised status '{Status}'.")
             });
     }

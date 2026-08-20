@@ -75,6 +75,21 @@ public sealed class SchemaConformanceTests : IDisposable
             $"SPEC.md §9.2 names indexes the migration does not create: {string.Join(", ", missing)}");
     }
 
+    [Fact]
+    public void Every_enumerated_value_agrees()
+    {
+        // Columns and types were not enough. `retired` reached the document in five places and
+        // the schema in none, and this suite passed throughout, because a CHECK constraint is
+        // not part of a column's shape. Enum drift is both the likeliest divergence and the
+        // most damaging: a status the document defines and the schema refuses fails at runtime,
+        // on the one write that needed it.
+        //
+        // Literals inside CHECK constraints rather than the constraints themselves, because the
+        // migration is free to lay its SQL out differently and a check that fires on formatting
+        // is one people learn to ignore.
+        Assert.Equal(CheckLiterals(_fromSpec), CheckLiterals(_fromMigration));
+    }
+
     [Theory]
     [InlineData("agents")]
     [InlineData("agent_credentials")]
@@ -85,6 +100,34 @@ public sealed class SchemaConformanceTests : IDisposable
     public void Every_column_agrees(string table)
     {
         Assert.Equal(Columns(_fromSpec, table), Columns(_fromMigration, table));
+    }
+
+    /// <summary>Every quoted literal appearing inside a CHECK constraint, per object.</summary>
+    private static IReadOnlyList<string> CheckLiterals(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT name, sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%';";
+
+        using var reader = command.ExecuteReader();
+        var literals = new List<string>();
+
+        while (reader.Read())
+        {
+            var name = reader.GetString(0);
+            var sql = reader.GetString(1);
+
+            foreach (Match check in Regex.Matches(sql, @"CHECK\s*\((?:[^()]|\([^()]*\))*\)"))
+            {
+                foreach (Match literal in Regex.Matches(check.Value, @"'([^']*)'"))
+                {
+                    literals.Add($"{name}:{literal.Groups[1].Value}");
+                }
+            }
+        }
+
+        literals.Sort(StringComparer.Ordinal);
+        return literals;
     }
 
     private static IReadOnlyList<string> Names(SqliteConnection connection, string type)

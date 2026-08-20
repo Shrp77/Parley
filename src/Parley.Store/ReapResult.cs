@@ -4,7 +4,10 @@ namespace Parley.Store;
 /// What one reaping sweep did.
 /// </summary>
 /// <param name="Orphaned">
-/// Exchanges moved to the orphaned state, releasing their pair slots.
+/// Exchanges moved to the orphaned state, releasing their wait-for edges.
+/// </param>
+/// <param name="Ghosted">
+/// Orphans closed because their grace period elapsed and nobody returned.
 /// </param>
 /// <param name="Contended">
 /// Expired exchanges that another writer changed between the scan and the write, and which
@@ -18,9 +21,9 @@ namespace Parley.Store;
 /// </para>
 /// <para>
 /// There is deliberately no summary property here. A <c>DidWork</c> derived from
-/// <see cref="Orphaned"/> would quietly under-report the moment this record gains a second
-/// count — retention pruning is coming — and nothing would fail to say so. A caller that
-/// wants "did anything happen" names the fields it means.
+/// <see cref="Orphaned"/> would have under-reported the moment this record gained a second
+/// count, which is exactly what <see cref="Ghosted"/> is, and nothing would have failed to
+/// say so. A caller that wants "did anything happen" names the fields it means.
 /// </para>
 /// <para>
 /// <see cref="Contended"/> is not an error count. An exchange that changed underneath the
@@ -29,10 +32,10 @@ namespace Parley.Store;
 /// find nothing to do.
 /// </para>
 /// </remarks>
-public sealed record ReapResult(int Orphaned, int Contended)
+public sealed record ReapResult(int Orphaned, int Ghosted, int Contended)
 {
     /// <summary>
-    /// An empty result, for a sweep that found nothing expired.
+    /// An empty result, for a sweep that found nothing to do.
     /// </summary>
-    public static ReapResult Nothing { get; } = new(0, 0);
+    public static ReapResult Nothing { get; } = new(0, 0, 0);
 }

@@ -132,6 +132,95 @@ public sealed class AgentRepositoryTests : IDisposable
         Assert.Equal(AgentStatus.Offline, (await Load(Orders)).Status);
     }
 
+    // ---- retirement ----
+
+    [Fact]
+    public async Task Retiring_records_the_state()
+    {
+        await Register(Orders);
+
+        Assert.Equal(1, await _agents.RetireAsync(Orders, TestContext.Current.CancellationToken));
+        Assert.Equal(AgentStatus.Retired, (await Load(Orders)).Status);
+    }
+
+    [Fact]
+    public async Task Retiring_an_unknown_agent_reports_nothing_changed()
+    {
+        Assert.Equal(0, await _agents.RetireAsync(Orders, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Start_up_does_not_clear_a_retirement()
+    {
+        // The distinction the status exists for. Every other status is what the previous run
+        // observed and a restart may well have invalidated it, so start-up clears them.
+        // Retirement is a person saying a repository is gone for good, and a restart is no
+        // evidence against that.
+        await Register(Orders);
+        await Register(Billing);
+        await _agents.RetireAsync(Orders, TestContext.Current.CancellationToken);
+        await _agents.MarkUnreachableAsync(Billing, TestContext.Current.CancellationToken);
+
+        await _agents.MarkAllOfflineAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(AgentStatus.Retired, (await Load(Orders)).Status);
+        Assert.Equal(AgentStatus.Offline, (await Load(Billing)).Status);
+    }
+
+    [Fact]
+    public async Task Registering_again_does_not_clear_a_retirement()
+    {
+        // The reason retirement needs its own counterpart rather than being undone by
+        // registration: the registry is reloaded from the manifest at every start-up, so this
+        // would silently un-retire the agent on the next restart and every restart after.
+        await Register(Orders);
+        await _agents.RetireAsync(Orders, TestContext.Current.CancellationToken);
+
+        await Register(Orders);
+
+        Assert.Equal(AgentStatus.Retired, (await Load(Orders)).Status);
+    }
+
+    [Fact]
+    public async Task Reinstating_returns_a_retired_agent_to_service()
+    {
+        await Register(Orders);
+        await _agents.RetireAsync(Orders, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, await _agents.ReinstateAsync(Orders, TestContext.Current.CancellationToken));
+
+        // Offline rather than live: nothing has yet demonstrated that this agent can be
+        // reached, and offline is the ordinary resting state of one that can.
+        Assert.Equal(AgentStatus.Offline, (await Load(Orders)).Status);
+    }
+
+    [Fact]
+    public async Task Reinstating_an_agent_that_was_not_retired_changes_nothing()
+    {
+        // Guarded on the current status so that reinstating cannot be used to clear an
+        // unreachable mark, which is the broker's observation rather than an operator's
+        // judgement and is cleared by the reboot sequence instead.
+        await Register(Orders);
+        await _agents.MarkUnreachableAsync(Orders, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, await _agents.ReinstateAsync(Orders, TestContext.Current.CancellationToken));
+        Assert.Equal(AgentStatus.Unreachable, (await Load(Orders)).Status);
+    }
+
+    [Fact]
+    public async Task Retiring_preserves_the_row_so_history_survives()
+    {
+        // §9.4 keeps exchange rows after pruning their message text so telemetry outlives the
+        // traffic, and both exchanges and messages are foreign keys to this row. Deleting the
+        // agent would cascade to the skeleton that exists to be kept.
+        await Register(Orders);
+        await _agents.RetireAsync(Orders, TestContext.Current.CancellationToken);
+
+        Assert.Contains(
+            await _agents.GetAllAsync(TestContext.Current.CancellationToken),
+            a => a.Name == Orders);
+    }
+
     // ---- credentials ----
 
     [Fact]
