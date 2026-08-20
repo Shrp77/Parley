@@ -175,11 +175,17 @@ A `conversation_id` optionally accompanies a Question or a Notify. It is an opaq
 identifier chosen by the **agent**, grouping exchanges that belong to one line of
 discussion.
 
-Declared on a Question, it is recorded on the **exchange**, not on the message. Everything
-in that exchange — the question, its clarifications, its answer — is then in the conversation
-by belonging to the exchange, rather than by each message carrying a copy that could
-disagree. A Notify has no exchange, so it is the one message type that carries the
-identifier itself.
+Declared on a Question, it is recorded on the **exchange**, which is authoritative. Everything
+in that exchange — the question, its clarifications, its answer — is in the conversation by
+belonging to the exchange, so a Clarify or Answer cannot be routed into a different one by
+claiming so. A Notify has no exchange and therefore declares its own.
+
+Messages also carry the identifier, repeating what their exchange already says. That is a
+deliberate exception to keeping one fact in one place, and it survives only because a
+composite foreign key (§9.2) makes the copy incapable of disagreeing. The reason to keep it
+is the moment it gets read: someone asking what became of a discussion is usually asking
+because something went wrong, and requiring a join through the very table under suspicion is
+a poor answer.
 
 The agent chooses it because the agent is the only participant that knows. Whether the
 question just asked continues the previous one or opens something unrelated is a fact
@@ -224,7 +230,9 @@ The cost of gate-crashing is therefore continuous and visible, while the benefit
 a closure that §9.4's idle rule reaches anyway.
 
 A Clarify or Answer takes its exchange's identifier regardless of what its sender says, so
-nobody can reassign an exchange — only add to a conversation. An operator reading an export
+nobody can reassign an exchange — only add to a conversation. That is enforced rather than
+observed: once an exchange carries any message, the composite foreign key in §9.2 refuses the
+update that would move it to another conversation. An operator reading an export
 should treat grouping as the participants' account of what belongs together, which is what
 makes it useful, and check the participants when that matters.
 
@@ -625,7 +633,7 @@ CREATE TABLE exchanges (
   is_decision       INTEGER NOT NULL DEFAULT 0,
   decision_ref      TEXT,
   question_hash     TEXT    NOT NULL,      -- content identity, §13.1
-  conversation_id   TEXT    REFERENCES conversations(id),
+  conversation_id   TEXT    REFERENCES conversations(id),  -- authoritative; see messages
   version           INTEGER NOT NULL DEFAULT 0,
 
   CHECK (asker <> answerer),
@@ -635,6 +643,11 @@ CREATE TABLE exchanges (
   CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
   CHECK (pair_key = min(asker, answerer) || char(31) || max(asker, answerer))
 ) STRICT;
+
+-- Composite parent key for the denormalised copy on messages. Redundant for uniqueness,
+-- since id is already the primary key, and required because SQLite resolves a composite
+-- foreign key only against indexed parent columns.
+CREATE UNIQUE INDEX ux_exchange_conversation ON exchanges(id, conversation_id);
 
 -- A conversation exists as a row so that it can carry a state. While it was only a string
 -- on messages, no rule could ask whether a discussion was over without reconstructing it
@@ -702,7 +715,7 @@ CREATE TABLE messages (
   responder_model TEXT    NOT NULL,       -- see §11.3
   payload_json    TEXT    NOT NULL,
   content_hash    TEXT    NOT NULL,       -- see §13.1
-  conversation_id TEXT,                   -- Notify only; see below and §5.0
+  conversation_id TEXT,                   -- denormalised from the exchange; see below
   created_utc     TEXT    NOT NULL,
   dedup_bucket    INTEGER GENERATED ALWAYS AS (unixepoch(created_utc) / 60) STORED,
   delivered_utc   TEXT,
@@ -720,11 +733,27 @@ CREATE TABLE messages (
          OR (length(conversation_id) BETWEEN 1 AND 64
              AND conversation_id NOT GLOB '*[^a-zA-Z0-9._:/-]*')),
 
-  -- A message belonging to an exchange takes that exchange's conversation and stores none of
-  -- its own. Two columns holding the same fact eventually hold different facts, and the one
-  -- that gets edited is not reliably the one that gets read. Only Notify, which has no
-  -- exchange, carries the identifier itself.
-  CHECK (conversation_id IS NULL OR exchange_id IS NULL)
+  -- The exchange holds the authoritative conversation (§5.0); this column repeats it, and
+  -- the composite foreign key below is what stops the copy becoming a second opinion. A
+  -- message may not name a conversation its exchange is not in, nor one that does not exist.
+  --
+  -- Kept deliberately, against the usual rule that one fact belongs in one column. The rule
+  -- guards against silent drift, and there is none to guard against once the copy cannot
+  -- differ. What it buys is that the message log answers "what happened in this
+  -- conversation" on its own, at the moment someone is looking because something has gone
+  -- wrong and the exchange rows are what they are trying to check.
+  --
+  -- One gap remains and is the acceptable direction. A composite foreign key is satisfied by
+  -- a NULL in either column, so a message may carry NULL where its exchange carries an
+  -- identifier. That loses the shortcut without misreporting anything: the value is still one
+  -- join away. The copy can fail to help; it cannot lie.
+  --
+  -- It also makes an exchange's conversation immutable once any message exists in it, because
+  -- the UPDATE that would move it is refused while children reference the old value. §5.0
+  -- states that nobody may reassign an exchange, only add to a conversation. That was a
+  -- convention until now.
+  FOREIGN KEY (exchange_id, conversation_id)
+    REFERENCES exchanges(id, conversation_id)
 ) STRICT;
 
 CREATE UNIQUE INDEX ux_message_dedup
