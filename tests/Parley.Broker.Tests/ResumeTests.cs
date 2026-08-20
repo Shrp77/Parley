@@ -236,6 +236,34 @@ public sealed class ResumeTests : IDisposable
             throw new InvalidOperationException("the budget service is unreachable");
     }
 
+    [Fact]
+    public async Task A_declined_replay_leaves_the_question_out_of_the_inbox()
+    {
+        // Re-delivery happens after the gate, not before. A gate that declines must leave the
+        // exchange exactly as it found it — reopening nothing and handing back nothing — or the
+        // agent would see a question for an exchange still orphaned.
+        var opened = await _exchanges.TryOpenAsync(
+            Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
+        Assert.True(opened.Succeeded);
+
+        var messages = new MessageRepository(_connection);
+        var appended = await messages.AppendAsync(
+            opened.Exchange!.Id, MessageType.Question, Orders, Billing, "claude-opus-5",
+            """{"text":"gross or net?","consequences":"If gross I stop adding tax; if net I keep it."}""",
+            T0, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.True(appended.Stored);
+
+        var broker = new Broker(_connection, With(ResumePolicy.Always, new RefusingGate()));
+        await broker.StartAsync(T0.AddMinutes(1), TestContext.Current.CancellationToken);
+        Assert.True(await messages.MarkDeliveredAsync(
+            appended.Message.Id, T0.AddMinutes(1), TestContext.Current.CancellationToken));
+
+        var drained = await broker.DrainInboxAsync(
+            Billing, T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Empty(drained);
+    }
+
     private sealed class RefusingGate : IResumeGate
     {
         public ValueTask<bool> MayResumeAsync(

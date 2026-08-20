@@ -48,6 +48,7 @@ public sealed class Broker
 {
     private readonly AgentRepository _agents;
     private readonly ExchangeRepository _exchanges;
+    private readonly MessageRepository _messages;
     private readonly Reaper _reaper;
     private readonly BrokerOptions _options;
 
@@ -81,6 +82,7 @@ public sealed class Broker
 
         _agents = new AgentRepository(connection);
         _exchanges = new ExchangeRepository(connection);
+        _messages = new MessageRepository(connection);
         _reaper = new Reaper(_exchanges);
     }
 
@@ -196,6 +198,135 @@ public sealed class Broker
     }
 
     /// <summary>
+    /// Drains an agent's inbox, delivering what is waiting for it.
+    /// </summary>
+    /// <param name="agent">The agent collecting its messages.</param>
+    /// <param name="nowUtc">The instant of the drain.</param>
+    /// <param name="limit">The most messages to return, or <see langword="null"/> for all.</param>
+    /// <param name="cancellationToken">Cancels the drain.</param>
+    /// <returns>The messages delivered, debts first.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="agent"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// This is the inbound traffic SPEC.md §14 describes, so it does the replay before the
+    /// read. Nothing is replayed at start-up: the reboot sequence orphans everything, and an
+    /// agent collecting its messages is what brings back what that agent owes, so a deployment
+    /// does not pay to instantiate agents that would have stayed idle. Under a resume policy of
+    /// <see cref="Core.ResumePolicy.Never"/> the replay finds nothing and the drain is simply a
+    /// read.
+    /// </para>
+    /// <para>
+    /// Delivery is recorded on two rows and both matter. The message is marked delivered, which
+    /// is what stops it being handed out again. The exchange is told, which starts its working
+    /// window — and that is the whole reason §6 could split one deadline into two without
+    /// inventing an acknowledgement message. Until this runs, silence means nobody collected the
+    /// question; afterwards it means somebody has it and is working.
+    /// </para>
+    /// <para>
+    /// A Notify has no exchange and only the message is marked. It is the one type where
+    /// delivery says nothing about anybody's deadline, because nothing is owed in return.
+    /// </para>
+    /// <para>
+    /// Delivery is recorded per message rather than in one write at the end. A drain
+    /// interrupted half way has delivered what it returned and nothing more, which is the
+    /// property a caller needs: it may act on what it received without knowing whether the rest
+    /// arrived.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<Message>> DrainInboxAsync(
+        AgentName agent,
+        DateTimeOffset nowUtc,
+        int? limit = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Traffic for this agent is what triggers the replay, so it happens before the read and
+        // anything it brings back is in the drain that asked for it rather than the next one.
+        await ResumeOwedByAsync(agent, nowUtc, cancellationToken).ConfigureAwait(false);
+
+        var pending = await _messages.GetPendingAsync(agent, limit, cancellationToken)
+            .ConfigureAwait(false);
+
+        var delivered = new List<Message>(pending.Count);
+
+        foreach (var message in pending)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // The window is started before the message is stamped, and the order is the whole
+            // point rather than an accident. These are two writes and nothing makes them atomic,
+            // so one of them can be the last thing that happens, and the two failures are not
+            // equally bad.
+            //
+            // This way round, a crash in between leaves an exchange with its long window and a
+            // message still pending: the next drain hands it over again, which costs the agent a
+            // repeated question. The other way round leaves a message marked delivered against
+            // an exchange still on its short window, so it orphans within minutes while the
+            // agent is working on it, and the answer that eventually arrives is refused because
+            // the exchange is no longer open. A repeated question is recoverable; a discarded
+            // answer is not.
+            if (message.ExchangeId is { } exchangeId)
+            {
+                await StartWorkingWindow(exchangeId, nowUtc, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (!await _messages.MarkDeliveredAsync(message.Id, nowUtc, cancellationToken)
+                .ConfigureAwait(false))
+            {
+                // Already delivered by a drain that raced this one. Skipped rather than returned
+                // twice, because a caller acting on the same question twice is the failure the
+                // delivered stamp exists to prevent.
+                //
+                // Unreachable as things stand, and kept deliberately. Getting here needs a
+                // second writer to stamp the row between the pending read and this write, which
+                // needs two connections racing — something this type's threading contract
+                // forbids. It is defence against a deployment that later relaxes that contract,
+                // in the same spirit as the contention counter in Reaper.SweepAsync, and its
+                // absence would turn that relaxation into duplicate questions rather than an
+                // error.
+                continue;
+            }
+
+            delivered.Add(message);
+        }
+
+        return delivered;
+    }
+
+    /// <summary>
+    /// Tells an exchange its question has been collected.
+    /// </summary>
+    /// <remarks>
+    /// Silent when the exchange is no longer open. Between the pending read and here it may have
+    /// been orphaned by a sweep or closed by its answerer, and neither is a reason to fail the
+    /// drain — the message was genuinely delivered, and an exchange that is not open has no
+    /// working window to start.
+    /// <para>
+    /// The state half of that guard is defensive rather than load-bearing:
+    /// <see cref="Exchange.Deliver"/> refuses a closed exchange itself and leaves it unmutated,
+    /// so removing the check changes only that a save would be issued for a row nothing
+    /// changed. Worth keeping anyway, because that save still bumps the version stamp and would
+    /// make a concurrent write fail for no reason. The null half is load-bearing and is not
+    /// covered by a test, because a message whose exchange has vanished is something the foreign
+    /// key makes impossible to construct.
+    /// </para>
+    /// </remarks>
+    private async Task StartWorkingWindow(
+        long exchangeId,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var exchange = await _exchanges.GetAsync(exchangeId, cancellationToken).ConfigureAwait(false);
+
+        if (exchange is null || !exchange.Deliver(nowUtc).Succeeded)
+        {
+            return;
+        }
+
+        await _exchanges.SaveAsync(exchange, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Replays orphaned exchanges the owing agent has yet to answer.
     /// </summary>
     /// <param name="agent">The agent that owes the answers.</param>
@@ -271,10 +402,10 @@ public sealed class Broker
 
             try
             {
-                if (await _exchanges.SaveAsync(exchange, cancellationToken: cancellationToken)
+                if (!await _exchanges.SaveAsync(exchange, cancellationToken: cancellationToken)
                     .ConfigureAwait(false))
                 {
-                    resumed.Add(exchange);
+                    continue;
                 }
             }
             catch (SqliteException ex)
@@ -297,6 +428,26 @@ public sealed class Broker
                 // nothing, which is the worst of both.
                 continue;
             }
+
+            // Reopening the exchange is only half a replay. SPEC.md §14 is explicit that a
+            // replay is re-delivery rather than re-sending, so the message the agent owes an
+            // answer to goes back into its inbox — the existing row, marked undelivered, not a
+            // fresh one that would make the log a record of delivery attempts.
+            //
+            // Without this the exchange reopens and the agent has an obligation it cannot see:
+            // its inbox is empty because the question is still stamped delivered from before the
+            // interruption, while the broker waits for an answer nobody was asked for, until the
+            // grace period ghosts it.
+            var owed = await _messages
+                .GetLatestOwedAsync(exchange.Id, agent, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (owed is not null)
+            {
+                await _messages.RedeliverAsync(owed.Id, cancellationToken).ConfigureAwait(false);
+            }
+
+            resumed.Add(exchange);
         }
 
         return resumed;
