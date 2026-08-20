@@ -371,7 +371,16 @@ That distinction matters once retention prunes the message text, because the rol
 survives, and it is deliberately pessimistic: the alternative would report a deployment as
 healthier the more of each question went unresolved.
 
-`ghosted` is the one resolution no agent may write. It is the broker reporting that an
+`ghosted` is the one resolution no agent may write, and unlike most rules of that shape this
+one is enforced rather than trusted (§9.3). A ghost asserts that nobody answered, so an
+exchange carrying an answer cannot be one. An agent supplying `ghosted` among its resolutions
+has its answer refused rather than silently recorded.
+
+That matters because the exchange-level resolution outlives the message text (§9.4), so it is
+what §15 reads when diagnosing an unhealthy deployment. An agent able to write `ghosted` could
+report its own answered exchanges as abandoned — making the infrastructure look broken, or
+disguising a peer as unreachable — and by the time anyone looked, the messages proving
+otherwise may have been pruned. It is the broker reporting that an
 exchange was abandoned, and it is distinct from `unknown` for the reason `out_of_scope` is
 distinct from `answered`: both close an exchange without resolving it, but one means a peer
 considered the question and could not settle it, and the other means no peer ever engaged
@@ -664,6 +673,11 @@ CREATE TABLE exchanges (
                     CHECK (open_pair_cap BETWEEN 1 AND 50),
   delivery_window_ms INTEGER NOT NULL,
   working_window_ms  INTEGER NOT NULL,
+  -- Carried per exchange for the same reason the windows are, and it is the same argument:
+  -- an exchange must be able to reproduce its own deadlines from its own row. Held globally,
+  -- an operator lengthening the grace period would retroactively revive orphans already past
+  -- the old one, and shortening it would ghost a batch of live orphans at once.
+  grace_period_ms    INTEGER NOT NULL,
   opened_utc        TEXT    NOT NULL,
   expires_utc       TEXT    NOT NULL,
   closed_utc        TEXT,
@@ -689,6 +703,12 @@ CREATE TABLE exchanges (
   CHECK (owed_by IN (asker, answerer)),
   CHECK (clarify_depth >= 0 AND clarify_depth <= clarify_depth_cap),
   CHECK (delivery_window_ms > 0 AND working_window_ms > 0),
+  -- Bounded in both directions, because both ends defeat the rule rather than merely tuning
+  -- it. At zero an orphan is ghosted the instant it is created, so the resume policy in §14
+  -- never gets a chance to run and `always` becomes indistinguishable from `never`. At the
+  -- top end the exchange effectively never closes, which restores the unbounded retention
+  -- §9.4 relies on this to remove. One second to thirty days.
+  CHECK (grace_period_ms BETWEEN 1000 AND 2592000000),
   CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
   -- A closed exchange says why it closed; an open one cannot, since it has not.
   CHECK ((state = 'CLOSED') = (resolution IS NOT NULL)),
@@ -751,6 +771,16 @@ END;
 -- every path that can produce an OPEN row, including the UPDATE that resumes an orphan.
 CREATE UNIQUE INDEX ux_open_question
   ON exchanges(asker, answerer, question_hash) WHERE state = 'OPEN';
+
+-- A ghost asserts that nobody answered (§14), so an exchange carrying an answer cannot be
+-- one. Structural rather than textual: it does not inspect the answer, only whether one
+-- exists, so there is nothing to word around.
+CREATE TRIGGER tr_ghost_needs_no_answer BEFORE UPDATE ON exchanges
+WHEN NEW.resolution = 'ghosted'
+BEGIN
+  SELECT RAISE(ABORT, 'ghosted requires that no answer was given')
+   WHERE EXISTS (SELECT 1 FROM messages WHERE exchange_id = NEW.id AND type = 'answer');
+END;
 
 -- Resuming an orphan is an UPDATE, which the trigger above never sees. Both are required.
 CREATE TRIGGER tr_open_pair_cap_resume BEFORE UPDATE ON exchanges
@@ -822,6 +852,11 @@ CREATE UNIQUE INDEX ux_message_dedup
 Rules that application code could otherwise route around live in the schema, so correctness
 survives bugs in the broker:
 
+- **`ghosted` is the broker's to write, not an agent's.** The trigger above. This is one of
+  the two forgeries §15's health signals are worth committing, and the only one the schema can
+  refuse — the other, an adapter claiming the reserved `parley:` responder prefix (§11.3),
+  cannot be, because every row is written by the broker and no `CHECK` can see who supplied a
+  value. Enforce what is enforceable and be explicit about the remainder.
 - **The open-question cap is itself bounded.** The cap is supplied per row, as
   `clarify_depth_cap` already is, so the triggers below are only as strong as the value the
   broker writes into them. A bug that wrote a large number would disable the cap while leaving
@@ -1487,6 +1522,11 @@ no; nobody will tell you which, so decide on your own evidence or escalate to yo
 That is not the retry instruction §7.3 forbids. A refusal defers, and telling a model to come
 back later produces a loop or silent abandonment. A ghost is terminal: it closes the exchange
 and hands the question back for good.
+
+The grace period is recorded on the exchange rather than read from configuration at sweep
+time, so an exchange is ghosted on the terms it was opened under. Changing the setting affects
+exchanges opened afterwards, and never retroactively revives an orphan already past the old
+period or ghosts a batch of live ones at once.
 
 **The grace period bounds manual resumption too.** Under `never`, an orphan waits for an
 operator to resume it explicitly — and now waits only until it is ghosted. An operator who
