@@ -14,6 +14,13 @@ public sealed class ExchangeRepositoryTests : IDisposable
     private static readonly TimeSpan Working = TimeSpan.FromHours(4);
     private static readonly TimeSpan Grace = TimeSpan.FromHours(3);
 
+    private static readonly ExchangePolicy Policy = ExchangePolicy.Default with
+    {
+        DeliveryWindow = Delivery,
+        WorkingWindow = Working,
+        GracePeriod = Grace
+    };
+
     // Distinctness is keyed on question content, so a test opening two exchanges on one pair
     // has to say they are different questions. Naming them here keeps that visible at each
     // call rather than hidden in a helper: "q1" and "q2" reading differently is the point.
@@ -44,7 +51,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
     public async Task Opening_persists_and_round_trips()
     {
         var outcome = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(outcome.Succeeded);
 
         var loaded = await _exchanges.GetAsync(
@@ -76,7 +83,8 @@ public sealed class ExchangeRepositoryTests : IDisposable
         var oddWorking = TimeSpan.FromMilliseconds(2500);
 
         var outcome = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, odd, oddWorking, Grace, Q("q1"),
+            Orders, Billing, T0, Q("q1"),
+            Policy with { DeliveryWindow = odd, WorkingWindow = oddWorking },
             cancellationToken: TestContext.Current.CancellationToken);
 
         var loaded = await _exchanges.GetAsync(
@@ -90,21 +98,33 @@ public sealed class ExchangeRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task A_non_positive_window_is_rejected()
+    public async Task A_policy_outside_what_storage_accepts_is_rejected()
     {
+        // Checked here as well as in the schema, so a misconfigured deployment fails naming the
+        // field rather than on the first question with a constraint violation raised several
+        // layers below the mistake.
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
             () => _exchanges.TryOpenAsync(
-                Orders, Billing, T0, TimeSpan.Zero, Working, Grace, Q("q1"),
+                Orders, Billing, T0, Q("q1"),
+                Policy with { DeliveryWindow = TimeSpan.Zero },
                 cancellationToken: TestContext.Current.CancellationToken));
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
             () => _exchanges.TryOpenAsync(
-                Orders, Billing, T0, Delivery, TimeSpan.Zero, Grace, Q("q1"),
+                Orders, Billing, T0, Q("q1"),
+                Policy with { GracePeriod = TimeSpan.FromMilliseconds(1) },
                 cancellationToken: TestContext.Current.CancellationToken));
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
             () => _exchanges.TryOpenAsync(
-                Orders, Billing, T0, Delivery, Working, TimeSpan.Zero, Q("q1"),
+                Orders, Billing, T0, Q("q1"),
+                Policy with { OpenPairCap = 0 },
+                cancellationToken: TestContext.Current.CancellationToken));
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => _exchanges.TryOpenAsync(
+                Orders, Billing, T0, Q("q1"),
+                Policy with { OpenPairCap = ExchangePolicy.MaximumOpenPairCap + 1 },
                 cancellationToken: TestContext.Current.CancellationToken));
     }
 
@@ -114,7 +134,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
         // Distinctness is keyed on it, so an empty hash would make every question identical.
         await Assert.ThrowsAsync<ArgumentException>(
             () => _exchanges.TryOpenAsync(
-                Orders, Billing, T0, Delivery, Working, Grace, "  ",
+                Orders, Billing, T0, "  ",
                 cancellationToken: TestContext.Current.CancellationToken));
     }
 
@@ -127,7 +147,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
         // and only one of them names the parameter at fault.
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
             () => _exchanges.TryOpenAsync(
-                Orders, Billing, T0, Delivery, Working, Grace, Q("q1"), clarifyDepthCap: -1,
+                Orders, Billing, T0, Q("q1"), Policy with { ClarifyDepthCap = -1 },
                 cancellationToken: TestContext.Current.CancellationToken));
     }
 
@@ -140,11 +160,11 @@ public sealed class ExchangeRepositoryTests : IDisposable
         // other and neither can be answered. The 2-cycle is no longer a special case; the same
         // walk that catches three agents catches two.
         await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("q1"),
+            Orders, Billing, T0, Q("q1"),
             cancellationToken: TestContext.Current.CancellationToken);
 
         var outcome = await _exchanges.TryOpenAsync(
-            Billing, Orders, T0, Delivery, Working, Grace, Q("q2"),
+            Billing, Orders, T0, Q("q2"),
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(OpenRejection.WouldDeadlock, outcome.Rejection);
@@ -158,11 +178,11 @@ public sealed class ExchangeRepositoryTests : IDisposable
         // across a repository boundary can take hours, and an asker unable to raise anything
         // else with that peer meanwhile has only Notify left.
         await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("where does price live"),
+            Orders, Billing, T0, Q("where does price live"),
             cancellationToken: TestContext.Current.CancellationToken);
 
         var outcome = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("who owns the discount ladder"),
+            Orders, Billing, T0, Q("who owns the discount ladder"),
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(outcome.Succeeded, $"expected admission, got {outcome.Rejection}");
@@ -174,11 +194,11 @@ public sealed class ExchangeRepositoryTests : IDisposable
         // Distinctness. Repetition used to be impossible because a pair held one exchange, so
         // removing that rule removed a guard nobody had written down as one.
         var first = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("where does price live"),
+            Orders, Billing, T0, Q("where does price live"),
             cancellationToken: TestContext.Current.CancellationToken);
 
         var repeat = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0.AddMinutes(1), Delivery, Working, Grace, Q("where does price live"),
+            Orders, Billing, T0.AddMinutes(1), Q("where does price live"),
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(OpenRejection.DuplicateQuestion, repeat.Rejection);
@@ -191,14 +211,14 @@ public sealed class ExchangeRepositoryTests : IDisposable
         for (var i = 0; i < 3; i++)
         {
             var admitted = await _exchanges.TryOpenAsync(
-                Orders, Billing, T0, Delivery, Working, Grace, Q($"question {i}"),
-                openPairCap: 3, cancellationToken: TestContext.Current.CancellationToken);
+                Orders, Billing, T0, Q($"question {i}"),
+                policy: Policy with { OpenPairCap = 3 }, cancellationToken: TestContext.Current.CancellationToken);
             Assert.True(admitted.Succeeded, $"question {i} should have been admitted");
         }
 
         var refused = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("one too many"),
-            openPairCap: 3, cancellationToken: TestContext.Current.CancellationToken);
+            Orders, Billing, T0, Q("one too many"),
+            policy: Policy with { OpenPairCap = 3 }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(OpenRejection.PairSaturated, refused.Rejection);
 
@@ -214,8 +234,8 @@ public sealed class ExchangeRepositoryTests : IDisposable
         // two flows are unrelated lines of enquiry, and coupling them would refuse one agent
         // for the sins of another.
         var saturate = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("only question"),
-            openPairCap: 1, cancellationToken: TestContext.Current.CancellationToken);
+            Orders, Billing, T0, Q("only question"),
+            policy: Policy with { OpenPairCap = 1 }, cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(saturate.Succeeded);
 
         // Answered, so it no longer holds a wait-for edge and the reverse question is not a
@@ -225,8 +245,8 @@ public sealed class ExchangeRepositoryTests : IDisposable
             saturate.Exchange, cancellationToken: TestContext.Current.CancellationToken));
 
         var reverse = await _exchanges.TryOpenAsync(
-            Billing, Orders, T0.AddMinutes(2), Delivery, Working, Grace, Q("a different question"),
-            openPairCap: 1, cancellationToken: TestContext.Current.CancellationToken);
+            Billing, Orders, T0.AddMinutes(2), Q("a different question"),
+            policy: Policy with { OpenPairCap = 1 }, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(reverse.Succeeded, $"expected admission, got {reverse.Rejection}");
     }
@@ -244,7 +264,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
             Billing, TestContext.Current.CancellationToken));
 
         var outcome = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(OpenRejection.AnswererUnreachable, outcome.Rejection);
         Assert.False(outcome.Succeeded);
@@ -268,7 +288,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
         Assert.Equal(3, await agents.MarkAllOfflineAsync(TestContext.Current.CancellationToken));
 
         var outcome = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(outcome.Succeeded);
     }
@@ -281,7 +301,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
         await agents.MarkLiveAsync(Billing, null, T0, TestContext.Current.CancellationToken);
 
         var outcome = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(outcome.Succeeded);
     }
@@ -296,7 +316,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
         await agents.MarkUnreachableAsync(Orders, TestContext.Current.CancellationToken);
 
         var outcome = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(outcome.Succeeded);
     }
@@ -305,12 +325,12 @@ public sealed class ExchangeRepositoryTests : IDisposable
     public async Task Three_cycle_is_rejected_with_a_path()
     {
         await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
         await _exchanges.TryOpenAsync(
-            Billing, Inventory, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Billing, Inventory, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
 
         var outcome = await _exchanges.TryOpenAsync(
-            Inventory, Orders, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Inventory, Orders, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(OpenRejection.WouldDeadlock, outcome.Rejection);
         Assert.Equal([Inventory, Orders, Billing], outcome.CyclePath);
@@ -320,9 +340,9 @@ public sealed class ExchangeRepositoryTests : IDisposable
     public async Task Closing_frees_the_pair_and_the_cycle()
     {
         await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
         await _exchanges.TryOpenAsync(
-            Billing, Inventory, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Billing, Inventory, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
 
         var open = await _exchanges.GetOpenAsync(
             cancellationToken: TestContext.Current.CancellationToken);
@@ -333,7 +353,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
             first, cancellationToken: TestContext.Current.CancellationToken));
 
         var outcome = await _exchanges.TryOpenAsync(
-            Inventory, Orders, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Inventory, Orders, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(outcome.Succeeded);
     }
@@ -342,7 +362,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
     public async Task Clarify_is_persisted_and_reverses_admission()
     {
         var opened = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
         var exchange = opened.Exchange!;
 
         Assert.True(exchange.Clarify(Billing, T0.AddMinutes(2)).Succeeded);
@@ -362,7 +382,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
     public async Task Save_advances_the_version_stamp()
     {
         var opened = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
         var exchange = opened.Exchange!;
         Assert.Equal(0L, exchange.Version);
 
@@ -382,7 +402,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
     public async Task Stale_save_is_rejected_and_loses_no_clarify_depth()
     {
         var opened = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
         var id = opened.Exchange!.Id;
 
         // Two independent instances of the same row, as two broker code paths would hold.
@@ -406,7 +426,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
     [Fact]
     public async Task Save_of_a_missing_row_reports_failure()
     {
-        var orphanInstance = Exchange.Open(999_999, Orders, Billing, T0, Delivery, Working, Grace);
+        var orphanInstance = Exchange.Open(999_999, Orders, Billing, T0, Policy);
 
         Assert.False(await _exchanges.SaveAsync(
             orphanInstance, cancellationToken: TestContext.Current.CancellationToken));
@@ -416,7 +436,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
     public async Task Orphaned_exchanges_are_findable_by_the_owing_agent()
     {
         var opened = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
         var exchange = opened.Exchange!;
 
         exchange.Orphan(T0.AddMinutes(20));
@@ -430,7 +450,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
 
         // An orphan holds no pair slot, so a new question on that pair is admitted.
         var reopened = await _exchanges.TryOpenAsync(
-            Billing, Orders, T0.AddHours(1), Delivery, Working, Grace, Q("q1"),
+            Billing, Orders, T0.AddHours(1), Q("q1"),
             cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(reopened.Succeeded);
     }
@@ -443,14 +463,14 @@ public sealed class ExchangeRepositoryTests : IDisposable
         // too. Both are then returned by GetOrphanedOwedByAsync, and replaying the inbox on
         // re-registration would try to resume both.
         var first = (await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("q1"),
+            Orders, Billing, T0, Q("q1"),
             cancellationToken: TestContext.Current.CancellationToken)).Exchange!;
         first.Orphan(T0.AddMinutes(20));
         Assert.True(await _exchanges.SaveAsync(
             first, cancellationToken: TestContext.Current.CancellationToken));
 
         var second = (await _exchanges.TryOpenAsync(
-            Orders, Billing, T0.AddHours(1), Delivery, Working, Grace, Q("q1"),
+            Orders, Billing, T0.AddHours(1), Q("q1"),
             cancellationToken: TestContext.Current.CancellationToken)).Exchange!;
         second.Orphan(T0.AddHours(2));
         Assert.True(await _exchanges.SaveAsync(
@@ -480,9 +500,9 @@ public sealed class ExchangeRepositoryTests : IDisposable
     public async Task Expiry_scan_finds_only_overdue_open_exchanges()
     {
         await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
         await _exchanges.TryOpenAsync(
-            Billing, Inventory, T0.AddHours(1), Delivery, Working, Grace, Q("q1"),
+            Billing, Inventory, T0.AddHours(1), Q("q1"),
             cancellationToken: TestContext.Current.CancellationToken);
 
         var expired = await _exchanges.GetExpiredAsync(

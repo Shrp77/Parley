@@ -20,9 +20,16 @@ public sealed class GhostingTests
     private static readonly TimeSpan Working = TimeSpan.FromHours(4);
     private static readonly TimeSpan Grace = TimeSpan.FromHours(3);
 
+    private static readonly ExchangePolicy Policy = ExchangePolicy.Default with
+    {
+        DeliveryWindow = Delivery,
+        WorkingWindow = Working,
+        GracePeriod = Grace
+    };
+
     private static Exchange Orphaned(DateTimeOffset at)
     {
-        var exchange = Exchange.Open(1, Orders, Billing, T0, Delivery, Working, Grace);
+        var exchange = Exchange.Open(1, Orders, Billing, T0, Policy);
         Assert.True(exchange.Orphan(at).Succeeded);
         return exchange;
     }
@@ -44,7 +51,7 @@ public sealed class GhostingTests
     {
         // An open exchange is still being waited on, and a closed one already said why it
         // closed. Ghosting either would overwrite a real outcome with an infrastructure one.
-        var open = Exchange.Open(1, Orders, Billing, T0, Delivery, Working, Grace);
+        var open = Exchange.Open(1, Orders, Billing, T0, Policy);
         Assert.Equal(TransitionError.ExchangeNotOrphaned, open.Ghost(T0).Error);
 
         Assert.True(open.Answer(Billing, T0).Succeeded);
@@ -72,8 +79,7 @@ public sealed class GhostingTests
         var orphanedAt = new DateTimeOffset(2026, 1, 1, 22, 0, 0, TimeSpan.Zero);
         var brokerStart = new DateTimeOffset(2026, 1, 2, 9, 0, 0, TimeSpan.Zero);
 
-        var exchange = Exchange.Open(1, Orders, Billing, orphanedAt.AddMinutes(-30),
-            Delivery, Working, Grace);
+        var exchange = Exchange.Open(1, Orders, Billing, orphanedAt.AddMinutes(-30), Policy);
         Assert.True(exchange.Orphan(orphanedAt).Succeeded);
 
         Assert.False(exchange.IsGhostableAt(brokerStart, brokerStart));
@@ -98,7 +104,7 @@ public sealed class GhostingTests
     [Fact]
     public void An_exchange_that_is_not_orphaned_is_never_ghostable()
     {
-        var open = Exchange.Open(1, Orders, Billing, T0, Delivery, Working, Grace);
+        var open = Exchange.Open(1, Orders, Billing, T0, Policy);
 
         Assert.False(open.IsGhostableAt(T0.AddYears(1), T0));
     }
@@ -120,7 +126,7 @@ public sealed class GhostingTests
         // A replay marks the question undelivered again (SPEC.md §14), so the exchange is
         // waiting for pickup rather than for an answer. Granting the working window here would
         // give an agent that never returned four hours of silence instead of fifteen minutes.
-        var exchange = Exchange.Open(1, Orders, Billing, T0, Delivery, Working, Grace);
+        var exchange = Exchange.Open(1, Orders, Billing, T0, Policy);
         Assert.True(exchange.Deliver(T0.AddMinutes(1)).Succeeded);
         Assert.Equal(T0.AddMinutes(1) + Working, exchange.ExpiresUtc);
 
@@ -137,7 +143,7 @@ public sealed class GhostingTests
     {
         // A ghost asserts nobody answered. The schema refuses this too; refusing here means the
         // caller learns what it did rather than meeting a constraint violation further down.
-        var exchange = Exchange.Open(1, Orders, Billing, T0, Delivery, Working, Grace);
+        var exchange = Exchange.Open(1, Orders, Billing, T0, Policy);
 
         var result = exchange.Answer(Billing, T0, Resolution.Ghosted);
 

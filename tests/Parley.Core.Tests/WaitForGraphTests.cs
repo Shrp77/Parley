@@ -13,8 +13,15 @@ public sealed class WaitForGraphTests
     private static readonly TimeSpan Working = TimeSpan.FromHours(4);
     private static readonly TimeSpan Grace = TimeSpan.FromHours(3);
 
+    private static readonly ExchangePolicy Policy = ExchangePolicy.Default with
+    {
+        DeliveryWindow = Delivery,
+        WorkingWindow = Working,
+        GracePeriod = Grace
+    };
+
     private static Exchange Open(long id, AgentName asker, AgentName answerer) =>
-        Exchange.Open(id, asker, answerer, T0, Delivery, Working, Grace);
+        Exchange.Open(id, asker, answerer, T0, Policy);
 
     [Fact]
     public void Empty_graph_blocks_nothing()

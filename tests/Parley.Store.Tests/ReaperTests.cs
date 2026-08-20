@@ -44,7 +44,7 @@ public sealed class ReaperTests : IDisposable
         AgentName asker, AgentName answerer, DateTimeOffset at, string question = "q1")
     {
         var outcome = await _exchanges.TryOpenAsync(
-            asker, answerer, at, Delivery, Working, Grace, question,
+            asker, answerer, at, question,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Asserted rather than assumed. A refusal here returns a null exchange that only
@@ -90,14 +90,14 @@ public sealed class ReaperTests : IDisposable
         await Open(Orders, Billing, T0);
 
         var repeat = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0.AddMinutes(1), Delivery, Working, Grace, "q1",
+            Orders, Billing, T0.AddMinutes(1), "q1",
             cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(OpenRejection.DuplicateQuestion, repeat.Rejection);
 
         await _reaper.SweepAsync(T0 + Delivery, BrokerStart, TestContext.Current.CancellationToken);
 
         var admitted = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0 + Delivery, Delivery, Working, Grace, "q1",
+            Orders, Billing, T0 + Delivery, "q1",
             cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(admitted.Succeeded, $"expected admission, got {admitted.Rejection}");
     }
@@ -113,7 +113,7 @@ public sealed class ReaperTests : IDisposable
         await Open(Billing, Inventory, T0.AddHours(1));
 
         var refused = await _exchanges.TryOpenAsync(
-            Inventory, Orders, T0.AddHours(1), Delivery, Working, Grace, "q1",
+            Inventory, Orders, T0.AddHours(1), "q1",
             cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(OpenRejection.WouldDeadlock, refused.Rejection);
 
@@ -122,7 +122,7 @@ public sealed class ReaperTests : IDisposable
         Assert.Equal(1, result.Orphaned);
 
         var admitted = await _exchanges.TryOpenAsync(
-            Inventory, Orders, T0 + Delivery, Delivery, Working, Grace, "q1",
+            Inventory, Orders, T0 + Delivery, "q1",
             cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(admitted.Succeeded);
     }

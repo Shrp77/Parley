@@ -51,7 +51,7 @@ public sealed class ReaperGhostingTests : IDisposable
     private async Task<Exchange> Open(string question = "q1")
     {
         var outcome = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Delivery, Working, Grace, question,
+            Orders, Billing, T0, question,
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(outcome.Succeeded, $"expected to open, got {outcome.Rejection}");
@@ -154,7 +154,7 @@ public sealed class ReaperGhostingTests : IDisposable
             T0 + Delivery + Grace, LongAgo, TestContext.Current.CancellationToken);
 
         var again = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0.AddDays(1), Delivery, Working, Grace, "where does price live",
+            Orders, Billing, T0.AddDays(1), "where does price live",
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(again.Succeeded, $"expected admission, got {again.Rejection}");
@@ -187,7 +187,7 @@ public sealed class ReaperGhostingTests : IDisposable
 
         // Opened later, so its delivery window expires later.
         var second = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0 + Grace, Delivery, Working, Grace, "second question",
+            Orders, Billing, T0 + Grace, "second question",
             cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(second.Succeeded);
 
