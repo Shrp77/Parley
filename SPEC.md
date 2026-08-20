@@ -749,12 +749,14 @@ error that does not explain itself, so the floor is stated here rather than disc
 CREATE TABLE agents (
   name            TEXT    PRIMARY KEY,     -- logical name, NOT a session id
   adapter         TEXT    NOT NULL,
-  tier            TEXT    NOT NULL,        -- full | pull | headless
+  tier            TEXT    NOT NULL CHECK (tier IN ('full', 'pull', 'headless')),
   workspace       TEXT,
   session_ref     TEXT,                    -- adapter-specific resume handle
   adapter_config  TEXT,                    -- opaque to the broker (see §12)
   last_seen_utc   TEXT,
-  status          TEXT    NOT NULL,        -- registered | live | offline | unreachable | retired
+  status          TEXT    NOT NULL
+                  CHECK (status IN ('registered', 'live', 'offline', 'unreachable',
+                                    'retired')),
 
   CHECK (adapter_config IS NULL
          OR (json_valid(adapter_config) AND length(adapter_config) <= 4000)),
@@ -783,7 +785,7 @@ CREATE TABLE exchanges (
   asker             TEXT    NOT NULL REFERENCES agents(name),
   answerer          TEXT    NOT NULL REFERENCES agents(name),
   owed_by           TEXT    NOT NULL REFERENCES agents(name),
-  state             TEXT    NOT NULL,      -- OPEN | CLOSED | ORPHANED
+  state             TEXT    NOT NULL CHECK (state IN ('OPEN', 'CLOSED', 'ORPHANED')),
   clarify_depth     INTEGER NOT NULL DEFAULT 0,
   clarify_depth_cap INTEGER NOT NULL DEFAULT 3,
   open_pair_cap     INTEGER NOT NULL DEFAULT 5
@@ -920,7 +922,8 @@ END;
 CREATE TABLE messages (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   exchange_id     INTEGER REFERENCES exchanges(id),  -- NULL for Notify
-  type            TEXT    NOT NULL,       -- question | clarify | answer | notify
+  type            TEXT    NOT NULL
+                  CHECK (type IN ('question', 'clarify', 'answer', 'notify')),
   from_agent      TEXT    NOT NULL REFERENCES agents(name),
   to_agent        TEXT    NOT NULL REFERENCES agents(name),
   responder_model TEXT    NOT NULL,       -- see §11.3
@@ -1065,7 +1068,14 @@ CREATE UNIQUE INDEX ux_message_dedup
 ### 9.3 Invariants enforced by storage
 
 Rules that application code could otherwise route around live in the schema, so correctness
-survives bugs in the broker:
+survives bugs in the broker.
+
+**Every enumeration above is a real `CHECK`, not a comment naming the permitted values.** The
+schema in §9.2 was previously written with the tokens in a trailing comment, which reads the
+same and constrains nothing, and a status the document defines while the schema refuses is a
+divergence that surfaces on the one write that needed it. This section's argument is that a
+rule the storage layer cannot enforce decays; an enumeration written as prose has already
+decayed.
 
 - **A Question states its consequences.** The `CHECK` on `messages`. Rule 1 was advisory and
   therefore weakest on the tier §11.2 calls the important one, since Headless agents receive
@@ -1279,6 +1289,7 @@ any of these into an agent's tool set would breach §10.1 and, through it, §16.
 | `export(conversation_id)` | Emit every message in a conversation. The one query that reads across agents, which is why it is here and not in §10.1. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
 | `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. |
+| `reinstate(agent)` | Withdraw a retirement. Registration does not, and must not, do this. |
 | `force_conclude(conversation)` | Close a conversation regardless of its participants' votes. |
 
 `force_conclude` is named apart from the agent operation `conclude` on purpose. §10.2 opens
@@ -1683,8 +1694,17 @@ immediately either way, which is the harm worth stopping automatically.
 
 **Retiring an agent.** When a repository is gone for good rather than temporarily, an
 operator retires its agent. The agent is marked `retired`: it is not routed to, not offered
-in `agents()`, and no longer blocks a conversation from closing (§5.0). Registering it again
-returns it to service, which is what happens when a repository comes back under a new path.
+in `agents()`, and no longer blocks a conversation from closing (§5.0).
+
+**Retirement is cleared only by an explicit operator action, never by registration.** An
+earlier reading of this section had re-registering return the agent to service, on the
+reasoning that a repository coming back under a new path would be re-registered anyway. That
+is wrong for a reason worth recording: the registry is reloaded from the manifest at every
+start-up, so retirement would be undone on the next restart and every restart after it. An
+operator who retires an agent and finds it live again the following morning has been given a
+control that does not hold. `reinstate(agent)` is therefore the counterpart to `retire`, and
+the two are symmetric: a judgement is entered and withdrawn by a person, not by a file being
+read again.
 
 **Retiring does not delete.** This is a correction to an earlier reading of this section,
 which described `retire` as removing the agent. The schema does not permit it and should not:

@@ -24,13 +24,12 @@ namespace Parley.Store;
 /// that owned its own clock could not be tested without one.
 /// </para>
 /// <para>
-/// This is also the source of the retention gap noted in SPEC.md §9.4. The floor keeps the
-/// messages of an orphaned exchange so §14 can still replay them, and under a <c>never</c>
-/// resume policy nothing ever clears such an exchange — so every sweep manufactures data
-/// that the age cap will not remove. Sweeping is still right: leaving the pair slot held
-/// forever is worse than holding the text. But the two rules only compose once §17 open
-/// question 7 decides what becomes of an orphan nobody comes back for, and until then a
-/// deployment that reaps steadily and resumes never will grow without bound.
+/// One sweep does both halves of the lifecycle, because they are the same walk over the same
+/// deadlines and separating them would mean two schedules to keep in step. Orphaning releases
+/// what a vanished agent was holding; ghosting closes what it never came back for. The second
+/// is what makes the retention age cap in SPEC.md §9.4 absolute — without it a <c>never</c>
+/// resume policy accumulates orphans nothing ever clears, and every sweep manufactures data
+/// the age cap will not remove.
 /// </para>
 /// </remarks>
 /// <param name="exchanges">The repository to sweep.</param>
@@ -43,6 +42,10 @@ public sealed class Reaper(ExchangeRepository exchanges)
     /// Orphans every open exchange whose deadline has passed.
     /// </summary>
     /// <param name="nowUtc">The instant to evaluate deadlines against.</param>
+    /// <param name="brokerStartUtc">
+    /// When the broker most recently started. The ghosting clock runs from the later of this
+    /// and the instant of orphaning, so an outage does not consume an orphan's grace period.
+    /// </param>
     /// <param name="cancellationToken">Cancels the sweep.</param>
     /// <returns>What the sweep did.</returns>
     /// <remarks>
@@ -83,17 +86,14 @@ public sealed class Reaper(ExchangeRepository exchanges)
     /// </remarks>
     public async Task<ReapResult> SweepAsync(
         DateTimeOffset nowUtc,
+        DateTimeOffset brokerStartUtc,
         CancellationToken cancellationToken = default)
     {
         var expired = await _exchanges.GetExpiredAsync(nowUtc, cancellationToken)
             .ConfigureAwait(false);
 
-        if (expired.Count == 0)
-        {
-            return ReapResult.Nothing;
-        }
-
         var orphaned = 0;
+        var ghosted = 0;
         var contended = 0;
 
         foreach (var exchange in expired)
@@ -123,6 +123,38 @@ public sealed class Reaper(ExchangeRepository exchanges)
             }
         }
 
-        return new ReapResult(orphaned, contended);
+        // Read after the orphaning pass rather than before, so an exchange orphaned by this
+        // sweep is considered for ghosting on the next one. Ghosting something the same sweep
+        // just orphaned would mean an exchange whose grace period was zero, which the schema
+        // forbids anyway.
+        var abandoned = await _exchanges
+            .GetGhostableAsync(nowUtc, brokerStartUtc, cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var exchange in abandoned)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Unreachable as things stand, for the same reason the orphan guard above is: the
+            // query filters on state = 'ORPHANED' and Ghost refuses anything else. It exists so
+            // that narrowing or widening that query later fails safe.
+            if (!exchange.Ghost(nowUtc).Succeeded)
+            {
+                contended++;
+                continue;
+            }
+
+            if (await _exchanges.SaveAsync(exchange, cancellationToken: cancellationToken)
+                .ConfigureAwait(false))
+            {
+                ghosted++;
+            }
+            else
+            {
+                contended++;
+            }
+        }
+
+        return new ReapResult(orphaned, ghosted, contended);
     }
 }

@@ -25,7 +25,13 @@ CREATE TABLE agents (
                     -- state of a lazily spawned agent and must stay routable, or the traffic
                     -- meant to wake it would be refused. Unreachable means spawning was tried
                     -- and failed repeatedly, so routing here only burns a TTL. See SPEC.md 14.
-                    CHECK (status IN ('registered', 'live', 'offline', 'unreachable')),
+                    -- 'retired' is the operator's judgement that a repository is gone for
+                    -- good, and unlike the others it is not liveness: start-up clears the rest
+                    -- and must leave this one alone. The row survives rather than being
+                    -- deleted, because exchanges and messages reference it and SPEC.md 9.4
+                    -- keeps exchange rows after pruning their text so telemetry outlives the
+                    -- traffic. Deleting would cascade to the skeleton that exists to be kept.
+                    CHECK (status IN ('registered', 'live', 'offline', 'unreachable', 'retired')),
 
     -- The column is named _config and readers parse it as JSON. Capped because an adapter
     -- configuration is a handful of settings, not a payload, and an unbounded one would be a
