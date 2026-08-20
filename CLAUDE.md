@@ -132,6 +132,17 @@ Rotating the lens matters — three runs of the same review are correlated and m
 the first. After fixing findings, **re-run the same lens** before moving to the next; fixes
 have introduced new problems that only the re-run caught.
 
+**Run to convergence, not to a fixed count.** "Three green" is not three passes; it is passes
+repeated until one finds nothing above low severity. A pass that finds something means the
+branch was not green, so fix it and go round again — including the lenses already run, because
+a fix is a change and changes are what the lenses are for. Stop when a full rotation turns up
+nothing worth acting on, and say how many rounds it took.
+
+The failure this corrects is specific and was repeated: running each lens once, fixing what it
+found, verifying the build still passes, and reporting green. A build that passes is not a
+review. The verification sweep at the end confirms the fixes did not break anything; it does
+not look for what the fixes introduced.
+
 The highest-value findings in this repository's history came from adversarially probing a
 guard rather than reading it: a self-referral that asserted both halves of a contradiction, a
 gate cycle that no sub-question could ever resolve, a forged `parley:broker` responder, an

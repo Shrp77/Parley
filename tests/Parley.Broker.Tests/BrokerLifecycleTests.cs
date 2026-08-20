@@ -134,6 +134,40 @@ public sealed class BrokerLifecycleTests : IDisposable
         Assert.Equal(1, afterGrace.Ghosted);
     }
 
+    [Fact]
+    public async Task Starting_again_moves_the_ghosting_clock_forward()
+    {
+        // Worth pinning because it is a footgun as much as a feature. A genuine restart should
+        // give every orphan a fresh window, since the outage consumed the old one through no
+        // fault of the agent. A host that calls StartAsync twice by accident gets the same
+        // behaviour and silently delays ghosting, with nothing to notice.
+        //
+        // Left as it is rather than guarded: refusing a second start would break the case this
+        // exists for, which is a process that restarts. The contract is that a host calls it
+        // once per process lifetime, and it is documented on the method.
+        await Open(Orders, Billing, "q1");
+
+        var broker = NewBroker();
+        await broker.StartAsync(T0, TestContext.Current.CancellationToken);
+
+        var ghostingDue = T0 + ExchangePolicy.Default.GracePeriod;
+        Assert.Equal(1, (await broker.TickAsync(
+            ghostingDue, TestContext.Current.CancellationToken)).Ghosted);
+
+        // A second exchange, a second start, and the clock restarts from there.
+        await Open(Orders, Billing, "q2");
+        var secondStart = T0.AddDays(1);
+        await broker.StartAsync(secondStart, TestContext.Current.CancellationToken);
+
+        Assert.Equal(secondStart, broker.StartedUtc);
+        Assert.Equal(0, (await broker.TickAsync(
+            secondStart + ExchangePolicy.Default.GracePeriod - TimeSpan.FromMinutes(1),
+            TestContext.Current.CancellationToken)).Ghosted);
+        Assert.Equal(1, (await broker.TickAsync(
+            secondStart + ExchangePolicy.Default.GracePeriod,
+            TestContext.Current.CancellationToken)).Ghosted);
+    }
+
     // ---- the tick ----
 
     [Fact]
@@ -224,6 +258,60 @@ public sealed class BrokerLifecycleTests : IDisposable
         var options = BrokerOptions.Default with { ResumePolicy = (ResumePolicy)99 };
 
         Assert.Throws<ArgumentOutOfRangeException>(() => NewBroker(options));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void A_missing_member_of_the_configuration_is_refused(bool nullPolicy)
+    {
+        // Validate guards both and nothing checked that it did, which is how a guard gets
+        // deleted in a refactor without anything noticing. A null gate would be a null reference
+        // at the first replay, and a null policy at the first question.
+        var options = nullPolicy
+            ? BrokerOptions.Default with { ExchangePolicy = null! }
+            : BrokerOptions.Default with { ResumeGate = null! };
+
+        Assert.Throws<ArgumentNullException>(() => NewBroker(options));
+    }
+
+    [Fact]
+    public async Task Resuming_observes_cancellation_part_way_through()
+    {
+        // Cancels from inside the gate, after the first exchange has been considered, so the
+        // pass is stopped half way rather than before it starts.
+        //
+        // Worth being exact about what this does not prove. The loop opens with an explicit
+        // ThrowIfCancellationRequested, and deleting it does not fail this test, because every
+        // awaited call in the body already honours the token — the gate, and the save after it.
+        // The check is therefore defensive rather than load-bearing today: it keeps the loop
+        // cancellable independently of what the body happens to do, which a body that gained a
+        // synchronous step would otherwise lose. This verifies the observable behaviour, which
+        // is that a cancelled pass stops.
+        await Open(Orders, Billing, "q1");
+        await Open(Orders, Billing, "q2");
+
+        using var cancelled = new CancellationTokenSource();
+        var broker = NewBroker(BrokerOptions.Default with
+        {
+            ResumePolicy = ResumePolicy.Always,
+            ResumeGate = new CancellingGate(cancelled)
+        });
+        await broker.StartAsync(T0, TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => broker.ResumeOwedByAsync(Billing, T0.AddMinutes(1), cancelled.Token));
+    }
+
+    /// <summary>Permits the first replay, then cancels, so the loop must notice.</summary>
+    private sealed class CancellingGate(CancellationTokenSource source) : IResumeGate
+    {
+        public async ValueTask<bool> MayResumeAsync(
+            Exchange exchange, CancellationToken cancellationToken = default)
+        {
+            await source.CancelAsync();
+            return true;
+        }
     }
 
     [Fact]

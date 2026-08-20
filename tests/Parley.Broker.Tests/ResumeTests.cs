@@ -215,6 +215,27 @@ public sealed class ResumeTests : IDisposable
         Assert.Empty(resumed);
     }
 
+    [Fact]
+    public async Task A_gate_that_throws_surfaces_rather_than_being_absorbed()
+    {
+        // Decided rather than accidental, and the opposite of how a constraint violation is
+        // handled two lines away. A violation is an expected outcome of ordinary operation, so
+        // the pass continues; a gate is the host's own code, so a throw is a defect it needs to
+        // see. A broker that swallowed it would leave replays silently not happening.
+        var broker = await InterruptedBy(With(ResumePolicy.Always, new ThrowingGate()), "q1");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => broker.ResumeOwedByAsync(
+                Billing, T0.AddMinutes(2), TestContext.Current.CancellationToken));
+    }
+
+    private sealed class ThrowingGate : IResumeGate
+    {
+        public ValueTask<bool> MayResumeAsync(
+            Exchange exchange, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("the budget service is unreachable");
+    }
+
     private sealed class RefusingGate : IResumeGate
     {
         public ValueTask<bool> MayResumeAsync(

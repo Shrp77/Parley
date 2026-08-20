@@ -35,8 +35,17 @@ public interface IResumeGate
     /// <param name="cancellationToken">Cancels the decision.</param>
     /// <returns><see langword="true"/> to permit the replay.</returns>
     /// <remarks>
+    /// <para>
     /// Asked per exchange rather than once per sweep, because a budget gate that has just
     /// permitted several replays may reasonably decline the next.
+    /// </para>
+    /// <para>
+    /// An exception propagates and abandons the replay pass. That is intentional: this is the
+    /// host's own code, so a throw is a defect it needs to see, and a broker that swallowed it
+    /// would leave replays silently not happening. An implementation that cannot reach whatever
+    /// it consults should decide what that means and return an answer — declining is safe,
+    /// because an exchange that is not replayed is ghosted when its grace period expires.
+    /// </para>
     /// </remarks>
     ValueTask<bool> MayResumeAsync(Exchange exchange, CancellationToken cancellationToken = default);
 }

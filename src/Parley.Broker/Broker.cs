@@ -101,6 +101,12 @@ public sealed class Broker
     /// <param name="cancellationToken">Cancels the sequence.</param>
     /// <returns>What the sequence did.</returns>
     /// <remarks>
+    /// Call once per process lifetime. A second call is not refused, because refusing one would
+    /// break the case this exists for, but it moves <see cref="StartedUtc"/> forward and with it
+    /// the ghosting clock — so a host that calls it twice by accident silently delays ghosting
+    /// for every orphan, with nothing to notice.
+    /// </remarks>
+    /// <remarks>
     /// <para>
     /// SPEC.md §14: mark agents offline, then orphan every open exchange. Both are the same
     /// admission — that whatever the previous run believed about liveness is no longer evidence
@@ -241,8 +247,17 @@ public sealed class Broker
 
         foreach (var exchange in orphans)
         {
+            // Defensive rather than load-bearing: every awaited call below already honours the
+            // token, so removing this changes no observable behaviour today. It keeps the loop
+            // cancellable independently of what the body happens to do, which a body that gained
+            // a synchronous step would otherwise lose.
             cancellationToken.ThrowIfCancellationRequested();
 
+            // A gate that throws is not caught, and the asymmetry with the constraint violation
+            // below is deliberate. That violation is an expected outcome of ordinary operation —
+            // an agent re-asked — so it is handled and the pass continues. A gate is the host's
+            // own code, and an exception from it is a defect the host needs to see rather than
+            // one the broker should absorb. Expected outcomes get handled; defects get surfaced.
             if (!await _options.ResumeGate.MayResumeAsync(exchange, cancellationToken)
                 .ConfigureAwait(false))
             {
