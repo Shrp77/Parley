@@ -87,6 +87,13 @@ public sealed record ExchangePolicy(
     /// A bug that wrote a large number would disable the cap while leaving every constraint
     /// satisfied and nothing to notice, so the worst it can do is pick a poor value inside a
     /// sane band rather than switch the rule off.
+    /// <para>
+    /// A <c>const</c> where the grace period bounds are properties, which looks inconsistent and
+    /// is not a choice: C# permits <c>const</c> only for primitives and strings, so a
+    /// <see cref="TimeSpan"/> cannot be one. It is worth keeping as a constant rather than
+    /// levelling the two down, because a test naming this bound in an attribute argument needs a
+    /// compile-time constant and would not compile against a property.
+    /// </para>
     /// </remarks>
     public const int MaximumOpenPairCap = 50;
 

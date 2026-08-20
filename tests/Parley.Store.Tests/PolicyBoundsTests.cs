@@ -112,6 +112,47 @@ public sealed class PolicyBoundsTests : IDisposable
     }
 
     [Fact]
+    public async Task Saving_an_exchange_never_rewrites_the_terms_it_was_admitted_under()
+    {
+        // The property the whole design rests on, and nothing pinned it. ExchangePolicy exists
+        // because these values are stamped once and never read from configuration again; if a
+        // later edit added a window to SaveAsync's column list, an exchange would start taking
+        // whatever the current configuration said, an operator changing a number would re-time
+        // work already in flight, and no test would fail.
+        var repository = new ExchangeRepository(_connection);
+        var admitted = ExchangePolicy.Default with
+        {
+            WorkingWindow = TimeSpan.FromHours(9),
+            GracePeriod = TimeSpan.FromHours(7),
+            ClarifyDepthCap = 2
+        };
+
+        var opened = await repository.TryOpenAsync(
+            AgentName.Create("orders"), AgentName.Create("billing"),
+            new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            "q", admitted, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.True(opened.Succeeded, $"expected admission, got {opened.Rejection}");
+
+        // A transition and a save, which is every write path an exchange has.
+        var exchange = opened.Exchange!;
+        Assert.True(exchange.Clarify(
+            AgentName.Create("billing"),
+            new DateTimeOffset(2026, 1, 1, 0, 5, 0, TimeSpan.Zero)).Succeeded);
+        Assert.True(await repository.SaveAsync(
+            exchange, cancellationToken: TestContext.Current.CancellationToken));
+
+        var reloaded = await repository.GetAsync(
+            exchange.Id, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(reloaded);
+        Assert.Equal(admitted.DeliveryWindow, reloaded.DeliveryWindow);
+        Assert.Equal(admitted.WorkingWindow, reloaded.WorkingWindow);
+        Assert.Equal(admitted.GracePeriod, reloaded.GracePeriod);
+        Assert.Equal(admitted.ClarifyDepthCap, reloaded.ClarifyDepthCap);
+    }
+
+    [Fact]
     public void The_default_policy_is_writable()
     {
         // The case that matters most and would be easy to omit: a deployment that configures
