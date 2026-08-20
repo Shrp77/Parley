@@ -353,16 +353,40 @@ toward mutual precision indefinitely.
 
 Closes the exchange. Carries a per-sub-question resolution:
 
-| `resolution` | Meaning |
-|---|---|
-| `answered` | Resolved within this agent's authority |
-| `out_of_scope` | Not this agent's boundary — `redirect_to` names the right one |
-| `unknown` | Within scope, but genuinely undetermined |
+| `resolution` | Meaning | Written by |
+|---|---|---|
+| `answered` | Resolved within this agent's authority | the answerer |
+| `out_of_scope` | Not this agent's boundary — `redirect_to` names the right one | the answerer |
+| `unknown` | Within scope, but genuinely undetermined | the answerer |
+| `ghosted` | Nobody ever answered, and nobody is going to | the broker (§14) |
 
 `out_of_scope` is deliberately not a separate message type — it *is* an answer — but
 it must be distinguishable, because it is the system's best diagnostic signal. A
 cluster of `out_of_scope` between two agents means the ownership map is wrong. That
 is a defect you would otherwise never notice.
+
+These are per sub-question. The exchange also carries a single rolled-up resolution (§9.2),
+which is the least resolved of them — an exchange is `answered` only if every sub-question was.
+That distinction matters once retention prunes the message text, because the rollup is what
+survives, and it is deliberately pessimistic: the alternative would report a deployment as
+healthier the more of each question went unresolved.
+
+`ghosted` is the one resolution no agent may write, and unlike most rules of that shape this
+one is enforced rather than trusted (§9.3). A ghost asserts that nobody answered, so an
+exchange carrying an answer cannot be one. An agent supplying `ghosted` among its resolutions
+has its answer refused rather than silently recorded.
+
+That matters because the exchange-level resolution outlives the message text (§9.4), so it is
+what §15 reads when diagnosing an unhealthy deployment. An agent able to write `ghosted` could
+report its own answered exchanges as abandoned — making the infrastructure look broken, or
+disguising a peer as unreachable — and by the time anyone looked, the messages proving
+otherwise may have been pruned. It is the broker reporting that an
+exchange was abandoned, and it is distinct from `unknown` for the reason `out_of_scope` is
+distinct from `answered`: both close an exchange without resolving it, but one means a peer
+considered the question and could not settle it, and the other means no peer ever engaged
+with it at all. Collapsing them would hide an infrastructure failure inside a legitimate
+answer, and the asker would treat "your peer does not know" and "your peer never replied" as
+the same fact when they call for completely different responses.
 
 ### 5.4 Notify
 
@@ -613,7 +637,7 @@ CREATE TABLE agents (
   session_ref     TEXT,                    -- adapter-specific resume handle
   adapter_config  TEXT,                    -- opaque to the broker (see §12)
   last_seen_utc   TEXT,
-  status          TEXT    NOT NULL,        -- registered | live | offline | unreachable
+  status          TEXT    NOT NULL,        -- registered | live | offline | unreachable | retired
 
   CHECK (adapter_config IS NULL
          OR (json_valid(adapter_config) AND length(adapter_config) <= 4000)),
@@ -649,12 +673,29 @@ CREATE TABLE exchanges (
                     CHECK (open_pair_cap BETWEEN 1 AND 50),
   delivery_window_ms INTEGER NOT NULL,
   working_window_ms  INTEGER NOT NULL,
+  -- Carried per exchange for the same reason the windows are, and it is the same argument:
+  -- an exchange must be able to reproduce its own deadlines from its own row. Held globally,
+  -- an operator lengthening the grace period would retroactively revive orphans already past
+  -- the old one, and shortening it would ghost a batch of live orphans at once.
+  grace_period_ms    INTEGER NOT NULL,
   opened_utc        TEXT    NOT NULL,
   expires_utc       TEXT    NOT NULL,
   closed_utc        TEXT,
   is_decision       INTEGER NOT NULL DEFAULT 0,
   decision_ref      TEXT,
   question_hash     TEXT    NOT NULL,      -- content identity, §13.1
+  -- NULL while open. Set when the exchange closes, and the only column that distinguishes a
+  -- ghost from an answer once the message text has been pruned (§9.4). §15's health signals
+  -- are computed from this, so it outlives what it describes.
+  --
+  -- A rollup, not the whole story. §5.3 resolves each sub-question separately and that detail
+  -- lives in the answer payload, which retention eventually removes; this column is what
+  -- remains. It records the least resolved outcome among the sub-questions, ordered
+  -- ghosted < unknown < out_of_scope < answered, so an exchange counts as answered only when
+  -- every part of it was. Rolling up the other way would let one settled sub-question hide
+  -- four unsettled ones, and the resulting telemetry would report a healthier deployment the
+  -- more the agents failed to answer.
+  resolution        TEXT    CHECK (resolution IN ('answered','out_of_scope','unknown','ghosted')),
   conversation_id   TEXT    REFERENCES conversations(id),  -- authoritative; see messages
   version           INTEGER NOT NULL DEFAULT 0,
 
@@ -662,7 +703,15 @@ CREATE TABLE exchanges (
   CHECK (owed_by IN (asker, answerer)),
   CHECK (clarify_depth >= 0 AND clarify_depth <= clarify_depth_cap),
   CHECK (delivery_window_ms > 0 AND working_window_ms > 0),
+  -- Bounded in both directions, because both ends defeat the rule rather than merely tuning
+  -- it. At zero an orphan is ghosted the instant it is created, so the resume policy in §14
+  -- never gets a chance to run and `always` becomes indistinguishable from `never`. At the
+  -- top end the exchange effectively never closes, which restores the unbounded retention
+  -- §9.4 relies on this to remove. One second to thirty days.
+  CHECK (grace_period_ms BETWEEN 1000 AND 2592000000),
   CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
+  -- A closed exchange says why it closed; an open one cannot, since it has not.
+  CHECK ((state = 'CLOSED') = (resolution IS NOT NULL)),
   CHECK (pair_key = min(asker, answerer) || char(31) || max(asker, answerer))
 ) STRICT;
 
@@ -722,6 +771,16 @@ END;
 -- every path that can produce an OPEN row, including the UPDATE that resumes an orphan.
 CREATE UNIQUE INDEX ux_open_question
   ON exchanges(asker, answerer, question_hash) WHERE state = 'OPEN';
+
+-- A ghost asserts that nobody answered (§14), so an exchange carrying an answer cannot be
+-- one. Structural rather than textual: it does not inspect the answer, only whether one
+-- exists, so there is nothing to word around.
+CREATE TRIGGER tr_ghost_needs_no_answer BEFORE UPDATE ON exchanges
+WHEN NEW.resolution = 'ghosted'
+BEGIN
+  SELECT RAISE(ABORT, 'ghosted requires that no answer was given')
+   WHERE EXISTS (SELECT 1 FROM messages WHERE exchange_id = NEW.id AND type = 'answer');
+END;
 
 -- Resuming an orphan is an UPDATE, which the trigger above never sees. Both are required.
 CREATE TRIGGER tr_open_pair_cap_resume BEFORE UPDATE ON exchanges
@@ -793,6 +852,11 @@ CREATE UNIQUE INDEX ux_message_dedup
 Rules that application code could otherwise route around live in the schema, so correctness
 survives bugs in the broker:
 
+- **`ghosted` is the broker's to write, not an agent's.** The trigger above. This is one of
+  the two forgeries §15's health signals are worth committing, and the only one the schema can
+  refuse — the other, an adapter claiming the reserved `parley:` responder prefix (§11.3),
+  cannot be, because every row is written by the broker and no `CHECK` can see who supplied a
+  value. Enforce what is enforceable and be explicit about the remainder.
 - **The open-question cap is itself bounded.** The cap is supplied per row, as
   `clarify_depth_cap` already is, so the triggers below are only as strong as the value the
   broker writes into them. A bug that wrote a large number would disable the cap while leaving
@@ -910,13 +974,16 @@ bothers.
 **The age cap.** Nothing outlives the configured maximum age, whatever the idle rule
 concludes. This bounds a conversation that never falls silent long enough to trip it.
 
-The floor still wins, and that has a consequence worth stating rather than discovering: an
-exchange orphaned and never resumed holds its messages past the age cap indefinitely,
-because §14 may still replay them. Under a `never` resume policy nothing ever clears such
-an exchange, so the age cap is not in fact absolute. Whether an unresumed orphan should
-eventually be abandoned is open question 7 in §17, and answering it is what would make
-this bound hold. Until then a deployment using `never` should expect its floor, not its
-age cap, to determine how long the oldest messages live.
+The floor still wins where it applies, but it can no longer hold anything open indefinitely.
+An orphan is retained so §14 can replay it, and §14 now guarantees that the retention has an
+end: after the grace period the exchange is ghosted and closed, at which point the floor stops
+applying to it and the ordinary rules resume. The age cap is therefore absolute — every
+message has a bounded lifetime under every resume policy, including `never`.
+
+This was previously not the case, and the document said so: a `never` deployment that reaped
+steadily accumulated orphans nothing would ever clear, so its floor rather than its age cap
+determined how long the oldest messages lived. Ghosting supplies the terminal state that was
+missing.
 
 **Nothing is exempt.** There is no retain-forever flag, because the log is a channel and
 a permanent corner of it would be the store §16 says this is not. An operator who wants
@@ -983,7 +1050,7 @@ any of these into an agent's tool set would breach §10.1 and, through it, §16.
 |---|---|
 | `export(conversation_id)` | Emit every message in a conversation. The one query that reads across agents, which is why it is here and not in §10.1. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
-| `retire(agent)` | Resolve an unreachable agent's outstanding exchanges and remove it. See §14. |
+| `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. |
 | `force_conclude(conversation)` | Close a conversation regardless of its participants' votes. |
 
 `force_conclude` is named apart from the agent operation `conclude` on purpose. §10.2 opens
@@ -1057,7 +1124,21 @@ scheme rather than assuming a model name:
 | `script:<name>` | a deterministic responder |
 | `human:<name>` | a person answering directly |
 
-The column is not constrained to these, because model identifiers cannot be
+**The `parley:` prefix is reserved, and the broker MUST refuse an adapter that claims it.**
+An adapter reporting its responder as `parley:broker` would forge a broker-authored close, and
+the forgery is worth something: §15 identifies an unhealthy deployment by counting exactly
+those, so an agent could hide its own failures among the infrastructure's, or manufacture
+evidence that a peer's model was down. Responder identity is what the whole of §11.3 rests on,
+and a namespace anyone may claim identifies nobody.
+
+This one cannot be a schema constraint, and the reason is worth recording rather than
+rediscovering. Every row is written by the broker, including the rows that legitimately say
+`parley:broker`, so no `CHECK` can distinguish the broker writing its own name from the broker
+faithfully recording an adapter that supplied it. The column cannot see who is speaking, only
+what was said. Enforcement therefore sits at the point where adapter-supplied values enter the
+broker, which is the one place the distinction still exists.
+
+Apart from that prefix the column is not constrained, because model identifiers cannot be
 enumerated in advance. It is constrained to be present, which is what makes an
 unattributed message impossible rather than merely discouraged, and to a character set
 and a length.
@@ -1285,7 +1366,8 @@ does the most work.
 that stay idle. The broker instantiates an agent on the first inbound Question,
 resuming from the stored `session_ref` where the adapter supports it.
 
-**Reboot sequence.** Broker starts → loads registry → marks all agents `offline` →
+**Reboot sequence.** Broker starts → loads registry → marks all agents `offline` (except `retired`, which is an operator's judgement and not
+stale liveness) →
 open exchanges become `ORPHANED` → the broker consults the **resume gate** → where the
 gate permits it, the first inbound traffic for an orphaned exchange instantiates the
 owning agent and replays the pending Question into its inbox.
@@ -1306,7 +1388,7 @@ Implementations MUST support a configured resume policy:
 | Policy | Behaviour on restart |
 |---|---|
 | `always` | Orphaned exchanges are replayed as described above. |
-| `never` | Orphans are retained but never replayed. They stay visible and resumable by explicit operator action. |
+| `never` | Orphans are not replayed. They stay visible and resumable by explicit operator action until the grace period expires and they are ghosted. |
 | `ask` | The broker surfaces the pending exchanges and replays only those confirmed. |
 
 `never` is the safe default for interactive use, and `always` for unattended use;
@@ -1347,21 +1429,50 @@ spawning was attempted and failed, repeatedly, so there is no point routing here
 
 Two things follow, and only two. New questions to an unreachable agent are **refused at
 admission** rather than accepted and left to expire — without this a dead repository
-absorbs a full TTL per question, forever, and no asker ever learns why. And the state is
+absorbs a full delivery window per question, forever, and no asker ever learns why. And the
+state is
 **visible in `agents()`**, so a peer or an operator can see it rather than infer it from
 silence.
 
-What does *not* follow is any automatic resolution of what is already outstanding. The
-broker marks and reports; it does not close. An operator retires the agent (§10.2), and
-that is what force-closes its exchanges with `unknown` and `parley:broker` — the same
-mechanism the clarify cap uses, for the same reason: no answer is coming and the asker
-deserves to be told so rather than left waiting.
+What the mark does *not* do is resolve what is already outstanding — but nor does anything
+stall waiting for a human. Those exchanges take the ordinary path: their windows elapse, they
+orphan, and after the grace period they are ghosted like any other abandoned exchange (above).
+An unreachable agent is one particularly reliable way of producing orphans, not a separate
+case needing separate handling.
 
-The division is deliberate. A deleted repository is frequently temporary — a re-clone, a
-moved worktree, a restored backup — and an automatic force-close would discard real
-questions to save a human a decision they are better placed to make. The cost is that an
-unattended deployment stalls on those exchanges until someone acts. The churn stops
+This is a change from an earlier reading of this section, which held that the broker marks and
+reports but never closes, and that an operator's `retire` was the only thing that could
+resolve an unreachable agent's outstanding exchanges. The objection then was that an automatic
+close would discard real questions to save a human a decision they were better placed to make.
+Ghosting does not discard: it hands the question back to the asker with the asker's own stated
+consequences, which is what the human would have arranged anyway. What is left for `retire` is
+the registry, not the exchanges.
+
+The division that survives is about the *registry* rather than the traffic. A deleted
+repository is frequently temporary — a re-clone, a moved worktree, a restored backup — so the
+broker never removes an agent on its own evidence. The churn stops
 immediately either way, which is the harm worth stopping automatically.
+
+**Retiring an agent.** When a repository is gone for good rather than temporarily, an
+operator retires its agent. The agent is marked `retired`: it is not routed to, not offered
+in `agents()`, and no longer blocks a conversation from closing (§5.0). Registering it again
+returns it to service, which is what happens when a repository comes back under a new path.
+
+**Retiring does not delete.** This is a correction to an earlier reading of this section,
+which described `retire` as removing the agent. The schema does not permit it and should not:
+`exchanges` and `messages` both reference `agents(name)`, and §9.4 keeps exchange rows after
+pruning the message text precisely so that telemetry outlives the traffic. Deleting the agent
+would cascade to the skeleton §9.4 exists to preserve, and take every counterparty's history
+of dealing with it along too — so the pair-level questions §15 is built on would be answerable
+for every agent except the ones that had gone wrong.
+
+The cost is that a retired agent's name is never reusable and the registry accumulates rows
+for repositories that no longer exist. That is the right trade: a registry row is small, and
+the alternative discards the record of what an agent said in exchange for tidiness.
+
+By the time an operator retires an agent its outstanding exchanges have usually resolved
+themselves — they orphan and are ghosted on the ordinary schedule. Retiring does not wait for
+that and does not accelerate it.
 
 **Recovery is not automatic on its own terms.** Refusing to route to an unreachable agent
 means nothing ever tries to spawn it, so on its own the state would be a one-way door: the
@@ -1376,6 +1487,66 @@ reinstalling or re-cloning a repository is exactly the kind of thing that happen
 runs. The cost is one threshold's worth of churn per restart for an agent that is still
 gone, which is bounded, visible, and the price of not requiring a human to notice a
 recovery.
+
+**Ghosting: an orphan nobody comes back for.** An exchange does not stay orphaned forever.
+After a configured **grace period**, default 3 hours, the broker closes it with resolution
+`ghosted` (§5.3) and tells the asker that no answer is coming.
+
+This is what makes the age cap in §9.4 absolute. The retention floor holds an orphan's
+messages so that §14 can still replay them, and under a `never` resume policy nothing ever
+cleared such an exchange — so a deployment that reaped steadily and resumed never grew
+without bound, by design and with no remedy. Ghosting supplies the terminal state that was
+missing. There is no exchange the system cannot eventually finish with.
+
+**The clock runs from the later of orphaning and broker start.** A broker that is down
+overnight comes back to exchanges orphaned before the outage whose grace period elapsed
+while nothing could possibly have resumed them, and a wall-clock rule would ghost every one
+of them within a second of start-up. Taking the later of the two gives each orphan a real
+window in which returning was possible. In steady running the two rules agree, because
+broker start is in the past for everything orphaned since.
+
+Orphaning fast and ghosting slowly are not in tension; they protect different parties. The
+windows in §6 run in minutes and hours because a held wait-for edge is contagious — it blocks
+peers who have done nothing wrong. The grace period is long because being wrong is expensive
+in the other direction: ghost early and an agent is told to proceed alone while its peer was
+minutes from answering. Between the two the asker is not blocked on anything, which is
+precisely what lets the second window be generous.
+
+**A ghost reply returns the asker's own words.** It carries back the `intent`,
+`sub_questions` and `consequences` from the original Question, as any delivered answer does
+(§4.2), together with the fact that nobody answered. The `consequences` field is what makes
+this actionable rather than merely informative: the asker wrote down what it would do for
+each possible answer, so the reply can say *you planned X if this were yes and Y if it were
+no; nobody will tell you which, so decide on your own evidence or escalate to your human.*
+
+That is not the retry instruction §7.3 forbids. A refusal defers, and telling a model to come
+back later produces a loop or silent abandonment. A ghost is terminal: it closes the exchange
+and hands the question back for good.
+
+The grace period is recorded on the exchange rather than read from configuration at sweep
+time, so an exchange is ghosted on the terms it was opened under. Changing the setting affects
+exchanges opened afterwards, and never retroactively revives an orphan already past the old
+period or ghosts a batch of live ones at once.
+
+**The grace period bounds manual resumption too.** Under `never`, an orphan waits for an
+operator to resume it explicitly — and now waits only until it is ghosted. An operator who
+wants a longer window to intervene configures a longer grace period; that is the dial, and
+there is deliberately no exemption that keeps an exchange orphaned indefinitely, because such
+an exemption is exactly the unbounded retention this rule exists to remove. Ghosting is not
+destructive in any case: the question goes back to the asker, which is the outcome a manual
+resume was trying to reach.
+
+**A ghosted exchange is closed, and closing releases everything.** It stops counting against
+the §7.1 cap, and the distinctness index no longer sees it, so the asker may ask the same
+question again. That is the correct outcome rather than a loophole: the asker has been told
+nobody answered, and if the question still matters after that it deserves a fresh attempt —
+possibly of a peer that exists. It is also the ordinary mechanism, not a special case, since
+every closed exchange releases the same way.
+
+**Ghosting is attributed to the broker.** The closing message records `parley:broker` as its
+responder (§11.3), because §13's envelope renders responder identity on every delivered
+message and an unattributed close would leave the asker unable to tell a broker-authored
+answer from a peer's. It also keeps the distinction visible in the log, which §15 depends on.
 
 **Staleness guard.** A resumed agent's understanding of its repository is stale if
 commits landed while it was offline. Adapters SHOULD inject a change summary since
@@ -1397,7 +1568,33 @@ Cheap to collect, disproportionately useful:
 - Cycle rejections per week → an architectural knot that should become a decision
   record.
 - Exchanges per promoted decision → how much talk produces durable output.
-- `resolution` breakdown by `responder_model` → adapter tier quality.
+- `resolution` breakdown by `responder_model` → adapter tier quality. **Exclude
+  `parley:broker`.** It is not a model and did not answer anything; counting its forced
+  closes among real responders makes every model look worse in proportion to how often the
+  infrastructure failed around it, which is the opposite of what this signal is for.
+- **Broker-authored closes, reported separately and per agent.** Excluding `parley:broker`
+  from the quality signal must not mean discarding it, because it is the most direct evidence
+  of an unhealthy deployment the system produces. A `ghosted` rate is not a fact about a
+  model; it is a fact about whether an agent is reachable and answering, which is exactly what
+  an operator needs to see and cannot get from any other signal here.
+
+  Report at least `ghosted` closes per answering agent over time, and forced `unknown` closes
+  from the clarify cap, kept apart from each other: the first says nobody replied, the second
+  says someone replied too many times without converging.
+
+  Attributing a ghost to a *model* takes one more step, and the shape of the data is worth
+  stating because it is not obvious. The closing message records `parley:broker`, so the row
+  that marks the failure does not name the model that failed — by construction, since no model
+  produced it. The agent is known from the exchange, and the model it was answering with is
+  known from that agent's previous messages. So a model attribution is a join through history
+  and is only available for an agent that has answered before; an agent that has never
+  answered once has no model recorded anywhere, which is itself the more serious finding.
+
+  Make that step, because the two failures it separates need different people. A rising rate
+  on one agent points at that agent's repository or adapter. A rising rate across every agent
+  sharing a model points at the model — a vendor outage, an expired key, a renamed endpoint —
+  and that is a single fix for what otherwise looks like several unrelated agents degrading at
+  once.
 - Inbox depth per agent, sustained → the ownership map has made this agent a bottleneck.
   §7.1 caps questions per pair and deliberately does not cap them per answerer, so this is
   the signal that replaces the constraint that was not imposed. It is a design defect to fix
@@ -1429,10 +1626,9 @@ Cheap to collect, disproportionately useful:
   most plausibly have been weakened: a conversation is a grouping the operator can read
   whole and no participant can read at all, not a channel its members share. Traffic is pruned once it is operationally spent (§9.4), and an
   operator who wants to keep a discussion exports it to a file they own rather than
-  making a corner of the log permanent. One case does outlive the age cap — an exchange
-  orphaned and never resumed, which the retention floor holds so §14 can still replay it.
-  That is an acknowledged gap in §9.4 rather than a second store, since nothing can read
-  it either.
+  making a corner of the log permanent. Nothing outlives the age cap: the one case that
+  used to, an exchange orphaned and never resumed, is now ghosted after a grace period
+  (§14), so every message has a bounded lifetime under every resume policy.
 - **Not a replacement for committed contracts.** Most cross-repository questions
   should be *lookups* against contracts and decision records. Parley handles the
   residue where the contract genuinely does not cover the case — and feeds the answer
@@ -1454,9 +1650,11 @@ Cheap to collect, disproportionately useful:
    The broker has no view of token consumption today, so it would have to be
    adapter-reported — which makes it a term in the adapter contract (§14) rather than
    broker-local configuration.
-7. What becomes of an orphan that is never resumed under a `never` policy? Retaining
-   it forever holds a claim on nothing, since orphans release their wait-for edge, but
-   discarding it on a timer loses the question that orphaning exists to preserve.
+7. *(Closed.)* What becomes of an orphan that is never resumed: it is ghosted. After a
+   grace period the broker closes it with `ghosted` and returns the question to the asker
+   along with the asker's own stated consequences, so the question is handed back rather
+   than discarded, and the exchange reaches a terminal state rather than being retained
+   against a replay that will never come. See §14.
 8. *(Closed.)* Which credential-store implementation to depend on: none. Most agents
    authenticate out of band and need nothing from the broker, and the rest are served by
    `env:` and `file:`, which require no dependency. `keychain:` remains declared and
