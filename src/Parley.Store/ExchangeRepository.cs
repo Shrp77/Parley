@@ -424,6 +424,17 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                     new { Id = conversationId, Opened = ExchangeRow.FormatTimestamp(nowUtc) },
                     scope.Transaction,
                     cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+            // Membership and the void, both from SPEC.md §5.0 and both consequences of this
+            // one act. An agent is a participant because it is party to an exchange carrying
+            // the identifier, so recording that anywhere but here could disagree with the
+            // exchange that established it. And opening an exchange discards any poll in
+            // progress along with every vote cast in it, because a conversation that concluded
+            // around a live question would leave that question in a discussion nobody may add
+            // to.
+            await new ConversationRepository(_connection)
+                .JoinAsync(conversationId, asker, answerer, nowUtc, scope.Transaction, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var expires = nowUtc + terms.DeliveryWindow;

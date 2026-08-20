@@ -80,8 +80,8 @@ public sealed class AgentVerbTests : IDisposable
         Assert.Equal(ExchangeState.Open, asked.Exchange!.State);
         Assert.Equal(Billing, asked.Exchange.OwedBy);
 
-        var inbox = await _broker.DrainInboxAsync(
-            Billing, T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken);
+        var inbox = (await _broker.DrainInboxAsync(
+            Billing, T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         var delivered = Assert.Single(inbox);
         Assert.Equal(asked.Question!.Id, delivered.Id);
@@ -99,8 +99,8 @@ public sealed class AgentVerbTests : IDisposable
 
         Assert.True(asked.Exchange!.Id > 0);
         Assert.Null(asked.Exchange.Resolution);
-        Assert.Empty(await _broker.DrainInboxAsync(
-            Orders, T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Empty((await _broker.DrainInboxAsync(
+            Orders, T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken)).Messages);
     }
 
     [Fact]
@@ -198,8 +198,8 @@ public sealed class AgentVerbTests : IDisposable
         Assert.Equal(ExchangeState.Closed, closed!.State);
         Assert.Equal(Resolution.Answered, closed.Resolution);
 
-        var inbox = await _broker.DrainInboxAsync(
-            Orders, T0.AddMinutes(4), cancellationToken: TestContext.Current.CancellationToken);
+        var inbox = (await _broker.DrainInboxAsync(
+            Orders, T0.AddMinutes(4), cancellationToken: TestContext.Current.CancellationToken)).Messages;
         Assert.Equal(MessageType.Answer, Assert.Single(inbox).Type);
     }
 
@@ -303,8 +303,8 @@ public sealed class AgentVerbTests : IDisposable
         Assert.Equal(Orders, loaded!.OwedBy);
         Assert.Equal(1, loaded.ClarifyDepth);
 
-        var inbox = await _broker.DrainInboxAsync(
-            Orders, T0.AddMinutes(4), cancellationToken: TestContext.Current.CancellationToken);
+        var inbox = (await _broker.DrainInboxAsync(
+            Orders, T0.AddMinutes(4), cancellationToken: TestContext.Current.CancellationToken)).Messages;
         Assert.Equal(MessageType.Clarify, Assert.Single(inbox).Type);
     }
 
@@ -388,8 +388,8 @@ public sealed class AgentVerbTests : IDisposable
         // Refused on the transition, before deduplication is reached: the exchange is closed.
         Assert.Equal(TransitionError.ExchangeNotOpen, retry.Error);
 
-        var inbox = await _broker.DrainInboxAsync(
-            Orders, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken);
+        var inbox = (await _broker.DrainInboxAsync(
+            Orders, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken)).Messages;
         Assert.Single(inbox);
     }
 

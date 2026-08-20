@@ -252,10 +252,27 @@ The poll works as follows.
 - **Any participant may propose. Nobody moderates.** The broker runs the poll; no agent
   runs it, and no agent's proposal carries more weight than another's. An agent that could
   conclude a discussion on everyone's behalf would be the lead that principle 2.6 forbids.
-- **Only participants holding open exchanges are polled.** An agent whose exchanges are all
+- **Only an agent that says it is finished proposes.** Declining when no poll is running says
+  only that the caller is not finished, which is what an open conversation already means, and
+  it starts nothing. The alternative is worse than pointless: it would put a closure question
+  nobody proposed to every other participant, and their silence would then be recorded as
+  assent to closing a discussion no one suggested closing.
+- **The proposer gets no exemption from the rule below.** A participant that proposes while
+  holding no open exchange is not polled either, and its own answer is not recorded — it has
+  already said the only thing the poll would have asked it. Exempting it would make the veto in
+  the gate-crashing paragraph above free and permanent, since an agent could join once, let its
+  exchange close, and object indefinitely at no cost.
+- **Only participants holding a live exchange are polled.** An agent whose exchanges are all
   closed has already said what it had to say, and under §14's lazy spawn, polling it would
   instantiate an idle agent purely to ask whether it was finished. At the scale this protocol
   targets that is most of the roster, woken to answer a question about nothing.
+
+  **Live means open or orphaned.** An orphan is a debt awaiting replay (§14), not a discussion
+  anyone has finished with, and the distinction is load-bearing rather than pedantic: §14's
+  reboot sequence orphans *every* open exchange, so counting only open ones would leave a poll
+  proposed just after a restart with nobody to ask. Any participant could then conclude a live
+  discussion single-handed, and the answer its peer still owed would be replayed into a closed
+  conversation nobody may add to.
 - **Silence assents.** A participant that does not answer within the same window §14 uses to
   abandon an orphan is taken to agree. Without this one unreachable agent could hold a
   discussion open indefinitely.
