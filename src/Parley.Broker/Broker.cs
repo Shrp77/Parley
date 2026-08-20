@@ -20,6 +20,29 @@ namespace Parley.Broker;
 /// could not be tested without one — the same reason <see cref="Reaper"/> takes an instant
 /// rather than reading it.
 /// </para>
+/// <para>
+/// <b>Not thread-safe, and the host must serialise access.</b> A broker holds one connection
+/// for its lifetime, which contradicts the advice on the repositories to give each unit of work
+/// its own — deliberately, because the two constraints pull against each other. A
+/// <see cref="SqliteConnection"/> is not thread-safe, and neither is
+/// <see cref="StartedUtc"/>, so calling <see cref="TickAsync"/> from a timer while
+/// <see cref="ResumeOwedByAsync"/> runs on another thread is a data race in both.
+/// </para>
+/// <para>
+/// A per-unit-of-work broker is not the answer either: <see cref="StartedUtc"/> is
+/// per-process state that the ghosting clock depends on, and an instance created for one call
+/// would not have it. So the resolution is that a host runs its brokers on one thread each,
+/// which at this scale costs nothing — the work is a handful of indexed queries against a
+/// local file, and §4.1 already contemplates one process hosting several brokers, one per
+/// project, which parallelises across projects rather than within one.
+/// </para>
+/// <para>
+/// What would change this is a host that needs concurrency inside a single project. The shape
+/// that fits is a connection factory rather than a connection, so each operation opens its own
+/// and <see cref="StartedUtc"/> stays on the broker. That is a larger change than it looks,
+/// because the in-memory databases the tests use are private to their connection, and it is not
+/// worth making against a host that does not exist yet.
+/// </para>
 /// </remarks>
 public sealed class Broker
 {
@@ -30,15 +53,23 @@ public sealed class Broker
 
     /// <summary>SQLite's extended result code for a unique index violation.</summary>
     /// <remarks>
-    /// Matched on the code rather than the message, which is neither stable nor localisable and
-    /// would silently stop matching the day either changes.
+    /// The code says what kind of failure occurred and is stable; it does not say which index
+    /// failed, and this table carries more than one. So the class of failure is matched on the
+    /// code and the specific index on a column name — ours, from our own schema, rather than
+    /// SQLite's prose around it. That is the part of the message that cannot drift without us
+    /// changing it, and a rename that broke the match would break a test in the same commit.
     /// </remarks>
     private const int UniqueConstraintViolation = 2067;
 
     /// <summary>
     /// Creates a broker over an open connection.
     /// </summary>
-    /// <param name="connection">An open connection to this project's database.</param>
+    /// <param name="connection">
+    /// An open, already-migrated connection to this project's database. The broker borrows it
+    /// and never closes it: it outlives individual operations but not the host, and a type that
+    /// disposed something it was handed would make the two lifetimes hard to reason about. The
+    /// caller opens it, keeps it, and closes it.
+    /// </param>
     /// <param name="options">Lifecycle configuration, or <see langword="null"/> for defaults.</param>
     /// <exception cref="ArgumentNullException"><paramref name="connection"/> is null.</exception>
     public Broker(SqliteConnection connection, BrokerOptions? options = null)
@@ -232,7 +263,8 @@ public sealed class Broker
                 }
             }
             catch (SqliteException ex)
-                when (ex.SqliteExtendedErrorCode == UniqueConstraintViolation)
+                when (ex.SqliteExtendedErrorCode == UniqueConstraintViolation
+                      && ex.Message.Contains("question_hash", StringComparison.Ordinal))
             {
                 // The asker re-asked while this was orphaned, so an identical question is open
                 // again and the distinctness index refuses the replay. That is the outcome
@@ -243,6 +275,11 @@ public sealed class Broker
                 // Skipped rather than propagated: one collision must not abandon the replay of
                 // every other exchange the agent owes. The orphan stays orphaned and the grace
                 // period disposes of it.
+                //
+                // Narrowed to the distinctness index rather than any unique violation, because
+                // this table carries another one and may gain more. Swallowing an unexpected
+                // constraint failure would turn a schema defect into a replay that quietly did
+                // nothing, which is the worst of both.
                 continue;
             }
         }
