@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Orchestration. Parley.Core holds the domain and Parley.Store the persistence; this is the
+    layer that decides when either of them runs. It is a library rather than an executable
+    because hosting is a deployment choice — SPEC.md section 4.1 has one process hosting several
+    brokers, one per project, and a Main method here would have made that awkward for no reason.
+
+    It does not know about transports or adapters, and must not learn: SPEC.md principle 2.3
+    makes the transport disposable, and a broker that referenced one would take the wrong thing
+    with it when the transport is replaced.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Parley.Store\Parley.Store.csproj" />
+  </ItemGroup>
+
+</Project>
