@@ -277,12 +277,34 @@ longer blocks closure. A judgement is only worth honouring while the agent that 
 still act on it, and a discussion held open by a repository that no longer exists is the
 churn §14 exists to stop.
 
+**Outcomes are shared; tallies are not.** A participant learns whether the conversation is
+open or closed, which is its own discussion and no more than it already needed to know to
+decide whether to ask again. It never learns the vote count, and it cannot infer one: an
+agent that calls `conclude` repeatedly sees only a state change, which tells it that closure
+was reached and nothing about who reached it or when they were asked. That is a genuine side
+channel and a deliberately narrow one — it discloses aggregate progress on a discussion the
+caller is already in, never a roster, a peer's position, or anyone's activity individually.
+
 **The poll leaks nothing.** It is strictly bilateral: each participant is asked whether it
 is finished, and told nothing about who else is in the conversation, how many there are, or
 how anyone answered. Membership is exactly the kind of thing an agent should not learn — if
 `billing` brought `inventory` into a discussion, `orders` has no business knowing that, and
 a tally of "three of four agree" discloses the roster size as surely as naming it would. The
 broker holds the count; no participant does.
+
+**New activity voids a poll in progress.** Opening an exchange in a conversation discards
+any in-flight poll and every vote already cast, and closure begins again from nothing.
+
+Without this the poll has a race with an obvious loser. Only participants holding open
+exchanges are polled, so an agent whose exchanges had all closed is not asked; if it opens a
+new one while the poll runs, the conversation can conclude around a live question, which then
+sits in a closed discussion nobody may add to. Discarding cast votes rather than only
+re-polling matters too, since an agent that said it was finished may not be once a peer
+reopens the subject.
+
+The cost is that a busy conversation is hard to conclude by agreement, which is the correct
+outcome: a discussion still producing questions is not over, and §9.4's idle rule will close
+it when it truly falls quiet.
 
 **A closed conversation stays closed.** A Question naming a concluded conversation is
 refused, and the refusal says so. Reopening is not a special case because it is not a real
@@ -649,6 +671,12 @@ CREATE TABLE exchanges (
 -- foreign key only against indexed parent columns.
 CREATE UNIQUE INDEX ux_exchange_conversation ON exchanges(id, conversation_id);
 
+-- Created by the broker on first reference, inside the same transaction that admits the
+-- Question naming it, and idempotently: two agents may name the same new identifier at once
+-- and neither should fail. Agents never create conversations explicitly, because a
+-- conversation is not a thing to be set up before use — it is whatever its participants said
+-- belonged together.
+--
 -- A conversation exists as a row so that it can carry a state. While it was only a string
 -- on messages, no rule could ask whether a discussion was over without reconstructing it
 -- from the traffic, and §9.4's idle rule could not be evaluated at all: it reasons about the
@@ -956,9 +984,15 @@ any of these into an agent's tool set would breach §10.1 and, through it, §16.
 | `export(conversation_id)` | Emit every message in a conversation. The one query that reads across agents, which is why it is here and not in §10.1. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
 | `retire(agent)` | Resolve an unreachable agent's outstanding exchanges and remove it. See §14. |
-| `conclude(conversation)` | Close a conversation regardless of its participants' votes. |
+| `force_conclude(conversation)` | Close a conversation regardless of its participants' votes. |
 
-Operator `conclude` exists because a decline blocks closure indefinitely (§5.0) and the
+`force_conclude` is named apart from the agent operation `conclude` on purpose. §10.2 opens
+by saying an adapter that surfaced an operator operation into an agent's tool set would breach
+§10.1, and two operations sharing a name across exactly that boundary is how such a mistake
+gets made — the wrong one is bound, the signatures nearly match, and the agent acquires the
+power to end a discussion over its peers' objections. Names that differ fail loudly instead.
+
+It exists because a decline blocks closure indefinitely (§5.0) and the
 agent holding it may simply be wrong. That is a deliberate asymmetry rather than a hole in
 principle 2.6: no agent may conclude over another's objection, and the person running the
 broker is not an agent. It is the same division as `retire` — the broker never overrules a
