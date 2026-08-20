@@ -297,6 +297,93 @@ public sealed class InboxTests : IDisposable
     }
 
     [Fact]
+    public async Task A_replayed_question_is_handed_over_again()
+    {
+        // SPEC.md §14: replay is re-delivery, not re-sending. Without it the exchange reopens
+        // and the agent has an obligation it cannot see — the question message is still stamped
+        // delivered from before the restart, so the inbox is empty while the broker waits for an
+        // answer nobody was asked for.
+        var exchange = await Ask(Orders, Billing, "where does price live");
+        await Send(MessageType.Question, Orders, Billing, exchange.Id, "gross or net?");
+
+        var resuming = new Broker(_connection, BrokerOptions.Default with
+        {
+            ResumePolicy = ResumePolicy.Always
+        });
+
+        // Delivered, then interrupted, which is the ordinary case: the agent had the question
+        // and the process went away before it answered.
+        await resuming.StartAsync(T0.AddMinutes(-1), TestContext.Current.CancellationToken);
+        await resuming.DrainInboxAsync(
+            Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
+
+        await resuming.StartAsync(T0.AddMinutes(2), TestContext.Current.CancellationToken);
+
+        var afterRestart = await resuming.DrainInboxAsync(
+            Billing, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Single(afterRestart);
+        Assert.Equal(MessageType.Question, afterRestart[0].Type);
+    }
+
+    [Fact]
+    public async Task A_replay_hands_back_the_latest_message_not_the_first()
+    {
+        // An exchange that got as far as a clarification owes an answer to the clarification,
+        // not to the original question. Replaying the whole exchange would hand back messages
+        // the agent has already dealt with, and one of them it sent itself.
+        var exchange = await Ask(Orders, Billing, "where does price live");
+        await Send(MessageType.Question, Orders, Billing, exchange.Id, "gross or net?");
+
+        // Billing clarifies, so the debt flips to orders, who now owes the answer.
+        Assert.True(exchange.Clarify(Billing, T0.AddSeconds(1)).Succeeded);
+        Assert.True(await _exchanges.SaveAsync(
+            exchange, cancellationToken: TestContext.Current.CancellationToken));
+        await Send(MessageType.Clarify, Billing, Orders, exchange.Id, "gross of what tax?");
+
+        var resuming = new Broker(_connection, BrokerOptions.Default with
+        {
+            ResumePolicy = ResumePolicy.Always
+        });
+        await resuming.StartAsync(T0.AddMinutes(-1), TestContext.Current.CancellationToken);
+        await resuming.DrainInboxAsync(
+            Orders, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
+
+        await resuming.StartAsync(T0.AddMinutes(2), TestContext.Current.CancellationToken);
+
+        var afterRestart = await resuming.DrainInboxAsync(
+            Orders, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(MessageType.Clarify, Assert.Single(afterRestart).Type);
+    }
+
+    [Fact]
+    public async Task A_replay_never_hands_an_agent_its_own_message()
+    {
+        // The filter that makes the replay safe rather than merely correct. An exchange holds
+        // traffic in both directions, and re-delivering the wrong half would put an agent's own
+        // question into its own inbox — which reads as something to answer.
+        var exchange = await Ask(Orders, Billing, "where does price live");
+        await Send(MessageType.Question, Orders, Billing, exchange.Id, "gross or net?");
+
+        var resuming = new Broker(_connection, BrokerOptions.Default with
+        {
+            ResumePolicy = ResumePolicy.Always
+        });
+        await resuming.StartAsync(T0.AddMinutes(-1), TestContext.Current.CancellationToken);
+        await resuming.DrainInboxAsync(
+            Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
+        await resuming.StartAsync(T0.AddMinutes(2), TestContext.Current.CancellationToken);
+
+        // Orders asks for its own inbox. It owes nothing on this exchange, so the replay finds
+        // nothing for it and its own question is not returned.
+        var toAsker = await resuming.DrainInboxAsync(
+            Orders, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Empty(toAsker);
+    }
+
+    [Fact]
     public async Task Draining_an_empty_inbox_is_not_an_error()
     {
         var drained = await _broker.DrainInboxAsync(

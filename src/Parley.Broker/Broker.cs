@@ -402,10 +402,10 @@ public sealed class Broker
 
             try
             {
-                if (await _exchanges.SaveAsync(exchange, cancellationToken: cancellationToken)
+                if (!await _exchanges.SaveAsync(exchange, cancellationToken: cancellationToken)
                     .ConfigureAwait(false))
                 {
-                    resumed.Add(exchange);
+                    continue;
                 }
             }
             catch (SqliteException ex)
@@ -428,6 +428,26 @@ public sealed class Broker
                 // nothing, which is the worst of both.
                 continue;
             }
+
+            // Reopening the exchange is only half a replay. SPEC.md §14 is explicit that a
+            // replay is re-delivery rather than re-sending, so the message the agent owes an
+            // answer to goes back into its inbox — the existing row, marked undelivered, not a
+            // fresh one that would make the log a record of delivery attempts.
+            //
+            // Without this the exchange reopens and the agent has an obligation it cannot see:
+            // its inbox is empty because the question is still stamped delivered from before the
+            // interruption, while the broker waits for an answer nobody was asked for, until the
+            // grace period ghosts it.
+            var owed = await _messages
+                .GetLatestOwedAsync(exchange.Id, agent, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (owed is not null)
+            {
+                await _messages.RedeliverAsync(owed.Id, cancellationToken).ConfigureAwait(false);
+            }
+
+            resumed.Add(exchange);
         }
 
         return resumed;

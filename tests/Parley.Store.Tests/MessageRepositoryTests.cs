@@ -492,4 +492,29 @@ public sealed class MessageRepositoryTests : IDisposable
             _exchangeId, MessageType.Question, Orders, Billing, Model, Payload, T0,
             cancellationToken: cancelled.Token));
     }
+    [Fact]
+    public async Task The_latest_owed_message_is_the_most_recent_one_addressed_to_the_agent()
+    {
+        // What a replay hands back. An exchange holds traffic in both directions, and the agent
+        // that owes a response needs the last thing said to it, not the last thing said.
+        await Append(type: MessageType.Question, payload: Payload);
+        await Append(type: MessageType.Clarify, from: Billing, to: Orders,
+            payload: """{"text":"gross of what tax?"}""");
+
+        var owed = await _messages.GetLatestOwedAsync(
+            _exchangeId, Orders, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(owed);
+        Assert.Equal(MessageType.Clarify, owed.Type);
+        Assert.Equal(Orders, owed.To);
+    }
+
+    [Fact]
+    public async Task An_exchange_with_nothing_addressed_to_the_agent_has_nothing_owed()
+    {
+        // A replay must cope with it rather than assuming a message exists: an exchange can be
+        // admitted before its question is written, and the two are separate operations.
+        Assert.Null(await _messages.GetLatestOwedAsync(
+            _exchangeId, Orders, TestContext.Current.CancellationToken));
+    }
 }

@@ -388,6 +388,45 @@ public sealed class MessageRepository(SqliteConnection connection)
     }
 
     /// <summary>
+    /// Finds the message a replayed exchange must hand over again.
+    /// </summary>
+    /// <param name="exchangeId">The exchange being replayed.</param>
+    /// <param name="agent">The agent that owes a response.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The message, or <see langword="null"/> if there is nothing to replay.</returns>
+    /// <remarks>
+    /// <para>
+    /// The most recent message addressed to the owing agent, which is the question when the
+    /// exchange never got past one and the latest clarification otherwise. Replaying the whole
+    /// exchange would hand back messages the agent has already dealt with and, worse, ones it
+    /// sent itself.
+    /// </para>
+    /// <para>
+    /// Not filtered on delivery. A replayed exchange usually holds a message delivered before
+    /// the interruption, which is the ordinary case, and one never delivered is already pending
+    /// and needs nothing done to it.
+    /// </para>
+    /// </remarks>
+    public async Task<Message?> GetLatestOwedAsync(
+        long exchangeId,
+        AgentName agent,
+        CancellationToken cancellationToken = default)
+    {
+        var row = await _connection.QuerySingleOrDefaultAsync<MessageRow>(
+            new CommandDefinition(
+                $"""
+                {SelectColumns}
+                WHERE exchange_id = @Exchange AND to_agent = @Agent
+                ORDER BY id DESC
+                LIMIT 1;
+                """,
+                new { Exchange = exchangeId, Agent = agent.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return row?.ToDomain();
+    }
+
+    /// <summary>
     /// Returns a delivered message to its recipient's inbox.
     /// </summary>
     /// <param name="id">The message to replay.</param>
