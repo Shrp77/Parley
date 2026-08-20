@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Parley.Core;
@@ -67,6 +67,11 @@ public sealed class MessageRepository(SqliteConnection connection)
     /// stands alone. Supplied by the agent on a question or a notification; a clarification or
     /// answer inherits the identifier of the exchange it belongs to. See SPEC.md §5.0.
     /// </param>
+    /// <param name="transaction">
+    /// A transaction to enlist in, or <see langword="null"/> to own one. Supplied when this
+    /// write is one step of a larger operation that must commit or fail whole; see
+    /// <c>WriteScope</c>. A borrowed transaction is not committed here.
+    /// </param>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>
     /// An outcome carrying either the appended message or the earlier one that made this a
@@ -115,6 +120,7 @@ public sealed class MessageRepository(SqliteConnection connection)
         string payloadJson,
         DateTimeOffset nowUtc,
         string? conversationId = null,
+        SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
         if (from == to)
@@ -128,9 +134,9 @@ public sealed class MessageRepository(SqliteConnection connection)
         var hash = MessageIdentity.Compute(exchangeId, type, from, to, payloadJson);
         var cutoff = ExchangeRow.FormatTimestamp(nowUtc - MessageIdentity.DeduplicationWindow);
 
-        // Synchronous BeginTransaction, deliberately: the async overloads do not expose the
-        // deferred flag, and IMMEDIATE is the whole point.
-        using var transaction = _connection.BeginTransaction(IsolationLevel.Serializable, deferred: false);
+        // Owns a transaction when called alone, joins one when composed into a larger
+        // operation. See WriteScope for why an ask cannot be two commits.
+        using var scope = WriteScope.Begin(_connection, transaction);
 
         var existing = await _connection.QuerySingleOrDefaultAsync<MessageRow>(
             new CommandDefinition(
@@ -141,7 +147,7 @@ public sealed class MessageRepository(SqliteConnection connection)
                 LIMIT 1;
                 """,
                 new { Hash = hash, Cutoff = cutoff },
-                transaction,
+                scope.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         if (existing is not null)
@@ -165,7 +171,7 @@ public sealed class MessageRepository(SqliteConnection connection)
                     SELECT conversation_id FROM exchanges WHERE id = @Exchange;
                     """,
                     new { Exchange = exchange },
-                    transaction,
+                    scope.Transaction,
                     cancellationToken: cancellationToken)).ConfigureAwait(false);
 
             if (conversationId is not null && conversationId != owned)
@@ -207,10 +213,10 @@ public sealed class MessageRepository(SqliteConnection connection)
                     Conversation = conversation,
                     Created = created
                 },
-                transaction,
+                scope.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        scope.Complete();
 
         return AppendOutcome.Appended(new Message(
             id, exchangeId, type, from, to, responderModel, payloadJson, conversation, nowUtc,

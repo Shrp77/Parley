@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Xunit;
 
@@ -72,7 +72,7 @@ public sealed class MessageRepositoryTests : IDisposable
             payload,
             at ?? T0,
             conversationId,
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
     [Fact]
     public async Task Appending_persists_and_round_trips()
@@ -81,7 +81,7 @@ public sealed class MessageRepositoryTests : IDisposable
 
         Assert.True(outcome.Stored);
 
-        var loaded = await _messages.GetAsync(outcome.Message.Id, TestContext.Current.CancellationToken);
+        var loaded = await _messages.GetAsync(outcome.Message.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Equal(_exchangeId, loaded.ExchangeId);
@@ -291,7 +291,7 @@ public sealed class MessageRepositoryTests : IDisposable
         Assert.False(await _messages.MarkDeliveredAsync(
             outcome.Message.Id, T0.AddMinutes(2), TestContext.Current.CancellationToken));
 
-        var loaded = await _messages.GetAsync(outcome.Message.Id, TestContext.Current.CancellationToken);
+        var loaded = await _messages.GetAsync(outcome.Message.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(T0.AddMinutes(1), loaded!.DeliveredUtc);
     }
 

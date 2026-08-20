@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -121,7 +121,7 @@ public sealed class InboxTests : IDisposable
         await _broker.DrainInboxAsync(
             Billing, deliveredAt, cancellationToken: TestContext.Current.CancellationToken);
 
-        var loaded = await _exchanges.GetAsync(exchange.Id, TestContext.Current.CancellationToken);
+        var loaded = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(deliveredAt, loaded!.DeliveredUtc);
         Assert.Equal(deliveredAt + ExchangePolicy.Default.WorkingWindow, loaded.ExpiresUtc);
     }
@@ -157,7 +157,7 @@ public sealed class InboxTests : IDisposable
 
         Assert.Equal(0, result.Orphaned);
 
-        var loaded = await _exchanges.GetAsync(exchange.Id, TestContext.Current.CancellationToken);
+        var loaded = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ExchangeState.Open, loaded!.State);
     }
 
@@ -237,13 +237,13 @@ public sealed class InboxTests : IDisposable
         await broker.StartAsync(T0.AddMinutes(1), TestContext.Current.CancellationToken);
 
         // The reboot sequence orphaned it.
-        var afterStart = await _exchanges.GetAsync(exchange.Id, TestContext.Current.CancellationToken);
+        var afterStart = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ExchangeState.Orphaned, afterStart!.State);
 
         await broker.DrainInboxAsync(
             Billing, T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken);
 
-        var afterDrain = await _exchanges.GetAsync(exchange.Id, TestContext.Current.CancellationToken);
+        var afterDrain = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ExchangeState.Open, afterDrain!.State);
     }
 
@@ -291,7 +291,7 @@ public sealed class InboxTests : IDisposable
 
         Assert.Single(drained);
 
-        var loaded = await _exchanges.GetAsync(exchange.Id, TestContext.Current.CancellationToken);
+        var loaded = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ExchangeState.Closed, loaded!.State);
         Assert.Null(loaded.DeliveredUtc);
     }

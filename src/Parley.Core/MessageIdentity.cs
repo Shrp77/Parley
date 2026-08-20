@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -87,6 +87,41 @@ public static class MessageIdentity
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)))
             .ToLowerInvariant();
     }
+
+    /// <summary>
+    /// Computes the content identity a question is held to for as long as its exchange stays
+    /// open, per SPEC.md §7.1.
+    /// </summary>
+    /// <param name="from">The asker.</param>
+    /// <param name="to">The answerer.</param>
+    /// <param name="payloadJson">The question payload, exactly as it will be stored.</param>
+    /// <returns>The SHA-256 digest as 64 lowercase hexadecimal characters.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="payloadJson"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// §7.1 says identity here is the content hash of §13.1, and this is that hash with the
+    /// exchange identifier excluded. It has to be: the value is written <em>as</em> the exchange
+    /// is created, so there is no identifier yet, and folding one in afterwards would make every
+    /// question hash unique and silently disable the distinctness index — the failure mode §13.1
+    /// warns about for <c>dedup_bucket</c>, reached from the other direction. Two agents asking
+    /// the same thing would both be admitted while the index reported no conflict.
+    /// </para>
+    /// <para>
+    /// The whole payload is hashed, not the question text alone. Rule 1 makes an asker state
+    /// what it will do with each possible answer, and that statement is part of what is being
+    /// asked: the same words with different consequences ask the answerer to weigh different
+    /// things. Hashing only the text would also put the store in the business of knowing the
+    /// payload's shape, which is the adapter's concern.
+    /// </para>
+    /// <para>
+    /// The scope differs from §13.1 even though the algorithm does not. Deduplication guards
+    /// delivery for sixty seconds, absorbing transport retries; this guards intent for as long
+    /// as the exchange is open, which under §6 may be hours. An agent that asks, forgets, and
+    /// asks again is what this catches.
+    /// </para>
+    /// </remarks>
+    public static string ComputeQuestion(AgentName from, AgentName to, string payloadJson) =>
+        Compute(exchangeId: null, MessageType.Question, from, to, payloadJson);
 
     /// <summary>
     /// Formats a message type as the token used in storage and in the identity hash.

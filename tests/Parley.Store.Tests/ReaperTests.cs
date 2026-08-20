@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Xunit;
 
@@ -76,7 +76,7 @@ public sealed class ReaperTests : IDisposable
         Assert.Equal(1, result.Orphaned);
         Assert.Equal(0, result.Contended);
 
-        var loaded = await _exchanges.GetAsync(exchange.Id, TestContext.Current.CancellationToken);
+        var loaded = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ExchangeState.Orphaned, loaded!.State);
     }
 
@@ -181,7 +181,7 @@ public sealed class ReaperTests : IDisposable
         // expired no longer exists in that form — and overwriting would discard a real answer.
         var exchange = await Open(Orders, Billing, T0);
 
-        var stale = await _exchanges.GetAsync(exchange.Id, TestContext.Current.CancellationToken);
+        var stale = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(stale!.Answer(Billing, T0.AddMinutes(1)).Succeeded);
         Assert.True(await _exchanges.SaveAsync(
             stale, cancellationToken: TestContext.Current.CancellationToken));
@@ -191,7 +191,7 @@ public sealed class ReaperTests : IDisposable
 
         Assert.Equal(ReapResult.Nothing, result);
 
-        var loaded = await _exchanges.GetAsync(exchange.Id, TestContext.Current.CancellationToken);
+        var loaded = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ExchangeState.Closed, loaded!.State);
     }
 
@@ -244,7 +244,7 @@ public sealed class ReaperTests : IDisposable
         await _reaper.SweepAsync(
             T0.AddMinutes(1) + Working, BrokerStart, TestContext.Current.CancellationToken);
 
-        var loaded = await _exchanges.GetAsync(exchange.Id, TestContext.Current.CancellationToken);
+        var loaded = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ExchangeState.Orphaned, loaded!.State);
         Assert.Equal(1, loaded.ClarifyDepth);
     }

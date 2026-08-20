@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Xunit;
 
@@ -143,7 +143,7 @@ public sealed class PolicyBoundsTests : IDisposable
             exchange, cancellationToken: TestContext.Current.CancellationToken));
 
         var reloaded = await repository.GetAsync(
-            exchange.Id, TestContext.Current.CancellationToken);
+            exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(reloaded);
         Assert.Equal(admitted.DeliveryWindow, reloaded.DeliveryWindow);
