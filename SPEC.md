@@ -662,10 +662,37 @@ redirects it now.
 These belong in the adapter's tool descriptions, not only in documentation — a model
 reads tool descriptions on every call and reads documentation approximately never.
 
+**Where a rule can stop being a rule, it has.** Principle 2.4 says anything the protocol can
+enforce mechanically should not be left to the model's good judgement, and §11.4 says these
+rules decay worst on Headless agents, which receive them as a prompt preamble rather than as
+tool descriptions re-read on every call. Every advisory rule is therefore weakest exactly
+where §11.2 says the important tier is. So the list below is annotated with what actually
+holds each one, and four of the ten are now storage constraints rather than requests.
+
+| | Rule | Held by |
+|---|---|---|
+| 1 | State your consequences | schema (§9.3) |
+| 2 | Gate explicitly or not at all | schema (§9.3) |
+| 3 | Never describe your internals | the model — except referrals, which are names (§9.3) |
+| 4 | Batch | the model |
+| 5 | Hard size cap | schema |
+| 6 | Answer from authority | the model |
+| 7 | Decisions get promoted | the model, plus the promotion mechanism |
+| 8 | Never wait | the API, which offers no blocking call |
+| 9 | Refer, do not relay | the model, with self-referral refused by schema (§9.3) |
+| 10 | Tag the conversation | the model |
+
+Rule 3 is the one worth staring at. It is *"the single rule most responsible for preventing
+context poisoning"* and it is essentially unenforceable, because it is a rule about prose and
+no constraint can read prose. The message cap (rule 5) bounds how much can leak in one go and
+the referral check bounds the one part of it that is a name, and beyond that it rests on the
+model. That is worth stating plainly rather than leaving the list to imply uniform strength.
+
 1. **State your consequences.** Every Question declares what you will do with each
-   possible answer.
+   possible answer. Enforced: a Question without them is refused by the schema, not
+   discouraged.
 2. **Gate explicitly or not at all.** Implicit dependencies between sub-questions are
-   forbidden.
+   forbidden. Enforced: a gate must name an earlier sub-question of the same message.
 3. **Never describe your internals.** Ask about, and answer about, *contracts and
    ownership* — never *how your repository implements something*. This is the single
    rule most responsible for preventing context poisoning. An agent that learns a
@@ -862,6 +889,44 @@ END;
 CREATE UNIQUE INDEX ux_open_question
   ON exchanges(asker, answerer, question_hash) WHERE state = 'OPEN';
 
+-- Rule 2: gates are syntactic, unambiguous and acyclic. A trigger because reaching into an
+-- array needs json_each, which is a subquery, and CHECK forbids those.
+--
+-- The second clause is the whole rule and does more than it appears to. Requiring a gate to
+-- name an *earlier* sub-question makes the dependency graph a DAG by construction, so a cycle
+-- cannot be expressed rather than being detected and rejected: no recursive walk, and nothing
+-- to get subtly wrong. It subsumes three failures at once — a gate on a missing id, a gate on
+-- itself, and a mutual pair each waiting on the other forever. Verified against all three plus
+-- a plain forward reference.
+--
+-- Uniqueness is checked first because without it "the earlier sub-question named q1" is not a
+-- single thing, and the second clause would be satisfied by whichever duplicate came first.
+--
+-- Scoped to questions, unlike the referral trigger below, and the difference is deliberate.
+-- redirect_to is a name whose leak potential does not depend on which message carries it, so
+-- validating it only where it is currently read would leave it unguarded the day something
+-- else reads it. sub_questions are defined only for a Question and mean nothing elsewhere, so
+-- there is no later reader to be caught out by. The scope also matters here: Notify is
+-- expected to be the highest-volume traffic (§5.4), and it would otherwise pay for two
+-- json_each scans over a path it never has.
+CREATE TRIGGER tr_gates_are_syntactic BEFORE INSERT ON messages
+WHEN NEW.type = 'question'
+BEGIN
+  SELECT RAISE(ABORT, 'sub_question ids are not unique')
+   WHERE (SELECT count(*) FROM json_each(NEW.payload_json, '$.sub_questions'))
+      <> (SELECT count(DISTINCT json_extract(value, '$.id'))
+            FROM json_each(NEW.payload_json, '$.sub_questions'));
+
+  SELECT RAISE(ABORT, 'a gate must reference an earlier sub_question')
+   WHERE EXISTS (
+     SELECT 1 FROM json_each(NEW.payload_json, '$.sub_questions') q
+      WHERE json_extract(q.value, '$.gate.on') IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM json_each(NEW.payload_json, '$.sub_questions') p
+           WHERE p.key < q.key
+             AND json_extract(p.value, '$.id') = json_extract(q.value, '$.gate.on')));
+END;
+
 -- Every referral names a registered agent. A trigger rather than a CHECK because reaching
 -- inside a JSON array needs json_tree, which is a subquery: CHECK forbids those, triggers
 -- permit them.
@@ -933,6 +998,17 @@ CREATE TABLE messages (
   CHECK ((type = 'notify') = (exchange_id IS NULL)),
   CHECK (length(payload_json) <= 2000),
   CHECK (json_valid(payload_json)),
+
+  -- Rule 1: a Question states what the asker will do with each possible answer. §5.1 calls
+  -- consequences the highest-leverage field in the protocol, and §4.2 gives it a second job as
+  -- the asker's own note to itself when the answer arrives hours later, so a Question without
+  -- it is not merely impolite: it is unanswerable well and unusable on return.
+  --
+  -- The length floor does real work. Requiring only that the key be present admits "n/a",
+  -- which satisfies a check and states nothing. Forty characters is about the shortest honest
+  -- statement of a consequence and is cheap to clear.
+  CHECK (type <> 'question'
+         OR length(coalesce(json_extract(payload_json, '$.consequences'), '')) >= 40),
   CHECK (length(responder_model) BETWEEN 1 AND 64
          AND responder_model NOT GLOB '*[^a-zA-Z0-9._:/-]*'),
   CHECK (length(content_hash) = 64
@@ -974,6 +1050,14 @@ CREATE UNIQUE INDEX ux_message_dedup
 Rules that application code could otherwise route around live in the schema, so correctness
 survives bugs in the broker:
 
+- **A Question states its consequences.** The `CHECK` on `messages`. Rule 1 was advisory and
+  therefore weakest on the tier §11.2 calls the important one, since Headless agents receive
+  the rules as a decaying preamble rather than as tool descriptions re-read on every call. It
+  is now impossible rather than discouraged.
+- **Gates are syntactic, unambiguous and acyclic.** The trigger below. §5.1 requires gates to
+  be machine-readable because *"a model handed an implicitly conditional sub-question will
+  answer it anyway, confidently, in a world that does not exist"* — and a gate naming something
+  that is not there is exactly that failure wearing correct syntax.
 - **A referral names a registered agent, and never the sender.** The trigger below. Rule 3
   forbids describing internals and is otherwise unenforceable — prose cannot be checked — but a
   referral is a name, and a name can be looked up. It is the only part of rule 3 the storage
