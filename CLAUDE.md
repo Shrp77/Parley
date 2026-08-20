@@ -18,6 +18,9 @@ src/Parley.Store    Persistence. SQLite via Dapper. ParleyDatabase (connection
 tests/Parley.Core.Tests   Domain tests. Deliberately does NOT reference Parley.Store —
                           the absent dependency is the point. Keep it that way.
 tests/Parley.Store.Tests  Repository and schema-constraint tests.
+tests/Parley.Spec.Tests   Checks SPEC.md: references resolve, tables are well formed, and
+                          the schema it documents executes. References neither Core nor
+                          Store, so a check cannot drift into asserting what the code does.
 ```
 
 `Parley.Core` having no I/O and no package dependencies is a design constraint, not an
@@ -91,16 +94,61 @@ Each of these cost a build cycle. Do not rediscover them.
 
 ## Review gate
 
-Before a branch is considered done: **three review passes, each with a different lens**, each
-finding nothing above low severity.
+Two parts: a mechanical floor that runs automatically, and three human-judgement lenses that
+do not.
+
+### The floor runs as tests
+
+`tests/Parley.Spec.Tests` checks SPEC.md the way the other projects check the code: every
+section reference resolves, no markdown table is ragged, no operation name spans the §10.1 /
+§10.2 boundary, the rules of §8 are numbered contiguously and all appear in its enforcement
+table, and **every schema fragment in the document executes against SQLite, in the order
+written**. `dotnet test` runs them; CI runs them on all three platforms.
+
+That last one is the valuable one. §9.3 argues that invariants belong in storage because
+application code can route around them, and each of those arguments is worth exactly what the
+DDL carrying it is worth. Do not hand-verify a constraint and move on — add the case, so the
+next edit is checked too.
+
+Two traps this suite has already hit, both of which made checks pass while testing nothing:
+
+- **Line endings.** SPEC.md is CRLF on Windows and LF on the Linux and macOS runners, and
+  .NET anchors `$` before a bare line feed only. `SpecDocument` normalises on load. A pattern
+  anchored to end-of-line otherwise matches everything on two runners and nothing on the third.
+- **Trigger bodies contain semicolons.** A pattern ending at the first `;` truncates a trigger
+  into something that still parses as SQL. Triggers are matched to `END;` separately, and
+  `The_document_contains_a_schema` guards the extraction itself, because a regex that silently
+  matches nothing makes every other check pass by vacuity.
+
+### The lenses are for what the floor cannot check
+
+Each finding nothing above low severity:
 
 1. Correctness and concurrency
 2. Security and data integrity
 3. API surface and maintainability
 
-Rotating the lens matters — three runs of the same review are correlated and mostly
-re-derive the first. After fixing findings, **re-run the same lens** before moving to the
-next; fixes have introduced new problems that only the re-run caught.
+Rotating the lens matters — three runs of the same review are correlated and mostly re-derive
+the first. After fixing findings, **re-run the same lens** before moving to the next; fixes
+have introduced new problems that only the re-run caught.
+
+The highest-value findings in this repository's history came from adversarially probing a
+guard rather than reading it: a self-referral that asserted both halves of a contradiction, a
+gate cycle that no sub-question could ever resolve, a forged `parley:broker` responder, an
+agent able to write `ghosted` over its own answered exchanges. None were visible by
+inspection; all were found by writing the malicious case and watching it be admitted. **Probe;
+do not reason.**
+
+### Two rules about running them
+
+**Run the lenses after the last edit, not alongside it.** Reviewing while authoring and then
+continuing to change things means reporting passes that never covered the final state. This
+has been caught by the user three separate times.
+
+**Verify CI ran against `HEAD`.** `gh pr checks --watch` returns the *previous* run when a new
+one has not yet registered, which reports green for a commit that was never built — the same
+shape as reading the dependency graph before restoring. Compare the run's commit against
+`git rev-parse HEAD`.
 
 ## Repository hygiene
 

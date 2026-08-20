@@ -889,75 +889,7 @@ END;
 CREATE UNIQUE INDEX ux_open_question
   ON exchanges(asker, answerer, question_hash) WHERE state = 'OPEN';
 
--- Rule 2: gates are syntactic, unambiguous and acyclic. A trigger because reaching into an
--- array needs json_each, which is a subquery, and CHECK forbids those.
---
--- The second clause is the whole rule and does more than it appears to. Requiring a gate to
--- name an *earlier* sub-question makes the dependency graph a DAG by construction, so a cycle
--- cannot be expressed rather than being detected and rejected: no recursive walk, and nothing
--- to get subtly wrong. It subsumes three failures at once — a gate on a missing id, a gate on
--- itself, and a mutual pair each waiting on the other forever. Verified against all three plus
--- a plain forward reference.
---
--- Uniqueness is checked first because without it "the earlier sub-question named q1" is not a
--- single thing, and the second clause would be satisfied by whichever duplicate came first.
---
--- Scoped to questions, unlike the referral trigger below, and the difference is deliberate.
--- redirect_to is a name whose leak potential does not depend on which message carries it, so
--- validating it only where it is currently read would leave it unguarded the day something
--- else reads it. sub_questions are defined only for a Question and mean nothing elsewhere, so
--- there is no later reader to be caught out by. The scope also matters here: Notify is
--- expected to be the highest-volume traffic (§5.4), and it would otherwise pay for two
--- json_each scans over a path it never has.
-CREATE TRIGGER tr_gates_are_syntactic BEFORE INSERT ON messages
-WHEN NEW.type = 'question'
-BEGIN
-  SELECT RAISE(ABORT, 'sub_question ids are not unique')
-   WHERE (SELECT count(*) FROM json_each(NEW.payload_json, '$.sub_questions'))
-      <> (SELECT count(DISTINCT json_extract(value, '$.id'))
-            FROM json_each(NEW.payload_json, '$.sub_questions'));
 
-  SELECT RAISE(ABORT, 'a gate must reference an earlier sub_question')
-   WHERE EXISTS (
-     SELECT 1 FROM json_each(NEW.payload_json, '$.sub_questions') q
-      WHERE json_extract(q.value, '$.gate.on') IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM json_each(NEW.payload_json, '$.sub_questions') p
-           WHERE p.key < q.key
-             AND json_extract(p.value, '$.id') = json_extract(q.value, '$.gate.on')));
-END;
-
--- Every referral names a registered agent. A trigger rather than a CHECK because reaching
--- inside a JSON array needs json_tree, which is a subquery: CHECK forbids those, triggers
--- permit them.
---
--- The key test is deliberately two-sided. json_tree reports an array element under a path
--- containing redirect_to, but a bare string under the parent's path with redirect_to as its
--- key, so matching on path alone silently ignores a malformed scalar — and a malformed value
--- that disables a guard is exactly how a rule becomes decorative. Verified against both forms.
---
--- Not restricted to answers, although only an answer carries a referral today. A redirect_to
--- in any other message type is inert, and inert data is how a guard lapses: the day something
--- reads it, the check that was scoped to the old reader is silently absent. The same mistake
--- as scoping the cap trigger to INSERT and meeting the resume path an UPDATE later.
-CREATE TRIGGER tr_referral_targets_exist BEFORE INSERT ON messages
-BEGIN
-  SELECT RAISE(ABORT, 'redirect_to names an agent that is not registered')
-   WHERE EXISTS (
-     SELECT 1 FROM json_tree(NEW.payload_json) t
-      WHERE (t.path LIKE '%redirect_to%' OR t.key = 'redirect_to')
-        AND t.type = 'text'
-        AND t.value NOT IN (SELECT name FROM agents));
-
-  -- A sender referring to itself asserts both halves of a contradiction in one message:
-  -- out_of_scope says the boundary is not mine, and the referral says it is. Checked against
-  -- every entry rather than the first, so one cannot hide among valid targets.
-  SELECT RAISE(ABORT, 'redirect_to names the sender')
-   WHERE EXISTS (
-     SELECT 1 FROM json_tree(NEW.payload_json) t
-      WHERE (t.path LIKE '%redirect_to%' OR t.key = 'redirect_to')
-        AND t.type = 'text' AND t.value = NEW.from_agent);
-END;
 
 -- A ghost asserts that nobody answered (§14), so an exchange carrying an answer cannot be
 -- one. Structural rather than textual: it does not inspect the answer, only whether one
@@ -1040,6 +972,80 @@ CREATE TABLE messages (
   FOREIGN KEY (exchange_id, conversation_id)
     REFERENCES exchanges(id, conversation_id)
 ) STRICT;
+
+-- The two triggers below sit after the table they guard rather than beside the rules they
+-- enforce. SQLite compiles a trigger against a table that must already exist, so the
+-- document's order is the order a database is built in, not a reading order.
+
+-- Rule 2: gates are syntactic, unambiguous and acyclic. A trigger because reaching into an
+-- array needs json_each, which is a subquery, and CHECK forbids those.
+--
+-- The second clause is the whole rule and does more than it appears to. Requiring a gate to
+-- name an *earlier* sub-question makes the dependency graph a DAG by construction, so a cycle
+-- cannot be expressed rather than being detected and rejected: no recursive walk, and nothing
+-- to get subtly wrong. It subsumes three failures at once — a gate on a missing id, a gate on
+-- itself, and a mutual pair each waiting on the other forever. Verified against all three plus
+-- a plain forward reference.
+--
+-- Uniqueness is checked first because without it "the earlier sub-question named q1" is not a
+-- single thing, and the second clause would be satisfied by whichever duplicate came first.
+--
+-- Scoped to questions, unlike the referral trigger below, and the difference is deliberate.
+-- redirect_to is a name whose leak potential does not depend on which message carries it, so
+-- validating it only where it is currently read would leave it unguarded the day something
+-- else reads it. sub_questions are defined only for a Question and mean nothing elsewhere, so
+-- there is no later reader to be caught out by. The scope also matters here: Notify is
+-- expected to be the highest-volume traffic (§5.4), and it would otherwise pay for two
+-- json_each scans over a path it never has.
+CREATE TRIGGER tr_gates_are_syntactic BEFORE INSERT ON messages
+WHEN NEW.type = 'question'
+BEGIN
+  SELECT RAISE(ABORT, 'sub_question ids are not unique')
+   WHERE (SELECT count(*) FROM json_each(NEW.payload_json, '$.sub_questions'))
+      <> (SELECT count(DISTINCT json_extract(value, '$.id'))
+            FROM json_each(NEW.payload_json, '$.sub_questions'));
+
+  SELECT RAISE(ABORT, 'a gate must reference an earlier sub_question')
+   WHERE EXISTS (
+     SELECT 1 FROM json_each(NEW.payload_json, '$.sub_questions') q
+      WHERE json_extract(q.value, '$.gate.on') IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM json_each(NEW.payload_json, '$.sub_questions') p
+           WHERE p.key < q.key
+             AND json_extract(p.value, '$.id') = json_extract(q.value, '$.gate.on')));
+END;
+
+-- Every referral names a registered agent. A trigger rather than a CHECK because reaching
+-- inside a JSON array needs json_tree, which is a subquery: CHECK forbids those, triggers
+-- permit them.
+--
+-- The key test is deliberately two-sided. json_tree reports an array element under a path
+-- containing redirect_to, but a bare string under the parent's path with redirect_to as its
+-- key, so matching on path alone silently ignores a malformed scalar — and a malformed value
+-- that disables a guard is exactly how a rule becomes decorative. Verified against both forms.
+--
+-- Not restricted to answers, although only an answer carries a referral today. A redirect_to
+-- in any other message type is inert, and inert data is how a guard lapses: the day something
+-- reads it, the check that was scoped to the old reader is silently absent. The same mistake
+-- as scoping the cap trigger to INSERT and meeting the resume path an UPDATE later.
+CREATE TRIGGER tr_referral_targets_exist BEFORE INSERT ON messages
+BEGIN
+  SELECT RAISE(ABORT, 'redirect_to names an agent that is not registered')
+   WHERE EXISTS (
+     SELECT 1 FROM json_tree(NEW.payload_json) t
+      WHERE (t.path LIKE '%redirect_to%' OR t.key = 'redirect_to')
+        AND t.type = 'text'
+        AND t.value NOT IN (SELECT name FROM agents));
+
+  -- A sender referring to itself asserts both halves of a contradiction in one message:
+  -- out_of_scope says the boundary is not mine, and the referral says it is. Checked against
+  -- every entry rather than the first, so one cannot hide among valid targets.
+  SELECT RAISE(ABORT, 'redirect_to names the sender')
+   WHERE EXISTS (
+     SELECT 1 FROM json_tree(NEW.payload_json) t
+      WHERE (t.path LIKE '%redirect_to%' OR t.key = 'redirect_to')
+        AND t.type = 'text' AND t.value = NEW.from_agent);
+END;
 
 CREATE UNIQUE INDEX ux_message_dedup
   ON messages(content_hash, dedup_bucket);
