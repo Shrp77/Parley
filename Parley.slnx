@@ -14,10 +14,12 @@
   <Folder Name="/src/">
     <Project Path="src/Parley.Core/Parley.Core.csproj" />
     <Project Path="src/Parley.Store/Parley.Store.csproj" />
+    <Project Path="src/Parley.Broker/Parley.Broker.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Parley.Core.Tests/Parley.Core.Tests.csproj" />
     <Project Path="tests/Parley.Store.Tests/Parley.Store.Tests.csproj" />
+    <Project Path="tests/Parley.Broker.Tests/Parley.Broker.Tests.csproj" />
     <Project Path="tests/Parley.Spec.Tests/Parley.Spec.Tests.csproj" />
   </Folder>
 </Solution>
