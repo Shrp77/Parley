@@ -49,14 +49,36 @@ public sealed class ExchangeRow
     public int ClarifyDepthCap { get; init; }
 
     /// <summary>
-    /// Gets the <c>ttl_ms</c> column: the inactivity window, in whole milliseconds.
+    /// Gets the <c>delivery_window_ms</c> column: the pickup window, in whole milliseconds.
     /// </summary>
     /// <remarks>
     /// Milliseconds rather than seconds so a rehydrated exchange can reproduce its own
     /// deadline. Seconds truncated the stored window while <c>expires_utc</c> retained full
-    /// precision, leaving the two mutually inconsistent for any non-integral TTL.
+    /// precision, leaving the two mutually inconsistent for any non-integral value.
     /// </remarks>
-    public long TtlMs { get; init; }
+    public long DeliveryWindowMs { get; init; }
+
+    /// <summary>
+    /// Gets the <c>working_window_ms</c> column: the answering window, in whole milliseconds.
+    /// </summary>
+    public long WorkingWindowMs { get; init; }
+
+    /// <summary>
+    /// Gets the <c>grace_period_ms</c> column: how long an orphan is kept before ghosting.
+    /// </summary>
+    public long GracePeriodMs { get; init; }
+
+    /// <summary>
+    /// Gets the <c>delivered_utc</c> column, or <see langword="null"/> if the question has not
+    /// been collected.
+    /// </summary>
+    public string? DeliveredUtc { get; init; }
+
+    /// <summary>
+    /// Gets the <c>resolution</c> column, or <see langword="null"/> while the exchange is not
+    /// closed.
+    /// </summary>
+    public string? Resolution { get; init; }
 
     /// <summary>Gets the <c>opened_utc</c> column: the creation timestamp, round-trip formatted.</summary>
     public string OpenedUtc { get; init; } = "";
@@ -132,11 +154,15 @@ public sealed class ExchangeRow
             ParseState(State),
             ClarifyDepth,
             ClarifyDepthCap,
-            TimeSpan.FromMilliseconds(TtlMs),
+            TimeSpan.FromMilliseconds(DeliveryWindowMs),
+            TimeSpan.FromMilliseconds(WorkingWindowMs),
+            TimeSpan.FromMilliseconds(GracePeriodMs),
             ParseTimestamp(OpenedUtc),
             ParseTimestamp(ExpiresUtc),
             ClosedUtc is null ? null : ParseTimestamp(ClosedUtc),
+            DeliveredUtc is null ? null : ParseTimestamp(DeliveredUtc),
             IsDecision != 0,
+            ParseResolution(Resolution),
             Version);
     }
 
@@ -197,5 +223,39 @@ public sealed class ExchangeRow
         "CLOSED" => ExchangeState.Closed,
         "ORPHANED" => ExchangeState.Orphaned,
         _ => throw new InvalidOperationException($"Unrecognised exchange state '{value}'.")
+    };
+
+    /// <summary>
+    /// Writes a resolution as the token the schema constrains.
+    /// </summary>
+    /// <param name="resolution">The resolution, or <see langword="null"/> if the exchange is open.</param>
+    /// <returns>The stored token, or <see langword="null"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="resolution"/> is not a defined <see cref="Core.Resolution"/> value.
+    /// </exception>
+    /// <remarks>
+    /// Tokens rather than the enum's numeric value, for the same reasons as
+    /// <see cref="FormatState"/>: the schema validates them, and a resolution is the column
+    /// §15's health signals are read from long after the message text has been pruned, so it
+    /// is worth being legible to whoever is looking.
+    /// </remarks>
+    public static string? FormatResolution(Core.Resolution? resolution) => resolution switch
+    {
+        null => null,
+        Core.Resolution.Answered => "answered",
+        Core.Resolution.OutOfScope => "out_of_scope",
+        Core.Resolution.Unknown => "unknown",
+        Core.Resolution.Ghosted => "ghosted",
+        _ => throw new ArgumentOutOfRangeException(nameof(resolution), resolution, null)
+    };
+
+    private static Core.Resolution? ParseResolution(string? value) => value switch
+    {
+        null => null,
+        "answered" => Core.Resolution.Answered,
+        "out_of_scope" => Core.Resolution.OutOfScope,
+        "unknown" => Core.Resolution.Unknown,
+        "ghosted" => Core.Resolution.Ghosted,
+        _ => throw new InvalidOperationException($"Unrecognised resolution '{value}'.")
     };
 }

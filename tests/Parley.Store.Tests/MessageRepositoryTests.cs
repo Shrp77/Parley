@@ -12,11 +12,15 @@ public sealed class MessageRepositoryTests : IDisposable
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(15);
 
-    private const string Payload = """{"text":"is the invoice total gross or net?"}""";
+    // A question must state what the asker will do with each possible answer (rule 1),
+    // and the schema refuses one that does not. Forty characters is the floor, chosen so
+    // that "n/a" cannot satisfy it.
+    private const string Payload = """{"text":"is the invoice total gross or net?","consequences":"If gross I stop adding tax at invoice time; if net I keep it."}""";
     private const string Model = "claude-opus-5";
 
     private readonly SqliteConnection _connection;
     private readonly MessageRepository _messages;
+    private readonly ExchangeRepository _exchanges;
     private readonly long _exchangeId;
 
     public MessageRepositoryTests()
@@ -34,11 +38,21 @@ public sealed class MessageRepositoryTests : IDisposable
 
         var exchanges = new ExchangeRepository(_connection);
         _exchangeId = exchanges
-            .TryOpenAsync(Orders, Billing, T0, Ttl, cancellationToken: TestContext.Current.CancellationToken)
+            .TryOpenAsync(Orders, Billing, T0, TimeSpan.FromMinutes(15), TimeSpan.FromHours(4),
+                TimeSpan.FromHours(3), "q1", cancellationToken: TestContext.Current.CancellationToken)
             .GetAwaiter().GetResult().Exchange!.Id;
 
         _messages = new MessageRepository(_connection);
+        _exchanges = new ExchangeRepository(_connection);
     }
+
+    // The conversation is chosen when the exchange is opened, not by the first message on it,
+    // so a test about conversations needs its own exchange rather than the shared fixture one.
+    private async Task<long> OpenInConversation(string conversationId, string question) =>
+        (await _exchanges.TryOpenAsync(
+            Orders, Billing, T0, TimeSpan.FromMinutes(15), TimeSpan.FromHours(4),
+            TimeSpan.FromHours(3), question, conversationId,
+            cancellationToken: TestContext.Current.CancellationToken)).Exchange!.Id;
 
     public void Dispose() => _connection.Dispose();
 
@@ -147,7 +161,7 @@ public sealed class MessageRepositoryTests : IDisposable
         // Byte-identical is the rule, so near-identical must pass. The two payloads differ
         // only in their final punctuation.
         await Append();
-        var altered = await Append(payload: """{"text":"is the invoice total gross or net!"}""");
+        var altered = await Append(payload: """{"text":"is the invoice total gross or net!","consequences":"If gross I stop adding tax at invoice time; if net I keep it."}""");
 
         Assert.True(altered.Stored);
     }
@@ -335,14 +349,20 @@ public sealed class MessageRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task A_clarification_inherits_its_exchange_conversation()
+    public async Task A_message_inherits_its_exchange_conversation()
     {
-        // SPEC 5.0: the question chooses, everything after it on that exchange follows.
-        await Append(type: MessageType.Question, conversationId: "pricing-boundary");
+        // SPEC 5.0: the exchange holds the conversation and everything on it follows. A message
+        // stores a copy, which the composite foreign key keeps in agreement.
+        var exchangeId = await OpenInConversation("pricing-boundary", "where does price live");
 
-        var clarify = await Append(type: MessageType.Clarify, from: Billing, to: Orders,
+        var question = await Append(
+            type: MessageType.Question, exchangeId: exchangeId,
+            payload: """{"text":"gross or net?","consequences":"If gross I stop adding tax at invoice time; if net I keep it."}""");
+        var clarify = await Append(
+            type: MessageType.Clarify, exchangeId: exchangeId, from: Billing, to: Orders,
             payload: """{"text":"gross or net of tax?"}""");
 
+        Assert.Equal("pricing-boundary", question.Message.ConversationId);
         Assert.Equal("pricing-boundary", clarify.Message.ConversationId);
 
         var conversation = await _messages.GetConversationAsync(
@@ -353,13 +373,13 @@ public sealed class MessageRepositoryTests : IDisposable
     [Fact]
     public async Task A_reply_cannot_reassign_its_exchange_to_another_conversation()
     {
-        // Without this, a clarification could split one discussion across two exports or graft
-        // it onto somebody else's. A CHECK cannot catch it, because it would have to read
-        // another row.
-        await Append(type: MessageType.Question, conversationId: "pricing-boundary");
+        // Without this a clarification could split one discussion across two exports, or graft
+        // it onto somebody else's. The composite foreign key refuses it too; refusing here
+        // means the caller learns what it did rather than meeting a constraint violation.
+        var exchangeId = await OpenInConversation("pricing-boundary", "where does price live");
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => Append(
-            type: MessageType.Clarify, from: Billing, to: Orders,
+            type: MessageType.Clarify, exchangeId: exchangeId, from: Billing, to: Orders,
             payload: """{"text":"gross or net?"}""", conversationId: "invoice-rounding"));
 
         Assert.Equal("conversationId", ex.ParamName);
@@ -387,9 +407,10 @@ public sealed class MessageRepositoryTests : IDisposable
     {
         // Agreeing with the exchange is not a conflict, so a caller that threads the identifier
         // through every call is not punished for it.
-        await Append(type: MessageType.Question, conversationId: "pricing-boundary");
+        var exchangeId = await OpenInConversation("pricing-boundary", "where does price live");
 
-        var clarify = await Append(type: MessageType.Clarify, from: Billing, to: Orders,
+        var clarify = await Append(
+            type: MessageType.Clarify, exchangeId: exchangeId, from: Billing, to: Orders,
             payload: """{"text":"gross or net?"}""", conversationId: "pricing-boundary");
 
         Assert.Equal("pricing-boundary", clarify.Message.ConversationId);
@@ -402,9 +423,14 @@ public sealed class MessageRepositoryTests : IDisposable
     [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     public async Task An_identifier_that_could_travel_badly_is_rejected(string id)
     {
-        // Agent-supplied and it names an export, so it is likely to reach a filename, a report
+        // Agent-supplied, and it names an export, so it is likely to reach a filename, a report
         // heading or a console. Same restriction as responder_model, for the same reason.
-        await Assert.ThrowsAsync<SqliteException>(() => Append(conversationId: id));
+        //
+        // Checked on a Notify, which is now the one message type that declares its own
+        // conversation. Everything attached to an exchange takes the exchange's.
+        await Assert.ThrowsAsync<SqliteException>(() => Append(
+            type: MessageType.Notify, exchangeId: null, to: Billing,
+            payload: """{"n":"contract changed"}""", conversationId: id));
     }
 
     [Fact]

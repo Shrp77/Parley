@@ -11,14 +11,25 @@ public enum OpenRejection
     None = 0,
 
     /// <summary>
-    /// The pair already holds an open exchange.
+    /// This asker already has the maximum open exchanges with this peer.
     /// </summary>
     /// <remarks>
-    /// Inspect <see cref="OpenOutcome.ReciprocalDebt"/> and
-    /// <see cref="OpenOutcome.Blocking"/> to distinguish the two situations this covers:
-    /// owing the peer an answer, versus already waiting on one.
+    /// Volume, not repetition. See <see cref="OpenOutcome.Outstanding"/> for what the asker is
+    /// already waiting on, which is frequently enough for it to conclude that this question is
+    /// already covered.
     /// </remarks>
-    PairBusy,
+    PairSaturated,
+
+    /// <summary>
+    /// An identical question from this asker to this peer is already open.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="PairSaturated"/> because it calls for a different response:
+    /// saturation means wait, duplication means the question has already been asked and the
+    /// answer is coming. See <see cref="OpenOutcome.Outstanding"/> for the exchange carrying
+    /// it.
+    /// </remarks>
+    DuplicateQuestion,
 
     /// <summary>
     /// Admitting the question would close a cycle in the wait-for graph, deadlocking every
@@ -54,12 +65,14 @@ public enum OpenRejection
 /// on rather than a convention, and only the factories can establish it.
 /// </para>
 /// <para>
-/// The two flavours of <see cref="OpenRejection.PairBusy"/> matter because they call for
-/// completely different responses. When the asker owes a debt, the broker returns the
-/// pending question rather than a retry instruction: instructing a language model to try
-/// again later produces either a token-burning loop or silent abandonment, whereas handing
-/// back the question it already owes converts a block into forward progress — and the answer
-/// frequently makes the intended question unnecessary or reshapes it.
+/// <see cref="OpenRejection.PairSaturated"/> and <see cref="OpenRejection.DuplicateQuestion"/>
+/// are kept apart because they call for completely different responses. Saturation means the
+/// asker is already waiting on as much as this peer will take, and the answer to one of those
+/// may well make this question unnecessary. Duplication means the question is already in
+/// flight, and the only sensible response is to wait for the answer that is coming. Neither
+/// tells the model to retry later, which SPEC.md §7.3 refuses to do: instructing a language
+/// model to remember something for later produces a token-burning loop or silent abandonment,
+/// so every refusal hands back work instead.
 /// </para>
 /// <para>
 /// When the asker is merely waiting, there is no work to hand back and the outcome reports
@@ -71,14 +84,12 @@ public sealed record OpenOutcome
     private OpenOutcome(
         Exchange? exchange,
         OpenRejection rejection,
-        Exchange? reciprocalDebt,
-        Exchange? blocking,
+        IReadOnlyList<Exchange> outstanding,
         IReadOnlyList<AgentName> cyclePath)
     {
         Exchange = exchange;
         Rejection = rejection;
-        ReciprocalDebt = reciprocalDebt;
-        Blocking = blocking;
+        Outstanding = outstanding;
         CyclePath = cyclePath;
     }
 
@@ -100,22 +111,20 @@ public sealed record OpenOutcome
     public OpenRejection Rejection { get; }
 
     /// <summary>
-    /// Gets the exchange the asker must resolve before it may ask.
+    /// Gets what this asker already has open with this peer.
     /// </summary>
     /// <value>
-    /// On <see cref="OpenRejection.PairBusy"/> where the asker is the party that owes a
-    /// response: the exchange it must resolve first. Otherwise <see langword="null"/>.
+    /// On <see cref="OpenRejection.PairSaturated"/>, every open exchange from this asker to
+    /// this answerer. On <see cref="OpenRejection.DuplicateQuestion"/>, the single exchange
+    /// already carrying the question. Empty otherwise.
     /// </value>
-    public Exchange? ReciprocalDebt { get; }
-
-    /// <summary>
-    /// Gets the exchange the asker is already waiting on.
-    /// </summary>
-    /// <value>
-    /// On <see cref="OpenRejection.PairBusy"/> where the asker is already waiting on this
-    /// peer: the exchange it is waiting on. Otherwise <see langword="null"/>.
-    /// </value>
-    public Exchange? Blocking { get; }
+    /// <remarks>
+    /// This is what makes both refusals actionable rather than an instruction to try later,
+    /// which SPEC.md §7.3 refuses to give. An asker handed the questions it is already waiting
+    /// on can usually see that the one it was about to send is among them, or is about to be
+    /// answered by one of them.
+    /// </remarks>
+    public IReadOnlyList<Exchange> Outstanding { get; }
 
     /// <summary>
     /// Gets the agents forming the cycle the question would have closed.
@@ -144,32 +153,31 @@ public sealed record OpenOutcome
     public static OpenOutcome Opened(Exchange exchange)
     {
         ArgumentNullException.ThrowIfNull(exchange);
-        return new(exchange, OpenRejection.None, null, null, []);
+        return new(exchange, OpenRejection.None, [], []);
     }
 
     /// <summary>
-    /// Creates a refusal indicating the asker must answer the peer before it may ask.
+    /// Creates a refusal indicating this asker has reached its limit with this peer.
     /// </summary>
-    /// <param name="debt">The exchange the asker owes a response to.</param>
-    /// <returns>A refusal carrying the outstanding debt.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="debt"/> is <see langword="null"/>.</exception>
-    public static OpenOutcome OweFirst(Exchange debt)
+    /// <param name="outstanding">Everything the asker already has open with the answerer.</param>
+    /// <returns>A refusal carrying what is already in flight.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="outstanding"/> is <see langword="null"/>.</exception>
+    public static OpenOutcome PairSaturated(IReadOnlyList<Exchange> outstanding)
     {
-        ArgumentNullException.ThrowIfNull(debt);
-        return new(null, OpenRejection.PairBusy, debt, null, []);
+        ArgumentNullException.ThrowIfNull(outstanding);
+        return new(null, OpenRejection.PairSaturated, outstanding, []);
     }
 
     /// <summary>
-    /// Creates a refusal indicating the asker already has a question outstanding with this
-    /// peer.
+    /// Creates a refusal indicating this question is already open with this peer.
     /// </summary>
-    /// <param name="blocking">The exchange the asker is currently waiting on.</param>
-    /// <returns>A refusal carrying the blocking exchange.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="blocking"/> is <see langword="null"/>.</exception>
-    public static OpenOutcome AlreadyWaiting(Exchange blocking)
+    /// <param name="existing">The exchange already carrying the question.</param>
+    /// <returns>A refusal carrying the exchange to wait on.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="existing"/> is <see langword="null"/>.</exception>
+    public static OpenOutcome Duplicate(Exchange existing)
     {
-        ArgumentNullException.ThrowIfNull(blocking);
-        return new(null, OpenRejection.PairBusy, null, blocking, []);
+        ArgumentNullException.ThrowIfNull(existing);
+        return new(null, OpenRejection.DuplicateQuestion, [existing], []);
     }
 
     /// <summary>
@@ -182,7 +190,7 @@ public sealed record OpenOutcome
     /// itself the information: nothing is coming from this peer, so stop asking.
     /// </remarks>
     public static OpenOutcome Unreachable() =>
-        new(null, OpenRejection.AnswererUnreachable, null, null, []);
+        new(null, OpenRejection.AnswererUnreachable, [], []);
 
     /// <summary>
     /// Creates a refusal indicating the question would deadlock.
@@ -193,6 +201,6 @@ public sealed record OpenOutcome
     public static OpenOutcome Deadlock(IReadOnlyList<AgentName> cyclePath)
     {
         ArgumentNullException.ThrowIfNull(cyclePath);
-        return new(null, OpenRejection.WouldDeadlock, null, null, cyclePath);
+        return new(null, OpenRejection.WouldDeadlock, [], cyclePath);
     }
 }

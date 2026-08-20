@@ -29,5 +29,18 @@ public enum Resolution
     /// admitted gap is cheaper than a fabrication. Also produced automatically when the
     /// clarification depth cap is reached.
     /// </remarks>
-    Unknown = 2
+    Unknown = 2,
+
+    /// <summary>
+    /// Nobody answered, and nobody is going to.
+    /// </summary>
+    /// <remarks>
+    /// The one resolution no agent may write: the broker records it when an orphan's grace
+    /// period expires. Distinct from <see cref="Unknown"/> for the reason
+    /// <see cref="OutOfScope"/> is distinct from <see cref="Answered"/> — both close an
+    /// exchange without resolving it, but one means a peer considered the question and could
+    /// not settle it, and the other means no peer ever engaged with it at all. Collapsing them
+    /// would hide an infrastructure failure inside a legitimate answer.
+    /// </remarks>
+    Ghosted = 3
 }

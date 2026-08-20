@@ -798,6 +798,11 @@ CREATE TABLE exchanges (
   opened_utc        TEXT    NOT NULL,
   expires_utc       TEXT    NOT NULL,
   closed_utc        TEXT,
+  -- Which of the two windows in §6 is running. Derivable from the question message, and
+  -- denormalised here anyway: the reaper scans exchanges and would otherwise join to messages
+  -- on every sweep to answer a question the exchange already knows. It also makes the window
+  -- transition legible in the table rather than implied by an opaque expires_utc.
+  delivered_utc     TEXT,
   is_decision       INTEGER NOT NULL DEFAULT 0,
   decision_ref      TEXT,
   question_hash     TEXT    NOT NULL,      -- content identity, §13.1
@@ -998,7 +1003,7 @@ CREATE TABLE messages (
 -- expected to be the highest-volume traffic (§5.4), and it would otherwise pay for two
 -- json_each scans over a path it never has.
 CREATE TRIGGER tr_gates_are_syntactic BEFORE INSERT ON messages
-WHEN NEW.type = 'question'
+WHEN NEW.type = 'question' AND json_valid(NEW.payload_json)
 BEGIN
   SELECT RAISE(ABORT, 'sub_question ids are not unique')
    WHERE (SELECT count(*) FROM json_each(NEW.payload_json, '$.sub_questions'))
@@ -1028,7 +1033,13 @@ END;
 -- in any other message type is inert, and inert data is how a guard lapses: the day something
 -- reads it, the check that was scoped to the old reader is silently absent. The same mistake
 -- as scoping the cap trigger to INSERT and meeting the resume path an UPDATE later.
+-- Guarded on json_valid because SQLite runs BEFORE triggers ahead of CHECK constraints, and
+-- json_tree raises 'malformed JSON' on a payload that is not JSON at all. Without the guard
+-- this trigger preempts the json_valid CHECK below and reports a referral problem for a
+-- message that has no referral, only broken syntax. A trigger should not answer for a
+-- constraint that exists to answer for itself.
 CREATE TRIGGER tr_referral_targets_exist BEFORE INSERT ON messages
+WHEN json_valid(NEW.payload_json)
 BEGIN
   SELECT RAISE(ABORT, 'redirect_to names an agent that is not registered')
    WHERE EXISTS (

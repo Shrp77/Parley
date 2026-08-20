@@ -26,6 +26,17 @@ namespace Parley.Store;
 /// </param>
 public sealed class ExchangeRepository(SqliteConnection connection)
 {
+    /// <summary>
+    /// The default limit on open exchanges from one agent to another.
+    /// </summary>
+    /// <remarks>
+    /// Directional, so a busy <c>orders to billing</c> cannot exhaust what <c>billing to
+    /// orders</c> may open: they are unrelated lines of enquiry, and coupling them would
+    /// refuse one for the sins of the other. The number is a starting estimate, like the
+    /// clarify depth cap, and is meant to be tuned against real traffic.
+    /// </remarks>
+    public const int DefaultOpenPairCap = 5;
+
     private const string SelectColumns =
         """
         SELECT id                AS Id,
@@ -36,7 +47,11 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                state             AS State,
                clarify_depth     AS ClarifyDepth,
                clarify_depth_cap AS ClarifyDepthCap,
-               ttl_ms            AS TtlMs,
+               delivery_window_ms AS DeliveryWindowMs,
+               working_window_ms  AS WorkingWindowMs,
+               grace_period_ms    AS GracePeriodMs,
+               delivered_utc     AS DeliveredUtc,
+               resolution        AS Resolution,
                opened_utc        AS OpenedUtc,
                expires_utc       AS ExpiresUtc,
                closed_utc        AS ClosedUtc,
@@ -161,7 +176,20 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// <param name="asker">The agent posing the question.</param>
     /// <param name="answerer">The agent expected to answer it.</param>
     /// <param name="nowUtc">The current instant, in UTC.</param>
-    /// <param name="ttl">The inactivity window before the exchange may be orphaned.</param>
+    /// <param name="deliveryWindow">The window allowed for the question to be picked up.</param>
+    /// <param name="workingWindow">The window allowed for an answer once it has been.</param>
+    /// <param name="gracePeriod">How long the resulting orphan is kept before it is ghosted.</param>
+    /// <param name="questionHash">
+    /// Content identity for the question, which the distinctness index refuses to duplicate
+    /// while an identical question is still open on this pair.
+    /// </param>
+    /// <param name="conversationId">
+    /// The discussion this exchange belongs to, or <see langword="null"/> if it stands alone.
+    /// </param>
+    /// <param name="openPairCap">
+    /// The limit on open exchanges from this asker to this answerer. Directional, so the two
+    /// flows between a pair are independent.
+    /// </param>
     /// <param name="clarifyDepthCap">
     /// The clarification request limit. Defaults to
     /// <see cref="Exchange.DefaultClarifyDepthCap"/>.
@@ -175,7 +203,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// <paramref name="asker"/> and <paramref name="answerer"/> are the same agent.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="ttl"/> is not positive, or <paramref name="clarifyDepthCap"/> is
+    /// A window or the grace period is not positive, or <paramref name="clarifyDepthCap"/> is
     /// negative.
     /// </exception>
     /// <remarks>
@@ -204,8 +232,13 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         AgentName asker,
         AgentName answerer,
         DateTimeOffset nowUtc,
-        TimeSpan ttl,
+        TimeSpan deliveryWindow,
+        TimeSpan workingWindow,
+        TimeSpan gracePeriod,
+        string questionHash,
+        string? conversationId = null,
         int clarifyDepthCap = Exchange.DefaultClarifyDepthCap,
+        int openPairCap = DefaultOpenPairCap,
         CancellationToken cancellationToken = default)
     {
         if (asker == answerer)
@@ -213,7 +246,10 @@ public sealed class ExchangeRepository(SqliteConnection connection)
             throw new ArgumentException($"An agent cannot question itself ('{asker}').", nameof(answerer));
         }
 
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(ttl, TimeSpan.Zero);
+        ArgumentException.ThrowIfNullOrWhiteSpace(questionHash);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(deliveryWindow, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(workingWindow, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(gracePeriod, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfNegative(clarifyDepthCap);
 
         // Synchronous BeginTransaction, deliberately. The async overloads do not expose the
@@ -241,12 +277,44 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         var open = await GetOpenAsync(transaction, cancellationToken).ConfigureAwait(false);
         var pairKey = PairKey.For(asker, answerer);
 
-        var existing = open.FirstOrDefault(e => e.PairKey == pairKey);
-        if (existing is not null)
+        // Owing this peer an answer no longer blocks asking it something: a pair may carry
+        // several open exchanges (SPEC.md §7.1). What used to be a refusal is now an ordering,
+        // applied when the inbox is drained rather than when a question happens to collide.
+
+        // Distinctness (SPEC.md §7.1). The unique index refuses this as well; finding it here
+        // means the asker is handed the exchange already carrying its question instead of a
+        // constraint violation. Repetition used to be structurally impossible because a pair
+        // held one exchange, so removing that rule removed a guard nobody had written down.
+        //
+        // Read from storage rather than from the loaded exchanges, so question_hash stays out
+        // of the domain model. It identifies a question for admission control and has no part
+        // in the state machine, and Exchange is the state machine.
+        var duplicateId = await _connection.ExecuteScalarAsync<long?>(
+            new CommandDefinition(
+                """
+                SELECT id FROM exchanges
+                 WHERE state = 'OPEN' AND asker = @Asker AND answerer = @Answerer
+                   AND question_hash = @QuestionHash
+                 LIMIT 1;
+                """,
+                new { Asker = asker.Value, Answerer = answerer.Value, QuestionHash = questionHash },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        var outstanding = open
+            .Where(e => e.Asker == asker && e.Answerer == answerer)
+            .ToList();
+
+        if (duplicateId is { } existingId)
         {
-            return existing.OwedBy == asker
-                ? OpenOutcome.OweFirst(existing)
-                : OpenOutcome.AlreadyWaiting(existing);
+            return OpenOutcome.Duplicate(outstanding.First(e => e.Id == existingId));
+        }
+
+        // The cap bounds volume, which distinctness does not: five different questions are
+        // five context loads for the peer whether or not any of them repeats.
+        if (outstanding.Count >= openPairCap)
+        {
+            return OpenOutcome.PairSaturated(outstanding);
         }
 
         var graph = WaitForGraph.FromOpenExchanges(open);
@@ -255,16 +323,38 @@ public sealed class ExchangeRepository(SqliteConnection connection)
             return OpenOutcome.Deadlock(cyclePath);
         }
 
-        var expires = nowUtc + ttl;
+        // Created here, inside the transaction that admits the question naming it, and
+        // idempotently: two agents may name the same new identifier at once and neither should
+        // lose. Agents never create conversations explicitly, because a conversation is not a
+        // thing to be set up before use — it is whatever its participants said belonged
+        // together (SPEC.md 5.0).
+        if (conversationId is not null)
+        {
+            await _connection.ExecuteAsync(
+                new CommandDefinition(
+                    """
+                    INSERT INTO conversations (id, state, opened_utc)
+                    VALUES (@Id, 'OPEN', @Opened)
+                    ON CONFLICT (id) DO NOTHING;
+                    """,
+                    new { Id = conversationId, Opened = ExchangeRow.FormatTimestamp(nowUtc) },
+                    transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+
+        var expires = nowUtc + deliveryWindow;
         var id = await _connection.ExecuteScalarAsync<long>(
             new CommandDefinition(
                 """
                 INSERT INTO exchanges
                     (pair_key, asker, answerer, owed_by, state, clarify_depth, clarify_depth_cap,
-                     ttl_ms, opened_utc, expires_utc, version)
+                     delivery_window_ms, working_window_ms, grace_period_ms,
+                     opened_utc, expires_utc, question_hash, conversation_id, open_pair_cap,
+                     version)
                 VALUES
                     (@PairKey, @Asker, @Answerer, @Answerer, 'OPEN', 0, @Cap,
-                     @TtlMs, @OpenedUtc, @ExpiresUtc, 0)
+                     @DeliveryWindowMs, @WorkingWindowMs, @GracePeriodMs,
+                     @OpenedUtc, @ExpiresUtc, @QuestionHash, @ConversationId, @OpenPairCap, 0)
                 RETURNING id;
                 """,
                 new
@@ -273,9 +363,14 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                     Asker = asker.Value,
                     Answerer = answerer.Value,
                     Cap = clarifyDepthCap,
-                    TtlMs = (long)ttl.TotalMilliseconds,
+                    OpenPairCap = openPairCap,
+                    DeliveryWindowMs = (long)deliveryWindow.TotalMilliseconds,
+                    WorkingWindowMs = (long)workingWindow.TotalMilliseconds,
+                    GracePeriodMs = (long)gracePeriod.TotalMilliseconds,
                     OpenedUtc = ExchangeRow.FormatTimestamp(nowUtc),
-                    ExpiresUtc = ExchangeRow.FormatTimestamp(expires)
+                    ExpiresUtc = ExchangeRow.FormatTimestamp(expires),
+                    QuestionHash = questionHash,
+                    ConversationId = conversationId
                 },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -285,7 +380,8 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         return OpenOutcome.Opened(
             Exchange.Rehydrate(
                 id, asker, answerer, answerer, ExchangeState.Open,
-                0, clarifyDepthCap, ttl, nowUtc, expires, null, false));
+                0, clarifyDepthCap, deliveryWindow, workingWindow, gracePeriod,
+                nowUtc, expires, null, null, false, null));
     }
 
     /// <summary>
@@ -350,6 +446,8 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                        clarify_depth = @ClarifyDepth,
                        expires_utc   = @ExpiresUtc,
                        closed_utc    = @ClosedUtc,
+                       delivered_utc = @DeliveredUtc,
+                       resolution    = @Resolution,
                        is_decision   = @IsDecision,
                        decision_ref  = COALESCE(@DecisionRef, decision_ref),
                        version       = @NextVersion
@@ -363,6 +461,8 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                     exchange.ClarifyDepth,
                     ExpiresUtc = ExchangeRow.FormatTimestamp(exchange.ExpiresUtc),
                     ClosedUtc = exchange.ClosedUtc is { } c ? ExchangeRow.FormatTimestamp(c) : null,
+                    DeliveredUtc = exchange.DeliveredUtc is { } d ? ExchangeRow.FormatTimestamp(d) : null,
+                    Resolution = ExchangeRow.FormatResolution(exchange.Resolution),
                     IsDecision = exchange.IsDecision ? 1 : 0,
                     DecisionRef = decisionRef,
                     ExpectedVersion = exchange.Version,

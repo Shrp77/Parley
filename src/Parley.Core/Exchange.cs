@@ -40,7 +40,9 @@ public sealed class Exchange
         long id,
         AgentName asker,
         AgentName answerer,
-        TimeSpan ttl,
+        TimeSpan deliveryWindow,
+        TimeSpan workingWindow,
+        TimeSpan gracePeriod,
         int clarifyDepthCap,
         DateTimeOffset openedUtc)
     {
@@ -50,10 +52,14 @@ public sealed class Exchange
         PairKey = PairKey.For(asker, answerer);
         OwedBy = answerer;
         State = ExchangeState.Open;
-        Ttl = ttl;
+        DeliveryWindow = deliveryWindow;
+        WorkingWindow = workingWindow;
+        GracePeriod = gracePeriod;
         ClarifyDepthCap = clarifyDepthCap;
         OpenedUtc = openedUtc;
-        ExpiresUtc = openedUtc + ttl;
+
+        // The delivery window runs first: nothing has picked the question up yet.
+        ExpiresUtc = openedUtc + deliveryWindow;
     }
 
     /// <summary>
@@ -118,13 +124,59 @@ public sealed class Exchange
     public int ClarifyDepthCap { get; }
 
     /// <summary>
-    /// Gets the inactivity window granted after each message.
+    /// Gets the window allowed for the question to be picked up.
     /// </summary>
-    /// <value>
-    /// The duration added to the current time whenever the exchange is opened, clarified, or
-    /// resumed, producing a new <see cref="ExpiresUtc"/>.
-    /// </value>
-    public TimeSpan Ttl { get; }
+    /// <value>Short. Runs from the question being written until it is delivered.</value>
+    /// <remarks>
+    /// Silence here means nobody collected the question: the agent never spawned, or died on
+    /// the way. That is the case worth reacting to quickly, because an exchange holding a
+    /// wait-for edge blocks peers who have done nothing wrong.
+    /// </remarks>
+    public TimeSpan DeliveryWindow { get; }
+
+    /// <summary>
+    /// Gets the window allowed for an answer once the question has been delivered.
+    /// </summary>
+    /// <value>Long. Runs from delivery, and is renewed by each clarification.</value>
+    /// <remarks>
+    /// Silence here means something entirely different from silence before delivery: the agent
+    /// was alive, took the question, and is working. Answering across a repository boundary can
+    /// mean building something or running a test suite, so this is measured in hours. One timer
+    /// cannot serve both cases — short enough to catch a dead agent will orphan a working one,
+    /// and long enough to let real work finish leaves a vanished agent holding its edge all
+    /// afternoon. Delivery is already recorded, so the split costs no extra message.
+    /// </remarks>
+    public TimeSpan WorkingWindow { get; }
+
+    /// <summary>
+    /// Gets how long an orphan is kept before it is ghosted.
+    /// </summary>
+    /// <value>The period after orphaning during which the owing agent may still return.</value>
+    /// <remarks>
+    /// Carried per exchange rather than read from configuration when the sweep runs, so an
+    /// exchange is ghosted on the terms it was opened under. Held globally, lengthening the
+    /// setting would retroactively revive orphans already past the old period, and shortening
+    /// it would ghost a batch of live ones at once.
+    /// </remarks>
+    public TimeSpan GracePeriod { get; }
+
+    /// <summary>
+    /// Gets the instant the question was delivered, if it has been.
+    /// </summary>
+    /// <value><see langword="null"/> until an inbox drain collects it.</value>
+    public DateTimeOffset? DeliveredUtc { get; private set; }
+
+    /// <summary>
+    /// Gets why the exchange closed, once it has.
+    /// </summary>
+    /// <value><see langword="null"/> while the exchange is open or orphaned.</value>
+    /// <remarks>
+    /// A rollup of the per-sub-question resolutions, taking the least resolved of them, so an
+    /// exchange counts as answered only when every part of it was. It outlives the message text
+    /// that retention eventually prunes, which makes it the only thing left distinguishing a
+    /// ghost from an answer.
+    /// </remarks>
+    public Resolution? Resolution { get; private set; }
 
     /// <summary>
     /// Gets the instant the exchange was opened.
@@ -223,7 +275,9 @@ public sealed class Exchange
     /// <param name="asker">The agent posing the question.</param>
     /// <param name="answerer">The agent expected to answer it.</param>
     /// <param name="nowUtc">The current instant, in UTC.</param>
-    /// <param name="ttl">The inactivity window before the exchange may be orphaned.</param>
+    /// <param name="deliveryWindow">The window allowed for the question to be picked up.</param>
+    /// <param name="workingWindow">The window allowed for an answer once it has been.</param>
+    /// <param name="gracePeriod">How long an orphan is kept before it is ghosted.</param>
     /// <param name="clarifyDepthCap">
     /// The clarification request limit. Defaults to <see cref="DefaultClarifyDepthCap"/>.
     /// </param>
@@ -232,8 +286,9 @@ public sealed class Exchange
     /// <paramref name="asker"/> and <paramref name="answerer"/> are the same agent.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="ttl"/> is not positive, or <paramref name="clarifyDepthCap"/> is
-    /// negative.
+    /// Any of <paramref name="deliveryWindow"/>, <paramref name="workingWindow"/> or
+    /// <paramref name="gracePeriod"/> is not positive, or <paramref name="clarifyDepthCap"/>
+    /// is negative.
     /// </exception>
     /// <remarks>
     /// This constructs the aggregate only. Admission control — checking the pair slot is
@@ -245,7 +300,9 @@ public sealed class Exchange
         AgentName asker,
         AgentName answerer,
         DateTimeOffset nowUtc,
-        TimeSpan ttl,
+        TimeSpan deliveryWindow,
+        TimeSpan workingWindow,
+        TimeSpan gracePeriod,
         int clarifyDepthCap = DefaultClarifyDepthCap)
     {
         if (asker == answerer)
@@ -253,10 +310,90 @@ public sealed class Exchange
             throw new ArgumentException($"An agent cannot question itself ('{asker}').", nameof(answerer));
         }
 
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(ttl, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(deliveryWindow, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(workingWindow, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(gracePeriod, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfNegative(clarifyDepthCap);
 
-        return new Exchange(id, asker, answerer, ttl, clarifyDepthCap, nowUtc);
+        return new Exchange(
+            id, asker, answerer, deliveryWindow, workingWindow, gracePeriod, clarifyDepthCap, nowUtc);
+    }
+
+    /// <summary>
+    /// Records that the question has been collected, and starts the working window.
+    /// </summary>
+    /// <param name="nowUtc">The instant of delivery, in UTC.</param>
+    /// <returns>
+    /// <see cref="TransitionResult.Ok"/> on success, or a failure carrying
+    /// <see cref="TransitionError.ExchangeNotOpen"/>.
+    /// </returns>
+    /// <remarks>
+    /// Idempotent in effect but not silent: delivering twice renews the working window, which
+    /// is what a replay after an orphan is supposed to do. What it must not do is run before
+    /// the exchange is open, since a closed exchange has nothing left to deliver.
+    /// </remarks>
+    public TransitionResult Deliver(DateTimeOffset nowUtc)
+    {
+        if (State != ExchangeState.Open)
+        {
+            return TransitionResult.Fail(TransitionError.ExchangeNotOpen);
+        }
+
+        DeliveredUtc = nowUtc;
+        ExpiresUtc = nowUtc + WorkingWindow;
+        return TransitionResult.Ok;
+    }
+
+    /// <summary>
+    /// Closes an orphaned exchange that nobody came back for.
+    /// </summary>
+    /// <param name="nowUtc">The current instant, in UTC.</param>
+    /// <returns>
+    /// <see cref="TransitionResult.Ok"/> on success, or a failure carrying
+    /// <see cref="TransitionError.ExchangeNotOrphaned"/>.
+    /// </returns>
+    /// <remarks>
+    /// The terminal state an orphan otherwise lacks. Without it a `never` resume policy retains
+    /// orphans nothing ever clears, so the retention age cap is not in fact absolute — the gap
+    /// SPEC.md §9.4 used to concede. Ghosting does not discard the question: the broker returns
+    /// it to the asker along with the consequences the asker itself wrote down.
+    /// </remarks>
+    public TransitionResult Ghost(DateTimeOffset nowUtc)
+    {
+        if (State != ExchangeState.Orphaned)
+        {
+            return TransitionResult.Fail(TransitionError.ExchangeNotOrphaned);
+        }
+
+        State = ExchangeState.Closed;
+        ClosedUtc = nowUtc;
+        Resolution = Core.Resolution.Ghosted;
+        OwedBy = Answerer;
+        return TransitionResult.Ok;
+    }
+
+    /// <summary>
+    /// Reports whether this orphan's grace period has elapsed.
+    /// </summary>
+    /// <param name="nowUtc">The instant to evaluate against.</param>
+    /// <param name="brokerStartUtc">When the broker most recently started.</param>
+    /// <returns><see langword="true"/> if the exchange may be ghosted.</returns>
+    /// <remarks>
+    /// The clock runs from the later of orphaning and broker start. A broker that was down
+    /// overnight returns to exchanges whose grace period elapsed while nothing could possibly
+    /// have resumed them, and a plain wall-clock rule would ghost every one of them within a
+    /// second of start-up. In steady running the two agree, because broker start is in the past
+    /// for everything orphaned since.
+    /// </remarks>
+    public bool IsGhostableAt(DateTimeOffset nowUtc, DateTimeOffset brokerStartUtc)
+    {
+        if (State != ExchangeState.Orphaned)
+        {
+            return false;
+        }
+
+        var from = ExpiresUtc > brokerStartUtc ? ExpiresUtc : brokerStartUtc;
+        return nowUtc >= from + GracePeriod;
     }
 
     /// <summary>
@@ -317,7 +454,7 @@ public sealed class Exchange
         }
 
         OwedBy = from == Asker ? Answerer : Asker;
-        ExpiresUtc = nowUtc + Ttl;
+        ExpiresUtc = nowUtc + WorkingWindow;
         return TransitionResult.Ok;
     }
 
@@ -328,6 +465,10 @@ public sealed class Exchange
     /// The agent answering. Must be the <see cref="Answerer"/> and must hold the turn.
     /// </param>
     /// <param name="nowUtc">The current instant, in UTC.</param>
+    /// <param name="resolution">
+    /// The rolled-up outcome, taking the least resolved of the per-sub-question resolutions.
+    /// <see cref="Core.Resolution.Ghosted"/> is refused: only the broker records that.
+    /// </param>
     /// <param name="isDecision">
     /// <see langword="true"/> if the answer settles something that should be promoted to a
     /// durable decision record.
@@ -343,7 +484,11 @@ public sealed class Exchange
     /// The per-sub-question <see cref="Resolution"/> values travel on the message payload,
     /// not on the aggregate. The exchange tracks whether it closed, not what it concluded.
     /// </remarks>
-    public TransitionResult Answer(AgentName from, DateTimeOffset nowUtc, bool isDecision = false)
+    public TransitionResult Answer(
+        AgentName from,
+        DateTimeOffset nowUtc,
+        Resolution resolution = Core.Resolution.Answered,
+        bool isDecision = false)
     {
         if (State != ExchangeState.Open)
         {
@@ -365,9 +510,18 @@ public sealed class Exchange
             return TransitionResult.Fail(TransitionError.NotYourTurn);
         }
 
+        if (resolution == Core.Resolution.Ghosted)
+        {
+            // A ghost asserts nobody answered, so it cannot arrive on an answer. The schema
+            // refuses this too; refusing it here means the caller learns why rather than
+            // meeting a constraint violation from three layers down.
+            return TransitionResult.Fail(TransitionError.GhostIsNotAnAnswer);
+        }
+
         State = ExchangeState.Closed;
         ClosedUtc = nowUtc;
         IsDecision = isDecision;
+        Resolution = resolution;
         OwedBy = Answerer;
         return TransitionResult.Ok;
     }
@@ -396,6 +550,7 @@ public sealed class Exchange
 
         State = ExchangeState.Closed;
         ClosedUtc = nowUtc;
+        Resolution = Core.Resolution.Unknown;
         OwedBy = Answerer;
         return TransitionResult.Ok;
     }
@@ -446,7 +601,12 @@ public sealed class Exchange
         }
 
         State = ExchangeState.Open;
-        ExpiresUtc = nowUtc + Ttl;
+
+        // The delivery window, not the working one. A replay marks the question undelivered
+        // again (SPEC.md 14), so the exchange is back to waiting for someone to pick it up,
+        // and granting hours for that would hide an agent that never returned at all.
+        DeliveredUtc = null;
+        ExpiresUtc = nowUtc + DeliveryWindow;
         return TransitionResult.Ok;
     }
 
@@ -460,11 +620,15 @@ public sealed class Exchange
     /// <param name="state">The lifecycle state.</param>
     /// <param name="clarifyDepth">Clarification requests spent so far.</param>
     /// <param name="clarifyDepthCap">The clarification request limit.</param>
-    /// <param name="ttl">The inactivity window.</param>
+    /// <param name="deliveryWindow">The window allowed for pickup.</param>
+    /// <param name="workingWindow">The window allowed for an answer once delivered.</param>
+    /// <param name="gracePeriod">How long an orphan is kept before it is ghosted.</param>
     /// <param name="openedUtc">The creation timestamp.</param>
     /// <param name="expiresUtc">The current deadline.</param>
     /// <param name="closedUtc">The closing timestamp, if closed.</param>
+    /// <param name="deliveredUtc">When the question was collected, if it has been.</param>
     /// <param name="isDecision">Whether the answer was flagged for promotion.</param>
+    /// <param name="resolution">Why the exchange closed, or <see langword="null"/> if open.</param>
     /// <param name="version">The optimistic concurrency stamp held by the stored row.</param>
     /// <returns>The reconstructed exchange.</returns>
     /// <remarks>
@@ -480,21 +644,28 @@ public sealed class Exchange
         ExchangeState state,
         int clarifyDepth,
         int clarifyDepthCap,
-        TimeSpan ttl,
+        TimeSpan deliveryWindow,
+        TimeSpan workingWindow,
+        TimeSpan gracePeriod,
         DateTimeOffset openedUtc,
         DateTimeOffset expiresUtc,
         DateTimeOffset? closedUtc,
+        DateTimeOffset? deliveredUtc,
         bool isDecision,
+        Resolution? resolution,
         long version = 0)
     {
-        var exchange = new Exchange(id, asker, answerer, ttl, clarifyDepthCap, openedUtc)
+        var exchange = new Exchange(
+            id, asker, answerer, deliveryWindow, workingWindow, gracePeriod, clarifyDepthCap, openedUtc)
         {
             OwedBy = owedBy,
             State = state,
             ClarifyDepth = clarifyDepth,
             ExpiresUtc = expiresUtc,
             ClosedUtc = closedUtc,
+            DeliveredUtc = deliveredUtc,
             IsDecision = isDecision,
+            Resolution = resolution,
             Version = version
         };
 

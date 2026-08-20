@@ -9,10 +9,12 @@ public sealed class WaitForGraphTests
     private static readonly AgentName Inventory = AgentName.Create("inventory");
     private static readonly AgentName Shipping = AgentName.Create("shipping");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan Delivery = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan Working = TimeSpan.FromHours(4);
+    private static readonly TimeSpan Grace = TimeSpan.FromHours(3);
 
     private static Exchange Open(long id, AgentName asker, AgentName answerer) =>
-        Exchange.Open(id, asker, answerer, T0, Ttl);
+        Exchange.Open(id, asker, answerer, T0, Delivery, Working, Grace);
 
     [Fact]
     public void Empty_graph_blocks_nothing()
