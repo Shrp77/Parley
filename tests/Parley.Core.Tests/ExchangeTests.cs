@@ -8,10 +8,12 @@ public sealed class ExchangeTests
     private static readonly AgentName Billing = AgentName.Create("billing");
     private static readonly AgentName Inventory = AgentName.Create("inventory");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan Delivery = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan Working = TimeSpan.FromHours(4);
+    private static readonly TimeSpan Grace = TimeSpan.FromHours(3);
 
     private static Exchange OpenExchange(int clarifyCap = Exchange.DefaultClarifyDepthCap) =>
-        Exchange.Open(1, Orders, Billing, T0, Ttl, clarifyCap);
+        Exchange.Open(1, Orders, Billing, T0, Delivery, Working, Grace, clarifyCap);
 
     [Fact]
     public void Opens_with_answerer_owing()
@@ -20,7 +22,7 @@ public sealed class ExchangeTests
 
         Assert.Equal(ExchangeState.Open, exchange.State);
         Assert.Equal(Billing, exchange.OwedBy);
-        Assert.Equal(T0 + Ttl, exchange.ExpiresUtc);
+        Assert.Equal(T0 + Delivery, exchange.ExpiresUtc);
     }
 
     [Fact]
@@ -74,7 +76,7 @@ public sealed class ExchangeTests
         Assert.True(exchange.Clarify(Billing, later).Succeeded);
 
         Assert.Equal(Orders, exchange.OwedBy);
-        Assert.Equal(later + Ttl, exchange.ExpiresUtc);
+        Assert.Equal(later + Working, exchange.ExpiresUtc);
     }
 
     [Fact]
@@ -125,7 +127,7 @@ public sealed class ExchangeTests
     public void Expiry_is_reported_only_while_open()
     {
         var exchange = OpenExchange();
-        var past = T0 + Ttl + TimeSpan.FromSeconds(1);
+        var past = T0 + Delivery + TimeSpan.FromSeconds(1);
 
         Assert.True(exchange.IsExpiredAt(past));
 
@@ -146,7 +148,8 @@ public sealed class ExchangeTests
         Assert.True(exchange.Resume(resumedAt).Succeeded);
 
         Assert.Equal(ExchangeState.Open, exchange.State);
-        Assert.Equal(resumedAt + Ttl, exchange.ExpiresUtc);
+        // The delivery window, not the working one: a replay is waiting for pickup again.
+        Assert.Equal(resumedAt + Delivery, exchange.ExpiresUtc);
 
         // A restart is not a fresh clarification budget.
         Assert.Equal(1, exchange.ClarifyDepth);
@@ -163,6 +166,6 @@ public sealed class ExchangeTests
     [Fact]
     public void Self_questioning_is_rejected()
     {
-        Assert.Throws<ArgumentException>(() => Exchange.Open(1, Orders, Orders, T0, Ttl));
+        Assert.Throws<ArgumentException>(() => Exchange.Open(1, Orders, Orders, T0, Delivery, Working, Grace));
     }
 }

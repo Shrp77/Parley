@@ -10,7 +10,9 @@ public sealed class ReaperTests : IDisposable
     private static readonly AgentName Billing = AgentName.Create("billing");
     private static readonly AgentName Inventory = AgentName.Create("inventory");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan Delivery = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan Working = TimeSpan.FromHours(4);
+    private static readonly TimeSpan Grace = TimeSpan.FromHours(3);
 
     private readonly SqliteConnection _connection;
     private readonly ExchangeRepository _exchanges;
@@ -35,10 +37,12 @@ public sealed class ReaperTests : IDisposable
 
     public void Dispose() => _connection.Dispose();
 
-    private async Task<Exchange> Open(AgentName asker, AgentName answerer, DateTimeOffset at)
+    private async Task<Exchange> Open(
+        AgentName asker, AgentName answerer, DateTimeOffset at, string question = "q1")
     {
         var outcome = await _exchanges.TryOpenAsync(
-            asker, answerer, at, Ttl, cancellationToken: TestContext.Current.CancellationToken);
+            asker, answerer, at, Delivery, Working, Grace, question,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Asserted rather than assumed. A refusal here returns a null exchange that only
         // surfaces later as a confusing assertion failure somewhere else in the test — which
@@ -65,7 +69,7 @@ public sealed class ReaperTests : IDisposable
         var exchange = await Open(Orders, Billing, T0);
 
         var result = await _reaper.SweepAsync(
-            T0 + Ttl, TestContext.Current.CancellationToken);
+            T0 + Delivery, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.Orphaned);
         Assert.Equal(0, result.Contended);
@@ -75,23 +79,25 @@ public sealed class ReaperTests : IDisposable
     }
 
     [Fact]
-    public async Task Orphaning_releases_the_pair_slot()
+    public async Task Orphaning_frees_the_question_to_be_asked_again()
     {
-        // The point of the whole exercise. An agent that vanished mid-question would otherwise
-        // hold this slot forever, and its peer could never ask it anything again.
+        // Under pair serialisation this test showed a released slot. Nothing serialises now, so
+        // what orphaning frees is narrower and more precise: the distinctness rule refuses a
+        // repeat only while the original is open, so an abandoned question can be re-asked once
+        // the sweep has closed the book on it.
         await Open(Orders, Billing, T0);
 
-        var blocked = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0.AddMinutes(1), Ttl,
+        var repeat = await _exchanges.TryOpenAsync(
+            Orders, Billing, T0.AddMinutes(1), Delivery, Working, Grace, "q1",
             cancellationToken: TestContext.Current.CancellationToken);
-        Assert.Equal(OpenRejection.PairBusy, blocked.Rejection);
+        Assert.Equal(OpenRejection.DuplicateQuestion, repeat.Rejection);
 
-        await _reaper.SweepAsync(T0 + Ttl, TestContext.Current.CancellationToken);
+        await _reaper.SweepAsync(T0 + Delivery, TestContext.Current.CancellationToken);
 
         var admitted = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0 + Ttl, Ttl,
+            Orders, Billing, T0 + Delivery, Delivery, Working, Grace, "q1",
             cancellationToken: TestContext.Current.CancellationToken);
-        Assert.True(admitted.Succeeded);
+        Assert.True(admitted.Succeeded, $"expected admission, got {admitted.Rejection}");
     }
 
     [Fact]
@@ -105,16 +111,16 @@ public sealed class ReaperTests : IDisposable
         await Open(Billing, Inventory, T0.AddHours(1));
 
         var refused = await _exchanges.TryOpenAsync(
-            Inventory, Orders, T0.AddHours(1), Ttl,
+            Inventory, Orders, T0.AddHours(1), Delivery, Working, Grace, "q1",
             cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(OpenRejection.WouldDeadlock, refused.Rejection);
 
         // Only the first has expired at this instant.
-        var result = await _reaper.SweepAsync(T0 + Ttl, TestContext.Current.CancellationToken);
+        var result = await _reaper.SweepAsync(T0 + Delivery, TestContext.Current.CancellationToken);
         Assert.Equal(1, result.Orphaned);
 
         var admitted = await _exchanges.TryOpenAsync(
-            Inventory, Orders, T0 + Ttl, Ttl,
+            Inventory, Orders, T0 + Delivery, Delivery, Working, Grace, "q1",
             cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(admitted.Succeeded);
     }
@@ -129,7 +135,7 @@ public sealed class ReaperTests : IDisposable
         // cycle the first two describe and be refused, leaving this test asserting nothing.
         await Open(Orders, Inventory, T0.AddHours(5));   // still live at the sweep instant
 
-        var result = await _reaper.SweepAsync(T0 + Ttl, TestContext.Current.CancellationToken);
+        var result = await _reaper.SweepAsync(T0 + Delivery, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result.Orphaned);
 
@@ -158,9 +164,9 @@ public sealed class ReaperTests : IDisposable
     {
         await Open(Orders, Billing, T0);
 
-        var first = await _reaper.SweepAsync(T0 + Ttl, TestContext.Current.CancellationToken);
+        var first = await _reaper.SweepAsync(T0 + Delivery, TestContext.Current.CancellationToken);
         var second = await _reaper.SweepAsync(
-            T0 + Ttl + Ttl, TestContext.Current.CancellationToken);
+            T0 + Delivery + Delivery, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, first.Orphaned);
         Assert.Equal(ReapResult.Nothing, second);
@@ -180,7 +186,7 @@ public sealed class ReaperTests : IDisposable
             stale, cancellationToken: TestContext.Current.CancellationToken));
 
         // The sweep reads the row fresh, so it now sees a closed exchange and finds nothing.
-        var result = await _reaper.SweepAsync(T0 + Ttl, TestContext.Current.CancellationToken);
+        var result = await _reaper.SweepAsync(T0 + Delivery, TestContext.Current.CancellationToken);
 
         Assert.Equal(ReapResult.Nothing, result);
 
@@ -198,10 +204,10 @@ public sealed class ReaperTests : IDisposable
         await Open(Orders, Billing, T0);
 
         var justBefore = await _reaper.SweepAsync(
-            T0 + Ttl - TimeSpan.FromTicks(1), TestContext.Current.CancellationToken);
+            T0 + Delivery - TimeSpan.FromTicks(1), TestContext.Current.CancellationToken);
         Assert.Equal(ReapResult.Nothing, justBefore);
 
-        var exactly = await _reaper.SweepAsync(T0 + Ttl, TestContext.Current.CancellationToken);
+        var exactly = await _reaper.SweepAsync(T0 + Delivery, TestContext.Current.CancellationToken);
         Assert.Equal(1, exactly.Orphaned);
     }
 
@@ -216,11 +222,11 @@ public sealed class ReaperTests : IDisposable
         Assert.True(await _exchanges.SaveAsync(
             exchange, cancellationToken: TestContext.Current.CancellationToken));
 
-        var early = await _reaper.SweepAsync(T0 + Ttl, TestContext.Current.CancellationToken);
+        var early = await _reaper.SweepAsync(T0 + Delivery, TestContext.Current.CancellationToken);
         Assert.Equal(ReapResult.Nothing, early);
 
         var later = await _reaper.SweepAsync(
-            T0.AddMinutes(10) + Ttl, TestContext.Current.CancellationToken);
+            T0.AddMinutes(10) + Working, TestContext.Current.CancellationToken);
         Assert.Equal(1, later.Orphaned);
     }
 
@@ -235,7 +241,7 @@ public sealed class ReaperTests : IDisposable
             exchange, cancellationToken: TestContext.Current.CancellationToken));
 
         await _reaper.SweepAsync(
-            T0.AddMinutes(1) + Ttl, TestContext.Current.CancellationToken);
+            T0.AddMinutes(1) + Working, TestContext.Current.CancellationToken);
 
         var loaded = await _exchanges.GetAsync(exchange.Id, TestContext.Current.CancellationToken);
         Assert.Equal(ExchangeState.Orphaned, loaded!.State);
@@ -249,7 +255,7 @@ public sealed class ReaperTests : IDisposable
         // replays it is the operator's resume policy, per SPEC 14, and not the reaper's call.
         await Open(Orders, Billing, T0);
 
-        await _reaper.SweepAsync(T0 + Ttl, TestContext.Current.CancellationToken);
+        await _reaper.SweepAsync(T0 + Delivery, TestContext.Current.CancellationToken);
 
         Assert.Single(await _exchanges.GetOrphanedOwedByAsync(
             Billing, TestContext.Current.CancellationToken));
@@ -264,7 +270,7 @@ public sealed class ReaperTests : IDisposable
         await cancelled.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => _reaper.SweepAsync(T0 + Ttl, cancelled.Token));
+            () => _reaper.SweepAsync(T0 + Delivery, cancelled.Token));
     }
 
     [Fact]

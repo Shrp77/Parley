@@ -47,5 +47,15 @@ public enum TransitionError
     /// <summary>
     /// Resumption was attempted on an exchange that is not orphaned.
     /// </summary>
-    ExchangeNotOrphaned
+    ExchangeNotOrphaned,
+
+    /// <summary>
+    /// An answer was attempted with <see cref="Resolution.Ghosted"/>.
+    /// </summary>
+    /// <remarks>
+    /// A ghost asserts that nobody answered, so it cannot arrive on an answer. The schema
+    /// refuses this as well; refusing it here means the caller learns what it did wrong rather
+    /// than meeting a constraint violation raised three layers further down.
+    /// </remarks>
+    GhostIsNotAnAnswer
 }

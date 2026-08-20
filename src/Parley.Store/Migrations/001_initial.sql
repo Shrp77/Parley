@@ -87,6 +87,43 @@ CREATE TABLE agent_credentials (
            OR reference LIKE 'file:_%')
 ) STRICT;
 
+-- A conversation exists as a row so it can carry a state. While it was only a string on
+-- messages, no rule could ask whether a discussion was over without reconstructing it from the
+-- traffic, and the idle rule in SPEC.md 9.4 could not be evaluated at all: it reasons about the
+-- exchanges in a conversation, and exchanges did not carry the identifier.
+--
+-- Created by the broker on first reference, inside the transaction that admits the Question
+-- naming it, and idempotently: two agents may name the same new identifier at once and neither
+-- should fail.
+CREATE TABLE conversations (
+    id          TEXT PRIMARY KEY,
+    state       TEXT NOT NULL CHECK (state IN ('OPEN', 'CLOSING', 'CLOSED')),
+    opened_utc  TEXT NOT NULL,
+    closed_utc  TEXT,
+
+    CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
+    CHECK (length(id) BETWEEN 1 AND 64 AND id NOT GLOB '*[^a-zA-Z0-9._:/-]*')
+) STRICT;
+
+-- Membership is derived, not declared: a row appears when an agent first becomes party to an
+-- exchange carrying the identifier. The vote column is the closure poll of SPEC.md 5.0. NULL
+-- means not yet asked or not yet answered, which are the same thing to the rule that reads it,
+-- since silence assents.
+CREATE TABLE conversation_participants (
+    conversation_id TEXT NOT NULL REFERENCES conversations(id),
+    agent           TEXT NOT NULL REFERENCES agents(name),
+    joined_utc      TEXT NOT NULL,
+    vote            TEXT CHECK (vote IN ('done', 'not_done')),
+    polled_utc      TEXT,
+    voted_utc       TEXT,
+
+    PRIMARY KEY (conversation_id, agent),
+
+    -- A vote without a poll is an agent answering a question nobody asked.
+    CHECK (vote IS NULL OR polled_utc IS NOT NULL),
+    CHECK ((vote IS NULL) = (voted_utc IS NULL))
+) STRICT;
+
 CREATE TABLE exchanges (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     pair_key          TEXT    NOT NULL,
@@ -96,15 +133,43 @@ CREATE TABLE exchanges (
     state             TEXT    NOT NULL CHECK (state IN ('OPEN', 'CLOSED', 'ORPHANED')),
     clarify_depth     INTEGER NOT NULL DEFAULT 0,
     clarify_depth_cap INTEGER NOT NULL DEFAULT 3,
-    -- Milliseconds, not seconds. Storing seconds truncated sub-second TTLs while
+    -- SPEC.md 7.1. Carried per row rather than read from configuration, so an exchange is
+    -- admitted on the terms it was opened under.
+    open_pair_cap     INTEGER NOT NULL DEFAULT 5
+                      CHECK (open_pair_cap BETWEEN 1 AND 50),
+    -- Milliseconds, not seconds. Storing seconds truncated sub-second windows while
     -- expires_utc kept full precision, so a rehydrated exchange could not reproduce
     -- its own deadline.
-    ttl_ms            INTEGER NOT NULL,
+    --
+    -- Two windows, not one deadline (SPEC.md 6). A single inactivity timer cannot tell an
+    -- agent that never received the question from one that received it and is working, and the
+    -- second routinely lasts hours. Delivery is already recorded, so the split needs no
+    -- acknowledgement message.
+    delivery_window_ms INTEGER NOT NULL,
+    working_window_ms  INTEGER NOT NULL,
+    -- SPEC.md 14. Per row for the same reason the windows are: held globally, lengthening the
+    -- setting would retroactively revive orphans already past the old period, and shortening it
+    -- would ghost a batch of live ones at once.
+    grace_period_ms    INTEGER NOT NULL,
     opened_utc        TEXT    NOT NULL,
     expires_utc       TEXT    NOT NULL,
     closed_utc        TEXT,
+    -- Which of the two windows in SPEC.md 6 is running. Derivable from the question message,
+    -- and denormalised here anyway: the reaper scans exchanges and would otherwise join to
+    -- messages on every sweep to answer something the exchange already knows.
+    delivered_utc     TEXT,
     is_decision       INTEGER NOT NULL DEFAULT 0 CHECK (is_decision IN (0, 1)),
     decision_ref      TEXT,
+    -- Content identity, SPEC.md 13.1. Names what the question was, so ux_open_question can
+    -- refuse the same question twice while it is still open.
+    question_hash     TEXT    NOT NULL,
+    -- Authoritative; messages carry a copy held in agreement by a composite foreign key.
+    conversation_id   TEXT    REFERENCES conversations(id),
+    -- NULL while open. Set when the exchange closes, and the only column distinguishing a
+    -- ghost from an answer once the message text has been pruned. A rollup of the
+    -- per-sub-question resolutions, taking the least resolved, so an exchange counts as
+    -- answered only when every part of it was. See SPEC.md 5.3.
+    resolution        TEXT    CHECK (resolution IN ('answered','out_of_scope','unknown','ghosted')),
     -- Optimistic concurrency stamp. Incremented on every write; a save that does not
     -- match the loaded value is rejected rather than silently overwriting. Without
     -- this, two paths that both load, transition, and save lose one transition, and
@@ -115,24 +180,36 @@ CREATE TABLE exchanges (
     CHECK (asker <> answerer),
     CHECK (owed_by IN (asker, answerer)),
     CHECK (clarify_depth >= 0 AND clarify_depth <= clarify_depth_cap),
-    CHECK (ttl_ms > 0),
+    CHECK (delivery_window_ms > 0 AND working_window_ms > 0),
+    -- Bounded both ways because both ends defeat the rule rather than tuning it. At zero an
+    -- orphan is ghosted the instant it is created, so the resume policy never runs. At the top
+    -- the exchange effectively never closes, restoring the unbounded retention ghosting exists
+    -- to remove. One second to thirty days.
+    CHECK (grace_period_ms BETWEEN 1000 AND 2592000000),
     CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
+    -- A closed exchange says why it closed; an open one cannot, since it has not.
+    CHECK ((state = 'CLOSED') = (resolution IS NOT NULL)),
 
-    -- pair_key must genuinely be derived from the two participants. ux_open_pair below is
-    -- the strongest invariant in this schema, and it is only as good as the value it
-    -- constrains: a mismatched key would have uniqueness enforced against the wrong string,
-    -- permitting two simultaneously open exchanges for the same real pair. char(31) is the
-    -- unit separator, and TEXT columns collate BINARY by default, which is the ordinal
-    -- comparison PairKey.For uses.
+    -- pair_key must genuinely be derived from the two participants. Cycle detection and the
+    -- retention rules both key on it, and a mismatched key would make two unrelated pairs
+    -- indistinguishable to every rule built on it. char(31) is the unit separator, and TEXT
+    -- columns collate BINARY by default, which is the ordinal comparison PairKey.For uses.
     CHECK (pair_key = min(asker, answerer) || char(31) || max(asker, answerer))
 ) STRICT;
 
--- The core invariant: at most one open exchange per unordered pair.
--- Enforced in storage rather than application code so correctness survives broker bugs.
-CREATE UNIQUE INDEX ux_open_pair
-    ON exchanges (pair_key) WHERE state = 'OPEN';
+-- Composite parent key for the denormalised conversation on messages. Redundant for
+-- uniqueness, since id is already the primary key, and required because SQLite resolves a
+-- composite foreign key only against indexed parent columns.
+CREATE UNIQUE INDEX ux_exchange_conversation ON exchanges(id, conversation_id);
 
--- Reaper scan: find open exchanges past their TTL.
+-- Distinctness, SPEC.md 7.1. An index rather than a trigger: it is declarative, and it covers
+-- every path that can produce an OPEN row, including the UPDATE that resumes an orphan. The
+-- one-open-exchange-per-pair rule it replaces made repetition structurally impossible without
+-- ever saying so, and removing that rule removed a guard nobody had written down.
+CREATE UNIQUE INDEX ux_open_question
+    ON exchanges (asker, answerer, question_hash) WHERE state = 'OPEN';
+
+-- Reaper scan: find open exchanges past their deadline.
 CREATE INDEX ix_open_expiry
     ON exchanges (expires_utc) WHERE state = 'OPEN';
 
@@ -229,7 +306,30 @@ CREATE TABLE messages (
     -- do damage. Bounded so an identifier cannot become a payload in its own right.
     CHECK (conversation_id IS NULL
            OR (length(conversation_id) BETWEEN 1 AND 64
-               AND conversation_id NOT GLOB '*[^a-zA-Z0-9._:/-]*'))
+               AND conversation_id NOT GLOB '*[^a-zA-Z0-9._:/-]*')),
+
+    -- SPEC.md rule 1: a Question states what the asker will do with each possible answer. The
+    -- length floor does the real work; requiring only that the key be present admits "n/a",
+    -- which satisfies a check and states nothing.
+    CHECK (type <> 'question'
+           OR length(coalesce(json_extract(payload_json, '$.consequences'), '')) >= 40),
+
+    -- The exchange holds the authoritative conversation; this column repeats it, and the
+    -- composite foreign key is what stops the copy becoming a second opinion. A message may
+    -- not name a conversation its exchange is not in, nor one that does not exist.
+    --
+    -- Kept deliberately, against the usual rule that one fact belongs in one column, because
+    -- the rule guards against silent drift and there is none once the copy cannot differ. What
+    -- it buys is a message log that answers "what happened in this conversation" on its own,
+    -- at the moment someone is looking because something has gone wrong.
+    --
+    -- A composite foreign key is satisfied by a NULL in either column, so a message may carry
+    -- NULL where its exchange carries an identifier. That loses the shortcut without
+    -- misreporting anything. The copy can fail to help; it cannot lie. It also makes an
+    -- exchange's conversation immutable once it carries any message, which SPEC.md 5.0 claimed
+    -- as a convention.
+    FOREIGN KEY (exchange_id, conversation_id)
+        REFERENCES exchanges(id, conversation_id)
 ) STRICT;
 
 -- Deduplication backstop. SPEC.md section 13.1 requires byte-identical messages to be
@@ -251,3 +351,76 @@ CREATE INDEX ix_inbox
 
 CREATE INDEX ix_messages_exchange
     ON messages (exchange_id, id);
+
+-- ---------------------------------------------------------------------------------------
+-- Triggers. These come last because SQLite compiles a trigger against a table that must
+-- already exist, so this file's order is the order a database is built in.
+--
+-- Every one of these enforces a rule that CHECK cannot: each needs to count or look up other
+-- rows, and CHECK forbids subqueries. That makes them weaker than the constraints above --
+-- procedural code that must itself be correct, constraining only the statements written
+-- against -- which is why two of them come in INSERT and UPDATE pairs.
+-- ---------------------------------------------------------------------------------------
+
+CREATE TRIGGER tr_open_pair_cap BEFORE INSERT ON exchanges WHEN NEW.state = 'OPEN'
+BEGIN
+  SELECT RAISE(ABORT, 'open_pair_cap reached')
+   WHERE (SELECT count(*) FROM exchanges
+           WHERE state = 'OPEN' AND asker = NEW.asker AND answerer = NEW.answerer)
+         >= NEW.open_pair_cap;
+END;
+
+CREATE TRIGGER tr_ghost_needs_no_answer BEFORE UPDATE ON exchanges
+WHEN NEW.resolution = 'ghosted'
+BEGIN
+  SELECT RAISE(ABORT, 'ghosted requires that no answer was given')
+   WHERE EXISTS (SELECT 1 FROM messages WHERE exchange_id = NEW.id AND type = 'answer');
+END;
+
+CREATE TRIGGER tr_open_pair_cap_resume BEFORE UPDATE ON exchanges
+WHEN NEW.state = 'OPEN' AND OLD.state <> 'OPEN'
+BEGIN
+  SELECT RAISE(ABORT, 'open_pair_cap reached on resume')
+   WHERE (SELECT count(*) FROM exchanges
+           WHERE state = 'OPEN' AND asker = NEW.asker AND answerer = NEW.answerer
+                 AND id <> NEW.id)
+         >= NEW.open_pair_cap;
+END;
+
+CREATE TRIGGER tr_gates_are_syntactic BEFORE INSERT ON messages
+WHEN NEW.type = 'question' AND json_valid(NEW.payload_json)
+BEGIN
+  SELECT RAISE(ABORT, 'sub_question ids are not unique')
+   WHERE (SELECT count(*) FROM json_each(NEW.payload_json, '$.sub_questions'))
+      <> (SELECT count(DISTINCT json_extract(value, '$.id'))
+            FROM json_each(NEW.payload_json, '$.sub_questions'));
+
+  SELECT RAISE(ABORT, 'a gate must reference an earlier sub_question')
+   WHERE EXISTS (
+     SELECT 1 FROM json_each(NEW.payload_json, '$.sub_questions') q
+      WHERE json_extract(q.value, '$.gate.on') IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM json_each(NEW.payload_json, '$.sub_questions') p
+           WHERE p.key < q.key
+             AND json_extract(p.value, '$.id') = json_extract(q.value, '$.gate.on')));
+END;
+
+CREATE TRIGGER tr_referral_targets_exist BEFORE INSERT ON messages
+WHEN json_valid(NEW.payload_json)
+BEGIN
+  SELECT RAISE(ABORT, 'redirect_to names an agent that is not registered')
+   WHERE EXISTS (
+     SELECT 1 FROM json_tree(NEW.payload_json) t
+      WHERE (t.path LIKE '%redirect_to%' OR t.key = 'redirect_to')
+        AND t.type = 'text'
+        AND t.value NOT IN (SELECT name FROM agents));
+
+  -- A sender referring to itself asserts both halves of a contradiction in one message:
+  -- out_of_scope says the boundary is not mine, and the referral says it is. Checked against
+  -- every entry rather than the first, so one cannot hide among valid targets.
+  SELECT RAISE(ABORT, 'redirect_to names the sender')
+   WHERE EXISTS (
+     SELECT 1 FROM json_tree(NEW.payload_json) t
+      WHERE (t.path LIKE '%redirect_to%' OR t.key = 'redirect_to')
+        AND t.type = 'text' AND t.value = NEW.from_agent);
+END;

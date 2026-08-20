@@ -45,13 +45,6 @@ public sealed class MessageRepository(SqliteConnection connection)
     private readonly SqliteConnection _connection =
         connection ?? throw new ArgumentNullException(nameof(connection));
 
-    /// <summary>Result of asking what conversation an exchange already belongs to.</summary>
-    private sealed class ConversationProbe
-    {
-        public long Total { get; init; }
-
-        public string? Conversation { get; init; }
-    }
 
     /// <summary>
     /// Appends a message unless an identical one was written inside the deduplication window.
@@ -156,51 +149,38 @@ public sealed class MessageRepository(SqliteConnection connection)
             return AppendOutcome.Duplicate(existing.ToDomain());
         }
 
-        // A clarification or answer inherits its exchange's conversation rather than declaring
-        // one, per SPEC.md 5.0. Enforced here because nothing else can: a CHECK cannot read
-        // another row, and a clarification carrying a different identifier from its question
-        // would split one discussion across two exports, or quietly graft it onto somebody
-        // else's. The first message on an exchange is the question, and it alone chooses.
+        // The exchange holds the authoritative conversation (SPEC.md 5.0); a message attached
+        // to one carries a copy, and the composite foreign key on messages keeps the two from
+        // ever disagreeing. So this reads the exchange rather than reconstructing the answer
+        // from whichever message happened to arrive first, which is what it used to do.
+        //
+        // A Notify has no exchange and therefore declares its own.
         var conversation = conversationId;
 
         if (exchangeId is { } exchange)
         {
-            // One round trip: the count distinguishes an exchange with no messages yet from
-            // one whose first message simply carries no identifier, which a bare SELECT of the
-            // column could not.
-            var prior = await _connection.QuerySingleAsync<ConversationProbe>(
+            var owned = await _connection.ExecuteScalarAsync<string>(
                 new CommandDefinition(
                     """
-                    SELECT count(*) AS Total,
-                           (SELECT earliest.conversation_id
-                              FROM messages AS earliest
-                             WHERE earliest.exchange_id = @Exchange
-                             ORDER BY earliest.id
-                             LIMIT 1) AS Conversation
-                      FROM messages
-                     WHERE exchange_id = @Exchange;
+                    SELECT conversation_id FROM exchanges WHERE id = @Exchange;
                     """,
                     new { Exchange = exchange },
                     transaction,
                     cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-            if (prior.Total > 0)
+            if (conversationId is not null && conversationId != owned)
             {
-                if (conversationId is not null && conversationId != prior.Conversation)
-                {
-                    throw new ArgumentException(
-                        prior.Conversation is null
-                            ? $"Exchange {exchange} was opened without a conversation, and the " +
-                              "question is what chooses one. A later message cannot enrol it in " +
-                              $"'{conversationId}'."
-                            : $"Exchange {exchange} belongs to conversation " +
-                              $"'{prior.Conversation}'. A clarification or answer inherits its " +
-                              $"exchange's conversation and cannot declare '{conversationId}'.",
-                        nameof(conversationId));
-                }
-
-                conversation = prior.Conversation;
+                throw new ArgumentException(
+                    owned is null
+                        ? $"Exchange {exchange} belongs to no conversation, and a message cannot " +
+                          $"enrol it in '{conversationId}'. The conversation is chosen when the " +
+                          "exchange is opened."
+                        : $"Exchange {exchange} belongs to conversation '{owned}'. A message on " +
+                          $"it cannot declare '{conversationId}'.",
+                    nameof(conversationId));
             }
+
+            conversation = owned;
         }
 
         var created = ExchangeRow.FormatTimestamp(nowUtc);
