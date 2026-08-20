@@ -429,6 +429,17 @@ Refusing such a referral outright would be worse: the answerer would have to gue
 peers' liveness to answer a question about ownership, which is not something it knows or should
 have to.
 
+**An agent may not refer to itself, and the schema refuses it** (§9.3). `out_of_scope` says
+the boundary is not mine and a referral says whose it is; naming yourself asserts both at once.
+It is worth refusing rather than ignoring because the plausible cause is not a typo — an agent
+that answers this way has misread the question as being about something it owns, and silently
+accepting it would send the asker back to the peer that just declined, which is the retry loop
+§7.3 exists to prevent, arrived at by a different route.
+
+Referring back to the **asker** is a different matter and is allowed. *"That is your call, not
+mine"* is a legitimate answer to a misdirected question, and one an asker genuinely needs when
+it has mistaken its own boundary for someone else's.
+
 **A referral chain does not become a relay.** Nothing stops the newly asked peer referring
 onward, and that is legitimate — but it is bounded by the same rules as any other traffic: each
 hop is an ordinary exchange against the §7.1 cap, and the asker chooses whether to follow. No
@@ -872,6 +883,15 @@ BEGIN
       WHERE (t.path LIKE '%redirect_to%' OR t.key = 'redirect_to')
         AND t.type = 'text'
         AND t.value NOT IN (SELECT name FROM agents));
+
+  -- A sender referring to itself asserts both halves of a contradiction in one message:
+  -- out_of_scope says the boundary is not mine, and the referral says it is. Checked against
+  -- every entry rather than the first, so one cannot hide among valid targets.
+  SELECT RAISE(ABORT, 'redirect_to names the sender')
+   WHERE EXISTS (
+     SELECT 1 FROM json_tree(NEW.payload_json) t
+      WHERE (t.path LIKE '%redirect_to%' OR t.key = 'redirect_to')
+        AND t.type = 'text' AND t.value = NEW.from_agent);
 END;
 
 -- A ghost asserts that nobody answered (§14), so an exchange carrying an answer cannot be
@@ -954,10 +974,11 @@ CREATE UNIQUE INDEX ux_message_dedup
 Rules that application code could otherwise route around live in the schema, so correctness
 survives bugs in the broker:
 
-- **A referral names a registered agent.** The trigger below. Rule 3 forbids describing
-  internals and is otherwise unenforceable — prose cannot be checked — but a referral is a
-  name, and a name can be looked up. It is the only part of rule 3 the storage layer can hold,
-  which is reason enough to hold it.
+- **A referral names a registered agent, and never the sender.** The trigger below. Rule 3
+  forbids describing internals and is otherwise unenforceable — prose cannot be checked — but a
+  referral is a name, and a name can be looked up. It is the only part of rule 3 the storage
+  layer can hold, which is reason enough to hold it. The second clause catches a message that
+  contradicts itself, saying the boundary is not the sender's while naming the sender.
 - **`ghosted` is the broker's to write, not an agent's.** The trigger above. This is one of
   the two forgeries §15's health signals are worth committing, and the only one the schema can
   refuse — the other, an adapter claiming the reserved `parley:` responder prefix (§11.3),
