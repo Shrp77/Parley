@@ -1,4 +1,5 @@
-﻿using Microsoft.Data.Sqlite;
+﻿using Dapper;
+using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -330,6 +331,69 @@ public sealed class AgentVerbTests : IDisposable
     }
 
     [Fact]
+    public async Task A_retried_clarification_does_not_advance_the_exchange_twice()
+    {
+        // At-least-once transport makes a repeated send ordinary traffic, and §13.1 suppresses
+        // the second write. What must also not happen is the transition applying again: found
+        // by probe, a suppressed retry still charged the clarify cap and still flipped the turn,
+        // handing the peer an obligation with nothing in its inbox to explain it.
+        var asked = await Ask();
+
+        await _broker.ClarifyAsync(
+            asked.Exchange!.Id, Billing, Model, """{"text":"gross of what?"}""",
+            T0.AddMinutes(2), TestContext.Current.CancellationToken);
+        await _broker.ClarifyAsync(
+            asked.Exchange.Id, Orders, Model, """{"text":"of VAT."}""",
+            T0.AddMinutes(2), TestContext.Current.CancellationToken);
+
+        var beforeRetry = await _exchanges.GetAsync(
+            asked.Exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
+
+        var retry = await _broker.ClarifyAsync(
+            asked.Exchange.Id, Billing, Model, """{"text":"gross of what?"}""",
+            T0.AddMinutes(2), TestContext.Current.CancellationToken);
+
+        // Reported as success carrying the earlier message, because from the sender's side the
+        // send did succeed — once.
+        Assert.True(retry.Succeeded);
+        Assert.False(retry.Stored);
+
+        var afterRetry = await _exchanges.GetAsync(
+            asked.Exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(beforeRetry!.ClarifyDepth, afterRetry!.ClarifyDepth);
+        Assert.Equal(beforeRetry.OwedBy, afterRetry.OwedBy);
+        Assert.Equal(beforeRetry.Version, afterRetry.Version);
+    }
+
+    [Fact]
+    public async Task A_retried_answer_does_not_close_the_exchange_twice()
+    {
+        // The same hazard where it costs most. An answer closes the exchange, so a retry that
+        // re-applied the transition against an exchange the first one closed would be refused
+        // — but only because the first succeeded. This pins that the retry reports the earlier
+        // answer rather than a contradiction.
+        var asked = await Ask();
+        const string Payload =
+            """{"resolutions":[{"id":"q1","resolution":"answered","text":"net"}]}""";
+
+        var first = await _broker.AnswerAsync(
+            asked.Exchange!.Id, Billing, Model, Payload, T0.AddMinutes(2),
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.True(first.Stored);
+
+        var retry = await _broker.AnswerAsync(
+            asked.Exchange.Id, Billing, Model, Payload, T0.AddMinutes(2),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        // Refused on the transition, before deduplication is reached: the exchange is closed.
+        Assert.Equal(TransitionError.ExchangeNotOpen, retry.Error);
+
+        var inbox = await _broker.DrainInboxAsync(
+            Orders, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Single(inbox);
+    }
+
+    [Fact]
     public async Task Speaking_out_of_turn_is_refused()
     {
         var asked = await Ask();
@@ -404,6 +468,86 @@ public sealed class AgentVerbTests : IDisposable
     }
 
     [Fact]
+    public async Task A_retired_agent_is_not_routed_to()
+    {
+        // SPEC.md §14: a retired agent is not routed to, and §10.1's agents() does not list it,
+        // so an asker should not have the name at all — this is the backstop for one that does.
+        // Found by probe: the question was admitted, and since a retired agent is not spawned
+        // either, it would have sat until the windows ran out and been reported as ghosted.
+        // That makes retirement a control that does not hold, which is precisely the failure
+        // §14 records when it refuses to let re-registration clear the mark.
+        await _agents.RetireAsync(Billing, TestContext.Current.CancellationToken);
+
+        var asked = await Ask();
+
+        Assert.Equal(OpenRejection.AnswererUnreachable, asked.Rejection);
+        Assert.Null(asked.Question);
+    }
+
+    [Fact]
+    public async Task A_retired_agent_may_not_open_new_exchanges_either()
+    {
+        // The same §14 rule read from the other end, and the reason it is not merely tidiness:
+        // an answer is a message addressed to the asker, so admitting a retired agent's question
+        // commits the broker to routing to an agent it must not route to. Refusing at the ask is
+        // what keeps that from being a violation already scheduled.
+        await _agents.RetireAsync(Orders, TestContext.Current.CancellationToken);
+
+        var asked = await Ask();
+
+        Assert.Equal(OpenRejection.AskerRetired, asked.Rejection);
+    }
+
+    [Fact]
+    public async Task An_exchange_opened_before_retirement_can_still_be_answered()
+    {
+        // Retirement is an operator's judgement about a repository, not a kill signal. Work
+        // already in flight finishes rather than being stranded, which would throw away answers
+        // peers had gone to the trouble of producing.
+        var asked = await Ask();
+        Assert.True(asked.Succeeded);
+
+        await _agents.RetireAsync(Orders, TestContext.Current.CancellationToken);
+
+        var answered = await _broker.AnswerAsync(
+            asked.Exchange!.Id, Billing, Model,
+            """{"resolutions":[{"id":"q1","resolution":"answered","text":"net"}]}""",
+            T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.True(answered.Succeeded);
+    }
+
+    [Fact]
+    public async Task Reinstating_an_agent_makes_it_routable_again()
+    {
+        // The symmetric half. §14 makes retire and reinstate a matched pair entered and
+        // withdrawn by a person, so a refusal that survived reinstatement would be as broken as
+        // a retirement that did not hold.
+        await _agents.RetireAsync(Billing, TestContext.Current.CancellationToken);
+        await _agents.ReinstateAsync(Billing, TestContext.Current.CancellationToken);
+
+        var asked = await Ask();
+
+        Assert.True(asked.Succeeded, $"expected admission, got {asked.Rejection}");
+    }
+
+    [Fact]
+    public async Task A_failed_ask_leaves_no_conversation_behind()
+    {
+        // Admission creates the conversation row for an identifier it has not seen, in the same
+        // transaction as the question. If the question is refused the discussion goes with it —
+        // otherwise an agent could mint a channel by failing, and a later question naming that
+        // identifier would join a discussion nobody ever opened.
+        await Assert.ThrowsAsync<SqliteException>(() => Ask(
+            payload: """{"text":"is the price gross or net?","consequences":"n/a"}""",
+            conversationId: "invented"));
+
+        var conversations = await _connection.QuerySingleAsync<long>(
+            "SELECT count(*) FROM conversations WHERE id = 'invented';");
+        Assert.Equal(0, conversations);
+    }
+
+    [Fact]
     public async Task A_question_that_would_close_a_cycle_is_refused()
     {
         // §7.2: a cycle is a set of questions none of which can ever be answered, because every
@@ -419,6 +563,53 @@ public sealed class AgentVerbTests : IDisposable
 
         Assert.Equal(OpenRejection.WouldDeadlock, closesIt.Rejection);
         Assert.NotEmpty(closesIt.Admission.CyclePath);
+    }
+
+    [Fact]
+    public async Task A_question_naming_a_concluded_conversation_is_refused_and_says_so()
+    {
+        // SPEC.md §5.0: a closed conversation stays closed. Closure is by consensus — a poll,
+        // a decline veto, a silence rule — and admitting this would let one agent overturn all
+        // three by naming the identifier again. Found by probe: it was admitted, and the
+        // discussion reopened with nobody asked.
+        var asked = await Ask(conversationId: "pricing");
+        Assert.True(asked.Succeeded);
+
+        await _broker.AnswerAsync(
+            asked.Exchange!.Id, Billing, Model, """{"resolutions":[]}""",
+            T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken);
+
+        await _connection.ExecuteAsync(
+            "UPDATE conversations SET state = 'CLOSED', closed_utc = @When WHERE id = 'pricing';",
+            new { When = "2026-01-01T00:03:00.000Z" });
+
+        var afterClosure = await Ask(
+            payload: """{"text":"and for refunds?","consequences":"If gross I reverse tax; if net I do not."}""",
+            at: T0.AddMinutes(4),
+            conversationId: "pricing");
+
+        Assert.Equal(OpenRejection.ConversationClosed, afterClosure.Rejection);
+        Assert.Null(afterClosure.Question);
+    }
+
+    [Fact]
+    public async Task The_same_question_without_the_concluded_identifier_is_admitted()
+    {
+        // What makes the refusal actionable rather than a dead end: the discussion is over, the
+        // question is not, and asking it afresh costs an identifier. §5.0 declines to make
+        // reopening a special case for exactly this reason.
+        var asked = await Ask(conversationId: "pricing");
+        await _broker.AnswerAsync(
+            asked.Exchange!.Id, Billing, Model, """{"resolutions":[]}""",
+            T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken);
+
+        await _connection.ExecuteAsync(
+            "UPDATE conversations SET state = 'CLOSED', closed_utc = @When WHERE id = 'pricing';",
+            new { When = "2026-01-01T00:03:00.000Z" });
+
+        var afresh = await Ask(at: T0.AddMinutes(4), conversationId: "pricing-refunds");
+
+        Assert.True(afresh.Succeeded, $"expected admission, got {afresh.Rejection}");
     }
 
     [Fact]

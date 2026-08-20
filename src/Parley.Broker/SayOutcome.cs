@@ -1,4 +1,4 @@
-using Parley.Core;
+﻿using Parley.Core;
 
 namespace Parley.Broker;
 
@@ -7,13 +7,20 @@ namespace Parley.Broker;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Three failures, kept apart because they call for three different things. A
-/// <see cref="TransitionError"/> means the exchange refused the move and the agent is wrong
-/// about the state of the world — it does not hold the turn, or the exchange has already
-/// closed — and retrying unchanged will fail identically. <see cref="Stale"/> means another
-/// writer got there first and the agent should reload and decide again, since the move it
-/// intended may no longer be legal. Neither is an exception, because both are ordinary
-/// outcomes of agents working concurrently.
+/// One failure, not two. A <see cref="TransitionError"/> means the exchange refused the move
+/// and the agent is wrong about the state of the world — it does not hold the turn, or the
+/// exchange has already closed — so retrying unchanged will fail identically. It is an outcome
+/// rather than an exception because agents working concurrently produce it in ordinary
+/// operation.
+/// </para>
+/// <para>
+/// There is deliberately no staleness here, though the write underneath is guarded by a version
+/// stamp. The read and the write share one <c>IMMEDIATE</c> transaction, so nothing can change
+/// the row in between, and a race between two brokers resolves one step earlier: the loser
+/// reads what the winner committed and is refused as
+/// <see cref="TransitionError.ExchangeNotOpen"/>. An earlier draft exposed a <c>Stale</c> flag
+/// that could never be true, which is worse than an omission — every adapter would have written
+/// a reload-and-retry path that no test could reach.
 /// </para>
 /// <para>
 /// A missing exchange is reported as <see cref="TransitionError.ExchangeNotOpen"/> rather than
@@ -25,12 +32,11 @@ namespace Parley.Broker;
 /// </remarks>
 public sealed record SayOutcome
 {
-    private SayOutcome(Message? message, bool stored, TransitionError? error, bool stale)
+    private SayOutcome(Message? message, bool stored, TransitionError? error)
     {
         Message = message;
         Stored = stored;
         Error = error;
-        Stale = stale;
     }
 
     /// <summary>
@@ -43,27 +49,25 @@ public sealed record SayOutcome
     public Message? Message { get; }
 
     /// <summary>
-    /// Gets a value indicating whether this call wrote the message.
+    /// Gets a value indicating whether this call wrote the message and moved the exchange.
     /// </summary>
     /// <value>
     /// <see langword="false"/> when an identical message was already written inside the
-    /// deduplication window of SPEC.md §13.1, in which case <see cref="Message"/> is the
-    /// earlier one.
+    /// deduplication window of SPEC.md §13.1, in which case <see cref="Message"/> is the earlier
+    /// one and <em>the exchange was not moved either</em>.
     /// </value>
+    /// <remarks>
+    /// The second half is the part worth stating. A suppressed message means the transition it
+    /// announces was already applied by the send this one duplicates, so applying it again would
+    /// charge the clarify cap twice and hand the turn to a peer whose inbox gained nothing —
+    /// leaving it holding an obligation it cannot see. <see cref="Succeeded"/> is still
+    /// <see langword="true"/>, because from the sender's side the send did succeed: once.
+    /// </remarks>
     public bool Stored { get; }
 
     /// <summary>Gets why the exchange refused the move.</summary>
     /// <value>The refusal, or <see langword="null"/> if the exchange did not refuse it.</value>
     public TransitionError? Error { get; }
-
-    /// <summary>
-    /// Gets a value indicating whether another writer changed the exchange first.
-    /// </summary>
-    /// <value>
-    /// <see langword="true"/> when the move was legal against the state read but the write was
-    /// refused as stale. Reload and decide again.
-    /// </value>
-    public bool Stale { get; }
 
     /// <summary>Gets a value indicating whether the move was applied.</summary>
     /// <value><see langword="true"/> when <see cref="Message"/> is populated.</value>
@@ -77,17 +81,12 @@ public sealed record SayOutcome
     internal static SayOutcome Said(Message message, bool stored)
     {
         ArgumentNullException.ThrowIfNull(message);
-        return new(message, stored, error: null, stale: false);
+        return new(message, stored, error: null);
     }
 
     /// <summary>Creates the outcome for a move the exchange refused.</summary>
     /// <param name="error">Why it was refused.</param>
     /// <returns>An outcome carrying the refusal.</returns>
     internal static SayOutcome Refused(TransitionError error) =>
-        new(message: null, stored: false, error, stale: false);
-
-    /// <summary>Creates the outcome for a move another writer overtook.</summary>
-    /// <returns>An outcome reporting that the caller must reload.</returns>
-    internal static SayOutcome Overtaken() =>
-        new(message: null, stored: false, error: null, stale: true);
+        new(message: null, stored: false, error);
 }

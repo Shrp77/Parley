@@ -1,5 +1,4 @@
-﻿using System.Data;
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 
@@ -100,6 +99,96 @@ public sealed class Broker
     public DateTimeOffset? StartedUtc { get; private set; }
 
     /// <summary>
+    /// The namespace SPEC.md §11.3 reserves for the broker's own attributions.
+    /// </summary>
+    private const string ReservedResponderPrefix = "parley:";
+
+    /// <summary>
+    /// Throws if an adapter has claimed the reserved responder namespace.
+    /// </summary>
+    /// <param name="responderModel">The responder identity the adapter supplied.</param>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="responderModel"/> is empty, or claims the <c>parley:</c> namespace.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// SPEC.md §11.3 makes this a MUST and names this exact boundary as the place to enforce
+    /// it, because nowhere else can. Every row is written by the broker, including the rows
+    /// that legitimately say <c>parley:broker</c> — a ghosting close, a forced <c>unknown</c> —
+    /// so no <c>CHECK</c> can tell the broker writing its own name from the broker faithfully
+    /// recording what an adapter handed it. The column sees what was said, never who was
+    /// speaking. This method is the one place the distinction still exists, and it exists here
+    /// only because these three operations are where adapter-supplied values enter.
+    /// </para>
+    /// <para>
+    /// Worth something to forge, which is why it is a MUST rather than hygiene. §15 identifies
+    /// an unhealthy deployment by counting broker-authored closes, so an agent that can write
+    /// that attribution can hide its own failures among the infrastructure's, or manufacture
+    /// evidence that a peer's model was down. A namespace anyone may claim identifies nobody,
+    /// and §11.3 rests entirely on responder identity meaning something.
+    /// </para>
+    /// <para>
+    /// Compared without case sensitivity, because the schema's character set admits
+    /// <c>PARLEY:broker</c> and a reader skimming a log would not pause at it. Ordinal, because
+    /// this is a protocol token and not text in anybody's language.
+    /// </para>
+    /// <para>
+    /// Throws rather than returning a refusal, for the reason <see cref="RequireStarted"/>
+    /// does: this describes a defect in the caller, not a fact about the world, and there is
+    /// nothing an agent could do about it if it were told.
+    /// </para>
+    /// </remarks>
+    private static void RequireAdapterResponder(string responderModel)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(responderModel);
+
+        if (responderModel.StartsWith(ReservedResponderPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException(
+                $"The '{ReservedResponderPrefix}' responder namespace is reserved for the " +
+                "broker's own attributions and an adapter may not claim it. See SPEC.md §11.3.",
+                nameof(responderModel));
+        }
+    }
+
+    /// <summary>
+    /// Throws unless the reboot sequence has run.
+    /// </summary>
+    /// <param name="operation">The operation being refused, named in the message.</param>
+    /// <exception cref="InvalidOperationException"><see cref="StartAsync"/> has not been called.</exception>
+    /// <remarks>
+    /// <para>
+    /// Every agent-facing operation is guarded, not only the sweep, because all of them read
+    /// state that SPEC.md §14's reboot sequence exists to invalidate. Before it runs, the open
+    /// set still holds exchanges belonging to a process that is gone and the registry still
+    /// holds liveness the last run observed — so admission counts stale exchanges against §7.1's
+    /// cap, cycle detection finds cycles among questions nobody is working on, and the
+    /// reachability check reads an <c>unreachable</c> mark that a restart is precisely the
+    /// occasion to clear. That last one is the worst of them: it is the one refusal that hands
+    /// back no work, and its documented meaning is that nothing is coming from this peer, so
+    /// stop asking.
+    /// </para>
+    /// <para>
+    /// Throwing rather than returning a refusal, and the difference matters. Every refusal in
+    /// <see cref="OpenOutcome"/> is addressed to an agent and describes the world; this is
+    /// addressed to the host and describes the host's own sequencing error. An agent cannot act
+    /// on it, and dressing it as a refusal would have agents reporting to their principals that
+    /// a peer was unreachable when the truth is that nobody called <see cref="StartAsync"/>.
+    /// </para>
+    /// </remarks>
+    private void RequireStarted(string operation)
+    {
+        if (StartedUtc is null)
+        {
+            throw new InvalidOperationException(
+                $"The broker has not started. Call StartAsync before {operation}: until the " +
+                "reboot sequence runs, the open set and the registry still describe the " +
+                "previous run, and this operation would decide against evidence that a start " +
+                "exists to invalidate.");
+        }
+    }
+
+    /// <summary>
     /// Opens an exchange and says the question in it, as one act.
     /// </summary>
     /// <param name="from">The agent asking.</param>
@@ -123,9 +212,14 @@ public sealed class Broker
     /// <returns>
     /// The exchange and the question, or the refusal with whatever the asker can act on.
     /// </returns>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="StartAsync"/> has not been called.
+    /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="from"/> and <paramref name="to"/> are the same agent, or
-    /// <paramref name="responderModel"/> or <paramref name="payloadJson"/> is empty.
+    /// <paramref name="from"/> and <paramref name="to"/> are the same agent;
+    /// <paramref name="responderModel"/> or <paramref name="payloadJson"/> is empty; or
+    /// <paramref name="responderModel"/> claims the <c>parley:</c> namespace reserved by
+    /// SPEC.md §11.3.
     /// </exception>
     /// <exception cref="SqliteException">
     /// The question violates a storage constraint. Nothing is written, including the exchange.
@@ -164,10 +258,11 @@ public sealed class Broker
         string? conversationId = null,
         CancellationToken cancellationToken = default)
     {
+        RequireStarted("asking");
+        RequireAdapterResponder(responderModel);
         ArgumentException.ThrowIfNullOrEmpty(payloadJson);
 
-        using var transaction = _connection.BeginTransaction(
-            IsolationLevel.Serializable, deferred: false);
+        using var scope = WriteScope.Begin(_connection, ambient: null);
 
         var admission = await _exchanges.TryOpenAsync(
             from,
@@ -176,7 +271,7 @@ public sealed class Broker
             MessageIdentity.ComputeQuestion(from, to, payloadJson),
             _options.ExchangePolicy,
             conversationId,
-            transaction,
+            scope.Transaction,
             cancellationToken).ConfigureAwait(false);
 
         if (!admission.Succeeded)
@@ -193,18 +288,17 @@ public sealed class Broker
             payloadJson,
             nowUtc,
             conversationId,
-            transaction,
+            scope.Transaction,
             cancellationToken).ConfigureAwait(false);
 
-        transaction.Commit();
+        scope.Complete();
 
-        // Stored is always true here, and the flag is passed through rather than asserted. A
-        // question cannot collide in the deduplication window because its identity includes the
-        // exchange it belongs to, and this exchange was created a few lines ago. The repeated
-        // question is caught by the distinctness index instead, which refuses the admission
-        // above rather than the append here. Passing the flag through keeps a caller correct if
-        // that identity ever changes; asserting it would turn such a change into a crash.
-        return AskOutcome.Asked(admission, appended.Message, appended.Stored);
+        // The append cannot be suppressed as a duplicate, which is why nothing branches on it:
+        // a question's identity includes the exchange it belongs to, and this exchange was
+        // created a few lines ago. A repeated question is caught a step earlier by the
+        // distinctness index, which refuses the admission above. See AskOutcome for why no flag
+        // is exposed for a value that could only ever read one way.
+        return AskOutcome.Asked(admission, appended.Message);
     }
 
     /// <summary>
@@ -217,7 +311,14 @@ public sealed class Broker
     /// <param name="nowUtc">The instant of the clarification.</param>
     /// <param name="cancellationToken">Cancels the clarification.</param>
     /// <returns>The message as stored, or why the exchange refused it.</returns>
-    /// <exception cref="ArgumentException"><paramref name="payloadJson"/> is empty.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="StartAsync"/> has not been called.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="responderModel"/> or <paramref name="payloadJson"/> is empty, or
+    /// <paramref name="responderModel"/> claims the <c>parley:</c> namespace reserved by
+    /// SPEC.md §11.3.
+    /// </exception>
     /// <exception cref="SqliteException">
     /// The message violates a storage constraint. Nothing is written, including the transition.
     /// </exception>
@@ -275,7 +376,14 @@ public sealed class Broker
     /// </param>
     /// <param name="cancellationToken">Cancels the answer.</param>
     /// <returns>The answer as stored, or why the exchange refused it.</returns>
-    /// <exception cref="ArgumentException"><paramref name="payloadJson"/> is empty.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="StartAsync"/> has not been called.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="responderModel"/> or <paramref name="payloadJson"/> is empty, or
+    /// <paramref name="responderModel"/> claims the <c>parley:</c> namespace reserved by
+    /// SPEC.md §11.3.
+    /// </exception>
     /// <exception cref="SqliteException">
     /// The message violates a storage constraint. Nothing is written, including the closure.
     /// </exception>
@@ -349,12 +457,13 @@ public sealed class Broker
         Func<Exchange, AgentName, TransitionResult> transition,
         CancellationToken cancellationToken)
     {
+        RequireStarted(type == MessageType.Answer ? "answering" : "clarifying");
+        RequireAdapterResponder(responderModel);
         ArgumentException.ThrowIfNullOrEmpty(payloadJson);
 
-        using var scope = _connection.BeginTransaction(
-            IsolationLevel.Serializable, deferred: false);
+        using var scope = WriteScope.Begin(_connection, ambient: null);
 
-        var exchange = await _exchanges.GetAsync(exchangeId, scope, cancellationToken)
+        var exchange = await _exchanges.GetAsync(exchangeId, scope.Transaction, cancellationToken)
             .ConfigureAwait(false);
 
         if (exchange is null)
@@ -384,19 +493,43 @@ public sealed class Broker
             payloadJson,
             nowUtc,
             conversationId: null,
-            scope,
+            scope.Transaction,
             cancellationToken).ConfigureAwait(false);
 
-        if (!await _exchanges.SaveAsync(
-                exchange, decisionRef: null, scope, cancellationToken).ConfigureAwait(false))
+        if (!appended.Stored)
         {
-            // Another writer moved the row between the read and here, so this decision was made
-            // against a state that no longer holds. Rolling back discards the message too,
-            // which is right: it announced a transition that did not happen.
-            return SayOutcome.Overtaken();
+            // A transport retry: this exact message was already written inside the §13.1
+            // window, which means the transition it announces was already applied. Applying it
+            // again would advance the exchange on a message nobody received — the clarify depth
+            // charged twice against §7's cap, and the turn handed to a peer whose inbox gained
+            // nothing, so it holds an obligation it has no way to see.
+            //
+            // Returning without saving is what AppendOutcome already prescribes: carry on as
+            // though the send succeeded, because it did, once. The transaction rolls back, so
+            // the transition applied to the in-memory instance goes with it.
+            return SayOutcome.Said(appended.Message, stored: false);
         }
 
-        scope.Commit();
+        if (!await _exchanges.SaveAsync(
+                exchange, decisionRef: null, scope.Transaction, cancellationToken).ConfigureAwait(false))
+        {
+            // Unreachable, and thrown rather than reported. The version guard on SaveAsync can
+            // only refuse a row that changed since it was read, and the read above happened
+            // inside this transaction, which took the write lock before it ran — so a mismatch
+            // here means the guarantee that makes every check in this method sound has failed,
+            // which is a defect and not an outcome an agent can act on. The transaction rolls
+            // back with the message in it.
+            //
+            // A race between two brokers does not arrive here: it resolves one step earlier,
+            // when the loser reads what the winner committed and the transition is refused
+            // against a closed exchange. That is covered by test, which is what keeps this from
+            // being an assumption.
+            throw new InvalidOperationException(
+                $"Exchange {exchangeId} changed under a write lock held for this operation. " +
+                "This indicates the connection is not honouring IMMEDIATE transactions.");
+        }
+
+        scope.Complete();
         return SayOutcome.Said(appended.Message, appended.Stored);
     }
 
@@ -509,7 +642,9 @@ public sealed class Broker
     /// <param name="limit">The most messages to return, or <see langword="null"/> for all.</param>
     /// <param name="cancellationToken">Cancels the drain.</param>
     /// <returns>The messages delivered, debts first.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="agent"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="StartAsync"/> has not been called.
+    /// </exception>
     /// <remarks>
     /// <para>
     /// This is the inbound traffic SPEC.md §14 describes, so it does the replay before the
@@ -543,6 +678,8 @@ public sealed class Broker
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
+        RequireStarted("draining an inbox");
+
         // Traffic for this agent is what triggers the replay, so it happens before the read and
         // anything it brings back is in the drain that asked for it rather than the next one.
         await ResumeOwedByAsync(agent, nowUtc, cancellationToken).ConfigureAwait(false);
@@ -638,6 +775,11 @@ public sealed class Broker
     /// <param name="nowUtc">The instant of the replay.</param>
     /// <param name="cancellationToken">Cancels the replay.</param>
     /// <returns>The exchanges returned to the open state.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="StartAsync"/> has not been called. Replay is defined against orphans and the
+    /// reboot sequence is what creates them, so before it runs this would report nothing to
+    /// resume for an agent that owes answers — a wrong answer indistinguishable from a right one.
+    /// </exception>
     /// <remarks>
     /// <para>
     /// Lazy, per SPEC.md §14: nothing is replayed at start-up. The reboot sequence orphans
@@ -671,6 +813,8 @@ public sealed class Broker
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default)
     {
+        RequireStarted("resuming");
+
         if (_options.ResumePolicy != ResumePolicy.Always)
         {
             return [];

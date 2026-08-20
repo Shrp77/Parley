@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace Parley.Store.Tests;
@@ -51,6 +51,42 @@ public sealed class AdmissionGuardTests : IDisposable
       + "payload_json, content_hash, created_utc) SELECT id, '" + type + "', '" + from + "', '"
       + to + "', 'claude-opus-5', " + payloadSql + ", '" + Hash + "', '" + Stamp
       + "' FROM exchanges LIMIT 1;");
+
+    private void InsertExchangeInConversation(string question, string conversation) => Execute(
+        "INSERT INTO exchanges (pair_key, asker, answerer, owed_by, state, clarify_depth, "
+      + "clarify_depth_cap, open_pair_cap, delivery_window_ms, working_window_ms, "
+      + "grace_period_ms, opened_utc, expires_utc, question_hash, conversation_id) VALUES "
+      + "('billing' || char(31) || 'orders','orders','billing','billing','OPEN',0,3,5,"
+      + "900000,14400000,10800000,'" + Stamp + "','" + Stamp + "','" + question + "','"
+      + conversation + "');");
+
+    [Fact]
+    public void A_closed_conversation_cannot_be_reopened_by_a_new_exchange()
+    {
+        // SPEC.md 5.0: a closed conversation stays closed. Closure is by consensus, so a single
+        // agent naming a concluded identifier would defeat the poll, the decline veto and the
+        // silence rule at once. The broker refuses this with a stated reason; this is the
+        // backstop for every path that is not the broker.
+        Execute("INSERT INTO conversations (id, state, opened_utc, closed_utc) VALUES "
+              + "('pricing','CLOSED','" + Stamp + "','" + Stamp + "');");
+
+        var ex = Assert.Throws<SqliteException>(
+            () => InsertExchangeInConversation("still-curious", "pricing"));
+
+        Assert.Contains("conversation is closed", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_open_conversation_still_accepts_exchanges()
+    {
+        // The other half, and the one that would fail if the trigger matched on the column
+        // rather than on the state: a discussion in progress is exactly what conversations are
+        // for, and a guard that refused those would be worse than none.
+        Execute("INSERT INTO conversations (id, state, opened_utc) VALUES "
+              + "('pricing','OPEN','" + Stamp + "');");
+
+        InsertExchangeInConversation("still-curious", "pricing");
+    }
 
     [Fact]
     public void The_cap_is_enforced_on_insert_even_when_the_broker_does_not_check()

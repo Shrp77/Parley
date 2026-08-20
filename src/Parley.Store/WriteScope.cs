@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using Microsoft.Data.Sqlite;
 
 namespace Parley.Store;
@@ -33,8 +33,15 @@ namespace Parley.Store;
 /// an optimisation but the only way to compose these at all. Beginning a second while one is
 /// open throws.
 /// </para>
+/// <para>
+/// Public rather than internal, because the repository methods take a transaction as a public
+/// parameter and this holds the only piece of knowledge needed to supply a correct one. Left
+/// internal, every external caller would have to rediscover <c>IsolationLevel.Serializable</c>
+/// with <c>deferred: false</c> — and the failure of getting it wrong is not a compile error but
+/// a check that reads a stale snapshot and passes when it should not.
+/// </para>
 /// </remarks>
-internal sealed class WriteScope : IDisposable
+public sealed class WriteScope : IDisposable
 {
     private readonly SqliteTransaction? _owned;
 
@@ -45,6 +52,11 @@ internal sealed class WriteScope : IDisposable
     }
 
     /// <summary>Gets the transaction the work runs in, owned or borrowed.</summary>
+    /// <value>
+    /// Pass this to every command issued inside the scope. Microsoft.Data.Sqlite refuses a
+    /// command with no transaction while one is open on the connection, so an unpassed
+    /// transaction is a run-time failure rather than a silently unguarded read.
+    /// </value>
     public SqliteTransaction Transaction { get; }
 
     /// <summary>
@@ -54,6 +66,7 @@ internal sealed class WriteScope : IDisposable
     /// <param name="connection">The connection to begin on when there is nothing to join.</param>
     /// <param name="ambient">A transaction to join, or <see langword="null"/> to own one.</param>
     /// <returns>A scope over the transaction the work should use.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="connection"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// <c>IMMEDIATE</c> rather than deferred, for the reason set out on
     /// <see cref="ExchangeRepository.TryOpenAsync"/>: a deferred transaction takes its read
@@ -69,6 +82,8 @@ internal sealed class WriteScope : IDisposable
     /// </remarks>
     public static WriteScope Begin(SqliteConnection connection, SqliteTransaction? ambient)
     {
+        ArgumentNullException.ThrowIfNull(connection);
+
         if (ambient is not null)
         {
             return new WriteScope(ambient, owned: null);

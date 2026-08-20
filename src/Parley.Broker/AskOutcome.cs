@@ -1,4 +1,4 @@
-using Parley.Core;
+﻿using Parley.Core;
 using Parley.Store;
 
 namespace Parley.Broker;
@@ -12,8 +12,14 @@ namespace Parley.Broker;
 /// question are different failures with different remedies and flattening them would lose that.
 /// A refusal means the question was never admitted and the asker should act on what it was
 /// handed back — the exchanges it is already waiting on, or the cycle it would have closed.
-/// A duplicate means the question was already said inside the deduplication window and the
-/// caller should carry on as though this send succeeded, because it did, once.
+/// </para>
+/// <para>
+/// There is deliberately no deduplication flag here, unlike <see cref="SayOutcome"/>. A
+/// question cannot collide inside the §13.1 window because its identity includes the exchange
+/// it belongs to, and that exchange is created by the same call — so the flag could only ever
+/// report one value. A repeated question is caught a step earlier, by the distinctness rule of
+/// §7.1, and arrives as <see cref="OpenRejection.DuplicateQuestion"/> carrying the exchange
+/// already holding it. Exposing a constant would invite callers to branch on nothing.
 /// </para>
 /// <para>
 /// Per SPEC.md §4.2 this carries an identifier and never an answer. The answer arrives through
@@ -22,11 +28,10 @@ namespace Parley.Broker;
 /// </remarks>
 public sealed record AskOutcome
 {
-    private AskOutcome(OpenOutcome admission, Message? question, bool stored)
+    private AskOutcome(OpenOutcome admission, Message? question)
     {
         Admission = admission;
         Question = question;
-        Stored = stored;
     }
 
     /// <summary>Gets the admission decision, carrying the refusal when there was one.</summary>
@@ -50,16 +55,6 @@ public sealed record AskOutcome
     /// </value>
     public Message? Question { get; }
 
-    /// <summary>
-    /// Gets a value indicating whether this call wrote the question.
-    /// </summary>
-    /// <value>
-    /// <see langword="false"/> when an identical question was already written inside the
-    /// deduplication window of SPEC.md §13.1, in which case <see cref="Question"/> is the
-    /// earlier one.
-    /// </value>
-    public bool Stored { get; }
-
     /// <summary>Gets the reason admission refused the question.</summary>
     /// <value><see cref="OpenRejection.None"/> when it did not.</value>
     public OpenRejection Rejection => Admission.Rejection;
@@ -76,11 +71,10 @@ public sealed record AskOutcome
     /// <summary>Creates the outcome for a question that was admitted and written.</summary>
     /// <param name="admission">The successful admission.</param>
     /// <param name="question">The question as stored.</param>
-    /// <param name="stored">Whether this call wrote it, or deduplication suppressed it.</param>
     /// <returns>An outcome carrying the exchange and the question.</returns>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="admission"/> is a refusal.</exception>
-    internal static AskOutcome Asked(OpenOutcome admission, Message question, bool stored)
+    internal static AskOutcome Asked(OpenOutcome admission, Message question)
     {
         ArgumentNullException.ThrowIfNull(admission);
         ArgumentNullException.ThrowIfNull(question);
@@ -91,7 +85,7 @@ public sealed record AskOutcome
                 "A refused admission carries no question.", nameof(admission));
         }
 
-        return new(admission, question, stored);
+        return new(admission, question);
     }
 
     /// <summary>Creates the outcome for a question admission refused.</summary>
@@ -109,6 +103,6 @@ public sealed record AskOutcome
                 "A successful admission is not a refusal.", nameof(admission));
         }
 
-        return new(admission, question: null, stored: false);
+        return new(admission, question: null);
     }
 }

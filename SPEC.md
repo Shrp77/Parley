@@ -940,6 +940,21 @@ BEGIN
    WHERE EXISTS (SELECT 1 FROM messages WHERE exchange_id = NEW.id AND type = 'answer');
 END;
 
+-- Section 5.0: a closed conversation stays closed. Closure is by consensus, and a single
+-- agent naming a concluded identifier on a new Question would reopen the discussion
+-- unilaterally -- defeating the poll, the decline veto and the silence rule all at once. In
+-- storage rather than in the broker because the exchange is what carries the membership: an
+-- exchange in a closed conversation is the state that must not exist, so the place to refuse
+-- it is where it would be written. Reopening is not a special case because it is not a real
+-- one; a discussion worth resuming is a new one, and identifiers are free.
+CREATE TRIGGER tr_closed_conversation_stays_closed BEFORE INSERT ON exchanges
+WHEN NEW.conversation_id IS NOT NULL
+BEGIN
+  SELECT RAISE(ABORT, 'conversation is closed')
+   WHERE EXISTS (SELECT 1 FROM conversations
+                  WHERE id = NEW.conversation_id AND state = 'CLOSED');
+END;
+
 -- Resuming an orphan is an UPDATE, which the trigger above never sees. Both are required.
 CREATE TRIGGER tr_open_pair_cap_resume BEFORE UPDATE ON exchanges
 WHEN NEW.state = 'OPEN' AND OLD.state <> 'OPEN'

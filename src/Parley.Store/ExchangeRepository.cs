@@ -296,16 +296,66 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         // so every other check passes and the question is admitted, waits a full inactivity
         // window, and orphans unanswered — costing the same again on every retry while nobody
         // learns why.
-        var reachable = await _connection.ExecuteScalarAsync<long>(
+        //
+        // 'retired' counts for the same reason and was missing: SPEC.md §14 says a retired
+        // agent is not routed to, and §10.1's agents() does not list it, so an asker should not
+        // have the name at all — this is the backstop for one that does. Leaving it out made
+        // retirement a control that does not hold, which is the exact failure §14 records when
+        // it refuses to let re-registration clear the mark. The two statuses are checked
+        // together rather than separately because the asker's correct response is identical:
+        // nothing is coming from this peer, so tell your principal rather than trying later.
+        //
+        // Both are broker checks rather than triggers, unlike the cap and the distinctness
+        // rule. Neither is an invariant: an agent may legitimately go unreachable or be retired
+        // while it holds open exchanges, so a stored constraint would have to permit exactly
+        // the rows it was meant to forbid.
+        var unroutable = await _connection.ExecuteScalarAsync<long>(
             new CommandDefinition(
-                "SELECT count(*) FROM agents WHERE name = @Name AND status = 'unreachable';",
+                "SELECT count(*) FROM agents WHERE name = @Name " +
+                "AND status IN ('unreachable', 'retired');",
                 new { Name = answerer.Value },
                 scope.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        if (reachable > 0)
+        if (unroutable > 0)
         {
             return OpenOutcome.Unreachable();
+        }
+
+        // The same rule read from the other end. §14 says a retired agent is not routed to, and
+        // an answer is a message addressed to the asker — so admitting a retired agent's
+        // question schedules the violation rather than avoiding it. Only 'retired' counts here,
+        // not 'unreachable': unreachable describes a peer nobody could spawn, which says
+        // nothing about an agent that is plainly running well enough to be asking.
+        var retired = await _connection.ExecuteScalarAsync<long>(
+            new CommandDefinition(
+                "SELECT count(*) FROM agents WHERE name = @Name AND status = 'retired';",
+                new { Name = asker.Value },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        if (retired > 0)
+        {
+            return OpenOutcome.AskerRetired();
+        }
+
+        // SPEC.md §5.0: a closed conversation stays closed, and the refusal says so. The
+        // trigger refuses this too; checking here is what turns a constraint violation into a
+        // refusal the asker can act on, exactly as the pair cap is checked above the index that
+        // backs it.
+        if (conversationId is not null)
+        {
+            var concluded = await _connection.ExecuteScalarAsync<long>(
+                new CommandDefinition(
+                    "SELECT count(*) FROM conversations WHERE id = @Id AND state = 'CLOSED';",
+                    new { Id = conversationId },
+                    scope.Transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+            if (concluded > 0)
+            {
+                return OpenOutcome.ConversationClosed();
+            }
         }
 
         var open = await GetOpenAsync(scope.Transaction, cancellationToken).ConfigureAwait(false);

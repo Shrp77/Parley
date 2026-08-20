@@ -1,4 +1,4 @@
-using Parley.Core;
+﻿using Parley.Core;
 
 namespace Parley.Store;
 
@@ -38,17 +38,51 @@ public enum OpenRejection
     WouldDeadlock,
 
     /// <summary>
-    /// The answerer could not be spawned and is not being routed to.
+    /// The answerer is not being routed to: it could not be spawned, or it has been retired.
     /// </summary>
     /// <remarks>
     /// Usually a repository that was deleted, moved, or renamed while its agent was still
-    /// registered. This is the one refusal that hands back no work, because there is none to
-    /// hand back — and saying so immediately is the point. Accepting the question instead
+    /// registered. It also covers a <c>retired</c> agent, which SPEC.md §14 says is not routed
+    /// to at all — the two are one refusal because the asker's correct response is identical,
+    /// and splitting them would disclose whether a peer was deliberately withdrawn or merely
+    /// broken, which is the operator's business rather than the asker's. This is the one
+    /// refusal that hands back no work, because there is none to hand back — and saying so
+    /// immediately is the point. Accepting the question instead
     /// would cost a full inactivity window before it orphaned unanswered, teaching the asker
     /// nothing and costing the same again on every retry. An asker seeing this should tell its
     /// principal, not try later.
     /// </remarks>
-    AnswererUnreachable
+    AnswererUnreachable,
+
+    /// <summary>
+    /// The question names a conversation that has already concluded.
+    /// </summary>
+    /// <remarks>
+    /// SPEC.md §5.0: a closed conversation stays closed. Closure is by consensus, so admitting
+    /// this would let one agent reopen a discussion everybody agreed was over — defeating the
+    /// poll, the decline veto and the silence rule at once. Like
+    /// <see cref="AnswererUnreachable"/> this hands back no work, and for the same reason: there
+    /// is none. What the asker should do is drop the identifier, or use a new one. A discussion
+    /// worth resuming is a new discussion, and identifiers cost nothing.
+    /// </remarks>
+    ConversationClosed,
+
+    /// <summary>
+    /// The asker has itself been retired, and may not open new exchanges.
+    /// </summary>
+    /// <remarks>
+    /// SPEC.md §14 says a retired agent is not routed to. Admitting its question would commit
+    /// the broker to breaking that: the answer is a message addressed to the asker, so every
+    /// exchange opened by a retired agent is a routing violation already scheduled. Refusing at
+    /// the point of asking is what keeps the rule from being one the broker undertakes to break
+    /// later.
+    /// </remarks>
+    /// <para>
+    /// Exchanges opened before retirement are left to finish rather than stranded. Retirement
+    /// is an operator's judgement about a repository, not a kill signal, and discarding work
+    /// already in flight would lose answers that peers had gone to the trouble of producing.
+    /// </para>
+    AskerRetired
 }
 
 /// <summary>
@@ -191,6 +225,31 @@ public sealed record OpenOutcome
     /// </remarks>
     public static OpenOutcome Unreachable() =>
         new(null, OpenRejection.AnswererUnreachable, [], []);
+
+    /// <summary>
+    /// Creates a refusal indicating the named conversation has concluded.
+    /// </summary>
+    /// <returns>A refusal carrying no work, because there is none.</returns>
+    /// <remarks>
+    /// The refusal states its reason, which SPEC.md §5.0 requires: an asker told only that its
+    /// question was refused would retry with the same identifier indefinitely, since nothing
+    /// about waiting reopens a concluded discussion.
+    /// </remarks>
+    public static OpenOutcome ConversationClosed() =>
+        new(null, OpenRejection.ConversationClosed, [], []);
+
+    /// <summary>
+    /// Creates a refusal indicating the asker has been retired.
+    /// </summary>
+    /// <returns>A refusal carrying no work, because there is none.</returns>
+    /// <remarks>
+    /// Distinct from <see cref="Unreachable"/>, which is about the peer, because the remedy is
+    /// different: an unreachable answerer means stop asking <em>this peer</em>, and this means
+    /// stop working. An agent seeing it should tell its principal that its registration has
+    /// been withdrawn.
+    /// </remarks>
+    public static OpenOutcome AskerRetired() =>
+        new(null, OpenRejection.AskerRetired, [], []);
 
     /// <summary>
     /// Creates a refusal indicating the question would deadlock.

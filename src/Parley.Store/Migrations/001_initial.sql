@@ -383,6 +383,19 @@ BEGIN
    WHERE EXISTS (SELECT 1 FROM messages WHERE exchange_id = NEW.id AND type = 'answer');
 END;
 
+-- SPEC.md section 5.0: a closed conversation stays closed. Closure is by consensus, so a
+-- single agent naming a concluded identifier would reopen the discussion unilaterally,
+-- defeating the poll, the decline veto and the silence rule together. The broker refuses this
+-- with a stated reason (OpenRejection.ConversationClosed); this is the backstop that covers
+-- every other path to an exchange row.
+CREATE TRIGGER tr_closed_conversation_stays_closed BEFORE INSERT ON exchanges
+WHEN NEW.conversation_id IS NOT NULL
+BEGIN
+  SELECT RAISE(ABORT, 'conversation is closed')
+   WHERE EXISTS (SELECT 1 FROM conversations
+                  WHERE id = NEW.conversation_id AND state = 'CLOSED');
+END;
+
 CREATE TRIGGER tr_open_pair_cap_resume BEFORE UPDATE ON exchanges
 WHEN NEW.state = 'OPEN' AND OLD.state <> 'OPEN'
 BEGIN
