@@ -38,8 +38,8 @@ public sealed class MessageRepositoryTests : IDisposable
 
         var exchanges = new ExchangeRepository(_connection);
         _exchangeId = exchanges
-            .TryOpenAsync(Orders, Billing, T0, TimeSpan.FromMinutes(15), TimeSpan.FromHours(4),
-                TimeSpan.FromHours(3), "q1", cancellationToken: TestContext.Current.CancellationToken)
+            .TryOpenAsync(Orders, Billing, T0, "q1",
+                cancellationToken: TestContext.Current.CancellationToken)
             .GetAwaiter().GetResult().Exchange!.Id;
 
         _messages = new MessageRepository(_connection);
@@ -50,8 +50,7 @@ public sealed class MessageRepositoryTests : IDisposable
     // so a test about conversations needs its own exchange rather than the shared fixture one.
     private async Task<long> OpenInConversation(string conversationId, string question) =>
         (await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, TimeSpan.FromMinutes(15), TimeSpan.FromHours(4),
-            TimeSpan.FromHours(3), question, conversationId,
+            Orders, Billing, T0, question, conversationId: conversationId,
             cancellationToken: TestContext.Current.CancellationToken)).Exchange!.Id;
 
     public void Dispose() => _connection.Dispose();

@@ -26,15 +26,6 @@ namespace Parley.Core;
 /// </remarks>
 public sealed class Exchange
 {
-    /// <summary>
-    /// The default number of clarification requests permitted before the broker forces an
-    /// answer of <see cref="Resolution.Unknown"/>.
-    /// </summary>
-    /// <remarks>
-    /// This value is a starting estimate and is expected to be tuned against real clarify
-    /// depth telemetry rather than argued about in advance.
-    /// </remarks>
-    public const int DefaultClarifyDepthCap = 3;
 
     private Exchange(
         long id,
@@ -275,20 +266,18 @@ public sealed class Exchange
     /// <param name="asker">The agent posing the question.</param>
     /// <param name="answerer">The agent expected to answer it.</param>
     /// <param name="nowUtc">The current instant, in UTC.</param>
-    /// <param name="deliveryWindow">The window allowed for the question to be picked up.</param>
-    /// <param name="workingWindow">The window allowed for an answer once it has been.</param>
-    /// <param name="gracePeriod">How long an orphan is kept before it is ghosted.</param>
-    /// <param name="clarifyDepthCap">
-    /// The clarification request limit. Defaults to <see cref="DefaultClarifyDepthCap"/>.
+    /// <param name="policy">
+    /// The terms to admit this exchange under, or <see langword="null"/> for
+    /// <see cref="ExchangePolicy.Default"/>. A resolved policy rather than the name of one:
+    /// selection belongs to the operator, and no parameter here should let an agent ask for a
+    /// longer window or a larger cap.
     /// </param>
     /// <returns>The newly opened exchange.</returns>
     /// <exception cref="ArgumentException">
     /// <paramref name="asker"/> and <paramref name="answerer"/> are the same agent.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// Any of <paramref name="deliveryWindow"/>, <paramref name="workingWindow"/> or
-    /// <paramref name="gracePeriod"/> is not positive, or <paramref name="clarifyDepthCap"/>
-    /// is negative.
+    /// <paramref name="policy"/> carries a value outside what storage will accept.
     /// </exception>
     /// <remarks>
     /// This constructs the aggregate only. Admission control — checking the pair slot is
@@ -300,23 +289,19 @@ public sealed class Exchange
         AgentName asker,
         AgentName answerer,
         DateTimeOffset nowUtc,
-        TimeSpan deliveryWindow,
-        TimeSpan workingWindow,
-        TimeSpan gracePeriod,
-        int clarifyDepthCap = DefaultClarifyDepthCap)
+        ExchangePolicy? policy = null)
     {
         if (asker == answerer)
         {
             throw new ArgumentException($"An agent cannot question itself ('{asker}').", nameof(answerer));
         }
 
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(deliveryWindow, TimeSpan.Zero);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(workingWindow, TimeSpan.Zero);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(gracePeriod, TimeSpan.Zero);
-        ArgumentOutOfRangeException.ThrowIfNegative(clarifyDepthCap);
+        var terms = policy ?? ExchangePolicy.Default;
+        terms.Validate();
 
         return new Exchange(
-            id, asker, answerer, deliveryWindow, workingWindow, gracePeriod, clarifyDepthCap, nowUtc);
+            id, asker, answerer, terms.DeliveryWindow, terms.WorkingWindow, terms.GracePeriod,
+            terms.ClarifyDepthCap, nowUtc);
     }
 
     /// <summary>

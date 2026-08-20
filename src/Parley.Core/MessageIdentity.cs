@@ -28,7 +28,7 @@ public static class MessageIdentity
     /// The window within which a byte-identical message is treated as a duplicate.
     /// </summary>
     /// <remarks>
-    /// A starting estimate, in the spirit of <see cref="Exchange.DefaultClarifyDepthCap"/>.
+    /// A starting estimate, in the spirit of <see cref="ExchangePolicy.Default"/>.
     /// It exists to absorb transport retries, not to police an agent repeating itself minutes
     /// later, and should be tuned against real traffic rather than argued about in advance.
     /// The storage backstop derives its bucket from this same number, so the two must move

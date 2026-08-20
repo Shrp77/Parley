@@ -26,16 +26,6 @@ namespace Parley.Store;
 /// </param>
 public sealed class ExchangeRepository(SqliteConnection connection)
 {
-    /// <summary>
-    /// The default limit on open exchanges from one agent to another.
-    /// </summary>
-    /// <remarks>
-    /// Directional, so a busy <c>orders to billing</c> cannot exhaust what <c>billing to
-    /// orders</c> may open: they are unrelated lines of enquiry, and coupling them would
-    /// refuse one for the sins of the other. The number is a starting estimate, like the
-    /// clarify depth cap, and is meant to be tuned against real traffic.
-    /// </remarks>
-    public const int DefaultOpenPairCap = 5;
 
     private const string SelectColumns =
         """
@@ -215,9 +205,6 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// <param name="asker">The agent posing the question.</param>
     /// <param name="answerer">The agent expected to answer it.</param>
     /// <param name="nowUtc">The current instant, in UTC.</param>
-    /// <param name="deliveryWindow">The window allowed for the question to be picked up.</param>
-    /// <param name="workingWindow">The window allowed for an answer once it has been.</param>
-    /// <param name="gracePeriod">How long the resulting orphan is kept before it is ghosted.</param>
     /// <param name="questionHash">
     /// Content identity for the question, which the distinctness index refuses to duplicate
     /// while an identical question is still open on this pair.
@@ -225,13 +212,9 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// <param name="conversationId">
     /// The discussion this exchange belongs to, or <see langword="null"/> if it stands alone.
     /// </param>
-    /// <param name="openPairCap">
-    /// The limit on open exchanges from this asker to this answerer. Directional, so the two
-    /// flows between a pair are independent.
-    /// </param>
-    /// <param name="clarifyDepthCap">
-    /// The clarification request limit. Defaults to
-    /// <see cref="Exchange.DefaultClarifyDepthCap"/>.
+    /// <param name="policy">
+    /// The terms to admit under, or <see langword="null"/> for
+    /// <see cref="ExchangePolicy.Default"/>. Resolved, never named.
     /// </param>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>
@@ -242,8 +225,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// <paramref name="asker"/> and <paramref name="answerer"/> are the same agent.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// A window or the grace period is not positive, or <paramref name="clarifyDepthCap"/> is
-    /// negative.
+    /// <paramref name="policy"/> carries a value outside what storage will accept.
     /// </exception>
     /// <remarks>
     /// <para>
@@ -271,13 +253,9 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         AgentName asker,
         AgentName answerer,
         DateTimeOffset nowUtc,
-        TimeSpan deliveryWindow,
-        TimeSpan workingWindow,
-        TimeSpan gracePeriod,
         string questionHash,
+        ExchangePolicy? policy = null,
         string? conversationId = null,
-        int clarifyDepthCap = Exchange.DefaultClarifyDepthCap,
-        int openPairCap = DefaultOpenPairCap,
         CancellationToken cancellationToken = default)
     {
         if (asker == answerer)
@@ -286,10 +264,13 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(questionHash);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(deliveryWindow, TimeSpan.Zero);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(workingWindow, TimeSpan.Zero);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(gracePeriod, TimeSpan.Zero);
-        ArgumentOutOfRangeException.ThrowIfNegative(clarifyDepthCap);
+
+        // A resolved policy, never the name of one. Selection belongs to the operator: the two
+        // caps are controls rather than tuning knobs, and a control the controlled party
+        // chooses is not a control. There is deliberately no parameter here an agent-facing
+        // path could smuggle a policy name through.
+        var terms = policy ?? ExchangePolicy.Default;
+        terms.Validate();
 
         // Synchronous BeginTransaction, deliberately. The async overloads do not expose the
         // deferred flag, and getting IMMEDIATE is the whole point here. Beginning a
@@ -351,7 +332,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
 
         // The cap bounds volume, which distinctness does not: five different questions are
         // five context loads for the peer whether or not any of them repeats.
-        if (outstanding.Count >= openPairCap)
+        if (outstanding.Count >= terms.OpenPairCap)
         {
             return OpenOutcome.PairSaturated(outstanding);
         }
@@ -381,7 +362,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                     cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
 
-        var expires = nowUtc + deliveryWindow;
+        var expires = nowUtc + terms.DeliveryWindow;
         var id = await _connection.ExecuteScalarAsync<long>(
             new CommandDefinition(
                 """
@@ -401,11 +382,11 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                     PairKey = pairKey.Value,
                     Asker = asker.Value,
                     Answerer = answerer.Value,
-                    Cap = clarifyDepthCap,
-                    OpenPairCap = openPairCap,
-                    DeliveryWindowMs = (long)deliveryWindow.TotalMilliseconds,
-                    WorkingWindowMs = (long)workingWindow.TotalMilliseconds,
-                    GracePeriodMs = (long)gracePeriod.TotalMilliseconds,
+                    Cap = terms.ClarifyDepthCap,
+                    OpenPairCap = terms.OpenPairCap,
+                    DeliveryWindowMs = (long)terms.DeliveryWindow.TotalMilliseconds,
+                    WorkingWindowMs = (long)terms.WorkingWindow.TotalMilliseconds,
+                    GracePeriodMs = (long)terms.GracePeriod.TotalMilliseconds,
                     OpenedUtc = ExchangeRow.FormatTimestamp(nowUtc),
                     ExpiresUtc = ExchangeRow.FormatTimestamp(expires),
                     QuestionHash = questionHash,
@@ -419,8 +400,8 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         return OpenOutcome.Opened(
             Exchange.Rehydrate(
                 id, asker, answerer, answerer, ExchangeState.Open,
-                0, clarifyDepthCap, deliveryWindow, workingWindow, gracePeriod,
-                nowUtc, expires, null, null, false, null));
+                0, terms.ClarifyDepthCap, terms.DeliveryWindow, terms.WorkingWindow,
+                terms.GracePeriod, nowUtc, expires, null, null, false, null));
     }
 
     /// <summary>

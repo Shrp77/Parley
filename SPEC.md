@@ -559,6 +559,26 @@ independent, so a busy `orders → billing` cannot exhaust what `billing → ord
 they are unrelated lines of enquiry and coupling them would refuse one for the sins of the
 other.
 
+**The cap is operator policy, and an agent never selects it.** Neither cap in this
+specification is a tuning knob. This one exists because terseness is a security control, and
+the clarification cap in §8 exists because two models will refine a question toward mutual
+precision indefinitely. A control the controlled party chooses is not a control, so an
+operation that let an asker name a longer window or a larger allowance would defeat both while
+looking like configuration.
+
+Concretely: admission takes a **resolved** set of terms, never the name of one. A deployment
+may define several named policies and map agents to them — an agent whose answers require a
+full end-to-end suite genuinely needs a longer working window than one answering from a
+contracts directory — but that mapping is manifest configuration, resolved before any
+agent-facing path is reached. There is deliberately no parameter through which a policy name
+could travel inward.
+
+Every value is stamped on the exchange at admission and never read from configuration again.
+That is what makes an exchange reproduce its own behaviour: an operator changing a number must
+not reach back and re-time work already in flight. Lengthening the grace period would otherwise
+revive orphans already past the old one, and shortening it would ghost a batch of live ones at
+once.
+
 **Distinctness.** A Question whose content matches one already open between the same two
 agents is refused, and the refusal returns the exchange already carrying it.
 

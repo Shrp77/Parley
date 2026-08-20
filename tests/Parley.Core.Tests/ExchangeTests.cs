@@ -12,8 +12,15 @@ public sealed class ExchangeTests
     private static readonly TimeSpan Working = TimeSpan.FromHours(4);
     private static readonly TimeSpan Grace = TimeSpan.FromHours(3);
 
-    private static Exchange OpenExchange(int clarifyCap = Exchange.DefaultClarifyDepthCap) =>
-        Exchange.Open(1, Orders, Billing, T0, Delivery, Working, Grace, clarifyCap);
+    private static readonly ExchangePolicy Policy = ExchangePolicy.Default with
+    {
+        DeliveryWindow = Delivery,
+        WorkingWindow = Working,
+        GracePeriod = Grace
+    };
+
+    private static Exchange OpenExchange(int clarifyCap = 3) =>
+        Exchange.Open(1, Orders, Billing, T0, Policy with { ClarifyDepthCap = clarifyCap });
 
     [Fact]
     public void Opens_with_answerer_owing()
@@ -166,6 +173,6 @@ public sealed class ExchangeTests
     [Fact]
     public void Self_questioning_is_rejected()
     {
-        Assert.Throws<ArgumentException>(() => Exchange.Open(1, Orders, Orders, T0, Delivery, Working, Grace));
+        Assert.Throws<ArgumentException>(() => Exchange.Open(1, Orders, Orders, T0, Policy));
     }
 }
