@@ -159,8 +159,8 @@ remember, because remembering is the thing that failed.
 
 ## 5. Message types
 
-Four types. No others — agents do not engage in social conversation, and every
-additional type is a new way to waste tokens.
+Four an agent may send. No others — agents do not engage in social conversation, and
+every additional type is a new way to waste tokens.
 
 | Type | Opens exchange | Expects reply | Direction |
 |---|---|---|---|
@@ -168,6 +168,25 @@ additional type is a new way to waste tokens.
 | **Clarify** | No | Yes | flips `owed_by` within exchange |
 | **Answer** | No (closes it) | No | answerer → asker |
 | **Notify** | No | No | any → any |
+
+And one only the broker writes:
+
+| Type | Opens exchange | Expects reply | Direction |
+|---|---|---|---|
+| **Ghost** | No (already closed) | No | broker → asker |
+
+A **Ghost** is §14's notice that no answer is coming. It is not a fifth thing an agent can
+say, and no agent operation produces one: a broker MUST refuse to store a Ghost that does not
+record `parley:broker` as its responder (§11.3), which is enforceable because the *type* is
+something no agent operation sets — unlike responder identity, which §11.3 explains the
+storage layer cannot attribute on its own.
+
+It needs a type of its own because none of the other four can carry it. An **Answer** cannot:
+a ghost asserts that nobody answered, so the invariant that a ghosted exchange holds no Answer
+would be false the moment the notice was written. A **Notify** cannot: it names no exchange,
+and the asker needs to know which question died. The alternative — relaxing one of those two
+rules for messages that claim to be the broker's — would make an integrity invariant depend on
+a value §11.3 is explicit that storage cannot attribute.
 
 ### 5.0 Conversations
 
@@ -1038,7 +1057,11 @@ CREATE TABLE messages (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   exchange_id     INTEGER REFERENCES exchanges(id),  -- NULL for Notify
   type            TEXT    NOT NULL
-                  CHECK (type IN ('question', 'clarify', 'answer', 'notify')),
+                  -- Four an agent may send, and one only the broker writes: 'ghost' is §14's
+                  -- notice that no answer is coming. It needs a type of its own because none of
+                  -- the other four can carry it — an 'answer' is refused on a ghosted exchange
+                  -- by tr_ghost_needs_no_answer, and a 'notify' may not name an exchange.
+                  CHECK (type IN ('question', 'clarify', 'answer', 'notify', 'ghost')),
   from_agent      TEXT    NOT NULL REFERENCES agents(name),
   to_agent        TEXT    NOT NULL REFERENCES agents(name),
   responder_model TEXT    NOT NULL,       -- see §11.3
@@ -1160,6 +1183,26 @@ END;
 -- this trigger preempts the json_valid CHECK below and reports a referral problem for a
 -- message that has no referral, only broken syntax. A trigger should not answer for a
 -- constraint that exists to answer for itself.
+-- A ghost is the broker's, and this is the one place authorship can be enforced rather than
+-- trusted. SPEC.md 11.3 is explicit that responder_model cannot distinguish the broker writing
+-- its own name from the broker faithfully recording an adapter that supplied it, because every
+-- row is written by the broker either way. That argument is about the value; it does not apply
+-- to the type, which no agent operation can set. So the type gates the write and the check ties
+-- the two together: a 'ghost' must carry the broker's attribution, and nothing else may.
+CREATE TRIGGER tr_ghost_is_the_brokers BEFORE INSERT ON messages
+WHEN NEW.type = 'ghost'
+BEGIN
+  SELECT RAISE(ABORT, 'a ghost message must record parley:broker as its responder')
+   WHERE NEW.responder_model <> 'parley:broker';
+END;
+
+-- The converse does not hold and must not be added. 'parley:broker' is also what a forced
+-- 'unknown' records when the clarify cap breaks (SPEC.md 7, 11.3, 15), which is an 'answer' the
+-- broker writes -- so a trigger reserving the attribution for ghosts would refuse the other
+-- broker-authored message the protocol already has. That an adapter cannot claim the namespace
+-- is enforced where 11.3 says it must be, at the point adapter-supplied values enter the broker,
+-- because every row here is written by the broker either way and the column cannot see which.
+
 CREATE TRIGGER tr_referral_targets_exist BEFORE INSERT ON messages
 WHEN json_valid(NEW.payload_json)
 BEGIN
@@ -2036,10 +2079,27 @@ nobody answered, and if the question still matters after that it deserves a fres
 possibly of a peer that exists. It is also the ordinary mechanism, not a special case, since
 every closed exchange releases the same way.
 
-**Ghosting is attributed to the broker.** The closing message records `parley:broker` as its
-responder (§11.3), because §13's envelope renders responder identity on every delivered
-message and an unattributed close would leave the asker unable to tell a broker-authored
-answer from a peer's. It also keeps the distinction visible in the log, which §15 depends on.
+**Ghosting is attributed to the broker.** The notice records `parley:broker` as its responder
+(§11.3), because §13's envelope renders responder identity on every delivered message and an
+unattributed close would leave the asker unable to tell a broker-authored answer from a peer's.
+It also keeps the distinction visible in the log, which §15 depends on.
+
+It is a message of type **Ghost** (§5), not an Answer, and it is `from` the agent that never
+answered — `from_agent` names a registered agent and the broker is not one, so the broker's
+identity travels in the responder, which is the field §11.3 gives that job and §13 renders.
+
+**The close and the notice are one write.** A broker MUST NOT commit one without the other.
+An exchange is ghostable exactly once: if the close committed and the notice did not, no later
+sweep would revisit it — the exchange is no longer orphaned — and the asker would wait for a
+message nothing will ever write again. Silence is the single outcome this section exists to
+prevent, so it must not be reachable by a crash between two statements.
+
+**The notice is trimmed rather than dropped.** It carries the asker's `intent`,
+`sub_questions` and `consequences`, and those can exceed the message cap of rule 8.5 once the
+broker's own text is added. A notice that cannot be stored is a notice nobody receives, so a
+broker MUST shorten it rather than fail: `sub_questions` first, then `intent`, keeping
+`consequences` — which is the field this section already identifies as the one that makes the
+reply actionable — and always keeping the statement that nobody answered.
 
 **Staleness guard.** A resumed agent's understanding of its repository is stale if
 commits landed while it was offline. Adapters SHOULD inject a change summary since

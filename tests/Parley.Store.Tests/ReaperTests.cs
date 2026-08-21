@@ -35,7 +35,7 @@ public sealed class ReaperTests : IDisposable
         }
 
         _exchanges = new ExchangeRepository(_connection);
-        _reaper = new Reaper(_exchanges);
+        _reaper = new Reaper(_exchanges, new MessageRepository(_connection), _connection);
     }
 
     public void Dispose() => _connection.Dispose();
@@ -277,6 +277,10 @@ public sealed class ReaperTests : IDisposable
     [Fact]
     public void A_reaper_needs_a_repository()
     {
-        Assert.Throws<ArgumentNullException>(() => new Reaper(null!));
+        Assert.Throws<ArgumentNullException>(
+            () => new Reaper(null!, new MessageRepository(_connection), _connection));
+        Assert.Throws<ArgumentNullException>(() => new Reaper(_exchanges, null!, _connection));
+        Assert.Throws<ArgumentNullException>(
+            () => new Reaper(_exchanges, new MessageRepository(_connection), null!));
     }
 }

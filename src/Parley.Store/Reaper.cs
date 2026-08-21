@@ -1,3 +1,4 @@
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 
 namespace Parley.Store;
@@ -33,10 +34,94 @@ namespace Parley.Store;
 /// </para>
 /// </remarks>
 /// <param name="exchanges">The repository to sweep.</param>
-public sealed class Reaper(ExchangeRepository exchanges)
+/// <param name="messages">Where the ghost notice of SPEC.md §14 is written.</param>
+/// <param name="connection">The connection, for the transaction a ghost is written under.</param>
+public sealed class Reaper(
+    ExchangeRepository exchanges,
+    MessageRepository messages,
+    SqliteConnection connection)
 {
+    /// <summary>
+    /// What SPEC.md §11.3 reserves for the broker's own attributions.
+    /// </summary>
+    private const string BrokerResponder = "parley:broker";
+
     private readonly ExchangeRepository _exchanges =
         exchanges ?? throw new ArgumentNullException(nameof(exchanges));
+
+    private readonly MessageRepository _messages =
+        messages ?? throw new ArgumentNullException(nameof(messages));
+
+    private readonly SqliteConnection _connection =
+        connection ?? throw new ArgumentNullException(nameof(connection));
+
+    /// <summary>
+    /// Closes an exchange as ghosted and tells its asker, in one transaction.
+    /// </summary>
+    /// <param name="exchange">The exchange, already transitioned in memory.</param>
+    /// <param name="nowUtc">The instant of the close.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true"/> if it was closed and the notice written.</returns>
+    /// <remarks>
+    /// <para>
+    /// SPEC.md §14 has ghosting close the exchange <em>and</em> tell the asker that no answer is
+    /// coming. The two are one write for a reason that is not tidiness: the notice is what makes
+    /// ghosting non-destructive, and an exchange is ghostable exactly once. If the close
+    /// committed and the notice did not, nothing would ever retry — the exchange is no longer
+    /// orphaned, so the next sweep passes over it, and the asker waits for a message that will
+    /// never be written now. Silence is the one outcome §14 exists to prevent.
+    /// </para>
+    /// <para>
+    /// The notice is written first so that the trigger asserting a ghost carries no answer sees
+    /// what it is meant to see. It fires on the exchange update and looks for a message of type
+    /// <c>answer</c>; a ghost is a type of its own precisely so that this ordering is a detail
+    /// rather than a loophole.
+    /// </para>
+    /// <para>
+    /// A refused save means another writer changed the exchange between the scan and here —
+    /// usually because it was answered after all — and rolling back takes the notice with it, so
+    /// the asker is not told nobody answered by the same sweep that lost the race to somebody
+    /// answering.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> GhostAsync(
+        Exchange exchange, DateTimeOffset nowUtc, CancellationToken cancellationToken)
+    {
+        using var scope = WriteScope.Begin(_connection, ambient: null);
+
+        var question = await _messages
+            .GetQuestionAsync(exchange.Id, cancellationToken).ConfigureAwait(false);
+
+        await _messages.AppendAsync(
+            exchange.Id,
+            MessageType.Ghost,
+            // From the agent that owed the answer, because from_agent names a registered agent
+            // and the broker is not one — §11.3 puts the broker's identity in the responder,
+            // which is what the envelope renders and what §15 counts.
+            exchange.Answerer,
+            exchange.Asker,
+            BrokerResponder,
+            GhostNotice.For(exchange.Answerer, question?.PayloadJson),
+            nowUtc,
+            // Taken from the question rather than reconstructed, because messages carry a copy
+            // of their exchange's conversation held in agreement by a composite foreign key
+            // (§9.2). Reading the copy is how the notice lands in the same discussion without a
+            // second opinion about which one that is.
+            question?.ConversationId,
+            scope.Transaction,
+            cancellationToken).ConfigureAwait(false);
+
+        if (!await _exchanges
+                .SaveAsync(exchange, transaction: scope.Transaction,
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        scope.Complete();
+        return true;
+    }
 
     /// <summary>
     /// Orphans every open exchange whose deadline has passed.
@@ -144,8 +229,7 @@ public sealed class Reaper(ExchangeRepository exchanges)
                 continue;
             }
 
-            if (await _exchanges.SaveAsync(exchange, cancellationToken: cancellationToken)
-                .ConfigureAwait(false))
+            if (await GhostAsync(exchange, nowUtc, cancellationToken).ConfigureAwait(false))
             {
                 ghosted++;
             }

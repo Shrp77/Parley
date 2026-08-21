@@ -88,7 +88,7 @@ public sealed class Broker
         _exchanges = new ExchangeRepository(connection);
         _messages = new MessageRepository(connection);
         _conversations = new ConversationRepository(connection);
-        _reaper = new Reaper(_exchanges);
+        _reaper = new Reaper(_exchanges, _messages, connection);
     }
 
     /// <summary>

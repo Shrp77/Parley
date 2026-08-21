@@ -143,6 +143,7 @@ public static class MessageIdentity
         MessageType.Clarify => "clarify",
         MessageType.Answer => "answer",
         MessageType.Notify => "notify",
+        MessageType.Ghost => "ghost",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
     };
 
@@ -161,6 +162,7 @@ public static class MessageIdentity
         "clarify" => MessageType.Clarify,
         "answer" => MessageType.Answer,
         "notify" => MessageType.Notify,
+        "ghost" => MessageType.Ghost,
         _ => throw new InvalidOperationException($"Unrecognised message type '{value}'.")
     };
 }

@@ -166,29 +166,25 @@ inactivity window to learn nothing. The seven agent operations of §10.1 are bui
 reachable over MCP, and two servers on one database hold a question and an answer between
 them. A question asked while the recipient's session is closed waits for that agent rather
 than being released when it opens one — the attach sequence of §14 releases only what an
-agent has actually been handed. The domain layer has no I/O and no package dependencies, and its tests
+agent has actually been handed. A question nobody ever answers ends by telling the asker so,
+carrying its own stated consequences back — so "ask and do not block" holds in the case where
+nothing arrives, which is the case an agent most needs to hear about. The domain layer has no I/O and no package dependencies, and its tests
 do not reference the storage assembly — the absent dependency is checked by the build
 rather than left as a convention. The protocol's invariants are enforced by schema
 constraints rather than by the code that calls them.
 
 **Next, in order.**
 
-1. **The ghost reply.** SPEC §14 has ghosting close an exchange *and tell the asker that no
-   answer is coming*, handing back the asker's own `intent`, `sub_questions` and
-   `consequences` so the reply is actionable rather than merely informative. The broker
-   ghosts correctly and writes no reply, so an asker whose peer never answered is told
-   nothing — the exchange ends, and the agent waiting on it never finds out. The spec is
-   right here and the code is behind it; this is the first thing to fix.
-2. **Operator console.** `export`, `prune`, `retire`, `reinstate` — SPEC §10.2. The
+1. **Operator console.** `export`, `prune`, `retire`, `reinstate` — SPEC §10.2. The
    broker marks an unreachable agent and stops routing to it, but never resolves what is
    already outstanding: that is an operator's decision, because a deleted repository is
    often a re-clone away from returning. Those exchanges currently wait.
-3. **Retention pruning.** The sweep orphans expired exchanges and ghosts them; it does
+2. **Retention pruning.** The sweep orphans expired exchanges and ghosts them; it does
    not yet apply the retention policy that keeps the message log from becoming the
    shared context store Parley is not.
-4. **Closure by silence.** The poll of §5.0 concludes when everyone agrees; the timeout
+3. **Closure by silence.** The poll of §5.0 concludes when everyone agrees; the timeout
    that makes silence count as assent is not wired to the sweep yet.
-5. **Per-sender rate limits.** The last unbuilt control in SPEC §13. Volume between a
+4. **Per-sender rate limits.** The last unbuilt control in SPEC §13. Volume between a
    pair is already bounded by the state machine — one open exchange per pair, a
    clarification cap — so this is really about `Notify`, which has no such guard.
 
