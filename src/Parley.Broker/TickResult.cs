@@ -1,4 +1,4 @@
-using Parley.Store;
+﻿using Parley.Store;
 
 namespace Parley.Broker;
 
@@ -18,8 +18,4 @@ namespace Parley.Broker;
 /// much as from any exchange. A single record would have made <c>Reaper</c> the place both
 /// were implemented, which is how a type acquires a second reason to change.
 /// </remarks>
-public sealed record TickResult(ReapResult Exchanges, int ConversationsConcluded)
-{
-    /// <summary>A tick that found nothing to do.</summary>
-    public static TickResult Nothing { get; } = new(ReapResult.Nothing, 0);
-}
+public sealed record TickResult(ReapResult Exchanges, int ConversationsConcluded);

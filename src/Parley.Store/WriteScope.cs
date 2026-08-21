@@ -53,9 +53,18 @@ public sealed class WriteScope : IDisposable
 
     /// <summary>Gets the transaction the work runs in, owned or borrowed.</summary>
     /// <value>
-    /// Pass this to every command issued inside the scope. Microsoft.Data.Sqlite refuses a
-    /// command with no transaction while one is open on the connection, so an unpassed
-    /// transaction is a run-time failure rather than a silently unguarded read.
+    /// Pass this to every command issued inside the scope — but not because forgetting would
+    /// fail. An earlier version of this comment claimed Microsoft.Data.Sqlite refuses a command
+    /// that carries no transaction while one is open, and a probe showed otherwise: the command
+    /// runs, joins the connection's transaction anyway, and is rolled back with it. That is the
+    /// safe direction, and it is worth stating accurately rather than leaving a warning nobody
+    /// can act on.
+    /// <para>
+    /// What the parameter actually buys is that the intent is visible where the query is, so a
+    /// reviewer can see which reads a decision was made against without tracing the call stack
+    /// to find out whether a transaction happened to be open. The load-bearing part of this type
+    /// is <see cref="Begin"/>'s own-or-borrow decision, not the pass-through.
+    /// </para>
     /// </value>
     public SqliteTransaction Transaction { get; }
 

@@ -38,6 +38,7 @@ public sealed class ClosurePollTests : IDisposable
     private readonly AgentRepository _agents;
     private readonly ConversationRepository _conversations;
     private readonly Broker _broker;
+    private readonly OperatorConsole _operator;
 
     public ClosurePollTests()
     {
@@ -55,6 +56,10 @@ public sealed class ClosurePollTests : IDisposable
         _conversations = new ConversationRepository(_connection);
         _broker = new Broker(_connection, BrokerOptions.Default);
         _broker.StartAsync(T0, TestContext.Current.CancellationToken).GetAwaiter().GetResult();
+
+        // SPEC.md §10.2 lives on its own type, so a broker handed to an adapter carries no
+        // operator operation an agent's tool set could be wired to.
+        _operator = new OperatorConsole(_connection);
     }
 
     public void Dispose() => _connection.Dispose();
@@ -495,6 +500,69 @@ public sealed class ClosurePollTests : IDisposable
     }
 
     [Fact]
+    public async Task A_vote_against_a_concluded_discussion_is_not_recorded()
+    {
+        // Found by probe. It changes no state — closure is terminal — so nothing visibly broke,
+        // which is what made it worth catching: the row was written, and it then read as a
+        // participant declining a closure that had already happened. The log is what an operator
+        // reads when something has gone wrong, and a stored contradiction is worse there than a
+        // refused write.
+        await Ask(Orders, Billing);
+        await Conclude(Orders, finished: true);
+        await Conclude(Billing, finished: true, at: T0.AddMinutes(6));
+
+        var recorded = await _conversations.RecordVoteAsync(
+            Conversation, Billing, Vote.NotDone, T0.AddMinutes(7),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.False(recorded);
+        Assert.Equal(ConversationState.Closed, await StateAsync());
+    }
+
+    [Fact]
+    public async Task A_reinstated_agent_gets_its_judgement_back()
+    {
+        // The counterpart to a decline lapsing. §5.0 lapses it because a judgement is only worth
+        // honouring while the agent that made it can still act on it — and after an operator
+        // reinstates the agent, it can. The vote row survives retirement precisely so this works
+        // without the agent being asked again.
+        await Ask(Orders, Billing);
+        await Conclude(Orders, finished: true);
+        await Conclude(Billing, finished: false, at: T0.AddMinutes(6));
+
+        await _agents.RetireAsync(Billing, TestContext.Current.CancellationToken);
+        await _agents.ReinstateAsync(Billing, TestContext.Current.CancellationToken);
+
+        var swept = await _broker.TickAsync(
+            T0.AddDays(1), TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, swept.ConversationsConcluded);
+        Assert.Equal(ConversationState.Closing, await StateAsync());
+    }
+
+    [Fact]
+    public async Task A_poll_in_one_conversation_does_not_touch_another()
+    {
+        // Overlapping membership is ordinary — orders is in both. If a poll stamped across
+        // conversations, an agent's silence in one would assent in the other, which is a vote it
+        // never cast on a discussion it was never asked about.
+        await Ask(Orders, Billing);
+        await _broker.AskAsync(
+            Orders, Inventory, Model, Question("which ledger owns stock?"), T0.AddMinutes(2),
+            "shipping", TestContext.Current.CancellationToken);
+
+        await Conclude(Orders, finished: true, at: T0.AddMinutes(3));
+
+        var other = await _conversations.GetAsync(
+            "shipping", cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(ConversationState.Open, other!.State);
+
+        var inventoryInbox = await _broker.DrainInboxAsync(
+            Inventory, T0.AddMinutes(4), cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Empty(inventoryInbox.ClosurePolls);
+    }
+
+    [Fact]
     public async Task Voiding_cannot_reopen_a_conversation_that_concluded()
     {
         // Closure is terminal. New activity is what voids a poll, and new activity is refused on
@@ -559,6 +627,95 @@ public sealed class ClosurePollTests : IDisposable
         var busy = await _broker.DrainInboxAsync(
             Billing, T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken);
         Assert.False(busy.IsEmpty);
+    }
+
+    [Fact]
+    public async Task An_operator_can_end_a_discussion_a_decline_has_blocked()
+    {
+        // The escape hatch of §10.2, and the reason it is not optional: a decline blocks
+        // indefinitely, and the agent holding it may simply be wrong. Without this the poll
+        // introduces a state nothing can resolve — TickAsync will not conclude over an
+        // objection, and a decline only lapses if its holder is retired or goes unreachable.
+        await Ask(Orders, Billing);
+        await Conclude(Orders, finished: true);
+        await Conclude(Billing, finished: false, at: T0.AddMinutes(6));
+
+        await _broker.TickAsync(T0.AddDays(1), TestContext.Current.CancellationToken);
+        Assert.Equal(ConversationState.Closing, await StateAsync());
+
+        var forced = await _operator.ForceConcludeAsync(
+            Conversation, T0.AddDays(1), TestContext.Current.CancellationToken);
+
+        Assert.True(forced);
+        Assert.Equal(ConversationState.Closed, await StateAsync());
+    }
+
+    [Fact]
+    public async Task An_operator_can_end_a_discussion_nobody_proposed_closing()
+    {
+        // Not restricted to a poll in progress. An operator ending a discussion should not have
+        // to find an agent willing to propose closure first, or the escape hatch would depend on
+        // the machinery it exists to escape.
+        await Ask(Orders, Billing);
+        Assert.Equal(ConversationState.Open, await StateAsync());
+
+        Assert.True(await _operator.ForceConcludeAsync(
+            Conversation, T0.AddMinutes(5), TestContext.Current.CancellationToken));
+
+        Assert.Equal(ConversationState.Closed, await StateAsync());
+    }
+
+    [Fact]
+    public async Task A_forced_closure_takes_an_outstanding_poll_out_of_the_inbox()
+    {
+        // The poll is derived from the conversation being in the polling state, not stored as a
+        // pending item, so ending the discussion has to end the question with it. An agent left
+        // holding a closure poll for a concluded conversation would answer a question that no
+        // longer exists — and its vote is refused once closed, so it would never stop asking.
+        await Ask(Orders, Billing);
+        await Conclude(Orders, finished: true);
+
+        var before = await _broker.DrainInboxAsync(
+            Billing, T0.AddMinutes(6), cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Single(before.ClosurePolls);
+
+        await _operator.ForceConcludeAsync(
+            Conversation, T0.AddMinutes(7), TestContext.Current.CancellationToken);
+
+        var after = await _broker.DrainInboxAsync(
+            Billing, T0.AddMinutes(8), cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Empty(after.ClosurePolls);
+    }
+
+    [Fact]
+    public async Task Forcing_a_conversation_that_already_concluded_changes_nothing()
+    {
+        await Ask(Orders, Billing);
+        await Conclude(Orders, finished: true);
+        await Conclude(Billing, finished: true, at: T0.AddMinutes(6));
+
+        var again = await _operator.ForceConcludeAsync(
+            Conversation, T0.AddDays(1), TestContext.Current.CancellationToken);
+
+        Assert.False(again);
+
+        // The original instant survives, so the log still says when the participants agreed
+        // rather than when somebody last called this.
+        var record = await _conversations.GetAsync(
+            Conversation, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(T0.AddMinutes(6), record!.ClosedUtc);
+    }
+
+    [Fact]
+    public async Task A_forced_closure_refuses_further_questions_like_any_other()
+    {
+        await Ask(Orders, Billing);
+        await _operator.ForceConcludeAsync(
+            Conversation, T0.AddMinutes(5), TestContext.Current.CancellationToken);
+
+        var refused = await Ask(Orders, Inventory, "which ledger owns stock?", at: T0.AddMinutes(6));
+
+        Assert.Equal(OpenRejection.ConversationClosed, refused.Rejection);
     }
 
     [Fact]

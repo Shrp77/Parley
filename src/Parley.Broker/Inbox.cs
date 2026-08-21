@@ -1,4 +1,4 @@
-using Parley.Core;
+﻿using Parley.Core;
 using Parley.Store;
 
 namespace Parley.Broker;
@@ -31,9 +31,6 @@ public sealed record Inbox(
     IReadOnlyList<Message> Messages,
     IReadOnlyList<ClosurePoll> ClosurePolls)
 {
-    /// <summary>An empty inbox.</summary>
-    public static Inbox Empty { get; } = new([], []);
-
     /// <summary>
     /// Gets a value indicating whether there is anything here to act on.
     /// </summary>

@@ -311,6 +311,13 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// too; doing it in the <c>WHERE</c> clause means the refusal is a <see langword="false"/>
     /// return rather than a constraint violation the caller has to interpret.
     /// <para>
+    /// Refuses a conversation that is not polling, for the same reason and one found later. A
+    /// vote against a concluded discussion changes no state — closure is terminal — but it is
+    /// recorded, and the row then says a participant declined a closure that had already
+    /// happened. The log is what an operator reads when something has gone wrong, so a stored
+    /// contradiction is worse than a refused write. The trigger in §9.3 is the backstop.
+    /// </para>
+    /// <para>
     /// A later vote overwrites an earlier one. An agent that declined and has since been
     /// satisfied must be able to say so, and §5.0's re-ask makes that the ordinary path rather
     /// than an edge case.
@@ -333,7 +340,9 @@ public sealed class ConversationRepository(SqliteConnection connection)
                    SET vote = @Vote, voted_utc = @When
                  WHERE conversation_id = @Conversation
                    AND agent = @Agent
-                   AND polled_utc IS NOT NULL;
+                   AND polled_utc IS NOT NULL
+                   AND EXISTS (SELECT 1 FROM conversations
+                                WHERE id = @Conversation AND state = 'CLOSING');
                 """,
                 new
                 {
@@ -435,6 +444,52 @@ public sealed class ConversationRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         scope.Complete();
+        return closed > 0;
+    }
+
+    /// <summary>
+    /// Closes a conversation regardless of its participants' votes.
+    /// </summary>
+    /// <param name="conversationId">The discussion to end.</param>
+    /// <param name="nowUtc">The instant of closure.</param>
+    /// <param name="transaction">
+    /// A transaction to enlist in, or <see langword="null"/> to run on its own. Present for the
+    /// same reason as on every other write here: an operator surface that ends a discussion will
+    /// eventually want to do something else in the same breath.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true"/> if this call closed it.</returns>
+    /// <remarks>
+    /// SPEC.md §10.2's <c>force_conclude</c>, and an operator operation only — see
+    /// <c>Broker.ForceConcludeAsync</c> for why it is named apart from the agent-facing one.
+    /// Matching on <c>state &lt;&gt; 'CLOSED'</c> rather than on <c>'CLOSING'</c> is deliberate:
+    /// an operator ending a discussion should not have to wait for somebody to propose closure
+    /// first, and a closure that is already recorded is left with its original instant rather
+    /// than being restamped.
+    /// </remarks>
+    public async Task<bool> ForceConcludeAsync(
+        string conversationId,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        var closed = await _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                UPDATE conversations
+                   SET state = 'CLOSED', closed_utc = @When
+                 WHERE id = @Conversation AND state <> 'CLOSED';
+                """,
+                new
+                {
+                    Conversation = conversationId,
+                    When = ExchangeRow.FormatTimestamp(nowUtc)
+                },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
         return closed > 0;
     }
 
