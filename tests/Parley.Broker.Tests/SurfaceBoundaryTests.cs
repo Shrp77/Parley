@@ -72,6 +72,30 @@ public sealed class SurfaceBoundaryTests
     }
 
     [Fact]
+    public void The_console_exposes_no_operation_it_has_not_declared()
+    {
+        // The same discipline as the broker's surface, applied to the other side of §10.2. What
+        // it buys is that adding an operator operation is a decision about which side of the
+        // boundary it belongs on, rather than a question of which class the method was already
+        // in — and this list is where the answer gets written down.
+        //
+        // prune is absent because §9.4's retention policy is not built. A command that applied
+        // nothing immediately would be worse than one honestly missing.
+        string[] declared =
+        [
+            nameof(OperatorConsole.ForceConcludeAsync),
+            nameof(OperatorConsole.RetireAsync),
+            nameof(OperatorConsole.ReinstateAsync),
+            nameof(OperatorConsole.DescribeAgentsAsync),
+            nameof(OperatorConsole.ExportAsync)
+        ];
+
+        var unexpected = PublicMethodsOf(typeof(OperatorConsole)).Where(n => !declared.Contains(n));
+
+        Assert.Empty(unexpected);
+    }
+
+    [Fact]
     public void No_operator_operation_is_reachable_from_the_broker()
     {
         // The specific mistake §10.2 describes: an adapter binds the wrong one, the signatures

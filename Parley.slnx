@@ -16,12 +16,14 @@
     <Project Path="src/Parley.Store/Parley.Store.csproj" />
     <Project Path="src/Parley.Broker/Parley.Broker.csproj" />
     <Project Path="src/Parley.Mcp/Parley.Mcp.csproj" />
+    <Project Path="src/Parley.Cli/Parley.Cli.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Parley.Core.Tests/Parley.Core.Tests.csproj" />
     <Project Path="tests/Parley.Store.Tests/Parley.Store.Tests.csproj" />
     <Project Path="tests/Parley.Broker.Tests/Parley.Broker.Tests.csproj" />
     <Project Path="tests/Parley.Mcp.Tests/Parley.Mcp.Tests.csproj" />
+    <Project Path="tests/Parley.Cli.Tests/Parley.Cli.Tests.csproj" />
     <Project Path="tests/Parley.Spec.Tests/Parley.Spec.Tests.csproj" />
   </Folder>
 </Solution>

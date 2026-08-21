@@ -137,6 +137,33 @@ setup, and it means an agent is addressable once somebody has opened its reposit
 addressing one that has never run needs the manifest, which is what the headless tier
 and spawn-on-demand are for.
 
+### The operator's side
+
+`parley` is a second binary, installed by a person and never given to an agent:
+
+```
+dotnet pack src/Parley.Cli -c Release
+dotnet tool install -g --add-source src/Parley.Cli/bin/Release Parley.Cli
+```
+
+```
+parley agents                       every agent, with the workspace a peer never sees
+parley retire <agent>               withdraw a registration; its server then refuses to start
+parley reinstate <agent>            the only thing that clears a retirement
+parley export <conversation>        every message in a discussion, across agents
+parley force-conclude <conv>        close a discussion over its participants' votes
+```
+
+It reads `PARLEY_DB` — the same variable the agents' servers are launched with — or takes
+`--db`.
+
+These are the operations of SPEC §10.2, and a separate program on purpose. §10.2 warns that an
+adapter surfacing one into an agent's tool set would breach §10.1, and the safeguards get
+progressively more structural: `force_conclude` is deliberately not `conclude`; the operations
+are not on `Broker`, so an adapter handed a broker has none to bind; and they are not in
+`parley-mcp`, so the binary an MCP client launches has none of them compiled into it. A test
+asserts that last one by reflecting over the real assembly.
+
 ## Specification
 
 Full protocol details — message schemas, exchange state machine, concurrency rules,
@@ -168,23 +195,24 @@ them. A question asked while the recipient's session is closed waits for that ag
 than being released when it opens one — the attach sequence of §14 releases only what an
 agent has actually been handed. A question nobody ever answers ends by telling the asker so,
 carrying its own stated consequences back — so "ask and do not block" holds in the case where
-nothing arrives, which is the case an agent most needs to hear about. The domain layer has no I/O and no package dependencies, and its tests
+nothing arrives, which is the case an agent most needs to hear about. A discussion closes when its
+participants agree, or when one of them says nothing for long enough — §5.0's silence-assents
+window is enforced by the sweep, so a peer that never answers a closure poll does not hold a
+conversation open indefinitely. The operator operations of §10.2 —
+`retire`, `reinstate`, `export`, `force_conclude` — are reachable through a second binary that
+agents are never given. The domain layer has no I/O and no package dependencies, and its tests
 do not reference the storage assembly — the absent dependency is checked by the build
 rather than left as a convention. The protocol's invariants are enforced by schema
 constraints rather than by the code that calls them.
 
 **Next, in order.**
 
-1. **Operator console.** `export`, `prune`, `retire`, `reinstate` — SPEC §10.2. The
-   broker marks an unreachable agent and stops routing to it, but never resolves what is
-   already outstanding: that is an operator's decision, because a deleted repository is
-   often a re-clone away from returning. Those exchanges currently wait.
-2. **Retention pruning.** The sweep orphans expired exchanges and ghosts them; it does
-   not yet apply the retention policy that keeps the message log from becoming the
-   shared context store Parley is not.
-3. **Closure by silence.** The poll of §5.0 concludes when everyone agrees; the timeout
-   that makes silence count as assent is not wired to the sweep yet.
-4. **Per-sender rate limits.** The last unbuilt control in SPEC §13. Volume between a
+1. **Retention pruning**, and with it `prune` — SPEC §9.4 and §10.2. The sweep orphans
+   expired exchanges and ghosts them; nothing yet applies the retention policy that keeps
+   the message log from becoming the shared context store Parley is not. `prune` is the one
+   operator operation still missing, and it is missing because there is nothing for it to
+   apply.
+2. **Per-sender rate limits.** The last unbuilt control in SPEC §13. Volume between a
    pair is already bounded by the state machine — one open exchange per pair, a
    clarification cap — so this is really about `Notify`, which has no such guard.
 

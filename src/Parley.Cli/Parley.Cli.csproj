@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The operator's way in, and a second binary rather than a flag on the first.
+
+    SPEC.md 10.2 warns that an adapter surfacing an operator operation into an agent's tool set
+    would breach 10.1, and the protections against that get progressively more structural:
+    force_conclude is deliberately not conclude; OperatorConsole is deliberately not Broker; and
+    this is deliberately not parley-mcp. An MCP client launches the server it was configured
+    with, and the server it was configured with has no operator operation compiled into it.
+
+    Not packable as a tool by accident: this is installed by a person on purpose, and the two
+    commands are named apart so 'parley' and 'parley-mcp' cannot be confused in a launch
+    configuration.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>parley</AssemblyName>
+    <RootNamespace>Parley.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>parley</ToolCommandName>
+    <PackageId>Parley.Cli</PackageId>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parley.Broker\Parley.Broker.csproj" />
+  </ItemGroup>
+
+</Project>

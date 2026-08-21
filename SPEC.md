@@ -2007,7 +2007,9 @@ for repositories that no longer exist. That is the right trade: a registry row i
 the alternative discards the record of what an agent said in exchange for tidiness.
 
 By the time an operator retires an agent its outstanding exchanges have usually resolved
-themselves — they orphan and are ghosted on the ordinary schedule. Retiring does not wait for
+themselves — they orphan and are ghosted on the ordinary schedule, and an answer that
+does arrive before that is still accepted, because ghosting does not discard and neither does
+retiring. Retiring does not wait for
 that and does not accelerate it.
 
 **Recovery is not automatic on its own terms.** Refusing to route to an unreachable agent

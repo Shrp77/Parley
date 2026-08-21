@@ -576,7 +576,12 @@ public sealed class AgentRepository(SqliteConnection connection)
         CancellationToken cancellationToken = default) =>
         await _connection.ExecuteAsync(
             new CommandDefinition(
-                "UPDATE agents SET status = 'retired' WHERE name = @Name;",
+                // Guarded on the current status, like every other transition here, so the row
+                // count is a truthful answer to "did this change anything". Without it, retiring
+                // an already-retired agent writes the same value and reports a change — which is
+                // what an operator's exit code is built on.
+                "UPDATE agents SET status = 'retired' " +
+                "WHERE name = @Name AND status <> 'retired';",
                 new { Name = name.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
