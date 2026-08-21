@@ -934,7 +934,20 @@ CREATE TABLE conversations (
   closed_utc  TEXT,
 
   CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
-  CHECK (length(id) BETWEEN 1 AND 64 AND id NOT GLOB '*[^a-zA-Z0-9._:/-]*')
+  -- A conversation is named by an agent and exported by name (SPEC.md 10.2), so this value
+  -- reaches a filename, a report heading or a console. No '/' and no ':', because both are
+  -- path syntax, and no '..' anywhere, because a run of dots is path syntax without needing a
+  -- separator. This is the authoritative name: exchanges reference it and messages carry a copy
+  -- held in agreement by a composite foreign key, so constraining it here is what constrains it
+  -- everywhere.
+  --
+  -- It was previously responder_model's character set, which permits '/'. That set is right for
+  -- a model identifier -- 'some-org/some-model-9' is a real name -- and wrong for this, and the
+  -- comment claiming to keep path separators out sat directly above a GLOB that admitted them.
+  -- '../../etc/passwd' was a legal conversation id.
+  CHECK (length(id) BETWEEN 1 AND 64
+         AND id NOT GLOB '*[^a-zA-Z0-9._-]*'
+         AND id NOT GLOB '*..*')
 ) STRICT;
 
 -- Membership is derived, not declared: a row appears when an agent first becomes party to
@@ -1061,7 +1074,8 @@ CREATE TABLE messages (
   CHECK (unixepoch(created_utc) IS NOT NULL),
   CHECK (conversation_id IS NULL
          OR (length(conversation_id) BETWEEN 1 AND 64
-             AND conversation_id NOT GLOB '*[^a-zA-Z0-9._:/-]*')),
+             AND conversation_id NOT GLOB '*[^a-zA-Z0-9._-]*'
+             AND conversation_id NOT GLOB '*..*')),
 
   -- The exchange holds the authoritative conversation (§5.0); this column repeats it, and
   -- the composite foreign key below is what stops the copy becoming a second opinion. A

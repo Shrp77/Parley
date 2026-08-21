@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -58,20 +58,35 @@ public sealed class SchemaIntegrityTests : IDisposable
 
     private void InsertExchange(
         string pairKey, string asker, string answerer, string state = "OPEN",
-        string questionHash = "h") => Execute(
+        string questionHash = "h", string? conversationId = null) => Execute(
         """
         INSERT INTO exchanges
             (pair_key, asker, answerer, owed_by, state, delivery_window_ms, working_window_ms,
-             grace_period_ms, question_hash, opened_utc, expires_utc, closed_utc, resolution)
+             grace_period_ms, question_hash, opened_utc, expires_utc, closed_utc, resolution,
+             conversation_id)
         VALUES
             ($pair, $asker, $answerer, $answerer, $state, 900000, 14400000, 10800000, $hash,
              $opened, $expires,
              CASE WHEN $state = 'CLOSED' THEN $closed ELSE NULL END,
-             CASE WHEN $state = 'CLOSED' THEN 'answered' ELSE NULL END);
+             CASE WHEN $state = 'CLOSED' THEN 'answered' ELSE NULL END,
+             $conversation);
         """,
         ("$pair", pairKey), ("$asker", asker), ("$answerer", answerer), ("$state", state),
         ("$hash", questionHash),
-        ("$opened", Opened), ("$expires", Expires), ("$closed", Closed));
+        ("$opened", Opened), ("$expires", Expires), ("$closed", Closed),
+        ("$conversation", (object?)conversationId ?? DBNull.Value));
+
+    /// <summary>Opens a conversation by name.</summary>
+    /// <param name="name">The identifier under test.</param>
+    /// <remarks>
+    /// The authoritative name, which is the point: exchanges reference it and messages carry a
+    /// copy held in agreement by a composite foreign key, so a name refused here cannot appear
+    /// anywhere. Tightening only the copy in <c>messages</c> would leave an export naming a file
+    /// from a column nothing checked.
+    /// </remarks>
+    private void InsertConversation(string name) => Execute(
+        "INSERT INTO conversations (id, state, opened_utc) VALUES ($id, 'OPEN', $opened);",
+        ("$id", name), ("$opened", Opened));
 
 
 
@@ -104,6 +119,44 @@ public sealed class SchemaIntegrityTests : IDisposable
         ("$responder", responderModel ?? "claude-opus-5"), ("$payload", payload),
         ("$hash", contentHash ?? Hash(Guid.NewGuid().ToString("N"))),
         ("$created", createdUtc ?? Opened));
+
+    // ---- what a conversation may be called ----
+
+    [Theory]
+    [InlineData("../../etc/passwd")]                    // the one that was admitted
+    [InlineData("a/b/c")]                               // '/' is path syntax
+    [InlineData("..")]                                  // so is a bare run of dots
+    [InlineData("a..b")]                                // anywhere in the name, not just leading
+    [InlineData("C:/tmp/x")]                            // ':' is path syntax on Windows
+    [InlineData("with space")]
+    [InlineData("with\nnewline")]
+    public void A_conversation_may_not_be_named_something_that_reaches_a_filesystem(string name)
+    {
+        // §10.2 exports a discussion by name, so this value reaches a filename, a report heading
+        // or a console. The constraint used to share responder_model's character set, which
+        // permits '/' — while the comment above it claimed to keep path separators out. The
+        // guarantee was written down, believed, and not enforced: '../../etc/passwd' was a legal
+        // conversation id for as long as the column existed.
+        //
+        // responder_model keeps '/' deliberately, because model identifiers carry it, as in
+        // 'some-org/some-model-9'. That value is not rendered into a filename; this one is.
+        var ex = Assert.Throws<SqliteException>(() => InsertConversation(name));
+
+        Assert.Contains("id", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("tax-rate")]
+    [InlineData("pricing")]
+    [InlineData("release_2026.01")]
+    [InlineData("a")]
+    public void An_ordinary_conversation_name_is_admitted(string name)
+    {
+        // The other side, so the constraint is not simply refusing everything. A dot is fine on
+        // its own; it is a run of them that is path syntax.
+        InsertConversation(name);
+        InsertExchange(OrdersBilling, "orders", "billing", conversationId: name);
+    }
 
     // ---- one open exchange per pair ----
 

@@ -108,7 +108,20 @@ CREATE TABLE conversations (
     closed_utc  TEXT,
 
     CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
-    CHECK (length(id) BETWEEN 1 AND 64 AND id NOT GLOB '*[^a-zA-Z0-9._:/-]*')
+    -- A conversation is named by an agent and exported by name (SPEC.md 10.2), so this value
+    -- reaches a filename, a report heading or a console. No '/' and no ':', because both are
+    -- path syntax, and no '..' anywhere, because a run of dots is path syntax without needing a
+    -- separator. This is the authoritative name: exchanges reference it and messages carry a copy
+    -- held in agreement by a composite foreign key, so constraining it here is what constrains it
+    -- everywhere.
+    --
+    -- It was previously responder_model's character set, which permits '/'. That set is right for
+    -- a model identifier -- 'some-org/some-model-9' is a real name -- and wrong for this, and the
+    -- comment claiming to keep path separators out sat directly above a GLOB that admitted them.
+    -- '../../etc/passwd' was a legal conversation id.
+    CHECK (length(id) BETWEEN 1 AND 64
+           AND id NOT GLOB '*[^a-zA-Z0-9._-]*'
+           AND id NOT GLOB '*..*')
 ) STRICT;
 
 -- Membership is derived, not declared: a row appears when an agent first becomes party to an
@@ -311,13 +324,21 @@ CREATE TABLE messages (
     -- store, silently, with the index still reporting no conflict.
     CHECK (unixepoch(created_utc) IS NOT NULL),
 
-    -- Same character set as responder_model, and for a related reason. This value is agent
-    -- supplied and names an export, so it is likely to reach a filename, a report heading or a
-    -- console; the restriction keeps newlines and path separators out of somewhere they would
-    -- do damage. Bounded so an identifier cannot become a payload in its own right.
+    -- Agent supplied, and it names an export, so it is likely to reach a filename, a report
+    -- heading or a console. The set is narrower than responder_model's and the difference is
+    -- deliberate: no '/' and no ':', because both are path syntax, and no '..' anywhere,
+    -- because a run of dots is path syntax even without a separator. An earlier version shared
+    -- responder_model's set and its comment claimed to keep path separators out while
+    -- permitting '/', so 'conversation_id' could be '../../etc/passwd' -- a guarantee that was
+    -- written down, believed, and not enforced. Bounded so an identifier cannot become a
+    -- payload in its own right.
+    --
+    -- responder_model keeps '/' because model identifiers genuinely carry it, as in
+    -- 'some-org/some-model-9'. It is not rendered into a filename; this is.
     CHECK (conversation_id IS NULL
            OR (length(conversation_id) BETWEEN 1 AND 64
-               AND conversation_id NOT GLOB '*[^a-zA-Z0-9._:/-]*')),
+               AND conversation_id NOT GLOB '*[^a-zA-Z0-9._-]*'
+                   AND conversation_id NOT GLOB '*..*')),
 
     -- SPEC.md rule 1: a Question states what the asker will do with each possible answer. The
     -- length floor does the real work; requiring only that the key be present admits "n/a",

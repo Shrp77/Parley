@@ -160,7 +160,32 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         [Description("Optional. The model that produced this question.")] string? responderModel = null,
         CancellationToken cancellationToken = default)
     {
-        var peer = ParseAgent(to);
+        if (BadAgent(to, out var peer) is { } badPeer)
+        {
+            return badPeer;
+        }
+
+        if (BadResponder(responderModel) is { } badResponder)
+        {
+            return badResponder;
+        }
+
+        if (peer == _options.Agent)
+        {
+            return Malformed(
+                "You cannot address yourself. Parley carries questions between agents that own " +
+                "different things; whatever this is, it is yours to decide.");
+        }
+
+        if (BadConversation(conversationId) is { } badConversation)
+        {
+            return badConversation;
+        }
+
+        if (BadSubQuestions(subQuestions) is { } badQuestions)
+        {
+            return badQuestions;
+        }
 
         var payload = new JsonObject
         {
@@ -225,6 +250,11 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         [Description("Optional. The model that produced this.")] string? responderModel = null,
         CancellationToken cancellationToken = default)
     {
+        if (BadResponder(responderModel) is { } badResponder)
+        {
+            return badResponder;
+        }
+
         var payload = new JsonObject { ["text"] = text };
 
         var json = payload.ToJsonString();
@@ -283,6 +313,16 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         [Description("Optional. The model that produced this answer.")] string? responderModel = null,
         CancellationToken cancellationToken = default)
     {
+        if (BadResponder(responderModel) is { } badResponder)
+        {
+            return badResponder;
+        }
+
+        if (BadResolutions(resolutions) is { } badResolutions)
+        {
+            return badResolutions;
+        }
+
         var entries = resolutions ?? [];
 
         var payload = new JsonObject
@@ -343,7 +383,28 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         [Description("Optional. The model that produced this.")] string? responderModel = null,
         CancellationToken cancellationToken = default)
     {
-        var peer = ParseAgent(to);
+        if (BadAgent(to, out var peer) is { } badPeer)
+        {
+            return badPeer;
+        }
+
+        if (BadResponder(responderModel) is { } badResponder)
+        {
+            return badResponder;
+        }
+
+        if (peer == _options.Agent)
+        {
+            return Malformed(
+                "You cannot address yourself. Parley carries questions between agents that own " +
+                "different things; whatever this is, it is yours to decide.");
+        }
+
+        if (BadConversation(conversationId) is { } badConversation)
+        {
+            return badConversation;
+        }
+
         var payload = new JsonObject { ["text"] = text };
 
         var json = payload.ToJsonString();
@@ -515,16 +576,219 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         };
     }
 
-    /// <summary>Parses an agent name, refusing one the grammar does not admit.</summary>
-    /// <param name="name">The name a caller supplied.</param>
-    /// <returns>The parsed name.</returns>
-    /// <exception cref="ArgumentException">It is not a valid agent name.</exception>
-    private static AgentName ParseAgent(string name) =>
-        AgentName.TryCreate(name, out var parsed)
-            ? parsed
-            : throw new ArgumentException(
-                $"'{name}' is not a valid agent name. Call parley_agents to see who exists.",
-                nameof(name));
+    /// <summary>Resolves a peer name supplied by the agent.</summary>
+    /// <param name="name">What the caller typed.</param>
+    /// <param name="peer">The parsed name, if it is one.</param>
+    /// <returns>A refusal, or <see langword="null"/> if <paramref name="peer"/> is set.</returns>
+    /// <remarks>
+    /// A refusal rather than the exception this used to throw. Naming a peer <c>Billing</c> is
+    /// an ordinary slip, and the useful answer says the rule and points at the tool that lists
+    /// the real names — where an exception says only that the call failed.
+    /// </remarks>
+    private static JsonNode? BadAgent(string name, out AgentName peer)
+    {
+        if (AgentName.TryCreate(name, out peer))
+        {
+            return null;
+        }
+
+        return Malformed(
+            $"'{name}' is not an agent name. Names are lowercase letters, digits and hyphens, " +
+            "starting with a letter. Call parley_agents to see who exists.");
+    }
+
+    /// <summary>
+    /// Refuses a malformed request, or returns nothing if it is usable.
+    /// </summary>
+    /// <param name="what">What was wrong, addressed to the agent.</param>
+    /// <returns>The refusal to hand back.</returns>
+    /// <remarks>
+    /// Every one of the callers below guards something the schema also enforces, and the
+    /// duplication is the point. The schema is what makes these unroutable-around (§9.3); it is
+    /// not a way to talk to a model. A constraint violation arrives as a <c>SqliteException</c>
+    /// naming a <c>GLOB</c>, which an agent cannot act on and will most likely respond to by
+    /// sending the same thing again.
+    /// <para>
+    /// These are all mistakes an agent makes while working rather than while misbehaving: a peer
+    /// named with a capital letter, two sub-questions that ended up with the same id, a gate
+    /// pointing at a question that was edited away. Each deserves a sentence saying what to do.
+    /// </para>
+    /// </remarks>
+    private static JsonNode Malformed(string what) => new JsonObject
+    {
+        ["ok"] = false,
+        ["refused"] = "malformed",
+        ["why"] = what
+    };
+
+    /// <summary>Validates a responder identity the caller supplied.</summary>
+    /// <param name="responderModel">What the caller said produced the message, if anything.</param>
+    /// <returns>A refusal, or <see langword="null"/> if it is usable.</returns>
+    /// <remarks>
+    /// The broker refuses these too, and has to: §11.3 names that boundary as the one place the
+    /// reserved namespace can be defended, because every row is written by the broker and no
+    /// <c>CHECK</c> can tell it writing its own name from it recording what an adapter supplied.
+    /// What the broker cannot do is answer an agent, and this is an agent-supplied tool
+    /// parameter — so the same rule is applied one layer out, where the answer can be a sentence
+    /// rather than an exception.
+    /// </remarks>
+    private static JsonNode? BadResponder(string? responderModel)
+    {
+        if (string.IsNullOrWhiteSpace(responderModel))
+        {
+            return null;
+        }
+
+        if (responderModel.StartsWith(
+                Parley.Broker.Broker.ReservedResponderPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return Malformed(
+                $"'{responderModel}' claims the reserved " +
+                $"'{Parley.Broker.Broker.ReservedResponderPrefix}' namespace, which only the " +
+                "broker writes. Name the model that produced this, or leave it out and the " +
+                "server will use the one it was launched with.");
+        }
+
+        var usable =
+            responderModel.Length <= 64 &&
+            responderModel.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or ':' or '/' or '-');
+
+        return usable
+            ? null
+            : Malformed(
+                $"'{responderModel}' is not a responder identity. Use up to 64 characters of " +
+                "letters, digits and '. _ : / -' — a model name, or 'script:something' or " +
+                "'human:someone'.");
+    }
+
+    /// <summary>Validates a conversation identifier.</summary>
+    /// <param name="conversationId">What the caller supplied, or <see langword="null"/>.</param>
+    /// <returns>A refusal, or <see langword="null"/> if it is usable.</returns>
+    /// <remarks>
+    /// Narrower than it looks necessary, and deliberately so: §10.2 exports a conversation by
+    /// name, so this string reaches a filename. It carries no path syntax and no run of dots,
+    /// which is what stops an agent naming a conversation <c>../../etc/passwd</c>.
+    /// </remarks>
+    private static JsonNode? BadConversation(string? conversationId)
+    {
+        if (conversationId is null)
+        {
+            return null;
+        }
+
+        var usable =
+            conversationId.Length is >= 1 and <= 64 &&
+            !conversationId.Contains("..", StringComparison.Ordinal) &&
+            conversationId.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-');
+
+        return usable
+            ? null
+            : Malformed(
+                $"'{conversationId}' cannot be a conversation id. Use up to 64 characters of " +
+                "letters, digits, '.', '_' and '-', with no '..' — the name reaches a filename " +
+                "when a discussion is exported. Something like 'tax-rate' works.");
+    }
+
+    /// <summary>Validates the sub-questions of a Question.</summary>
+    /// <param name="subQuestions">What the caller supplied.</param>
+    /// <returns>A refusal, or <see langword="null"/> if they are usable.</returns>
+    /// <remarks>
+    /// Ids have to be present and distinct because §5.3 answers them by id, and a gate has to
+    /// name one of them because §5.1 stores the dependency. A question with none at all is
+    /// refused too: it holds the pair slot and burns a working window while asking nothing, and
+    /// the peer receiving it has no way to answer.
+    /// </remarks>
+    private static JsonNode? BadSubQuestions(SubQuestion[]? subQuestions)
+    {
+        var asked = subQuestions ?? [];
+
+        if (asked.Length == 0)
+        {
+            return Malformed(
+                "A question needs at least one sub-question. Say what you actually need to know.");
+        }
+
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var question in asked)
+        {
+            if (string.IsNullOrWhiteSpace(question.Id))
+            {
+                return Malformed("Every sub-question needs an id, such as q1.");
+            }
+
+            if (!ids.Add(question.Id))
+            {
+                return Malformed(
+                    $"Two sub-questions share the id '{question.Id}'. They are answered by id, " +
+                    "so the ids have to differ.");
+            }
+        }
+
+        foreach (var question in asked)
+        {
+            if (!string.IsNullOrWhiteSpace(question.GateOn) && !ids.Contains(question.GateOn))
+            {
+                return Malformed(
+                    $"Sub-question '{question.Id}' is gated on '{question.GateOn}', which is not " +
+                    "one of the sub-questions you asked.");
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Validates the resolutions of an Answer.</summary>
+    /// <param name="resolutions">What the caller supplied.</param>
+    /// <returns>A refusal, or <see langword="null"/> if they are usable.</returns>
+    /// <remarks>
+    /// An unrecognised outcome used to become <c>unknown</c>, quietly. That is worse than it
+    /// sounds: §15 counts <c>unknown</c> to tell a healthy deployment from one in trouble, so a
+    /// typo would not merely lose the agent's meaning, it would be indistinguishable from a
+    /// peer that genuinely could not answer — and the more agents typed it, the worse the
+    /// deployment would appear to be. <c>ghosted</c> is refused by name because it is the one
+    /// resolution no agent may write (§5.3), and coercing it to <c>unknown</c> would answer an
+    /// attempt at forgery with a shrug.
+    /// </remarks>
+    private static JsonNode? BadResolutions(Resolution[]? resolutions)
+    {
+        var given = resolutions ?? [];
+
+        if (given.Length == 0)
+        {
+            return Malformed("An answer needs a resolution for each sub-question you were asked.");
+        }
+
+        foreach (var resolution in given)
+        {
+            var outcome = resolution.Outcome?.Trim().ToLowerInvariant();
+
+            if (outcome is "answered" or "unknown" or "out_of_scope" or "outofscope")
+            {
+                // The redirect names a peer, so it is a peer name. Left unchecked it reaches a
+                // column constrained to the agent grammar and comes back as SQL — and this is
+                // the field §8's referral rule pushes an agent towards, so it is reached often.
+                if (!string.IsNullOrWhiteSpace(resolution.RedirectTo) &&
+                    !AgentName.TryCreate(resolution.RedirectTo, out _))
+                {
+                    return Malformed(
+                        $"'{resolution.RedirectTo}' is not an agent name, so it cannot be who " +
+                        "owns this. Call parley_agents to find the right owner, or say 'unknown' " +
+                        "rather than guessing.");
+                }
+
+                continue;
+            }
+
+            return Malformed(
+                $"'{resolution.Outcome}' is not an outcome. Use 'answered' for what you know, " +
+                "'unknown' for what you cannot determine, or 'out_of_scope' for what belongs to " +
+                "another agent — and name them in redirect_to. Only the broker records a " +
+                "question as ghosted.");
+        }
+
+        return null;
+    }
 
     /// <summary>Takes the least resolved of the per-sub-question outcomes.</summary>
     /// <param name="resolutions">What the answerer said about each sub-question.</param>
@@ -740,10 +1004,25 @@ public sealed record Resolution(
     /// sub-questions it did resolve. <c>ghosted</c> lands here too, and the broker refuses it as
     /// an aggregate regardless, because only the broker records that.
     /// </remarks>
+    /// <summary>Reads the outcome word into the domain value.</summary>
+    /// <returns>What the answerer said about this sub-question.</returns>
+    /// <exception cref="InvalidOperationException">The outcome is not one this understands.</exception>
+    /// <remarks>
+    /// The final case throws where it used to return <c>unknown</c>, and it is unreachable: the
+    /// tool validates every outcome before assembling a payload. Unreachable is the point. The
+    /// silent fallback was the defect — a typo became <c>unknown</c>, which §15 counts to tell a
+    /// healthy deployment from one in trouble, so a misspelling was indistinguishable from a peer
+    /// that genuinely could not answer. Two lists of accepted words that can drift apart is how
+    /// that comes back, and this way the drift is a crash in a test rather than a slow lie in the
+    /// telemetry.
+    /// </remarks>
     internal Core.Resolution Parse() => Outcome?.Trim().ToLowerInvariant() switch
     {
         "answered" => Core.Resolution.Answered,
         "out_of_scope" or "outofscope" => Core.Resolution.OutOfScope,
-        _ => Core.Resolution.Unknown
+        "unknown" => Core.Resolution.Unknown,
+        _ => throw new InvalidOperationException(
+            $"'{Outcome}' reached Parse, which means the tool admitted an outcome it does not " +
+            "understand. See BadResolutions: the two lists have drifted apart.")
     };
 }
