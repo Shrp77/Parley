@@ -96,6 +96,20 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// </summary>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>All agents in the registry, whatever their status.</returns>
+    /// <remarks>
+    /// <b>Never reachable from an agent.</b> This returns the stored record whole — workspace
+    /// path, session handle, and the adapter configuration §12.1 makes free-form so it can carry
+    /// endpoints — and <see cref="ListRoutableAsync"/> exists precisely so none of that crosses
+    /// to a peer. The two sit next to each other, differ by one word at the call site, and only
+    /// one of them is safe to answer <c>agents()</c> with; <c>SurfaceBoundaryTests</c> fails if a
+    /// broker operation ever returns this type, so the distinction is checked rather than
+    /// remembered.
+    /// <para>
+    /// It has no production caller yet and is kept deliberately: it is the read side of the
+    /// registry's full record, and a manifest loader needs to see current configuration in order
+    /// to diff against it. Without it those columns would be write-only.
+    /// </para>
+    /// </remarks>
     public async Task<IReadOnlyList<AgentRecord>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         var rows = await _connection.QueryAsync<AgentRow>(
