@@ -74,6 +74,15 @@ if (stray is not null)
     return Usage;
 }
 
+// Before the database, because `parley` on its own is somebody asking what this does, and
+// answering "no database" tells them nothing they can act on — least of all that there is a
+// list of commands to see. Found by installing it and typing the name.
+if (arguments.Count == 0)
+{
+    await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
+    return Usage;
+}
+
 if (string.IsNullOrWhiteSpace(databasePath))
 {
     await Console.Error.WriteLineAsync(
@@ -81,12 +90,6 @@ if (string.IsNullOrWhiteSpace(databasePath))
         "are launched with.").ConfigureAwait(false);
 
     return Config;
-}
-
-if (arguments.Count == 0)
-{
-    await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
-    return Usage;
 }
 
 // Opened rather than created. An operator command against a project that has never run is a

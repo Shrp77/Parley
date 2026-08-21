@@ -105,6 +105,31 @@ public sealed class ForeignDatabaseTests : IDisposable
     }
 
     [Fact]
+    public void The_bare_command_says_what_it_can_do()
+    {
+        // `parley` on its own is somebody asking what this is, and it used to answer "no
+        // database" — a configuration error about a thing they had not yet been told existed,
+        // with no hint that there was a list of commands behind it. Found by installing the tool
+        // and typing its name.
+        var (exitCode, error) = ToolProcess.Run();
+
+        Assert.Equal(64, exitCode);
+        Assert.Contains("parley [--db <path>] agents", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("No database.", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_verb_without_a_database_still_says_so()
+    {
+        // The other side. Naming a command means you know what you want, and then the missing
+        // database is the useful thing to be told.
+        var (exitCode, error) = ToolProcess.Run("agents");
+
+        Assert.Equal(78, exitCode);
+        Assert.Contains("No database.", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void An_option_it_does_not_have_is_refused_rather_than_read_as_data()
     {
         // `parley export --db` used to reach the export with "--db" as the conversation
