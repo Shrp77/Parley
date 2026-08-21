@@ -84,9 +84,9 @@ public sealed class AgentVerbTests : IDisposable
             Billing, T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         var delivered = Assert.Single(inbox);
-        Assert.Equal(asked.Question!.Id, delivered.Id);
-        Assert.Equal(MessageType.Question, delivered.Type);
-        Assert.Equal(asked.Exchange.Id, delivered.ExchangeId);
+        Assert.Equal(asked.Question!.Id, delivered.Message.Id);
+        Assert.Equal(MessageType.Question, delivered.Message.Type);
+        Assert.Equal(asked.Exchange.Id, delivered.Message.ExchangeId);
     }
 
     [Fact]
@@ -200,7 +200,7 @@ public sealed class AgentVerbTests : IDisposable
 
         var inbox = (await _broker.DrainInboxAsync(
             Orders, T0.AddMinutes(4), cancellationToken: TestContext.Current.CancellationToken)).Messages;
-        Assert.Equal(MessageType.Answer, Assert.Single(inbox).Type);
+        Assert.Equal(MessageType.Answer, Assert.Single(inbox).Message.Type);
     }
 
     [Fact]
@@ -305,7 +305,7 @@ public sealed class AgentVerbTests : IDisposable
 
         var inbox = (await _broker.DrainInboxAsync(
             Orders, T0.AddMinutes(4), cancellationToken: TestContext.Current.CancellationToken)).Messages;
-        Assert.Equal(MessageType.Clarify, Assert.Single(inbox).Type);
+        Assert.Equal(MessageType.Clarify, Assert.Single(inbox).Message.Type);
     }
 
     [Fact]

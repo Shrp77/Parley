@@ -8,7 +8,8 @@ namespace Parley.Broker;
 /// outstanding against it.
 /// </summary>
 /// <param name="Messages">
-/// The messages delivered by this drain, debts first per SPEC.md §7.3.
+/// The messages delivered by this drain, debts first per SPEC.md §7.3, each paired with the
+/// envelope §13 requires it to be delivered inside.
 /// </param>
 /// <param name="ClosurePolls">
 /// Conversations this agent has been asked to conclude and has not yet answered.
@@ -28,7 +29,7 @@ namespace Parley.Broker;
 /// </para>
 /// </remarks>
 public sealed record Inbox(
-    IReadOnlyList<Message> Messages,
+    IReadOnlyList<DeliveredMessage> Messages,
     IReadOnlyList<ClosurePoll> ClosurePolls)
 {
     /// <summary>

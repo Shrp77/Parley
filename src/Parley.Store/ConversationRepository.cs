@@ -54,6 +54,45 @@ public sealed class ConversationRepository(SqliteConnection connection)
     }
 
     /// <summary>
+    /// Opens a conversation if no agent has named it yet.
+    /// </summary>
+    /// <param name="conversationId">The identifier being declared.</param>
+    /// <param name="nowUtc">The instant it was first named.</param>
+    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <remarks>
+    /// Idempotent, because two agents may name the same new identifier at once and neither
+    /// should lose. Agents never create a conversation explicitly: SPEC.md §5.0 makes it
+    /// whatever its participants said belonged together, so it comes into being as a side effect
+    /// of the first message that names it.
+    /// <para>
+    /// Called from admission and from a notification, which is the whole reason it is a method.
+    /// A notification has no exchange and §5.0 therefore has it declare its own conversation —
+    /// so both paths mint one, and two copies of that INSERT would be two chances to get the
+    /// initial state wrong.
+    /// </para>
+    /// </remarks>
+    public async Task EnsureOpenAsync(
+        string conversationId,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                INSERT INTO conversations (id, state, opened_utc)
+                VALUES (@Id, 'OPEN', @Opened)
+                ON CONFLICT (id) DO NOTHING;
+                """,
+                new { Id = conversationId, Opened = ExchangeRow.FormatTimestamp(nowUtc) },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Records that two agents are party to a conversation, and voids any poll in progress.
     /// </summary>
     /// <param name="conversationId">The discussion they joined.</param>

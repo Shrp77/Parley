@@ -328,6 +328,22 @@ refused, and the refusal says so. Reopening is not a special case because it is 
 one: a discussion worth resuming after everyone agreed it was over is a new discussion, and
 it gets a new identifier at no cost.
 
+**A Notify naming one is refused too**, and this is worth stating separately because the
+sentence above reads as being about Questions and is not. A Question is what takes a pair slot
+and grows membership, so it is the obvious case; but the hazard named a paragraph earlier is a
+message left *"in a closed discussion nobody may add to"*, and a notification does that just as
+well while taking no slot and joining nothing. An implementation that refused only Questions
+would leave a discussion everyone agreed was over still accumulating traffic — and the
+asymmetry is easy to reach, because the two operations are written at different times against
+different checks.
+
+A Notify **declares** a conversation rather than joining one. It has no exchange to inherit an
+identifier from, so naming a new one opens it; but membership is derived from being party to an
+exchange, and a notification is not one. An announcer therefore does not become a participant
+and gets no vote in a closure poll it has no stake in. A message may not name a conversation
+that does not exist, which the schema enforces directly — the composite key of §9.2 cannot,
+since it is satisfied by a NULL in either column and a Notify always has a NULL `exchange_id`.
+
 ### 5.1 Question
 
 ```jsonc
@@ -493,6 +509,14 @@ does not wait (§4.2); what distinguishes Notify is that nothing is owed in retu
 no exchange, takes no slot, and creates no debt for anybody. *"The `OrderLine` contract
 gained a `PriceSnapshot` field."* Not chit-chat — an event. Likely the highest-volume and
 highest-value traffic in a mature deployment.
+
+Taking no slot means §7.1's cap does not bound it, and creating no debt means it adds no edge
+for §7.2 to find a cycle in. Two consequences follow. Deduplication (§13.1) is the *only* guard
+it has, which is why that section calls this the type where the control does the most work. And
+the routing rules of §14 still apply: a notification addressed to an `unreachable` or `retired`
+agent is refused, and one *from* a retired agent is too. Neither costs anybody a wait, which is
+exactly why it would otherwise go unnoticed — a sender whose announcements silently succeed into
+a peer that no longer exists never learns to stop.
 
 ## 6. Exchange state machine
 
@@ -1007,7 +1031,10 @@ CREATE TABLE messages (
   responder_model TEXT    NOT NULL,       -- see §11.3
   payload_json    TEXT    NOT NULL,
   content_hash    TEXT    NOT NULL,       -- see §13.1
-  conversation_id TEXT,                   -- denormalised from the exchange; see below
+  -- References conversations(id) directly, which the composite key below cannot do for a
+  -- Notify: that key is satisfied by a NULL in either column, and a Notify always has a NULL
+  -- exchange_id. Without it a notification could name a discussion that does not exist.
+  conversation_id TEXT REFERENCES conversations(id),  -- denormalised from the exchange
   created_utc     TEXT    NOT NULL,
   dedup_bucket    INTEGER GENERATED ALWAYS AS (unixepoch(created_utc) / 60) STORED,
   delivered_utc   TEXT,
@@ -1338,6 +1365,12 @@ splitting them would ask it to know which situation it was in.
 A closure poll is surfaced through `inbox()` rather than as a message, because §5 admits four
 message types and no others. A fifth type carrying broker questions would also make the
 broker a participant that agents address, which it is not.
+
+`inbox()` returns each message **already wrapped in the §13 envelope**, never the raw payload.
+The requirement is §13's — the broker wraps and never the sender — but it is restated here
+because this is the operation an implementer builds, and a drain that returned payloads for an
+adapter to render would satisfy every other rule in this section while leaving the framing to
+whoever remembered it.
 
 `ask`, `clarify` and `answer` each move an exchange and write a message, and each **MUST**
 commit both or neither. This is a requirement rather than an implementation note because the

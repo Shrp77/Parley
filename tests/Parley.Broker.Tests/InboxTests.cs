@@ -189,8 +189,8 @@ public sealed class InboxTests : IDisposable
             Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         Assert.Equal(2, drained.Count);
-        Assert.Equal(MessageType.Question, drained[0].Type);
-        Assert.Equal(MessageType.Answer, drained[1].Type);
+        Assert.Equal(MessageType.Question, drained[0].Message.Type);
+        Assert.Equal(MessageType.Answer, drained[1].Message.Type);
     }
 
     [Fact]
@@ -203,7 +203,7 @@ public sealed class InboxTests : IDisposable
         var drained = (await _broker.DrainInboxAsync(
             Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
-        Assert.Equal(MessageType.Notify, Assert.Single(drained).Type);
+        Assert.Equal(MessageType.Notify, Assert.Single(drained).Message.Type);
     }
 
     [Fact]
@@ -323,7 +323,7 @@ public sealed class InboxTests : IDisposable
             Billing, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         Assert.Single(afterRestart);
-        Assert.Equal(MessageType.Question, afterRestart[0].Type);
+        Assert.Equal(MessageType.Question, afterRestart[0].Message.Type);
     }
 
     [Fact]
@@ -354,7 +354,7 @@ public sealed class InboxTests : IDisposable
         var afterRestart = (await resuming.DrainInboxAsync(
             Orders, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
-        Assert.Equal(MessageType.Clarify, Assert.Single(afterRestart).Type);
+        Assert.Equal(MessageType.Clarify, Assert.Single(afterRestart).Message.Type);
     }
 
     [Fact]

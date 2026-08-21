@@ -1,92 +1,8 @@
-using Dapper;
+﻿using Dapper;
 using Microsoft.Data.Sqlite;
 using Parley.Core;
 
 namespace Parley.Store;
-
-/// <summary>
-/// How an agent attaches to the broker, classified by capability rather than by vendor.
-/// </summary>
-/// <remarks>
-/// The broker degrades gracefully across tiers: a question to a pull-only agent is queued
-/// rather than pushed, and a question to a headless agent triggers an invocation.
-/// </remarks>
-public enum AgentTier
-{
-    /// <summary>
-    /// Native tool calls outbound, and inbound messages pushed into a running turn. The agent
-    /// can be interrupted by an arriving message.
-    /// </summary>
-    Full = 0,
-
-    /// <summary>
-    /// Native tool calls outbound, but inbound messages only seen when the agent drains its
-    /// inbox. It cannot be interrupted.
-    /// </summary>
-    Pull = 1,
-
-    /// <summary>
-    /// No persistent session. The broker invokes the responder with a one-shot prompt and
-    /// captures the reply.
-    /// </summary>
-    /// <remarks>
-    /// The responder need not be an agent at all — a plain model API call, a local model, a
-    /// script that queries a contracts directory, or a human with a notification all qualify.
-    /// Anything that accepts a bounded question and returns text can participate.
-    /// </remarks>
-    Headless = 2
-}
-
-/// <summary>
-/// The registration and liveness state of an agent.
-/// </summary>
-public enum AgentStatus
-{
-    /// <summary>Known to the registry but never yet connected.</summary>
-    Registered = 0,
-
-    /// <summary>Currently attached to the broker and able to receive messages.</summary>
-    Live = 1,
-
-    /// <summary>
-    /// Previously live, now disconnected. Its open exchanges are orphaned and its pair slots
-    /// released.
-    /// </summary>
-    Offline = 2,
-
-    /// <summary>
-    /// Spawning was attempted and failed repeatedly, so the agent is not worth routing to.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Deliberately not a worse <see cref="Offline"/>. Offline is the ordinary resting state
-    /// of a lazily spawned agent between questions, and must stay routable — refusing traffic
-    /// to an offline agent would refuse the very traffic meant to wake it. This says something
-    /// else: the broker tried, and there was nothing there.
-    /// </para>
-    /// <para>
-    /// The usual cause is a repository that was deleted, moved, or renamed while its agent was
-    /// still registered. Questions to such an agent are refused at admission, because
-    /// accepting them costs a full TTL each and tells the asker nothing. Resolving what is
-    /// already outstanding is the operator's decision, not the broker's: a deleted repository
-    /// is often temporary, and force-closing on the broker's initiative would discard real
-    /// questions to save a human a judgement they are better placed to make.
-    /// </para>
-    /// </remarks>
-    Unreachable = 3,
-
-    /// <summary>
-    /// Retired by an operator: the repository is gone for good.
-    /// </summary>
-    /// <remarks>
-    /// The only status the broker never sets on its own evidence. <see cref="Unreachable"/> is
-    /// the broker reporting that it tried and failed, which a re-clone or a restored backup can
-    /// invalidate at any moment; this is a person saying it will not come back. Start-up clears
-    /// every other status as stale liveness and leaves this one, because it is a judgement
-    /// rather than an observation.
-    /// </remarks>
-    Retired
-}
 
 /// <summary>
 /// A registered participant: its identity, how to reach it, and whether it is currently
@@ -199,6 +115,138 @@ public sealed class AgentRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return [.. rows.Select(r => r.ToDomain())];
+    }
+
+    /// <summary>
+    /// Reports whether an agent is registered at all.
+    /// </summary>
+    /// <param name="agent">The name to look for.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns><see langword="true"/> if the registry holds a row for it, in any status.</returns>
+    /// <remarks>
+    /// Distinct from <see cref="IsUnroutableAsync"/>, which folds an unknown name in with the
+    /// statuses that refuse traffic. This one answers the different question the broker asks
+    /// about the agent that is <em>acting</em>: an adapter configured with a name nobody
+    /// registered is a deployment fault, not a peer being unavailable.
+    /// </remarks>
+    public async Task<bool> IsRegisteredAsync(
+        AgentName agent,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteScalarAsync<long>(
+            new CommandDefinition(
+                "SELECT count(*) FROM agents WHERE name = @Name;",
+                new { Name = agent.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
+
+    /// <summary>
+    /// Lists what one agent may learn about the others, per SPEC.md §10.1's <c>agents()</c>.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Every registered agent except those an operator has retired.</returns>
+    /// <remarks>
+    /// <para>
+    /// Projects rather than filters, and the columns it does not select are the reason it exists
+    /// beside <see cref="GetAllAsync"/>. Workspace, session handle and adapter configuration are
+    /// all on the stored record and none may cross to a peer: the first is a path on somebody
+    /// else's machine, the second an internal identifier, and §12.1 makes the third free-form
+    /// precisely so it can hold endpoints the broker never interprets. Handing those to an agent
+    /// would breach rule 3 through the one operation whose job is to describe agents.
+    /// </para>
+    /// <para>
+    /// Retired agents are omitted, per §14 — "not routed to, not offered in <c>agents()</c>".
+    /// Unreachable ones are listed, also per §14, because a peer that can see the mark stops
+    /// asking instead of inferring it from silence.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<AgentSummary>> ListRoutableAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await _connection.QueryAsync<SummaryRow>(
+            new CommandDefinition(
+                """
+                SELECT name AS Name, adapter AS Adapter, tier AS Tier, status AS Status,
+                       last_seen_utc AS LastSeenUtc
+                  FROM agents
+                 WHERE status <> 'retired'
+                 ORDER BY name;
+                """,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return rows.Select(r => new AgentSummary(
+            AgentName.Create(r.Name),
+            r.Adapter,
+            AgentRow.ParseTier(r.Tier),
+            AgentRow.ParseStatus(r.Status),
+            r.LastSeenUtc is null ? null : ExchangeRow.ParseTimestamp(r.LastSeenUtc))).ToList();
+    }
+
+    /// <summary>
+    /// Reports whether an agent carries a status that stops the broker routing to it.
+    /// </summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns><see langword="true"/> if it is <c>unreachable</c> or <c>retired</c>.</returns>
+    /// <remarks>
+    /// <para>
+    /// The pair of statuses admission already refuses a question to (§14). Stated once here so a
+    /// second caller cannot get the set subtly wrong — an omitted <c>retired</c> is what made
+    /// retirement a control that did not hold.
+    /// </para>
+    /// <para>
+    /// A name that is not registered at all counts too, and that was found rather than designed.
+    /// Without it a message addressed to an unknown agent reached the <c>INSERT</c> and came back
+    /// as a foreign-key violation — a raw storage exception for an ordinary mistake like a typo
+    /// or a name remembered from before a re-registration, where §7.3 asks for a refusal the
+    /// asker can act on. It also made the two distinguishable: a retired name refused and an
+    /// unknown one thrown, which hands back exactly the state §14 keeps out of <c>agents()</c>.
+    /// Both now mean the same thing, which is what they are — a name you cannot address, and
+    /// <c>agents()</c> is the answer to both.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> IsUnroutableAsync(
+        AgentName agent,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteScalarAsync<long>(
+            new CommandDefinition(
+                "SELECT count(*) FROM agents WHERE name = @Name " +
+                "AND status NOT IN ('unreachable', 'retired');",
+                new { Name = agent.Value },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false) == 0;
+
+    /// <summary>
+    /// Reports whether an operator has retired an agent.
+    /// </summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns><see langword="true"/> if it is <c>retired</c>.</returns>
+    /// <remarks>
+    /// Narrower than <see cref="IsUnroutableAsync"/> and used where the question is about the
+    /// agent that is <em>acting</em> rather than the one being addressed. <c>unreachable</c>
+    /// describes a peer nobody could spawn, which says nothing about an agent plainly running
+    /// well enough to be sending something.
+    /// </remarks>
+    public async Task<bool> IsRetiredAsync(
+        AgentName agent,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteScalarAsync<long>(
+            new CommandDefinition(
+                "SELECT count(*) FROM agents WHERE name = @Name AND status = 'retired';",
+                new { Name = agent.Value },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
+
+    private sealed class SummaryRow
+    {
+        public string Name { get; init; } = "";
+        public string Adapter { get; init; } = "";
+        public string Tier { get; init; } = "";
+        public string Status { get; init; } = "";
+        public string? LastSeenUtc { get; init; }
     }
 
     /// <summary>
@@ -554,28 +602,51 @@ public sealed class AgentRepository(SqliteConnection connection)
 
         public string Status { get; init; } = "";
 
+        /// <summary>Parses a stored tier token.</summary>
+        /// <param name="value">The token read from storage.</param>
+        /// <returns>The corresponding tier.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// <paramref name="value"/> is not a recognised token, indicating a corrupted or
+        /// externally modified database.
+        /// </exception>
+        /// <remarks>
+        /// Named rather than inlined into <see cref="ToDomain"/>, because a second reader now
+        /// needs it — the summary projection §10.1 returns — and two copies of a mapping are how
+        /// the two come to disagree.
+        /// </remarks>
+        public static AgentTier ParseTier(string value) => value switch
+        {
+            "full" => AgentTier.Full,
+            "pull" => AgentTier.Pull,
+            "headless" => AgentTier.Headless,
+            _ => throw new InvalidOperationException($"Unrecognised tier '{value}'.")
+        };
+
+        /// <summary>Parses a stored status token.</summary>
+        /// <param name="value">The token read from storage.</param>
+        /// <returns>The corresponding status.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// <paramref name="value"/> is not a recognised token, indicating a corrupted or
+        /// externally modified database.
+        /// </exception>
+        public static AgentStatus ParseStatus(string value) => value switch
+        {
+            "registered" => AgentStatus.Registered,
+            "live" => AgentStatus.Live,
+            "offline" => AgentStatus.Offline,
+            "unreachable" => AgentStatus.Unreachable,
+            "retired" => AgentStatus.Retired,
+            _ => throw new InvalidOperationException($"Unrecognised status '{value}'.")
+        };
+
         public AgentRecord ToDomain() => new(
             AgentName.Create(Name),
             Adapter,
-            Tier switch
-            {
-                "full" => AgentTier.Full,
-                "pull" => AgentTier.Pull,
-                "headless" => AgentTier.Headless,
-                _ => throw new InvalidOperationException($"Unrecognised tier '{Tier}'.")
-            },
+            ParseTier(Tier),
             Workspace,
             SessionRef,
             AdapterConfig,
             LastSeenUtc is null ? null : ExchangeRow.ParseTimestamp(LastSeenUtc),
-            Status switch
-            {
-                "registered" => AgentStatus.Registered,
-                "live" => AgentStatus.Live,
-                "offline" => AgentStatus.Offline,
-                "unreachable" => AgentStatus.Unreachable,
-                "retired" => AgentStatus.Retired,
-                _ => throw new InvalidOperationException($"Unrecognised status '{Status}'.")
-            });
+            ParseStatus(Status));
     }
 }

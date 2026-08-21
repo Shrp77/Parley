@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using Xunit;
 
 namespace Parley.Broker.Tests;
@@ -38,7 +38,9 @@ public sealed class SurfaceBoundaryTests
         nameof(Broker.ClarifyAsync),
         nameof(Broker.AnswerAsync),
         nameof(Broker.ConcludeAsync),
+        nameof(Broker.NotifyAsync),
         nameof(Broker.DrainInboxAsync),
+        nameof(Broker.ListAgentsAsync),
 
         // Lifecycle. Driven by the host, not exposed to an agent by any adapter.
         nameof(Broker.StartAsync),
