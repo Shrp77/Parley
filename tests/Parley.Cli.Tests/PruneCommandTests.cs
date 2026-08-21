@@ -219,6 +219,24 @@ public sealed class PruneCommandTests : IDisposable
         Assert.Equal(1, await MessageCount(path));
     }
 
+    [Theory]
+    [InlineData("export")]
+    [InlineData("force-conclude")]
+    public async Task A_blank_conversation_identifier_is_refused_rather_than_thrown(string verb)
+    {
+        // `parley export ""` used to reach the repository, hit an ArgumentException on the way
+        // in, and print a .NET stack trace with exit code 127 — the operator's own input coming
+        // back at them as a crash. Found by typing it, on the side of the trust boundary where
+        // nobody was looking.
+        var path = await ProjectDatabase();
+
+        var (exitCode, error) = ToolProcess.Run("--db", path, verb, "");
+
+        Assert.Equal(64, exitCode);
+        Assert.DoesNotContain("Unhandled exception", error, StringComparison.Ordinal);
+        Assert.Contains("identifier is required", error, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Prune_takes_no_operand()
     {

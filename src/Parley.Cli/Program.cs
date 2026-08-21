@@ -187,11 +187,14 @@ using (holder)
                 .ConfigureAwait(false);
 
         case "export" when rest.Length == 1:
-            return await commands.ExportAsync(rest[0], CancellationToken.None).ConfigureAwait(false);
+            return await WithConversation(
+                rest[0], id => commands.ExportAsync(id, CancellationToken.None))
+                .ConfigureAwait(false);
 
         case "force-conclude" when rest.Length == 1:
-            return await commands
-                .ForceConcludeAsync(rest[0], DateTimeOffset.UtcNow, CancellationToken.None)
+            return await WithConversation(
+                rest[0],
+                id => commands.ForceConcludeAsync(id, DateTimeOffset.UtcNow, CancellationToken.None))
                 .ConfigureAwait(false);
 
         case "prune" when rest.Length == 0:
@@ -223,6 +226,30 @@ async Task<int> PruneAsync(OperatorCommands commands)
 
     return await commands.PruneAsync(policy, DateTimeOffset.UtcNow, CancellationToken.None)
         .ConfigureAwait(false);
+}
+
+// `parley export ""` used to reach the repository, hit an ArgumentException on the way in, and
+// print a .NET stack trace with exit code 127. That is the operator's own input coming back at
+// them as a crash — the same shape as the agent-input defects §7.3 exists to prevent, on the
+// side of the boundary where nobody was looking. Found by typing it.
+//
+// Blank only. The schema constrains the character set of a conversation identifier and refuses
+// to store one outside it, so an identifier this rejected but storage would have accepted is a
+// refusal the operator cannot act on — and an identifier storage would have rejected can only
+// ever match nothing, which "no messages in '...'" already says clearly.
+async Task<int> WithConversation(string conversationId, Func<string, Task<int>> run)
+{
+    if (string.IsNullOrWhiteSpace(conversationId))
+    {
+        await Console.Error.WriteLineAsync(
+            "A conversation identifier is required, and blank is not one. Identifiers are chosen " +
+            "by the agents that name them on a question or an event; `parley export <id>` is how " +
+            "you read one back.").ConfigureAwait(false);
+
+        return Usage;
+    }
+
+    return await run(conversationId).ConfigureAwait(false);
 }
 
 async Task<int> WithAgent(string name, Func<AgentName, Task<int>> run)
