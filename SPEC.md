@@ -1361,7 +1361,7 @@ unbounded corner of the log in the part carrying the full text of every question
 by exactly the failure §14 exists to bound elsewhere.
 
 What that costs is worth stating exactly rather than waving at. A question outlives its
-exchange only after the exchange was ghosted, and §10.1's `get_messages` already withholds a
+exchange only after the exchange was ghosted, and §10.1's `inbox` already withholds a
 question whose exchange has ended, so removing one takes text no delivery would have
 returned. The ghost notice is the real case: it *would* be delivered, and past the cap it is
 removed unread. That is the trade — an agent absent for the whole configured lifetime of the
