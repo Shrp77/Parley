@@ -42,6 +42,12 @@ public sealed class SurfaceBoundaryTests
         nameof(Broker.DrainInboxAsync),
         nameof(Broker.ListAgentsAsync),
 
+        // Reads the identifiers an exchange's question declared, so an adapter can hold §5.3's
+        // rule that there is one resolution per sub-question asked. On this side of the line
+        // because the answerer was already told them when the question arrived — it returns
+        // identifiers, never the question, so it cannot become a way around §13's envelope.
+        nameof(Broker.GetSubQuestionIdsAsync),
+
         // Lifecycle. Driven by the host, not exposed to an agent by any adapter.
         nameof(Broker.StartAsync),
         nameof(Broker.DetachAsync),
@@ -77,6 +83,29 @@ public sealed class SurfaceBoundaryTests
         var leaked = PublicMethodsOf(typeof(Broker)).Where(operatorOperations.Contains);
 
         Assert.Empty(leaked);
+    }
+
+    [Fact]
+    public void An_operation_naming_an_exchange_or_a_conversation_also_names_the_agent()
+    {
+        // An identifier is not an authorisation. An exchange id is a small integer an agent can
+        // guess, and a conversation id is a string an agent chose — so an operation that takes
+        // one and no acting agent will answer whoever calls it about whatever they name.
+        //
+        // This is not hypothetical. GetSubQuestionIdsAsync shipped without the agent for exactly
+        // one review round, and the adapter built a refusal out of it that read back another
+        // pair's sub-question identifiers to a bystander that had guessed the exchange id.
+        // Identifiers are agent-chosen, so one may well name what a team is working on. Ordering
+        // the adapter's guards would not have fixed it: what leaked was the diagnostic itself.
+        var unscoped = typeof(Broker)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m => m.GetParameters().Any(p =>
+                p.Name is "exchangeId" or "conversationId"))
+            .Where(m => !m.GetParameters().Any(p => p.ParameterType == typeof(Parley.Core.AgentName)))
+            .Select(m => m.Name)
+            .ToArray();
+
+        Assert.Empty(unscoped);
     }
 
     [Fact]

@@ -196,11 +196,16 @@ public sealed class SecondSessionTests
         }
         finally
         {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-
-            if (Directory.Exists(root))
+            try
             {
                 Directory.Delete(root, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Best effort, like the fixture's. Microsoft.Data.Sqlite pools connections, so
+                // disposing one returns it rather than closing the file — and clearing the pool
+                // to force that is process-wide, which would reach into whatever else is running
+                // in parallel. A directory left under the temporary path is the cheaper problem.
             }
         }
     }

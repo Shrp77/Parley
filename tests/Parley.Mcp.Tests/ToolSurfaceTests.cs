@@ -73,6 +73,73 @@ public sealed class ToolSurfaceTests
     }
 
     [Fact]
+    public void Every_refusal_code_is_spelled_the_same_way()
+    {
+        // The refusal code is the part a model matches on to decide what to do next; the prose
+        // beside it is the part it reads. Two spellings of one condition therefore fail in the
+        // worst way — an agent handling "notaparticipant" silently misses "not_a_participant"
+        // and treats a refusal as an unknown failure. Most codes come from an enum name, so the
+        // shape is settled: lowercase letters, no separators.
+        var source = File.ReadAllText(SourcePath("ParleyTools.cs"));
+        var literals = System.Text.RegularExpressions.Regex
+            .Matches(source, @"\[""refused""\] = ""([^""]+)""")
+            .Select(m => m.Groups[1].Value)
+            .ToArray();
+
+        Assert.NotEmpty(literals);
+        Assert.All(literals, code => Assert.Matches("^[a-z]+$", code));
+    }
+
+    [Fact]
+    public void What_the_tools_promise_matches_what_they_accept()
+    {
+        // §11.4 puts the rules of §8 in tool descriptions because that is what an agent re-reads
+        // on every call — which makes a description that has drifted from the code worse than a
+        // stale doc comment. It is the thing being obeyed.
+        //
+        // Both of these drifted the moment a guard was added: a referral now has to name an
+        // agent the registry holds, and a conversation id now has to be safe to use as a
+        // filename. An agent told neither would confidently do the wrong thing, be refused, and
+        // have to learn the rule by failing.
+        var source = File.ReadAllText(SourcePath("ParleyTools.cs"));
+        var descriptions = System.Text.RegularExpressions.Regex
+            .Matches(source, @"\[Description\((.*?)\)\]",
+                System.Text.RegularExpressions.RegexOptions.Singleline)
+            .Select(m => m.Groups[1].Value)
+            .ToArray();
+
+        var answerRules = Assert.Single(descriptions, d => d.Contains("out_of_scope", StringComparison.Ordinal));
+        Assert.Contains("parley_agents", answerRules, StringComparison.Ordinal);
+
+        Assert.All(
+            descriptions.Where(d => d.Contains("line of discussion", StringComparison.Ordinal)),
+            d => Assert.Contains("Letters, digits", d, StringComparison.Ordinal));
+    }
+
+    /// <summary>Locates a source file in the adapter project.</summary>
+    /// <param name="fileName">The file to find.</param>
+    /// <returns>Its full path.</returns>
+    /// <remarks>
+    /// Reading the source is unusual and is the honest way to check this one. The codes are
+    /// string literals chosen at each call site, so nothing at runtime enumerates them — a test
+    /// that exercised every refusal path instead would pin the ones it happened to reach and say
+    /// nothing about the next one somebody adds.
+    /// </remarks>
+    private static string SourcePath(string fileName)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "src")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.NotNull(directory);
+
+        return Path.Combine(directory.FullName, "src", "Parley.Mcp", fileName);
+    }
+
+    [Fact]
     public void Every_tool_carries_a_description_because_that_is_where_section_8_lives()
     {
         // §11.4: the rules of §8 live in tool descriptions, which Full and Pull-only agents

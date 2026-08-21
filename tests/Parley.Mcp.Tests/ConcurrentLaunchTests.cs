@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace Parley.Mcp.Tests;
@@ -45,8 +44,6 @@ public sealed class ConcurrentLaunchTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-
         try
         {
             Directory.Delete(_directory, recursive: true);

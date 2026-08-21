@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using Parley.Core;
 
 namespace Parley.Mcp.Tests;
@@ -99,11 +98,6 @@ internal sealed class ServerFixture : IAsyncDisposable
         }
 
         _sessions.Clear();
-
-        // Disposing a SqliteConnection returns it to the pool rather than closing the file, so
-        // without this the directory cannot be removed and — more to the point — a test that
-        // meant to assert a handle was released would pass whether it was or not.
-        SqliteConnection.ClearAllPools();
 
         try
         {

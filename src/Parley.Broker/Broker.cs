@@ -1,4 +1,5 @@
-﻿using Microsoft.Data.Sqlite;
+﻿using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 
@@ -1078,6 +1079,87 @@ public sealed class Broker
         StartedUtc = nowUtc;
 
         return new StartResult(live, orphaned);
+    }
+
+    /// <summary>
+    /// Reads the sub-question identifiers an exchange was opened with.
+    /// </summary>
+    /// <param name="exchangeId">The exchange.</param>
+    /// <param name="asking">The agent asking, which must be the one that owes the next move.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>
+    /// The identifiers, in the order they were asked; or an empty list if the exchange does not
+    /// exist, is not this agent's to answer, or declared none.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// Exists so an adapter can hold an answer to §5.3's rule that there is one resolution per
+    /// sub-question asked. Without it, an answer resolving <c>q99</c> for an exchange that asked
+    /// <c>q1</c> is stored and closes the exchange: the asker's actual question goes unanswered,
+    /// the exchange records <c>answered</c>, and §15 counts a deployment that resolved something
+    /// it did not.
+    /// </para>
+    /// <para>
+    /// Deliberately narrow in two directions. It returns identifiers and not the question, so it
+    /// cannot become the way an agent re-reads a peer's words outside the envelope §13 requires;
+    /// and it answers only the agent that owes the next move, so it cannot become the way an
+    /// agent reads anything at all about an exchange it is not in. The second was learned the
+    /// hard way: an earlier version answered anybody, and the refusal an adapter built from it
+    /// carried another pair's identifiers to a bystander that had simply guessed the id.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<string>> GetSubQuestionIdsAsync(
+        long exchangeId,
+        AgentName asking,
+        CancellationToken cancellationToken = default)
+    {
+        var exchange = await _exchanges.GetAsync(exchangeId, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        // Scoped to whoever owes the next move, and that is the whole reason the caller is a
+        // parameter. Without it any agent could name any exchange id and read back the
+        // sub-question identifiers of a conversation it is not in — and identifiers are agent
+        // chosen, so one may well be 'migrate-payments-to-stripe'. Refusing afterwards is not
+        // enough when the refusal is what carries them.
+        if (exchange is null || exchange.OwedBy != asking)
+        {
+            return [];
+        }
+
+        var question = await _messages.GetQuestionAsync(exchangeId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (question is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            using var payload = JsonDocument.Parse(question.PayloadJson);
+
+            if (!payload.RootElement.TryGetProperty("sub_questions", out var asked) ||
+                asked.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            return
+            [
+                .. asked.EnumerateArray()
+                    .Select(q => q.TryGetProperty("id", out var id) ? id.GetString() : null)
+                    .Where(id => !string.IsNullOrEmpty(id))
+                    .Select(id => id!)
+            ];
+        }
+        catch (JsonException)
+        {
+            // Stored payloads are checked for well-formedness by the schema, so this is
+            // unreachable. Returning nothing rather than throwing keeps a malformed row from
+            // making an exchange permanently unanswerable, which would be a worse failure than
+            // the one this guard prevents.
+            return [];
+        }
     }
 
     /// <summary>

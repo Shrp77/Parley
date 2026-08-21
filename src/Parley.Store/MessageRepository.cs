@@ -345,6 +345,35 @@ public sealed class MessageRepository(SqliteConnection connection)
     }
 
     /// <summary>
+    /// Loads the question an exchange was opened with.
+    /// </summary>
+    /// <param name="exchangeId">The exchange.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The question, or <see langword="null"/> if the exchange carries none.</returns>
+    /// <remarks>
+    /// The oldest question on the exchange, which is the only one there: a second would need a
+    /// second admission, and admission opens a new exchange rather than adding to this one. The
+    /// ordering makes that explicit rather than relying on it.
+    /// </remarks>
+    public async Task<Message?> GetQuestionAsync(
+        long exchangeId,
+        CancellationToken cancellationToken = default)
+    {
+        var row = await _connection.QueryFirstOrDefaultAsync<MessageRow>(
+            new CommandDefinition(
+                $"""
+                {SelectColumns}
+                WHERE exchange_id = @Exchange AND type = 'question'
+                ORDER BY id
+                LIMIT 1;
+                """,
+                new { Exchange = exchangeId },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return row?.ToDomain();
+    }
+
+    /// <summary>
     /// Loads a single message by its identity.
     /// </summary>
     /// <param name="id">The message's primary key.</param>

@@ -154,8 +154,9 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
             "sub-question ids. Refused if vague or absent.")]
         string consequences,
         [Description(
-            "Optional. An identifier grouping this with an existing line of discussion. You are " +
-            "the only participant who knows whether it continues one.")]
+            "Optional. An identifier grouping this with an existing line of discussion. " +
+            "Letters, digits, '.', '_' and '-' — it is used as a filename when a discussion " +
+            "is exported. You are the only participant who knows whether it continues one.")]
         string? conversationId = null,
         [Description("Optional. The model that produced this question.")] string? responderModel = null,
         CancellationToken cancellationToken = default)
@@ -180,6 +181,11 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         if (BadConversation(conversationId) is { } badConversation)
         {
             return badConversation;
+        }
+
+        if (BadFraming(intent, consequences) is { } badFraming)
+        {
+            return badFraming;
         }
 
         if (BadSubQuestions(subQuestions) is { } badQuestions)
@@ -300,6 +306,8 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         - "out_of_scope": you do not own it. Name who does in redirect_to and stop. Do NOT go and
           ask them on the asker's behalf — refer, do not relay. Guessing about a peer's boundary
           is the worst of the three, because it is wrong AND attributed to you.
+          redirect_to must be an agent from parley_agents. If the owner is not there, say
+          "unknown" rather than naming somebody who cannot be reached.
 
         Answer from authority, not inference. Never describe your internals.
         """)]
@@ -321,6 +329,18 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         if (BadResolutions(resolutions) is { } badResolutions)
         {
             return badResolutions;
+        }
+
+        if (await UnknownReferralAsync(resolutions, cancellationToken).ConfigureAwait(false)
+            is { } badReferral)
+        {
+            return badReferral;
+        }
+
+        if (await MismatchedResolutionsAsync(exchangeId, resolutions, cancellationToken)
+                .ConfigureAwait(false) is { } mismatched)
+        {
+            return mismatched;
         }
 
         var entries = resolutions ?? [];
@@ -378,7 +398,9 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
     public async Task<JsonNode> NotifyAsync(
         [Description("The agent to tell.")] string to,
         [Description("The event, stated plainly. One or two sentences.")] string text,
-        [Description("Optional. An identifier grouping this with a line of discussion.")]
+        [Description(
+            "Optional. An identifier grouping this with a line of discussion. Letters, digits, " +
+            "'.', '_' and '-'.")]
         string? conversationId = null,
         [Description("Optional. The model that produced this.")] string? responderModel = null,
         CancellationToken cancellationToken = default)
@@ -564,7 +586,11 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
             return new JsonObject
             {
                 ["ok"] = false,
-                ["refused"] = "not_a_participant",
+                // The same spelling the enum-derived codes produce. Two spellings of one
+                // condition is worse here than in most places: the refusal code is the part a
+                // model matches on to decide what to do next, and the prose is the part it
+                // reads. An agent handling 'notaparticipant' would silently miss this one.
+                ["refused"] = "notaparticipant",
                 ["why"] = "You are not part of that discussion, or it does not exist."
             };
         }
@@ -689,6 +715,57 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
                 "when a discussion is exported. Something like 'tax-rate' works.");
     }
 
+    /// <summary>The shortest <c>consequences</c> the schema will store, per SPEC.md §8 rule 1.</summary>
+    /// <remarks>
+    /// The floor is what does the work. Requiring only that the field be present admits "n/a",
+    /// which satisfies a check and states nothing — and a question that states nothing about
+    /// what its answer is for is the one §8 exists to prevent, because the peer cannot scope its
+    /// answer and the asker cannot use it once its own context has moved on (§4.2).
+    /// </remarks>
+    private const int MinimumConsequences = 40;
+
+    /// <summary>Validates the framing of a Question.</summary>
+    /// <param name="intent">What the asker is trying to decide.</param>
+    /// <param name="consequences">What the asker will do with each possible answer.</param>
+    /// <returns>A refusal, or <see langword="null"/> if the question is framed.</returns>
+    /// <remarks>
+    /// <para>
+    /// §8 rule 1 is the quality rule the rest of the protocol leans on, and it is enforced in
+    /// the schema rather than advised — which meant an agent that wrote "n/a" received a CHECK
+    /// constraint naming <c>json_extract</c>. That is the single worst place in the tool surface
+    /// to answer with SQL: the agent has not made a mistake of syntax, it has failed to say what
+    /// its question is for, and the correction is a sentence about thinking rather than about
+    /// formatting.
+    /// </para>
+    /// <para>
+    /// The intent has no floor in the schema and is checked for presence only. A question with
+    /// no stated intent is admissible and useless, and where the schema is silent the honest
+    /// thing is to ask rather than to invent a second threshold here.
+    /// </para>
+    /// </remarks>
+    private static JsonNode? BadFraming(string? intent, string? consequences)
+    {
+        if (string.IsNullOrWhiteSpace(intent))
+        {
+            return Malformed(
+                "Say what you are trying to decide. One sentence — the peer scopes its answer " +
+                "to it, and so do you when this comes back hours from now.");
+        }
+
+        if (string.IsNullOrWhiteSpace(consequences) ||
+            consequences.Trim().Length < MinimumConsequences)
+        {
+            return Malformed(
+                "Say what you will do with each possible answer, in at least " +
+                $"{MinimumConsequences} characters. This is the rule the rest of the protocol " +
+                "leans on: it tells the peer how much precision is worth its time, and it is " +
+                "what your own answer is read against when it arrives and you no longer " +
+                "remember asking. \"n/a\" is not an answer to it.");
+        }
+
+        return null;
+    }
+
     /// <summary>Validates the sub-questions of a Question.</summary>
     /// <param name="subQuestions">What the caller supplied.</param>
     /// <returns>A refusal, or <see langword="null"/> if they are usable.</returns>
@@ -732,6 +809,168 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
                 return Malformed(
                     $"Sub-question '{question.Id}' is gated on '{question.GateOn}', which is not " +
                     "one of the sub-questions you asked.");
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Refuses an answer that does not resolve the question that was asked.</summary>
+    /// <param name="exchangeId">The exchange being answered.</param>
+    /// <param name="resolutions">What the answerer said about each sub-question.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>A refusal, or <see langword="null"/> if every sub-question is accounted for.</returns>
+    /// <remarks>
+    /// <para>
+    /// §5.3 is one resolution per sub-question asked, and the tool's own description says so —
+    /// but nothing held it, so an answer resolving <c>q99</c> closed an exchange that had asked
+    /// <c>q1</c>. The asker's question went unanswered, the exchange recorded <c>answered</c>,
+    /// and §15 counted a deployment resolving something it had not.
+    /// </para>
+    /// <para>
+    /// Both directions matter and the missing one is the likelier. Answering only the first of
+    /// three sub-questions is an ordinary way for a long turn to go wrong, and it closes the
+    /// exchange just as firmly as answering all three — the two remaining questions are gone,
+    /// with no record that they were skipped rather than answered.
+    /// </para>
+    /// <para>
+    /// An exchange whose question declared no identifiers is left alone rather than refused.
+    /// The tool refuses to open one of those now, so reaching this means a row written before
+    /// that guard existed, and refusing every answer to it would make it permanently
+    /// unanswerable — a worse outcome than the one being prevented.
+    /// </para>
+    /// </remarks>
+    private async Task<JsonNode?> MismatchedResolutionsAsync(
+        long exchangeId, Resolution[]? resolutions, CancellationToken cancellationToken)
+    {
+        var asked = await _session.RunAsync(
+            (broker, _, ct) => broker.GetSubQuestionIdsAsync(exchangeId, _options.Agent, ct),
+            cancellationToken).ConfigureAwait(false);
+
+        if (asked.Count == 0)
+        {
+            return null;
+        }
+
+        var given = (resolutions ?? [])
+            .Select(r => r.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToArray();
+
+        // Two entries for one sub-question is the mirror of two sub-questions sharing an id,
+        // which is refused when the question is asked. Left alone it stores a self-contradiction
+        // — 'answered: gross' and 'unknown' against the same id — and the rollup silently takes
+        // the pessimistic one, so §5.3's aggregate stops describing what the answerer said.
+        var repeated = given
+            .GroupBy(id => id, StringComparer.Ordinal)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToArray();
+
+        if (repeated.Length > 0)
+        {
+            return Malformed(
+                $"You have resolved {string.Join(", ", repeated)} more than once. One entry per " +
+                "sub-question — two answers to the same one is a contradiction, and the exchange " +
+                "records the least resolved of them.");
+        }
+
+        var answered = given.ToHashSet(StringComparer.Ordinal);
+
+        var missing = asked.Where(id => !answered.Contains(id)).ToArray();
+        var invented = answered.Where(id => !asked.Contains(id)).ToArray();
+
+        if (missing.Length == 0 && invented.Length == 0)
+        {
+            return null;
+        }
+
+        // Both halves in one message when both apply, because they usually do: answering the
+        // wrong identifier leaves the right one unresolved, and being told only one of those
+        // costs a round trip to discover the other.
+        var complaint = new List<string>();
+
+        if (missing.Length > 0)
+        {
+            complaint.Add($"you have not resolved {string.Join(", ", missing)}");
+        }
+
+        if (invented.Length > 0)
+        {
+            complaint.Add($"you have resolved {string.Join(", ", invented)}, which nobody asked");
+        }
+
+        return Malformed(
+            $"This exchange asked {string.Join(", ", asked)}, and " +
+            string.Join(", and ", complaint) +
+            ". Every sub-question needs exactly one entry — answering some of them closes the " +
+            "exchange just as firmly as answering all of them, and the rest are then gone. Use " +
+            "'unknown' for the ones you cannot determine.");
+    }
+
+    /// <summary>Refuses a referral naming somebody the registry does not hold.</summary>
+    /// <param name="resolutions">What the answerer said about each sub-question.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>A refusal, or <see langword="null"/> if every referral names a real peer.</returns>
+    /// <remarks>
+    /// <para>
+    /// Separate from the grammar check because the two fail differently: a name like
+    /// <c>Inventory</c> is wrong in a way the agent can see, and <c>inventory</c> in a
+    /// deployment that has no inventory agent is wrong in a way only the registry knows. Both
+    /// used to arrive as SQL — this one from <c>tr_referral_targets_exist</c>.
+    /// </para>
+    /// <para>
+    /// It is worth a query because this is the referral an agent is most likely to make. §8
+    /// tells it to name the owner rather than guess, and §12.3 means an agent exists only once
+    /// somebody has opened its repository — so the honest answer to "who owns this" is
+    /// frequently an agent the broker has never heard of. Saying so, and pointing at the tool
+    /// that lists who does exist, is the difference between a dead end and a correction.
+    /// </para>
+    /// <para>
+    /// Checked against the routable set rather than mere registration, which is stricter than
+    /// the trigger. Referring an asker to a retired or unreachable peer sends it somewhere it
+    /// will be refused, and §5.3 already has a better word for a question this agent cannot
+    /// place: <c>unknown</c>.
+    /// </para>
+    /// </remarks>
+    private async Task<JsonNode?> UnknownReferralAsync(
+        Resolution[]? resolutions, CancellationToken cancellationToken)
+    {
+        var referrals = (resolutions ?? [])
+            .Select(r => r.RedirectTo)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (referrals.Length == 0)
+        {
+            return null;
+        }
+
+        var known = await _session.RunAsync(
+            (broker, _, ct) => broker.ListAgentsAsync(ct), cancellationToken).ConfigureAwait(false);
+
+        var routable = known.Select(a => a.Name.Value).ToHashSet(StringComparer.Ordinal);
+
+        foreach (var referral in referrals)
+        {
+            // Referring to yourself asserts both halves of a contradiction in one message:
+            // out_of_scope says the boundary is not yours, and the referral says it is. The
+            // schema refuses it; said here, it is a correction rather than a constraint name.
+            if (referral == _options.Agent.Value)
+            {
+                return Malformed(
+                    "You cannot refer a question back to yourself. Saying it is out of your " +
+                    "scope and that you own it are the same claim twice, in opposite " +
+                    "directions — answer it, or say 'unknown'.");
+            }
+
+            if (!routable.Contains(referral!))
+            {
+                return Malformed(
+                    $"There is no agent called '{referral}' to refer this to. Call parley_agents " +
+                    "to see who exists, or answer 'unknown' rather than sending them somewhere " +
+                    "that is not there.");
             }
         }
 

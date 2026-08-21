@@ -166,10 +166,15 @@ public sealed class MalformedInputTests
             cancellationToken: ct);
 
         Assert.True(sent["ok"]!.GetValue<bool>(), sent.ToJsonString());
+
+        // Found by sender rather than by position. Nothing else should be in this inbox, but an
+        // assertion that reads index zero fails with an index error when that assumption breaks,
+        // which says nothing about what actually arrived.
+        var delivered = (await billing.InboxAsync(cancellationToken: ct))["messages"]!.AsArray();
+        var note = Assert.Single(delivered, m => m!["from"]!.GetValue<string>() == "orders");
+
         Assert.Contains(
-            "script:contracts-lookup",
-            (await billing.InboxAsync(cancellationToken: ct))["messages"]![0]!["message"]!.GetValue<string>(),
-            StringComparison.Ordinal);
+            "script:contracts-lookup", note!["message"]!.GetValue<string>(), StringComparison.Ordinal);
     }
 
     [Fact]
