@@ -240,7 +240,12 @@ CREATE TABLE messages (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     -- NULL for Notify, which opens no exchange and takes no pair slot.
     exchange_id     INTEGER REFERENCES exchanges(id),
-    type            TEXT    NOT NULL CHECK (type IN ('question', 'clarify', 'answer', 'notify')),
+    -- Four an agent may send, and one only the broker writes. 'ghost' is SPEC.md 14's notice
+    -- that no answer is coming, and it needs a type of its own because none of the other four
+    -- can carry it: an 'answer' is refused on a ghosted exchange by tr_ghost_needs_no_answer,
+    -- and a 'notify' may not name an exchange. tr_ghost_is_the_brokers guards who may write it.
+    type            TEXT    NOT NULL CHECK (type IN ('question', 'clarify', 'answer', 'notify',
+                                                     'ghost')),
     from_agent      TEXT    NOT NULL REFERENCES agents(name),
     to_agent        TEXT    NOT NULL REFERENCES agents(name),
     -- Which model actually produced this. See SPEC.md section 11.3.
@@ -462,6 +467,26 @@ BEGIN
            WHERE p.key < q.key
              AND json_extract(p.value, '$.id') = json_extract(q.value, '$.gate.on')));
 END;
+
+-- A ghost is the broker's, and this is the one place authorship can be enforced rather than
+-- trusted. SPEC.md 11.3 is explicit that responder_model cannot distinguish the broker writing
+-- its own name from the broker faithfully recording an adapter that supplied it, because every
+-- row is written by the broker either way. That argument is about the value; it does not apply
+-- to the type, which no agent operation can set. So the type gates the write and the check ties
+-- the two together: a 'ghost' must carry the broker's attribution, and nothing else may.
+CREATE TRIGGER tr_ghost_is_the_brokers BEFORE INSERT ON messages
+WHEN NEW.type = 'ghost'
+BEGIN
+  SELECT RAISE(ABORT, 'a ghost message must record parley:broker as its responder')
+   WHERE NEW.responder_model <> 'parley:broker';
+END;
+
+-- The converse does not hold and must not be added. 'parley:broker' is also what a forced
+-- 'unknown' records when the clarify cap breaks (SPEC.md 7, 11.3, 15), which is an 'answer' the
+-- broker writes -- so a trigger reserving the attribution for ghosts would refuse the other
+-- broker-authored message the protocol already has. That an adapter cannot claim the namespace
+-- is enforced where 11.3 says it must be, at the point adapter-supplied values enter the broker,
+-- because every row here is written by the broker either way and the column cannot see which.
 
 CREATE TRIGGER tr_referral_targets_exist BEFORE INSERT ON messages
 WHEN json_valid(NEW.payload_json)

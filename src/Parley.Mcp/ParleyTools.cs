@@ -463,6 +463,11 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         questions you asked, and events. Also surfaces any conversation you are being asked to
         agree is finished.
 
+        A message of type "ghost" is the broker telling you a question of yours will never be
+        answered — the peer never came back and the exchange has been closed. It carries your own
+        intent and consequences back to you, because by then you will not remember asking. Act on
+        the plan you recorded, or ask again; nothing is waiting on you.
+
         Call this when you have a moment, not in a loop. Everything here is fire-and-forget, so
         nothing is waiting on you within seconds.
 

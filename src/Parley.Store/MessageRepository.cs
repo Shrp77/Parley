@@ -290,6 +290,20 @@ public sealed class MessageRepository(SqliteConnection connection)
                 $"""
                 {SelectColumns}
                 WHERE to_agent = @Agent AND delivered_utc IS NULL
+                  -- A question whose exchange is no longer open asks for a move that can no
+                  -- longer be made. Handing it over spends an agent's turn on something it will
+                  -- be refused for -- and after a ghost it does so while the asker is being told
+                  -- nobody answered, which is the two halves of one exchange disagreeing.
+                  --
+                  -- Only questions. An answer closes the exchange it belongs to and a ghost
+                  -- exists because one closed, so neither can require an open exchange; a notify
+                  -- names none at all. A clarification is left alone deliberately: it is text
+                  -- from a peer inside an exchange the recipient is already party to, and
+                  -- withholding it would drop what somebody said rather than a request nobody
+                  -- can act on.
+                  AND (type <> 'question'
+                       OR EXISTS (SELECT 1 FROM exchanges e
+                                   WHERE e.id = messages.exchange_id AND e.state = 'OPEN'))
                 ORDER BY CASE
                              WHEN EXISTS (SELECT 1 FROM exchanges e
                                            WHERE e.id = messages.exchange_id

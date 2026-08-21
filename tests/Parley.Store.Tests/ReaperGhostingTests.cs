@@ -43,7 +43,7 @@ public sealed class ReaperGhostingTests : IDisposable
         }
 
         _exchanges = new ExchangeRepository(_connection);
-        _reaper = new Reaper(_exchanges);
+        _reaper = new Reaper(_exchanges, new MessageRepository(_connection), _connection);
     }
 
     public void Dispose() => _connection.Dispose();
