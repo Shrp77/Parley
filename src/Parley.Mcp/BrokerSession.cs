@@ -157,7 +157,8 @@ public sealed class BrokerSession : IAsyncDisposable
         {
             LivenessLease = options.TickInterval * 3 > BrokerOptions.DefaultLivenessLease
                 ? options.TickInterval * 3
-                : BrokerOptions.DefaultLivenessLease
+                : BrokerOptions.DefaultLivenessLease,
+            Retention = options.Retention
         };
 
     /// <summary>

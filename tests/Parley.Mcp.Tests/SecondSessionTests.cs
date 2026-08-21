@@ -1,4 +1,4 @@
-using Xunit;
+﻿using Xunit;
 
 namespace Parley.Mcp.Tests;
 
@@ -185,6 +185,7 @@ public sealed class SecondSessionTests
             Parley.Core.AgentName.Create("orders"),
             "test-model",
             TimeSpan.FromMinutes(1),
+            Parley.Core.RetentionPolicy.Default,
             null);
 
         try

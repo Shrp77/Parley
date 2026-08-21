@@ -10,6 +10,7 @@ using Parley.Store;
 //   parley --db <path> reinstate <agent>
 //   parley --db <path> export <conversation>
 //   parley --db <path> force-conclude <conversation>
+//   parley --db <path> prune
 //
 // PARLEY_DB is read when --db is absent, so the same variable that configures an agent's server
 // configures the operator's view of the same project.
@@ -28,8 +29,12 @@ const string Help = """
       parley [--db <path>] reinstate <agent>           withdraw a retirement
       parley [--db <path>] export <conversation>       emit every message in a discussion
       parley [--db <path>] force-conclude <conv>       close a discussion over its votes
+      parley [--db <path>] prune                       apply the retention policy now
 
     --db defaults to PARLEY_DB, the same variable the agents' servers are launched with.
+    prune reads PARLEY_RETENTION_IDLE_HOURS and PARLEY_RETENTION_MAX_AGE_HOURS from the same
+    place, and prints the policy it applied. It removes text permanently; export first if you
+    want to keep a discussion.
 
     These are never available to an agent. parley-mcp, the server an MCP client launches, has
     none of them compiled into it.
@@ -156,10 +161,35 @@ using (holder)
                 .ForceConcludeAsync(rest[0], DateTimeOffset.UtcNow, CancellationToken.None)
                 .ConfigureAwait(false);
 
+        case "prune" when rest.Length == 0:
+            return await PruneAsync(commands).ConfigureAwait(false);
+
         default:
             await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
             return Usage;
     }
+}
+
+// The policy is read here rather than beside --db, so a variable an operator got wrong stops
+// prune and nothing else. Refusing `parley agents` because a retention hour is unparseable
+// would be strictly worse: listing changes nothing, and the reason somebody is at a terminal
+// asking what is registered is usually that something has already gone wrong.
+async Task<int> PruneAsync(OperatorCommands commands)
+{
+    RetentionPolicy policy;
+
+    try
+    {
+        policy = RetentionPolicyEnvironment.Read(Environment.GetEnvironmentVariable);
+    }
+    catch (InvalidOperationException ex)
+    {
+        await Console.Error.WriteLineAsync(ex.Message).ConfigureAwait(false);
+        return Config;
+    }
+
+    return await commands.PruneAsync(policy, DateTimeOffset.UtcNow, CancellationToken.None)
+        .ConfigureAwait(false);
 }
 
 async Task<int> WithAgent(string name, Func<AgentName, Task<int>> run)

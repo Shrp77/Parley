@@ -10,6 +10,7 @@ namespace Parley.Broker;
 /// Conversations closed because every polled participant agreed, or fell silent long enough to
 /// be taken as agreeing.
 /// </param>
+/// <param name="Retention">What the retention policy of §9.4 removed and what the floor held.</param>
 /// <remarks>
 /// A wrapper rather than three more fields on <see cref="ReapResult"/>, because the two sweeps
 /// answer to different sections and would drift if merged. <see cref="ReapResult"/> is the
@@ -18,4 +19,7 @@ namespace Parley.Broker;
 /// much as from any exchange. A single record would have made <c>Reaper</c> the place both
 /// were implemented, which is how a type acquires a second reason to change.
 /// </remarks>
-public sealed record TickResult(ReapResult Exchanges, int ConversationsConcluded);
+public sealed record TickResult(
+    ReapResult Exchanges,
+    int ConversationsConcluded,
+    PruneResult Retention);

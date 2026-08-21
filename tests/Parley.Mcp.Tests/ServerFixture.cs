@@ -1,4 +1,4 @@
-using Parley.Core;
+﻿using Parley.Core;
 
 namespace Parley.Mcp.Tests;
 
@@ -64,7 +64,8 @@ internal sealed class ServerFixture : IAsyncDisposable
     /// <param name="responder">What to attribute its messages to.</param>
     /// <returns>The options.</returns>
     public ServerOptions OptionsFor(string agent, string responder = "test-model") =>
-        new(DatabasePath, AgentName.Create(agent), responder, TimeSpan.FromMinutes(1), null);
+        new(DatabasePath, AgentName.Create(agent), responder, TimeSpan.FromMinutes(1),
+            RetentionPolicy.Default, null);
 
     /// <summary>Launches a server for an agent, as its client would.</summary>
     /// <param name="agent">The agent.</param>

@@ -45,6 +45,7 @@ public sealed class OperatorConsole
     private readonly ConversationRepository _conversations;
     private readonly AgentRepository _agents;
     private readonly MessageRepository _messages;
+    private readonly Pruner _pruner;
 
     /// <summary>
     /// Creates a console over an open connection.
@@ -60,6 +61,7 @@ public sealed class OperatorConsole
         _conversations = new ConversationRepository(connection);
         _agents = new AgentRepository(connection);
         _messages = new MessageRepository(connection);
+        _pruner = new Pruner(connection);
     }
 
     /// <summary>
@@ -193,4 +195,40 @@ public sealed class OperatorConsole
         CancellationToken cancellationToken = default) =>
         await _messages.GetConversationAsync(conversationId, cancellationToken).ConfigureAwait(false);
 
+    /// <summary>
+    /// Applies the retention policy of SPEC.md §9.4 now, per §10.2.
+    /// </summary>
+    /// <param name="policy">The policy to apply.</param>
+    /// <param name="nowUtc">The instant to measure ages against.</param>
+    /// <param name="cancellationToken">Cancels the pass.</param>
+    /// <returns>What was removed, and what the floor held back.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="policy"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="policy"/> is unusable.</exception>
+    /// <remarks>
+    /// <para>
+    /// §10.2 describes this as applying the policy "immediately rather than waiting for the
+    /// sweep", which says plainly that it is not the only thing that prunes: every server's tick
+    /// does the same work on its own schedule. What this adds is the ability to act at a
+    /// particular moment — after retiring an agent, before handing a machine on, or once an
+    /// operator has changed the numbers and wants the effect now rather than within a tick.
+    /// </para>
+    /// <para>
+    /// It takes the policy as an argument rather than holding one, and that is the difference
+    /// between this and every other operation here. The others are instructions whose effect is
+    /// fully described by the verb; this one's effect depends entirely on two numbers, and a
+    /// console that carried its own copy would let the operator's command and the servers' sweep
+    /// apply different policies to the same file without either being able to say so. Passing it
+    /// in forces the caller to have decided, which is what lets the caller report it.
+    /// </para>
+    /// <para>
+    /// Not lifecycle-guarded, like the rest of this type. It also does not require an attached
+    /// agent, which is the point: reclaiming a log is exactly what an operator does when the
+    /// agents are not running.
+    /// </para>
+    /// </remarks>
+    public async Task<PruneResult> PruneAsync(
+        RetentionPolicy policy,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default) =>
+        await _pruner.PruneAsync(policy, nowUtc, cancellationToken).ConfigureAwait(false);
 }

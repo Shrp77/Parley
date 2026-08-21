@@ -152,10 +152,15 @@ parley retire <agent>               withdraw a registration; its server then ref
 parley reinstate <agent>            the only thing that clears a retirement
 parley export <conversation>        every message in a discussion, across agents
 parley force-conclude <conv>        close a discussion over its participants' votes
+parley prune                        apply the retention policy of §9.4 now
 ```
 
 It reads `PARLEY_DB` — the same variable the agents' servers are launched with — or takes
-`--db`.
+`--db`. `prune` reads the retention policy from `PARLEY_RETENTION_IDLE_HOURS` and
+`PARLEY_RETENTION_MAX_AGE_HOURS` the same way, and prints the policy it applied before it
+prints what it removed: an operator's shell is not the environment their MCP client launched
+the servers with, and a command that deletes on a configured schedule should say which
+schedule it used.
 
 These are the operations of SPEC §10.2, and a separate program on purpose. §10.2 warns that an
 adapter surfacing one into an agent's tool set would breach §10.1, and the safeguards get
@@ -198,23 +203,25 @@ carrying its own stated consequences back — so "ask and do not block" holds in
 nothing arrives, which is the case an agent most needs to hear about. A discussion closes when its
 participants agree, or when one of them says nothing for long enough — §5.0's silence-assents
 window is enforced by the sweep, so a peer that never answers a closure poll does not hold a
-conversation open indefinitely. The operator operations of §10.2 —
-`retire`, `reinstate`, `export`, `force_conclude` — are reachable through a second binary that
-agents are never given. The domain layer has no I/O and no package dependencies, and its tests
+conversation open indefinitely. The message log is bounded: §9.4's retention policy runs on the
+ordinary sweep, so a deployment nobody configures still forgets — a channel that kept everything
+would be the shared context store §16 says Parley is not, and the file already holds the full
+text of every question and answer. A floor bounds the dial in the other direction, so tightening
+retention cannot delete an undelivered message, a live exchange's question, or the rows
+deduplication is still reading. All five operator operations of §10.2 —
+`retire`, `reinstate`, `export`, `force_conclude`, `prune` — are reachable through a second
+binary that agents are never given. The domain layer has no I/O and no package dependencies, and its tests
 do not reference the storage assembly — the absent dependency is checked by the build
 rather than left as a convention. The protocol's invariants are enforced by schema
 constraints rather than by the code that calls them.
 
 **Next, in order.**
 
-1. **Retention pruning**, and with it `prune` — SPEC §9.4 and §10.2. The sweep orphans
-   expired exchanges and ghosts them; nothing yet applies the retention policy that keeps
-   the message log from becoming the shared context store Parley is not. `prune` is the one
-   operator operation still missing, and it is missing because there is nothing for it to
-   apply.
-2. **Per-sender rate limits.** The last unbuilt control in SPEC §13. Volume between a
+1. **Per-sender rate limits.** The last unbuilt control in SPEC §13. Volume between a
    pair is already bounded by the state machine — one open exchange per pair, a
-   clarification cap — so this is really about `Notify`, which has no such guard.
+   clarification cap — so this is really about `Notify`, which has no such guard. It also
+   brings the one clause §9.4's retention floor names and does not yet have: a rate-limit
+   window, beside the deduplication window already there.
 
 Issues and discussion are welcome — particularly on the open questions at the end of
 SPEC.md.

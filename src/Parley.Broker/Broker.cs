@@ -53,7 +53,27 @@ public sealed class Broker
     private readonly MessageRepository _messages;
     private readonly ConversationRepository _conversations;
     private readonly Reaper _reaper;
+    private readonly Pruner _pruner;
     private readonly BrokerOptions _options;
+
+    /// <summary>
+    /// When this broker last applied the retention policy, or <see langword="null"/> if it has
+    /// not since starting.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Per process rather than stored, and deliberately so. A persisted timestamp would be one
+    /// more row for several servers to contend over, and the consequence of losing it is that a
+    /// restarted broker prunes once on its first tick — which is what it should do anyway, since
+    /// a deployment whose sessions are short would otherwise never reach the interval at all.
+    /// </para>
+    /// <para>
+    /// Private, unlike <see cref="StartedUtc"/>. That one is read by the ghosting clock and so
+    /// is part of what a host reasons about; this is pacing, and a caller that could see it would
+    /// be able to act on how often the sweep runs rather than on the state of the log.
+    /// </para>
+    /// </remarks>
+    private DateTimeOffset? _prunedUtc;
 
     /// <summary>SQLite's extended result code for a unique index violation.</summary>
     /// <remarks>
@@ -89,6 +109,7 @@ public sealed class Broker
         _messages = new MessageRepository(connection);
         _conversations = new ConversationRepository(connection);
         _reaper = new Reaper(_exchanges, _messages, connection);
+        _pruner = new Pruner(connection);
     }
 
     /// <summary>
@@ -100,6 +121,8 @@ public sealed class Broker
     /// elapsed while nothing could possibly have resumed them.
     /// </remarks>
     public DateTimeOffset? StartedUtc { get; private set; }
+
+
 
     /// <summary>
     /// Gets the agent this broker attached for, or <see langword="null"/> before it has.
@@ -1197,7 +1220,7 @@ public sealed class Broker
     /// </summary>
     /// <param name="nowUtc">The instant to evaluate deadlines against.</param>
     /// <param name="cancellationToken">Cancels the pass.</param>
-    /// <returns>What the pass did to exchanges and to conversations.</returns>
+    /// <returns>What the pass did to exchanges, to conversations, and to the message log.</returns>
     /// <exception cref="InvalidOperationException">
     /// <see cref="StartAsync"/> has not been called.
     /// </exception>
@@ -1239,7 +1262,35 @@ public sealed class Broker
         var concluded = await ConcludeSatisfiedPollsAsync(nowUtc, cancellationToken)
             .ConfigureAwait(false);
 
-        return new TickResult(swept, concluded);
+        // Last, because both of the passes above make things prunable and neither is made
+        // easier by running after this one. Ghosting closes an orphan, which lifts the floor
+        // clause holding its messages; concluding a conversation short-circuits the idle period
+        // for everything in it. Pruning first would simply defer both to the next tick.
+        //
+        // And on its own schedule, unlike them. They enforce deadlines and must run at the
+        // cadence of the shortest one; retention is measured in days, and its pass is a full
+        // walk of the message log under the lock admission takes. See
+        // BrokerOptions.DefaultRetentionInterval for what that cost measured.
+        var pruned = PruneResult.Nothing;
+
+        // A clock that has moved backwards prunes rather than waiting, which is not fussiness
+        // about NTP: the stamp is per process and compared by subtraction, so a host that ticked
+        // once with a clock an hour fast would then skip every sweep until real time caught up.
+        // Retention stopping is silent — a log that is not shrinking looks exactly like a log
+        // with nothing due — so the failure would be found by noticing the file size.
+        if (_prunedUtc is not { } last ||
+            nowUtc < last ||
+            nowUtc - last >= _options.RetentionInterval)
+        {
+            pruned = await _pruner
+                .PruneAsync(_options.Retention, nowUtc, cancellationToken).ConfigureAwait(false);
+
+            // Recorded after the pass rather than before, so a sweep that threw is retried on
+            // the next tick instead of waiting out an interval it never used.
+            _prunedUtc = nowUtc;
+        }
+
+        return new TickResult(swept, concluded, pruned);
     }
 
     /// <summary>

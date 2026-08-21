@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace Parley.Mcp.Tests;
@@ -84,7 +84,7 @@ public sealed class ForeignDatabaseTests : IDisposable
 
         var options = new ServerOptions(
             path, Parley.Core.AgentName.Create("orders"), "test-model",
-            TimeSpan.FromMinutes(1), null);
+            TimeSpan.FromMinutes(1), Parley.Core.RetentionPolicy.Default, null);
 
         var refusal = await Assert.ThrowsAsync<InvalidOperationException>(
             () => BrokerSession.StartAsync(options, new StubClock(T0), ct));
@@ -111,7 +111,7 @@ public sealed class ForeignDatabaseTests : IDisposable
 
         var options = new ServerOptions(
             path, Parley.Core.AgentName.Create("orders"), "test-model",
-            TimeSpan.FromMinutes(1), null);
+            TimeSpan.FromMinutes(1), Parley.Core.RetentionPolicy.Default, null);
 
         var session = await BrokerSession.StartAsync(options, new StubClock(T0), ct);
         await session.DisposeAsync();
