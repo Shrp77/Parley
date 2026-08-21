@@ -290,6 +290,53 @@ public sealed class AgentRepository(SqliteConnection connection)
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
 
+    /// <summary>
+    /// Says whether an agent has been heard from since a given instant.
+    /// </summary>
+    /// <param name="agent">The agent to test.</param>
+    /// <param name="sinceUtc">The oldest contact that still counts.</param>
+    /// <param name="transaction">The transaction to read within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns><see langword="true"/> if a session is believed to be attached right now.</returns>
+    /// <remarks>
+    /// <para>
+    /// Read by the attach sequence, which releases a debt on the grounds that its worker
+    /// vanished. This is the only evidence the registry holds that one has <em>not</em>, and it
+    /// is a lease rather than a flag for two reasons a flag cannot cover.
+    /// </para>
+    /// <para>
+    /// A flag cannot be cleared by a process that stopped existing, so a crashed session leaves
+    /// <c>live</c> set for ever — the registry lies, and every later attach declines to release
+    /// debts whose worker is demonstrably gone. And a flag cannot count: an agent may have two
+    /// sessions open, and the second one closing marks the agent offline while the first is
+    /// still mid-answer, so the next attach releases work somebody is doing. A lease expires on
+    /// its own and is renewed by whichever sessions are actually running, which answers both.
+    /// </para>
+    /// <para>
+    /// Status is deliberately not consulted. <c>offline</c> written by one session's clean
+    /// shutdown says nothing about another session's, and it is precisely that disagreement the
+    /// timestamp resolves — <c>last_seen_utc</c> is renewed by every heartbeat, so the surviving
+    /// session keeps it current whatever its departing sibling wrote. Retirement is checked
+    /// where retirement matters, in <see cref="MarkLiveAsync"/> and at admission.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> WasSeenSinceAsync(
+        AgentName agent,
+        DateTimeOffset sinceUtc,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteScalarAsync<long>(
+            new CommandDefinition(
+                """
+                SELECT count(*) FROM agents
+                 WHERE name = @Name
+                   AND last_seen_utc IS NOT NULL
+                   AND last_seen_utc >= @Since;
+                """,
+                new { Name = agent.Value, Since = ExchangeRow.FormatTimestamp(sinceUtc) },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
+
     private sealed class SummaryRow
     {
         public string Name { get; init; } = "";
@@ -343,6 +390,68 @@ public sealed class AgentRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
+
+    /// <summary>
+    /// Registers an agent only if the registry does not already hold one by that name.
+    /// </summary>
+    /// <param name="agent">The agent to register.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The number of rows inserted: one if it was new, zero if it already existed.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="agent"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// The self-registration path of SPEC.md §12.3, and the distinction from
+    /// <see cref="UpsertAsync"/> is the whole reason it exists. An adapter registers itself on
+    /// every launch, so an upsert there would overwrite adapter, tier, workspace and
+    /// configuration each time somebody opened that repository — and for an agent an operator
+    /// had registered from a manifest, that silently destroys the entry.
+    /// </para>
+    /// <para>
+    /// Concretely: <c>billing</c> registered as Headless with a model and an endpoint is what
+    /// lets the broker invoke it when nobody has its session open. One person opening billing's
+    /// editor once would rewrite it as a Pull agent with no configuration, and the broker would
+    /// no longer know how to reach it at all. Nothing would report this; the next question to
+    /// billing would simply never be delivered while its session was closed.
+    /// </para>
+    /// <para>
+    /// So the rule §12.3 states is enforced here rather than trusted: an operator's registration
+    /// wins, and an adapter's own is a fallback for an agent nobody has described. Reconciling a
+    /// tier that disagrees with how the agent actually attached is the operator's decision, and
+    /// they are better placed to make it than a process that happened to start.
+    /// </para>
+    /// <para>
+    /// <c>DO NOTHING</c> rather than a read followed by a write, so two sessions launching at
+    /// once cannot both find the registry empty and race to fill it.
+    /// </para>
+    /// </remarks>
+    public async Task<int> RegisterIfAbsentAsync(
+        AgentRecord agent,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(agent);
+
+        return await _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                INSERT INTO agents (name, adapter, tier, workspace, session_ref, adapter_config,
+                                    last_seen_utc, status)
+                VALUES (@Name, @Adapter, @Tier, @Workspace, @SessionRef, @AdapterConfig,
+                        @LastSeenUtc, @Status)
+                ON CONFLICT(name) DO NOTHING;
+                """,
+                new
+                {
+                    Name = agent.Name.Value,
+                    agent.Adapter,
+                    Tier = FormatTier(agent.Tier),
+                    agent.Workspace,
+                    agent.SessionRef,
+                    agent.AdapterConfig,
+                    LastSeenUtc = agent.LastSeenUtc is { } t ? ExchangeRow.FormatTimestamp(t) : null,
+                    Status = FormatStatus(agent.Status)
+                },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Marks an agent live and records that it has just communicated.

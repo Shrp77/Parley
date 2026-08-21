@@ -75,7 +75,16 @@ public sealed class ManyAgentsTests : IDisposable
             opened.Add(asked.Exchange!.Id);
         }
 
-        // Now everybody's session opens, one after another, as people come back to work.
+        // Everybody reads their question during the day and answers none of it. The reading
+        // matters: §14 releases a debt the agent was carrying, and a question still sitting
+        // uncollected has not been handed to anybody yet — orphaning it on attach would destroy
+        // it in the moment before its recipient could read it.
+        foreach (var agent in Agents)
+        {
+            await host.DrainInboxAsync(agent, T0.AddMinutes(90), cancellationToken: ct);
+        }
+
+        // Now everybody's session opens again, one after another, as people come back to work.
         for (var i = 0; i < Repositories; i++)
         {
             Attach(Agents[i], T0.AddMinutes(2 + i));
@@ -106,6 +115,15 @@ public sealed class ManyAgentsTests : IDisposable
             var asked = await host.AskAsync(
                 Agents[i], Agents[i + 1], Model, Question(i), T0.AddMinutes(1), cancellationToken: ct);
             opened.Add(asked.Exchange!.Id);
+        }
+
+        // Everybody reads their question during the day and answers none of it. The reading
+        // matters: §14 releases a debt the agent was carrying, and a question still sitting
+        // uncollected has not been handed to anybody yet — orphaning it on attach would destroy
+        // it in the moment before its recipient could read it.
+        foreach (var agent in Agents)
+        {
+            await host.DrainInboxAsync(agent, T0.AddMinutes(90), cancellationToken: ct);
         }
 
         // One person comes back and opens one repository.

@@ -67,17 +67,29 @@ public sealed class AttachEdgeTests : IDisposable
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Billing asks for detail, so the debt is now orders'.
+        // Each side collects what it was sent before acting on it, which is what a real session
+        // does and what §14 now requires before a debt counts as abandoned.
+        await broker.DrainInboxAsync(Billing, T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken);
+
         await broker.ClarifyAsync(
             asked.Exchange!.Id, Billing, Model, """{"text":"gross of what?"}""",
             T0.AddMinutes(2), TestContext.Current.CancellationToken);
+
+        await broker.DrainInboxAsync(Orders, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken);
 
         var billingAttach = await new Broker(_connection, BrokerOptions.Default)
             .StartAsync(Billing, T0.AddMinutes(3), TestContext.Current.CancellationToken);
         var afterBilling = (await _exchanges.GetAsync(
             asked.Exchange.Id, cancellationToken: TestContext.Current.CancellationToken))!.State;
 
+        // The previous session stopped cleanly, which is what marks the agent offline and so
+        // what tells the next attach that no worker is still holding these. Without it the
+        // agent is still live and §14 declines to release anything — the right answer for a
+        // second window opened alongside a live session, and the wrong one here.
+        await broker.DetachAsync(TestContext.Current.CancellationToken);
+
         var ordersAttach = await new Broker(_connection, BrokerOptions.Default)
-            .StartAsync(Orders, T0.AddMinutes(4), TestContext.Current.CancellationToken);
+            .StartAsync(Orders, T0.AddHours(2), TestContext.Current.CancellationToken);
         var afterOrders = (await _exchanges.GetAsync(
             asked.Exchange.Id, cancellationToken: TestContext.Current.CancellationToken))!.State;
 
@@ -217,6 +229,7 @@ public sealed class AttachEdgeTests : IDisposable
             Orders, Billing, Model, Question, T0.AddMinutes(1),
             cancellationToken: TestContext.Current.CancellationToken);
 
+        await broker.DrainInboxAsync(Billing, T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken);
         await _agents.RetireAsync(Billing, TestContext.Current.CancellationToken);
 
         var result = await new Broker(_connection, BrokerOptions.Default)

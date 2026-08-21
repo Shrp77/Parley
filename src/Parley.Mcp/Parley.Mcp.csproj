@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The transport, and the only project that knows what MCP is. SPEC.md principle 2.3 makes the
+    transport disposable: if a platform ships native cross-session messaging, Parley should run
+    over it rather than compete with it. That is only true while the dependency points this way
+    and never back, so Parley.Broker does not reference this and must not learn to.
+
+    An executable, unlike everything below it. An MCP stdio server is launched as a child
+    process by its client and speaks JSON-RPC over stdin and stdout, so there is a Main here
+    where the library projects deliberately have none.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>parley-mcp</AssemblyName>
+    <RootNamespace>Parley.Mcp</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    Packaged as a .NET tool, so that the launch configuration in the README can say
+    "command": "parley-mcp" and have that mean something. An MCP client launches a command by
+    name and inherits PATH; a bare build output does not put anything on PATH, so the documented
+    configuration would have worked only for somebody who had already worked out where the
+    binary landed and edited the path in.
+
+    PackAsTool rather than a published folder because the install is then one command that does
+    not vary by platform, and because updating is the same command again. The alternative asks
+    every user to pick a runtime identifier and a directory.
+  -->
+  <PropertyGroup>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>parley-mcp</ToolCommandName>
+    <PackageId>Parley.Mcp</PackageId>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parley.Broker\Parley.Broker.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+
+</Project>
