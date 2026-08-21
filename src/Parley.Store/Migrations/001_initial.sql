@@ -383,6 +383,19 @@ BEGIN
    WHERE EXISTS (SELECT 1 FROM messages WHERE exchange_id = NEW.id AND type = 'answer');
 END;
 
+-- SPEC.md section 5.0: closure is terminal, so a vote against a concluded discussion is a
+-- stored contradiction -- the row would read as a participant declining a closure that had
+-- already happened. The broker refuses this in ConversationRepository.RecordVoteAsync; this
+-- is the backstop for every other path. A CHECK cannot express it, since it must read
+-- another table.
+CREATE TRIGGER tr_no_vote_after_closure BEFORE UPDATE ON conversation_participants
+WHEN NEW.vote IS NOT NULL
+BEGIN
+  SELECT RAISE(ABORT, 'conversation is closed')
+   WHERE EXISTS (SELECT 1 FROM conversations
+                  WHERE id = NEW.conversation_id AND state = 'CLOSED');
+END;
+
 -- SPEC.md section 5.0: a closed conversation stays closed. Closure is by consensus, so a
 -- single agent naming a concluded identifier would reopen the discussion unilaterally,
 -- defeating the poll, the decline veto and the silence rule together. The broker refuses this

@@ -85,8 +85,8 @@ public sealed class InboxTests : IDisposable
         var exchange = await Ask(Orders, Billing, "where does price live");
         await Send(MessageType.Question, Orders, Billing, exchange.Id, "gross or net?");
 
-        var drained = await _broker.DrainInboxAsync(
-            Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
+        var drained = (await _broker.DrainInboxAsync(
+            Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         Assert.Single(drained);
     }
@@ -101,8 +101,8 @@ public sealed class InboxTests : IDisposable
         await broker.DrainInboxAsync(
             Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
 
-        var again = await broker.DrainInboxAsync(
-            Billing, T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken);
+        var again = (await broker.DrainInboxAsync(
+            Billing, T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         Assert.Empty(again);
     }
@@ -134,8 +134,8 @@ public sealed class InboxTests : IDisposable
         var exchange = await Ask(Orders, Billing, "q");
         await Send(MessageType.Question, Orders, Billing, exchange.Id, "gross or net?");
 
-        var result = await _broker.TickAsync(
-            T0 + ExchangePolicy.Default.DeliveryWindow, TestContext.Current.CancellationToken);
+        var result = (await _broker.TickAsync(
+            T0 + ExchangePolicy.Default.DeliveryWindow, TestContext.Current.CancellationToken)).Exchanges;
 
         Assert.Equal(1, result.Orphaned);
     }
@@ -152,8 +152,8 @@ public sealed class InboxTests : IDisposable
         await broker.DrainInboxAsync(
             Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
 
-        var result = await broker.TickAsync(
-            T0 + ExchangePolicy.Default.DeliveryWindow, TestContext.Current.CancellationToken);
+        var result = (await broker.TickAsync(
+            T0 + ExchangePolicy.Default.DeliveryWindow, TestContext.Current.CancellationToken)).Exchanges;
 
         Assert.Equal(0, result.Orphaned);
 
@@ -185,8 +185,8 @@ public sealed class InboxTests : IDisposable
         var owed = await Ask(Orders, Billing, "the question billing owes");
         await Send(MessageType.Question, Orders, Billing, owed.Id, "gross or net?");
 
-        var drained = await _broker.DrainInboxAsync(
-            Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
+        var drained = (await _broker.DrainInboxAsync(
+            Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         Assert.Equal(2, drained.Count);
         Assert.Equal(MessageType.Question, drained[0].Type);
@@ -200,8 +200,8 @@ public sealed class InboxTests : IDisposable
         // owed in return.
         await Send(MessageType.Notify, Orders, Billing, null, "the contract gained a field");
 
-        var drained = await _broker.DrainInboxAsync(
-            Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
+        var drained = (await _broker.DrainInboxAsync(
+            Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         Assert.Equal(MessageType.Notify, Assert.Single(drained).Type);
     }
@@ -214,9 +214,9 @@ public sealed class InboxTests : IDisposable
         await Send(MessageType.Notify, Orders, Billing, null, "one");
         await Send(MessageType.Notify, Orders, Billing, null, "two");
 
-        var drained = await _broker.DrainInboxAsync(
+        var drained = (await _broker.DrainInboxAsync(
             Billing, T0.AddMinutes(1), limit: 2,
-            cancellationToken: TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         Assert.Equal(2, drained.Count);
     }
@@ -267,8 +267,8 @@ public sealed class InboxTests : IDisposable
         Assert.True(await _messages.MarkDeliveredAsync(
             message.Id, T0.AddSeconds(30), TestContext.Current.CancellationToken));
 
-        var drained = await _broker.DrainInboxAsync(
-            Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
+        var drained = (await _broker.DrainInboxAsync(
+            Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         Assert.Empty(drained);
     }
@@ -286,8 +286,8 @@ public sealed class InboxTests : IDisposable
         Assert.True(await _exchanges.SaveAsync(
             exchange, cancellationToken: TestContext.Current.CancellationToken));
 
-        var drained = await _broker.DrainInboxAsync(
-            Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
+        var drained = (await _broker.DrainInboxAsync(
+            Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         Assert.Single(drained);
 
@@ -319,8 +319,8 @@ public sealed class InboxTests : IDisposable
 
         await resuming.StartAsync(T0.AddMinutes(2), TestContext.Current.CancellationToken);
 
-        var afterRestart = await resuming.DrainInboxAsync(
-            Billing, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken);
+        var afterRestart = (await resuming.DrainInboxAsync(
+            Billing, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         Assert.Single(afterRestart);
         Assert.Equal(MessageType.Question, afterRestart[0].Type);
@@ -351,8 +351,8 @@ public sealed class InboxTests : IDisposable
 
         await resuming.StartAsync(T0.AddMinutes(2), TestContext.Current.CancellationToken);
 
-        var afterRestart = await resuming.DrainInboxAsync(
-            Orders, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken);
+        var afterRestart = (await resuming.DrainInboxAsync(
+            Orders, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         Assert.Equal(MessageType.Clarify, Assert.Single(afterRestart).Type);
     }
@@ -377,8 +377,8 @@ public sealed class InboxTests : IDisposable
 
         // Orders asks for its own inbox. It owes nothing on this exchange, so the replay finds
         // nothing for it and its own question is not returned.
-        var toAsker = await resuming.DrainInboxAsync(
-            Orders, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken);
+        var toAsker = (await resuming.DrainInboxAsync(
+            Orders, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         Assert.Empty(toAsker);
     }
@@ -386,8 +386,8 @@ public sealed class InboxTests : IDisposable
     [Fact]
     public async Task Draining_an_empty_inbox_is_not_an_error()
     {
-        var drained = await _broker.DrainInboxAsync(
-            Billing, T0, cancellationToken: TestContext.Current.CancellationToken);
+        var drained = (await _broker.DrainInboxAsync(
+            Billing, T0, cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         Assert.Empty(drained);
     }
@@ -398,8 +398,8 @@ public sealed class InboxTests : IDisposable
         var exchange = await Ask(Orders, Billing, "q");
         await Send(MessageType.Question, Orders, Billing, exchange.Id, "gross or net?");
 
-        var drained = await _broker.DrainInboxAsync(
-            Orders, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
+        var drained = (await _broker.DrainInboxAsync(
+            Orders, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         Assert.Empty(drained);
     }

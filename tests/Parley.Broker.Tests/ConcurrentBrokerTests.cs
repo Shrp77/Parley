@@ -152,8 +152,8 @@ public sealed class ConcurrentBrokerTests : IDisposable
         // see SayAsync.
         Assert.Single(results, r => !r);
 
-        var inbox = await brokerOne.DrainInboxAsync(
-            Orders, T0.AddMinutes(5), cancellationToken: TestContext.Current.CancellationToken);
+        var inbox = (await brokerOne.DrainInboxAsync(
+            Orders, T0.AddMinutes(5), cancellationToken: TestContext.Current.CancellationToken)).Messages;
         Assert.Single(inbox);
 
         async Task<bool> Answer(Broker broker)

@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -258,8 +258,8 @@ public sealed class ResumeTests : IDisposable
         Assert.True(await messages.MarkDeliveredAsync(
             appended.Message.Id, T0.AddMinutes(1), TestContext.Current.CancellationToken));
 
-        var drained = await broker.DrainInboxAsync(
-            Billing, T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken);
+        var drained = (await broker.DrainInboxAsync(
+            Billing, T0.AddMinutes(2), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
         Assert.Empty(drained);
     }

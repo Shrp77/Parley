@@ -123,14 +123,14 @@ public sealed class BrokerLifecycleTests : IDisposable
         var broker = NewBroker();
         await broker.StartAsync(brokerStart, TestContext.Current.CancellationToken);
 
-        var beforeGrace = await broker.TickAsync(
+        var beforeGrace = (await broker.TickAsync(
             brokerStart + ExchangePolicy.Default.GracePeriod - TimeSpan.FromMinutes(1),
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken)).Exchanges;
         Assert.Equal(0, beforeGrace.Ghosted);
 
-        var afterGrace = await broker.TickAsync(
+        var afterGrace = (await broker.TickAsync(
             brokerStart + ExchangePolicy.Default.GracePeriod,
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken)).Exchanges;
         Assert.Equal(1, afterGrace.Ghosted);
     }
 
@@ -151,8 +151,8 @@ public sealed class BrokerLifecycleTests : IDisposable
         await broker.StartAsync(T0, TestContext.Current.CancellationToken);
 
         var ghostingDue = T0 + ExchangePolicy.Default.GracePeriod;
-        Assert.Equal(1, (await broker.TickAsync(
-            ghostingDue, TestContext.Current.CancellationToken)).Ghosted);
+        Assert.Equal(1, ((await broker.TickAsync(
+            ghostingDue, TestContext.Current.CancellationToken)).Exchanges).Ghosted);
 
         // A second exchange, a second start, and the clock restarts from there.
         await Open(Orders, Billing, "q2");
@@ -160,12 +160,12 @@ public sealed class BrokerLifecycleTests : IDisposable
         await broker.StartAsync(secondStart, TestContext.Current.CancellationToken);
 
         Assert.Equal(secondStart, broker.StartedUtc);
-        Assert.Equal(0, (await broker.TickAsync(
+        Assert.Equal(0, ((await broker.TickAsync(
             secondStart + ExchangePolicy.Default.GracePeriod - TimeSpan.FromMinutes(1),
-            TestContext.Current.CancellationToken)).Ghosted);
-        Assert.Equal(1, (await broker.TickAsync(
+            TestContext.Current.CancellationToken)).Exchanges).Ghosted);
+        Assert.Equal(1, ((await broker.TickAsync(
             secondStart + ExchangePolicy.Default.GracePeriod,
-            TestContext.Current.CancellationToken)).Ghosted);
+            TestContext.Current.CancellationToken)).Exchanges).Ghosted);
     }
 
     // ---- the tick ----
@@ -192,8 +192,8 @@ public sealed class BrokerLifecycleTests : IDisposable
 
         var exchange = await Open(Orders, Billing, "q1");
 
-        var result = await broker.TickAsync(
-            T0 + ExchangePolicy.Default.DeliveryWindow, TestContext.Current.CancellationToken);
+        var result = (await broker.TickAsync(
+            T0 + ExchangePolicy.Default.DeliveryWindow, TestContext.Current.CancellationToken)).Exchanges;
 
         Assert.Equal(1, result.Orphaned);
 

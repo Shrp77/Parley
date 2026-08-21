@@ -132,8 +132,8 @@ public sealed class ResponderIdentityTests : IDisposable
         var asked = await AskAs("claude-opus-5");
         Assert.True(asked.Succeeded);
 
-        var swept = await _broker.TickAsync(
-            T0.AddDays(1), TestContext.Current.CancellationToken);
+        var swept = (await _broker.TickAsync(
+            T0.AddDays(1), TestContext.Current.CancellationToken)).Exchanges;
 
         Assert.True(swept.Ghosted > 0 || swept.Orphaned > 0,
             "expected the sweep to dispose of an exchange nobody answered");

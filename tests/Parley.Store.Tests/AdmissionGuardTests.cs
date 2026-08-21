@@ -77,6 +77,42 @@ public sealed class AdmissionGuardTests : IDisposable
     }
 
     [Fact]
+    public void A_vote_cannot_be_cast_once_the_conversation_has_closed()
+    {
+        // The repository refuses this in its WHERE clause. This is the backstop, and it exists
+        // because SPEC.md 9.3 argues invariants belong in storage precisely where application
+        // code can route around them -- and this one routes around nothing visible, since
+        // closure is terminal and the vote changes no state. It only corrupts the log.
+        Execute("INSERT INTO conversations (id, state, opened_utc, closed_utc) VALUES "
+              + "('pricing','CLOSED','" + Stamp + "','" + Stamp + "');");
+        Execute("INSERT INTO conversation_participants "
+              + "(conversation_id, agent, joined_utc, polled_utc) VALUES "
+              + "('pricing','billing','" + Stamp + "','" + Stamp + "');");
+
+        var ex = Assert.Throws<SqliteException>(() => Execute(
+            "UPDATE conversation_participants SET vote = 'not_done', voted_utc = '" + Stamp
+          + "' WHERE conversation_id = 'pricing' AND agent = 'billing';"));
+
+        Assert.Contains("conversation is closed", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_vote_is_accepted_while_the_poll_is_running()
+    {
+        // The other half. A trigger that refused every vote would pass the test above while
+        // making the whole mechanism inoperable, which is the failure mode a guard test exists
+        // to rule out.
+        Execute("INSERT INTO conversations (id, state, opened_utc) VALUES "
+              + "('pricing','CLOSING','" + Stamp + "');");
+        Execute("INSERT INTO conversation_participants "
+              + "(conversation_id, agent, joined_utc, polled_utc) VALUES "
+              + "('pricing','billing','" + Stamp + "','" + Stamp + "');");
+
+        Execute("UPDATE conversation_participants SET vote = 'not_done', voted_utc = '" + Stamp
+              + "' WHERE conversation_id = 'pricing' AND agent = 'billing';");
+    }
+
+    [Fact]
     public void An_open_conversation_still_accepts_exchanges()
     {
         // The other half, and the one that would fail if the trigger matched on the column

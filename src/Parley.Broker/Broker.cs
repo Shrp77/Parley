@@ -50,6 +50,7 @@ public sealed class Broker
     private readonly AgentRepository _agents;
     private readonly ExchangeRepository _exchanges;
     private readonly MessageRepository _messages;
+    private readonly ConversationRepository _conversations;
     private readonly Reaper _reaper;
     private readonly BrokerOptions _options;
 
@@ -85,6 +86,7 @@ public sealed class Broker
         _agents = new AgentRepository(connection);
         _exchanges = new ExchangeRepository(connection);
         _messages = new MessageRepository(connection);
+        _conversations = new ConversationRepository(connection);
         _reaper = new Reaper(_exchanges);
     }
 
@@ -534,6 +536,165 @@ public sealed class Broker
     }
 
     /// <summary>
+    /// Says whether the caller is finished with a discussion, opening a closure poll if nobody
+    /// had, or answering one if somebody had.
+    /// </summary>
+    /// <param name="conversationId">The discussion.</param>
+    /// <param name="agent">The participant speaking.</param>
+    /// <param name="finished">
+    /// <see langword="true"/> to agree the discussion is over; <see langword="false"/> to
+    /// decline, which blocks closure.
+    /// </param>
+    /// <param name="nowUtc">The instant of the call.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether the discussion is now closed, or a refusal.</returns>
+    /// <exception cref="ArgumentException"><paramref name="conversationId"/> is empty.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="StartAsync"/> has not been called.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// One operation rather than two, because proposing and answering are the same statement.
+    /// An agent that says it is finished has proposed closure if nobody had yet, and has
+    /// answered the poll if somebody had; nothing distinguishes those from the agent's side,
+    /// and splitting them would ask it to know which situation it was in — which it cannot,
+    /// since SPEC.md §5.0 tells it nothing about the poll it is not part of.
+    /// </para>
+    /// <para>
+    /// Nobody moderates. The broker runs the poll, no agent runs it, and no agent's proposal
+    /// carries more weight than another's — an agent that could conclude a discussion on
+    /// everyone's behalf would be the lead principle 2.6 forbids. A decline therefore blocks
+    /// outright rather than being outvoted, because a majority that can conclude over an
+    /// objection is authority over another agent by a different name.
+    /// </para>
+    /// <para>
+    /// Declining is cheap to reverse and the agent need not remember it. The vote is durable,
+    /// but §5.0 has the broker re-deliver the closure question when the conversation next falls
+    /// idle, and calling again with <paramref name="finished"/> set overwrites the earlier
+    /// answer. An agent that declined and has since been satisfied simply says so.
+    /// </para>
+    /// <para>
+    /// A closed conversation returns <see langword="true"/> without recording anything, so
+    /// calling twice is safe and says the same thing both times. That is the whole of what a
+    /// participant may learn: §5.0 shares outcomes and withholds tallies, and this reports one
+    /// boolean about a discussion the caller is already in.
+    /// </para>
+    /// </remarks>
+    public async Task<ClosureOutcome> ConcludeAsync(
+        string conversationId,
+        AgentName agent,
+        bool finished,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        RequireStarted("concluding");
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        using var scope = WriteScope.Begin(_connection, ambient: null);
+
+        // Membership is checked before anything else is read, and its refusal is the only one
+        // this operation has. An agent that is not a participant learns nothing at all — not
+        // whether the conversation exists, not who is in it, not whether a poll is running.
+        if (!await _conversations.IsParticipantAsync(
+                conversationId, agent, scope.Transaction, cancellationToken).ConfigureAwait(false))
+        {
+            return ClosureOutcome.NotAParticipant();
+        }
+
+        var conversation = await _conversations.GetAsync(
+            conversationId, scope.Transaction, cancellationToken).ConfigureAwait(false);
+
+        if (conversation is null)
+        {
+            // Unreachable: a participant row carries a foreign key into this table, so a
+            // participant implies a conversation. Kept because the alternative to a refusal
+            // here is a null dereference below, and treating it as "not a participant" keeps
+            // the disclosure story intact if that ever changes.
+            return ClosureOutcome.NotAParticipant();
+        }
+
+        if (conversation.State == ConversationState.Closed)
+        {
+            return ClosureOutcome.Recorded(concluded: true);
+        }
+
+        var silence = _options.ExchangePolicy.GracePeriod;
+
+        // Declining when nothing is being decided says only that the caller is not finished,
+        // which is what an open conversation already means. Opening a poll on it would be
+        // worse than pointless: every other participant would be asked a closure question
+        // nobody proposed, and under SPEC.md §5.0 their silence would then be recorded as
+        // assent to it. §5.0 ties proposing to an agent that "says it is finished", and this
+        // is the other half of that sentence.
+        if (conversation.State == ConversationState.Open && !finished)
+        {
+            return ClosureOutcome.Recorded(concluded: false);
+        }
+
+        // Idempotent on an already-polling conversation: it stamps only participants not yet
+        // asked. A proposer holding no open exchange is not among them — see
+        // ConversationRepository.BeginPollAsync for why that exemption cannot exist.
+        await _conversations.BeginPollAsync(
+            conversationId, nowUtc, scope.Transaction, cancellationToken)
+            .ConfigureAwait(false);
+
+        await _conversations.RecordVoteAsync(
+            conversationId, agent, finished ? Vote.Done : Vote.NotDone, nowUtc,
+            scope.Transaction, cancellationToken).ConfigureAwait(false);
+
+        var concluded = await _conversations.TryConcludeAsync(
+            conversationId, nowUtc, silence, scope.Transaction, cancellationToken)
+            .ConfigureAwait(false);
+
+        scope.Complete();
+        return ClosureOutcome.Recorded(concluded);
+    }
+
+    /// <summary>
+    /// Concludes every conversation whose poll has been satisfied.
+    /// </summary>
+    /// <param name="nowUtc">The instant to judge silence against.</param>
+    /// <param name="cancellationToken">Cancels the pass.</param>
+    /// <returns>How many conversations closed.</returns>
+    /// <remarks>
+    /// <para>
+    /// This is what makes silence assent. A poll that everybody answered concludes on the last
+    /// vote without waiting for a tick; a poll one participant ignored concludes here, once its
+    /// window has elapsed. Without the second, one unreachable agent could hold a discussion
+    /// open indefinitely — which SPEC.md §5.0 refuses precisely because the alternative gives an
+    /// absent agent more power than a present one.
+    /// </para>
+    /// <para>
+    /// A conversation whose last live blocker was retired or marked unreachable also concludes
+    /// here, with no vote changing. §5.0 lapses a decline with its holder, and nothing else
+    /// would notice that the registry moved.
+    /// </para>
+    /// </remarks>
+    private async Task<int> ConcludeSatisfiedPollsAsync(
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var polling = await _conversations.GetPollingAsync(
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        var closed = 0;
+
+        foreach (var conversationId in polling)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (await _conversations.TryConcludeAsync(
+                    conversationId, nowUtc, _options.ExchangePolicy.GracePeriod,
+                    cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                closed++;
+            }
+        }
+
+        return closed;
+    }
+
+    /// <summary>
     /// Runs the reboot sequence.
     /// </summary>
     /// <param name="nowUtc">The instant the broker started.</param>
@@ -608,7 +769,7 @@ public sealed class Broker
     /// </summary>
     /// <param name="nowUtc">The instant to evaluate deadlines against.</param>
     /// <param name="cancellationToken">Cancels the pass.</param>
-    /// <returns>What the pass did.</returns>
+    /// <returns>What the pass did to exchanges and to conversations.</returns>
     /// <exception cref="InvalidOperationException">
     /// <see cref="StartAsync"/> has not been called.
     /// </exception>
@@ -619,7 +780,7 @@ public sealed class Broker
     /// exact failure the clock rule exists to prevent. Failing loudly beats a sweep that looks
     /// like it worked.
     /// </remarks>
-    public async Task<ReapResult> TickAsync(
+    public async Task<TickResult> TickAsync(
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default)
     {
@@ -631,7 +792,17 @@ public sealed class Broker
                 "an outage as soon as the process returned.");
         }
 
-        return await _reaper.SweepAsync(nowUtc, startedUtc, cancellationToken).ConfigureAwait(false);
+        var swept = await _reaper.SweepAsync(nowUtc, startedUtc, cancellationToken)
+            .ConfigureAwait(false);
+
+        // After the exchange sweep, not before. Closure is decided partly from which
+        // participants still hold open exchanges, so running it first would judge a poll
+        // against exchanges this very tick was about to orphan — concluding a discussion on
+        // the strength of a deadline that had not yet been applied.
+        var concluded = await ConcludeSatisfiedPollsAsync(nowUtc, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new TickResult(swept, concluded);
     }
 
     /// <summary>
@@ -641,7 +812,10 @@ public sealed class Broker
     /// <param name="nowUtc">The instant of the drain.</param>
     /// <param name="limit">The most messages to return, or <see langword="null"/> for all.</param>
     /// <param name="cancellationToken">Cancels the drain.</param>
-    /// <returns>The messages delivered, debts first.</returns>
+    /// <returns>
+    /// The messages delivered, debts first, together with any closure poll outstanding against
+    /// this agent.
+    /// </returns>
     /// <exception cref="InvalidOperationException">
     /// <see cref="StartAsync"/> has not been called.
     /// </exception>
@@ -672,7 +846,7 @@ public sealed class Broker
     /// arrived.
     /// </para>
     /// </remarks>
-    public async Task<IReadOnlyList<Message>> DrainInboxAsync(
+    public async Task<Inbox> DrainInboxAsync(
         AgentName agent,
         DateTimeOffset nowUtc,
         int? limit = null,
@@ -730,7 +904,13 @@ public sealed class Broker
             delivered.Add(message);
         }
 
-        return delivered;
+        // Read after the messages rather than before, because the replay above can join this
+        // agent to a conversation it had fallen out of — and a poll it is newly entitled to see
+        // should arrive in the drain that revealed it, not the next one.
+        var polls = await _conversations.GetOutstandingPollsAsync(
+            agent, _options.ExchangePolicy.GracePeriod, cancellationToken).ConfigureAwait(false);
+
+        return new Inbox(delivered, polls);
     }
 
     /// <summary>

@@ -14,10 +14,16 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 src/Parley.Core     Domain. No I/O, no dependencies. AgentName, PairKey, Exchange,
                     WaitForGraph, and the enums.
 src/Parley.Store    Persistence. SQLite via Dapper. ParleyDatabase (connection
-                    factory), SchemaMigrator, ExchangeRepository, AgentRepository.
+                    factory), SchemaMigrator, WriteScope, and the repositories:
+                    Exchange, Message, Agent, Conversation.
+src/Parley.Broker   Orchestration. Decides when the other two run. Broker holds the
+                    agent operations of SPEC.md §10.1; OperatorConsole holds §10.2.
+                    Knows nothing of transports or adapters, and must not learn.
 tests/Parley.Core.Tests   Domain tests. Deliberately does NOT reference Parley.Store —
                           the absent dependency is the point. Keep it that way.
 tests/Parley.Store.Tests  Repository and schema-constraint tests.
+tests/Parley.Broker.Tests Lifecycle, the agent operations, and the surface boundary
+                          below.
 tests/Parley.Spec.Tests   Checks SPEC.md: references resolve, tables are well formed, and
                           the schema it documents executes. References neither Core nor
                           Store, so a check cannot drift into asserting what the code does.
@@ -25,6 +31,15 @@ tests/Parley.Spec.Tests   Checks SPEC.md: references resolve, tables are well fo
 
 `Parley.Core` having no I/O and no package dependencies is a design constraint, not an
 accident of the current code. A `using` that pulls I/O into Core is a review finding.
+
+**Agent operations and operator operations live on different types.** SPEC.md §10.2 warns
+that an adapter surfacing an operator operation into an agent's tool set would breach §10.1,
+and the protection the document offers is a naming convention — `force_conclude` is
+deliberately not `conclude`. That is thin: it depends on whoever writes the adapter reading
+carefully. So an adapter is handed a `Broker`, and a `Broker` has no operator operation to
+bind. `SurfaceBoundaryTests` enumerates the broker's public surface and fails when it grows,
+which makes adding an operation a decision about which side it belongs on rather than a
+question of which class the connection was already in.
 
 ## Build and test
 
