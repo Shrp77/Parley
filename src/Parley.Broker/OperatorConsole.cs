@@ -1,4 +1,5 @@
 ﻿using Microsoft.Data.Sqlite;
+using Parley.Core;
 using Parley.Store;
 
 namespace Parley.Broker;
@@ -42,6 +43,8 @@ namespace Parley.Broker;
 public sealed class OperatorConsole
 {
     private readonly ConversationRepository _conversations;
+    private readonly AgentRepository _agents;
+    private readonly MessageRepository _messages;
 
     /// <summary>
     /// Creates a console over an open connection.
@@ -55,6 +58,8 @@ public sealed class OperatorConsole
     {
         ArgumentNullException.ThrowIfNull(connection);
         _conversations = new ConversationRepository(connection);
+        _agents = new AgentRepository(connection);
+        _messages = new MessageRepository(connection);
     }
 
     /// <summary>
@@ -93,4 +98,99 @@ public sealed class OperatorConsole
         return await _conversations.ForceConcludeAsync(
             conversationId, nowUtc, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Withdraws an agent's registration, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="agent">The agent to retire.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true"/> if the registry changed.</returns>
+    /// <remarks>
+    /// <para>
+    /// The one status the broker never sets on its own evidence. <c>unreachable</c> is the
+    /// broker reporting that it tried to reach an agent and could not, which a re-clone or a
+    /// restored backup invalidates at any moment; this is a person saying it will not come back.
+    /// §14 turns on that difference: an attach clears every other status as stale liveness and
+    /// leaves this one, so a retired agent can start its server as often as it likes and be
+    /// refused every operation.
+    /// </para>
+    /// <para>
+    /// It does not resolve what the agent already owes, and that is deliberate. Its debts orphan
+    /// and are ghosted on the ordinary schedule of §14, which tells each asker with its own
+    /// stated consequences — the same path any abandoned exchange takes. Retiring is about the
+    /// registry, not the traffic.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> RetireAsync(
+        AgentName agent,
+        CancellationToken cancellationToken = default) =>
+        await _agents.RetireAsync(agent, cancellationToken).ConfigureAwait(false) > 0;
+
+    /// <summary>
+    /// Withdraws a retirement, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="agent">The agent to reinstate.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true"/> if the registry changed.</returns>
+    /// <remarks>
+    /// The only thing that clears a retirement. §14 is explicit that registration must not, and
+    /// an agent attaching is the closest thing to registration there is — so without this the
+    /// state would be terminal, and an operator who retired an agent by mistake would have no
+    /// way back short of editing the database.
+    /// </remarks>
+    public async Task<bool> ReinstateAsync(
+        AgentName agent,
+        CancellationToken cancellationToken = default) =>
+        await _agents.ReinstateAsync(agent, cancellationToken).ConfigureAwait(false) > 0;
+
+    /// <summary>
+    /// Describes every registered agent, whole.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The stored record of each agent.</returns>
+    /// <remarks>
+    /// <para>
+    /// Named apart from <see cref="Broker.ListAgentsAsync"/> for the reason §10.2 gives about
+    /// <c>force_conclude</c> and <c>conclude</c>: two operations that differ across the
+    /// §10.1 boundary must not share a name, because the mistake that boundary guards against is
+    /// the wrong one being bound when the signatures nearly match. <c>SurfaceBoundaryTests</c>
+    /// fails if they ever collide.
+    /// </para>
+    /// <para>
+    /// The difference is not cosmetic. This returns the stored record — workspace path, session
+    /// handle, and the adapter configuration §12.1 makes free-form so it can carry endpoints —
+    /// where the agent-facing operation returns a projection with none of it. An operator is
+    /// looking at their own deployment; a peer is not.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<AgentRecord>> DescribeAgentsAsync(
+        CancellationToken cancellationToken = default) =>
+        await _agents.GetAllAsync(cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Emits every message in a conversation, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="conversationId">The discussion to read.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Every message carrying that identifier, oldest first.</returns>
+    /// <exception cref="ArgumentException"><paramref name="conversationId"/> is null or empty.</exception>
+    /// <remarks>
+    /// <para>
+    /// The one query that reads across agents, which is exactly why it is an operator operation:
+    /// an adapter that surfaced it would hand one agent everything two others had said to each
+    /// other, breaching §10.1 in the most direct way available.
+    /// </para>
+    /// <para>
+    /// It returns the messages rather than the envelopes of §13. An envelope exists to mark a
+    /// peer's words as data inside another agent's context, and there is no agent here — an
+    /// operator reading their own deployment's log is not being asked to obey it. Wrapping would
+    /// also make the export unusable for the purpose §10.2 gives it, which is comparing how
+    /// different model pairings converge on the same question.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<Message>> ExportAsync(
+        string conversationId,
+        CancellationToken cancellationToken = default) =>
+        await _messages.GetConversationAsync(conversationId, cancellationToken).ConfigureAwait(false);
+
 }
