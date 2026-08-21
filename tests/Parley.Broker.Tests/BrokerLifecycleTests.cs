@@ -6,14 +6,23 @@ using Xunit;
 namespace Parley.Broker.Tests;
 
 /// <summary>
-/// The reboot sequence and the maintenance tick.
+/// The attach sequence and the maintenance tick.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Every piece exercised here already existed and was already tested. What was missing was
 /// anything that decided when to call it, so these are about sequencing rather than about the
-/// transitions themselves — that an exchange interrupted by a restart does not keep a deadline
-/// nobody is working towards, that a retirement outlives the restart while an unreachable mark
-/// does not, and that a sweep refuses to run before it knows when the broker started.
+/// transitions themselves — that a debt whose worker vanished does not keep a deadline nobody
+/// is working towards, that a retirement outlives an attach, and that a sweep refuses to run
+/// before it knows when the broker started.
+/// </para>
+/// <para>
+/// The sequence is scoped to the attaching agent, per SPEC.md §14, and much of what follows is
+/// about the half that scoping protects: a peer's live work. The broker-wide version these
+/// replaced was correct while a broker was one service hosting every agent, and became a hazard
+/// the moment agents were separately launched sessions — the second one to start orphaned the
+/// first's work, silently.
+/// </para>
 /// </remarks>
 public sealed class BrokerLifecycleTests : IDisposable
 {
@@ -51,6 +60,9 @@ public sealed class BrokerLifecycleTests : IDisposable
             cancellationToken: TestContext.Current.CancellationToken)).Exchange
         ?? throw new InvalidOperationException($"expected to open {asker} -> {answerer}");
 
+    private async Task<ExchangeState> StateOf(long id) =>
+        (await _exchanges.GetAsync(id, cancellationToken: TestContext.Current.CancellationToken))!.State;
+
     private async Task<AgentStatus> StatusOf(AgentName name) =>
         (await _agents.GetAllAsync(TestContext.Current.CancellationToken))
             .Single(a => a.Name == name).Status;
@@ -58,58 +70,100 @@ public sealed class BrokerLifecycleTests : IDisposable
     // ---- the reboot sequence ----
 
     [Fact]
-    public async Task Starting_orphans_every_open_exchange()
+    public async Task Attaching_orphans_what_that_agent_owes()
     {
-        // An exchange left open across a restart keeps a deadline nobody is working towards,
-        // and a wait-for edge blocking peers on behalf of an agent that is not running.
-        var first = await Open(Orders, Billing, "q1");
-        var second = await Open(Billing, Inventory, "q2");
+        // A debt whose worker just vanished keeps a deadline nobody is working towards, and a
+        // wait-for edge blocking peers on behalf of a process that is not running.
+        var owed = await Open(Orders, Billing, "q1");
 
-        var result = await NewBroker().StartAsync(T0.AddHours(1), TestContext.Current.CancellationToken);
+        var result = await NewBroker().StartAsync(
+            Billing, T0.AddHours(1), TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, result.ExchangesOrphaned);
-
-        foreach (var id in new[] { first.Id, second.Id })
-        {
-            var loaded = await _exchanges.GetAsync(id, cancellationToken: TestContext.Current.CancellationToken);
-            Assert.Equal(ExchangeState.Orphaned, loaded!.State);
-        }
+        Assert.Equal(1, result.ExchangesOrphaned);
+        Assert.Equal(ExchangeState.Orphaned, await StateOf(owed.Id));
     }
 
     [Fact]
-    public async Task Starting_clears_stale_liveness_including_an_unreachable_mark()
+    public async Task Attaching_leaves_a_peers_live_work_alone()
     {
-        // Reinstalling or re-cloning a repository is exactly the kind of thing that happens
-        // between runs, so a mark the previous run made gets to be proved again.
-        await _agents.MarkLiveAsync(Orders, "sess-1", T0, TestContext.Current.CancellationToken);
-        await _agents.MarkUnreachableAsync(Billing, TestContext.Current.CancellationToken);
+        // The property the scoping exists for, and the one whose absence was silent. Billing is
+        // waiting on inventory for the second exchange — inventory may well be mid-answer, so
+        // orphaning it would discard a peer's work because a process on the other side of the
+        // conversation restarted.
+        var owed = await Open(Orders, Billing, "q1");
+        var waitingOn = await Open(Billing, Inventory, "q2");
 
-        var result = await NewBroker().StartAsync(T0.AddHours(1), TestContext.Current.CancellationToken);
+        var result = await NewBroker().StartAsync(
+            Billing, T0.AddHours(1), TestContext.Current.CancellationToken);
 
-        Assert.Equal(3, result.AgentsMarkedOffline);
-        Assert.Equal(AgentStatus.Offline, await StatusOf(Orders));
-        Assert.Equal(AgentStatus.Offline, await StatusOf(Billing));
+        Assert.Equal(1, result.ExchangesOrphaned);
+        Assert.Equal(ExchangeState.Orphaned, await StateOf(owed.Id));
+        Assert.Equal(ExchangeState.Open, await StateOf(waitingOn.Id));
     }
 
     [Fact]
-    public async Task Starting_leaves_a_retirement_alone()
+    public async Task One_agent_attaching_does_not_disturb_another()
     {
-        // The one judgement a restart is not evidence against.
-        await _agents.RetireAsync(Inventory, TestContext.Current.CancellationToken);
+        // Twenty-two repositories with an agent apiece is the deployment §1 describes, and under
+        // the broker-wide sequence the second session to open orphaned the first's work, the
+        // third orphaned both, and none of them could tell. Two is enough to show it.
+        // Three agents, not two: orders owing billing and billing owing orders would close a
+        // 2-cycle, which §7.2 refuses at admission. Which is itself the point — the debts in a
+        // real deployment fan out rather than pair up.
+        var ordersOwes = await Open(Billing, Orders, "for orders");
+        var billingOwes = await Open(Inventory, Billing, "for billing");
 
-        var result = await NewBroker().StartAsync(T0.AddHours(1), TestContext.Current.CancellationToken);
+        await NewBroker().StartAsync(Orders, T0.AddHours(1), TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, result.AgentsMarkedOffline);
-        Assert.Equal(AgentStatus.Retired, await StatusOf(Inventory));
+        Assert.Equal(ExchangeState.Orphaned, await StateOf(ordersOwes.Id));
+        Assert.Equal(ExchangeState.Open, await StateOf(billingOwes.Id));
+
+        // And billing attaching later takes its own, still leaving orders' alone.
+        await NewBroker().StartAsync(Billing, T0.AddHours(2), TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExchangeState.Orphaned, await StateOf(billingOwes.Id));
     }
 
     [Fact]
-    public async Task Starting_over_a_quiet_deployment_does_nothing_surprising()
+    public async Task Attaching_marks_that_agent_live_and_nobody_else()
     {
-        var result = await NewBroker().StartAsync(T0, TestContext.Current.CancellationToken);
+        // An unreachable mark clears by the agent proving it wrong, and attaching is that proof.
+        // Better evidence than the old broker restart, which cleared the mark on an agent
+        // nobody had heard from.
+        await _agents.MarkUnreachableAsync(Orders, TestContext.Current.CancellationToken);
+
+        var result = await NewBroker().StartAsync(
+            Orders, T0.AddHours(1), TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, result.AgentMarkedLive);
+        Assert.Equal(AgentStatus.Live, await StatusOf(Orders));
+        Assert.Equal(AgentStatus.Registered, await StatusOf(Billing));
+    }
+
+    [Fact]
+    public async Task Attaching_does_not_revive_a_retired_agent()
+    {
+        // The one judgement an attach is not evidence against. §14: retirement is cleared only
+        // by an explicit operator action, never by registration — and an agent attaching is the
+        // closest thing to registration there is, since it is the agent announcing itself.
+        // Without the guard, an operator who retired an agent would find it live again the
+        // moment somebody opened that repository's session.
+        await _agents.RetireAsync(Orders, TestContext.Current.CancellationToken);
+
+        var result = await NewBroker().StartAsync(
+            Orders, T0.AddHours(1), TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, result.AgentMarkedLive);
+        Assert.Equal(AgentStatus.Retired, await StatusOf(Orders));
+    }
+
+    [Fact]
+    public async Task Attaching_to_a_quiet_deployment_does_nothing_surprising()
+    {
+        var result = await NewBroker().StartAsync(Orders, T0, TestContext.Current.CancellationToken);
 
         Assert.Equal(0, result.ExchangesOrphaned);
-        Assert.Equal(3, result.AgentsMarkedOffline);
+        Assert.Equal(1, result.AgentMarkedLive);
     }
 
     [Fact]
@@ -121,7 +175,7 @@ public sealed class BrokerLifecycleTests : IDisposable
 
         var brokerStart = T0.AddDays(3);
         var broker = NewBroker();
-        await broker.StartAsync(brokerStart, TestContext.Current.CancellationToken);
+        await broker.StartAsync(Billing, brokerStart, TestContext.Current.CancellationToken);
 
         var beforeGrace = (await broker.TickAsync(
             brokerStart + ExchangePolicy.Default.GracePeriod - TimeSpan.FromMinutes(1),
@@ -148,7 +202,7 @@ public sealed class BrokerLifecycleTests : IDisposable
         await Open(Orders, Billing, "q1");
 
         var broker = NewBroker();
-        await broker.StartAsync(T0, TestContext.Current.CancellationToken);
+        await broker.StartAsync(Billing, T0, TestContext.Current.CancellationToken);
 
         var ghostingDue = T0 + ExchangePolicy.Default.GracePeriod;
         Assert.Equal(1, ((await broker.TickAsync(
@@ -157,7 +211,7 @@ public sealed class BrokerLifecycleTests : IDisposable
         // A second exchange, a second start, and the clock restarts from there.
         await Open(Orders, Billing, "q2");
         var secondStart = T0.AddDays(1);
-        await broker.StartAsync(secondStart, TestContext.Current.CancellationToken);
+        await broker.StartAsync(Billing, secondStart, TestContext.Current.CancellationToken);
 
         Assert.Equal(secondStart, broker.StartedUtc);
         Assert.Equal(0, ((await broker.TickAsync(
@@ -188,7 +242,7 @@ public sealed class BrokerLifecycleTests : IDisposable
     public async Task Ticking_orphans_what_has_run_out_of_time()
     {
         var broker = NewBroker();
-        await broker.StartAsync(T0, TestContext.Current.CancellationToken);
+        await broker.StartAsync(Orders, T0, TestContext.Current.CancellationToken);
 
         var exchange = await Open(Orders, Billing, "q1");
 
@@ -207,7 +261,7 @@ public sealed class BrokerLifecycleTests : IDisposable
         var broker = NewBroker();
         Assert.Null(broker.StartedUtc);
 
-        await broker.StartAsync(T0, TestContext.Current.CancellationToken);
+        await broker.StartAsync(Orders, T0, TestContext.Current.CancellationToken);
 
         Assert.Equal(T0, broker.StartedUtc);
     }
@@ -226,7 +280,7 @@ public sealed class BrokerLifecycleTests : IDisposable
 
         var broker = NewBroker();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => broker.StartAsync(T0, cancelled.Token));
+            () => broker.StartAsync(Orders, T0, cancelled.Token));
 
         Assert.Null(broker.StartedUtc);
         await Assert.ThrowsAsync<InvalidOperationException>(
@@ -297,7 +351,7 @@ public sealed class BrokerLifecycleTests : IDisposable
             ResumePolicy = ResumePolicy.Always,
             ResumeGate = new CancellingGate(cancelled)
         });
-        await broker.StartAsync(T0, TestContext.Current.CancellationToken);
+        await broker.StartAsync(Billing, T0, TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => broker.ResumeOwedByAsync(Billing, T0.AddMinutes(1), cancelled.Token));

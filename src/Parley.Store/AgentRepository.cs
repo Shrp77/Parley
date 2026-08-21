@@ -353,6 +353,19 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// handle rather than clearing it, so a routine liveness update cannot destroy the value
     /// that makes session resumption possible.
     /// </remarks>
+    /// <remarks>
+    /// A retired agent is not revived, and the guard is in the <c>WHERE</c> clause rather than
+    /// in a caller. SPEC.md §14: "Retirement is cleared only by an explicit operator action,
+    /// never by registration" — and an agent attaching is the closest thing to registration
+    /// there is, since it is the agent announcing itself. Without this, an operator who retired
+    /// an agent would find it live again the moment somebody opened that repository's session,
+    /// which is precisely the control-that-does-not-hold §14 describes.
+    /// <para>
+    /// The zero this returns is meaningful rather than a silent no-op: it says the registry
+    /// refused, which is how <c>StartResult.AgentMarkedLive</c> tells an adapter that its agent
+    /// has been withdrawn.
+    /// </para>
+    /// </remarks>
     public async Task<int> MarkLiveAsync(
         AgentName name,
         string? sessionRef,
@@ -365,7 +378,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                    SET status        = 'live',
                        session_ref   = COALESCE(@SessionRef, session_ref),
                        last_seen_utc = @Now
-                 WHERE name = @Name;
+                 WHERE name = @Name AND status <> 'retired';
                 """,
                 new
                 {

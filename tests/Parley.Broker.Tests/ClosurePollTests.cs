@@ -55,7 +55,7 @@ public sealed class ClosurePollTests : IDisposable
 
         _conversations = new ConversationRepository(_connection);
         _broker = new Broker(_connection, BrokerOptions.Default);
-        _broker.StartAsync(T0, TestContext.Current.CancellationToken).GetAwaiter().GetResult();
+        _broker.StartAsync(Orders, T0, TestContext.Current.CancellationToken).GetAwaiter().GetResult();
 
         // SPEC.md §10.2 lives on its own type, so a broker handed to an adapter carries no
         // operator operation an agent's tool set could be wired to.
@@ -309,7 +309,7 @@ public sealed class ClosurePollTests : IDisposable
         await Ask(Orders, Billing);
 
         var second = new Broker(_connection, BrokerOptions.Default);
-        await second.StartAsync(T0.AddMinutes(2), TestContext.Current.CancellationToken);
+        await second.StartAsync(Orders, T0.AddMinutes(2), TestContext.Current.CancellationToken);
 
         var proposed = await second.ConcludeAsync(
             Conversation, Orders, true, T0.AddMinutes(3), TestContext.Current.CancellationToken);

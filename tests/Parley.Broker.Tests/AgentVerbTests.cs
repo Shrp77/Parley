@@ -51,7 +51,7 @@ public sealed class AgentVerbTests : IDisposable
         _exchanges = new ExchangeRepository(_connection);
         _messages = new MessageRepository(_connection);
         _broker = new Broker(_connection, BrokerOptions.Default);
-        _broker.StartAsync(T0, TestContext.Current.CancellationToken).GetAwaiter().GetResult();
+        _broker.StartAsync(Orders, T0, TestContext.Current.CancellationToken).GetAwaiter().GetResult();
     }
 
     public void Dispose() => _connection.Dispose();
@@ -170,7 +170,7 @@ public sealed class AgentVerbTests : IDisposable
         // stamped on the exchange to the operator's configuration.
         var strict = ExchangePolicy.Default with { ClarifyDepthCap = 1, OpenPairCap = 2 };
         var broker = new Broker(_connection, BrokerOptions.Default with { ExchangePolicy = strict });
-        await broker.StartAsync(T0, TestContext.Current.CancellationToken);
+        await broker.StartAsync(Orders, T0, TestContext.Current.CancellationToken);
 
         var asked = await broker.AskAsync(
             Orders, Billing, Model, Question, T0.AddMinutes(1),
@@ -413,7 +413,7 @@ public sealed class AgentVerbTests : IDisposable
         // out of budget; the exchange stays open for somebody to dispose of deliberately.
         var strict = ExchangePolicy.Default with { ClarifyDepthCap = 1 };
         var broker = new Broker(_connection, BrokerOptions.Default with { ExchangePolicy = strict });
-        await broker.StartAsync(T0, TestContext.Current.CancellationToken);
+        await broker.StartAsync(Orders, T0, TestContext.Current.CancellationToken);
 
         var asked = await broker.AskAsync(
             Orders, Billing, Model, Question, T0.AddMinutes(1),

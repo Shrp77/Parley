@@ -61,7 +61,7 @@ public sealed class FullDiscussionTests : IDisposable
         };
 
         var broker = new Broker(_connection, options);
-        await broker.StartAsync(T0, ct);
+        await broker.StartAsync(Orders, T0, ct);
 
         // Orders asks billing, naming the discussion.
         var asked = await broker.AskAsync(
@@ -80,7 +80,7 @@ public sealed class FullDiscussionTests : IDisposable
 
         // The process dies here, mid-clarification, with orders holding the turn.
         var restarted = new Broker(_connection, options);
-        var reboot = await restarted.StartAsync(T0.AddMinutes(4), ct);
+        var reboot = await restarted.StartAsync(Orders, T0.AddMinutes(4), ct);
         Assert.Equal(1, reboot.ExchangesOrphaned);
 
         // Orders comes back. Its own traffic is what replays what it owes, and the question it

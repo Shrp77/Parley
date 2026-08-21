@@ -47,7 +47,7 @@ public sealed class EnvelopeDeliveryTests : IDisposable
         }
 
         _broker = new Broker(_connection, BrokerOptions.Default);
-        _broker.StartAsync(T0, TestContext.Current.CancellationToken).GetAwaiter().GetResult();
+        _broker.StartAsync(Orders, T0, TestContext.Current.CancellationToken).GetAwaiter().GetResult();
     }
 
     public void Dispose() => _connection.Dispose();

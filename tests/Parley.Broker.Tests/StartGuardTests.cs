@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -75,11 +75,16 @@ public sealed class StartGuardTests : IDisposable
     }
 
     [Fact]
-    public async Task Asking_before_start_does_not_count_a_dead_run_against_the_pair_cap()
+    public async Task A_dead_peers_slots_are_reclaimed_by_the_sweep_not_by_attaching()
     {
-        // Exchanges left OPEN by a process that died still hold pair slots and wait-for edges
-        // on behalf of agents that are not running. StartAsync orphans them; before it runs
-        // they saturate the pair and refuse a question that should have been admitted.
+        // Exchanges left OPEN by a process that died still hold pair slots and wait-for edges.
+        // Under the broker-wide sequence, any agent attaching cleared them all — which is
+        // exactly the behaviour that made one session orphan another's live work.
+        //
+        // Scoped to the attaching agent, these are billing's debts and orders attaching does not
+        // touch them. What reclaims them is the deadline machinery: their windows expire and the
+        // sweep orphans them, which is the same mechanism that handles a peer that stops
+        // answering for any other reason.
         for (var i = 0; i < ExchangePolicy.Default.OpenPairCap; i++)
         {
             var stale = await _exchanges.TryOpenAsync(
@@ -92,15 +97,22 @@ public sealed class StartGuardTests : IDisposable
             Orders, Billing, Model, Question, T0.AddDays(1),
             cancellationToken: TestContext.Current.CancellationToken));
 
-        // And once the sequence has run, the dead run's exchanges are orphaned and the question
-        // is admitted — which is what makes the refusal above a sequencing error rather than a
-        // fact about the world.
-        await _broker.StartAsync(T0.AddDays(1), TestContext.Current.CancellationToken);
+        await _broker.StartAsync(Orders, T0.AddDays(1), TestContext.Current.CancellationToken);
+
+        // Orders attaching leaves billing's debts alone, so the pair is still saturated.
+        var stillFull = await _broker.AskAsync(
+            Orders, Billing, Model, Question, T0.AddDays(1),
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(OpenRejection.PairSaturated, stillFull.Rejection);
+
+        // The sweep is what reclaims them, and it needs no cooperation from the dead process.
+        var swept = await _broker.TickAsync(
+            T0.AddDays(1), TestContext.Current.CancellationToken);
+        Assert.Equal(ExchangePolicy.Default.OpenPairCap, swept.Exchanges.Orphaned);
 
         var asked = await _broker.AskAsync(
             Orders, Billing, Model, Question, T0.AddDays(1),
             cancellationToken: TestContext.Current.CancellationToken);
-
         Assert.True(asked.Succeeded, $"expected admission, got {asked.Rejection}");
     }
 

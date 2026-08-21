@@ -101,6 +101,18 @@ public sealed class Broker
     public DateTimeOffset? StartedUtc { get; private set; }
 
     /// <summary>
+    /// Gets the agent this broker attached for, or <see langword="null"/> before it has.
+    /// </summary>
+    /// <remarks>
+    /// Recorded because the attach sequence of SPEC.md §14 is now scoped to one agent, so the
+    /// broker knows which. It is not used to authorise operations — every one of them still
+    /// takes the acting agent explicitly, because the broker is a library and the adapter above
+    /// it is what binds an identity to a process. Making it implicit here would move that
+    /// decision somewhere the tests could not exercise several agents against one database.
+    /// </remarks>
+    public AgentName? Attached { get; private set; }
+
+    /// <summary>
     /// The namespace SPEC.md §11.3 reserves for the broker's own attributions.
     /// </summary>
     private const string ReservedResponderPrefix = "parley:";
@@ -892,9 +904,10 @@ public sealed class Broker
     }
 
     /// <summary>
-    /// Runs the reboot sequence.
+    /// Attaches an agent to the broker, running the sequence of SPEC.md §14.
     /// </summary>
-    /// <param name="nowUtc">The instant the broker started.</param>
+    /// <param name="agent">The agent this broker speaks for.</param>
+    /// <param name="nowUtc">The instant of the attach.</param>
     /// <param name="cancellationToken">Cancels the sequence.</param>
     /// <returns>What the sequence did.</returns>
     /// <remarks>
@@ -905,18 +918,31 @@ public sealed class Broker
     /// </remarks>
     /// <remarks>
     /// <para>
-    /// SPEC.md §14: mark agents offline, then orphan every open exchange. Both are the same
-    /// admission — that whatever the previous run believed about liveness is no longer evidence
-    /// of anything. An exchange left open across a restart would keep a deadline nobody is
-    /// working towards, and a wait-for edge blocking peers on behalf of an agent that is not
-    /// running.
+    /// <b>Scoped to the attaching agent.</b> It is marked <c>live</c>, and the exchanges it owes
+    /// are orphaned. Every other agent and every other exchange is left exactly as it was.
     /// </para>
     /// <para>
-    /// Retired agents are spared, and only retired agents. Every other status is what the last
-    /// run observed and the restart may well have invalidated it — reinstalling or re-cloning a
-    /// repository is exactly the kind of thing that happens between runs, which is why an
-    /// <c>unreachable</c> mark is cleared here and gets to be proved again. Retirement is a
-    /// person's judgement, and a restart is not evidence against it.
+    /// This replaced a broker-wide sequence that marked all agents offline and orphaned every
+    /// open exchange, and the reason is worth keeping. That was right while a broker was one
+    /// long-running service hosting all of its agents: they shared a fate, so a restart
+    /// invalidated everything at once. An agent is now a coding session, started and stopped by
+    /// whoever is working, and §11.1's adapters attach one agent each — so under the old rule
+    /// the second agent to open a session orphaned the first's live work, the third orphaned
+    /// both, and none of them could tell. A probe with two agents showed it in three calls;
+    /// twenty-two repositories with an agent apiece is the deployment §1 describes.
+    /// </para>
+    /// <para>
+    /// <b>What it owes, not what it is party to.</b> An exchange this agent is <em>waiting on</em>
+    /// has somebody else working towards its deadline, and orphaning it would discard a peer's
+    /// work in progress because a process on the other side of the conversation restarted. What
+    /// has no worker is the debt the vanished agent was carrying, which is what <c>owed_by</c>
+    /// names and what orphaning is for.
+    /// </para>
+    /// <para>
+    /// Marking <c>live</c> does not disturb a retirement: <see cref="AgentRepository.MarkLiveAsync"/>
+    /// refuses a retired agent, because retirement is a person's judgement and attaching is not
+    /// evidence against it. An agent whose registration was withdrawn can start its server all
+    /// it likes and will still be refused every operation.
     /// </para>
     /// <para>
     /// Orphaning goes through the domain transition one exchange at a time rather than a bulk
@@ -927,17 +953,22 @@ public sealed class Broker
     /// </para>
     /// </remarks>
     public async Task<StartResult> StartAsync(
+        AgentName agent,
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default)
     {
-        var offline = await _agents.MarkAllOfflineAsync(cancellationToken).ConfigureAwait(false);
+        // No session reference: SPEC.md §12 has that carry whatever an adapter needs to reach
+        // an agent again, and an adapter the agent launched itself has nothing to hand back —
+        // it is reached by being running, not by being called.
+        var live = await _agents.MarkLiveAsync(agent, sessionRef: null, nowUtc, cancellationToken)
+            .ConfigureAwait(false);
 
-        var open = await _exchanges.GetOpenAsync(cancellationToken: cancellationToken)
+        var owed = await _exchanges.GetOpenOwedByAsync(agent, cancellationToken)
             .ConfigureAwait(false);
 
         var orphaned = 0;
 
-        foreach (var exchange in open)
+        foreach (var exchange in owed)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -953,12 +984,14 @@ public sealed class Broker
             }
         }
 
+        Attached = agent;
+
         // Recorded last, so a sequence that throws part-way leaves a broker that refuses to
         // tick rather than one that ticks having half-orphaned its exchanges. TickAsync reads
         // this to time ghosting, and a start that did not finish is not a start.
         StartedUtc = nowUtc;
 
-        return new StartResult(offline, orphaned);
+        return new StartResult(live, orphaned);
     }
 
     /// <summary>

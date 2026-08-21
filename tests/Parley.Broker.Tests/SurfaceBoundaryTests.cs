@@ -46,7 +46,8 @@ public sealed class SurfaceBoundaryTests
         nameof(Broker.StartAsync),
         nameof(Broker.TickAsync),
         nameof(Broker.ResumeOwedByAsync),
-        "get_StartedUtc"
+        "get_StartedUtc",
+        "get_Attached"
     ];
 
     private static IEnumerable<string> PublicMethodsOf(Type type) =>
