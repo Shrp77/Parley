@@ -1273,7 +1273,14 @@ public sealed class Broker
         // BrokerOptions.DefaultRetentionInterval for what that cost measured.
         var pruned = PruneResult.Nothing;
 
-        if (_prunedUtc is not { } last || nowUtc - last >= _options.RetentionInterval)
+        // A clock that has moved backwards prunes rather than waiting, which is not fussiness
+        // about NTP: the stamp is per process and compared by subtraction, so a host that ticked
+        // once with a clock an hour fast would then skip every sweep until real time caught up.
+        // Retention stopping is silent — a log that is not shrinking looks exactly like a log
+        // with nothing due — so the failure would be found by noticing the file size.
+        if (_prunedUtc is not { } last ||
+            nowUtc < last ||
+            nowUtc - last >= _options.RetentionInterval)
         {
             pruned = await _pruner
                 .PruneAsync(_options.Retention, nowUtc, cancellationToken).ConfigureAwait(false);

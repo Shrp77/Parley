@@ -129,6 +129,14 @@ public sealed class Pruner(SqliteConnection connection)
     /// follows a series of primary-key lookups instead of a second walk of the log.
     /// </para>
     /// <para>
+    /// Carrying identifiers across a gap where other writers are running is sound because
+    /// <c>messages.id</c> is <c>AUTOINCREMENT</c>, which SQLite guarantees never to reuse. On a
+    /// plain <c>INTEGER PRIMARY KEY</c> the highest rowid is reissued after a delete, so a
+    /// message written between this scan and the delete could take an identifier this pass had
+    /// already judged — and be removed by a decision made about a different message entirely.
+    /// That is a dependency on the schema, not an implementation detail of it.
+    /// </para>
+    /// <para>
     /// That trade is measured rather than assumed, because assuming it got it backwards once
     /// already. Against two hundred thousand messages with nothing due, evaluating everything
     /// inside a <c>DELETE</c> took 0.7–1.5 seconds and this takes 0.3; draining a backlog that

@@ -65,24 +65,30 @@ public sealed class RetentionSweepTests : IDisposable
     }
 
     /// <summary>Asks, collects, and answers — one exchange that ends properly.</summary>
-    private async Task SettledExchange(Broker broker, string conversationId)
+    /// <param name="broker">The broker to run it through.</param>
+    /// <param name="conversationId">The discussion to run it in.</param>
+    /// <param name="at">When it starts, defaulting to the fixture instant.</param>
+    private async Task SettledExchange(
+        Broker broker, string conversationId, DateTimeOffset? at = null)
     {
+        var start = at ?? T0;
+
         var asked = await broker.AskAsync(
-            Orders, Billing, Model, Question, T0, conversationId, Ct);
+            Orders, Billing, Model, Question, start, conversationId, Ct);
 
         Assert.True(asked.Succeeded, $"expected admission, got {asked.Rejection}");
 
         // Collected, so the question is delivered and the floor's inbox clause stops applying.
-        await broker.DrainInboxAsync(Billing, T0.AddMinutes(1), cancellationToken: Ct);
+        await broker.DrainInboxAsync(Billing, start.AddMinutes(1), cancellationToken: Ct);
 
         var answered = await broker.AnswerAsync(
             asked.Exchange!.Id, Billing, Model,
             """{"resolutions":[{"id":"q1","resolution":"answered","text":"net"}]}""",
-            T0.AddMinutes(2), cancellationToken: Ct);
+            start.AddMinutes(2), cancellationToken: Ct);
 
         Assert.True(answered.Succeeded, $"expected the answer to store, got {answered.Error}");
 
-        await broker.DrainInboxAsync(Orders, T0.AddMinutes(3), cancellationToken: Ct);
+        await broker.DrainInboxAsync(Orders, start.AddMinutes(3), cancellationToken: Ct);
     }
 
     /// <summary>Closes a discussion by operator decision, so its messages fall due at once.</summary>
@@ -230,6 +236,29 @@ public sealed class RetentionSweepTests : IDisposable
 
         // The same two minutes that changed nothing under the default.
         Assert.Equal(2, (await broker.TickAsync(T0.AddMinutes(12), Ct)).Retention.Removed);
+    }
+
+    [Fact]
+    public async Task A_clock_that_moved_backwards_does_not_suspend_retention()
+    {
+        // The stamp is per process and compared by subtraction, so one tick with a clock an hour
+        // fast would otherwise skip every sweep until real time caught up. Retention stopping is
+        // silent: a log that is not shrinking looks exactly like a log with nothing due.
+        var broker = new Broker(_connection, BrokerOptions.Default);
+        await broker.StartAsync(Orders, T0, Ct);
+
+        await SettledExchange(broker, "pricing");
+        await Conclude("pricing", T0.AddMinutes(4));
+
+        // A tick stamped an hour into the future, which prunes and claims the slot.
+        Assert.Equal(2, (await broker.TickAsync(T0.AddHours(1), Ct)).Retention.Removed);
+
+        await SettledExchange(broker, "second", T0.AddMinutes(5));
+        await Conclude("second", T0.AddMinutes(9));
+
+        // Time corrected. Under a plain subtraction this and every tick for the next hour would
+        // do nothing at all.
+        Assert.Equal(2, (await broker.TickAsync(T0.AddMinutes(10), Ct)).Retention.Removed);
     }
 
     // ---- configuration ----

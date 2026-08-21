@@ -422,6 +422,27 @@ public sealed class PrunerTests : IDisposable
     }
 
     [Fact]
+    public async Task Message_identifiers_are_never_reused()
+    {
+        // What the pruner rests on. It scans for identifiers outside a transaction and deletes
+        // by them afterwards, so an identifier reissued in between would let a decision made
+        // about one message remove a different one. SQLite reissues the highest rowid on a plain
+        // INTEGER PRIMARY KEY and never does under AUTOINCREMENT, so this is the schema keyword
+        // the whole arrangement depends on — checked here rather than trusted, because a
+        // migration that dropped it would break the pruner silently and nowhere near this file.
+        var exchange = await Open(T0, "q1");
+        var first = await Say(exchange.Id, T0);
+        await Settle(exchange, T0.AddMinutes(5));
+
+        Assert.Equal(1, (await Prune(T0.AddDays(4))).Removed);
+
+        var second = await Open(T0.AddDays(5), "q2");
+        var reused = await Say(second.Id, T0.AddDays(5));
+
+        Assert.True(reused > first, $"message {first} was reissued as {reused}");
+    }
+
+    [Fact]
     public async Task An_unusable_policy_is_refused_rather_than_applied()
     {
         // Checked here as well as at broker construction, because this is the entry point the
