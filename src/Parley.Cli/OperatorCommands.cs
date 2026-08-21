@@ -192,6 +192,78 @@ public sealed class OperatorCommands
         return 0;
     }
 
+    /// <summary>Applies the retention policy of SPEC.md §9.4 now.</summary>
+    /// <param name="policy">The policy to apply.</param>
+    /// <param name="nowUtc">The instant to measure ages against.</param>
+    /// <param name="cancellationToken">Cancels the pass.</param>
+    /// <returns>Zero.</returns>
+    /// <remarks>
+    /// <para>
+    /// Prints the policy before the counts, and that is the load-bearing part. The numbers come
+    /// from the environment, and an operator's shell is not the environment their MCP client
+    /// launched the servers with — so the command that deletes text on a configured schedule
+    /// must say which schedule it used. Reporting only what went would let a default policy
+    /// remove a year of log from a deployment configured to keep one, silently.
+    /// </para>
+    /// <para>
+    /// Zero even when nothing was removed, unlike <see cref="RetireAsync"/> and
+    /// <see cref="ReinstateAsync"/>. Those exit non-zero when the registry did not change
+    /// because a script that expected a change can then tell; here "nothing was old enough" is
+    /// the ordinary steady state of a healthy deployment, and a cron job that failed most nights
+    /// would train whoever reads it to ignore the one night it meant something.
+    /// </para>
+    /// </remarks>
+    public async Task<int> PruneAsync(
+        RetentionPolicy policy, DateTimeOffset nowUtc, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+
+        // Every value interpolated below is already a string, so nothing here formats a number
+        // against a culture. The two that were numbers are converted invariantly first, which is
+        // also why they are converted rather than interpolated: string.Create's handler takes a
+        // single interpolated literal and refuses a concatenation, and these lines are too long
+        // to be one.
+        await _output.WriteLineAsync(
+            $"Retention: idle after {Hours(policy.IdlePeriod)}, nothing older than " +
+            $"{Hours(policy.MaximumAge)}. Set {RetentionPolicyEnvironment.IdleVariable} and " +
+            $"{RetentionPolicyEnvironment.MaximumAgeVariable} to change them, in the same " +
+            "environment the agents' servers are launched with.").ConfigureAwait(false);
+
+        var result = await _console.PruneAsync(policy, nowUtc, cancellationToken)
+            .ConfigureAwait(false);
+
+        var removed = result.Removed.ToString(CultureInfo.InvariantCulture);
+
+        await _output.WriteLineAsync($"Removed {removed} message(s).").ConfigureAwait(false);
+
+        if (result.HeldByFloor > 0)
+        {
+            // Said only when it is true, because the explanation is long and an operator who
+            // sees it every time stops reading it. A number that stays high across runs is the
+            // signal: exchanges are sitting open, or a peer has stopped collecting its inbox.
+            var held = result.HeldByFloor.ToString(CultureInfo.InvariantCulture);
+
+            await _output.WriteLineAsync(
+                $"{held} more were old enough and were kept: still undelivered, on an exchange " +
+                "that has not closed, or inside the deduplication window. That floor is not " +
+                "configurable — it is what keeps tightening retention from breaking delivery " +
+                "or deduplication as a side effect.").ConfigureAwait(false);
+        }
+
+        return 0;
+    }
+
+    /// <summary>Renders a duration as whole hours.</summary>
+    /// <param name="value">The duration.</param>
+    /// <returns>Text an operator can compare against what they configured.</returns>
+    /// <remarks>
+    /// Hours because that is the unit the variables are stated in, and a command that echoes a
+    /// setting back in different units than it was written in is one more thing to convert
+    /// while deciding whether it is right.
+    /// </remarks>
+    private static string Hours(TimeSpan value) =>
+        string.Create(CultureInfo.InvariantCulture, $"{value.TotalHours:0.##} hours");
+
     /// <summary>Renders an enum member the way the registry stores it.</summary>
     /// <param name="value">The member.</param>
     /// <returns>Its lowercase name.</returns>

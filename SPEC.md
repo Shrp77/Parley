@@ -1352,6 +1352,20 @@ a floor overrides both.
 An operator configuring aggressive retention must not be able to break deduplication as
 a side effect. The floor is what makes the dial safe to turn.
 
+**Two of those clauses are bounded by construction and one is not.** The deduplication
+clause expires on a fixed window measured in seconds. The exchange clause terminates because
+§14 ghosts an orphan and closes it. Nothing terminates the first: an agent that never
+attaches never collects, and no other mechanism clears an inbox nobody reads. So the age cap
+below reaches that clause, and only that clause. Leaving it absolute would put the one
+unbounded corner of the log in the part carrying the full text of every question, held open
+by exactly the failure §14 exists to bound elsewhere.
+
+Little is lost by that. A question survives its exchange only after the exchange was ghosted
+and its asker told (§14), and §10.1's `get_messages` already withholds a question whose
+exchange has ended — so what the cap removes at that point is text no delivery would return.
+The remedy for an agent that is not coming back is `retire` (§10.2), which is a decision
+about the registry and does not depend on this.
+
 **The idle rule.** Once every exchange in a conversation is closed and nothing has been
 added to it for the configured idle period, the discussion is over and its messages are
 prunable. Messages with no `conversation_id` are treated as a conversation of one
@@ -1374,11 +1388,11 @@ bothers.
 **The age cap.** Nothing outlives the configured maximum age, whatever the idle rule
 concludes. This bounds a conversation that never falls silent long enough to trip it.
 
-The floor still wins where it applies, but it can no longer hold anything open indefinitely.
-An orphan is retained so §14 can replay it, and §14 now guarantees that the retention has an
-end: after the grace period the exchange is ghosted and closed, at which point the floor stops
-applying to it and the ordinary rules resume. The age cap is therefore absolute — every
-message has a bounded lifetime under every resume policy, including `never`.
+The two floor clauses the cap does not reach are bounded on their own. An orphan is retained
+so §14 can replay it, and §14 now guarantees that the retention has an end: after the grace
+period the exchange is ghosted and closed, at which point the floor stops applying to it and
+the ordinary rules resume. The age cap is therefore absolute — every message has a bounded
+lifetime under every resume policy, including `never`.
 
 This was previously not the case, and the document said so: a `never` deployment that reaped
 steadily accumulated orphans nothing would ever clear, so its floor rather than its age cap
@@ -1390,6 +1404,14 @@ a permanent corner of it would be the store §16 says this is not. An operator w
 to keep a discussion exports it (§10.2); the export is a file they own, outside the
 retention policy entirely, and the log is free to forget. Retention that can be switched
 off per-conversation drifts back into being a context store one exception at a time.
+
+**Where the numbers come from.** The idle period and the maximum age are deployment
+configuration, read by the agents' servers and by the operator's tool from the same
+variables, and applied on the ordinary sweep. Any server in a project may prune, so a
+project whose servers are configured differently converges on the shortest policy configured
+for it. That is what the floor exists to make safe, and it is why `prune` (§10.2) reports
+the policy it applied and not only what it removed — a one-shot deletion under numbers the
+operator did not realise were in force is the mistake worth making visible.
 
 Messages are the retention target because messages hold the text. Exchange rows carry
 no free prose — participants, timings, resolution, clarify depth — and are what §15

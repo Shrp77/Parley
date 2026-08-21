@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using Xunit;
 
 namespace Parley.Cli.Tests;
@@ -30,13 +30,16 @@ public sealed class SeparationTests
     [Fact]
     public void The_operator_commands_are_exactly_the_operations_of_section_10_2()
     {
-        // prune is absent on purpose: §9.4's retention policy is not built, and a command that
-        // applied nothing immediately would be worse than one that is honestly missing.
+        // All five of §10.2 now that prune exists. Whichever arrives next, the check that fails
+        // is this one, which is the point: adding an operator operation should be a decision
+        // about which side of §10.1 it belongs on rather than a question of which class the
+        // method was already in.
         string[] expected =
         [
             "AgentsAsync",
             "ExportAsync",
             "ForceConcludeAsync",
+            "PruneAsync",
             "ReinstateAsync",
             "RetireAsync"
         ];
@@ -74,7 +77,7 @@ public sealed class SeparationTests
                                           BindingFlags.Instance | BindingFlags.Static |
                                           BindingFlags.DeclaredOnly))
             .Where(m => m.Name is "RetireAsync" or "ReinstateAsync" or "ForceConcludeAsync"
-                                or "ExportAsync" or "DescribeAgentsAsync")
+                                or "ExportAsync" or "DescribeAgentsAsync" or "PruneAsync")
             .Select(m => $"{m.DeclaringType!.Name}.{m.Name}")
             .ToArray();
 

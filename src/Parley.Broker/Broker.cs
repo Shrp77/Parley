@@ -53,6 +53,7 @@ public sealed class Broker
     private readonly MessageRepository _messages;
     private readonly ConversationRepository _conversations;
     private readonly Reaper _reaper;
+    private readonly Pruner _pruner;
     private readonly BrokerOptions _options;
 
     /// <summary>SQLite's extended result code for a unique index violation.</summary>
@@ -89,6 +90,7 @@ public sealed class Broker
         _messages = new MessageRepository(connection);
         _conversations = new ConversationRepository(connection);
         _reaper = new Reaper(_exchanges, _messages, connection);
+        _pruner = new Pruner(connection);
     }
 
     /// <summary>
@@ -1197,7 +1199,7 @@ public sealed class Broker
     /// </summary>
     /// <param name="nowUtc">The instant to evaluate deadlines against.</param>
     /// <param name="cancellationToken">Cancels the pass.</param>
-    /// <returns>What the pass did to exchanges and to conversations.</returns>
+    /// <returns>What the pass did to exchanges, to conversations, and to the message log.</returns>
     /// <exception cref="InvalidOperationException">
     /// <see cref="StartAsync"/> has not been called.
     /// </exception>
@@ -1239,7 +1241,14 @@ public sealed class Broker
         var concluded = await ConcludeSatisfiedPollsAsync(nowUtc, cancellationToken)
             .ConfigureAwait(false);
 
-        return new TickResult(swept, concluded);
+        // Last, because both of the passes above make things prunable and neither is made
+        // easier by running after this one. Ghosting closes an orphan, which lifts the floor
+        // clause holding its messages; concluding a conversation short-circuits the idle period
+        // for everything in it. Pruning first would simply defer both to the next tick.
+        var pruned = await _pruner
+            .PruneAsync(_options.Retention, nowUtc, cancellationToken).ConfigureAwait(false);
+
+        return new TickResult(swept, concluded, pruned);
     }
 
     /// <summary>

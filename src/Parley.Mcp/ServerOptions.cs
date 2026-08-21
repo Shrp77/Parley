@@ -11,6 +11,7 @@ namespace Parley.Mcp;
 /// What to record as having produced a message when a call does not say. See SPEC.md §11.3.
 /// </param>
 /// <param name="TickInterval">How often the sweep runs.</param>
+/// <param name="Retention">How long the message log keeps what it carried. See SPEC.md §9.4.</param>
 /// <param name="Workspace">
 /// The directory this agent works in, recorded in the registry so an operator can tell which
 /// repository a name belongs to, or <see langword="null"/> if the launch did not say.
@@ -37,6 +38,7 @@ public sealed record ServerOptions(
     AgentName Agent,
     string ResponderModel,
     TimeSpan TickInterval,
+    RetentionPolicy Retention,
     string? Workspace)
 {
     /// <summary>The environment variable naming the database file.</summary>
@@ -165,6 +167,10 @@ public sealed record ServerOptions(
             agent,
             responder,
             ReadTickInterval(read),
+            // Read from the same names the operator's tool reads, through the same code, so the
+            // sweep this server runs and a `parley prune` cannot silently apply different
+            // numbers to the same file. See RetentionPolicyEnvironment.
+            RetentionPolicyEnvironment.Read(read),
             string.IsNullOrWhiteSpace(workspace) ? null : workspace);
     }
 

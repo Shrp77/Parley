@@ -79,15 +79,17 @@ public sealed class SurfaceBoundaryTests
         // boundary it belongs on, rather than a question of which class the method was already
         // in — and this list is where the answer gets written down.
         //
-        // prune is absent because §9.4's retention policy is not built. A command that applied
-        // nothing immediately would be worse than one honestly missing.
+        // This is the whole of §10.2 now that prune exists. It is the one that reads its policy
+        // from an argument rather than deciding for itself, which is what keeps the operator's
+        // command and the servers' sweep from applying different numbers to the same file.
         string[] declared =
         [
             nameof(OperatorConsole.ForceConcludeAsync),
             nameof(OperatorConsole.RetireAsync),
             nameof(OperatorConsole.ReinstateAsync),
             nameof(OperatorConsole.DescribeAgentsAsync),
-            nameof(OperatorConsole.ExportAsync)
+            nameof(OperatorConsole.ExportAsync),
+            nameof(OperatorConsole.PruneAsync)
         ];
 
         var unexpected = PublicMethodsOf(typeof(OperatorConsole)).Where(n => !declared.Contains(n));
