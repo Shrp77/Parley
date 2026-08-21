@@ -54,6 +54,21 @@ for (var i = 0; i < arguments.Count - 1; i++)
 
 databasePath ??= Environment.GetEnvironmentVariable("PARLEY_DB");
 
+// Anything left starting with a hyphen is an option this does not have, and refusing it is the
+// point rather than tidiness: without this, `parley export --db` reaches the export with "--db"
+// as the conversation identifier and runs a real query against it. A flag in the wrong place
+// silently becoming data is the worst reading of a mistyped command, because it succeeds.
+var stray = arguments.Find(a => a.StartsWith('-'));
+
+if (stray is not null)
+{
+    await Console.Error.WriteLineAsync($"'{stray}' is not an option this command takes.")
+        .ConfigureAwait(false);
+    await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
+
+    return Usage;
+}
+
 if (string.IsNullOrWhiteSpace(databasePath))
 {
     await Console.Error.WriteLineAsync(
@@ -85,7 +100,24 @@ SqliteConnectionHolder holder;
 
 try
 {
-    holder = new SqliteConnectionHolder(ParleyDatabase.OpenAndMigrate(databasePath));
+    // Opened, never migrated. This is the operator's tool, and it administers a database the
+    // agents' servers created — so migrating from here is never the intent, and doing it is
+    // actively dangerous: pointed at somebody's application database by a mistyped path, it
+    // wrote Parley's seven tables and triggers into it, bumped user_version from 0 to 1, and
+    // reported "no agents registered". A typo should not install a schema.
+    holder = new SqliteConnectionHolder(ParleyDatabase.Open(databasePath));
+
+    if (SchemaMigrator.GetUserVersion(holder.Connection) == 0)
+    {
+        holder.Dispose();
+
+        await Console.Error.WriteLineAsync(
+            $"'{databasePath}' is not a Parley database. It has a schema version of zero, which " +
+            "means nothing here wrote it. Check the path — this command administers a database " +
+            "an agent's server created, and will not create or alter one.").ConfigureAwait(false);
+
+        return Config;
+    }
 }
 #pragma warning disable CA1031 // Do not catch general exception types
 catch (Exception ex)

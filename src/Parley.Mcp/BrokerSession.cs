@@ -1,4 +1,5 @@
-﻿using Microsoft.Data.Sqlite;
+﻿using System.Globalization;
+using Microsoft.Data.Sqlite;
 using Parley.Broker;
 using Parley.Core;
 using Parley.Store;
@@ -93,10 +94,13 @@ public sealed class BrokerSession : IAsyncDisposable
 
         EnsureDirectory(options.DatabasePath);
 
-        var connection = ParleyDatabase.OpenAndMigrate(options.DatabasePath);
+        var connection = ParleyDatabase.Open(options.DatabasePath);
 
         try
         {
+            RefuseAForeignDatabase(connection, options.DatabasePath);
+            SchemaMigrator.Migrate(connection);
+
             await RegisterAsync(connection, options, cancellationToken).ConfigureAwait(false);
 
             var broker = new Parley.Broker.Broker(connection, BrokerOptionsFor(options));
@@ -155,6 +159,61 @@ public sealed class BrokerSession : IAsyncDisposable
                 ? options.TickInterval * 3
                 : BrokerOptions.DefaultLivenessLease
         };
+
+    /// <summary>
+    /// Refuses to migrate a database somebody else made.
+    /// </summary>
+    /// <param name="connection">The open, unmigrated connection.</param>
+    /// <param name="databasePath">The configured path, for the message.</param>
+    /// <exception cref="InvalidOperationException">The file holds a schema that is not Parley's.</exception>
+    /// <remarks>
+    /// <para>
+    /// <c>PARLEY_DB</c> is a path in a launch configuration, and a path in a launch configuration
+    /// is a thing people mistype. Pointed at an application's own SQLite file, the migration
+    /// writes seven tables, their indexes and their triggers into it and bumps
+    /// <c>user_version</c> from zero to one — which is silent, and which breaks whatever
+    /// migration tooling that database had, because <c>user_version</c> is where most of it
+    /// keeps its place.
+    /// </para>
+    /// <para>
+    /// Tables present with a schema version of zero is the signature: a Parley database this
+    /// server created carries a version from its first migration onwards, and the migration is
+    /// transactional, so tables and version commit together and there is no half-state to
+    /// mistake for this one. An empty file, or no file at all, is the ordinary first run and
+    /// passes.
+    /// </para>
+    /// </remarks>
+    private static void RefuseAForeignDatabase(SqliteConnection connection, string databasePath)
+    {
+        // Both reads under one transaction, which is not tidiness. They are two statements, so
+        // outside one they can straddle another server's migration commit — version read before
+        // it, tables read after — and the pair then reads exactly like somebody else's database.
+        // Six servers starting together on a fresh project hit that on the third round.
+        using var snapshot = connection.BeginTransaction();
+
+        using var version = connection.CreateCommand();
+        version.Transaction = snapshot;
+        version.CommandText = "PRAGMA user_version;";
+
+        if (Convert.ToInt64(version.ExecuteScalar(), CultureInfo.InvariantCulture) != 0)
+        {
+            return;
+        }
+
+        using var tables = connection.CreateCommand();
+        tables.Transaction = snapshot;
+        tables.CommandText =
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%';";
+
+        if (Convert.ToInt64(tables.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"'{databasePath}' already holds a database that Parley did not create. Refusing to " +
+            "write a schema into it. Check the path.");
+    }
 
     /// <summary>
     /// Creates the directory the database file lives in, if it is missing.
