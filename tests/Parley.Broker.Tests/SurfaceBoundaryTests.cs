@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using Xunit;
 
 namespace Parley.Broker.Tests;
@@ -38,7 +38,9 @@ public sealed class SurfaceBoundaryTests
         nameof(Broker.ClarifyAsync),
         nameof(Broker.AnswerAsync),
         nameof(Broker.ConcludeAsync),
+        nameof(Broker.NotifyAsync),
         nameof(Broker.DrainInboxAsync),
+        nameof(Broker.ListAgentsAsync),
 
         // Lifecycle. Driven by the host, not exposed to an agent by any adapter.
         nameof(Broker.StartAsync),
@@ -73,6 +75,26 @@ public sealed class SurfaceBoundaryTests
         var leaked = PublicMethodsOf(typeof(Broker)).Where(operatorOperations.Contains);
 
         Assert.Empty(leaked);
+    }
+
+    [Fact]
+    public void No_broker_operation_hands_back_a_stored_registry_record()
+    {
+        // AgentRecord carries a workspace path, a session handle and the adapter's own
+        // configuration; AgentSummary exists so none of that reaches a peer. The two differ by
+        // one word at the call site, so the projection is exactly the kind of thing that gets
+        // skipped by a later operation written in a hurry — rule 3 breached through the one
+        // operation whose job is to describe agents.
+        var leaking = typeof(Broker)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m => Mentions(m.ReturnType, typeof(Parley.Store.AgentRecord)))
+            .Select(m => m.Name);
+
+        Assert.Empty(leaking);
+
+        static bool Mentions(Type type, Type target) =>
+            type == target ||
+            (type.IsGenericType && type.GetGenericArguments().Any(a => Mentions(a, target)));
     }
 
     [Fact]

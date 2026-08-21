@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -71,7 +71,7 @@ public sealed class FullDiscussionTests : IDisposable
 
         // Billing collects it, which starts the working window.
         var billingInbox = await broker.DrainInboxAsync(Billing, T0.AddMinutes(2), cancellationToken: ct);
-        Assert.Equal(MessageType.Question, Assert.Single(billingInbox.Messages).Type);
+        Assert.Equal(MessageType.Question, Assert.Single(billingInbox.Messages).Message.Type);
 
         // It needs detail, so the turn goes back.
         Assert.True((await broker.ClarifyAsync(
@@ -86,7 +86,7 @@ public sealed class FullDiscussionTests : IDisposable
         // Orders comes back. Its own traffic is what replays what it owes, and the question it
         // owes an answer to is handed over again rather than left stamped as delivered.
         var ordersInbox = await restarted.DrainInboxAsync(Orders, T0.AddMinutes(5), cancellationToken: ct);
-        Assert.Equal(MessageType.Clarify, Assert.Single(ordersInbox.Messages).Type);
+        Assert.Equal(MessageType.Clarify, Assert.Single(ordersInbox.Messages).Message.Type);
 
         Assert.True((await restarted.ClarifyAsync(
             asked.Exchange.Id, Orders, Model, """{"text":"of VAT."}""", T0.AddMinutes(6), ct)).Succeeded);
@@ -99,7 +99,7 @@ public sealed class FullDiscussionTests : IDisposable
         Assert.True(answered.Succeeded);
 
         var settled = await restarted.DrainInboxAsync(Orders, T0.AddMinutes(8), cancellationToken: ct);
-        Assert.Equal(MessageType.Answer, Assert.Single(settled.Messages).Type);
+        Assert.Equal(MessageType.Answer, Assert.Single(settled.Messages).Message.Type);
 
         // Orders proposes closure. Billing holds nothing open now, so it is not woken to answer
         // a question about nothing, and the discussion concludes on the proposal alone.

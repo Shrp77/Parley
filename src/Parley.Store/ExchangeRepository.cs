@@ -309,15 +309,13 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         // rule. Neither is an invariant: an agent may legitimately go unreachable or be retired
         // while it holds open exchanges, so a stored constraint would have to permit exactly
         // the rows it was meant to forbid.
-        var unroutable = await _connection.ExecuteScalarAsync<long>(
-            new CommandDefinition(
-                "SELECT count(*) FROM agents WHERE name = @Name " +
-                "AND status IN ('unreachable', 'retired');",
-                new { Name = answerer.Value },
-                scope.Transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        var agents = new AgentRepository(_connection);
 
-        if (unroutable > 0)
+        var unroutable = await agents
+            .IsUnroutableAsync(answerer, scope.Transaction, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (unroutable)
         {
             return OpenOutcome.Unreachable();
         }
@@ -327,14 +325,11 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         // question schedules the violation rather than avoiding it. Only 'retired' counts here,
         // not 'unreachable': unreachable describes a peer nobody could spawn, which says
         // nothing about an agent that is plainly running well enough to be asking.
-        var retired = await _connection.ExecuteScalarAsync<long>(
-            new CommandDefinition(
-                "SELECT count(*) FROM agents WHERE name = @Name AND status = 'retired';",
-                new { Name = asker.Value },
-                scope.Transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        var retired = await agents
+            .IsRetiredAsync(asker, scope.Transaction, cancellationToken)
+            .ConfigureAwait(false);
 
-        if (retired > 0)
+        if (retired)
         {
             return OpenOutcome.AskerRetired();
         }
@@ -414,16 +409,11 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         // together (SPEC.md 5.0).
         if (conversationId is not null)
         {
-            await _connection.ExecuteAsync(
-                new CommandDefinition(
-                    """
-                    INSERT INTO conversations (id, state, opened_utc)
-                    VALUES (@Id, 'OPEN', @Opened)
-                    ON CONFLICT (id) DO NOTHING;
-                    """,
-                    new { Id = conversationId, Opened = ExchangeRow.FormatTimestamp(nowUtc) },
-                    scope.Transaction,
-                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+            var conversations = new ConversationRepository(_connection);
+
+            await conversations
+                .EnsureOpenAsync(conversationId, nowUtc, scope.Transaction, cancellationToken)
+                .ConfigureAwait(false);
 
             // Membership and the void, both from SPEC.md §5.0 and both consequences of this
             // one act. An agent is a participant because it is party to an exchange carrying
@@ -432,7 +422,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
             // progress along with every vote cast in it, because a conversation that concluded
             // around a live question would leave that question in a discussion nobody may add
             // to.
-            await new ConversationRepository(_connection)
+            await conversations
                 .JoinAsync(conversationId, asker, answerer, nowUtc, scope.Transaction, cancellationToken)
                 .ConfigureAwait(false);
         }

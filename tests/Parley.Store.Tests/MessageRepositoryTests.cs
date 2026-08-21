@@ -309,6 +309,16 @@ public sealed class MessageRepositoryTests : IDisposable
     {
         // The export in SPEC 10.2. It reads across agents, which is why it is an operator
         // operation and must never reach an agent's tool set.
+        //
+        // The conversations exist first, because a message may not name one that does not: a
+        // Notify carries no exchange, so the composite key cannot vouch for its identifier and
+        // the direct reference does it instead. This test used to conjure both by naming them.
+        var conversations = new ConversationRepository(_connection);
+        foreach (var id in new[] { "pricing-boundary", "invoice-rounding" })
+        {
+            await conversations.EnsureOpenAsync(id, T0, cancellationToken: TestContext.Current.CancellationToken);
+        }
+
         var first = await Append(payload: """{"n":1}""", type: MessageType.Notify,
             exchangeId: null, conversationId: "pricing-boundary");
         await Append(payload: """{"n":2}""", type: MessageType.Notify, exchangeId: null);

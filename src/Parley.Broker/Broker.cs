@@ -154,6 +154,36 @@ public sealed class Broker
     }
 
     /// <summary>
+    /// Throws unless the acting agent is registered.
+    /// </summary>
+    /// <param name="agent">The agent the adapter claims to be.</param>
+    /// <param name="cancellationToken">Cancels the check.</param>
+    /// <exception cref="InvalidOperationException">No such agent is registered.</exception>
+    /// <remarks>
+    /// <para>
+    /// A host error rather than an agent one, which is why it throws where a peer being
+    /// unroutable returns a refusal. An agent cannot register itself, so there is nothing for it
+    /// to do about this; what it means is that the adapter was configured with a name the
+    /// registry does not hold, and every operation it attempts will fail the same way.
+    /// </para>
+    /// <para>
+    /// Added because the failure was otherwise a foreign-key violation from three layers down,
+    /// arriving on whichever operation happened to be first. A deployment misconfigured this way
+    /// is common — a typo, or a manifest that was never loaded — and it deserves a message that
+    /// names the cause.
+    /// </para>
+    /// </remarks>
+    private async Task RequireRegisteredAsync(AgentName agent, CancellationToken cancellationToken)
+    {
+        if (!await _agents.IsRegisteredAsync(agent, cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                $"No agent named '{agent}' is registered. An adapter must be configured with a " +
+                "name the registry holds; register it, or load the manifest that declares it.");
+        }
+    }
+
+    /// <summary>
     /// Throws unless the reboot sequence has run.
     /// </summary>
     /// <param name="operation">The operation being refused, named in the message.</param>
@@ -263,6 +293,7 @@ public sealed class Broker
         RequireStarted("asking");
         RequireAdapterResponder(responderModel);
         ArgumentException.ThrowIfNullOrEmpty(payloadJson);
+        await RequireRegisteredAsync(from, cancellationToken).ConfigureAwait(false);
 
         using var scope = WriteScope.Begin(_connection, ambient: null);
 
@@ -533,6 +564,172 @@ public sealed class Broker
 
         scope.Complete();
         return SayOutcome.Said(appended.Message, appended.Stored);
+    }
+
+    /// <summary>
+    /// Announces an event to a peer. Opens no exchange and creates no debt.
+    /// </summary>
+    /// <param name="from">The agent announcing.</param>
+    /// <param name="to">The agent being told.</param>
+    /// <param name="responderModel">What produced this; see SPEC.md §11.3.</param>
+    /// <param name="payloadJson">The event document.</param>
+    /// <param name="nowUtc">The instant of the announcement.</param>
+    /// <param name="conversationId">
+    /// The discussion this belongs to, or <see langword="null"/> if it stands alone. A
+    /// notification has no exchange, so unlike a clarification or an answer it declares its own.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the send.</param>
+    /// <returns>The event as stored, or the refusal.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="StartAsync"/> has not been called.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="from"/> and <paramref name="to"/> are the same agent;
+    /// <paramref name="responderModel"/> or <paramref name="payloadJson"/> is empty; or
+    /// <paramref name="responderModel"/> claims the <c>parley:</c> namespace reserved by §11.3.
+    /// </exception>
+    /// <exception cref="SqliteException">
+    /// The event violates a storage constraint — an over-length payload, or one that is not
+    /// valid JSON.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// SPEC.md §5.4: no reply is expected. Every type is fire-and-forget in the sense that the
+    /// sender does not wait; what distinguishes this one is that nothing is owed in return. It
+    /// takes no pair slot, so §7.1's cap does not apply, and it cannot deadlock, so §7.2's cycle
+    /// check has nothing to check — a notification adds no edge to the wait-for graph because
+    /// nobody is waiting.
+    /// </para>
+    /// <para>
+    /// One write, but still one transaction. There is no exchange to keep the message consistent
+    /// with, so the span buys less here than it does on <see cref="AskAsync"/> — what it buys is
+    /// that a refusal cannot mint the conversation it was refused from, and that the closed check
+    /// and the append cannot straddle somebody else's conclusion. The window that second one
+    /// closes is narrow and its outcome would have been benign, since §5.0 lets a message already
+    /// written stay where it is; the reason to close it anyway is that an operation which checked
+    /// in one transaction and wrote in another would be the odd one out, and odd ones get copied.
+    /// </para>
+    /// <para>
+    /// Deduplication is the only guard it has, and §13.1 says so explicitly — a repeated question
+    /// is refused by the pair slot, a repeated clarification by the turn check, a repeated answer
+    /// by the exchange no longer being open, and <c>Notify</c> by nothing else at all. An
+    /// at-least-once transport will retry, so a caller should read
+    /// <see cref="NotifyOutcome.Stored"/> rather than assuming this wrote something.
+    /// </para>
+    /// <para>
+    /// Routing is refused for the statuses §14 excludes, the same as a question. It matters less
+    /// than it does there — nobody is left waiting on a debt — but a sender told plainly that a
+    /// peer is gone can stop announcing to it, and one whose writes silently succeed cannot.
+    /// </para>
+    /// </remarks>
+    public async Task<NotifyOutcome> NotifyAsync(
+        AgentName from,
+        AgentName to,
+        string responderModel,
+        string payloadJson,
+        DateTimeOffset nowUtc,
+        string? conversationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        RequireStarted("notifying");
+        RequireAdapterResponder(responderModel);
+        ArgumentException.ThrowIfNullOrEmpty(payloadJson);
+        await RequireRegisteredAsync(from, cancellationToken).ConfigureAwait(false);
+
+        // One transaction across the checks and the write, for the reason WriteScope exists:
+        // AskAsync spans its own, and an operation that checked in one transaction and wrote in
+        // another would be the odd one out that later gets copied. The window here is narrow and
+        // its outcome benign — an event admitted a moment before a conclusion is the same as one
+        // admitted a moment after, and §5.0 lets a message already written stay where it is —
+        // but "narrow and benign" is not a property to leave resting on nothing.
+        using var scope = WriteScope.Begin(_connection, ambient: null);
+
+        if (await _agents.IsUnroutableAsync(to, scope.Transaction, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            return NotifyOutcome.Refused(NotifyRejection.RecipientUnroutable);
+        }
+
+        if (await _agents.IsRetiredAsync(from, scope.Transaction, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            return NotifyOutcome.Refused(NotifyRejection.SenderRetired);
+        }
+
+        if (conversationId is not null)
+        {
+            // §5.0 words its refusal in terms of a Question, because that is what takes a slot
+            // and grows membership. But the hazard it names is a message sitting "in a closed
+            // discussion nobody may add to", and a notification does that just as well — a probe
+            // found the question refused and the notification beside it admitted.
+            var conversation = await _conversations.GetAsync(
+                conversationId, scope.Transaction, cancellationToken).ConfigureAwait(false);
+
+            if (conversation?.State == ConversationState.Closed)
+            {
+                return NotifyOutcome.Refused(NotifyRejection.ConversationClosed);
+            }
+
+            // Declared rather than joined. §5.0 has a Notify declare its own conversation, since
+            // it has no exchange to inherit one from — but membership is derived from being party
+            // to an exchange, and a notification is not one. So this mints the discussion without
+            // making anybody a participant of it, which is what keeps a notification from
+            // conferring a vote in a closure poll.
+            await _conversations.EnsureOpenAsync(
+                conversationId, nowUtc, scope.Transaction, cancellationToken).ConfigureAwait(false);
+        }
+
+        var appended = await _messages.AppendAsync(
+            exchangeId: null,
+            MessageType.Notify,
+            from,
+            to,
+            responderModel,
+            payloadJson,
+            nowUtc,
+            conversationId,
+            scope.Transaction,
+            cancellationToken).ConfigureAwait(false);
+
+        scope.Complete();
+        return NotifyOutcome.Sent(appended.Message, appended.Stored);
+    }
+
+    /// <summary>
+    /// Lists the agents this one may address.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Every registered agent an operator has not retired.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="StartAsync"/> has not been called.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// SPEC.md §10.1's <c>agents()</c>, and the only operation that tells an agent anything about
+    /// another. It is what makes referral work without leaking: rule 9 has an agent that does not
+    /// own part of an answer name whoever does, and §11.3 notes that naming a peer discloses
+    /// nothing this already lists. An agent that could not enumerate its peers would have to be
+    /// told them in its prompt, which goes stale the moment the roster changes.
+    /// </para>
+    /// <para>
+    /// Returns a projection, not the stored record. The registry also holds a workspace path, a
+    /// session handle and the adapter's own configuration, and none of those may cross to a
+    /// peer — see <see cref="AgentSummary"/>, which exists so that the omission is a type rather
+    /// than a habit.
+    /// </para>
+    /// <para>
+    /// Guarded on start like everything else here, because the liveness it reports is exactly
+    /// what §14's reboot sequence invalidates: before it runs, every agent still carries whatever
+    /// the previous run last observed, and an asker reading that would route on evidence about a
+    /// process that is gone.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<AgentSummary>> ListAgentsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        RequireStarted("listing agents");
+
+        return await _agents.ListRoutableAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -861,7 +1058,7 @@ public sealed class Broker
         var pending = await _messages.GetPendingAsync(agent, limit, cancellationToken)
             .ConfigureAwait(false);
 
-        var delivered = new List<Message>(pending.Count);
+        var delivered = new List<DeliveredMessage>(pending.Count);
 
         foreach (var message in pending)
         {
@@ -901,7 +1098,21 @@ public sealed class Broker
                 continue;
             }
 
-            delivered.Add(message);
+            // Wrapped here and nowhere else. SPEC.md §13 makes this the broker's job precisely
+            // because an agent permitted to label its own message would label it trusted, and an
+            // adapter left to render the payload itself is one forgetful line away from the same
+            // outcome. Handing back the envelope rather than the raw payload is what makes that
+            // impossible rather than discouraged.
+            //
+            // A fresh token per message, not per drain: two messages sharing one would let a
+            // sender that saw the first close the second's payload block.
+            delivered.Add(new DeliveredMessage(
+                message,
+                TrustEnvelope.Wrap(
+                    message.From,
+                    message.ResponderModel,
+                    message.PayloadJson,
+                    TrustEnvelope.NewToken())));
         }
 
         // Read after the messages rather than before, because the replay above can join this

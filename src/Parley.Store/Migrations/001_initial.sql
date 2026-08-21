@@ -241,7 +241,12 @@ CREATE TABLE messages (
     -- broker inferring that from a timeout would be guessing exactly where it matters. It is
     -- a grouping key and nothing more — it confers no privileges and changes no routing.
     -- See SPEC.md sections 5.0 and 9.4.
-    conversation_id TEXT,
+    -- The direct reference matters for the one message type with no exchange. A Notify
+    -- declares its own conversation (SPEC.md section 5.0), so the composite key below cannot
+    -- vouch for it: that key is satisfied by a NULL in either column, and a Notify always has
+    -- NULL exchange_id. Without this a notification could name a discussion that does not
+    -- exist, and export would return messages for a conversation the registry never heard of.
+    conversation_id TEXT    REFERENCES conversations(id),
     created_utc     TEXT    NOT NULL,
     -- Derived, never supplied. ux_message_dedup below is only as good as the value it
     -- constrains: a bucket that does not match created_utc silently disables deduplication
