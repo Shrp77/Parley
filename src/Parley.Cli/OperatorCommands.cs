@@ -236,6 +236,17 @@ public sealed class OperatorCommands
 
         await _output.WriteLineAsync($"Removed {removed} message(s).").ConfigureAwait(false);
 
+        if (result.Capped)
+        {
+            // Only ever seen on a first prune against a log that grew without a policy. Saying
+            // nothing would leave an operator believing the log was now inside its retention,
+            // which is the one thing this command exists to tell them.
+            await _output.WriteLineAsync(
+                "That is as much as one pass removes, so there is more. Run it again, or leave " +
+                "it to the sweep — a backlog drains over several passes rather than holding the " +
+                "database for one long one.").ConfigureAwait(false);
+        }
+
         if (result.HeldByFloor > 0)
         {
             // Said only when it is true, because the explanation is long and an operator who

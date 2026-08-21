@@ -10,6 +10,9 @@ namespace Parley.Store;
 /// <param name="Contended">
 /// Messages another sweep removed between this one deciding and doing.
 /// </param>
+/// <param name="Capped">
+/// Whether this pass stopped at its own limit with spent messages still to remove.
+/// </param>
 /// <remarks>
 /// <para>
 /// Three numbers rather than one because they answer different questions and a single total
@@ -29,13 +32,22 @@ namespace Parley.Store;
 /// not: the work was done, by somebody else.
 /// </para>
 /// <para>
+/// <see cref="Capped"/> is a fact rather than a count, and it is here rather than left to a
+/// caller comparing <see cref="Removed"/> against a published limit, because a caller can get
+/// that comparison wrong and because the limit is a storage decision that has no business in the
+/// vocabulary of whatever renders this. A pass is capped only on a first prune against a log
+/// that grew without a policy; saying nothing would leave an operator believing the log was now
+/// inside its retention when it was not.
+/// </para>
+/// <para>
 /// <see cref="HeldByFloor"/> is expected to be small and non-zero on a busy deployment — every
 /// message inside the sixty-second deduplication window counts while it is there. A number that
 /// stays large across sweeps is the signal worth acting on, because it means exchanges are
 /// sitting open or a peer has stopped collecting its inbox.
 /// </para>
 /// </remarks>
-public sealed record PruneResult(int Removed, int HeldByFloor, int Contended)
+public sealed record PruneResult(
+    int Removed, int HeldByFloor, int Contended, bool Capped)
 {
     /// <summary>
     /// The result of a pass that did nothing, including a tick that did not reach its retention
@@ -48,5 +60,5 @@ public sealed record PruneResult(int Removed, int HeldByFloor, int Contended)
     /// state of the log, and the interval is not a fact about the deployment worth propagating
     /// that far.
     /// </remarks>
-    public static PruneResult Nothing { get; } = new(0, 0, 0);
+    public static PruneResult Nothing { get; } = new(0, 0, 0, Capped: false);
 }

@@ -62,8 +62,6 @@ public sealed class Pruner(SqliteConnection connection)
         WITH grouped AS (
             SELECT m.id                     AS id,
                    unixepoch(m.created_utc) AS created,
-                   m.delivered_utc          AS delivered,
-                   m.exchange_id            AS exchange_id,
                    coalesce('c:' || coalesce(e.conversation_id, m.conversation_id),
                             'x:' || m.exchange_id,
                             'm:' || m.id)   AS grp
@@ -76,10 +74,18 @@ public sealed class Pruner(SqliteConnection connection)
              GROUP BY grp
         ),
         unfinished AS (
+            -- Conversations with an exchange still running. This is the first half of the idle
+            -- rule and it does real work: a discussion is not finished because its earliest
+            -- thread went quiet.
             SELECT 'c:' || e.conversation_id AS grp
               FROM exchanges e
              WHERE e.conversation_id IS NOT NULL AND e.state <> 'CLOSED'
             UNION
+            -- And exchanges that are their own group. This branch decides nothing the floor
+            -- would not: a live exchange's messages are refused by DeleteStatement whether or
+            -- not they reach it. What it does is keep them from reaching it -- every sweep of a
+            -- deployment with open exchanges would otherwise batch up its live traffic, ask the
+            -- database to delete it, and be told no.
             SELECT 'x:' || e.id
               FROM exchanges e
              WHERE e.state <> 'CLOSED'
@@ -137,13 +143,18 @@ public sealed class Pruner(SqliteConnection connection)
     /// That is a dependency on the schema, not an implementation detail of it.
     /// </para>
     /// <para>
-    /// That trade is measured rather than assumed, because assuming it got it backwards once
-    /// already. Against two hundred thousand messages with nothing due, evaluating everything
-    /// inside a <c>DELETE</c> took 0.7–1.5 seconds and this takes 0.3; draining a backlog that
-    /// size is the other way round, 1.8 seconds against 2.6, because materialising and batching
-    /// beats one set-based statement only when there is little to materialise. Which is the right
-    /// way round: "nothing due" is what every sweep of every server does forever, and a drain
-    /// that large happens once.
+    /// That shape is measured rather than assumed, because assuming it got it backwards once
+    /// already. Against two hundred thousand messages with nothing due, the arrangement this
+    /// replaced — one transaction holding the classification and the delete together — took
+    /// 0.7–1.5 seconds, and a second connection asking for the write lock throughout it waited
+    /// 545 milliseconds and got two turns. This takes 0.3–0.7 for the same scan and that
+    /// connection waits nothing at all, because none of it is under the lock.
+    /// </para>
+    /// <para>
+    /// The one-set-based-statement version is faster at deleting in bulk, and that is the trade
+    /// accepted here. "Nothing due" is what every sweep of every server does forever; bulk is
+    /// what a first drain does once, and <see cref="MaxRemovalsPerPass"/> bounds that
+    /// separately.
     /// </para>
     /// </remarks>
     private const string SpentRows =
@@ -152,6 +163,43 @@ public sealed class Pruner(SqliteConnection connection)
 
         SELECT id FROM judged WHERE spent = 1;
         """;
+
+    /// <summary>
+    /// The most messages one pass will remove.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A bound on a first drain rather than on ordinary work. Retention keeps a log small, so
+    /// this is never reached twice — but the pass that reaches it once is the one run against a
+    /// log that grew for months without a policy, and that pass is the dangerous one. Removing
+    /// two hundred thousand messages took four seconds and grew the write-ahead log enough to
+    /// force a checkpoint, and a concurrent writer measured a single wait of 2.3 seconds against
+    /// a <c>busy_timeout</c> of five. It did not fail. A log twice that size, or a slower disk,
+    /// and it would — as <c>SQLITE_BUSY</c> reaching an agent that asked a question.
+    /// </para>
+    /// <para>
+    /// At ten thousand, measured the same way, the worst that writer waits is 200 milliseconds.
+    /// The remainder is not lost: retention is not a deadline, so the next sweep continues where
+    /// this one stopped and a backlog drains over a few of them. That is the whole reason a cap
+    /// is available here and would not be on the reaper — an exchange past its deadline has
+    /// somebody waiting on it, and a message past its retention has nobody.
+    /// </para>
+    /// <para>
+    /// It does assume removal outruns production, which is ten thousand an hour against a
+    /// protocol whose exchanges are one per pair and whose messages are capped at two thousand
+    /// characters. The exception is <c>Notify</c>, which has no guard of its own until SPEC.md
+    /// §13's per-sender rate limits exist — a sender producing faster than this would keep a log
+    /// growing under a policy that was applying correctly. That is the same gap §13 already
+    /// names, reached from here, rather than one this cap introduces.
+    /// </para>
+    /// <para>
+    /// Private, and the pass reports <see cref="PruneResult.Capped"/> rather than the number.
+    /// A caller comparing its own count against a published constant is a caller that can get
+    /// the comparison wrong, and it would put a storage tuning decision into the vocabulary of
+    /// whatever renders it.
+    /// </para>
+    /// </remarks>
+    private const int MaxRemovalsPerPass = 10_000;
 
     /// <summary>
     /// How many identifiers one <c>DELETE</c> carries.
@@ -232,6 +280,7 @@ public sealed class Pruner(SqliteConnection connection)
     /// <param name="nowUtc">The instant to measure ages against.</param>
     /// <param name="cancellationToken">Cancels the pass.</param>
     /// <returns>How many were removed, how many the floor kept, and how many another sweep had.</returns>
+    /// <seealso cref="MaxRemovalsPerPass"/>
     /// <exception cref="ArgumentNullException"><paramref name="policy"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="policy"/> is unusable.</exception>
     /// <remarks>
@@ -279,6 +328,14 @@ public sealed class Pruner(SqliteConnection connection)
 
         var prunable = spent as List<long> ?? [.. spent];
 
+        var capped = prunable.Count > MaxRemovalsPerPass;
+
+        if (capped)
+        {
+            prunable.RemoveRange(
+                MaxRemovalsPerPass, prunable.Count - MaxRemovalsPerPass);
+        }
+
         var removed = 0;
         var held = 0;
         var contended = 0;
@@ -316,7 +373,7 @@ public sealed class Pruner(SqliteConnection connection)
             contended += batch.Count - went - surviving;
         }
 
-        return new PruneResult(removed, held, contended);
+        return new PruneResult(removed, held, contended, capped);
     }
 
     /// <summary>Binds a batch of identifiers alongside the windows the floor is re-checked on.</summary>

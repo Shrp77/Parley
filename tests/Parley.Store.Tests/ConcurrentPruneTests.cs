@@ -167,6 +167,39 @@ public sealed class ConcurrentPruneTests : IDisposable
     }
 
     [Fact]
+    public async Task A_first_drain_is_spread_over_several_passes_and_says_so()
+    {
+        // The bound on the one pass that is dangerous. Removing two hundred thousand messages in
+        // a single pass took four seconds and grew the write-ahead log enough to force a
+        // checkpoint, and a concurrent writer measured a wait of 2.3 seconds against a
+        // busy_timeout of five — so a log twice that size would surface SQLITE_BUSY to an agent
+        // that asked a question. Retention is not a deadline, so a backlog may drain over
+        // several sweeps instead.
+        //
+        // What must not happen is that it drains quietly: an operator told "removed 10,000" and
+        // nothing else would believe the log was inside its policy when it was not.
+        const int Messages = 10_500;
+        await Seed(Messages);
+
+        using var connection = ParleyDatabase.Open(_path);
+        var pruner = new Pruner(connection);
+
+        var first = await pruner.PruneAsync(RetentionPolicy.Default, T0.AddDays(10), Ct);
+
+        Assert.True(first.Capped, "a pass with more than its limit to remove must say so");
+        Assert.True(
+            first.Removed < Messages,
+            $"a single pass removed all {Messages}, so nothing is bounding a first drain");
+
+        // The remainder is not lost, and the pass that finishes it does not claim to be capped.
+        var second = await pruner.PruneAsync(RetentionPolicy.Default, T0.AddDays(10), Ct);
+
+        Assert.False(second.Capped);
+        Assert.Equal(Messages, first.Removed + second.Removed);
+        Assert.Equal(0, await MessageCount());
+    }
+
+    [Fact]
     public async Task A_sweep_that_arrives_after_the_work_is_done_reports_a_quiet_pass()
     {
         // The other side of contention: a sweep whose scan finds nothing at all is not the same
