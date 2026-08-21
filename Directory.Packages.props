@@ -47,6 +47,20 @@
   </ItemGroup>
 
   <!--
+    The MCP server SDK, and the hosting it expects. ModelContextProtocol is the higher-level
+    package: it brings the stdio transport, attribute-driven tool discovery, and the
+    Microsoft.Extensions.Hosting integration that gives the tick loop somewhere to live.
+    ModelContextProtocol.Core is the alternative and was considered - it has a smaller
+    dependency graph, and would have meant hand-wiring the transport, the dispatch and a timer
+    that the host otherwise provides. The graph is public, audited on every build, and the
+    hosting packages ship with the runtime; the hand-wiring would have been ours to get wrong.
+  -->
+  <ItemGroup Label="Adapters">
+    <PackageVersion Include="ModelContextProtocol" Version="2.2.0" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+  </ItemGroup>
+
+  <!--
     xUnit v3. The entire v2 package family (xunit, xunit.core, xunit.assert) is marked
     deprecated on NuGet: legacy, security fixes only, all feature work moved to v3. The
     package name carries the product version in v3 so the package version itself can follow
