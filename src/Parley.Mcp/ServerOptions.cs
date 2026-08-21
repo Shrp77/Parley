@@ -11,6 +11,10 @@ namespace Parley.Mcp;
 /// What to record as having produced a message when a call does not say. See SPEC.md §11.3.
 /// </param>
 /// <param name="TickInterval">How often the sweep runs.</param>
+/// <param name="Workspace">
+/// The directory this agent works in, recorded in the registry so an operator can tell which
+/// repository a name belongs to, or <see langword="null"/> if the launch did not say.
+/// </param>
 /// <remarks>
 /// <para>
 /// <b><see cref="Agent"/> comes from the launch configuration and from nowhere else.</b> It is
@@ -32,7 +36,8 @@ public sealed record ServerOptions(
     string DatabasePath,
     AgentName Agent,
     string ResponderModel,
-    TimeSpan TickInterval)
+    TimeSpan TickInterval,
+    string? Workspace)
 {
     /// <summary>The environment variable naming the database file.</summary>
     public const string DatabaseVariable = "PARLEY_DB";
@@ -45,6 +50,25 @@ public sealed record ServerOptions(
 
     /// <summary>The environment variable overriding the sweep interval, in seconds.</summary>
     public const string TickVariable = "PARLEY_TICK_SECONDS";
+
+    /// <summary>
+    /// What a message is attributed to when the launch configuration names nothing.
+    /// </summary>
+    /// <remarks>
+    /// SPEC.md §11.3 makes attribution a MUST on every message, so silence needs a value rather
+    /// than an omission — and one that says plainly that nobody claimed anything, since the
+    /// point of the field is telling a weak responder from a strong one.
+    /// </remarks>
+    public const string DefaultResponder = "unknown-model";
+
+    /// <summary>The environment variable naming the directory this agent works in.</summary>
+    /// <remarks>
+    /// Optional, and deliberately not defaulted to the current directory. An MCP client chooses
+    /// the working directory of the process it launches, and several do not choose the project
+    /// — so a default would record something plausible and wrong in the one field an operator
+    /// uses to tell two similarly named agents apart. Unset means unknown, which is true.
+    /// </remarks>
+    public const string WorkspaceVariable = "PARLEY_WORKSPACE";
 
     /// <summary>
     /// How often the sweep runs when the launch configuration does not say.
@@ -78,10 +102,30 @@ public sealed record ServerOptions(
     /// migrates it, and a path that does not exist yet is the ordinary first run of a project.
     /// </para>
     /// </remarks>
-    public static ServerOptions FromEnvironment()
+    public static ServerOptions FromEnvironment() => Read(Environment.GetEnvironmentVariable);
+
+    /// <summary>
+    /// Reads the configuration from an arbitrary source of variables.
+    /// </summary>
+    /// <param name="read">Returns a variable's value, or <see langword="null"/> if it is unset.</param>
+    /// <returns>The options this server was launched with.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="read"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// A required variable is missing, or one carries a value that cannot be used.
+    /// </exception>
+    /// <remarks>
+    /// Separated from <see cref="FromEnvironment"/> so that the parsing can be tested without
+    /// mutating the process environment. That is not a cosmetic concern: the test host runs
+    /// classes in parallel, so a test that set <c>PARLEY_AGENT</c> would be setting it for every
+    /// other test running at that moment, and the failure would be intermittent and blamed on
+    /// something else.
+    /// </remarks>
+    public static ServerOptions Read(Func<string, string?> read)
     {
-        var databasePath = Require(DatabaseVariable);
-        var agentName = Require(AgentVariable);
+        ArgumentNullException.ThrowIfNull(read);
+
+        var databasePath = Require(read, DatabaseVariable);
+        var agentName = Require(read, AgentVariable);
 
         if (!AgentName.TryCreate(agentName, out var agent))
         {
@@ -93,23 +137,45 @@ public sealed record ServerOptions(
 
         // Defaulted rather than required, because most deployments have one and the same answer
         // and a variable everybody must set is a variable everybody sets wrong once.
-        var responder = Environment.GetEnvironmentVariable(ResponderVariable);
+        var responder = read(ResponderVariable);
 
         if (string.IsNullOrWhiteSpace(responder))
         {
-            responder = "unknown-model";
+            responder = DefaultResponder;
         }
 
-        return new ServerOptions(databasePath, agent, responder, ReadTickInterval());
+        // Refused at start-up, because the broker refuses it on every send. SPEC.md §11.3
+        // reserves this namespace and makes refusing an adapter that claims it a MUST, so a
+        // server configured this way launches cleanly and then fails every single operation —
+        // which is the failure mode this whole method exists to avoid, reported to the model
+        // rather than to whoever wrote the launch configuration.
+        if (responder.StartsWith(Parley.Broker.Broker.ReservedResponderPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"{ResponderVariable} is '{responder}', and the '{Parley.Broker.Broker.ReservedResponderPrefix}' " +
+                "namespace is reserved for the broker's own attributions. See SPEC.md §11.3: an " +
+                "adapter claiming it could forge a broker-authored close, so every message this " +
+                "server sent would be refused.");
+        }
+
+        var workspace = read(WorkspaceVariable);
+
+        return new ServerOptions(
+            databasePath,
+            agent,
+            responder,
+            ReadTickInterval(read),
+            string.IsNullOrWhiteSpace(workspace) ? null : workspace);
     }
 
     /// <summary>Reads a required variable.</summary>
+    /// <param name="read">The source of variables.</param>
     /// <param name="name">The variable's name.</param>
     /// <returns>Its value.</returns>
     /// <exception cref="InvalidOperationException">It is unset or blank.</exception>
-    private static string Require(string name)
+    private static string Require(Func<string, string?> read, string name)
     {
-        var value = Environment.GetEnvironmentVariable(name);
+        var value = read(name);
 
         return string.IsNullOrWhiteSpace(value)
             ? throw new InvalidOperationException(
@@ -120,11 +186,12 @@ public sealed record ServerOptions(
     }
 
     /// <summary>Reads the sweep interval, or falls back to the default.</summary>
+    /// <param name="read">The source of variables.</param>
     /// <returns>How often to sweep.</returns>
     /// <exception cref="InvalidOperationException">The value is not a positive number of seconds.</exception>
-    private static TimeSpan ReadTickInterval()
+    private static TimeSpan ReadTickInterval(Func<string, string?> read)
     {
-        var configured = Environment.GetEnvironmentVariable(TickVariable);
+        var configured = read(TickVariable);
 
         if (string.IsNullOrWhiteSpace(configured))
         {

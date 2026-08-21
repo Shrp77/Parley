@@ -16,6 +16,24 @@
     <RootNamespace>Parley.Mcp</RootNamespace>
   </PropertyGroup>
 
+  <!--
+    Packaged as a .NET tool, so that the launch configuration in the README can say
+    "command": "parley-mcp" and have that mean something. An MCP client launches a command by
+    name and inherits PATH; a bare build output does not put anything on PATH, so the documented
+    configuration would have worked only for somebody who had already worked out where the
+    binary landed and edited the path in.
+
+    PackAsTool rather than a published folder because the install is then one command that does
+    not vary by platform, and because updating is the same command again. The alternative asks
+    every user to pick a runtime identifier and a directory.
+  -->
+  <PropertyGroup>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>parley-mcp</ToolCommandName>
+    <PackageId>Parley.Mcp</PackageId>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Parley.Broker\Parley.Broker.csproj" />
   </ItemGroup>

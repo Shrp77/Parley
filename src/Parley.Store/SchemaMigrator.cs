@@ -1,3 +1,4 @@
+﻿using System.Data;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
@@ -74,7 +75,26 @@ public static class SchemaMigrator
                 continue;
             }
 
-            using var transaction = connection.BeginTransaction();
+            // IMMEDIATE, so the write lock is taken before the decision to apply rather than at
+            // the first CREATE TABLE. A deferred transaction acquires nothing until it writes,
+            // which leaves the version read above outside any lock at all.
+            using var transaction = connection.BeginTransaction(
+                IsolationLevel.Serializable, deferred: false);
+
+            // Read again inside the lock. Two processes opening one project at the same moment
+            // both see an empty database, both decide to apply 001, and SQLite serialises them
+            // — so the second arrives here holding the lock, with the tables already created,
+            // and fails with "table agents already exists". It then exits, and what the person
+            // sees is one repository that opened and one that would not, intermittently.
+            //
+            // This is the ordinary case rather than a corner of it. Every agent has its own
+            // process, so a machine coming back after a reboot starts all of them at once
+            // against a database only one of them can create.
+            if (version <= GetUserVersion(connection, transaction))
+            {
+                transaction.Rollback();
+                continue;
+            }
 
             using (var command = connection.CreateCommand())
             {
@@ -162,11 +182,28 @@ public static class SchemaMigrator
     /// The highest migration number applied, or zero for an empty database.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="connection"/> is <see langword="null"/>.</exception>
-    public static int GetUserVersion(SqliteConnection connection)
+    public static int GetUserVersion(SqliteConnection connection) =>
+        GetUserVersion(connection, transaction: null);
+
+    /// <summary>
+    /// Reads the schema version currently recorded in the database, within a transaction.
+    /// </summary>
+    /// <param name="connection">The open connection to query.</param>
+    /// <param name="transaction">The transaction to read within, or <see langword="null"/>.</param>
+    /// <returns>
+    /// The highest migration number applied, or zero for an empty database.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="connection"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The overload exists so the migration loop can re-read the version while holding the write
+    /// lock. Read outside one, the answer is only ever a description of the past.
+    /// </remarks>
+    private static int GetUserVersion(SqliteConnection connection, SqliteTransaction? transaction)
     {
         ArgumentNullException.ThrowIfNull(connection);
 
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "PRAGMA user_version;";
         return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
     }

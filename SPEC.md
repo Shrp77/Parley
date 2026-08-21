@@ -1624,6 +1624,40 @@ Removing a credential from the registry removes the *pointer*. Whatever store ho
 value is untouched: the broker did not put it there, and deleting from someone's keychain
 on the strength of a registry edit is not its decision.
 
+### 12.3 Self-registration, and what it does not grant
+
+An adapter MAY register the one agent it attaches, as part of attaching it. This is how a
+deployment starts: §14 has the broker refuse an unregistered agent every operation, so
+without it the first session in a new repository could not open, and there would be
+nothing to run the operator action that would have registered it either.
+
+**Registering itself grants an adapter nothing it did not already have.** The identity comes
+from the launch configuration — §13 requires an adapter to fix it before the agent gets a
+turn — so the name an adapter can register is exactly the name it can already act as. What
+it must not do is register a *third* agent, and an adapter that offers registration as a
+tool parameter has reintroduced the forgery §13 forbids by a slower route.
+
+Three properties make it safe to run on every launch:
+
+| Property | Why |
+|---|---|
+| Configuration is updated, status is not | A relaunch cannot clear a retirement, per §14 |
+| Only the attaching agent is written | Nobody's registration is altered by somebody else starting up |
+| The declared tier is the adapter's own | §11.1's routing degrades on a claim only that adapter can make |
+
+**It does not replace the manifest, and cannot.** A self-registered agent exists from its
+first launch onwards, which means it is addressable only once somebody has opened that
+repository at least once — and the registration carries no `config`, so the broker knows
+nothing about how to invoke it. That is sufficient for Full and Pull-only tiers, which
+attach themselves and are reached through a session they opened. It is not sufficient for
+Headless (§11.2), where the broker does the invoking and therefore needs the endpoint, the
+model, and any credential reference; nor for spawn-on-demand, where the whole point is to
+reach an agent whose session is not open. Those need the manifest of §12.
+
+The two paths are complementary rather than alternatives, and a deployment may use both:
+self-registration bootstraps the agents that come to the broker, the manifest describes the
+ones the broker goes to.
+
 ## 13. Trust boundary
 
 An incoming message is **untrusted input from a peer**, not an instruction from the
@@ -1726,10 +1760,10 @@ does the most work.
 that stay idle. The broker instantiates an agent on the first inbound Question,
 resuming from the stored `session_ref` where the adapter supports it.
 
-**Attach sequence.** An agent attaches → it is marked `live` → **the exchanges it owes**
-become `ORPHANED` → the broker consults the **resume gate** → where the gate permits it, the
-first inbound traffic for an orphaned exchange replays the pending Question into that agent's
-inbox.
+**Attach sequence.** An agent attaches → it is marked `live` → **the exchanges it owes and
+has already collected** become `ORPHANED` → the broker consults the **resume gate** → where the
+gate permits it, the first inbound traffic for an orphaned exchange replays the pending Question
+into that agent's inbox.
 
 **Scoped to the attaching agent, not to the broker.** An earlier version of this section had a
 broker restart mark *every* agent offline and orphan *every* open exchange, which was right
@@ -1749,6 +1783,50 @@ somebody working towards it and the wait-for edge is honest, so nothing should c
 no worker is the other direction — an exchange whose `owed_by` is the agent that just
 vanished — and that is exactly what orphaning is for.
 
+**Only what it has already been handed.** An exchange whose inbound message is still
+undelivered was never carried by anybody, and the agent attaching is not standing in for a
+worker who vanished — it is the worker, arriving. The broker MUST NOT orphan an exchange on
+which the attaching agent has undelivered traffic waiting.
+
+This is load-bearing rather than a refinement. With one agent per repository most repositories
+are closed most of the time, so most cross-session Questions are asked into a closed session.
+An attach sequence that orphaned on `owed_by` alone would destroy every one of them in the
+moment before its recipient could read it — and what the recipient would see is the Question in
+its inbox next to a refusal saying it was abandoned because nobody returned to it in time, on a
+Question it returned to within seconds. The deployment would look like it was working.
+
+Waiting for delivery costs nothing, because an uncollected Question is bounded anyway: §6's
+delivery window expires it and the sweep orphans it then. That is a deadline doing its job
+rather than a restart standing in for one.
+
+The test is what the agent has **still to collect**, not what it has already seen — they differ
+mid-exchange. An agent that read a Question, asked for detail, and closed its session before
+the detail arrived has seen traffic on that exchange but has not seen the turn it now owes an
+answer to.
+
+**And nothing at all while a session is still attached.** An agent heard from recently has a
+worker that has not vanished, so an attach that finds one MUST orphan nothing. Two editor
+windows open on one repository are two sessions for one agent, and the second releasing what
+the first is mid-answer on tells neither of them: the first session's answer is refused as
+not-open, and the second finds an empty inbox where the question was.
+
+**Liveness is therefore a lease, not a flag**, and the distinction is load-bearing rather than
+stylistic. A flag cannot be cleared by a process that stopped existing, so a crash would leave
+an agent permanently attached and no later session could ever release its debts. And a flag
+cannot count: with two sessions open, whichever one exits first writes `offline` while the
+other is still working, and the next attach believes it.
+
+So a broker MUST renew its agent's liveness on every maintenance pass, and MUST decide whether
+a session is attached from when the agent was last heard from rather than from its recorded
+status. The lease MUST comfortably exceed the sweep interval — a lease that lapses between
+heartbeats on a healthy server is worse than none, because it looks like it is working.
+
+Two consequences worth stating. A restart releases nothing until the previous session's lease
+has lapsed, so `ExchangesOrphaned` is zero for a process that comes straight back; the debts
+are released by the next attach after that, or by §6's window, whichever comes first. And a
+clean detach does not shorten this: it records that one session stopped, which is not evidence
+about any other.
+
 **Detaching says the session stopped, and nothing else.** It marks the agent `offline` and
 leaves its debts open, because whoever picks that session up next may well finish them — and
 the attach sequence releases them on the way back in, which is the moment it is actually known
@@ -1756,8 +1834,8 @@ that nobody did. A detach that orphaned eagerly would discard work every time so
 laptop.
 
 **Liveness is best-effort, and that is affordable.** An adapter marks its agent `live` on
-attach and `offline` on a clean detach; a crashed process leaves a stale `live` until it next
-starts. Nothing a peer depends on is left to a clean shutdown: deadlines are enforced by the
+attach, renews it on each sweep, and marks it `offline` on a clean detach; a crashed process
+stops renewing and its lease lapses. Nothing a peer depends on is left to a clean shutdown: deadlines are enforced by the
 sweep, and debts are released on attach. That mark is cosmetic: `offline` does not block routing, deliberately, because it is
 the ordinary resting state of a lazily spawned agent between questions and refusing traffic to
 one would refuse the very traffic meant to wake it. The statuses that *do* gate routing —

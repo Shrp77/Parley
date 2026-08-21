@@ -228,7 +228,13 @@ public sealed class InboxTests : IDisposable
         // collecting its messages is what brings back what it owes, so a deployment does not pay
         // to instantiate agents that would have stayed idle.
         var exchange = await Ask(Orders, Billing, "q");
-        await Send(MessageType.Question, Orders, Billing, exchange.Id, "gross or net?");
+        var question = await Send(MessageType.Question, Orders, Billing, exchange.Id, "gross or net?");
+
+        // Billing collected the question during its last session and answered nothing. That is
+        // what makes this a debt it was carrying rather than one it has yet to be handed, and
+        // §14 releases only the first — see ExchangeRepository.GetAbandonedOwedByAsync.
+        Assert.True(await _messages.MarkDeliveredAsync(
+            question.Id, T0.AddSeconds(1), TestContext.Current.CancellationToken));
 
         var broker = new Broker(_connection, BrokerOptions.Default with
         {
@@ -318,7 +324,17 @@ public sealed class InboxTests : IDisposable
         await resuming.DrainInboxAsync(
             Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
 
-        await resuming.StartAsync(Billing, T0.AddMinutes(2), TestContext.Current.CancellationToken);
+        // The previous session stopped cleanly, which is what marks the agent offline and so
+        // what tells the next attach that no worker is still holding these. Without it the
+        // agent is still live and §14 declines to release anything — the right answer for a
+        // second window opened alongside a live session, and the wrong one here.
+        await resuming.DetachAsync(TestContext.Current.CancellationToken);
+
+        // Well past the liveness lease, because that is what a restart looks like from the
+        // registry: the previous session stopped renewing, and the lease lapsing is what
+        // says so. Within the lease §14 declines to release anything, which is the right
+        // answer for a second window opened beside a live session and the wrong one here.
+        await resuming.StartAsync(Billing, T0.AddHours(2), TestContext.Current.CancellationToken);
 
         var afterRestart = (await resuming.DrainInboxAsync(
             Billing, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken)).Messages;
@@ -350,7 +366,9 @@ public sealed class InboxTests : IDisposable
         await resuming.DrainInboxAsync(
             Orders, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
 
-        await resuming.StartAsync(Orders, T0.AddMinutes(2), TestContext.Current.CancellationToken);
+        await resuming.DetachAsync(TestContext.Current.CancellationToken);
+
+        await resuming.StartAsync(Orders, T0.AddHours(2), TestContext.Current.CancellationToken);
 
         var afterRestart = (await resuming.DrainInboxAsync(
             Orders, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken)).Messages;

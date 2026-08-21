@@ -1,4 +1,5 @@
-﻿using Microsoft.Data.Sqlite;
+﻿using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -34,12 +35,14 @@ public sealed class BrokerLifecycleTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AgentRepository _agents;
     private readonly ExchangeRepository _exchanges;
+    private readonly MessageRepository _messages;
 
     public BrokerLifecycleTests()
     {
         _connection = ParleyDatabase.OpenInMemory();
         _agents = new AgentRepository(_connection);
         _exchanges = new ExchangeRepository(_connection);
+        _messages = new MessageRepository(_connection);
 
         foreach (var name in new[] { Orders, Billing, Inventory })
         {
@@ -54,11 +57,64 @@ public sealed class BrokerLifecycleTests : IDisposable
 
     private Broker NewBroker(BrokerOptions? options = null) => new(_connection, options);
 
-    private async Task<Exchange> Open(AgentName asker, AgentName answerer, string question) =>
-        (await _exchanges.TryOpenAsync(
-            asker, answerer, T0, question,
-            cancellationToken: TestContext.Current.CancellationToken)).Exchange
-        ?? throw new InvalidOperationException($"expected to open {asker} -> {answerer}");
+    /// <summary>
+    /// Opens an exchange and puts the question in front of the answerer, as an ask followed by
+    /// a drain would.
+    /// </summary>
+    /// <remarks>
+    /// The delivery is not decoration. §14 releases a debt the attaching agent was *carrying*,
+    /// and carrying it means having been handed it — an exchange whose question is still pending
+    /// in the answerer's inbox belongs to an agent that has not had its turn yet, and orphaning
+    /// it on attach would destroy the question a moment before it could be read. So an exchange
+    /// built for these tests has to reach the state the broker actually produces, which is a
+    /// message row that has been collected. <see cref="OpenUndelivered"/> is the other half.
+    /// </remarks>
+    /// <param name="asker">The asking agent.</param>
+    /// <param name="answerer">The agent that owes the answer.</param>
+    /// <param name="question">The question payload.</param>
+    /// <returns>The opened exchange.</returns>
+    private async Task<Exchange> Open(AgentName asker, AgentName answerer, string question)
+    {
+        var exchange = await OpenUndelivered(asker, answerer, question);
+        var ct = TestContext.Current.CancellationToken;
+
+        foreach (var message in await _messages.GetPendingAsync(answerer, cancellationToken: ct))
+        {
+            await _messages.MarkDeliveredAsync(message.Id, T0, ct);
+        }
+
+        return exchange;
+    }
+
+    /// <summary>Opens an exchange and leaves the question uncollected.</summary>
+    /// <param name="asker">The asking agent.</param>
+    /// <param name="answerer">The agent that owes the answer.</param>
+    /// <param name="question">The question payload.</param>
+    /// <returns>The opened exchange.</returns>
+    private async Task<Exchange> OpenUndelivered(
+        AgentName asker, AgentName answerer, string question)
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var exchange = (await _exchanges.TryOpenAsync(
+            asker, answerer, T0, question, cancellationToken: ct)).Exchange
+            ?? throw new InvalidOperationException($"expected to open {asker} -> {answerer}");
+
+        await _messages.AppendAsync(
+            exchange.Id, MessageType.Question, asker, answerer, "test-model",
+            JsonSerializer.Serialize(new
+            {
+                text = question,
+
+                // §8 rule 1, enforced by a CHECK with a length floor rather than a key-present
+                // test, because "n/a" satisfies the second and states nothing.
+                consequences = "If the answer is yes I read it from you; if not I define my own."
+            }),
+            T0,
+            cancellationToken: ct);
+
+        return exchange;
+    }
 
     private async Task<ExchangeState> StateOf(long id) =>
         (await _exchanges.GetAsync(id, cancellationToken: TestContext.Current.CancellationToken))!.State;
@@ -211,6 +267,11 @@ public sealed class BrokerLifecycleTests : IDisposable
         // A second exchange, a second start, and the clock restarts from there.
         await Open(Orders, Billing, "q2");
         var secondStart = T0.AddDays(1);
+        // The previous session stopped cleanly, which is what marks the agent offline and so
+        // what tells the next attach that no worker is still holding these. Without it the
+        // agent is still live and §14 declines to release anything — the right answer for a
+        // second window opened alongside a live session, and the wrong one here.
+        await broker.DetachAsync(TestContext.Current.CancellationToken);
         await broker.StartAsync(Billing, secondStart, TestContext.Current.CancellationToken);
 
         Assert.Equal(secondStart, broker.StartedUtc);

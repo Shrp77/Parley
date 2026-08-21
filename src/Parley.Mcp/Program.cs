@@ -64,20 +64,44 @@ builder.Services
 
 var host = builder.Build();
 
+BrokerSession session;
+
 try
 {
     // Touches the session before serving, so a failure to open the database is reported here
     // rather than on the first tool call.
-    _ = host.Services.GetRequiredService<BrokerSession>();
+    session = host.Services.GetRequiredService<BrokerSession>();
 }
-catch (Exception ex)
+catch (AgentRetiredException ex)
 {
+    // Separated from the failures below because it is not a fault. An operator withdrew this
+    // agent, and the launch configuration still names it — which is the same shape of problem
+    // as a missing variable and gets the same exit code, so a supervisor can tell "configured
+    // wrong" from "the machine is broken" without reading the message.
+    await Console.Error.WriteLineAsync(ex.Message).ConfigureAwait(false);
+    return 78; // EX_CONFIG.
+}
+#pragma warning disable CA1031 // Do not catch general exception types
+catch (Exception ex)
+#pragma warning restore CA1031
+{
+    // Broad on purpose. Whatever went wrong opening or migrating the database, the useful
+    // behaviour is the same: say so on stderr and exit, so the client shows the person a
+    // process that failed rather than a server that answers every tool with the same error.
     await Console.Error.WriteLineAsync($"Parley could not start: {ex.Message}").ConfigureAwait(false);
     return 74; // EX_IOERR.
 }
 
-await host.RunAsync().ConfigureAwait(false);
-
-await host.Services.GetRequiredService<BrokerSession>().DisposeAsync().ConfigureAwait(false);
+try
+{
+    await host.RunAsync().ConfigureAwait(false);
+}
+finally
+{
+    // In a finally, so the agent is marked offline even when serving ends badly. The mark is
+    // cosmetic — nothing routes on it — but a registry that reports everybody live is a registry
+    // nobody consults, and this is the only moment the process knows it is stopping.
+    await session.DisposeAsync().ConfigureAwait(false);
+}
 
 return 0;

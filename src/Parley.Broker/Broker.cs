@@ -120,7 +120,30 @@ public sealed class Broker
     /// <summary>
     /// The namespace SPEC.md §11.3 reserves for the broker's own attributions.
     /// </summary>
-    private const string ReservedResponderPrefix = "parley:";
+    /// <remarks>
+    /// Public because an adapter needs it. §11.3 makes refusing a claim on this namespace a
+    /// MUST, and an adapter that validates its own configuration — so that a server named this
+    /// way fails at launch rather than on every send — would otherwise carry a second copy of
+    /// the token. Two copies of a protocol constant is how the two come to disagree, and the
+    /// disagreement would be silent in the direction that matters.
+    /// </remarks>
+    public const string ReservedResponderPrefix = "parley:";
+
+    /// <summary>The longest responder identity storage will accept, per SPEC.md §11.3.</summary>
+    private const int MaxResponderLength = 64;
+
+    /// <summary>Says whether a character may appear in a responder identity.</summary>
+    /// <param name="candidate">The character.</param>
+    /// <returns><see langword="true"/> if SPEC.md §11.3 permits it.</returns>
+    /// <remarks>
+    /// Written out rather than expressed as a regular expression so that it matches the schema's
+    /// <c>GLOB</c> exactly and obviously. The set excludes whitespace and every bracket, which
+    /// is what stops a responder identity fabricating envelope structure in the §13 header — the
+    /// region the payload delimiter does not defend.
+    /// </remarks>
+    private static bool IsResponderCharacter(char candidate) =>
+        char.IsAsciiLetterOrDigit(candidate) ||
+        candidate is '.' or '_' or ':' or '/' or '-';
 
     /// <summary>
     /// Throws if an adapter has claimed the reserved responder namespace.
@@ -160,6 +183,25 @@ public sealed class Broker
     private static void RequireAdapterResponder(string responderModel)
     {
         ArgumentException.ThrowIfNullOrEmpty(responderModel);
+
+        // Checked here as well as in the schema, and the duplication is the point rather than an
+        // oversight. The schema's CHECK is the enforcement of record — §11.3 puts the constraint
+        // in storage so no code path can route around it — but a constraint violation arrives as
+        // a SqliteException carrying SQL, and this value comes from an agent, which means an
+        // agent can make the adapter hand it one. That is not a forgery, because the write is
+        // refused either way; it is an untrusted party choosing the error the caller sees.
+        //
+        // The rule is stated once in SPEC.md §11.3 and implemented twice, deliberately. If the
+        // two ever disagree the schema wins and this reads as a refusal that need not have
+        // happened, which is the safe direction for a divergence to fall in.
+        if (responderModel.Length > MaxResponderLength ||
+            responderModel.Any(c => !IsResponderCharacter(c)))
+        {
+            throw new ArgumentException(
+                "A responder identity is at most 64 characters of letters, digits, and the " +
+                $"punctuation '.', '_', ':', '/' and '-'. See SPEC.md §11.3. Got '{responderModel}'.",
+                nameof(responderModel));
+        }
 
         if (responderModel.StartsWith(ReservedResponderPrefix, StringComparison.OrdinalIgnoreCase))
         {
@@ -947,6 +989,24 @@ public sealed class Broker
     /// names and what orphaning is for.
     /// </para>
     /// <para>
+    /// <b>And nothing at all if a session is already attached.</b> The mark this sets is the
+    /// registry's only evidence that a worker has not vanished, so an attach that finds the
+    /// agent already <c>live</c> orphans nothing — two windows open on one repository are two
+    /// sessions for one agent, and the second must not release what the first is working on. A
+    /// crashed process leaves a stale <c>live</c> and so declines to release what it could have,
+    /// which costs a §6 window of latency before the sweep does it instead. That asymmetry is
+    /// deliberate: believing a live session is gone destroys work, and believing a dead one is
+    /// alive delays a deadline.
+    /// </para>
+    /// <para>
+    /// <b>And only a debt it has actually been handed.</b> An exchange whose question is still
+    /// sitting undelivered in this agent's inbox was never carried by anybody, so the attaching
+    /// agent is not a replacement for a worker who vanished — it is the worker, arriving. See
+    /// <see cref="ExchangeRepository.GetAbandonedOwedByAsync"/>: without that condition every
+    /// question asked to a closed session is destroyed the moment its recipient opens one, which
+    /// in a deployment of one agent per repository is most of them.
+    /// </para>
+    /// <para>
     /// Marking <c>live</c> does not disturb a retirement: <see cref="AgentRepository.MarkLiveAsync"/>
     /// refuses a retired agent, because retirement is a person's judgement and attaching is not
     /// evidence against it. An agent whose registration was withdrawn can start its server all
@@ -972,14 +1032,25 @@ public sealed class Broker
         // StartResult.AgentMarkedLive unambiguous: a zero now means retired, and only retired.
         await RequireRegisteredAsync(agent, cancellationToken).ConfigureAwait(false);
 
+        // Read before the mark is written, because writing it destroys the answer. A live lease
+        // means a worker that has not vanished, and orphaning its debts would release the
+        // exchange it is mid-answer on — which is exactly what a second editor window on one
+        // repository does. Neither side would be told: the first session's answer is refused as
+        // not-open, and the second finds nothing in its inbox.
+        var alreadyAttached = await _agents
+            .WasSeenSinceAsync(agent, nowUtc - _options.LivenessLease, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
         // No session reference: SPEC.md §12 has that carry whatever an adapter needs to reach
         // an agent again, and an adapter the agent launched itself has nothing to hand back —
         // it is reached by being running, not by being called.
         var live = await _agents.MarkLiveAsync(agent, sessionRef: null, nowUtc, cancellationToken)
             .ConfigureAwait(false);
 
-        var owed = await _exchanges.GetOpenOwedByAsync(agent, cancellationToken)
-            .ConfigureAwait(false);
+        var owed = alreadyAttached
+            ? []
+            : await _exchanges.GetAbandonedOwedByAsync(agent, cancellationToken)
+                .ConfigureAwait(false);
 
         var orphaned = 0;
 
@@ -1066,6 +1137,15 @@ public sealed class Broker
                 "broker start, and a sweep without one would ghost every orphan that outlived " +
                 "an outage as soon as the process returned.");
         }
+
+        // The heartbeat that keeps this agent's lease current. Here rather than in a mechanism
+        // of its own because the sweep is already the one thing a host runs on a timer, and a
+        // second timer would be a second thing to forget. What it buys is that liveness answers
+        // "is a session running now" rather than "did one start once": a crashed process stops
+        // renewing and its lease lapses, and an agent with two sessions open stays live while
+        // either of them is still ticking, whatever the other one wrote on its way out.
+        await _agents.MarkLiveAsync(Attached!.Value, sessionRef: null, nowUtc, cancellationToken)
+            .ConfigureAwait(false);
 
         var swept = await _reaper.SweepAsync(nowUtc, startedUtc, cancellationToken)
             .ConfigureAwait(false);

@@ -40,6 +40,45 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
     private readonly ServerOptions _options =
         options ?? throw new ArgumentNullException(nameof(options));
 
+    /// <summary>
+    /// Refuses a payload that exceeds the message cap, or returns nothing if it fits.
+    /// </summary>
+    /// <param name="payloadJson">The assembled payload.</param>
+    /// <returns>The refusal to return to the caller, or <see langword="null"/> to proceed.</returns>
+    /// <remarks>
+    /// <para>
+    /// Checked here so an agent that writes too much gets something it can act on. The cap lives
+    /// in the schema, which is what makes it unroutable-around (§9.3) — but a violation there
+    /// arrives as a SqliteException carrying SQL, and this is a limit an agent reaches in the
+    /// ordinary course of working rather than by misbehaving. Models are verbose; being told
+    /// "shorter" is a correction, and being handed a constraint name is not.
+    /// </para>
+    /// <para>
+    /// A refusal rather than an exception, for the same reason. Every other thing an agent can
+    /// get wrong here comes back as <c>ok: false</c> with a sentence about what to do instead,
+    /// and one condition that throws instead would be the one it handles worst.
+    /// </para>
+    /// <para>
+    /// The measurement is of the whole payload rather than the caller's text, because the cap is
+    /// on what is stored and the JSON wrapper counts towards it. Telling an agent its
+    /// eighteen-hundred-character answer fits, and then failing, would be worse than not
+    /// checking.
+    /// </para>
+    /// </remarks>
+    private static JsonNode? TooLong(string payloadJson) =>
+        payloadJson.Length <= MessageLimits.MaxPayloadCharacters
+            ? null
+            : new JsonObject
+            {
+                ["ok"] = false,
+                ["refused"] = "toolong",
+                ["why"] =
+                    $"That message is {payloadJson.Length} characters and the limit is " +
+                    $"{MessageLimits.MaxPayloadCharacters}. The cap is a rule of the protocol, " +
+                    "not a buffer size: what you send lands in a peer's context. Say the same " +
+                    "thing in fewer words, or split it into separate questions."
+            };
+
     /// <summary>Resolves the responder identity for a call, defaulting to the configured one.</summary>
     /// <param name="responderModel">What the caller said produced the message, if anything.</param>
     /// <returns>The identity to record.</returns>
@@ -131,9 +170,16 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
             ["consequences"] = consequences
         };
 
+        var json = payload.ToJsonString();
+
+        if (TooLong(json) is { } refused)
+        {
+            return refused;
+        }
+
         var outcome = await _session.RunAsync(
             (broker, now, ct) => broker.AskAsync(
-                _options.Agent, peer, Responder(responderModel), payload.ToJsonString(), now,
+                _options.Agent, peer, Responder(responderModel), json, now,
                 conversationId, ct),
             cancellationToken).ConfigureAwait(false);
 
@@ -181,9 +227,16 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
     {
         var payload = new JsonObject { ["text"] = text };
 
+        var json = payload.ToJsonString();
+
+        if (TooLong(json) is { } refused)
+        {
+            return refused;
+        }
+
         var outcome = await _session.RunAsync(
             (broker, now, ct) => broker.ClarifyAsync(
-                exchangeId, _options.Agent, Responder(responderModel), payload.ToJsonString(),
+                exchangeId, _options.Agent, Responder(responderModel), json,
                 now, ct),
             cancellationToken).ConfigureAwait(false);
 
@@ -243,9 +296,16 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         // make §15's telemetry describe a deployment that does not exist.
         var rollup = RollUp(entries);
 
+        var json = payload.ToJsonString();
+
+        if (TooLong(json) is { } refused)
+        {
+            return refused;
+        }
+
         var outcome = await _session.RunAsync(
             (broker, now, ct) => broker.AnswerAsync(
-                exchangeId, _options.Agent, Responder(responderModel), payload.ToJsonString(),
+                exchangeId, _options.Agent, Responder(responderModel), json,
                 now, rollup, isDecision, ct),
             cancellationToken).ConfigureAwait(false);
 
@@ -286,9 +346,16 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         var peer = ParseAgent(to);
         var payload = new JsonObject { ["text"] = text };
 
+        var json = payload.ToJsonString();
+
+        if (TooLong(json) is { } refused)
+        {
+            return refused;
+        }
+
         var outcome = await _session.RunAsync(
             (broker, now, ct) => broker.NotifyAsync(
-                _options.Agent, peer, Responder(responderModel), payload.ToJsonString(), now,
+                _options.Agent, peer, Responder(responderModel), json, now,
                 conversationId, ct),
             cancellationToken).ConfigureAwait(false);
 

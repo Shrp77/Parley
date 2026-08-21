@@ -135,11 +135,14 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     }
 
     /// <summary>
-    /// Loads the open exchanges an agent owes the next move on.
+    /// Loads the open exchanges an agent owes the next move on and has already had its turn at.
     /// </summary>
     /// <param name="agent">The agent whose debts these are.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>Every open exchange whose <c>owed_by</c> is this agent.</returns>
+    /// <returns>
+    /// Every open exchange whose <c>owed_by</c> is this agent and on which this agent has
+    /// nothing left to collect.
+    /// </returns>
     /// <remarks>
     /// <para>
     /// The input to SPEC.md §14's attach sequence, and the reason it is <c>owed_by</c> rather
@@ -149,18 +152,61 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// the debt the vanished agent was carrying.
     /// </para>
     /// <para>
+    /// <b>And carrying it means having been given it.</b> A question asked while the recipient's
+    /// session was closed is still sitting in that agent's inbox undelivered, so there is no
+    /// vanished worker and nothing to release — the agent arriving <em>is</em> the worker,
+    /// arriving. Without this condition the attach sequence orphans that question in the moment
+    /// before its recipient could read it, and that is not an edge case: with one agent per
+    /// repository most repositories are closed most of the time, so most cross-session questions
+    /// are asked into a closed session, and every one of them would be destroyed by its
+    /// recipient opening theirs. What the agent sees then is a question in its inbox and a
+    /// refusal saying it was abandoned because nobody returned to it in time — on a question it
+    /// returned to within seconds.
+    /// </para>
+    /// <para>
+    /// So the test is what the agent still has pending, not what it has seen. Those differ in
+    /// the middle of an exchange: an agent that read a question, asked for detail, and closed
+    /// its session before the detail arrived has seen something on that exchange but has not
+    /// seen the turn it now owes an answer to. Orphaning that would discard a peer's reply that
+    /// nobody had read, which is the same defect one step further in.
+    /// </para>
+    /// <para>
+    /// What remains, and what §14 means, is an exchange whose whole conversation has been
+    /// collected and left unanswered: the agent saw it, the session ended, nobody carried on.
+    /// Nothing is lost by waiting for delivery either, because an uncollected question is still
+    /// bounded — §6's window expires it and the sweep orphans it then, which is the deadline
+    /// doing its job rather than a restart standing in for one.
+    /// </para>
+    /// <para>
+    /// The second condition is redundant against today's message flow, which always sends the
+    /// owing agent something before the debt exists, and is kept because the costs are not
+    /// symmetric. Orphaning an exchange the agent never saw destroys a question; declining to
+    /// orphan one leaves it to expire on its own deadline a few minutes later.
+    /// </para>
+    /// <para>
     /// Distinct from <see cref="GetOrphanedOwedByAsync"/>, which reads the same debts once they
     /// have already been orphaned and is what a replay works from. This one is what turns the
     /// first into the second.
     /// </para>
     /// </remarks>
-    public async Task<IReadOnlyList<Exchange>> GetOpenOwedByAsync(
+    public async Task<IReadOnlyList<Exchange>> GetAbandonedOwedByAsync(
         AgentName agent,
         CancellationToken cancellationToken = default)
     {
         var rows = await _connection.QueryAsync<ExchangeRow>(
             new CommandDefinition(
-                $"{SelectColumns} WHERE state = 'OPEN' AND owed_by = @Agent;",
+                $"""
+                {SelectColumns}
+                WHERE state = 'OPEN'
+                  AND owed_by = @Agent
+                  AND NOT EXISTS (SELECT 1 FROM messages m
+                                   WHERE m.exchange_id = exchanges.id
+                                     AND m.to_agent = @Agent
+                                     AND m.delivered_utc IS NULL)
+                  AND EXISTS (SELECT 1 FROM messages m
+                               WHERE m.exchange_id = exchanges.id
+                                 AND m.to_agent = @Agent);
+                """,
                 new { Agent = agent.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 

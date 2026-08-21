@@ -1,4 +1,5 @@
-﻿using Microsoft.Data.Sqlite;
+﻿using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -23,6 +24,7 @@ public sealed class ResumeTests : IDisposable
 
     private readonly SqliteConnection _connection;
     private readonly ExchangeRepository _exchanges;
+    private readonly MessageRepository _messages;
 
     public ResumeTests()
     {
@@ -38,6 +40,7 @@ public sealed class ResumeTests : IDisposable
         }
 
         _exchanges = new ExchangeRepository(_connection);
+        _messages = new MessageRepository(_connection);
     }
 
     public void Dispose() => _connection.Dispose();
@@ -51,6 +54,22 @@ public sealed class ResumeTests : IDisposable
                 Orders, Billing, T0, question,
                 cancellationToken: TestContext.Current.CancellationToken);
             Assert.True(opened.Succeeded, $"expected to open '{question}', got {opened.Rejection}");
+
+            // Delivered, because §14 releases what the attaching agent was carrying and an
+            // uncollected question has not been handed to anybody yet. A replay is by definition
+            // a second delivery, so an exchange being tested for replay must have had a first.
+            var sent = await _messages.AppendAsync(
+                opened.Exchange!.Id, MessageType.Question, Orders, Billing, "test-model",
+                JsonSerializer.Serialize(new
+                {
+                    text = question,
+                    consequences = "If the answer is yes I read it from you; if not I define my own."
+                }),
+                T0,
+                cancellationToken: TestContext.Current.CancellationToken);
+
+            await _messages.MarkDeliveredAsync(
+                sent.Message.Id, T0, TestContext.Current.CancellationToken);
         }
 
         // Attaches as billing, because billing is who owes these answers and SPEC.md §14 now
@@ -176,6 +195,16 @@ public sealed class ResumeTests : IDisposable
         Assert.True(opened.Exchange!.Clarify(Billing, T0.AddSeconds(1)).Succeeded);
         Assert.True(await _exchanges.SaveAsync(
             opened.Exchange, cancellationToken: TestContext.Current.CancellationToken));
+
+        // The clarification reaches orders and is collected, which is what makes the debt one
+        // orders is carrying rather than one still sitting in its inbox.
+        var sent = await _messages.AppendAsync(
+            opened.Exchange.Id, MessageType.Clarify, Billing, Orders, "test-model",
+            """{"text":"gross or net?"}""", T0.AddSeconds(1),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        await _messages.MarkDeliveredAsync(
+            sent.Message.Id, T0.AddSeconds(2), TestContext.Current.CancellationToken);
 
         // The clarify flipped the debt to orders, so orders is both the owing agent and the
         // one whose attach orphans it.
