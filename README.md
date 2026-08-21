@@ -153,6 +153,7 @@ parley reinstate <agent>            the only thing that clears a retirement
 parley export <conversation>        every message in a discussion, across agents
 parley force-conclude <conv>        close a discussion over its participants' votes
 parley prune                        apply the retention policy of §9.4 now
+parley --help                       the same list, on stdout, exiting zero
 ```
 
 It reads `PARLEY_DB` — the same variable the agents' servers are launched with — or takes

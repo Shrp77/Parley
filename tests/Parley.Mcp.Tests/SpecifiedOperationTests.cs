@@ -68,27 +68,41 @@ public sealed class SpecifiedOperationTests
 
     /// <summary>The operation names in one section's table.</summary>
     /// <param name="section">The heading to read, as it appears in the document.</param>
-    /// <param name="next">The heading that ends it.</param>
     /// <returns>The names, without their parameter lists.</returns>
-    private static IReadOnlyList<string> Operations(string section, string next)
+    /// <remarks>
+    /// The section ends at the next heading of any depth rather than at a named one. Bounding
+    /// §10.2 by <c>## 11</c> would have silently swallowed a §10.3 into it, and the operations
+    /// of a section that does not exist yet would then have been read as operator operations —
+    /// which is the boundary the whole file is about.
+    /// </remarks>
+    private static IReadOnlyList<string> Operations(string section)
     {
         var text = Specification();
         var start = text.IndexOf(section, StringComparison.Ordinal);
 
         Assert.True(start >= 0, $"SPEC.md has no heading '{section}'");
 
-        var end = text.IndexOf(next, start, StringComparison.Ordinal);
+        var after = Regex.Match(text[(start + section.Length)..], @"^#{2,4} ", RegexOptions.Multiline);
 
-        Assert.True(end > start, $"SPEC.md has no heading '{next}' after '{section}'");
+        Assert.True(after.Success, $"'{section}' is not followed by another heading");
 
-        var names = Regex.Matches(text[start..end], @"^\|\s*`([a-z_]+)\(", RegexOptions.Multiline)
+        var body = text.Substring(start + section.Length, after.Index);
+
+        var names = Regex.Matches(body, @"^\|\s*`([a-z_]+)\(", RegexOptions.Multiline)
             .Select(m => m.Groups[1].Value)
             .ToArray();
 
-        // The extraction itself is guarded, because a pattern that silently matches nothing
-        // makes every assertion below pass by vacuity — which is how the schema checks in
+        // The extraction is guarded twice, because a pattern that silently matches nothing makes
+        // every assertion below pass by vacuity — which is how the schema checks in
         // Parley.Spec.Tests were once green while testing nothing at all.
+        //
+        // Once that anything parsed, and once that everything did: a table row whose name did not
+        // match would otherwise drop one operation quietly, and dropping one is exactly how a
+        // tool and its specification come to disagree without failing.
+        var rows = Regex.Matches(body, @"^\|\s*`", RegexOptions.Multiline).Count;
+
         Assert.True(names.Length > 0, $"no operations parsed from '{section}'; the table shape changed");
+        Assert.Equal(rows, names.Length);
 
         return names;
     }
@@ -104,7 +118,7 @@ public sealed class SpecifiedOperationTests
     [Fact]
     public void Every_operation_of_section_10_1_is_a_tool_of_the_same_name()
     {
-        var expected = Operations("### 10.1", "### 10.2")
+        var expected = Operations("### 10.1")
             .Select(name => Prefix + name)
             .OrderBy(n => n, StringComparer.Ordinal);
 
@@ -118,7 +132,7 @@ public sealed class SpecifiedOperationTests
         // somebody remembered to keep current. force_conclude is deliberately not conclude, and
         // this fails if a tool ever carries an operator operation's name — including one added
         // to §10.2 after this was written.
-        var operatorOperations = Operations("### 10.2", "## 11")
+        var operatorOperations = Operations("### 10.2")
             .Select(name => Prefix + name)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -137,11 +151,21 @@ public sealed class SpecifiedOperationTests
 
         var known = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
         {
-            ["10.1"] = Operations("### 10.1", "### 10.2"),
-            ["10.2"] = Operations("### 10.2", "## 11")
+            ["10.1"] = Operations("### 10.1"),
+            ["10.2"] = Operations("### 10.2")
         };
 
-        var references = Regex.Matches(text, @"§(10\.[12])(?:'s)? `([a-z_]+)`")
+        // Both apostrophes, because the document is written in prose and a typographic one is a
+        // keystroke away; and up to three characters of gap, because \s covers the newline this
+        // document's line wrapping will eventually put between the section and the name. A
+        // pattern that required exactly one space would stop covering anything the first time a
+        // sentence grew by a word, and would pass while doing it.
+        //
+        // Three characters, and not more, is what keeps it to attributions. "§10.1's `inbox`" and
+        // "§10.1 `ask`" fit; "§10.1 and the `messages` table" does not, and must not, because a
+        // table is not an operation and failing on one would be a false alarm against ordinary
+        // prose.
+        var references = Regex.Matches(text, @"§(10\.[12])(?:['\u2019]s)?\s{0,3}`([a-z_]+)`")
             .Select(m => (Section: m.Groups[1].Value, Name: m.Groups[2].Value))
             .ToArray();
 
@@ -151,5 +175,24 @@ public sealed class SpecifiedOperationTests
             .ToArray();
 
         Assert.Empty(wrong);
+    }
+
+    [Fact]
+    public void The_check_above_is_reading_a_document_that_names_those_sections()
+    {
+        // What this guards is the scanning, not the prose. The check above is conditional by
+        // nature — if nothing attributes a name to §10.1 or §10.2 it has nothing to say — and a
+        // conditional check whose condition silently stopped matching would be green while
+        // covering nothing at all.
+        //
+        // So it asserts the fragile half works: that "§10.1" and "§10.2" are findable in the
+        // loaded text. That is what breaks if the section symbol is mangled by an encoding, if
+        // the sections are renumbered, or if the file fails to load — and it does not pin any
+        // one sentence, so rewording the prose cannot fail the build.
+        var text = Specification();
+
+        Assert.True(
+            Regex.Matches(text, @"§10\.[12]").Count >= 5,
+            "SPEC.md barely mentions §10.1 or §10.2; the reference check is scanning nothing");
     }
 }

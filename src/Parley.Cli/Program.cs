@@ -11,6 +11,7 @@ using Parley.Store;
 //   parley --db <path> export <conversation>
 //   parley --db <path> force-conclude <conversation>
 //   parley --db <path> prune
+//   parley --help
 //
 // PARLEY_DB is read when --db is absent, so the same variable that configures an agent's server
 // configures the operator's view of the same project.
@@ -47,6 +48,16 @@ const int IoError = 74;    // EX_IOERR
 var arguments = new List<string>(args);
 string? databasePath = null;
 
+// Asked for rather than fallen into, so it goes to standard output and exits zero. Every other
+// path here prints the same text to standard error with a non-zero code, because there it is
+// the answer to a mistake. The distinction is what lets `parley --help | less` work while a
+// script can still tell a mistyped command from a request for the manual.
+if (arguments.Exists(a => a is "--help" or "-h"))
+{
+    await Console.Out.WriteLineAsync(Help).ConfigureAwait(false);
+    return 0;
+}
+
 for (var i = 0; i < arguments.Count - 1; i++)
 {
     if (arguments[i] is "--db" or "-d")
@@ -55,6 +66,25 @@ for (var i = 0; i < arguments.Count - 1; i++)
         arguments.RemoveRange(i, 2);
         break;
     }
+}
+
+// A --db the loop did not consume is one that had no path after it, or a second one. Both used
+// to fall through to the stray-option refusal below and be told that '--db' is not an option
+// this command takes — which is false, and false in the most confusing direction: it names the
+// one option the command does have and denies having it. Found by typing `parley --db` and
+// forgetting the path.
+var repeated = arguments.FindIndex(a => a is "--db" or "-d");
+
+if (repeated >= 0)
+{
+    await Console.Error.WriteLineAsync(
+        repeated == arguments.Count - 1
+            ? $"'{arguments[repeated]}' needs a path after it."
+            : $"'{arguments[repeated]}' was given more than once.").ConfigureAwait(false);
+
+    await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
+
+    return Usage;
 }
 
 databasePath ??= Environment.GetEnvironmentVariable("PARLEY_DB");
