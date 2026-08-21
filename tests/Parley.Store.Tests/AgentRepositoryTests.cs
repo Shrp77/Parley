@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Xunit;
 
@@ -119,17 +119,19 @@ public sealed class AgentRepositoryTests : IDisposable
     [Fact]
     public async Task Marking_all_offline_does_not_spare_the_unreachable()
     {
-        // Start-up clears stale liveness, and an unreachable mark is liveness the previous run
-        // recorded. Sparing it would carry a judgement across a restart that the restart may
-        // well have invalidated — reinstalling the repository is exactly the kind of thing that
-        // happens between runs.
+        // An unreachable mark is a conclusion the broker drew from failing to spawn something,
+        // and the agent attaching is the evidence that overturns it. Better evidence than the
+        // broker-wide clear this replaced, which reset the mark on agents nobody had heard from
+        // — reinstalling the repository is exactly the kind of thing that happens in between,
+        // but so is the repository still being gone.
         await Register(Orders);
         await Register(Billing);
         await _agents.MarkUnreachableAsync(Orders, TestContext.Current.CancellationToken);
 
-        await _agents.MarkAllOfflineAsync(TestContext.Current.CancellationToken);
+        await _agents.MarkLiveAsync(Orders, null, T0, TestContext.Current.CancellationToken);
 
-        Assert.Equal(AgentStatus.Offline, (await Load(Orders)).Status);
+        Assert.Equal(AgentStatus.Live, (await Load(Orders)).Status);
+        Assert.Equal(AgentStatus.Registered, (await Load(Billing)).Status);
     }
 
     // ---- retirement ----
@@ -161,7 +163,12 @@ public sealed class AgentRepositoryTests : IDisposable
         await _agents.RetireAsync(Orders, TestContext.Current.CancellationToken);
         await _agents.MarkUnreachableAsync(Billing, TestContext.Current.CancellationToken);
 
-        await _agents.MarkAllOfflineAsync(TestContext.Current.CancellationToken);
+        // Neither end of the lifecycle disturbs a retirement. Attaching is the closest thing to
+        // registration there is, and §14 says registration never clears one.
+        await _agents.MarkLiveAsync(Orders, null, T0, TestContext.Current.CancellationToken);
+        await _agents.MarkOfflineAsync(Orders, TestContext.Current.CancellationToken);
+        await _agents.MarkLiveAsync(Billing, null, T0, TestContext.Current.CancellationToken);
+        await _agents.MarkOfflineAsync(Billing, TestContext.Current.CancellationToken);
 
         Assert.Equal(AgentStatus.Retired, (await Load(Orders)).Status);
         Assert.Equal(AgentStatus.Offline, (await Load(Billing)).Status);

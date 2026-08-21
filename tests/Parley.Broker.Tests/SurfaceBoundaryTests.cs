@@ -44,6 +44,7 @@ public sealed class SurfaceBoundaryTests
 
         // Lifecycle. Driven by the host, not exposed to an agent by any adapter.
         nameof(Broker.StartAsync),
+        nameof(Broker.DetachAsync),
         nameof(Broker.TickAsync),
         nameof(Broker.ResumeOwedByAsync),
         "get_StartedUtc",

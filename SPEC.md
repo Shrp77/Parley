@@ -1749,9 +1749,16 @@ somebody working towards it and the wait-for edge is honest, so nothing should c
 no worker is the other direction — an exchange whose `owed_by` is the agent that just
 vanished — and that is exactly what orphaning is for.
 
-**Liveness is now best-effort, and that is affordable.** An adapter marks its agent `live` on
+**Detaching says the session stopped, and nothing else.** It marks the agent `offline` and
+leaves its debts open, because whoever picks that session up next may well finish them — and
+the attach sequence releases them on the way back in, which is the moment it is actually known
+that nobody did. A detach that orphaned eagerly would discard work every time somebody closed a
+laptop.
+
+**Liveness is best-effort, and that is affordable.** An adapter marks its agent `live` on
 attach and `offline` on a clean detach; a crashed process leaves a stale `live` until it next
-starts. That mark is cosmetic: `offline` does not block routing, deliberately, because it is
+starts. Nothing a peer depends on is left to a clean shutdown: deadlines are enforced by the
+sweep, and debts are released on attach. That mark is cosmetic: `offline` does not block routing, deliberately, because it is
 the ordinary resting state of a lazily spawned agent between questions and refusing traffic to
 one would refuse the very traffic meant to wake it. The statuses that *do* gate routing —
 `unreachable` and `retired` — are set by evidence and by a person respectively, and neither is
