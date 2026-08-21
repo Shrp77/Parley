@@ -1726,11 +1726,43 @@ does the most work.
 that stay idle. The broker instantiates an agent on the first inbound Question,
 resuming from the stored `session_ref` where the adapter supports it.
 
-**Reboot sequence.** Broker starts → loads registry → marks all agents `offline` (except `retired`, which is an operator's judgement and not
-stale liveness) →
-open exchanges become `ORPHANED` → the broker consults the **resume gate** → where the
-gate permits it, the first inbound traffic for an orphaned exchange instantiates the
-owning agent and replays the pending Question into its inbox.
+**Attach sequence.** An agent attaches → it is marked `live` → **the exchanges it owes**
+become `ORPHANED` → the broker consults the **resume gate** → where the gate permits it, the
+first inbound traffic for an orphaned exchange replays the pending Question into that agent's
+inbox.
+
+**Scoped to the attaching agent, not to the broker.** An earlier version of this section had a
+broker restart mark *every* agent offline and orphan *every* open exchange, which was right
+while a broker was one long-running service that hosted all of its agents: they shared a fate,
+so a restart invalidated everything at once.
+
+That stopped being true. An agent is a coding session, started and stopped by whoever is
+working, and §11.1's adapters attach one agent each. Under the old rule the second agent to
+start its session orphaned the first's live work, the third orphaned both, and none of them
+could tell — the damage scaled with how many colleagues were working and was silent. Twenty-two
+repositories with an agent apiece is the case that makes it obvious, and it is the case §1
+describes.
+
+**Only what the attaching agent owes.** Not everything it is party to. If `orders` asked
+`billing` a question and `orders` restarts, `billing` may well be mid-answer: the deadline has
+somebody working towards it and the wait-for edge is honest, so nothing should change. What has
+no worker is the other direction — an exchange whose `owed_by` is the agent that just
+vanished — and that is exactly what orphaning is for.
+
+**Detaching says the session stopped, and nothing else.** It marks the agent `offline` and
+leaves its debts open, because whoever picks that session up next may well finish them — and
+the attach sequence releases them on the way back in, which is the moment it is actually known
+that nobody did. A detach that orphaned eagerly would discard work every time somebody closed a
+laptop.
+
+**Liveness is best-effort, and that is affordable.** An adapter marks its agent `live` on
+attach and `offline` on a clean detach; a crashed process leaves a stale `live` until it next
+starts. Nothing a peer depends on is left to a clean shutdown: deadlines are enforced by the
+sweep, and debts are released on attach. That mark is cosmetic: `offline` does not block routing, deliberately, because it is
+the ordinary resting state of a lazily spawned agent between questions and refusing traffic to
+one would refuse the very traffic meant to wake it. The statuses that *do* gate routing —
+`unreachable` and `retired` — are set by evidence and by a person respectively, and neither is
+inferred from a process going away.
 
 **Resume is a user decision, not a protocol rule.** Two restarts that are byte-identical
 to the broker carry opposite intent, and the broker cannot tell them apart:

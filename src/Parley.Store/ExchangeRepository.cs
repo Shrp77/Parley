@@ -135,6 +135,39 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     }
 
     /// <summary>
+    /// Loads the open exchanges an agent owes the next move on.
+    /// </summary>
+    /// <param name="agent">The agent whose debts these are.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Every open exchange whose <c>owed_by</c> is this agent.</returns>
+    /// <remarks>
+    /// <para>
+    /// The input to SPEC.md §14's attach sequence, and the reason it is <c>owed_by</c> rather
+    /// than "party to". An exchange the agent is <em>waiting on</em> has somebody else working
+    /// towards its deadline, and orphaning it would discard a peer's work in progress because a
+    /// process on the other side of the conversation happened to restart. What has no worker is
+    /// the debt the vanished agent was carrying.
+    /// </para>
+    /// <para>
+    /// Distinct from <see cref="GetOrphanedOwedByAsync"/>, which reads the same debts once they
+    /// have already been orphaned and is what a replay works from. This one is what turns the
+    /// first into the second.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<Exchange>> GetOpenOwedByAsync(
+        AgentName agent,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await _connection.QueryAsync<ExchangeRow>(
+            new CommandDefinition(
+                $"{SelectColumns} WHERE state = 'OPEN' AND owed_by = @Agent;",
+                new { Agent = agent.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return [.. rows.Select(r => r.ToDomain())];
+    }
+
+    /// <summary>
     /// Loads orphaned exchanges awaiting a response from a particular agent.
     /// </summary>
     /// <param name="agent">The agent that owes the outstanding response.</param>

@@ -33,7 +33,7 @@ namespace Parley.Broker;
 /// <para>
 /// Deliberately not lifecycle-guarded, unlike every operation on <see cref="Broker"/>. Those
 /// refuse before <see cref="Broker.StartAsync"/> because they decide against state that §14's
-/// reboot sequence exists to invalidate — the open set, the registry's liveness. These decide
+/// attach sequence exists to invalidate — this agent's debts, its liveness. These decide
 /// against nothing: closing a conversation is an instruction, not an inference. Requiring a
 /// started broker would make the escape hatch depend on the lifecycle an operator is most likely
 /// reaching for it because of.

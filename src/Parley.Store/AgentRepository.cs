@@ -132,6 +132,42 @@ public sealed class AgentRepository(SqliteConnection connection)
     }
 
     /// <summary>
+    /// Records that an agent has detached cleanly.
+    /// </summary>
+    /// <param name="name">The agent that is stopping.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>One if the agent was marked offline, zero if it is retired.</returns>
+    /// <remarks>
+    /// <para>
+    /// The counterpart to <see cref="MarkLiveAsync"/>, and the only thing that produces
+    /// <see cref="AgentStatus.Offline"/> now that the attach sequence of SPEC.md §14 is scoped
+    /// to one agent. The broker-wide "mark everything offline" it replaced could not survive
+    /// that scoping: no process speaks for every agent any more, so no process is entitled to
+    /// say they have all stopped.
+    /// </para>
+    /// <para>
+    /// Best-effort by construction. An adapter calls it on a clean shutdown; a crashed process
+    /// leaves a stale <c>live</c> until that agent next attaches. That is affordable because
+    /// the mark is cosmetic — <c>offline</c> does not gate routing, deliberately, since it is
+    /// the ordinary resting state of a lazily spawned agent between questions and refusing
+    /// traffic to one would refuse the very traffic meant to wake it.
+    /// </para>
+    /// <para>
+    /// Retired agents are left alone, the same as on the way in. A person withdrew them; a
+    /// process stopping is not a statement about that.
+    /// </para>
+    /// </remarks>
+    public async Task<int> MarkOfflineAsync(
+        AgentName name,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE agents SET status = 'offline' " +
+                "WHERE name = @Name AND status <> 'retired';",
+                new { Name = name.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>
     /// Reports whether an agent is registered at all.
     /// </summary>
     /// <param name="agent">The name to look for.</param>
@@ -274,8 +310,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// On conflict this updates configuration only — adapter, tier, workspace, and credential
     /// configuration. Session handle, liveness, and last-seen timestamp are deliberately left
     /// alone, so reloading a manifest cannot sever a live agent's session or reset the window
-    /// used to compute its change summary. Use <see cref="MarkLiveAsync"/> and
-    /// <see cref="MarkAllOfflineAsync"/> for those.
+    /// used to compute its change summary. Use <see cref="MarkLiveAsync"/> for those.
     /// </remarks>
     public async Task<int> UpsertAsync(AgentRecord agent, CancellationToken cancellationToken = default)
     {
@@ -308,35 +343,6 @@ public sealed class AgentRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Marks every agent offline.
-    /// </summary>
-    /// <param name="cancellationToken">Cancels the operation.</param>
-    /// <returns>The number of agents updated.</returns>
-    /// <remarks>
-    /// <para>
-    /// Called once during broker start-up. No adapter can still be attached across a process
-    /// restart, so recorded liveness from the previous run is stale by definition and must be
-    /// cleared before any of it is trusted.
-    /// </para>
-    /// <para>
-    /// This deliberately resets <see cref="AgentStatus.Unreachable"/> too, and that is what
-    /// makes the state recoverable rather than a one-way door. Nothing spawns an agent the
-    /// broker refuses to route to, so an unreachable agent can never demonstrate that it is
-    /// back; clearing the mark at start-up gives it that chance. Carrying the mark across a
-    /// restart would preserve a conclusion the restart may have invalidated, since re-cloning
-    /// a repository is exactly the kind of thing that happens between runs.
-    /// </para>
-    /// </remarks>
-    public async Task<int> MarkAllOfflineAsync(CancellationToken cancellationToken = default) =>
-        await _connection.ExecuteAsync(
-            new CommandDefinition(
-                // Retired is excluded because it is not stale liveness: it is an operator's
-                // judgement that a repository is gone for good, and a restart is no evidence
-                // against it. Every other status is what the previous run observed, which the
-                // restart itself may well have invalidated.
-                "UPDATE agents SET status = 'offline' WHERE status <> 'retired';",
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>
     /// Marks an agent live and records that it has just communicated.
@@ -353,6 +359,19 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// handle rather than clearing it, so a routine liveness update cannot destroy the value
     /// that makes session resumption possible.
     /// </remarks>
+    /// <remarks>
+    /// A retired agent is not revived, and the guard is in the <c>WHERE</c> clause rather than
+    /// in a caller. SPEC.md §14: "Retirement is cleared only by an explicit operator action,
+    /// never by registration" — and an agent attaching is the closest thing to registration
+    /// there is, since it is the agent announcing itself. Without this, an operator who retired
+    /// an agent would find it live again the moment somebody opened that repository's session,
+    /// which is precisely the control-that-does-not-hold §14 describes.
+    /// <para>
+    /// The zero this returns is meaningful rather than a silent no-op: it says the registry
+    /// refused, which is how <c>StartResult.AgentMarkedLive</c> tells an adapter that its agent
+    /// has been withdrawn.
+    /// </para>
+    /// </remarks>
     public async Task<int> MarkLiveAsync(
         AgentName name,
         string? sessionRef,
@@ -365,7 +384,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                    SET status        = 'live',
                        session_ref   = COALESCE(@SessionRef, session_ref),
                        last_seen_utc = @Now
-                 WHERE name = @Name;
+                 WHERE name = @Name AND status <> 'retired';
                 """,
                 new
                 {

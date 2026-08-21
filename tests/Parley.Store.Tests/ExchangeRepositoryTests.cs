@@ -285,7 +285,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
         // Offline is the ordinary resting state of a lazily spawned agent, not a fault.
         // Refusing here would refuse the very traffic meant to wake it.
         var agents = new AgentRepository(_connection);
-        Assert.Equal(3, await agents.MarkAllOfflineAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await agents.MarkOfflineAsync(Billing, TestContext.Current.CancellationToken));
 
         var outcome = await _exchanges.TryOpenAsync(
             Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);

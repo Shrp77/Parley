@@ -66,8 +66,8 @@ public sealed class ConcurrentBrokerTests : IDisposable
 
         var brokerOne = new Broker(one, BrokerOptions.Default);
         var brokerTwo = new Broker(two, BrokerOptions.Default);
-        await brokerOne.StartAsync(T0, TestContext.Current.CancellationToken);
-        await brokerTwo.StartAsync(T0, TestContext.Current.CancellationToken);
+        await brokerOne.StartAsync(Orders, T0, TestContext.Current.CancellationToken);
+        await brokerTwo.StartAsync(Orders, T0, TestContext.Current.CancellationToken);
         return (brokerOne, brokerTwo);
     }
 

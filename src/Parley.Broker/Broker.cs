@@ -101,6 +101,23 @@ public sealed class Broker
     public DateTimeOffset? StartedUtc { get; private set; }
 
     /// <summary>
+    /// Gets the agent this broker attached for, or <see langword="null"/> before it has.
+    /// </summary>
+    /// <remarks>
+    /// Recorded because the attach sequence of SPEC.md §14 is scoped to one agent, so the broker
+    /// knows which. <see cref="DetachAsync"/> reads it, which is what stops a process marking
+    /// somebody else's agent offline — there is no parameter to pass the wrong name through.
+    /// <para>
+    /// It is not used to <em>authorise</em> anything. Every agent operation still takes the
+    /// acting agent explicitly, because the broker is a library and the adapter above it is what
+    /// binds an identity to a process; making it implicit here would move that decision somewhere
+    /// the tests could not exercise several agents against one database. The identity boundary is
+    /// the process, and it lives in the adapter.
+    /// </para>
+    /// </remarks>
+    public AgentName? Attached { get; private set; }
+
+    /// <summary>
     /// The namespace SPEC.md §11.3 reserves for the broker's own attributions.
     /// </summary>
     private const string ReservedResponderPrefix = "parley:";
@@ -184,16 +201,16 @@ public sealed class Broker
     }
 
     /// <summary>
-    /// Throws unless the reboot sequence has run.
+    /// Throws unless this broker has attached an agent.
     /// </summary>
     /// <param name="operation">The operation being refused, named in the message.</param>
     /// <exception cref="InvalidOperationException"><see cref="StartAsync"/> has not been called.</exception>
     /// <remarks>
     /// <para>
     /// Every agent-facing operation is guarded, not only the sweep, because all of them read
-    /// state that SPEC.md §14's reboot sequence exists to invalidate. Before it runs, the open
-    /// set still holds exchanges belonging to a process that is gone and the registry still
-    /// holds liveness the last run observed — so admission counts stale exchanges against §7.1's
+    /// state that SPEC.md §14's attach sequence exists to invalidate. Before it runs, this
+    /// agent's debts are still open on behalf of a process that is gone and the registry still
+    /// holds whatever liveness its last session left — so admission counts stale exchanges against §7.1's
     /// cap, cycle detection finds cycles among questions nobody is working on, and the
     /// reachability check reads an <c>unreachable</c> mark that a restart is precisely the
     /// occasion to clear. That last one is the worst of them: it is the one refusal that hands
@@ -214,9 +231,9 @@ public sealed class Broker
         {
             throw new InvalidOperationException(
                 $"The broker has not started. Call StartAsync before {operation}: until the " +
-                "reboot sequence runs, the open set and the registry still describe the " +
-                "previous run, and this operation would decide against evidence that a start " +
-                "exists to invalidate.");
+                "attach sequence runs, this agent's debts and its liveness still describe " +
+                "its previous session, and this operation would decide against evidence that " +
+                "attaching exists to invalidate.");
         }
     }
 
@@ -719,9 +736,9 @@ public sealed class Broker
     /// </para>
     /// <para>
     /// Guarded on start like everything else here, because the liveness it reports is exactly
-    /// what §14's reboot sequence invalidates: before it runs, every agent still carries whatever
-    /// the previous run last observed, and an asker reading that would route on evidence about a
-    /// process that is gone.
+    /// what §14's attach sequence invalidates for the attaching agent: before it runs, this
+    /// agent still carries whatever its previous session left, and an asker reading its own
+    /// stale mark would route on evidence about a process that is gone.
     /// </para>
     /// </remarks>
     public async Task<IReadOnlyList<AgentSummary>> ListAgentsAsync(
@@ -892,11 +909,15 @@ public sealed class Broker
     }
 
     /// <summary>
-    /// Runs the reboot sequence.
+    /// Attaches an agent to the broker, running the sequence of SPEC.md §14.
     /// </summary>
-    /// <param name="nowUtc">The instant the broker started.</param>
+    /// <param name="agent">The agent this broker speaks for.</param>
+    /// <param name="nowUtc">The instant of the attach.</param>
     /// <param name="cancellationToken">Cancels the sequence.</param>
     /// <returns>What the sequence did.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// No agent by that name is registered.
+    /// </exception>
     /// <remarks>
     /// Call once per process lifetime. A second call is not refused, because refusing one would
     /// break the case this exists for, but it moves <see cref="StartedUtc"/> forward and with it
@@ -905,18 +926,31 @@ public sealed class Broker
     /// </remarks>
     /// <remarks>
     /// <para>
-    /// SPEC.md §14: mark agents offline, then orphan every open exchange. Both are the same
-    /// admission — that whatever the previous run believed about liveness is no longer evidence
-    /// of anything. An exchange left open across a restart would keep a deadline nobody is
-    /// working towards, and a wait-for edge blocking peers on behalf of an agent that is not
-    /// running.
+    /// <b>Scoped to the attaching agent.</b> It is marked <c>live</c>, and the exchanges it owes
+    /// are orphaned. Every other agent and every other exchange is left exactly as it was.
     /// </para>
     /// <para>
-    /// Retired agents are spared, and only retired agents. Every other status is what the last
-    /// run observed and the restart may well have invalidated it — reinstalling or re-cloning a
-    /// repository is exactly the kind of thing that happens between runs, which is why an
-    /// <c>unreachable</c> mark is cleared here and gets to be proved again. Retirement is a
-    /// person's judgement, and a restart is not evidence against it.
+    /// This replaced a broker-wide sequence that marked all agents offline and orphaned every
+    /// open exchange, and the reason is worth keeping. That was right while a broker was one
+    /// long-running service hosting all of its agents: they shared a fate, so a restart
+    /// invalidated everything at once. An agent is now a coding session, started and stopped by
+    /// whoever is working, and §11.1's adapters attach one agent each — so under the old rule
+    /// the second agent to open a session orphaned the first's live work, the third orphaned
+    /// both, and none of them could tell. A probe with two agents showed it in three calls;
+    /// twenty-two repositories with an agent apiece is the deployment §1 describes.
+    /// </para>
+    /// <para>
+    /// <b>What it owes, not what it is party to.</b> An exchange this agent is <em>waiting on</em>
+    /// has somebody else working towards its deadline, and orphaning it would discard a peer's
+    /// work in progress because a process on the other side of the conversation restarted. What
+    /// has no worker is the debt the vanished agent was carrying, which is what <c>owed_by</c>
+    /// names and what orphaning is for.
+    /// </para>
+    /// <para>
+    /// Marking <c>live</c> does not disturb a retirement: <see cref="AgentRepository.MarkLiveAsync"/>
+    /// refuses a retired agent, because retirement is a person's judgement and attaching is not
+    /// evidence against it. An agent whose registration was withdrawn can start its server all
+    /// it likes and will still be refused every operation.
     /// </para>
     /// <para>
     /// Orphaning goes through the domain transition one exchange at a time rather than a bulk
@@ -927,17 +961,29 @@ public sealed class Broker
     /// </para>
     /// </remarks>
     public async Task<StartResult> StartAsync(
+        AgentName agent,
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default)
     {
-        var offline = await _agents.MarkAllOfflineAsync(cancellationToken).ConfigureAwait(false);
+        // Refused before anything is written. An adapter configured with a name the registry
+        // does not hold would otherwise attach cleanly, orphan nothing, mark nothing live, and
+        // then throw on every single operation — reporting a deployment fault to the model
+        // instead of to the person who wrote the launch configuration. It also keeps
+        // StartResult.AgentMarkedLive unambiguous: a zero now means retired, and only retired.
+        await RequireRegisteredAsync(agent, cancellationToken).ConfigureAwait(false);
 
-        var open = await _exchanges.GetOpenAsync(cancellationToken: cancellationToken)
+        // No session reference: SPEC.md §12 has that carry whatever an adapter needs to reach
+        // an agent again, and an adapter the agent launched itself has nothing to hand back —
+        // it is reached by being running, not by being called.
+        var live = await _agents.MarkLiveAsync(agent, sessionRef: null, nowUtc, cancellationToken)
+            .ConfigureAwait(false);
+
+        var owed = await _exchanges.GetOpenOwedByAsync(agent, cancellationToken)
             .ConfigureAwait(false);
 
         var orphaned = 0;
 
-        foreach (var exchange in open)
+        foreach (var exchange in owed)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -953,12 +999,44 @@ public sealed class Broker
             }
         }
 
+        Attached = agent;
+
         // Recorded last, so a sequence that throws part-way leaves a broker that refuses to
         // tick rather than one that ticks having half-orphaned its exchanges. TickAsync reads
         // this to time ghosting, and a start that did not finish is not a start.
         StartedUtc = nowUtc;
 
-        return new StartResult(offline, orphaned);
+        return new StartResult(live, orphaned);
+    }
+
+    /// <summary>
+    /// Records that this broker's agent is stopping.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true"/> if the agent was marked offline.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="StartAsync"/> has not been called.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// The counterpart to attaching, and deliberately the only thing this does. It does not
+    /// orphan the agent's debts: those belong to work that may well be finished by whoever picks
+    /// the session up next, and the attach sequence releases them on the way back in — which is
+    /// the moment it is actually known that nobody carried on.
+    /// </para>
+    /// <para>
+    /// Best-effort, because a crashed process calls nothing. That is affordable: the mark is
+    /// cosmetic, since <c>offline</c> does not gate routing. What is <em>not</em> left to a
+    /// clean shutdown is anything a peer depends on — deadlines are enforced by the sweep, and
+    /// debts are released on attach.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> DetachAsync(CancellationToken cancellationToken = default)
+    {
+        RequireStarted("detaching");
+
+        return await _agents.MarkOfflineAsync(Attached!.Value, cancellationToken)
+            .ConfigureAwait(false) > 0;
     }
 
     /// <summary>
@@ -971,7 +1049,7 @@ public sealed class Broker
     /// <see cref="StartAsync"/> has not been called.
     /// </exception>
     /// <remarks>
-    /// Refuses to run before the reboot sequence, because the ghosting clock is measured from
+    /// Refuses to run before the attach sequence, because the ghosting clock is measured from
     /// broker start and a sweep without one would fall back to wall-clock timing — ghosting
     /// every orphan that outlived an outage the instant the process came back, which is the
     /// exact failure the clock rule exists to prevent. Failing loudly beats a sweep that looks
@@ -1019,9 +1097,9 @@ public sealed class Broker
     /// <remarks>
     /// <para>
     /// This is the inbound traffic SPEC.md §14 describes, so it does the replay before the
-    /// read. Nothing is replayed at start-up: the reboot sequence orphans everything, and an
-    /// agent collecting its messages is what brings back what that agent owes, so a deployment
-    /// does not pay to instantiate agents that would have stayed idle. Under a resume policy of
+    /// read. Nothing is replayed at attach: the sequence orphans what this agent owes, and the
+    /// agent collecting its messages is what brings those back, so a deployment does not pay to
+    /// instantiate agents that would have stayed idle. Under a resume policy of
     /// <see cref="Core.ResumePolicy.Never"/> the replay finds nothing and the drain is simply a
     /// read.
     /// </para>
@@ -1168,14 +1246,14 @@ public sealed class Broker
     /// <returns>The exchanges returned to the open state.</returns>
     /// <exception cref="InvalidOperationException">
     /// <see cref="StartAsync"/> has not been called. Replay is defined against orphans and the
-    /// reboot sequence is what creates them, so before it runs this would report nothing to
+    /// attach sequence is what creates them, so before it runs this would report nothing to
     /// resume for an agent that owes answers — a wrong answer indistinguishable from a right one.
     /// </exception>
     /// <remarks>
     /// <para>
-    /// Lazy, per SPEC.md §14: nothing is replayed at start-up. The reboot sequence orphans
-    /// everything and the first inbound traffic for an agent brings back what that agent owes,
-    /// so a deployment does not pay to instantiate agents that would have stayed idle.
+    /// Lazy, per SPEC.md §14: nothing is replayed at attach. The sequence orphans what the
+    /// attaching agent owes, and the first inbound traffic for it brings those back, so a
+    /// deployment does not pay to instantiate agents that would have stayed idle.
     /// </para>
     /// <para>
     /// Returns an empty list under <see cref="Core.ResumePolicy.Never"/> and

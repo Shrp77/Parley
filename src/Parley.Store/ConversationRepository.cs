@@ -261,10 +261,10 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// "holding open exchanges" but gives its reason as an agent whose exchanges are all
     /// <em>closed</em>, and an orphan is neither: it is a debt awaiting replay under §14, which
     /// may return it to open at the next inbound traffic. Counting only <c>OPEN</c> made a
-    /// restart into a weapon — the reboot sequence orphans everything, so for as long as it
-    /// took the first agent to come back, any participant could propose closure, find nobody
-    /// left to ask, and conclude the discussion single-handed. A probe closed a live discussion
-    /// that way in three calls.
+    /// restart into a weapon — the attach sequence orphans the debts of whoever attached, so a
+    /// participant proposing closure straight afterwards could find nobody left to ask and
+    /// conclude the discussion single-handed. A probe closed a live discussion that way in three
+    /// calls, back when a single attach orphaned every open exchange at once.
     /// </para>
     /// <para>
     /// The proposer gets no exemption, and an earlier version of this gave it one — stamping it

@@ -49,7 +49,7 @@ public sealed class InboxTests : IDisposable
         // over orphans rather than over live traffic — which is a different scenario, and the
         // one Draining_replays_what_the_agent_owes_before_reading covers deliberately.
         _broker = new Broker(_connection);
-        _broker.StartAsync(T0.AddHours(-1), TestContext.Current.CancellationToken)
+        _broker.StartAsync(Orders, T0.AddHours(-1), TestContext.Current.CancellationToken)
             .GetAwaiter().GetResult();
     }
 
@@ -234,9 +234,9 @@ public sealed class InboxTests : IDisposable
         {
             ResumePolicy = ResumePolicy.Always
         });
-        await broker.StartAsync(T0.AddMinutes(1), TestContext.Current.CancellationToken);
+        await broker.StartAsync(Billing, T0.AddMinutes(1), TestContext.Current.CancellationToken);
 
-        // The reboot sequence orphaned it.
+        // The attach sequence orphaned it, because billing is what owes it.
         var afterStart = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ExchangeState.Orphaned, afterStart!.State);
 
@@ -312,12 +312,13 @@ public sealed class InboxTests : IDisposable
         });
 
         // Delivered, then interrupted, which is the ordinary case: the agent had the question
-        // and the process went away before it answered.
-        await resuming.StartAsync(T0.AddMinutes(-1), TestContext.Current.CancellationToken);
+        // and the process went away before it answered. Billing is who attaches, because §14
+        // now orphans what the attaching agent owes — and this debt is billing's.
+        await resuming.StartAsync(Billing, T0.AddMinutes(-1), TestContext.Current.CancellationToken);
         await resuming.DrainInboxAsync(
             Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
 
-        await resuming.StartAsync(T0.AddMinutes(2), TestContext.Current.CancellationToken);
+        await resuming.StartAsync(Billing, T0.AddMinutes(2), TestContext.Current.CancellationToken);
 
         var afterRestart = (await resuming.DrainInboxAsync(
             Billing, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken)).Messages;
@@ -345,11 +346,11 @@ public sealed class InboxTests : IDisposable
         {
             ResumePolicy = ResumePolicy.Always
         });
-        await resuming.StartAsync(T0.AddMinutes(-1), TestContext.Current.CancellationToken);
+        await resuming.StartAsync(Orders, T0.AddMinutes(-1), TestContext.Current.CancellationToken);
         await resuming.DrainInboxAsync(
             Orders, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
 
-        await resuming.StartAsync(T0.AddMinutes(2), TestContext.Current.CancellationToken);
+        await resuming.StartAsync(Orders, T0.AddMinutes(2), TestContext.Current.CancellationToken);
 
         var afterRestart = (await resuming.DrainInboxAsync(
             Orders, T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken)).Messages;
@@ -370,10 +371,10 @@ public sealed class InboxTests : IDisposable
         {
             ResumePolicy = ResumePolicy.Always
         });
-        await resuming.StartAsync(T0.AddMinutes(-1), TestContext.Current.CancellationToken);
+        await resuming.StartAsync(Orders, T0.AddMinutes(-1), TestContext.Current.CancellationToken);
         await resuming.DrainInboxAsync(
             Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
-        await resuming.StartAsync(T0.AddMinutes(2), TestContext.Current.CancellationToken);
+        await resuming.StartAsync(Orders, T0.AddMinutes(2), TestContext.Current.CancellationToken);
 
         // Orders asks for its own inbox. It owes nothing on this exchange, so the replay finds
         // nothing for it and its own question is not returned.

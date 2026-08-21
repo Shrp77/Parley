@@ -53,8 +53,11 @@ public sealed class ResumeTests : IDisposable
             Assert.True(opened.Succeeded, $"expected to open '{question}', got {opened.Rejection}");
         }
 
+        // Attaches as billing, because billing is who owes these answers and SPEC.md §14 now
+        // orphans what the attaching agent owes rather than everything open. Attaching as
+        // orders would orphan nothing here — orders is waiting, not working.
         var broker = new Broker(_connection, options);
-        await broker.StartAsync(T0.AddMinutes(1), TestContext.Current.CancellationToken);
+        await broker.StartAsync(Billing, T0.AddMinutes(1), TestContext.Current.CancellationToken);
         return broker;
     }
 
@@ -174,10 +177,11 @@ public sealed class ResumeTests : IDisposable
         Assert.True(await _exchanges.SaveAsync(
             opened.Exchange, cancellationToken: TestContext.Current.CancellationToken));
 
+        // The clarify flipped the debt to orders, so orders is both the owing agent and the
+        // one whose attach orphans it.
         var broker = new Broker(_connection, With(ResumePolicy.Always));
-        await broker.StartAsync(T0.AddMinutes(1), TestContext.Current.CancellationToken);
+        await broker.StartAsync(Orders, T0.AddMinutes(1), TestContext.Current.CancellationToken);
 
-        // The clarify flipped the debt to orders, so orders is who owes the response.
         var resumed = await broker.ResumeOwedByAsync(
             Orders, T0.AddMinutes(2), TestContext.Current.CancellationToken);
 
@@ -254,7 +258,7 @@ public sealed class ResumeTests : IDisposable
         Assert.True(appended.Stored);
 
         var broker = new Broker(_connection, With(ResumePolicy.Always, new RefusingGate()));
-        await broker.StartAsync(T0.AddMinutes(1), TestContext.Current.CancellationToken);
+        await broker.StartAsync(Orders, T0.AddMinutes(1), TestContext.Current.CancellationToken);
         Assert.True(await messages.MarkDeliveredAsync(
             appended.Message.Id, T0.AddMinutes(1), TestContext.Current.CancellationToken));
 
