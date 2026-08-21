@@ -7,13 +7,26 @@ namespace Parley.Store;
 /// <param name="HeldByFloor">
 /// Messages the idle rule or the age cap released, and the floor of SPEC.md §9.4 kept anyway.
 /// </param>
+/// <param name="Contended">
+/// Messages another sweep removed between this one deciding and doing.
+/// </param>
 /// <remarks>
 /// <para>
-/// Two numbers rather than one because they answer different questions and a single total
+/// Three numbers rather than one because they answer different questions and a single total
 /// conflates them. "Nothing was old enough" and "plenty was old enough and the floor is holding
 /// it" are indistinguishable from a count of what went, and they call for opposite responses:
 /// the first means the policy is looser than the operator thought, the second means traffic is
 /// still in flight.
+/// </para>
+/// <para>
+/// <see cref="Contended"/> is the third, and it exists because leaving it out made the other two
+/// lie. Every server prunes on its own schedule and an operator may run <c>prune</c> beside
+/// them, so losing the race is ordinary rather than exceptional — six sweeps at once over thirty
+/// thousand spent messages had four of them removing nothing. Folded into
+/// <see cref="HeldByFloor"/> that read as "thirty thousand messages are undelivered or on open
+/// exchanges", which is not merely imprecise: it points at a broken deployment when nothing is
+/// wrong. It is not an error count, for the same reason <see cref="ReapResult.Contended"/> is
+/// not: the work was done, by somebody else.
 /// </para>
 /// <para>
 /// <see cref="HeldByFloor"/> is expected to be small and non-zero on a busy deployment — every
@@ -22,4 +35,16 @@ namespace Parley.Store;
 /// sitting open or a peer has stopped collecting its inbox.
 /// </para>
 /// </remarks>
-public readonly record struct PruneResult(int Removed, int HeldByFloor);
+public readonly record struct PruneResult(int Removed, int HeldByFloor, int Contended)
+{
+    /// <summary>
+    /// The result of a tick that did not reach its retention interval.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from "swept and found nothing" only in that no scan happened, and deliberately
+    /// not distinguished in the type. A caller acting differently on the two would be acting on
+    /// how often the sweep runs rather than on the state of the log, and the interval is not a
+    /// fact about the deployment worth propagating that far.
+    /// </remarks>
+    public static PruneResult Nothing { get; }
+}

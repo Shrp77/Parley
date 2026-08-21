@@ -87,42 +87,17 @@ public sealed class Pruner(SqliteConnection connection)
         judged AS (
             SELECT g.id AS id,
 
-                   -- The floor of SPEC.md 9.4. Two clauses are absolute and one is not, which
-                   -- is the whole of the difference between them.
-                   (
-                     -- Absolute: an exchange that is still open or orphaned may be replayed by
-                     -- section 14, and the question text is what there would be to replay. This
-                     -- clause is bounded on its own -- ghosting closes an orphan -- so nothing
-                     -- needs to override it.
-                     NOT EXISTS (SELECT 1 FROM exchanges x
-                                  WHERE x.id = g.exchange_id
-                                    AND x.state IN ('OPEN', 'ORPHANED'))
-
-                     -- Absolute: inside the deduplication window of section 13.1, where the row
-                     -- is still doing work. Removing one there would let a byte-identical
-                     -- message through, so an operator tightening retention could break
-                     -- deduplication as a side effect -- the exact thing the floor exists to
-                     -- stop. The bucketed backstop index needs no separate allowance: a bucket
-                     -- is the same length as the window, so a row older than the window is
-                     -- always in a strictly older bucket and constrains no insert that could
-                     -- still arrive.
-                     AND g.created <= @NowSeconds - @DeduplicationSeconds
-
-                     -- Not absolute: an undelivered message is somebody's inbox, and nothing
-                     -- ever clears an inbox nobody reads. An agent that never attaches never
-                     -- collects, so this is the one clause with no terminal state -- and the
-                     -- age cap reaches it, or the cap is not a cap.
-                     AND (g.delivered IS NOT NULL
-                          OR g.created <= @NowSeconds - @MaximumAgeSeconds)
-                   ) AS clears_floor,
-
                    (
                      -- The age cap, which overrides whatever the idle rule concludes.
                      g.created <= @NowSeconds - @MaximumAgeSeconds
 
                      -- The idle rule: every exchange in the group closed, and nothing added for
                      -- the idle period.
-                     OR (g.grp NOT IN (SELECT grp FROM unfinished)
+                     -- NOT EXISTS rather than NOT IN. The subquery cannot produce a NULL as it
+                     -- stands, but if it ever did, NOT IN would evaluate to NULL for every row
+                     -- and retention would silently stop -- a total failure that looks exactly
+                     -- like a healthy deployment with nothing due.
+                     OR (NOT EXISTS (SELECT 1 FROM unfinished u WHERE u.grp = g.grp)
                          AND (
                                -- Explicit closure short-circuits the idle period. The
                                -- participants have said the discussion is over, which is better
@@ -138,28 +113,105 @@ public sealed class Pruner(SqliteConnection connection)
         )
         """;
 
-    /// <summary>Removes what may go.</summary>
+    /// <summary>Reads every message the two rules of SPEC.md §9.4 release.</summary>
     /// <remarks>
-    /// The <c>WITH</c> clause leads the <c>DELETE</c> rather than sitting inside a subquery, so
-    /// the classification is evaluated once against the table as it stands. Repeating the
-    /// predicate in the delete's own <c>WHERE</c> would have it read the very table being
-    /// deleted from, and the set being removed would shift underneath the scan deciding what to
-    /// remove.
+    /// <para>
+    /// The rules only. The floor is not evaluated here, and that is the single most important
+    /// thing about this query: it has to be re-evaluated at the moment of deletion anyway,
+    /// because this scan runs outside any transaction and a message can be delivered or an
+    /// exchange resumed in between. A copy here would be a second statement of a rule that
+    /// already lives in <see cref="DeleteStatement"/>, and the two would mask each other —
+    /// removing either one on its own changed no observable behaviour and failed no test, which
+    /// is how a safety check quietly becomes decoration.
+    /// </para>
+    /// <para>
+    /// The identifiers come back rather than being deleted in place, which makes the delete that
+    /// follows a series of primary-key lookups instead of a second walk of the log.
+    /// </para>
+    /// <para>
+    /// That trade is measured rather than assumed, because assuming it got it backwards once
+    /// already. Against two hundred thousand messages with nothing due, evaluating everything
+    /// inside a <c>DELETE</c> took 0.7–1.5 seconds and this takes 0.3; draining a backlog that
+    /// size is the other way round, 1.8 seconds against 2.6, because materialising and batching
+    /// beats one set-based statement only when there is little to materialise. Which is the right
+    /// way round: "nothing due" is what every sweep of every server does forever, and a drain
+    /// that large happens once.
+    /// </para>
     /// </remarks>
-    private const string DeleteStatement =
+    private const string SpentRows =
         Judged +
         """
 
-        DELETE FROM messages
-         WHERE id IN (SELECT id FROM judged WHERE clears_floor = 1 AND spent = 1);
+        SELECT id FROM judged WHERE spent = 1;
         """;
 
-    /// <summary>Counts what the rules would have released and the floor is holding.</summary>
-    private const string HeldCount =
-        Judged +
-        """
+    /// <summary>
+    /// How many identifiers one <c>DELETE</c> carries.
+    /// </summary>
+    /// <remarks>
+    /// SQLite bounds how many parameters a statement may bind, and Dapper expands a list into one
+    /// parameter each. Five hundred is comfortably inside the smallest limit any build ships
+    /// with, and the batching costs nothing: every statement is a primary-key lookup, and they
+    /// all run inside the one transaction, so a chunked delete and a single delete commit
+    /// identically.
+    /// </remarks>
+    private const int DeleteBatch = 500;
 
-        SELECT count(*) FROM judged WHERE clears_floor = 0 AND spent = 1;
+    /// <summary>Counts how many of a batch are still there.</summary>
+    /// <remarks>
+    /// Run in the same transaction as the delete, so the difference between what was asked for,
+    /// what went, and what remains is exact. A row still present was refused by the floor; a row
+    /// neither deleted nor present was removed by another sweep between this one deciding and
+    /// doing. Both are ordinary and they mean completely different things, so the alternative —
+    /// reporting the difference as one number — makes the common case read as the alarming one.
+    /// </remarks>
+    private const string SurvivorCount = "SELECT count(*) FROM messages WHERE id IN @Ids;";
+
+    /// <summary>Removes a batch by identifier, subject to the floor of SPEC.md §9.4.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The floor lives here and nowhere else.</b> It is evaluated at the moment of deletion,
+    /// against the row as it stands then, which is the only moment where being right about it
+    /// matters: the scan that chose these identifiers ran outside any transaction, so a message
+    /// may have been delivered or an orphan resumed since. Every clause reads the row itself or
+    /// its exchange by primary key, so it costs almost nothing to ask again.
+    /// </para>
+    /// <para>
+    /// The idle rule is deliberately not re-checked, and could not be without re-running the
+    /// scan. What could have changed is that a conversation idle for days received a message in
+    /// the milliseconds since — and these messages were prunable at the instant the sweep looked,
+    /// exactly as they would have been to a sweep that ran a second earlier. That is not a loss
+    /// the policy did not already sanction. The floor clauses are the ones where the answer
+    /// genuinely differs, and those are here.
+    /// </para>
+    /// </remarks>
+    private const string DeleteStatement =
+        """
+        DELETE FROM messages
+         WHERE id IN @Ids
+
+           -- Absolute: an exchange still open or orphaned may be replayed by section 14, and
+           -- the question text is what there would be to replay. Bounded on its own, since
+           -- ghosting closes an orphan, so nothing needs to override it.
+           AND NOT EXISTS (SELECT 1 FROM exchanges x
+                            WHERE x.id = messages.exchange_id
+                              AND x.state IN ('OPEN', 'ORPHANED'))
+
+           -- Absolute: inside the deduplication window of section 13.1, where the row is still
+           -- doing work. Removing one there would let a byte-identical message through, so an
+           -- operator tightening retention could break deduplication as a side effect -- the
+           -- exact thing the floor exists to stop. The bucketed backstop index needs no separate
+           -- allowance: a bucket is the same length as the window, so a row older than the
+           -- window is always in a strictly older bucket and constrains no insert that could
+           -- still arrive.
+           AND unixepoch(created_utc) <= @NowSeconds - @DeduplicationSeconds
+
+           -- Not absolute: an undelivered message is somebody's inbox, and nothing ever clears
+           -- an inbox nobody reads. An agent that never attaches never collects, so this is the
+           -- one clause with no terminal state -- and the age cap reaches it, or the cap is not
+           -- a cap.
+           AND (delivered_utc IS NOT NULL
+                OR unixepoch(created_utc) <= @NowSeconds - @MaximumAgeSeconds);
         """;
 
     private readonly SqliteConnection _connection =
@@ -171,7 +223,7 @@ public sealed class Pruner(SqliteConnection connection)
     /// <param name="policy">The retention policy to apply.</param>
     /// <param name="nowUtc">The instant to measure ages against.</param>
     /// <param name="cancellationToken">Cancels the pass.</param>
-    /// <returns>How many messages were removed, and how many the floor kept.</returns>
+    /// <returns>How many were removed, how many the floor kept, and how many another sweep had.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="policy"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="policy"/> is unusable.</exception>
     /// <remarks>
@@ -202,28 +254,85 @@ public sealed class Pruner(SqliteConnection connection)
         ArgumentNullException.ThrowIfNull(policy);
         policy.Validate();
 
-        var parameters = new
+        var parameters = new Windows(
+            nowUtc.ToUnixTimeSeconds(),
+            (long)MessageIdentity.DeduplicationWindow.TotalSeconds,
+            (long)policy.IdlePeriod.TotalSeconds,
+            (long)policy.MaximumAge.TotalSeconds);
+
+        // Outside any transaction, and that is the point rather than an omission. A single
+        // statement is atomic in SQLite, so it needs none for consistency — and taking one would
+        // mean holding the IMMEDIATE lock admission needs for the whole walk of the log. On two
+        // hundred thousand messages that walk is half a second and a drain is several, against a
+        // busy_timeout of five: large enough, and questions would fail outright rather than wait.
+        var spent = await _connection.QueryAsync<long>(
+            new CommandDefinition(
+                SpentRows, parameters, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        var prunable = spent as List<long> ?? [.. spent];
+
+        var removed = 0;
+        var held = 0;
+        var contended = 0;
+
+        for (var offset = 0; offset < prunable.Count; offset += DeleteBatch)
         {
-            NowSeconds = nowUtc.ToUnixTimeSeconds(),
-            DeduplicationSeconds = (long)MessageIdentity.DeduplicationWindow.TotalSeconds,
-            IdleSeconds = (long)policy.IdlePeriod.TotalSeconds,
-            MaximumAgeSeconds = (long)policy.MaximumAge.TotalSeconds
-        };
+            cancellationToken.ThrowIfCancellationRequested();
 
-        using var scope = WriteScope.Begin(_connection, ambient: null);
+            var batch = prunable.GetRange(offset, Math.Min(DeleteBatch, prunable.Count - offset));
 
-        var held = await _connection.ExecuteScalarAsync<int>(
-            new CommandDefinition(
-                HeldCount, parameters, scope.Transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
+            // One transaction per batch, so the lock is held for a few primary-key deletes at a
+            // time. A pass interrupted halfway leaves the remainder exactly as the next sweep
+            // would find it anyway: pruning is idempotent, and there is no state that is only
+            // correct once all of it has been written. The reaper reaches the same arrangement
+            // from the same reasoning.
+            using var scope = WriteScope.Begin(_connection, ambient: null);
 
-        var removed = await _connection.ExecuteAsync(
-            new CommandDefinition(
-                DeleteStatement, parameters, scope.Transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
+            var went = await _connection.ExecuteAsync(
+                new CommandDefinition(
+                    DeleteStatement, Bind(batch, parameters), scope.Transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        scope.Complete();
+            var surviving = await _connection.ExecuteScalarAsync<int>(
+                new CommandDefinition(
+                    SurvivorCount, new { Ids = batch }, scope.Transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        return new PruneResult(removed, held);
+            scope.Complete();
+
+            removed += went;
+
+            // Present but not deleted means the floor refused it a moment after releasing it.
+            // Neither deleted nor present means another sweep had it first.
+            held += surviving;
+            contended += batch.Count - went - surviving;
+        }
+
+        return new PruneResult(removed, held, contended);
     }
+
+    /// <summary>Binds a batch of identifiers alongside the windows the floor is re-checked on.</summary>
+    /// <param name="ids">The identifiers to delete.</param>
+    /// <param name="windows">The windows.</param>
+    /// <returns>The parameter object for one delete.</returns>
+    private static object Bind(IReadOnlyList<long> ids, Windows windows) => new
+    {
+        Ids = ids,
+        windows.NowSeconds,
+        windows.DeduplicationSeconds,
+        windows.MaximumAgeSeconds
+    };
+
+    /// <summary>The instants and durations the statements are evaluated against.</summary>
+    /// <param name="NowSeconds">The instant of the sweep, as a Unix timestamp.</param>
+    /// <param name="DeduplicationSeconds">The window of SPEC.md §13.1.</param>
+    /// <param name="IdleSeconds">The idle period of §9.4.</param>
+    /// <param name="MaximumAgeSeconds">The age cap of §9.4.</param>
+    /// <remarks>
+    /// Named rather than anonymous because the delete binds a subset of it, and two anonymous
+    /// types that had to agree on four parameter names is the kind of agreement nothing checks.
+    /// </remarks>
+    private sealed record Windows(
+        long NowSeconds, long DeduplicationSeconds, long IdleSeconds, long MaximumAgeSeconds);
+
 }

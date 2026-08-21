@@ -85,6 +85,11 @@ public sealed class RetentionSweepTests : IDisposable
         await broker.DrainInboxAsync(Orders, T0.AddMinutes(3), cancellationToken: Ct);
     }
 
+    /// <summary>Closes a discussion by operator decision, so its messages fall due at once.</summary>
+    private async Task Conclude(string conversationId, DateTimeOffset at) =>
+        Assert.True(await new ConversationRepository(_connection)
+            .ForceConcludeAsync(conversationId, at, cancellationToken: Ct));
+
     [Fact]
     public async Task The_ordinary_tick_applies_the_retention_policy()
     {
@@ -161,7 +166,85 @@ public sealed class RetentionSweepTests : IDisposable
         Assert.Equal(1, result.Retention.HeldByFloor);
     }
 
+    [Fact]
+    public async Task Retention_runs_on_its_own_cadence_and_not_on_every_tick()
+    {
+        // The reaper enforces deadlines and must run at the cadence of the shortest one.
+        // Retention is measured in days, and its pass is a full walk of the message log under
+        // the lock admission takes — so a sweep every minute spends that on every question in
+        // the deployment to discover something that could not have changed.
+        var broker = new Broker(_connection, BrokerOptions.Default);
+        await broker.StartAsync(Orders, T0, Ct);
+
+        await SettledExchange(broker, "pricing");
+
+        // The first tick after a start prunes whatever the interval says. Nothing is due yet, so
+        // it only claims the slot.
+        Assert.Equal(0, (await broker.TickAsync(T0.AddMinutes(10), Ct)).Retention.Removed);
+
+        // Concluding short-circuits the idle period, so everything in the discussion falls due
+        // at once — which is what makes this observable inside an hour at all.
+        await Conclude("pricing", T0.AddMinutes(11));
+
+        // Due, and not looked at: the interval has not elapsed.
+        Assert.Equal(0, (await broker.TickAsync(T0.AddMinutes(12), Ct)).Retention.Removed);
+        Assert.Equal(2, await MessageCount());
+
+        // An hour after the last pass, it runs.
+        Assert.Equal(2, (await broker.TickAsync(T0.AddMinutes(70), Ct)).Retention.Removed);
+    }
+
+    [Fact]
+    public async Task A_broker_that_has_just_started_prunes_on_its_first_tick()
+    {
+        // Otherwise a project whose agents are spawned per question and exit again would never
+        // reach the interval, and its log would grow without bound while every server reported
+        // a healthy sweep.
+        var broker = new Broker(_connection, BrokerOptions.Default);
+        await broker.StartAsync(Orders, T0, Ct);
+
+        await SettledExchange(broker, "pricing");
+
+        var restarted = new Broker(_connection, BrokerOptions.Default);
+        await restarted.StartAsync(Orders, T0.AddDays(4), Ct);
+
+        Assert.Equal(2, (await restarted.TickAsync(T0.AddDays(4), Ct)).Retention.Removed);
+    }
+
+    [Fact]
+    public async Task An_interval_can_be_shortened_to_the_tick()
+    {
+        // The dial exists, and the every-tick behaviour is reachable through it. A deployment
+        // that wants retention applied the moment something falls due can have it; it is a
+        // decision with a cost rather than the default.
+        var options = BrokerOptions.Default with { RetentionInterval = TimeSpan.FromTicks(1) };
+
+        var broker = new Broker(_connection, options);
+        await broker.StartAsync(Orders, T0, Ct);
+
+        await SettledExchange(broker, "pricing");
+
+        Assert.Equal(0, (await broker.TickAsync(T0.AddMinutes(10), Ct)).Retention.Removed);
+
+        await Conclude("pricing", T0.AddMinutes(11));
+
+        // The same two minutes that changed nothing under the default.
+        Assert.Equal(2, (await broker.TickAsync(T0.AddMinutes(12), Ct)).Retention.Removed);
+    }
+
     // ---- configuration ----
+
+    [Fact]
+    public void An_interval_of_zero_is_refused()
+    {
+        // It would restore the every-tick sweep the interval exists to replace, and do it
+        // silently: the deployment would work, and pay a full pass over the log for every
+        // question anybody asked.
+        var options = BrokerOptions.Default with { RetentionInterval = TimeSpan.Zero };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Broker(_connection, options));
+    }
+
 
     [Fact]
     public void An_age_cap_shorter_than_an_exchange_lives_is_refused()

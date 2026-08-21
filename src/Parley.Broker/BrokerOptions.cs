@@ -12,6 +12,7 @@ namespace Parley.Broker;
 /// How long an agent counts as attached after it was last heard from.
 /// </param>
 /// <param name="Retention">How long the message log keeps what it carried. See SPEC.md §9.4.</param>
+/// <param name="RetentionInterval">How often <see cref="Broker.TickAsync"/> applies it.</param>
 /// <remarks>
 /// <para>
 /// The division here is not arbitrary. <see cref="ExchangePolicy"/> is stamped onto every
@@ -39,7 +40,8 @@ public sealed record BrokerOptions(
     ResumePolicy ResumePolicy,
     IResumeGate ResumeGate,
     TimeSpan LivenessLease,
-    RetentionPolicy Retention)
+    RetentionPolicy Retention,
+    TimeSpan RetentionInterval)
 {
     /// <summary>
     /// How long an agent counts as attached when a deployment specifies nothing.
@@ -68,6 +70,32 @@ public sealed record BrokerOptions(
     public static TimeSpan DefaultLivenessLease { get; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
+    /// How often the sweep applies the retention policy, when a deployment specifies nothing.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Retention is not a deadline, which is what separates it from everything else the tick
+    /// does. The reaper enforces windows measured in minutes and must run at that cadence or a
+    /// peer waits past a deadline that has already passed. The idle period of SPEC.md §9.4 is
+    /// measured in days, so a sweep every minute spends a full pass over the message log to
+    /// discover something that could not have changed since the last one.
+    /// </para>
+    /// <para>
+    /// It is not free to discover it. The pass runs under the same <c>IMMEDIATE</c> lock
+    /// admission takes, so its cost is paid by every question in the deployment: measured
+    /// against a log of twenty thousand messages it was eighty milliseconds, and against two
+    /// hundred thousand it was a second — on every tick, of every server, whether or not
+    /// anything was due. An hour turns that into noise without letting anything outlive its
+    /// policy by a margin that matters against a floor of days.
+    /// </para>
+    /// <para>
+    /// The first tick after a start prunes regardless, so a deployment whose sessions are short
+    /// still forgets. That also makes the cost visible where it is cheapest to notice.
+    /// </para>
+    /// </remarks>
+    public static TimeSpan DefaultRetentionInterval { get; } = TimeSpan.FromHours(1);
+
+    /// <summary>
     /// The configuration applied when a deployment specifies none.
     /// </summary>
     /// <remarks>
@@ -82,7 +110,8 @@ public sealed record BrokerOptions(
         Core.ResumePolicy.Never,
         AlwaysResume.Instance,
         DefaultLivenessLease,
-        RetentionPolicy.Default);
+        RetentionPolicy.Default,
+        DefaultRetentionInterval);
 
     /// <summary>
     /// Throws if the configuration is unusable.
@@ -136,6 +165,16 @@ public sealed record BrokerOptions(
         {
             throw new ArgumentOutOfRangeException(
                 nameof(LivenessLease), LivenessLease, "The liveness lease must be positive.");
+        }
+
+        // Zero would restore the every-tick sweep this interval exists to replace, and would do
+        // it silently -- the deployment would work, and pay a full pass over the message log for
+        // every question anybody asked.
+        if (RetentionInterval <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(RetentionInterval), RetentionInterval,
+                "The retention sweep interval must be positive.");
         }
     }
 }

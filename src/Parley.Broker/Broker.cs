@@ -56,6 +56,25 @@ public sealed class Broker
     private readonly Pruner _pruner;
     private readonly BrokerOptions _options;
 
+    /// <summary>
+    /// When this broker last applied the retention policy, or <see langword="null"/> if it has
+    /// not since starting.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Per process rather than stored, and deliberately so. A persisted timestamp would be one
+    /// more row for several servers to contend over, and the consequence of losing it is that a
+    /// restarted broker prunes once on its first tick — which is what it should do anyway, since
+    /// a deployment whose sessions are short would otherwise never reach the interval at all.
+    /// </para>
+    /// <para>
+    /// Private, unlike <see cref="StartedUtc"/>. That one is read by the ghosting clock and so
+    /// is part of what a host reasons about; this is pacing, and a caller that could see it would
+    /// be able to act on how often the sweep runs rather than on the state of the log.
+    /// </para>
+    /// </remarks>
+    private DateTimeOffset? _prunedUtc;
+
     /// <summary>SQLite's extended result code for a unique index violation.</summary>
     /// <remarks>
     /// The code says what kind of failure occurred and is stable; it does not say which index
@@ -102,6 +121,8 @@ public sealed class Broker
     /// elapsed while nothing could possibly have resumed them.
     /// </remarks>
     public DateTimeOffset? StartedUtc { get; private set; }
+
+
 
     /// <summary>
     /// Gets the agent this broker attached for, or <see langword="null"/> before it has.
@@ -1245,8 +1266,22 @@ public sealed class Broker
         // easier by running after this one. Ghosting closes an orphan, which lifts the floor
         // clause holding its messages; concluding a conversation short-circuits the idle period
         // for everything in it. Pruning first would simply defer both to the next tick.
-        var pruned = await _pruner
-            .PruneAsync(_options.Retention, nowUtc, cancellationToken).ConfigureAwait(false);
+        //
+        // And on its own schedule, unlike them. They enforce deadlines and must run at the
+        // cadence of the shortest one; retention is measured in days, and its pass is a full
+        // walk of the message log under the lock admission takes. See
+        // BrokerOptions.DefaultRetentionInterval for what that cost measured.
+        var pruned = PruneResult.Nothing;
+
+        if (_prunedUtc is not { } last || nowUtc - last >= _options.RetentionInterval)
+        {
+            pruned = await _pruner
+                .PruneAsync(_options.Retention, nowUtc, cancellationToken).ConfigureAwait(false);
+
+            // Recorded after the pass rather than before, so a sweep that threw is retried on
+            // the next tick instead of waiting out an interval it never used.
+            _prunedUtc = nowUtc;
+        }
 
         return new TickResult(swept, concluded, pruned);
     }

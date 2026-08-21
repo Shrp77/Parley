@@ -250,6 +250,20 @@ public sealed class OperatorCommands
                 "or deduplication as a side effect.").ConfigureAwait(false);
         }
 
+        if (result.Contended > 0)
+        {
+            // Reported apart from the floor because it means the opposite thing. The floor
+            // holding traffic is worth looking into; another sweep having got there first is the
+            // system working — every agent's server prunes on its own schedule, and this command
+            // is not the only thing applying the policy.
+            var contended = result.Contended.ToString(CultureInfo.InvariantCulture);
+
+            await _output.WriteLineAsync(
+                $"{contended} were already gone: an agent's server swept them between this " +
+                "command deciding and doing. Nothing is wrong — every server applies the same " +
+                "policy on its own schedule.").ConfigureAwait(false);
+        }
+
         return 0;
     }
 
