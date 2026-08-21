@@ -35,16 +35,18 @@ namespace Parley.Store;
 /// sitting open or a peer has stopped collecting its inbox.
 /// </para>
 /// </remarks>
-public readonly record struct PruneResult(int Removed, int HeldByFloor, int Contended)
+public sealed record PruneResult(int Removed, int HeldByFloor, int Contended)
 {
     /// <summary>
-    /// The result of a tick that did not reach its retention interval.
+    /// The result of a pass that did nothing, including a tick that did not reach its retention
+    /// interval.
     /// </summary>
     /// <remarks>
-    /// Distinct from "swept and found nothing" only in that no scan happened, and deliberately
-    /// not distinguished in the type. A caller acting differently on the two would be acting on
-    /// how often the sweep runs rather than on the state of the log, and the interval is not a
-    /// fact about the deployment worth propagating that far.
+    /// A tick that skipped the sweep is distinct from one that swept and found nothing only in
+    /// that no scan happened, and the two are deliberately not distinguished here. A caller
+    /// acting differently on them would be acting on how often the sweep runs rather than on the
+    /// state of the log, and the interval is not a fact about the deployment worth propagating
+    /// that far.
     /// </remarks>
-    public static PruneResult Nothing { get; }
+    public static PruneResult Nothing { get; } = new(0, 0, 0);
 }

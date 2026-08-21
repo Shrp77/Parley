@@ -1360,11 +1360,15 @@ below reaches that clause, and only that clause. Leaving it absolute would put t
 unbounded corner of the log in the part carrying the full text of every question, held open
 by exactly the failure §14 exists to bound elsewhere.
 
-Little is lost by that. A question survives its exchange only after the exchange was ghosted
-and its asker told (§14), and §10.1's `get_messages` already withholds a question whose
-exchange has ended — so what the cap removes at that point is text no delivery would return.
-The remedy for an agent that is not coming back is `retire` (§10.2), which is a decision
-about the registry and does not depend on this.
+What that costs is worth stating exactly rather than waving at. A question outlives its
+exchange only after the exchange was ghosted, and §10.1's `get_messages` already withholds a
+question whose exchange has ended, so removing one takes text no delivery would have
+returned. The ghost notice is the real case: it *would* be delivered, and past the cap it is
+removed unread. That is the trade — an agent absent for the whole configured lifetime of the
+log loses the news that a question it asked that long ago went unanswered, while the exchange
+row recording `ghosted` survives for §15 either way. The remedy for an agent that is not
+coming back is `retire` (§10.2), which is a decision about the registry and does not depend
+on this.
 
 **The idle rule.** Once every exchange in a conversation is closed and nothing has been
 added to it for the configured idle period, the discussion is over and its messages are
@@ -1384,6 +1388,22 @@ participants have said the discussion is over, which is better evidence than sil
 arrives sooner. The idle rule remains for everything else, which is most conversations —
 agreeing to conclude is a courtesy, not an obligation, and nothing degrades if nobody
 bothers.
+
+That inherits §5.0's membership rule, and it is worth stating what the two compose to. A
+conversation identifier is a claim rather than a verified fact, so an agent that knows one
+joins by naming it on a question; and §5.0 polls only participants holding a live exchange,
+because an agent whose exchanges have all closed has already said what it had to say. A
+discussion where everybody has finished therefore polls nobody and closes on the first
+proposal — including one made by an agent that joined a moment earlier. Composed with this
+rule, that agent brings forward the deletion of two others' message text by up to the idle
+period.
+
+This is bounded rather than prevented, and the bound is the argument. It removes nothing the
+policy was not going to remove, reaches nothing still in flight — the floor holds every live
+exchange absolutely — and leaves the exchange rows §15 is computed from untouched. Preventing
+it instead would mean either refusing to honour a consensus the protocol just recorded, or
+making membership a verified fact, which §5.0 declines to do for reasons of its own. An
+operator who needs a discussion to outlive the policy exports it.
 
 **The age cap.** Nothing outlives the configured maximum age, whatever the idle rule
 concludes. This bounds a conversation that never falls silent long enough to trip it.

@@ -1,5 +1,4 @@
-using System.Diagnostics;
-using System.Globalization;
+﻿using System.Globalization;
 using Microsoft.Data.Sqlite;
 using Xunit;
 
@@ -41,54 +40,6 @@ public sealed class ForeignDatabaseTests : IDisposable
         }
     }
 
-    private static (string FileName, string? Argument) Tool()
-    {
-        var directory = Path.GetDirectoryName(typeof(ForeignDatabaseTests).Assembly.Location)!;
-        var apphost = Path.Combine(directory, OperatingSystem.IsWindows() ? "parley.exe" : "parley");
-
-        if (File.Exists(apphost))
-        {
-            return (apphost, null);
-        }
-
-        var library = Path.Combine(directory, "parley.dll");
-        Assert.True(File.Exists(library), $"expected the tool beside the tests in {directory}");
-
-        return ("dotnet", library);
-    }
-
-    private static (int ExitCode, string Error) Run(params string[] arguments)
-    {
-        var (fileName, argument) = Tool();
-        var start = new ProcessStartInfo(fileName)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false
-        };
-
-        if (argument is not null)
-        {
-            start.ArgumentList.Add(argument);
-        }
-
-        foreach (var value in arguments)
-        {
-            start.ArgumentList.Add(value);
-        }
-
-        // Cleared so an operator's own environment cannot decide which database the test reads.
-        start.Environment["PARLEY_DB"] = "";
-
-        using var process = Process.Start(start)!;
-        var error = process.StandardError.ReadToEnd();
-        process.StandardOutput.ReadToEnd();
-
-        Assert.True(process.WaitForExit(TimeSpan.FromSeconds(30)), "the tool never exited");
-
-        return (process.ExitCode, error);
-    }
-
     private string MakeForeignDatabase()
     {
         var path = Path.Combine(_directory, "app.db");
@@ -126,7 +77,7 @@ public sealed class ForeignDatabaseTests : IDisposable
     {
         var path = MakeForeignDatabase();
 
-        var (exitCode, error) = Run("--db", path, "agents");
+        var (exitCode, error) = ToolProcess.Run("--db", path, "agents");
 
         Assert.Equal(78, exitCode);
         Assert.Contains("not a Parley database", error, StringComparison.Ordinal);
@@ -146,7 +97,7 @@ public sealed class ForeignDatabaseTests : IDisposable
         // question about the wrong directory.
         var path = Path.Combine(_directory, "nowhere.db");
 
-        var (exitCode, error) = Run("--db", path, "agents");
+        var (exitCode, error) = ToolProcess.Run("--db", path, "agents");
 
         Assert.Equal(78, exitCode);
         Assert.Contains("created by the first agent server", error, StringComparison.Ordinal);
@@ -159,7 +110,8 @@ public sealed class ForeignDatabaseTests : IDisposable
         // `parley export --db` used to reach the export with "--db" as the conversation
         // identifier and run a real query against it. A flag in the wrong place silently
         // becoming data is the worst reading of a mistyped command, because it succeeds.
-        var (exitCode, error) = Run("--db", MakeForeignDatabase(), "export", "--db");
+        var (exitCode, error) = ToolProcess.Run(
+            "--db", MakeForeignDatabase(), "export", "--db");
 
         Assert.Equal(64, exitCode);
         Assert.Contains("is not an option", error, StringComparison.Ordinal);

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Microsoft.Data.Sqlite;
 using Parley.Broker;
 using Parley.Core;
@@ -161,62 +160,6 @@ public sealed class PruneCommandTests : IDisposable
 
     // ---- the process ----
 
-    private static (string FileName, string? Argument) Tool()
-    {
-        var directory = Path.GetDirectoryName(typeof(PruneCommandTests).Assembly.Location)!;
-        var apphost = Path.Combine(directory, OperatingSystem.IsWindows() ? "parley.exe" : "parley");
-
-        if (File.Exists(apphost))
-        {
-            return (apphost, null);
-        }
-
-        var library = Path.Combine(directory, "parley.dll");
-        Assert.True(File.Exists(library), $"expected the tool beside the tests in {directory}");
-
-        return ("dotnet", library);
-    }
-
-    private static (int ExitCode, string Error) Run(
-        (string Name, string Value)[] environment, params string[] arguments)
-    {
-        var (fileName, argument) = Tool();
-        var start = new ProcessStartInfo(fileName)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false
-        };
-
-        if (argument is not null)
-        {
-            start.ArgumentList.Add(argument);
-        }
-
-        foreach (var value in arguments)
-        {
-            start.ArgumentList.Add(value);
-        }
-
-        // Cleared first, so an operator's own environment cannot decide what the test reads.
-        start.Environment["PARLEY_DB"] = "";
-        start.Environment[RetentionPolicyEnvironment.IdleVariable] = "";
-        start.Environment[RetentionPolicyEnvironment.MaximumAgeVariable] = "";
-
-        foreach (var (name, value) in environment)
-        {
-            start.Environment[name] = value;
-        }
-
-        using var process = Process.Start(start)!;
-        var error = process.StandardError.ReadToEnd();
-        process.StandardOutput.ReadToEnd();
-
-        Assert.True(process.WaitForExit(TimeSpan.FromSeconds(30)), "the tool never exited");
-
-        return (process.ExitCode, error);
-    }
-
     /// <summary>Builds a real Parley database with one message in it.</summary>
     private async Task<string> ProjectDatabase()
     {
@@ -266,7 +209,7 @@ public sealed class PruneCommandTests : IDisposable
         // time anybody checks.
         var path = await ProjectDatabase();
 
-        var (exitCode, error) = Run(
+        var (exitCode, error) = ToolProcess.Run(
             [(RetentionPolicyEnvironment.IdleVariable, "soon")], "--db", path, "prune");
 
         Assert.Equal(78, exitCode);
@@ -284,7 +227,7 @@ public sealed class PruneCommandTests : IDisposable
         // better than the alternatives, both of which are wrong in a way that looks like success.
         var path = await ProjectDatabase();
 
-        var (exitCode, _) = Run([], "--db", path, "prune", "pricing");
+        var (exitCode, _) = ToolProcess.Run("--db", path, "prune", "pricing");
 
         Assert.Equal(64, exitCode);
         Assert.Equal(1, await MessageCount(path));
@@ -344,12 +287,12 @@ public sealed class PruneCommandTests : IDisposable
         // that they are being read at all is for two settings to reach different answers.
         var path = await RecentlySettledDatabase();
 
-        var (unconfigured, _) = Run([], "--db", path, "prune");
+        var (unconfigured, _) = ToolProcess.Run("--db", path, "prune");
 
         Assert.Equal(0, unconfigured);
         Assert.Equal(2, await MessageCount(path));
 
-        var (configured, error) = Run(
+        var (configured, error) = ToolProcess.Run(
             [
                 (RetentionPolicyEnvironment.IdleVariable, "1"),
                 (RetentionPolicyEnvironment.MaximumAgeVariable, "1")
@@ -369,7 +312,7 @@ public sealed class PruneCommandTests : IDisposable
         // still replay it, and the question text is what there would be to replay.
         var path = await ProjectDatabase();
 
-        var (exitCode, _) = Run(
+        var (exitCode, _) = ToolProcess.Run(
             [
                 (RetentionPolicyEnvironment.IdleVariable, "1"),
                 (RetentionPolicyEnvironment.MaximumAgeVariable, "1")
