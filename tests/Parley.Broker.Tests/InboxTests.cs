@@ -280,13 +280,25 @@ public sealed class InboxTests : IDisposable
     }
 
     [Fact]
-    public async Task Delivering_against_a_closed_exchange_still_hands_the_message_over()
+    public async Task Delivering_against_a_closed_exchange_starts_no_working_window()
     {
-        // Between the pending read and the write, an exchange may have been answered or swept.
-        // Neither is a reason to fail the drain: the message was genuinely delivered, and an
-        // exchange that is not open has no working window to start.
+        // Two claims that used to be tested as one, and only the second survives.
+        //
+        // A closed exchange has no working window to start, so a delivery that lands on one
+        // leaves its clock alone rather than failing. That still holds, and it is what makes the
+        // race between the pending read and the delivery write harmless.
+        //
+        // What no longer holds is that the message is handed over at all — for a Question. It
+        // asks for a move, and a closed exchange has none left, so an agent given one spends a
+        // turn being refused. That was reachable in the worst way: an exchange ghosted while its
+        // question sat uncollected handed the question to the peer at the same moment it told
+        // the asker nobody had answered.
+        //
+        // A Clarify is still delivered, which is why this checks one: it is what a peer said
+        // inside an exchange the recipient is party to, not a request nobody can act on.
         var exchange = await Ask(Orders, Billing, "q");
         await Send(MessageType.Question, Orders, Billing, exchange.Id, "gross or net?");
+        await Send(MessageType.Clarify, Orders, Billing, exchange.Id, "gross of VAT.");
 
         Assert.True(exchange.Answer(Billing, T0.AddSeconds(1)).Succeeded);
         Assert.True(await _exchanges.SaveAsync(
@@ -295,11 +307,32 @@ public sealed class InboxTests : IDisposable
         var drained = (await _broker.DrainInboxAsync(
             Billing, T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken)).Messages;
 
-        Assert.Single(drained);
+        Assert.Equal(MessageType.Clarify, Assert.Single(drained).Message.Type);
 
         var loaded = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ExchangeState.Closed, loaded!.State);
         Assert.Null(loaded.DeliveredUtc);
+    }
+
+    [Fact]
+    public async Task A_question_whose_exchange_has_ended_is_not_handed_over()
+    {
+        // The case that made this worth changing. A question nobody collected before its
+        // exchange ran out of time is ghosted, and §14 tells the asker that no answer is
+        // coming — while the peer, drainining afterwards, was handed the question and refused
+        // when it tried to answer. The two halves of one exchange disagreed.
+        var exchange = await Ask(Orders, Billing, "q");
+        await Send(MessageType.Question, Orders, Billing, exchange.Id, "gross or net?");
+
+        Assert.True(exchange.Orphan(T0.AddMinutes(20)).Succeeded);
+        Assert.True(exchange.Ghost(T0.AddDays(1)).Succeeded);
+        Assert.True(await _exchanges.SaveAsync(
+            exchange, cancellationToken: TestContext.Current.CancellationToken));
+
+        var drained = (await _broker.DrainInboxAsync(
+            Billing, T0.AddDays(2), cancellationToken: TestContext.Current.CancellationToken)).Messages;
+
+        Assert.Empty(drained);
     }
 
     [Fact]

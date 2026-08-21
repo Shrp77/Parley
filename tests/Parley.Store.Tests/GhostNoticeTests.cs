@@ -236,6 +236,47 @@ public sealed class GhostNoticeTests : IDisposable
     }
 
     [Fact]
+    public async Task An_exchange_is_not_closed_when_its_notice_cannot_be_written()
+    {
+        // The half of "one write" that is not about crashes. A deduplicated append writes no row
+        // and reports it in the outcome instead of throwing, so a sweep that ignored the outcome
+        // would commit the close beside a notice that is not there — "ghosted with nobody told",
+        // reached by the one path that does not look like a failure.
+        //
+        // The notice is planted with the exact payload the reaper will build, which is why
+        // GhostNotice is reachable from here: reproducing it by hand would give a test that
+        // passes when two copies of one construction agree, and says nothing about the reaper.
+        var ct = TestContext.Current.CancellationToken;
+        var payload = Question("Deciding where the tax rate lives.", Consequences);
+
+        var opened = await _exchanges.TryOpenAsync(Orders, Billing, T0, payload, cancellationToken: ct);
+
+        await _messages.AppendAsync(
+            opened.Exchange!.Id, MessageType.Question, Orders, Billing, "test-model", payload, T0,
+            cancellationToken: ct);
+
+        await _reaper.SweepAsync(T0.AddHours(9), T0, ct);
+
+        var planted = await _messages.AppendAsync(
+            opened.Exchange.Id, MessageType.Ghost, Billing, Orders, "parley:broker",
+            GhostNotice.For(Billing, payload), T0.AddDays(2), cancellationToken: ct);
+
+        Assert.True(planted.Stored, "the probe needs its own notice to have been written");
+
+        var swept = await _reaper.SweepAsync(T0.AddDays(2), T0, ct);
+
+        // Refused, and counted as contention rather than as a ghosting.
+        Assert.Equal(0, swept.Ghosted);
+        Assert.Equal(1, swept.Contended);
+
+        var exchange = await _exchanges.GetAsync(opened.Exchange.Id, cancellationToken: ct);
+
+        Assert.Equal(ExchangeState.Orphaned, exchange!.State);
+        Assert.Equal(1, await _connection.ExecuteScalarAsync<long>(
+            "SELECT count(*) FROM messages WHERE type = 'ghost';"));
+    }
+
+    [Fact]
     public async Task An_exchange_that_was_answered_gets_no_notice()
     {
         // The other side, so the sweep is not simply writing one for everything it touches.

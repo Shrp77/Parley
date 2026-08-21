@@ -78,6 +78,11 @@ public sealed class Reaper(
     /// rather than a loophole.
     /// </para>
     /// <para>
+    /// A notice the store deduplicates counts as contention for the same reason a refused save
+    /// does: it means this ghost has already been written, so somebody else is committing the
+    /// close, and this attempt has nothing to add.
+    /// </para>
+    /// <para>
     /// A refused save means another writer changed the exchange between the scan and here —
     /// usually because it was answered after all — and rolling back takes the notice with it, so
     /// the asker is not told nobody answered by the same sweep that lost the race to somebody
@@ -92,7 +97,7 @@ public sealed class Reaper(
         var question = await _messages
             .GetQuestionAsync(exchange.Id, cancellationToken).ConfigureAwait(false);
 
-        await _messages.AppendAsync(
+        var notice = await _messages.AppendAsync(
             exchange.Id,
             MessageType.Ghost,
             // From the agent that owed the answer, because from_agent names a registered agent
@@ -110,6 +115,17 @@ public sealed class Reaper(
             question?.ConversationId,
             scope.Transaction,
             cancellationToken).ConfigureAwait(false);
+
+        // Checked rather than assumed, on the one invariant this method exists to hold. A
+        // deduplicated append writes no row and says so in the outcome instead of throwing, so
+        // ignoring it would let the close commit beside a notice that is not there — which is
+        // exactly "ghosted with nobody told", reached by the one path that does not look like a
+        // failure. It cannot currently happen: the content hash covers the exchange id and an
+        // exchange is ghostable once. That is an argument, and this is a check.
+        if (!notice.Stored)
+        {
+            return false;
+        }
 
         if (!await _exchanges
                 .SaveAsync(exchange, transaction: scope.Transaction,

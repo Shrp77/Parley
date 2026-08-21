@@ -2094,6 +2094,17 @@ sweep would revisit it — the exchange is no longer orphaned — and the asker 
 message nothing will ever write again. Silence is the single outcome this section exists to
 prevent, so it must not be reachable by a crash between two statements.
 
+**A Question is not delivered once its exchange has ended.** A Question asks for a move, and
+an exchange that is not `OPEN` has none left — so handing one over spends an agent's turn on
+something it will be refused for. After a ghost it does worse than that: the peer is given the
+question at the same moment the asker is told nobody answered it, which is the two halves of
+one exchange contradicting each other.
+
+This applies to Questions alone. An Answer closes the exchange it belongs to and a Ghost exists
+because one closed, so neither can require an open exchange, and a Notify names none. A Clarify
+is delivered too: it is what a peer said inside an exchange the recipient is already party to,
+and withholding it drops something that was said rather than a request nobody can act on.
+
 **The notice is trimmed rather than dropped.** It carries the asker's `intent`,
 `sub_questions` and `consequences`, and those can exceed the message cap of rule 8.5 once the
 broker's own text is added. A notice that cannot be stored is a notice nobody receives, so a
