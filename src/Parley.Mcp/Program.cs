@@ -58,7 +58,10 @@ builder.Services.AddSingleton(provider =>
 builder.Services.AddHostedService<SweepService>();
 
 builder.Services
-    .AddMcpServer()
+    // Instructions travel with the protocol, which makes this the one way to tell a model what
+    // Parley is for that does not depend on which vendor's client it lives in. See
+    // ParleyInstructions for what belongs in it and what deliberately does not.
+    .AddMcpServer(server => server.ServerInstructions = ParleyInstructions.Text)
     .WithStdioServerTransport()
     .WithTools<ParleyTools>();
 

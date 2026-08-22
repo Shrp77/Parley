@@ -146,37 +146,31 @@ parameter, so no tool call can change who the caller is. Had it been a parameter
 agent could impersonate every other and the guarantee would rest on a model choosing not
 to.
 
-### 3. Tell the agent it has a peer
+### 3. Name the peers and the boundary
 
-**This is the step that makes Parley work, and nothing installs it for you.**
+The server introduces itself. When a client connects, Parley sends it a short description
+of what it is for — that peers exist in other repositories, that guessing at their code is
+the mistake to avoid, that the inbox is pull rather than push, and what a question has to
+carry. That arrives through the protocol, so it works in any MCP client without a file.
 
-Binding the tools tells an agent *how* to ask. It does not tell it *that there is anyone
-to ask*, or which questions are not its to answer. That belongs in whatever file your
-client reads as standing instructions for a repository — `CLAUDE.md` for Claude Code,
-`AGENTS.md` for several other tools, a system prompt, or a project rules file. The
-content is the same wherever it goes:
+What the server cannot know is **which** peers this repository has and **which** boundary
+it does not own. That part is yours, and it goes in whatever file your client reads as
+standing instructions — `CLAUDE.md` for Claude Code, `AGENTS.md` for several other tools,
+a system prompt, or a project rules file. It can be short:
 
 ```markdown
-## Reaching billing
+## Peers
 
-The `billing` agent works in a separate repository and a separate session. Reach it
-with the `parley` tools:
+`billing` owns invoicing and tax. This repository computes a net order total and does not
+apply VAT.
 
-- `parley_ask` — one question, with an intent, sub-questions, and consequences. State
-  what you will do with each possible answer; a question that does not is refused.
-- `parley_inbox` — collect what is waiting for you. Nothing arrives unprompted, so
-  check when you start work.
-- `parley_answer` / `parley_clarify` — when billing asks you something.
-- `parley_conclude` — when a discussion is finished.
-
-Asking does not block. If billing never replies you are told so rather than waiting.
-
-**Do not guess at billing's behaviour and do not edit billing's repository.** Ask.
+**Do not guess at billing's behaviour and do not edit its repository.** Ask it, with
+`parley`.
 ```
 
-Two lines of that do most of the work: naming the peer, and saying which boundary the
-agent does not own. Without them an agent will confidently invent the other side's
-behaviour, which is the failure Parley exists to prevent.
+Naming the peer and saying which boundary you do not own is most of the value. Skip it and
+an agent will confidently invent the other side's behaviour, which is the failure Parley
+exists to prevent — the tools being bound is not enough on its own.
 
 ### What the agent can do
 
