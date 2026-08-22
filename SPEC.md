@@ -2285,3 +2285,25 @@ Cheap to collect, disproportionately useful:
    `Resume` preserving `clarify_depth` exists to prevent. Carrying depth forward onto a
    re-ask would fix it, but requires deciding what "the same question, asked again" means
    when the content differs enough to be admitted at all.
+
+10. How does an asker choose a recipient? Today, from the peer's name and from whatever
+    the deployment wrote into that agent's standing instructions. `Agents` (§10.1)
+    returns a name, an adapter, a tier and a status — nothing about what any of them owns
+    — so the only routing signal inside the protocol is the name, and everything else lives
+    in a file the protocol never sees, written once per repository and maintained by hand.
+
+    The design absorbs a wrong guess rather than preventing one. `out_of_scope` carries
+    `redirect_to` (§5.3), referral is a first-class outcome rather than a failure to answer,
+    and *refer, do not relay* keeps the correction to a single hop. Misrouting therefore
+    costs a message, not an answer, which is why the weak signal has been survivable.
+
+    What is open is whether the registry should carry a short, self-declared statement of
+    what each agent owns, returned by `Agents` beside the name. It would make routing live
+    and single-sourced, where standing instructions are per repository, drift silently, and
+    can disagree with one another about the same boundary. Against it: the statement is
+    self-declared, so it is exactly as trustworthy as the prose it replaces — it centralises
+    the claim without verifying it. A roster that describes every agent's domain also hands
+    each agent a map of the whole system, which is the disclosure §10.1 withholds the
+    workspace path to avoid, in softer form. And a free-text field that can hold a paragraph
+    will eventually hold one, so a cap would be doing the load-bearing work here exactly as
+    it does for messages (principle 2.2, rule 8.5).
