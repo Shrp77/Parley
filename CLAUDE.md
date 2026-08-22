@@ -206,3 +206,11 @@ implementation detail, and needs to be argued rather than assumed.
 - **Credentials are references, never values.** `env:`, `keychain:`, `file:`. The broker
   resolves them at invocation and never persists or logs them. This is what makes the
   manifest safe to commit.
+
+<!-- SPECKIT START -->
+Design work for a protocol change runs through Spec Kit: `/speckit-specify` writes
+`specs/<n>-<slug>/spec.md`, `/speckit-plan` writes `plan.md` beside it, `/speckit-tasks`
+writes `tasks.md`. Read the plan for the feature being worked on before implementing it.
+The constitution in `.specify/memory/constitution.md` restates the standing constraints
+below in the form Spec Kit's checks read; this file remains the authority when they differ.
+<!-- SPECKIT END -->
