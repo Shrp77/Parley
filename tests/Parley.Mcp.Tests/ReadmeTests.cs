@@ -1,6 +1,4 @@
-using System.Reflection;
 using System.Text.RegularExpressions;
-using Parley.Core;
 using Xunit;
 
 namespace Parley.Mcp.Tests;
@@ -31,33 +29,7 @@ public sealed class ReadmeTests
 
     /// <summary>Every variable name the server or the operator's tool reads.</summary>
     /// <returns>The names, from the constants that define them.</returns>
-    /// <remarks>
-    /// Read from the types rather than from a list written here, so a variable added to a launch
-    /// configuration is documented or the build says so. A list would be one more thing to keep
-    /// current, which is the failure this exists to catch.
-    /// </remarks>
-    private static IReadOnlyList<string> Variables()
-    {
-        var names = new[]
-            {
-                typeof(ServerOptions),
-                typeof(RetentionPolicyEnvironment),
-                typeof(DeploymentEnvironment)
-            }
-            .SelectMany(t => t.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly))
-            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
-            .Select(f => (string)f.GetRawConstantValue()!)
-            .Where(v => v.StartsWith("PARLEY_", StringComparison.Ordinal))
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(v => v, StringComparer.Ordinal)
-            .ToArray();
-
-        // Guarded, because a reflection query that matched nothing would make every assertion
-        // below pass against a README that documented none of them.
-        Assert.True(names.Length >= 5, $"only found {names.Length} variables; the constants moved");
-
-        return names;
-    }
+    private static IReadOnlyList<string> Variables() => DeploymentVariables.All();
 
     [Fact]
     public void Every_variable_a_server_reads_appears_in_the_readme()
