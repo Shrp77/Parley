@@ -39,32 +39,9 @@ public sealed class SpecifiedOperationTests
     /// </remarks>
     private const string Prefix = "parley_";
 
-    /// <summary>SPEC.md, located by walking up from the test assembly.</summary>
-    /// <remarks>
-    /// Line endings are normalised on load, for the reason <c>Parley.Spec.Tests</c> records: the
-    /// file is CRLF on Windows and LF on the Linux and macOS runners, and .NET anchors <c>$</c>
-    /// before a bare line feed only. A pattern anchored to end-of-line otherwise matches nothing
-    /// on one platform of three, and a check that passes on two runners is worse than no check.
-    /// </remarks>
-    private static string Specification()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (directory is not null)
-        {
-            var candidate = Path.Combine(directory.FullName, "SPEC.md");
-
-            if (File.Exists(candidate))
-            {
-                return File.ReadAllText(candidate).Replace("\r\n", "\n", StringComparison.Ordinal);
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException(
-            $"SPEC.md not found in any directory above {AppContext.BaseDirectory}.");
-    }
+    /// <summary>SPEC.md, normalised and located from the test assembly.</summary>
+    /// <returns>Its text.</returns>
+    private static string Specification() => RepositoryFile.Read("SPEC.md");
 
     /// <summary>The operation names in one section's table.</summary>
     /// <param name="section">The heading to read, as it appears in the document.</param>

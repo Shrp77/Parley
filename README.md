@@ -111,12 +111,21 @@ That puts `parley-mcp` on PATH, which is what lets a launch configuration name i
         "PARLEY_AGENT": "orders",                     // who this process speaks for
         "PARLEY_RESPONDER": "some-model-9",           // optional, see SPEC §11.3
         "PARLEY_WORKSPACE": "/src/acme-orders",       // optional, for the registry
-        "PARLEY_TICK_SECONDS": "60"                   // optional, sweep cadence
+        "PARLEY_TICK_SECONDS": "60",                  // optional, sweep cadence
+        "PARLEY_RETENTION_IDLE_HOURS": "72",          // optional, see SPEC §9.4
+        "PARLEY_RETENTION_MAX_AGE_HOURS": "720"       // optional, see SPEC §9.4
       }
     }
   }
 }
 ```
+
+The retention pair belongs here and not only in the operator's shell, because **the servers
+are what apply the policy** — every sweep prunes, and `prune` (§10.2) only brings the next one
+forward. Set them in one place and not the other and the agents quietly enforce the default
+while `parley prune` reports the numbers you meant. Left unset everywhere, retention still runs:
+§9.4 says an unbounded log is the thing Parley is not, so it defaults to three days idle and
+thirty days maximum rather than to keeping everything.
 
 Point every agent on a project at the same `PARLEY_DB` and they can talk. Nothing else
 is installed and nothing is left running: there is no daemon, no port, and no service to
