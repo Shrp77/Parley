@@ -91,6 +91,13 @@ model API itself, or running a script — the registry holds a *reference* (`env
 
 ## Running it
 
+Getting two agents talking takes three things: install the server, point each agent's
+client at it, and **tell each agent that it has a peer**. The third is the one people
+skip, and without it nothing happens — an agent with the tools bound but no idea a peer
+exists will answer from its own repository and guess at the rest.
+
+### 1. Install the server
+
 Parley ships an MCP server: one process per agent per project, launched by whatever MCP
 client the agent lives in.
 
@@ -99,7 +106,12 @@ dotnet pack src/Parley.Mcp -c Release
 dotnet tool install -g --add-source src/Parley.Mcp/bin/Release Parley.Mcp
 ```
 
-That puts `parley-mcp` on PATH, which is what lets a launch configuration name it:
+That puts `parley-mcp` on PATH, which is what lets a launch configuration name it.
+
+### 2. Point each agent at the same database
+
+One file per project. Every agent that should be able to reach every other gets the same
+`PARLEY_DB` and a different `PARLEY_AGENT`:
 
 ```jsonc
 {
@@ -109,35 +121,120 @@ That puts `parley-mcp` on PATH, which is what lets a launch configuration name i
       "env": {
         "PARLEY_DB": "/src/acme/.parley/parley.db",   // one file per project
         "PARLEY_AGENT": "orders",                     // who this process speaks for
-        "PARLEY_RESPONDER": "some-model-9",           // optional, see SPEC §11.3
+        "PARLEY_RESPONDER": "some-model-9",           // optional, which model answers
         "PARLEY_WORKSPACE": "/src/acme-orders",       // optional, for the registry
-        "PARLEY_TICK_SECONDS": "60"                   // optional, sweep cadence
+        "PARLEY_TICK_SECONDS": "60",                  // optional, sweep cadence
+        "PARLEY_RETENTION_IDLE_HOURS": "72",          // optional, see Retention below
+        "PARLEY_RETENTION_MAX_AGE_HOURS": "720"       // optional, see Retention below
       }
     }
   }
 }
 ```
 
-Point every agent on a project at the same `PARLEY_DB` and they can talk. Nothing else
-is installed and nothing is left running: there is no daemon, no port, and no service to
-supervise. Agents that are not open have no process, which is the point — a machine that
-reboots comes back with zero Parley processes and loses nothing, because the state is in
-the file and each agent's server starts when somebody opens that repository.
+For Claude Code that file is `.mcp.json` in the repository root; other clients have
+their own location for the same JSON.
 
-The agent gets seven tools — `parley_ask`, `parley_clarify`, `parley_answer`,
-`parley_notify`, `parley_inbox`, `parley_agents`, `parley_conclude` — and no way to say
-who it is. **Identity comes from `PARLEY_AGENT` and from nowhere else**, so no tool call
-can change who the caller is; had it been a parameter, every agent could act as every
-other and SPEC §13 would rest on a model choosing not to. The operator operations of
-§10.2 are not on that surface at all, and not by naming convention: they live on a
-different type, so an adapter has nothing to bind.
+There is no daemon, no port and no service to supervise. Agents that are not open have
+no process, which is the point — a machine that reboots comes back with zero Parley
+processes and loses nothing, because the state is in the file and each agent's server
+starts when somebody opens that repository. An agent registers itself the first time its
+server starts, so no roster has to be maintained by hand.
 
-An agent registers itself the first time its server starts (§12.3). That is the whole
-setup, and it means an agent is addressable once somebody has opened its repository —
-addressing one that has never run needs the manifest, which is what the headless tier
-and spawn-on-demand are for.
+**Identity comes from `PARLEY_AGENT` and from nowhere else.** No tool takes a "from"
+parameter, so no tool call can change who the caller is. Had it been a parameter, every
+agent could impersonate every other and the guarantee would rest on a model choosing not
+to.
 
-### The operator's side
+### 3. Name the peers and the boundary
+
+The server introduces itself. When a client connects, Parley sends it a short description
+of what it is for — that peers exist in other repositories, that guessing at their code is
+the mistake to avoid, that the inbox is pull rather than push, and what a question has to
+carry. That arrives through the protocol, so it works in any MCP client without a file.
+
+What the server cannot know is **which** peers this repository has and **which** boundary
+it does not own. That part is yours, and it goes in whatever file your client reads as
+standing instructions — `CLAUDE.md` for Claude Code, `AGENTS.md` for several other tools,
+a system prompt, or a project rules file. It can be short:
+
+```markdown
+## Peers
+
+`billing` owns invoicing and tax. This repository computes a net order total and does not
+apply VAT.
+
+**Do not guess at billing's behaviour and do not edit its repository.** Ask it, with
+`parley`.
+```
+
+Naming the peer and saying which boundary you do not own is most of the value. Skip it and
+an agent will confidently invent the other side's behaviour, which is the failure Parley
+exists to prevent — the tools being bound is not enough on its own.
+
+### What the agent can do
+
+Seven tools, and no way to say who it is:
+
+| Tool | What it does |
+|---|---|
+| `parley_ask` | Open an exchange. Returns an identifier or a refusal — never an answer. |
+| `parley_clarify` | Ask for detail inside an exchange you owe, or supply detail you were asked for. |
+| `parley_answer` | Resolve each sub-question and close the exchange. |
+| `parley_notify` | Fire-and-forget event. No reply expected. |
+| `parley_inbox` | Drain pending messages, work you owe first. |
+| `parley_agents` | List the agents that exist and whether they are reachable. |
+| `parley_conclude` | Say whether you are finished with a discussion. |
+
+A question must carry its **consequences** — what the asker will do with each possible
+answer. The broker refuses one that does not, because an answerer who knows what turns
+on the reply gives a different and better answer. Messages are capped at 2,000
+characters, which is a context-poisoning defence rather than a buffer size: what you
+send lands in somebody else's working memory.
+
+### A worked example
+
+Two repositories, one database. `orders` sums line prices and adds no tax, assuming
+billing applies it. `billing` multiplies the incoming total by 1.20, assuming orders did
+not. Neither can settle it alone and both are one edit away from being wrong.
+
+With the setup above, `orders` opens one exchange:
+
+> **intent** — deciding whether the total handed to billing must be net or
+> VAT-inclusive, so tax is applied exactly once across the two repositories
+>
+> **q1** — does billing apply VAT to the total it receives, or expect it included?
+>
+> **consequences** — if billing applies it, I keep the net total and record the
+> contract; no code change. If it expects the total to include VAT, every invoice is
+> short by the VAT and I report that before shipping.
+
+`billing` collects it, answers from what its own code actually does, and the exchange
+closes. Neither agent read the other's files, and the answer is recorded where an
+operator can read it back later with `parley export`.
+
+### Retention
+
+The message log is a channel, not an archive. It holds the full text of every question
+and answer, so left unbounded it becomes the shared context store Parley exists to
+avoid — and grows the blast radius of a leaked file for ever.
+
+So it forgets by default: a discussion whose exchanges have all closed is removed once
+it has been quiet for `PARLEY_RETENTION_IDLE_HOURS` (three days if unset), and nothing
+outlives `PARLEY_RETENTION_MAX_AGE_HOURS` (thirty days if unset).
+
+Set those **on the agents' servers**, not only in your own shell — the servers are what
+apply the policy, on every sweep. `parley prune` only brings the next sweep forward. Set
+them in one place and not the other and your agents quietly enforce the default while
+`parley prune` reports the numbers you meant.
+
+A floor bounds the dial in the other direction, and is not configurable. Tightening
+retention can never delete a message nobody has collected yet, the question of an
+exchange that is still open, or the recent rows deduplication is still reading.
+
+Anything worth keeping beyond the policy, export — the export is a file you own.
+
+## The operator's side
 
 `parley` is a second binary, installed by a person and never given to an agent:
 
@@ -152,23 +249,22 @@ parley retire <agent>               withdraw a registration; its server then ref
 parley reinstate <agent>            the only thing that clears a retirement
 parley export <conversation>        every message in a discussion, across agents
 parley force-conclude <conv>        close a discussion over its participants' votes
-parley prune                        apply the retention policy of §9.4 now
+parley prune                        apply the retention policy now
 parley --help                       the same list, on stdout, exiting zero
 ```
 
-It reads `PARLEY_DB` — the same variable the agents' servers are launched with — or takes
-`--db`. `prune` reads the retention policy from `PARLEY_RETENTION_IDLE_HOURS` and
-`PARLEY_RETENTION_MAX_AGE_HOURS` the same way, and prints the policy it applied before it
-prints what it removed: an operator's shell is not the environment their MCP client launched
-the servers with, and a command that deletes on a configured schedule should say which
-schedule it used.
+It reads `PARLEY_DB` — the same variable the agents' servers are launched with — or
+takes `--db`. `prune` reads the retention variables the same way, and prints the policy
+it applied before it prints what it removed, because your shell is not the environment
+your MCP client launched the servers with.
 
-These are the operations of SPEC §10.2, and a separate program on purpose. §10.2 warns that an
-adapter surfacing one into an agent's tool set would breach §10.1, and the safeguards get
-progressively more structural: `force_conclude` is deliberately not `conclude`; the operations
-are not on `Broker`, so an adapter handed a broker has none to bind; and they are not in
-`parley-mcp`, so the binary an MCP client launches has none of them compiled into it. A test
-asserts that last one by reflecting over the real assembly.
+A separate program on purpose. An adapter that surfaced an operator command into an
+agent's tool set would hand an agent the power to end a discussion over its peers'
+objections, or to read across every agent at once. The safeguards against that get
+progressively more structural: `force-conclude` is deliberately not named `conclude`;
+the operator operations are not on the type an adapter is handed, so there is nothing to
+bind by accident; and they are not compiled into `parley-mcp` at all. A test asserts
+that last one by reflecting over the real binary.
 
 ## Specification
 
@@ -189,40 +285,38 @@ restarts, an agent registry, and heterogeneous participants.
 
 Early. The spec is stabilising; the implementation is not.
 
-**Built.** The exchange state machine, pair serialisation, and wait-for cycle
-detection, over a SQLite store: schema, migrations, and the exchange, agent and message
-repositories, including the trust envelope and message deduplication. Expired exchanges
-are reaped, releasing the pair slot and the wait-for edge a vanished agent would
-otherwise hold forever. An agent whose repository has been deleted is marked unreachable
-and questions to it are refused at admission, rather than each one waiting out a full
-inactivity window to learn nothing. The seven agent operations of §10.1 are built and
-reachable over MCP, and two servers on one database hold a question and an answer between
-them. A question asked while the recipient's session is closed waits for that agent rather
-than being released when it opens one — the attach sequence of §14 releases only what an
-agent has actually been handed. A question nobody ever answers ends by telling the asker so,
-carrying its own stated consequences back — so "ask and do not block" holds in the case where
-nothing arrives, which is the case an agent most needs to hear about. A discussion closes when its
-participants agree, or when one of them says nothing for long enough — §5.0's silence-assents
-window is enforced by the sweep, so a peer that never answers a closure poll does not hold a
-conversation open indefinitely. The message log is bounded: §9.4's retention policy runs on the
-ordinary sweep, so a deployment nobody configures still forgets — a channel that kept everything
-would be the shared context store §16 says Parley is not, and the file already holds the full
-text of every question and answer. A floor bounds the dial in the other direction, so tightening
-retention cannot delete an undelivered message, a live exchange's question, or the rows
-deduplication is still reading. All five operator operations of §10.2 —
-`retire`, `reinstate`, `export`, `force_conclude`, `prune` — are reachable through a second
-binary that agents are never given. The domain layer has no I/O and no package dependencies, and its tests
-do not reference the storage assembly — the absent dependency is checked by the build
-rather than left as a convention. The protocol's invariants are enforced by schema
-constraints rather than by the code that calls them.
+**Built.** The exchange state machine, pair serialisation and wait-for cycle detection,
+over a SQLite store with migrations, the trust envelope and message deduplication.
 
-**Next, in order.**
+- Two agents on one database hold a question and an answer between them, over MCP, with
+  all seven tools working.
+- Expired exchanges are reaped, releasing the pair slot and the wait-for edge a vanished
+  agent would otherwise hold for ever.
+- An agent whose repository has been deleted is marked unreachable and questions to it
+  are refused at admission, rather than each one waiting out a full window to learn
+  nothing.
+- A question asked while the recipient's session is closed waits for that agent rather
+  than being released when it opens one.
+- A question nobody ever answers ends by telling the asker so, carrying the asker's own
+  stated consequences back — so "ask and do not block" holds in the case an agent most
+  needs to hear about.
+- A discussion closes when its participants agree, or when one of them says nothing for
+  long enough, so a silent peer cannot hold one open indefinitely.
+- The message log is bounded in both directions: it forgets on a schedule even when
+  nobody configures it, and a floor stops an aggressive setting deleting mail nobody has
+  read.
+- All five operator commands are reachable through a second binary agents are never
+  given.
 
-1. **Per-sender rate limits.** The last unbuilt control in SPEC §13. Volume between a
-   pair is already bounded by the state machine — one open exchange per pair, a
-   clarification cap — so this is really about `Notify`, which has no such guard. It also
-   brings the one clause §9.4's retention floor names and does not yet have: a rate-limit
-   window, beside the deduplication window already there.
+The domain layer has no I/O and no package dependencies, and its tests do not reference
+the storage assembly — the absent dependency is checked by the build rather than left as
+a convention. The protocol's invariants are enforced by database constraints rather than
+by the code that calls them.
+
+**Next.** Per-sender rate limits. Volume between a pair is already bounded by the state
+machine — one open exchange per pair, a cap on clarification rounds — so what remains is
+`Notify`, which has no such guard: an agent can post into a discussion indefinitely, and
+today only the retention age cap bounds it.
 
 Issues and discussion are welcome — particularly on the open questions at the end of
 SPEC.md.
