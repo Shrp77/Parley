@@ -105,6 +105,25 @@ public sealed class ForeignDatabaseTests : IDisposable
     }
 
     [Fact]
+    public void The_environment_variable_the_servers_are_launched_with_is_the_one_this_reads()
+    {
+        // End to end through the real binary, because the name used to be spelled twice — a
+        // constant in the MCP server and a literal here — in assemblies that deliberately do not
+        // reference each other. Comparing two constants proves they are equal; running the
+        // process proves this is the variable it actually reads, which is the part that would
+        // have left an operator administering a database the agents were not using.
+        var path = MakeForeignDatabase();
+
+        var (exitCode, error) = ToolProcess.Run(
+            [(Parley.Core.DeploymentEnvironment.DatabaseVariable, path)], "agents");
+
+        // Refused for being a foreign database, which is only reachable if it opened this path —
+        // no --db was given, so the variable is the only way it could have found it.
+        Assert.Equal(78, exitCode);
+        Assert.Contains("not a Parley database", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_bare_command_says_what_it_can_do()
     {
         // `parley` on its own is somebody asking what this is, and it used to answer "no

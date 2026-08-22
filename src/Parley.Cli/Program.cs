@@ -87,7 +87,11 @@ if (repeated >= 0)
     return Usage;
 }
 
-databasePath ??= Environment.GetEnvironmentVariable("PARLEY_DB");
+// The name comes from Parley.Core rather than being spelled again here. It used to be a bare
+// literal, agreeing with the server's constant by nothing but coincidence — and if they had ever
+// diverged, this command would have administered a database the agents were not using while
+// reporting success.
+databasePath ??= Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable);
 
 // Anything left starting with a hyphen is an option this does not have, and refusing it is the
 // point rather than tidiness: without this, `parley export --db` reaches the export with "--db"

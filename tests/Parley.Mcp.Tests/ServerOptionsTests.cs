@@ -1,4 +1,4 @@
-using Xunit;
+﻿using Xunit;
 
 namespace Parley.Mcp.Tests;
 
@@ -152,5 +152,18 @@ public sealed class ServerOptionsTests
 
         Assert.Equal("/src/o", set.Workspace);
         Assert.Null(unset.Workspace);
+    }
+
+    [Fact]
+    public void The_database_variable_is_named_in_one_place()
+    {
+        // It had two spellings: a constant here and a bare literal in the operator's command, in
+        // assemblies that deliberately do not reference each other. They agreed by coincidence,
+        // and nothing would have noticed them diverging — the operator would have administered a
+        // database the agents were not using, and both would have reported success.
+        //
+        // This fails if somebody replaces the reference with a literal again, which is the only
+        // way they can now come apart.
+        Assert.Equal(Parley.Core.DeploymentEnvironment.DatabaseVariable, ServerOptions.DatabaseVariable);
     }
 }

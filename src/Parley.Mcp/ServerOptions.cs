@@ -42,7 +42,12 @@ public sealed record ServerOptions(
     string? Workspace)
 {
     /// <summary>The environment variable naming the database file.</summary>
-    public const string DatabaseVariable = "PARLEY_DB";
+    /// <remarks>
+    /// The name itself lives in <see cref="DeploymentEnvironment"/>, because the operator's tool
+    /// reads the same variable and does not reference this assembly. Kept here as well so a
+    /// launch configuration's vocabulary is readable from the type that describes a launch.
+    /// </remarks>
+    public const string DatabaseVariable = DeploymentEnvironment.DatabaseVariable;
 
     /// <summary>The environment variable naming the agent this server speaks for.</summary>
     public const string AgentVariable = "PARLEY_AGENT";
