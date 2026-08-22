@@ -15,6 +15,36 @@ public sealed class GhostedQuestionTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);
 
+    /// <summary>Asserts an inbox holds exactly one message, and says what it holds if not.</summary>
+    /// <param name="inbox">The drained inbox, as the tool returned it.</param>
+    /// <param name="what">What the caller expected to be waiting.</param>
+    /// <returns>The single message.</returns>
+    /// <remarks>
+    /// <para>
+    /// <c>Assert.Single</c> reports the count and not the contents, which is the wrong half. A
+    /// run of this test failed once, on a loaded machine, and was never reproduced — twenty-seven
+    /// further attempts including nine assemblies at once could not bring it back, and the count
+    /// alone said nothing about whether the inbox was empty, held a second ghost, or held
+    /// something else entirely. Those are three different defects.
+    /// </para>
+    /// <para>
+    /// So the next occurrence carries its evidence. This changes no assertion; it changes what a
+    /// failure is worth, which for something seen once in twenty-five runs is the only thing that
+    /// can be improved without knowing the cause.
+    /// </para>
+    /// </remarks>
+    private static System.Text.Json.Nodes.JsonNode OnlyMessage(
+        System.Text.Json.Nodes.JsonNode inbox, string what)
+    {
+        var messages = inbox["messages"]!.AsArray();
+
+        Assert.True(
+            messages.Count == 1,
+            $"expected exactly one message ({what}), got {messages.Count}: {inbox.ToJsonString()}");
+
+        return messages[0]!;
+    }
+
     [Fact]
     public async Task An_asker_whose_peer_never_answers_is_told_so_through_its_inbox()
     {
@@ -34,7 +64,7 @@ public sealed class GhostedQuestionTests
         var exchangeId = asked["exchange_id"]!.GetValue<long>();
 
         // Billing collects the question and then goes quiet for good.
-        Assert.Single((await billing.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
+        OnlyMessage(await billing.InboxAsync(cancellationToken: ct), "the question");
 
         for (var hour = 1; hour <= 12; hour++)
         {
@@ -42,7 +72,8 @@ public sealed class GhostedQuestionTests
             await ordersSession.RunAsync((broker, now, c) => broker.TickAsync(now, c), ct);
         }
 
-        var notice = Assert.Single((await orders.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
+        var notice = OnlyMessage(
+            await orders.InboxAsync(cancellationToken: ct), "the ghost notice");
 
         Assert.Equal("ghost", notice!["type"]!.GetValue<string>());
         Assert.Equal(exchangeId, notice["exchange_id"]!.GetValue<long>());

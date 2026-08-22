@@ -105,15 +105,118 @@ public sealed class ForeignDatabaseTests : IDisposable
     }
 
     [Fact]
-    public void An_option_it_does_not_have_is_refused_rather_than_read_as_data()
+    public void The_environment_variable_the_servers_are_launched_with_is_the_one_this_reads()
+    {
+        // End to end through the real binary, because the name used to be spelled twice — a
+        // constant in the MCP server and a literal here — in assemblies that deliberately do not
+        // reference each other. Comparing two constants proves they are equal; running the
+        // process proves this is the variable it actually reads, which is the part that would
+        // have left an operator administering a database the agents were not using.
+        var path = MakeForeignDatabase();
+
+        var (exitCode, error) = ToolProcess.Run(
+            [(Parley.Core.DeploymentEnvironment.DatabaseVariable, path)], "agents");
+
+        // Refused for being a foreign database, which is only reachable if it opened this path —
+        // no --db was given, so the variable is the only way it could have found it.
+        Assert.Equal(78, exitCode);
+        Assert.Contains("not a Parley database", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_bare_command_says_what_it_can_do()
+    {
+        // `parley` on its own is somebody asking what this is, and it used to answer "no
+        // database" — a configuration error about a thing they had not yet been told existed,
+        // with no hint that there was a list of commands behind it. Found by installing the tool
+        // and typing its name.
+        var (exitCode, error) = ToolProcess.Run();
+
+        Assert.Equal(64, exitCode);
+        Assert.Contains("parley [--db <path>] agents", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("No database.", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_verb_without_a_database_still_says_so()
+    {
+        // The other side. Naming a command means you know what you want, and then the missing
+        // database is the useful thing to be told.
+        var (exitCode, error) = ToolProcess.Run("agents");
+
+        Assert.Equal(78, exitCode);
+        Assert.Contains("No database.", error, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("--help")]
+    [InlineData("-h")]
+    public void Asking_for_the_manual_is_not_a_mistake(string flag)
+    {
+        // It used to answer "'--help' is not an option this command takes" and then print the
+        // help anyway, on standard error, with a usage exit code. The user got what they wanted
+        // and was told they were wrong for wanting it.
+        var (exitCode, error) = ToolProcess.Run(flag);
+
+        Assert.Equal(0, exitCode);
+
+        // On standard output, because it was asked for. Everywhere else the same text is an
+        // answer to a mistake and belongs on standard error, which is what lets a script tell
+        // the two apart.
+        Assert.Equal("", error);
+    }
+
+    [Fact]
+    public void The_database_option_without_a_path_says_which_half_is_missing()
+    {
+        // `parley --db`, having forgotten the path. It used to fall through to the stray-option
+        // refusal and be told that '--db' is not an option this command takes — false, and false
+        // in the most confusing direction: it names the one option the command does have and
+        // denies having it.
+        var (exitCode, error) = ToolProcess.Run("--db");
+
+        Assert.Equal(64, exitCode);
+        Assert.Contains("needs a path after it", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("is not an option", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_database_option_given_twice_says_so()
+    {
+        var (exitCode, error) = ToolProcess.Run("--db", "one.db", "--db", "two.db", "agents");
+
+        Assert.Equal(64, exitCode);
+        Assert.Contains("was given more than once", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_flag_in_the_wrong_place_never_becomes_data()
     {
         // `parley export --db` used to reach the export with "--db" as the conversation
         // identifier and run a real query against it. A flag in the wrong place silently
         // becoming data is the worst reading of a mistyped command, because it succeeds.
+        //
+        // Which branch refuses it is not the property. This one is now caught as a --db with no
+        // path after it, which is a better description of what the person typed; what matters is
+        // that it is refused and that no query ran.
         var (exitCode, error) = ToolProcess.Run(
             "--db", MakeForeignDatabase(), "export", "--db");
 
         Assert.Equal(64, exitCode);
+        Assert.DoesNotContain("No messages in", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_option_it_does_not_have_is_refused_rather_than_read_as_data()
+    {
+        // The stray-option branch itself, which needs a flag the command genuinely does not
+        // have — the --db cases above are now caught earlier and more precisely, so without
+        // this the branch that catches everything else would be covered by nothing.
+        var (exitCode, error) = ToolProcess.Run(
+            "--db", MakeForeignDatabase(), "export", "--verbose");
+
+        Assert.Equal(64, exitCode);
         Assert.Contains("is not an option", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("No messages in", error, StringComparison.Ordinal);
     }
 }

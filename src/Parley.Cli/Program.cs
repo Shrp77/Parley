@@ -11,6 +11,7 @@ using Parley.Store;
 //   parley --db <path> export <conversation>
 //   parley --db <path> force-conclude <conversation>
 //   parley --db <path> prune
+//   parley --help
 //
 // PARLEY_DB is read when --db is absent, so the same variable that configures an agent's server
 // configures the operator's view of the same project.
@@ -47,6 +48,16 @@ const int IoError = 74;    // EX_IOERR
 var arguments = new List<string>(args);
 string? databasePath = null;
 
+// Asked for rather than fallen into, so it goes to standard output and exits zero. Every other
+// path here prints the same text to standard error with a non-zero code, because there it is
+// the answer to a mistake. The distinction is what lets `parley --help | less` work while a
+// script can still tell a mistyped command from a request for the manual.
+if (arguments.Exists(a => a is "--help" or "-h"))
+{
+    await Console.Out.WriteLineAsync(Help).ConfigureAwait(false);
+    return 0;
+}
+
 for (var i = 0; i < arguments.Count - 1; i++)
 {
     if (arguments[i] is "--db" or "-d")
@@ -57,7 +68,30 @@ for (var i = 0; i < arguments.Count - 1; i++)
     }
 }
 
-databasePath ??= Environment.GetEnvironmentVariable("PARLEY_DB");
+// A --db the loop did not consume is one that had no path after it, or a second one. Both used
+// to fall through to the stray-option refusal below and be told that '--db' is not an option
+// this command takes — which is false, and false in the most confusing direction: it names the
+// one option the command does have and denies having it. Found by typing `parley --db` and
+// forgetting the path.
+var repeated = arguments.FindIndex(a => a is "--db" or "-d");
+
+if (repeated >= 0)
+{
+    await Console.Error.WriteLineAsync(
+        repeated == arguments.Count - 1
+            ? $"'{arguments[repeated]}' needs a path after it."
+            : $"'{arguments[repeated]}' was given more than once.").ConfigureAwait(false);
+
+    await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
+
+    return Usage;
+}
+
+// The name comes from Parley.Core rather than being spelled again here. It used to be a bare
+// literal, agreeing with the server's constant by nothing but coincidence — and if they had ever
+// diverged, this command would have administered a database the agents were not using while
+// reporting success.
+databasePath ??= Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable);
 
 // Anything left starting with a hyphen is an option this does not have, and refusing it is the
 // point rather than tidiness: without this, `parley export --db` reaches the export with "--db"
@@ -74,6 +108,15 @@ if (stray is not null)
     return Usage;
 }
 
+// Before the database, because `parley` on its own is somebody asking what this does, and
+// answering "no database" tells them nothing they can act on — least of all that there is a
+// list of commands to see. Found by installing it and typing the name.
+if (arguments.Count == 0)
+{
+    await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
+    return Usage;
+}
+
 if (string.IsNullOrWhiteSpace(databasePath))
 {
     await Console.Error.WriteLineAsync(
@@ -81,12 +124,6 @@ if (string.IsNullOrWhiteSpace(databasePath))
         "are launched with.").ConfigureAwait(false);
 
     return Config;
-}
-
-if (arguments.Count == 0)
-{
-    await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
-    return Usage;
 }
 
 // Opened rather than created. An operator command against a project that has never run is a
@@ -154,11 +191,14 @@ using (holder)
                 .ConfigureAwait(false);
 
         case "export" when rest.Length == 1:
-            return await commands.ExportAsync(rest[0], CancellationToken.None).ConfigureAwait(false);
+            return await WithConversation(
+                rest[0], id => commands.ExportAsync(id, CancellationToken.None))
+                .ConfigureAwait(false);
 
         case "force-conclude" when rest.Length == 1:
-            return await commands
-                .ForceConcludeAsync(rest[0], DateTimeOffset.UtcNow, CancellationToken.None)
+            return await WithConversation(
+                rest[0],
+                id => commands.ForceConcludeAsync(id, DateTimeOffset.UtcNow, CancellationToken.None))
                 .ConfigureAwait(false);
 
         case "prune" when rest.Length == 0:
@@ -190,6 +230,30 @@ async Task<int> PruneAsync(OperatorCommands commands)
 
     return await commands.PruneAsync(policy, DateTimeOffset.UtcNow, CancellationToken.None)
         .ConfigureAwait(false);
+}
+
+// `parley export ""` used to reach the repository, hit an ArgumentException on the way in, and
+// print a .NET stack trace with exit code 127. That is the operator's own input coming back at
+// them as a crash — the same shape as the agent-input defects §7.3 exists to prevent, on the
+// side of the boundary where nobody was looking. Found by typing it.
+//
+// Blank only. The schema constrains the character set of a conversation identifier and refuses
+// to store one outside it, so an identifier this rejected but storage would have accepted is a
+// refusal the operator cannot act on — and an identifier storage would have rejected can only
+// ever match nothing, which "no messages in '...'" already says clearly.
+async Task<int> WithConversation(string conversationId, Func<string, Task<int>> run)
+{
+    if (string.IsNullOrWhiteSpace(conversationId))
+    {
+        await Console.Error.WriteLineAsync(
+            "A conversation identifier is required, and blank is not one. Identifiers are chosen " +
+            "by the agents that name them on a question or an event; `parley export <id>` is how " +
+            "you read one back.").ConfigureAwait(false);
+
+        return Usage;
+    }
+
+    return await run(conversationId).ConfigureAwait(false);
 }
 
 async Task<int> WithAgent(string name, Func<AgentName, Task<int>> run)

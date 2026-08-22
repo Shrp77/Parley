@@ -31,7 +31,7 @@ internal static class ToolProcess
     /// </remarks>
     private static readonly string[] Configuration =
     [
-        "PARLEY_DB",
+        Parley.Core.DeploymentEnvironment.DatabaseVariable,
         Parley.Core.RetentionPolicyEnvironment.IdleVariable,
         Parley.Core.RetentionPolicyEnvironment.MaximumAgeVariable
     ];
