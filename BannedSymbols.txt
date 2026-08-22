@@ -1,0 +1,1 @@
+M:Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();Process-global: it disposes handles other test classes are using. See the note in Directory.Packages.props.
