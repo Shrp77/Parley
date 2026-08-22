@@ -24,4 +24,13 @@
     <PackageReference Include="xunit.v3" />
   </ItemGroup>
 
+
+  <!-- See Directory.Packages.props: one banned symbol, and why. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)..\..\BannedSymbols.txt" />
+  </ItemGroup>
 </Project>

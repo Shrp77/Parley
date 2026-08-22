@@ -1,5 +1,4 @@
 using System.Globalization;
-using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Xunit;
 
@@ -42,15 +41,15 @@ public sealed class ConcurrentPruneTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-
         try
         {
             Directory.Delete(_directory, recursive: true);
         }
         catch (IOException)
         {
-            // Best effort; pooled connections keep the file open.
+            // Best effort. A pooled connection can still hold the file, and the alternative --
+            // SqliteConnection.ClearAllPools() -- is process-global and disposes handles
+            // that other test classes are using. See BannedSymbols.txt.
         }
     }
 
@@ -95,7 +94,6 @@ public sealed class ConcurrentPruneTests : IDisposable
         Assert.True(exchange.Answer(Billing, T0).Succeeded);
         Assert.True(await exchanges.SaveAsync(exchange, cancellationToken: Ct));
 
-        SqliteConnection.ClearAllPools();
     }
 
     private async Task<long> MessageCount()

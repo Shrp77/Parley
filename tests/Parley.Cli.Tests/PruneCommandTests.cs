@@ -70,7 +70,9 @@ public sealed class PruneCommandTests : IDisposable
         }
         catch (IOException)
         {
-            // Best effort; pooled connections keep the file open.
+            // Best effort. A pooled connection can still hold the file, and the alternative --
+            // SqliteConnection.ClearAllPools() -- is process-global and disposes handles
+            // that other test classes are using. See BannedSymbols.txt.
         }
     }
 
@@ -182,14 +184,11 @@ public sealed class PruneCommandTests : IDisposable
                 .Succeeded);
         }
 
-        SqliteConnection.ClearAllPools();
         return path;
     }
 
     private async Task<long> MessageCount(string path)
     {
-        SqliteConnection.ClearAllPools();
-
         using var connection = new SqliteConnection($"Data Source={path}");
         await connection.OpenAsync(Ct);
 
@@ -292,7 +291,6 @@ public sealed class PruneCommandTests : IDisposable
             await broker.DrainInboxAsync(Orders, then.AddMinutes(3), cancellationToken: Ct);
         }
 
-        SqliteConnection.ClearAllPools();
         return path;
     }
 

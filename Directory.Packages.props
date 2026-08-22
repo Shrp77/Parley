@@ -1,4 +1,4 @@
-<Project>
+﻿<Project>
 
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
@@ -72,8 +72,24 @@
     nothing else. The runner is selected in global.json, under a "test" section alongside
     "sdk" — not in dotnet.config, whose INI format was dropped during .NET 10 RC2.
   -->
+  <!--
+    Analyzers, not dependencies: PrivateAssets keeps them off every consumer's graph, and nothing
+    they enforce reaches a shipped assembly.
+
+    BannedApiAnalyzers exists for one symbol so far, and it earned its place. Several test classes
+    called SqliteConnection.ClearAllPools() to release a file handle before reading or deleting a
+    temporary database. That call is process-global, xUnit runs test classes in parallel, and
+    under load it disposed the native handle of a connection another class was using,
+    surfacing as "ObjectDisposedException: SQLitePCL.sqlite3" from whichever test happened to be mid-query.
+    It presented as a flaky test failing about once in twenty-five runs of the suite, was not
+    reproducible in ninety runs afterwards, and took a build running concurrently to bring back.
+
+    The calls are gone. This is what stops the next one being written, because the reason not to
+    write it is invisible at the call site: the code looks local and is not.
+  -->
   <ItemGroup Label="Testing">
     <PackageVersion Include="xunit.v3" Version="4.0.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="4.14.0" />
   </ItemGroup>
 
   <!-- ==== Transitive pins ====

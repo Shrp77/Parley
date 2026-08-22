@@ -38,7 +38,8 @@ public sealed class ForeignDatabaseTests : IDisposable
         }
         catch (IOException)
         {
-            // Best effort, as elsewhere: pooled connections keep the file open.
+            // Best effort, as elsewhere. A pooled connection can still hold the file, and
+            // clearing the pools to release it is process-global -- see BannedSymbols.txt.
         }
     }
 
@@ -92,7 +93,6 @@ public sealed class ForeignDatabaseTests : IDisposable
         Assert.Contains("did not create", refusal.Message, StringComparison.Ordinal);
 
         // And the file is exactly as it was.
-        SqliteConnection.ClearAllPools();
         var (version, tables) = Inspect(path);
 
         Assert.Equal(0, version);
@@ -116,7 +116,6 @@ public sealed class ForeignDatabaseTests : IDisposable
         var session = await BrokerSession.StartAsync(options, new StubClock(T0), ct);
         await session.DisposeAsync();
 
-        SqliteConnection.ClearAllPools();
         var (version, _) = Inspect(path);
 
         Assert.Equal(1, version);

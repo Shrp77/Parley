@@ -36,7 +36,9 @@ public sealed class ForeignDatabaseTests : IDisposable
         }
         catch (IOException)
         {
-            // Best effort; pooled connections keep the file open.
+            // Best effort. A pooled connection can still hold the file, and the alternative --
+            // SqliteConnection.ClearAllPools() -- is process-global and disposes handles
+            // that other test classes are using. See BannedSymbols.txt.
         }
     }
 
@@ -82,7 +84,6 @@ public sealed class ForeignDatabaseTests : IDisposable
         Assert.Equal(78, exitCode);
         Assert.Contains("not a Parley database", error, StringComparison.Ordinal);
 
-        SqliteConnection.ClearAllPools();
         var (version, tables) = Inspect(path);
 
         Assert.Equal(0, version);
