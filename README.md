@@ -96,6 +96,34 @@ at it, say what each agent owns, and **tell each agent that it has a peer**. The
 the ones people skip, and without them nothing happens — an agent with the tools bound but no
 idea a peer exists will answer from its own repository and guess at the rest.
 
+### In Claude Code
+
+Parley ships a plugin, and this repository is its marketplace:
+
+```
+/plugin marketplace add Shrp77/Parley
+/plugin install parley@parley
+/parley:setup
+```
+
+`/parley:setup` walks the steps below with you — it checks the server is installed and
+writes this repository's launch configuration, then hands you to `/parley:peers`. It does not
+yet ask for `PARLEY_OWNS`, so add that line yourself for now; step 3 says what to write. The
+plugin also carries the operator commands as a skill, so you can ask for a roster or an
+export in words rather than remembering the flags.
+
+It stops short of supplying the server itself, and that is deliberate: Claude Code stores a
+plugin's configuration per user, so a plugin-supplied server would give every repository the
+same agent name. Identity belongs to the repository, so the launch configuration does too.
+[The plugin's own README](plugins/parley/README.md) has the detail.
+
+**While Parley is in alpha the first step is not one command.** Nothing is published to
+NuGet yet, so setup asks you to clone this repository and build the tool. Publishing is what
+the first release is for.
+
+The rest of this section is the general path: what the plugin does for you, and what to do
+in any other client.
+
 ### 1. Install the server
 
 Parley ships an MCP server: one process per agent per project, launched by whatever MCP
@@ -338,6 +366,8 @@ over a SQLite store with migrations, the trust envelope and message deduplicatio
   read.
 - All five operator commands are reachable through a second binary agents are never
   given.
+- Claude Code installs it as a plugin: this repository is the marketplace, a setup command
+  writes a repository's launch configuration, and the operator commands ship as a skill.
 
 The domain layer has no I/O and no package dependencies, and its tests do not reference
 the storage assembly — the absent dependency is checked by the build rather than left as
@@ -348,6 +378,11 @@ by the code that calls them.
 machine — one open exchange per pair, a cap on clarification rounds — so what remains is
 `Notify`, which has no such guard: an agent can post into a discussion indefinitely, and
 today only the retention age cap bounds it.
+
+**Before the first release.** `Parley.Mcp` and `Parley.Cli` go to NuGet, so installing either
+is `dotnet tool install -g` rather than a clone and a build, and the plugin's first step
+becomes one line. Every install path above currently asks you to build from source, which is
+the alpha showing rather than a design position.
 
 Issues and discussion are welcome — particularly on the open questions at the end of
 SPEC.md.

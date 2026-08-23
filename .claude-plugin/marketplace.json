@@ -1,0 +1,24 @@
+{
+  "name": "parley",
+  "owner": {
+    "name": "Parley",
+    "url": "https://github.com/Shrp77/Parley"
+  },
+  "description": "Parley's own integrations. Adding this marketplace points Claude Code at the plugin directory of the Parley repository, so the integration ships and versions with the protocol it configures.",
+  "plugins": [
+    {
+      "name": "parley",
+      "source": "./plugins/parley",
+      "description": "Cross-repository agent-to-agent messaging. Sets this repository up as a Parley agent, keeps its list of peers current, and carries the operator commands agents are never given.",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/Shrp77/Parley",
+      "repository": "https://github.com/Shrp77/Parley",
+      "author": {
+        "name": "Parley contributors",
+        "url": "https://github.com/Shrp77/Parley"
+      },
+      "category": "workflow",
+      "keywords": ["mcp", "multi-agent", "cross-repository", "messaging", "protocol"]
+    }
+  ]
+}

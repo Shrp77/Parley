@@ -29,6 +29,13 @@ tests/Parley.Spec.Tests   Checks SPEC.md: references resolve, tables are well fo
                           Store, so a check cannot drift into asserting what the code does.
 ```
 
+`plugins/parley` is the Claude Code integration and `.claude-plugin/marketplace.json` is the
+catalogue pointing at it, so the integration versions with the protocol it configures. It ships
+no MCP server configuration on purpose: Claude Code keeps a plugin's configuration in user
+scope, so a bundled server would hand every repository the same `PARLEY_AGENT` — and taking the
+agent's name from the launch environment is the guarantee the whole trust model rests on. An
+integration for another client belongs beside it, not inside `src`.
+
 `Parley.Core` having no I/O and no package dependencies is a design constraint, not an
 accident of the current code. A `using` that pulls I/O into Core is a review finding.
 
