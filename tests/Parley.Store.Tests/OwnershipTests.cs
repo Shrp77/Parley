@@ -334,6 +334,11 @@ public sealed class OwnershipTests : IDisposable
     [InlineData(0x1D173, "MUSICAL SYMBOL BEGIN BEAM")]
     [InlineData(0x1BCA0, "SHORTHAND FORMAT LETTER OVERLAP")]
     [InlineData(0x110BD, "KAITHI NUMBER SIGN")]
+    [InlineData(0x110CD, "KAITHI NUMBER SIGN ABOVE")]
+    [InlineData(0x13430, "EGYPTIAN HIEROGLYPH VERTICAL JOINER")]
+    [InlineData(0x1343F, "EGYPTIAN HIEROGLYPH END WALLED ENCLOSURE")]
+    [InlineData(0x1BCA3, "SHORTHAND FORMAT UP STEP")]
+    [InlineData(0x1D17A, "MUSICAL SYMBOL END PHRASE")]
     public async Task The_schema_refuses_a_hidden_character_from_beyond_the_basic_plane(int point, string name)
     {
         // The sweep above covers the basic plane, which is where a hand-written range list stops
