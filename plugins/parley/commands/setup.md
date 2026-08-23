@@ -44,7 +44,7 @@ dotnet tool install -g --add-source src/Parley.Cli/bin/Release Parley.Cli
 
 If the user already has a clone, skip the `git clone` and run the rest from it.
 
-## 2. Ask for the two things only the user knows
+## 2. Ask for the three things only the user knows
 
 **The agent name for this repository.** Lowercase letters, digits and hyphens, starting with a
 letter, up to 32 characters. It should name the domain this repository owns - `orders`,
@@ -56,6 +56,23 @@ Two repositories must never be given the same name. Identity is the one thing Pa
 unforgeable, and it does that by taking the name from the launch environment and offering no
 tool that mentions it - which is worth nothing if two servers claim the same name, because
 either one may then collect the other's mail.
+
+**What this repository owns.** One line, up to 100 characters, that every other agent sees
+beside this one's name when it lists the roster. It is how a peer decides whether a question
+is this repository's, so say what you own **and** what you do not - the exclusion is the half
+that stops somebody asking the wrong agent:
+
+> `Carts, orders and line totals. No tax, no stock.`
+>
+> `Invoicing, tax and payment capture. Does not price orders or reserve stock.`
+
+It must be one line and it is refused at start-up if it is not, so do not paste prose with a
+line break in it. It goes into a JSON file, so escape a quotation mark or a backslash if the
+user's wording has one - an unescaped one makes the whole launch configuration unreadable and
+the server simply never starts. Ask the user; do not write it for them from what you can see in the
+repository, because a boundary is a decision somebody made rather than something a directory
+listing implies. If they are unsure, leaving it out is better than guessing - an agent with
+none is listed with none, and askers fall back to its name.
 
 **The database path.** One SQLite file, shared by every repository that should be able to reach
 every other. It therefore has to live outside all of them - a path under one repository makes
@@ -85,6 +102,7 @@ the file.
       "env": {
         "PARLEY_DB": "${PARLEY_DB:-<absolute path to the database>}",
         "PARLEY_AGENT": "<the agent name>",
+        "PARLEY_OWNS": "<what this repository owns, and what it does not>",
         "PARLEY_WORKSPACE": "${PARLEY_WORKSPACE:-<absolute path to this repository>}"
       }
     }
@@ -98,8 +116,10 @@ Substitute the real values. Three notes on the shape:
   `.mcp.json` is usually committed and both paths are machine-specific, so the default is what
   this machine uses and a teammate overrides it by setting the variable rather than by editing
   a shared file.
-- `PARLEY_AGENT` is written plainly, with no fallback. It is the same on every machine, because
-  it names what this repository is rather than where it lives.
+- `PARLEY_AGENT` and `PARLEY_OWNS` are written plainly, with no fallback. Both are the same on
+  every machine, because they name what this repository is rather than where it lives. Omit
+  `PARLEY_OWNS` entirely if the user had no answer; an empty string means the same as absent,
+  but a placeholder left in by accident is a claim they did not make.
 - `PARLEY_WORKSPACE` is optional and only an operator ever sees it; it is how `parley agents`
   tells two similarly named agents apart. Write the absolute path, not `.` - the server
   deliberately does not default it, because a plausible and wrong workspace is worse than an
