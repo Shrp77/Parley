@@ -28,6 +28,15 @@ public sealed class PluginTests
     private const string Peers = "plugins/parley/commands/peers.md";
     private const string Skill = "plugins/parley/skills/parley-operator/SKILL.md";
 
+    /// <summary>The repository root, anchored on the marketplace manifest.</summary>
+    /// <returns>Its full path.</returns>
+    /// <remarks>
+    /// Anchored there because that file's position at the root is load-bearing: Claude Code
+    /// resolves every relative plugin source from beside it. The walk itself belongs to
+    /// <see cref="RepositoryFile"/>, which exists because it was written twice once already.
+    /// </remarks>
+    private static string Root() => RepositoryFile.RootHolding(Marketplace);
+
     /// <summary>The verbs the operator's tool accepts, taken from the help it prints.</summary>
     /// <param name="text">Text in which each verb appears as <c>parley [--db &lt;path&gt;] verb</c>.</param>
     /// <returns>The verbs, in no particular order.</returns>
@@ -63,7 +72,7 @@ public sealed class PluginTests
         // A relative source is resolved from the repository root on the installing machine, so
         // a path that is merely plausible fails for everybody except the person who wrote it.
         var source = entry.GetProperty("source").GetString();
-        var resolved = Path.GetFullPath(Path.Combine(RepositoryRoot(), source!));
+        var resolved = Path.GetFullPath(Path.Combine(Root(), source!));
 
         Assert.True(
             File.Exists(Path.Combine(resolved, ".claude-plugin", "plugin.json")),
@@ -109,7 +118,7 @@ public sealed class PluginTests
         // The third way to declare one, and the one a manifest check would miss: Claude Code
         // discovers a plugin's components from their default locations whether the manifest
         // mentions them or not.
-        Assert.False(File.Exists(Path.Combine(RepositoryRoot(), "plugins", "parley", ".mcp.json")));
+        Assert.False(File.Exists(Path.Combine(Root(), "plugins", "parley", ".mcp.json")));
     }
 
     [Fact]
@@ -181,32 +190,5 @@ public sealed class PluginTests
             Assert.DoesNotContain($"parley {operatorCommand}", peers, StringComparison.Ordinal);
             Assert.DoesNotContain($"<path> {operatorCommand}", peers, StringComparison.Ordinal);
         }
-    }
-
-    /// <summary>Locates the repository root, for the checks about what sits beside a file.</summary>
-    /// <returns>Its full path.</returns>
-    /// <exception cref="InvalidOperationException">No directory above the assembly holds the marketplace.</exception>
-    /// <remarks>
-    /// The same walk upwards as <see cref="RepositoryFile"/>, and for the same reason: the test
-    /// host's working directory differs between <c>dotnet test</c>, an IDE runner and CI, so the
-    /// only stable anchor is the assembly's own location. Anchored on the marketplace manifest
-    /// because it is the one file whose position at the root is load-bearing — Claude Code
-    /// resolves every relative plugin source from beside it.
-    /// </remarks>
-    private static string RepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, Marketplace)))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException($"{Marketplace} not found above {AppContext.BaseDirectory}.");
     }
 }

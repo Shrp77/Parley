@@ -24,17 +24,31 @@ internal static class RepositoryFile
     /// <param name="name">The file name, as it appears at the repository root.</param>
     /// <returns>Its text, with line endings normalised to line feeds.</returns>
     /// <exception cref="InvalidOperationException">No directory above the assembly holds it.</exception>
-    public static string Read(string name)
+    public static string Read(string name) =>
+        File.ReadAllText(Path.Combine(RootHolding(name), name))
+            .Replace("\r\n", "\n", StringComparison.Ordinal);
+
+    /// <summary>Finds the directory above the test assembly that holds a file.</summary>
+    /// <param name="name">The file name, as it appears at the repository root.</param>
+    /// <returns>That directory's full path.</returns>
+    /// <exception cref="InvalidOperationException">No directory above the assembly holds it.</exception>
+    /// <remarks>
+    /// Separated from <see cref="Read"/> because a second kind of check needs the location rather
+    /// than the contents: the plugin's marketplace resolves a relative source path from beside
+    /// itself, so verifying it means resolving that path the way an installing machine would.
+    /// Kept here rather than copied there, which is the mistake this whole class exists because
+    /// of — there were two copies of the walk within a day of each other, and the half that is
+    /// easy to get wrong is not the loop.
+    /// </remarks>
+    public static string RootHolding(string name)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
 
         while (directory is not null)
         {
-            var candidate = Path.Combine(directory.FullName, name);
-
-            if (File.Exists(candidate))
+            if (File.Exists(Path.Combine(directory.FullName, name)))
             {
-                return File.ReadAllText(candidate).Replace("\r\n", "\n", StringComparison.Ordinal);
+                return directory.FullName;
             }
 
             directory = directory.Parent;
