@@ -15,20 +15,26 @@ That part is this file's job.
 
 ## 1. Read the roster
 
-Call `parley_agents`. It returns every registered agent and whether it is reachable. If the
-tool is not available, the server is not connected - run `/parley:setup` first, or restart if
-it has just been configured.
+Call `parley_agents`. It returns every registered agent, whether it is reachable, and - for
+each one whose launch configuration says so - an `owns` line describing what that agent is
+responsible for. If the tool is not available, the server is not connected: run
+`/parley:setup` first, or restart if it has just been configured.
 
 ## 2. Establish what each peer owns
 
-For each agent other than this one, you need one line: what it owns, and what this repository
-therefore does not.
+**Use the `owns` line the roster gives you.** It was written by whoever configured that
+repository, which makes it the closest thing to a first-hand statement you can get without
+asking a person. Quote it or shorten it; do not rewrite what it claims.
 
-**Do not invent it.** Guessing at another repository's responsibilities in the very file that
-exists to stop this agent guessing at another repository is the worst available outcome - it
-reads as settled fact for as long as the file lives. Ask the user. If they do not know either,
-the honest entry is the peer's name and "boundary not yet agreed", which still tells this agent
-that somebody is there to ask.
+For a peer with no `owns` line, ask the user. **Do not invent one.** Guessing at another
+repository's responsibilities in the very file that exists to stop this agent guessing at
+another repository is the worst available outcome - it reads as settled fact for as long as
+the file lives. If the user does not know either, the honest entry is the peer's name and
+"boundary not yet agreed", which still tells this agent that somebody is there to ask.
+
+If several peers have no line, that is worth saying out loud: whoever configured them can add
+`PARLEY_OWNS` once each and every agent in the project sees it, rather than every repository
+keeping its own description of everybody else. That is the whole reason the field exists.
 
 ## 3. Write the block
 

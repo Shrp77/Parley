@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Parley.Core;
 using Xunit;
 
 namespace Parley.Mcp.Tests;
@@ -155,6 +157,41 @@ public sealed class PluginTests
         {
             Assert.Contains(required, configuration.Value, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public void The_setup_command_writes_what_the_repository_owns()
+    {
+        // Not required by the server - an agent with no statement starts perfectly well - which
+        // is exactly why this needs a check. A setup that quietly omits it produces a working
+        // deployment whose agents can only be found by name, and the symptom is not an error:
+        // it is peers guessing at each other, which is the failure Parley exists to prevent.
+        var setup = RepositoryFile.Read(Setup);
+
+        var configuration = Regex.Match(setup, @"""mcpServers"".*?\n```", RegexOptions.Singleline);
+
+        Assert.True(configuration.Success, "the setup command no longer shows a launch configuration");
+        Assert.Contains(DeploymentEnvironment.OwnsVariable, configuration.Value, StringComparison.Ordinal);
+
+        // And it has to ask for the value rather than inventing one, so it has to say how long
+        // the value may be. A boundary is a decision somebody made; a directory listing does not
+        // imply it.
+        Assert.Contains(
+            OwnershipStatement.MaxCharacters.ToString(CultureInfo.InvariantCulture),
+            setup,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_peers_command_reads_what_the_roster_already_knows()
+    {
+        // The roster carries each peer's own statement of what it owns, so a command that asked
+        // the user for it would be asking a person to retype what the protocol just supplied -
+        // and would reintroduce the per-repository copy the field exists to remove.
+        var peers = RepositoryFile.Read(Peers);
+
+        Assert.Contains("owns", peers, StringComparison.Ordinal);
+        Assert.Contains(DeploymentEnvironment.OwnsVariable, peers, StringComparison.Ordinal);
     }
 
     [Fact]

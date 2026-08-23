@@ -106,11 +106,11 @@ Parley ships a plugin, and this repository is its marketplace:
 /parley:setup
 ```
 
-`/parley:setup` walks the steps below with you — it checks the server is installed and
-writes this repository's launch configuration, then hands you to `/parley:peers`. It does not
-yet ask for `PARLEY_OWNS`, so add that line yourself for now; step 3 says what to write. The
-plugin also carries the operator commands as a skill, so you can ask for a roster or an
-export in words rather than remembering the flags.
+`/parley:setup` walks the steps below with you — it checks the server is installed, asks for
+this repository's name and what it owns, and writes the launch configuration — then hands you
+to `/parley:peers`, which builds the peers block from the roster rather than from what you can
+remember. The plugin also carries the operator commands as a skill, so you can ask for a
+roster or an export in words rather than remembering the flags.
 
 It stops short of supplying the server itself, and that is deliberate: Claude Code stores a
 plugin's configuration per user, so a plugin-supplied server would give every repository the
