@@ -62,19 +62,21 @@ internal sealed class ServerFixture : IAsyncDisposable
     /// <summary>Builds the launch configuration for one agent.</summary>
     /// <param name="agent">The agent the server speaks for.</param>
     /// <param name="responder">What to attribute its messages to.</param>
+    /// <param name="owns">What its launch configuration says it owns, if anything.</param>
     /// <returns>The options.</returns>
-    public ServerOptions OptionsFor(string agent, string responder = "test-model") =>
+    public ServerOptions OptionsFor(string agent, string responder = "test-model", string? owns = null) =>
         new(DatabasePath, AgentName.Create(agent), responder, TimeSpan.FromMinutes(1),
-            RetentionPolicy.Default, null);
+            RetentionPolicy.Default, null, owns);
 
     /// <summary>Launches a server for an agent, as its client would.</summary>
     /// <param name="agent">The agent.</param>
     /// <param name="cancellationToken">Cancels start-up.</param>
+    /// <param name="owns">What its launch configuration says it owns, if anything.</param>
     /// <returns>The started session and the tools bound to it.</returns>
     public async Task<(BrokerSession Session, ParleyTools Tools)> LaunchAsync(
-        string agent, CancellationToken cancellationToken)
+        string agent, CancellationToken cancellationToken, string? owns = null)
     {
-        var options = OptionsFor(agent);
+        var options = OptionsFor(agent, owns: owns);
         var session = await BrokerSession.StartAsync(options, Clock, cancellationToken);
 
         _sessions.Add(session);

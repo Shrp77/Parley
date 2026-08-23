@@ -45,7 +45,8 @@ public static class ParleyInstructions
         Use it when an answer depends on a repository you do not own. Inventing another
         codebase's behaviour is the mistake this exists to prevent, and asking costs one message.
 
-        - Call parley_agents to see who exists. The roster changes as agents come and go.
+        - Call parley_agents to see who exists and what each one owns. The roster changes as
+          agents come and go, and it is how you pick who to ask.
         - Nothing arrives unprompted. Call parley_inbox when you start work, and again later if
           you are waiting on a reply.
         - Asking never blocks. If nobody ever answers you are told so, rather than left waiting.

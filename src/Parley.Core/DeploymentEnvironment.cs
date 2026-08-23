@@ -33,4 +33,14 @@ public static class DeploymentEnvironment
     /// deployments.
     /// </remarks>
     public const string DatabaseVariable = "PARLEY_DB";
+
+    /// <summary>The variable saying what an agent owns.</summary>
+    /// <remarks>
+    /// Read by a server, which records it, and named by the operator's tool, which reports the
+    /// agents that have not set it — so it is the second name two binaries share without
+    /// referencing each other, and it is here for the reason the first one is. See
+    /// <see cref="OwnershipStatement"/> for what the value is and why it comes from a launch
+    /// rather than from a call.
+    /// </remarks>
+    public const string OwnsVariable = "PARLEY_OWNS";
 }

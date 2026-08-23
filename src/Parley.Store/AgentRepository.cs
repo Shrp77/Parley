@@ -35,6 +35,12 @@ namespace Parley.Store;
 /// code that moved while it was away.
 /// </param>
 /// <param name="Status">The agent's current registration and liveness state.</param>
+/// <param name="Owns">
+/// One line saying what this agent owns, or <see langword="null"/> if its launch did not say.
+/// Unlike the rest of this record it is written for peers to read: see
+/// <see cref="OwnershipStatement"/>, and <see cref="AgentRepository.RefreshOwnershipAsync"/>
+/// for why it is refreshed on every launch while the configuration around it is not.
+/// </param>
 /// <remarks>
 /// Credentials are deliberately not a field here, and should not become one. This record is
 /// what <see cref="AgentRepository.UpsertAsync"/> writes from a manifest reload, and anything
@@ -53,7 +59,8 @@ public sealed record AgentRecord(
     string? SessionRef,
     string? AdapterConfig,
     DateTimeOffset? LastSeenUtc,
-    AgentStatus Status);
+    AgentStatus Status,
+    string? Owns = null);
 
 /// <summary>
 /// One credential an adapter needs, as a reference rather than a value.
@@ -121,6 +128,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                        workspace      AS Workspace,
                        session_ref    AS SessionRef,
                        adapter_config AS AdapterConfig,
+                       owns           AS Owns,
                        last_seen_utc  AS LastSeenUtc,
                        status         AS Status
                 FROM agents
@@ -215,7 +223,7 @@ public sealed class AgentRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 SELECT name AS Name, adapter AS Adapter, tier AS Tier, status AS Status,
-                       last_seen_utc AS LastSeenUtc
+                       last_seen_utc AS LastSeenUtc, owns AS Owns
                   FROM agents
                  WHERE status <> 'retired'
                  ORDER BY name;
@@ -227,7 +235,8 @@ public sealed class AgentRepository(SqliteConnection connection)
             r.Adapter,
             AgentRow.ParseTier(r.Tier),
             AgentRow.ParseStatus(r.Status),
-            r.LastSeenUtc is null ? null : ExchangeRow.ParseTimestamp(r.LastSeenUtc))).ToList();
+            r.LastSeenUtc is null ? null : ExchangeRow.ParseTimestamp(r.LastSeenUtc),
+            r.Owns)).ToList();
     }
 
     /// <summary>
@@ -344,6 +353,7 @@ public sealed class AgentRepository(SqliteConnection connection)
         public string Tier { get; init; } = "";
         public string Status { get; init; } = "";
         public string? LastSeenUtc { get; init; }
+        public string? Owns { get; init; }
     }
 
     /// <summary>
@@ -367,14 +377,15 @@ public sealed class AgentRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 INSERT INTO agents (name, adapter, tier, workspace, session_ref, adapter_config,
-                                    last_seen_utc, status)
+                                    owns, last_seen_utc, status)
                 VALUES (@Name, @Adapter, @Tier, @Workspace, @SessionRef, @AdapterConfig,
-                        @LastSeenUtc, @Status)
+                        @Owns, @LastSeenUtc, @Status)
                 ON CONFLICT(name) DO UPDATE SET
                     adapter        = excluded.adapter,
                     tier           = excluded.tier,
                     workspace      = excluded.workspace,
-                    adapter_config = excluded.adapter_config;
+                    adapter_config = excluded.adapter_config,
+                    owns           = excluded.owns;
                 """,
                 new
                 {
@@ -384,6 +395,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                     agent.Workspace,
                     agent.SessionRef,
                     agent.AdapterConfig,
+                    agent.Owns,
                     LastSeenUtc = agent.LastSeenUtc is { } t ? ExchangeRow.FormatTimestamp(t) : null,
                     Status = FormatStatus(agent.Status)
                 },
@@ -434,9 +446,9 @@ public sealed class AgentRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 INSERT INTO agents (name, adapter, tier, workspace, session_ref, adapter_config,
-                                    last_seen_utc, status)
+                                    owns, last_seen_utc, status)
                 VALUES (@Name, @Adapter, @Tier, @Workspace, @SessionRef, @AdapterConfig,
-                        @LastSeenUtc, @Status)
+                        @Owns, @LastSeenUtc, @Status)
                 ON CONFLICT(name) DO NOTHING;
                 """,
                 new
@@ -447,11 +459,64 @@ public sealed class AgentRepository(SqliteConnection connection)
                     agent.Workspace,
                     agent.SessionRef,
                     agent.AdapterConfig,
+                    agent.Owns,
                     LastSeenUtc = agent.LastSeenUtc is { } t ? ExchangeRow.FormatTimestamp(t) : null,
                     Status = FormatStatus(agent.Status)
                 },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Records what a launching agent's configuration says it owns, replacing what was there.
+    /// </summary>
+    /// <param name="name">The agent whose server is starting.</param>
+    /// <param name="owns">What its launch says it owns, or <see langword="null"/> for none.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>One if the registration was updated, zero if the agent is unknown or retired.</returns>
+    /// <remarks>
+    /// <para>
+    /// <see cref="RegisterIfAbsentAsync"/> writes nothing when the name is already known, and
+    /// that is right for what it protects: a second launch must not revive a retirement by the
+    /// side door, nor rewrite an agent an operator described in a manifest as Headless, with the
+    /// endpoint the broker needs to invoke it, into a configuration-free Pull agent because
+    /// somebody opened that repository once.
+    /// </para>
+    /// <para>
+    /// It is wrong for this one column. Left to registration alone, a launch could state what an
+    /// agent owns exactly once — on its very first start ever — and never correct it. A
+    /// statement that cannot be corrected is worse than no statement, because every peer routes
+    /// by it and nothing says it is stale.
+    /// </para>
+    /// <para>
+    /// So this column belongs to the launch: refreshed on every start, cleared when the launch
+    /// stops saying. Clearing matters as much as setting — an operator who deletes the variable
+    /// because the statement was wrong has withdrawn it, and a coalescing update would keep the
+    /// wrong one for ever with no way to remove it.
+    /// </para>
+    /// <para>
+    /// It touches nothing else. No status, so it cannot resurrect a retirement, and retired rows
+    /// are skipped outright; no tier and no adapter configuration, so it cannot flatten a
+    /// manifest. <b>The workspace is deliberately not refreshed here</b>, and that asymmetry is
+    /// real rather than an oversight: a manifest names where the broker should look for an agent
+    /// it may have to invoke, and a launch that says nothing about a workspace must not erase
+    /// that. The consequence is that a moved repository keeps its old recorded path until an
+    /// operator corrects it, which is a known and separate problem.
+    /// </para>
+    /// </remarks>
+    public async Task<int> RefreshOwnershipAsync(
+        AgentName name,
+        string? owns,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                UPDATE agents
+                   SET owns = @Owns
+                 WHERE name = @Name
+                   AND status <> 'retired';
+                """,
+                new { Name = name.Value, Owns = owns },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>
     /// Marks an agent live and records that it has just communicated.
@@ -745,6 +810,8 @@ public sealed class AgentRepository(SqliteConnection connection)
 
         public string? AdapterConfig { get; init; }
 
+        public string? Owns { get; init; }
+
         public string? LastSeenUtc { get; init; }
 
         public string Status { get; init; } = "";
@@ -794,6 +861,7 @@ public sealed class AgentRepository(SqliteConnection connection)
             SessionRef,
             AdapterConfig,
             LastSeenUtc is null ? null : ExchangeRow.ParseTimestamp(LastSeenUtc),
-            ParseStatus(Status));
+            ParseStatus(Status),
+            Owns);
     }
 }

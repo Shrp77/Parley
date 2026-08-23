@@ -62,6 +62,16 @@ public sealed class OperatorCommands
                 CultureInfo.InvariantCulture,
                 $"{agent.Name.Value,-20} {Lower(agent.Status),-12} {Lower(agent.Tier),-9} " +
                 $"{agent.Adapter,-12} {agent.Workspace ?? ""}")).ConfigureAwait(false);
+
+            // The statement its peers route by, on its own line because it is prose rather than
+            // a column. Its absence is printed rather than skipped: the field is optional and
+            // the feature is inert without it, so this listing is where the person who can set
+            // it finds out that nobody has. That is the whole of the nudge — a note on every
+            // start-up would land in whichever log the client keeps for a server that is
+            // misbehaving, which nobody reads while nothing is wrong.
+            await _output.WriteLineAsync(
+                $"  owns: {agent.Owns ?? $"(unset — set {DeploymentEnvironment.OwnsVariable} where that agent's server is launched)"}")
+                .ConfigureAwait(false);
         }
 
         return 0;

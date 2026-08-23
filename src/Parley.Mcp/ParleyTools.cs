@@ -527,8 +527,13 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
     [McpServerTool(Name = "parley_agents")]
     [Description(
         """
-        List the agents you can address, with their adapter and whether they are reachable.
-        Use this before asking, and use it to name the right owner when you refer a question on.
+        List the agents you can address: what each one owns, its adapter, and whether it is
+        reachable. Use this before asking, and use it to name the right owner when you refer a
+        question on.
+
+        "owns" is one line written by whoever configured that agent, not by the agent itself.
+        It is how you pick a recipient. An agent with no "owns" has not said; go by its name,
+        and if you guess wrong it will refer you rather than answer badly.
 
         An agent marked "unreachable" cannot be spawned — do not ask it anything, and tell your
         principal rather than retrying.
@@ -543,13 +548,23 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
 
         foreach (var agent in agents.Where(a => a.Name != _options.Agent))
         {
-            listed.Add(new JsonObject
+            var entry = new JsonObject
             {
                 ["name"] = agent.Name.Value,
                 ["adapter"] = agent.Adapter,
                 ["tier"] = agent.Tier.ToString().ToLowerInvariant(),
                 ["status"] = agent.Status.ToString().ToLowerInvariant()
-            });
+            };
+
+            // Omitted rather than null when the launch did not say. An absent key reads as
+            // unknown, which is what it is; a null one invites the reader to treat "owns
+            // nothing" as a claim that peer made about itself.
+            if (agent.Owns is { } owns)
+            {
+                entry["owns"] = owns;
+            }
+
+            listed.Add(entry);
         }
 
         return new JsonObject { ["agents"] = listed };

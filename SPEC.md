@@ -845,6 +845,7 @@ CREATE TABLE agents (
   workspace       TEXT,
   session_ref     TEXT,                    -- adapter-specific resume handle
   adapter_config  TEXT,                    -- opaque to the broker (see §12)
+  owns            TEXT,                    -- one line, read by peers (see §17 q10)
   last_seen_utc   TEXT,
   status          TEXT    NOT NULL
                   CHECK (status IN ('registered', 'live', 'offline', 'unreachable',
@@ -852,6 +853,47 @@ CREATE TABLE agents (
 
   CHECK (adapter_config IS NULL
          OR (json_valid(adapter_config) AND length(adapter_config) <= 4000)),
+
+  -- What this agent owns, in one line, written by whoever configured its launch. Bounded
+  -- here because terseness is a security control (principle 2.2) and this text is charged
+  -- against every agent's working memory once per peer, every time the roster is listed. The
+  -- number is measured: a roster entry costs about 75 characters of structure before the
+  -- statement, so ten peers at 100 cost roughly what one message is allowed to.
+  --
+  -- It must also render as what it says, on one line, because it is put into a list
+  -- of peers that every agent reads: anything able to break the line, hide itself, or
+  -- reorder what follows lets one entry imitate the entries around it.
+  --
+  -- The class below is every code point .NET reports as Control, Format, LineSeparator or
+  -- ParagraphSeparator, collapsed into ranges. It is exact rather than approximate because
+  -- it was derived by sweeping the whole of Unicode and comparing against OwnershipStatement,
+  -- and OwnershipTests re-runs that sweep so the two cannot drift. Testing C0 alone did not
+  -- hold and neither did guessing at blocks: probing found U+2028 and U+2029, which are line
+  -- breaks wherever this is rendered; U+202E and U+061C, which reorder the display of what
+  -- follows; U+00AD and U+FEFF, which are invisible; and U+E0020-U+E007F, the tag characters
+  -- used to smuggle text past a reader entirely. Every one of them was accepted before.
+  --
+  -- The last clause catches an embedded NUL, which no range can: char(0) is the empty string
+  -- in SQLite, so a class built from it matches everything and would refuse every statement.
+  -- length() stops at a NUL while concatenation does not, so a value whose length is
+  -- unchanged by appending a character is hiding bytes behind a terminator.
+  CHECK (owns IS NULL
+         OR (length(owns) <= 100
+             AND owns NOT GLOB '*[' ||
+             char(1) || '-' || char(31) || char(127) || '-' || char(159) ||
+             char(173) || '-' || char(173) || char(1536) || '-' || char(1541) ||
+             char(1564) || '-' || char(1564) || char(1757) || '-' || char(1757) ||
+             char(1807) || '-' || char(1807) || char(2192) || '-' || char(2193) ||
+             char(2274) || '-' || char(2274) || char(6158) || '-' || char(6158) ||
+             char(8203) || '-' || char(8207) || char(8232) || '-' || char(8238) ||
+             char(8288) || '-' || char(8292) || char(8294) || '-' || char(8303) ||
+             char(65279) || '-' || char(65279) || char(65529) || '-' || char(65531) ||
+             char(69821) || '-' || char(69821) || char(69837) || '-' || char(69837) ||
+             char(78896) || '-' || char(78911) || char(113824) || '-' || char(113827) ||
+             char(119155) || '-' || char(119162) || char(917505) || '-' || char(917505) ||
+             char(917536) || '-' || char(917631)
+             || ']*'
+             AND length(owns) = length(owns || '.') - 1)),
 
   -- mirrors the AgentName grammar; see §9.3
   CHECK (length(name) BETWEEN 1 AND 32
@@ -1448,7 +1490,7 @@ is no shared memory to poison; §10.1 is what makes that true.
 
 | Operation | Description |
 |---|---|
-| `agents()` | List registered agents, their adapters, and liveness. |
+| `agents()` | List registered agents: what each one owns (§17 q10), their adapters, and liveness. |
 | `ask(to, intent, sub_questions, consequences)` | Open an exchange. Returns its identifier, or a refusal (§7.3). Never returns an answer. |
 | `clarify(exchange_id, text)` | Request detail within an open exchange you owe. |
 | `answer(exchange_id, resolutions, decision?)` | Close an exchange. |
@@ -2285,3 +2327,45 @@ Cheap to collect, disproportionately useful:
    `Resume` preserving `clarify_depth` exists to prevent. Carrying depth forward onto a
    re-ask would fix it, but requires deciding what "the same question, asked again" means
    when the content differs enough to be admitted at all.
+
+10. *(Closed.)* How does an asker choose a recipient? From an `owns` line in the registry,
+    written by whoever configured that agent's launch and returned by `agents()` beside the
+    name. One line, capped at 100 characters, refusing control characters, enforced in the
+    schema. It is optional, and an agent that has none is listed without one — an asker then
+    falls back to the name and to referral, exactly as before.
+
+    **It is not self-declared, and that is the whole of why it is worth reading.** A field a
+    model could write would be no more trustworthy than the prose it replaces, merely
+    centralised. Sourced from the launch environment it is written by a person, in the file
+    that already fixes the agent's name, and no operation accepts one — an agent can no more
+    edit its charter than its identity (§13). It is refreshed on every launch, and cleared
+    when a launch stops supplying it, because a statement that cannot be corrected is worse
+    than none when every peer routes by it.
+
+    It stays advisory. Nothing is routed by it, refused because of it, or compared against
+    it; there is no uniqueness constraint and no arbitration, so two agents may claim the
+    same ground and the broker will not say which is right. Principle 2.6 leaves that to the
+    people who own the repositories, and referral remains the correction: `out_of_scope` with
+    `redirect_to` (§5.3) costs one message and names the owner.
+
+    The argument against it was real and is recorded rather than discarded, because a later
+    change needs to know it was weighed. A roster describing every agent's domain hands each
+    agent a map of the whole system, which is the disclosure §10.1 withholds the workspace
+    path to avoid, in softer form; the answer is that an operator writes this text for the
+    express purpose of peers reading it, whereas nobody writes a filesystem path for that. And
+    a free-text field that can hold a paragraph will eventually hold one, which is why the cap
+    is an order of magnitude below the message cap rather than near it: a message is read once
+    by one agent, while this is read by all of them, repeatedly.
+
+    What was rejected: making it enforceable. A registry that could refuse a question because
+    the recipient's `owns` did not cover it would be an authority over what an agent may be
+    asked, which no agent has over another (principle 2.6), and would make a one-line description into
+    a routing table that has to be right.
+
+    The state this replaces, kept because it is what an implementation without the field
+    still does: `agents()` returns a name, an adapter, a tier and a status, so the only
+    routing signal inside the protocol is the name, and everything else lives in a file the
+    protocol never sees, written once per repository and maintained by hand. That was
+    survivable because a wrong guess is cheap — referral is a first-class outcome and *refer,
+    do not relay* keeps the correction to a single hop — but it is still one copy of the same
+    ownership map per repository, drifting independently.

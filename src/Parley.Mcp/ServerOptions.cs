@@ -16,6 +16,10 @@ namespace Parley.Mcp;
 /// The directory this agent works in, recorded in the registry so an operator can tell which
 /// repository a name belongs to, or <see langword="null"/> if the launch did not say.
 /// </param>
+/// <param name="Owns">
+/// One line saying what this agent owns, shown to every peer that lists the roster, or
+/// <see langword="null"/> if the launch did not say. See <see cref="OwnershipStatement"/>.
+/// </param>
 /// <remarks>
 /// <para>
 /// <b><see cref="Agent"/> comes from the launch configuration and from nowhere else.</b> It is
@@ -39,7 +43,8 @@ public sealed record ServerOptions(
     string ResponderModel,
     TimeSpan TickInterval,
     RetentionPolicy Retention,
-    string? Workspace)
+    string? Workspace,
+    string? Owns = null)
 {
     /// <summary>The environment variable naming the database file.</summary>
     /// <remarks>
@@ -76,6 +81,17 @@ public sealed record ServerOptions(
     /// uses to tell two similarly named agents apart. Unset means unknown, which is true.
     /// </remarks>
     public const string WorkspaceVariable = "PARLEY_WORKSPACE";
+
+    /// <summary>The environment variable saying what this agent owns.</summary>
+    /// <remarks>
+    /// Set here rather than offered as a tool parameter, and that is the whole argument for
+    /// trusting it. The objection to recording what an agent owns in the registry is that a
+    /// self-declared field is worth no more than the prose it replaces — true, if a model
+    /// declares it. Read from the launch environment it is declared by the person who wrote the
+    /// launch configuration, in the same file and by the same mechanism that fixes the agent's
+    /// name, and no operation anywhere accepts one. See SPEC.md §17, the tenth question.
+    /// </remarks>
+    public const string OwnsVariable = DeploymentEnvironment.OwnsVariable;
 
     /// <summary>
     /// How often the sweep runs when the launch configuration does not say.
@@ -166,6 +182,16 @@ public sealed record ServerOptions(
         }
 
         var workspace = read(WorkspaceVariable);
+        var owns = OwnershipStatement.Read(read(OwnsVariable));
+
+        // Refused at start-up for the same reason a malformed agent name is: the constraint that
+        // actually enforces this lives in the schema, so a server launched with a bad statement
+        // would start cleanly and then fail its own registration — reporting a configuration
+        // mistake to the model, which can do nothing about it, rather than to whoever made it.
+        if (!OwnershipStatement.IsValid(owns, out var invalid))
+        {
+            throw new InvalidOperationException($"{OwnsVariable} cannot be used: {invalid}");
+        }
 
         return new ServerOptions(
             databasePath,
@@ -176,7 +202,8 @@ public sealed record ServerOptions(
             // sweep this server runs and a `parley prune` cannot silently apply different
             // numbers to the same file. See RetentionPolicyEnvironment.
             RetentionPolicyEnvironment.Read(read),
-            string.IsNullOrWhiteSpace(workspace) ? null : workspace);
+            string.IsNullOrWhiteSpace(workspace) ? null : workspace,
+            owns);
     }
 
     /// <summary>Reads a required variable.</summary>
