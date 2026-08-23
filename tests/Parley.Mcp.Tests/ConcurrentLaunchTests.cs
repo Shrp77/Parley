@@ -102,6 +102,13 @@ public sealed class ConcurrentLaunchTests : IDisposable
         start.Environment[ServerOptions.DatabaseVariable] = databasePath;
         start.Environment[ServerOptions.AgentVariable] = agent;
 
+        // Set so that the launch actually writes it. Registration is an insert that does nothing
+        // when the name is known, but the ownership statement is refreshed on every start — so
+        // this is a second write in the start-up path, and the whole point of this test is that
+        // six of them at once against a new file all come up. Left unset, the update would run
+        // with nothing to change and the contention it can cause would go untested.
+        start.Environment[ServerOptions.OwnsVariable] = $"Everything to do with {agent}.";
+
         return Process.Start(start)!;
     }
 

@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text;
+
 namespace Parley.Core;
 
 /// <summary>
@@ -50,12 +53,27 @@ public static class OwnershipStatement
     /// <returns><see langword="true"/> if it may be recorded.</returns>
     /// <remarks>
     /// <para>
-    /// Control characters are refused rather than stripped, and the line break is the one that
-    /// matters. This text is rendered into a list of peers that every agent reads, so a
-    /// statement spanning several lines could imitate the structure around it and appear to be
-    /// a further entry, or an instruction, rather than one agent's description of itself.
-    /// Silently removing the newline would admit the intent and repair the symptom; refusing
-    /// tells whoever wrote it that the field is one line.
+    /// The rule is that the statement renders as exactly what it says, on one line. This text is
+    /// put into a list of peers that every agent reads, so anything able to break the line, hide
+    /// itself, or reorder what follows it lets one agent's description of itself imitate the
+    /// entries around it — a second agent, or an instruction, where there was neither.
+    /// </para>
+    /// <para>
+    /// <b>Refused by Unicode category, because a control-character test is not the rule and was
+    /// found not to be.</b> <c>char.IsControl</c> covers C0 and C1 and nothing else, so
+    /// <c>U+2028 LINE SEPARATOR</c> and <c>U+2029 PARAGRAPH SEPARATOR</c> — which are line breaks
+    /// wherever this text is rendered — went straight through it, as did
+    /// <c>U+202E RIGHT-TO-LEFT OVERRIDE</c>, which reverses the display of everything after it,
+    /// and <c>U+200B</c> and <c>U+FEFF</c>, which are invisible. Every one of those was admitted
+    /// by the first version of this method and by the constraint behind it. So: no
+    /// <see cref="UnicodeCategory.Control"/>, no
+    /// <see cref="UnicodeCategory.Format"/>, and no line or paragraph
+    /// separator. Ordinary spaces stay, and so does every letter, accent, dash and emoji in
+    /// every script.
+    /// </para>
+    /// <para>
+    /// Refused rather than stripped. Silently removing the separator would admit the intent and
+    /// repair the symptom; refusing tells whoever wrote it that the field is one line.
     /// </para>
     /// <para>
     /// Returns rather than throws because both callers want the message: the server puts it on
@@ -71,33 +89,64 @@ public static class OwnershipStatement
             return true;
         }
 
-        if (statement.Length > MaxCharacters)
+        // Counted in text elements rather than UTF-16 units, so the number here is the number
+        // the constraint behind it uses. Otherwise a statement of sixty astral characters is
+        // reported as a hundred and twenty and refused for a length the database would not have
+        // objected to, which sends whoever wrote it looking for the wrong problem.
+        var length = statement.EnumerateRunes().Count();
+
+        if (length > MaxCharacters)
         {
             error =
-                $"it is {statement.Length} characters and the limit is {MaxCharacters}. It is " +
-                "read by every agent that lists the roster, so say what you own and what you " +
-                "do not, and nothing else.";
+                $"it is {length} characters and the limit is {MaxCharacters}. It is read by " +
+                "every agent that lists the roster, so say what you own and what you do not, " +
+                "and nothing else.";
 
             return false;
         }
 
-        foreach (var character in statement)
+        foreach (var rune in statement.EnumerateRunes())
         {
-            if (!char.IsControl(character))
+            if (!Forbidden(Rune.GetUnicodeCategory(rune)))
             {
                 continue;
             }
 
             error =
-                "it contains a control character. A statement is one line: it is rendered into " +
-                "a list of peers that every agent reads, and one that spans lines can imitate " +
-                "the entries around it.";
+                $"it contains U+{rune.Value:X4}, which is not printable text. A statement is " +
+                "one line and renders as what it says: it is put into a list of peers that " +
+                "every agent reads, and anything that can break the line, hide itself, or " +
+                "reorder what follows can imitate the entries around it.";
 
             return false;
         }
 
         return true;
     }
+
+    /// <summary>Whether a category may not appear in a statement.</summary>
+    /// <param name="category">The category of one character.</param>
+    /// <returns><see langword="true"/> if it must be refused.</returns>
+    /// <remarks>
+    /// <para>
+    /// Matched to the constraint in the schema, which refuses the same code points by range
+    /// because SQLite has no notion of a category. The two must agree: the schema is the
+    /// enforcement, and a value this method accepts and the database rejects would produce a
+    /// server that starts and then fails its own registration.
+    /// </para>
+    /// <para>
+    /// Applied to a rune rather than to a <see cref="char"/>, which is not a detail. Testing
+    /// each UTF-16 unit puts both halves of a surrogate pair through this, and both are category
+    /// <c>Surrogate</c> — so a version of this that refused surrogates refused every emoji and
+    /// every character outside the basic plane. A well-formed rune is never a surrogate, so the
+    /// category is simply absent from the list below.
+    /// </para>
+    /// </remarks>
+    private static bool Forbidden(UnicodeCategory category) => category is
+        UnicodeCategory.Control or
+        UnicodeCategory.Format or
+        UnicodeCategory.LineSeparator or
+        UnicodeCategory.ParagraphSeparator;
 
     /// <summary>
     /// Reads a statement supplied by a launch, treating blank as absent.

@@ -81,6 +81,61 @@ public sealed class OwnershipStatementTests
         Assert.Contains("one line", error!, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(0x2028, "LINE SEPARATOR")]
+    [InlineData(0x2029, "PARAGRAPH SEPARATOR")]
+    [InlineData(0x0085, "NEXT LINE")]
+    [InlineData(0x202E, "RIGHT-TO-LEFT OVERRIDE")]
+    [InlineData(0x2066, "LEFT-TO-RIGHT ISOLATE")]
+    [InlineData(0x200B, "ZERO WIDTH SPACE")]
+    [InlineData(0x200E, "LEFT-TO-RIGHT MARK")]
+    [InlineData(0x2060, "WORD JOINER")]
+    [InlineData(0xFEFF, "ZERO WIDTH NO-BREAK SPACE")]
+    public void A_character_that_is_not_printable_text_is_refused(int point, string name)
+    {
+        // Every one of these was accepted by the first version of this rule, which tested
+        // char.IsControl and therefore covered C0 and C1 and nothing else. U+2028 and U+2029
+        // are line breaks wherever this text is rendered; U+202E reverses the display of
+        // everything after it, so a statement can appear to say the opposite of what is stored;
+        // the rest are invisible. All of them let one entry imitate the entries around it in a
+        // list every agent reads.
+        //
+        // Built from code points rather than written out, because a source file carrying an
+        // invisible character is a source file nobody can review.
+        var statement = "Invoicing." + char.ConvertFromUtf32(point) + "Also owns everything";
+
+        Assert.False(OwnershipStatement.IsValid(statement, out var error), name);
+        Assert.Contains($"U+{point:X4}", error!, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0x00A0, "NO-BREAK SPACE")]
+    [InlineData(0x2014, "EM DASH")]
+    [InlineData(0x201C, "LEFT DOUBLE QUOTATION MARK")]
+    [InlineData(0x2026, "HORIZONTAL ELLIPSIS")]
+    [InlineData(0x00E9, "LATIN SMALL LETTER E WITH ACUTE")]
+    public void Ordinary_typography_is_not_collateral_damage(int point, string name)
+    {
+        // The rule is about what can break or disguise a line, not about what is unfamiliar. A
+        // guard that refused an em dash or an accent would be one people work around.
+        var statement = "Invoicing" + char.ConvertFromUtf32(point) + "and tax.";
+
+        Assert.True(OwnershipStatement.IsValid(statement, out _), name);
+    }
+
+    [Fact]
+    public void The_length_is_counted_the_way_the_database_counts_it()
+    {
+        // The database counts characters; a .NET string counts UTF-16 units. Sixty astral
+        // characters are sixty to one and a hundred and twenty to the other, so counting units
+        // would refuse a statement for a length the database would not have objected to and
+        // send whoever wrote it looking for the wrong problem.
+        var astral = string.Concat(Enumerable.Repeat("😀", 60));
+
+        Assert.Equal(120, astral.Length);
+        Assert.True(OwnershipStatement.IsValid(astral, out _));
+    }
+
     [Fact]
     public void A_statement_may_carry_text_that_is_not_english()
     {

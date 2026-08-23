@@ -51,20 +51,39 @@ CREATE TABLE agents (
     -- An order of magnitude below the 2000-character message cap, because a message is read
     -- once by one agent and this is read by all of them, repeatedly.
     --
-    -- Control characters are refused because the value is rendered into a list of peers. One
-    -- carrying a line break could imitate the entries around it and read as a further agent,
-    -- or as an instruction, rather than as one agent's description of itself. char(10) and
-    -- char(13) are the ones that matter; the range test covers the rest without enumerating.
+    -- The statement must render as what it says, on one line, because it is put into a list
+    -- of peers that every agent reads: anything able to break the line, hide itself, or
+    -- reorder what follows lets one entry imitate the entries around it.
     --
-    -- The last clause is what catches an embedded NUL, which the range above cannot: char(0)
-    -- is the empty string in SQLite, so a GLOB built from it matches everything and would
-    -- refuse every statement. length() stops at a NUL while concatenation does not, so a value
-    -- whose length is unchanged by appending a character is one that is hiding bytes behind a
-    -- terminator. Found by probing the constraint rather than by reading it.
+    -- The class below is every code point .NET reports as Control, Format, LineSeparator or
+    -- ParagraphSeparator, collapsed into ranges. It is exact rather than approximate because
+    -- it was derived by sweeping the whole of Unicode and comparing against OwnershipStatement,
+    -- and OwnershipTests re-runs that sweep so the two cannot drift. Testing C0 alone did not
+    -- hold and neither did guessing at blocks: probing found U+2028 and U+2029, which are line
+    -- breaks wherever this is rendered; U+202E and U+061C, which reorder the display of what
+    -- follows; U+00AD and U+FEFF, which are invisible; and U+E0020-U+E007F, the tag characters
+    -- used to smuggle text past a reader entirely. Every one of them was accepted before.
+    --
+    -- The last clause catches an embedded NUL, which no range can: char(0) is the empty string
+    -- in SQLite, so a class built from it matches everything and would refuse every statement.
+    -- length() stops at a NUL while concatenation does not, so a value whose length is
+    -- unchanged by appending a character is hiding bytes behind a terminator.
     CHECK (owns IS NULL
            OR (length(owns) <= 100
-               AND owns NOT GLOB '*[' || char(1) || '-' || char(31) || ']*'
-               AND owns NOT GLOB '*' || char(127) || '*'
+               AND owns NOT GLOB '*[' ||
+               char(1) || '-' || char(31) || char(127) || '-' || char(159) ||
+               char(173) || '-' || char(173) || char(1536) || '-' || char(1541) ||
+               char(1564) || '-' || char(1564) || char(1757) || '-' || char(1757) ||
+               char(1807) || '-' || char(1807) || char(2192) || '-' || char(2193) ||
+               char(2274) || '-' || char(2274) || char(6158) || '-' || char(6158) ||
+               char(8203) || '-' || char(8207) || char(8232) || '-' || char(8238) ||
+               char(8288) || '-' || char(8292) || char(8294) || '-' || char(8303) ||
+               char(65279) || '-' || char(65279) || char(65529) || '-' || char(65531) ||
+               char(69821) || '-' || char(69821) || char(69837) || '-' || char(69837) ||
+               char(78896) || '-' || char(78911) || char(113824) || '-' || char(113827) ||
+               char(119155) || '-' || char(119162) || char(917505) || '-' || char(917505) ||
+               char(917536) || '-' || char(917631)
+               || ']*'
                AND length(owns) = length(owns || '.') - 1)),
 
     -- The agent name grammar, mirroring AgentName's ^[a-z][a-z0-9-]{0,31}$. Every other

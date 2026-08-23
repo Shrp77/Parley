@@ -274,7 +274,8 @@ dotnet tool install -g --add-source src/Parley.Cli/bin/Release Parley.Cli
 ```
 
 ```
-parley agents                       every agent, with the workspace a peer never sees
+parley agents                       every agent, what it owns, and the workspace a peer
+                                    never sees
 parley retire <agent>               withdraw a registration; its server then refuses to start
 parley reinstate <agent>            the only thing that clears a retirement
 parley export <conversation>        every message in a discussion, across agents

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Xunit;
@@ -41,6 +42,8 @@ public sealed class OwnershipTests : IDisposable
         _agents.UpsertAsync(
             new AgentRecord(name, "test", AgentTier.Full, null, null, null, null, status, owns),
             TestContext.Current.CancellationToken);
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private async Task<AgentRecord> Load(AgentName name) =>
         (await _agents.GetAllAsync(TestContext.Current.CancellationToken))
@@ -104,6 +107,55 @@ public sealed class OwnershipTests : IDisposable
             () => command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken));
 
         Assert.Contains("CHECK constraint failed", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0x2028, "LINE SEPARATOR")]
+    [InlineData(0x2029, "PARAGRAPH SEPARATOR")]
+    [InlineData(0x0085, "NEXT LINE")]
+    [InlineData(0x202E, "RIGHT-TO-LEFT OVERRIDE")]
+    [InlineData(0x2066, "LEFT-TO-RIGHT ISOLATE")]
+    [InlineData(0x200B, "ZERO WIDTH SPACE")]
+    [InlineData(0x200E, "LEFT-TO-RIGHT MARK")]
+    [InlineData(0x2060, "WORD JOINER")]
+    [InlineData(0xFEFF, "ZERO WIDTH NO-BREAK SPACE")]
+    public async Task The_schema_refuses_a_character_that_is_not_printable_text(int point, string name)
+    {
+        // The schema is the enforcement, so the one-line rule has to hold here and not only in
+        // the value type. Every one of these was stored happily by the first version of this
+        // constraint, which tested the C0 range and therefore missed the two Unicode line
+        // separators, the bidi overrides, and everything invisible.
+        await using var command = _connection.CreateCommand();
+        command.CommandText =
+            "INSERT INTO agents (name, adapter, tier, status, owns) " +
+            "VALUES ('orders', 'test', 'full', 'registered', $owns);";
+        command.Parameters.AddWithValue(
+            "$owns", "Invoicing." + char.ConvertFromUtf32(point) + "Also owns everything");
+
+        var failure = await Assert.ThrowsAsync<SqliteException>(
+            () => command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("CHECK constraint failed", failure.Message, StringComparison.Ordinal);
+        Assert.False(OwnershipStatement.IsValid(command.Parameters[0].Value as string, out _), name);
+    }
+
+    [Theory]
+    [InlineData(0x00A0, "NO-BREAK SPACE")]
+    [InlineData(0x2014, "EM DASH")]
+    [InlineData(0x201C, "LEFT DOUBLE QUOTATION MARK")]
+    [InlineData(0x2026, "HORIZONTAL ELLIPSIS")]
+    [InlineData(0x1F600, "GRINNING FACE")]
+    public async Task The_schema_keeps_ordinary_typography(int point, string name)
+    {
+        // The widened constraint refuses whole Unicode blocks, so this is the check that it did
+        // not take an em dash or an emoji with it. A guard people have to work around is worse
+        // than the hole it closed.
+        var statement = "Invoicing" + char.ConvertFromUtf32(point) + "and tax.";
+
+        await Register(Billing, statement);
+
+        Assert.Equal(statement, (await Load(Billing)).Owns);
+        Assert.True(OwnershipStatement.IsValid(statement, out _), name);
     }
 
     [Fact]
@@ -197,6 +249,131 @@ public sealed class OwnershipTests : IDisposable
         var record = await Load(Billing);
 
         Assert.Equal(manifest with { Owns = "Invoicing and tax." }, record);
+    }
+
+    [Fact]
+    public void The_schema_and_the_value_type_agree_about_every_character()
+    {
+        // The check that keeps the two halves of this rule from drifting, and the one that found
+        // the rule was wrong in the first place. OwnershipStatement refuses by Unicode category;
+        // the schema cannot, because SQLite has no notion of one, so it refuses the same code
+        // points by range. A range list maintained by hand beside a category list is two things
+        // that agree until somebody edits one.
+        //
+        // Both directions matter. A character the schema refuses and the value type accepts is a
+        // server that starts and then fails its own registration. One the value type refuses and
+        // the schema accepts is a hole, reachable by any writer that does not go through the
+        // value type — and that is exactly what was there: U+00AD, U+061C, U+FFF9 and fourteen
+        // others walked into the database while the validator turned them away.
+        var disagreements = new List<string>();
+
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            "INSERT INTO agents (name, adapter, tier, status, owns) " +
+            "VALUES ('probe', 'test', 'full', 'registered', $owns);";
+        var parameter = command.Parameters.Add("$owns", Microsoft.Data.Sqlite.SqliteType.Text);
+
+        using var undo = _connection.BeginTransaction();
+        command.Transaction = undo;
+
+        for (var point = 1; point <= 0xFFFF; point++)
+        {
+            if (point is >= 0xD800 and <= 0xDFFF)
+            {
+                continue;
+            }
+
+            var statement = "a" + char.ConvertFromUtf32(point) + "b";
+            var valueType = OwnershipStatement.IsValid(statement, out _);
+
+            parameter.Value = statement;
+
+            bool schema;
+
+            using (var savepoint = _connection.CreateCommand())
+            {
+                savepoint.Transaction = undo;
+                savepoint.CommandText = "SAVEPOINT probe;";
+                savepoint.ExecuteNonQuery();
+            }
+
+            try
+            {
+                command.ExecuteNonQuery();
+                schema = true;
+            }
+            catch (SqliteException)
+            {
+                schema = false;
+            }
+
+            using (var rollback = _connection.CreateCommand())
+            {
+                rollback.Transaction = undo;
+                rollback.CommandText = "ROLLBACK TO probe; RELEASE probe;";
+                rollback.ExecuteNonQuery();
+            }
+
+            if (valueType != schema)
+            {
+                disagreements.Add(
+                    $"U+{point:X4} {CharUnicodeInfo.GetUnicodeCategory((char)point)}: " +
+                    $"value type {(valueType ? "accepts" : "refuses")}, schema {(schema ? "accepts" : "refuses")}");
+            }
+        }
+
+        undo.Rollback();
+
+        Assert.Empty(disagreements);
+    }
+
+    [Theory]
+    [InlineData(0xE0001, "LANGUAGE TAG")]
+    [InlineData(0xE0020, "TAG SPACE")]
+    [InlineData(0xE007F, "CANCEL TAG")]
+    [InlineData(0x1D173, "MUSICAL SYMBOL BEGIN BEAM")]
+    [InlineData(0x1BCA0, "SHORTHAND FORMAT LETTER OVERLAP")]
+    [InlineData(0x110BD, "KAITHI NUMBER SIGN")]
+    public async Task The_schema_refuses_a_hidden_character_from_beyond_the_basic_plane(int point, string name)
+    {
+        // The sweep above covers the basic plane, which is where a hand-written range list stops
+        // by default — and the tag block is not in it. U+E0020 to U+E007F encode ASCII invisibly
+        // and are the standard way to carry text past a reader that a model still sees, so an
+        // ownership line was the ideal place to put one.
+        await using var command = _connection.CreateCommand();
+        command.CommandText =
+            "INSERT INTO agents (name, adapter, tier, status, owns) " +
+            "VALUES ('orders', 'test', 'full', 'registered', $owns);";
+        command.Parameters.AddWithValue(
+            "$owns", "Invoicing." + char.ConvertFromUtf32(point) + "hidden");
+
+        await Assert.ThrowsAsync<SqliteException>(
+            () => command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken));
+
+        Assert.False(
+            OwnershipStatement.IsValid("Invoicing." + char.ConvertFromUtf32(point) + "hidden", out _),
+            name);
+    }
+
+    [Fact]
+    public async Task A_manifest_reload_is_authoritative_about_the_statement()
+    {
+        // Documented rather than incidental, because the alternative is a trap. AgentRecord
+        // gives Owns a default, so a manifest loader that never thought about the field would
+        // construct records with none and this upsert would clear every statement it touched.
+        //
+        // That is nonetheless the right semantics: a manifest-registered Headless agent has no
+        // server and therefore no launch, so the manifest is the only thing that can ever set or
+        // change what it owns. Whoever writes that loader has to carry the field. This test is
+        // where they find that out.
+        await Register(Billing, "Invoicing and tax.");
+
+        await _agents.UpsertAsync(
+            new AgentRecord(Billing, "vendor-api", AgentTier.Headless, null, null, null, null,
+                AgentStatus.Registered),
+            Ct);
+
+        Assert.Null((await Load(Billing)).Owns);
     }
 
     [Fact]
