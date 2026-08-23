@@ -1,4 +1,4 @@
--- Parley schema, migration 001.
+﻿-- Parley schema, migration 001.
 -- Applied inside a transaction by SchemaMigrator; do not add BEGIN/COMMIT here.
 --
 -- Requires SQLite 3.38 or later: STRICT tables (3.37), generated columns (3.31), and
@@ -19,6 +19,7 @@ CREATE TABLE agents (
     -- Free-form because it has no invariant. Credentials are the opposite case and live in
     -- agent_credentials below, where each one can be constrained. See SPEC.md section 12.
     adapter_config  TEXT,
+    owns            TEXT,
     last_seen_utc   TEXT,
     status          TEXT    NOT NULL
                     -- 'unreachable' is not a worse 'offline'. Offline is the ordinary resting
@@ -38,6 +39,33 @@ CREATE TABLE agents (
     -- place to hide things.
     CHECK (adapter_config IS NULL
            OR (json_valid(adapter_config) AND length(adapter_config) <= 4000)),
+
+    -- One line saying what this agent owns, written by whoever configured its launch and read
+    -- by every agent that lists the roster. See SPEC.md 17, question 10: without it the
+    -- signal in the protocol is the name, and what each agent owns lives in one hand-written
+    -- copy per repository.
+    --
+    -- Bounded here rather than in the code that writes it, because the argument for the bound
+    -- is the argument for every other cap in this file: terseness is a security control, and
+    -- this text is charged against every agent's working memory once per peer per listing.
+    -- An order of magnitude below the 2000-character message cap, because a message is read
+    -- once by one agent and this is read by all of them, repeatedly.
+    --
+    -- Control characters are refused because the value is rendered into a list of peers. One
+    -- carrying a line break could imitate the entries around it and read as a further agent,
+    -- or as an instruction, rather than as one agent's description of itself. char(10) and
+    -- char(13) are the ones that matter; the range test covers the rest without enumerating.
+    --
+    -- The last clause is what catches an embedded NUL, which the range above cannot: char(0)
+    -- is the empty string in SQLite, so a GLOB built from it matches everything and would
+    -- refuse every statement. length() stops at a NUL while concatenation does not, so a value
+    -- whose length is unchanged by appending a character is one that is hiding bytes behind a
+    -- terminator. Found by probing the constraint rather than by reading it.
+    CHECK (owns IS NULL
+           OR (length(owns) <= 100
+               AND owns NOT GLOB '*[' || char(1) || '-' || char(31) || ']*'
+               AND owns NOT GLOB '*' || char(127) || '*'
+               AND length(owns) = length(owns || '.') - 1)),
 
     -- The agent name grammar, mirroring AgentName's ^[a-z][a-z0-9-]{0,31}$. Every other
     -- constraint in this schema is built on this column: asker, answerer, owed_by and both

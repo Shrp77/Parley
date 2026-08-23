@@ -16,6 +16,13 @@ namespace Parley.Core;
 /// because a peer seeing it can stop asking rather than inferring it from silence.
 /// </param>
 /// <param name="LastSeenUtc">When the registry last observed it, or <see langword="null"/>.</param>
+/// <param name="Owns">
+/// One line saying what this agent owns, or <see langword="null"/> if its launch did not say.
+/// See <see cref="OwnershipStatement"/>: it is what turns a list of names into something an
+/// asker can route by, and it is here rather than withheld because an operator wrote it for
+/// exactly this purpose. Absent means unknown, which is true — the asker falls back to the name
+/// and to referral, as it did before the field existed.
+/// </param>
 /// <remarks>
 /// <para>
 /// A reduced view of <c>AgentRecord</c>, and the omissions are the point. The stored record also
@@ -42,4 +49,5 @@ public sealed record AgentSummary(
     string Adapter,
     AgentTier Tier,
     AgentStatus Status,
-    DateTimeOffset? LastSeenUtc);
+    DateTimeOffset? LastSeenUtc,
+    string? Owns);

@@ -89,6 +89,9 @@ public sealed class MixedWorkloadTests : IDisposable
         Assert.Equal(2, billingInbox.Messages.Count);
         Assert.Equal(0, orphanedGrouping);
         Assert.True(allWrapped, "every delivered message must carry its own payload, wrapped");
-        Assert.Equal(["Name", "Adapter", "Tier", "Status", "LastSeenUtc"], summaryFields);
+        // Owns is here on purpose and is the only field ever added to this list deliberately:
+        // an operator writes it for peers to read. Anything else appearing means a column on
+        // the stored record reached the projection without that decision being made.
+        Assert.Equal(["Name", "Adapter", "Tier", "Status", "LastSeenUtc", "Owns"], summaryFields);
     }
 }

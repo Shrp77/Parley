@@ -91,10 +91,10 @@ model API itself, or running a script — the registry holds a *reference* (`env
 
 ## Running it
 
-Getting two agents talking takes three things: install the server, point each agent's
-client at it, and **tell each agent that it has a peer**. The third is the one people
-skip, and without it nothing happens — an agent with the tools bound but no idea a peer
-exists will answer from its own repository and guess at the rest.
+Getting two agents talking takes four things: install the server, point each agent's client
+at it, say what each agent owns, and **tell each agent that it has a peer**. The last two are
+the ones people skip, and without them nothing happens — an agent with the tools bound but no
+idea a peer exists will answer from its own repository and guess at the rest.
 
 ### 1. Install the server
 
@@ -121,6 +121,7 @@ One file per project. Every agent that should be able to reach every other gets 
       "env": {
         "PARLEY_DB": "/src/acme/.parley/parley.db",   // one file per project
         "PARLEY_AGENT": "orders",                     // who this process speaks for
+        "PARLEY_OWNS": "Carts, orders, line totals. No tax, no stock.", // what peers route by
         "PARLEY_RESPONDER": "some-model-9",           // optional, which model answers
         "PARLEY_WORKSPACE": "/src/acme-orders",       // optional, for the registry
         "PARLEY_TICK_SECONDS": "60",                  // optional, sweep cadence
@@ -146,7 +147,36 @@ parameter, so no tool call can change who the caller is. Had it been a parameter
 agent could impersonate every other and the guarantee would rest on a model choosing not
 to.
 
-### 3. Name the peers and the boundary
+### 3. Say what each agent owns
+
+`PARLEY_OWNS` is one line, written by you, that every other agent sees beside that agent's
+name when it lists the roster. It is how an asker picks who to ask:
+
+```
+orders     Carts, orders, line totals. No tax, no stock.
+billing    Invoicing, tax and payment capture. Does not price orders or reserve stock.
+inventory  Stock levels and reservations. Does not decide whether an order may be placed.
+```
+
+Say what you own **and** what you do not — the exclusion is what stops a peer asking the
+wrong agent. It is capped at 100 characters, must be one line, and is refused at start-up if it is
+neither. That is not a buffer size: this text lands in every agent's working memory once per
+peer, every time somebody lists the roster. The number is measured rather than chosen — at a
+hundred characters, ten peers cost about what one message is allowed to, so finding out who
+to ask stays cheaper than asking.
+
+It comes from the launch configuration and no tool can set it, which is the point. A field an
+agent could write would be worth no more than a model's opinion of itself; written by you, in
+the same file that fixes the agent's name, it is a statement a peer can act on. Change it and
+every peer sees the new one the next time that agent's server starts; delete it and the claim
+is withdrawn.
+
+It is optional. An agent without one is listed without one, and askers fall back to the name —
+which usually works, because a wrong guess costs one message: the answerer refers the question
+to whoever does own it rather than answering badly. `parley agents` shows you which of your
+agents have not set it.
+
+### 4. Name the peers and the boundary
 
 The server introduces itself. When a client connects, Parley sends it a short description
 of what it is for — that peers exist in other repositories, that guessing at their code is

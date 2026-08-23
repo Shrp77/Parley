@@ -313,7 +313,18 @@ public sealed class BrokerSession : IAsyncDisposable
                 SessionRef: null,
                 AdapterConfig: null,
                 LastSeenUtc: null,
-                AgentStatus.Registered),
+                AgentStatus.Registered,
+                options.Owns),
+            cancellationToken).ConfigureAwait(false);
+
+        // Then the one column the launch owns, which the insert above will not have written if
+        // the agent was already known. Without this a launch could say what an agent owns
+        // exactly once — on its first start ever — and never correct it, and every peer routes
+        // by that statement. Everything the registration owns is still written once; see
+        // RefreshOwnershipAsync for why the workspace is not in here with it.
+        await agents.RefreshOwnershipAsync(
+            options.Agent,
+            options.Owns,
             cancellationToken).ConfigureAwait(false);
     }
 
