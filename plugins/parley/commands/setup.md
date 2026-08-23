@@ -67,7 +67,9 @@ that stops somebody asking the wrong agent:
 > `Invoicing, tax and payment capture. Does not price orders or reserve stock.`
 
 It must be one line and it is refused at start-up if it is not, so do not paste prose with a
-line break in it. Ask the user; do not write it for them from what you can see in the
+line break in it. It goes into a JSON file, so escape a quotation mark or a backslash if the
+user's wording has one - an unescaped one makes the whole launch configuration unreadable and
+the server simply never starts. Ask the user; do not write it for them from what you can see in the
 repository, because a boundary is a decision somebody made rather than something a directory
 listing implies. If they are unsure, leaving it out is better than guessing - an agent with
 none is listed with none, and askers fall back to its name.
