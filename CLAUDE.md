@@ -113,6 +113,23 @@ Each of these cost a build cycle. Do not rediscover them.
   unhelpful `ArgumentOutOfRangeException`.
 - **Package deprecation produces no build warning at all.** The CI `dependency health` job
   exists because the xUnit v2 deprecation was only caught by looking for it.
+- **`dotnet test` can report `Zero tests ran` on a machine where the tests are fine.** Every
+  project returns exit code 5 in a fraction of a second, `total: 0`, no failure named. The
+  suite is not empty and nothing is misconfigured: running the host executables directly,
+  `tests/Parley.*.Tests/bin/*/net10.0/Parley.*.Tests.exe`, discovers and passes all of them,
+  and CI runs the identical command and reports 859 passing on all three platforms. Seen so
+  far only on one Windows machine, on SDK 10.0.301 and 10.0.400 alike, in both Debug and
+  Release, from both PowerShell and Git Bash — so it is not the SDK feature band, the
+  configuration, or the shell, and the cause is not yet known. `dotnet test` launches each
+  host with `--server dotnettestcli --dotnet-test-pipe <name>`; the host's own diagnostic log
+  (`TESTINGPLATFORM_DIAGNOSTIC=1`) stops mid-startup, and since MTP logs asynchronously a
+  truncated log means the process went away rather than that it idled.
+
+  **Run the executables before concluding anything about the tests.** A toolchain that
+  discovers nothing and a suite that contains nothing produce the same summary, and the second
+  reading is the one that gets acted on. This is the same trap as reading the dependency graph
+  before restoring, and as `gh pr checks` returning the previous run: a green-looking answer to
+  a question that was never asked.
 
 ## Review gate
 
@@ -205,9 +222,11 @@ implementation detail, and needs to be argued rather than assumed.
 - **The protocol is the product; the transport is disposable.** If a platform ships native
   cross-session messaging, Parley should run over it rather than compete with it. Keep the
   transport behind an interface.
-- **Terseness is a security control.** The 2,000-character message cap is a
-  context-poisoning defence, not a style preference. It lives in the schema so no code path
-  can route around it.
+- **Terseness is a security control.** The message cap is a context-poisoning defence, not a
+  style preference. It lives in the schema so no code path can route around it. The number is
+  currently 4,000 and is deliberately provisional: `parley refusals` records what it turned
+  away so the next change to it can cite evidence rather than taste. Move it on that evidence,
+  not because a message did not fit.
 - **No agent has authority over another.** There is no orchestrator and no lead. Any design
   that introduces one contradicts the premise.
 - **Credentials are references, never values.** `env:`, `keychain:`, `file:`. The broker

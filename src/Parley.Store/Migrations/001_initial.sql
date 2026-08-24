@@ -330,7 +330,7 @@ CREATE TABLE messages (
     CHECK (from_agent <> to_agent),
     CHECK ((type = 'notify') = (exchange_id IS NULL)),
 
-    -- SPEC.md rule 8.5: 2,000 characters per message, enforced rather than advised.
+    -- SPEC.md rule 8.5: 4,000 characters per message, enforced rather than advised.
     -- Terseness is the context-poisoning defence, so the limit lives in the schema
     -- where no code path can route around it.
     CHECK (length(payload_json) <= 4000),
