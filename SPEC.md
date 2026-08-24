@@ -810,6 +810,12 @@ model. That is worth stating plainly rather than leaving the list to imply unifo
 
    It was 2,000 until refusals were instrumented (§10.2, `refusals`). Set the next value from
    that record rather than from judgement again.
+
+   **Doubling it doubled the worst case, and that number should be written down rather than
+   left to be worked out.** An exchange carries at most one answer and `clarify_depth_cap`
+   clarifications in each direction, so at a cap of three the most one peer can place in
+   another's context through a single exchange went from eight thousand characters to sixteen
+   thousand. That is the figure to weigh against, not the per-message one.
 6. **Answer from authority, not inference.** Three outcomes, and choosing correctly between
    them is most of what makes an answer useful. If you own it and know, answer. If you own it
    and do not know, `unknown` beats a confident fabrication the peer will act on. If you do
@@ -1194,6 +1200,15 @@ CREATE TABLE messages (
 -- answer updates a row instead of filling a disk. What is lost is the distribution; what is
 -- kept is how often, how far over at worst, and how far over on average, which is what
 -- choosing a number needs.
+--
+-- Deliberately outside the retention policy of §9.4, which is the one surprise here and so is
+-- said rather than left to be noticed. That policy forgets message text on a schedule because
+-- an unbounded log recreates the shared store the protocol replaces; these rows carry no text
+-- at all, and their whole value is being readable years after the traffic they describe is
+-- gone. A count pruned on the same schedule as the thing it counts answers nothing.
+--
+-- total is 64-bit because it accumulates: fifty thousand refusals at forty thousand characters
+-- passes what 32 bits holds, which is one looping agent for an afternoon.
 CREATE TABLE size_refusals (
   agent       TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
   type        TEXT    NOT NULL CHECK (type IN ('question', 'clarify', 'answer', 'notify')),

@@ -162,6 +162,27 @@ public sealed class SizeRefusalTests : IDisposable
     }
 
     [Fact]
+    public async Task A_total_past_two_billion_is_still_readable()
+    {
+        // The read threw an OverflowException before the total was widened, which took the
+        // operator's command out permanently for that deployment with no way back short of
+        // editing the database. Reachable rather than theoretical: fifty thousand refusals at
+        // forty thousand characters, which is one looping agent for an afternoon — and this is a
+        // feature whose whole purpose is to still answer a question years later.
+        await using var seed = _connection.CreateCommand();
+        seed.CommandText =
+            "INSERT INTO size_refusals (agent, type, refusals, worst, total, cap, last_utc) " +
+            "VALUES ('orders', 'answer', 60000, 40000, 2400000000, 4000, $when);";
+        seed.Parameters.AddWithValue("$when", ExchangeRow.FormatTimestamp(T0));
+        await seed.ExecuteNonQueryAsync(Ct);
+
+        var only = Assert.Single(await _refusals.GetAllAsync(Ct));
+
+        Assert.Equal(2_400_000_000L, only.Total);
+        Assert.Equal(40000, only.Total / only.Refusals);
+    }
+
+    [Fact]
     public void The_schema_keeps_no_refused_text()
     {
         // The check that matters most, and the one that would be easy to lose to a helpful

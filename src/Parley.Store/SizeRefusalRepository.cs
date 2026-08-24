@@ -11,7 +11,14 @@ namespace Parley.Store;
 /// <param name="Type">The message type it was trying to send.</param>
 /// <param name="Refusals">How many times.</param>
 /// <param name="Worst">The longest payload refused, in characters.</param>
-/// <param name="Total">Every refused payload's length added together.</param>
+/// <param name="Total">
+/// Every refused payload's length added together. Sixty-four bit, and not defensively: a
+/// thirty-two bit total passes two billion after roughly fifty thousand refusals at forty
+/// thousand characters, which one looping agent produces in an afternoon. Past that the read
+/// threw an overflow and the operator's command stopped working for that deployment
+/// permanently, with no way back short of editing the database — for a feature whose whole
+/// purpose is to still be readable years later. Found by probing rather than by reading.
+/// </param>
 /// <param name="Cap">The cap in force at the most recent refusal.</param>
 /// <param name="LastUtc">When the most recent one happened.</param>
 /// <remarks>
@@ -25,7 +32,7 @@ public sealed record SizeRefusal(
     MessageType Type,
     int Refusals,
     int Worst,
-    int Total,
+    long Total,
     int Cap,
     DateTimeOffset LastUtc);
 
@@ -60,10 +67,18 @@ public sealed class SizeRefusalRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>The number of rows affected.</returns>
     /// <remarks>
+    /// <para>
     /// An upsert onto one row per agent and type, so the table is bounded by the registry rather
     /// than by how often an agent misbehaves — an agent looping on an oversized answer updates a
     /// row instead of filling a disk. The distribution is lost and the count, the worst case and
     /// the mean are kept, which is what choosing a number needs.
+    /// </para>
+    /// <para>
+    /// Two processes never contend for the same row, and that falls out of the deployment rather
+    /// than being arranged: the key begins with the agent, and one agent is one server process.
+    /// Contention here is ordinary contention for the file, which the busy timeout covers, and a
+    /// write that loses it costs one measurement and nothing else.
+    /// </para>
     /// </remarks>
     public async Task<int> RecordAsync(
         AgentName agent,
@@ -157,7 +172,7 @@ public sealed class SizeRefusalRepository(SqliteConnection connection)
 
         public int Worst { get; init; }
 
-        public int Total { get; init; }
+        public long Total { get; init; }
 
         public int Cap { get; init; }
 
