@@ -43,11 +43,33 @@
     <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1905</WarningsNotAsErrors>
   </PropertyGroup>
 
+  <!--
+    One version for everything this repository ships, declared here because a version set per
+    project is a version that disagrees with itself. Semantic: major.minor.patch, and while the
+    major is zero the minor is what moves on a breaking change.
+
+    Stated at all because nothing did, and MSBuild's default when nothing does is 1.0.0 — so
+    both tools were advertising themselves as a stable 1.0 of a protocol whose own README says
+    to expect breaking changes. It also silently broke reinstalling: `dotnet tool update` sees
+    the same version it already has and does nothing, at some length, so a local rebuild
+    appears to install and does not. Bump this when you want a rebuilt tool to actually
+    replace the one on PATH.
+
+    This is the *package* version and it is not the protocol's. SPEC.md carries its own, because
+    it is what other implementations build against and a fix to the operator's CLI must not
+    imply that the wire contract moved. The storage schema carries a third, in user_version.
+  -->
+  <PropertyGroup>
+    <VersionPrefix>0.1.0</VersionPrefix>
+  </PropertyGroup>
+
   <PropertyGroup>
     <Authors>Arvind Knudsen</Authors>
     <Copyright>Copyright 2026 Arvind Knudsen</Copyright>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Shrp77/Parley</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Shrp77/Parley</PackageProjectUrl>
   </PropertyGroup>
 
 </Project>

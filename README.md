@@ -333,6 +333,23 @@ the operator operations are not on the type an adapter is handed, so there is no
 bind by accident; and they are not compiled into `parley-mcp` at all. A test asserts
 that last one by reflecting over the real binary.
 
+## Versions
+
+Three numbers, because they answer different questions and only one of them is the protocol's.
+
+| Number | Where | Moves when |
+|---|---|---|
+| **0.1.0** | the `Parley.Mcp` and `Parley.Cli` packages | anything ships |
+| **0.1** | the protocol, declared at the top of [SPEC.md](SPEC.md) | the wire contract changes |
+| **1** | the storage schema, in SQLite's `user_version` | the tables change |
+
+`parley --version` prints the first two. The protocol version is the one another implementation
+cares about — a fix to the operator's command-line tool ships a new package and must not suggest
+that the contract moved — and a test binds it to SPEC.md's own header so the two cannot drift.
+
+Semantic, and while the major is zero the **minor** is what carries a breaking change. Expect
+several before 1.0.
+
 ## Specification
 
 Full protocol details — message schemas, exchange state machine, concurrency rules,
