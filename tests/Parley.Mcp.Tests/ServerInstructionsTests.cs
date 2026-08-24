@@ -120,13 +120,23 @@ public sealed class ServerInstructionsTests : IDisposable
         Assert.Equal(ParleyInstructions.Text, instructions);
     }
 
+    /// <summary>The size cap as the instruction text would have to write it.</summary>
+    /// <remarks>
+    /// Derived rather than typed, so raising the cap and forgetting the sentence that tells an
+    /// agent what it is fails here instead of leaving every agent working to the old number.
+    /// </remarks>
+    private static string CapAsWritten =>
+        Parley.Core.MessageLimits.MaxPayloadCharacters.ToString(
+            System.Globalization.CultureInfo.InvariantCulture);
+
     [Fact]
     public void The_instructions_say_when_to_reach_for_parley_and_what_it_costs()
     {
         // What a model cannot infer from the tool descriptions: that peers exist at all, that
         // guessing at another repository is the thing to avoid, and that the inbox is pull. The
         // mechanics of each call are left to the tools, which describe themselves.
-        foreach (var needed in new[] { "parley_agents", "parley_inbox", "2000" })
+        foreach (var needed in new[]
+                 { "parley_agents", "parley_inbox", CapAsWritten })
         {
             Assert.Contains(needed, ParleyInstructions.Text, StringComparison.Ordinal);
         }

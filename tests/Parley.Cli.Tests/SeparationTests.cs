@@ -40,6 +40,7 @@ public sealed class SeparationTests
             "ExportAsync",
             "ForceConcludeAsync",
             "PruneAsync",
+            "RefusalsAsync",
             "ReinstateAsync",
             "RetireAsync"
         ];

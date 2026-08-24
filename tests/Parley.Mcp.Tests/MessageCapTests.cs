@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
+using Dapper;
 using Parley.Core;
+using Parley.Store;
 using Xunit;
 
 namespace Parley.Mcp.Tests;
@@ -9,7 +11,7 @@ namespace Parley.Mcp.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The 2,000-character cap is a context-poisoning defence rather than a buffer size, and it
+/// The message size cap is a context-poisoning defence rather than a buffer size, and it
 /// lives in the schema so no code path can route around it. That makes it unroutable-around and
 /// it also makes the failure a <c>SqliteException</c> carrying SQL — which is a limit an agent
 /// reaches by working normally, reported in a form it cannot act on. Models are verbose.
@@ -185,5 +187,40 @@ public sealed class MessageCapTests
 
         Assert.True(sent["ok"]?.GetValue<bool>() ?? false, sent.ToJsonString());
         Assert.Single((await billing.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
+    }
+
+    [Fact]
+    public async Task A_refusal_is_counted_where_the_cap_can_be_argued_from()
+    {
+        // The cap is the one number in this protocol nobody has ever had evidence for. This is
+        // where the evidence comes from, so the check is that a refusal an agent actually hits
+        // reaches the record with the type and the length intact -- and that the payload does
+        // not, because keeping the text refused for being too long would retain exactly what the
+        // cap exists to keep out.
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+
+        var (_, orders) = await fixture.LaunchAsync("orders", ct);
+        await fixture.LaunchAsync("billing", ct);
+
+        var oversized = new string('x', MessageLimits.MaxPayloadCharacters + 500);
+
+        var refused = await orders.NotifyAsync("billing", oversized, cancellationToken: ct);
+
+        Assert.False((bool)refused["ok"]!);
+        Assert.Equal("toolong", (string?)refused["refused"]);
+
+        using var connection = ParleyDatabase.OpenAndMigrate(fixture.DatabasePath);
+        var recorded = new SizeRefusalRepository(connection);
+        var only = Assert.Single(await recorded.GetAllAsync(ct));
+
+        Assert.Equal("orders", only.Agent.Value);
+        Assert.Equal(MessageType.Notify, only.Type);
+        Assert.Equal(1, only.Refusals);
+        Assert.True(only.Worst > MessageLimits.MaxPayloadCharacters);
+        Assert.Equal(MessageLimits.MaxPayloadCharacters, only.Cap);
+
+        // Nothing of what was sent survives anywhere.
+        Assert.Equal(0, connection.ExecuteScalar<long>("SELECT count(*) FROM messages;"));
     }
 }

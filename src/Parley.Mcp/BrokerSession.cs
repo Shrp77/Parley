@@ -49,16 +49,23 @@ public sealed class BrokerSession : IAsyncDisposable
     private readonly SqliteConnection _connection;
     private readonly Parley.Broker.Broker _broker;
     private readonly TimeProvider _clock;
+
+    // Who this server speaks for. Fixed at construction from the launch environment, like
+    // everything else about this agent's identity, and used only for bookkeeping the broker
+    // does not do.
+    private readonly AgentName _agent;
     private int _disposed;
 
     private BrokerSession(
         SqliteConnection connection,
         Parley.Broker.Broker broker,
-        TimeProvider clock)
+        TimeProvider clock,
+        AgentName agent)
     {
         _connection = connection;
         _broker = broker;
         _clock = clock;
+        _agent = agent;
     }
 
     /// <summary>
@@ -122,7 +129,7 @@ public sealed class BrokerSession : IAsyncDisposable
                 throw new AgentRetiredException(options.Agent);
             }
 
-            return new BrokerSession(connection, broker, clock);
+            return new BrokerSession(connection, broker, clock, options.Agent);
         }
         catch
         {
@@ -353,6 +360,54 @@ public sealed class BrokerSession : IAsyncDisposable
         try
         {
             return await work(_broker, _clock.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Records that the size cap refused a message this agent tried to send.
+    /// </summary>
+    /// <param name="type">The message type.</param>
+    /// <param name="characters">How long the payload was.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>A task that completes when it has been recorded, or given up on.</returns>
+    /// <remarks>
+    /// <para>
+    /// Separate from <see cref="RunAsync{T}"/> because it is not broker work: nothing about the
+    /// protocol happens, no message exists, and the exchange the agent was trying to advance is
+    /// untouched. It still takes the gate, because it is a write on the shared connection.
+    /// </para>
+    /// <para>
+    /// <b>Best effort, and silent when it fails.</b> The refusal is the answer the agent needs
+    /// and it must not depend on the bookkeeping behind it succeeding — a full disk or a locked
+    /// database would otherwise turn "your message is too long" into an unhandled exception,
+    /// which is a worse outcome than losing a statistic. Instrumentation that can break the thing
+    /// it measures is not instrumentation.
+    /// </para>
+    /// </remarks>
+    public async Task RecordSizeRefusalAsync(
+        MessageType type, int characters, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            await new SizeRefusalRepository(_connection).RecordAsync(
+                _agent,
+                type,
+                characters,
+                MessageLimits.MaxPayloadCharacters,
+                _clock.GetUtcNow(),
+                cancellationToken).ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // Do not catch general exception types
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+            // Deliberately swallowed; see the remarks. The caller is already returning a refusal.
         }
         finally
         {

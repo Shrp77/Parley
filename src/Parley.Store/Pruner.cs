@@ -186,7 +186,7 @@ public sealed class Pruner(SqliteConnection connection)
     /// </para>
     /// <para>
     /// It does assume removal outruns production, which is ten thousand an hour against a
-    /// protocol whose exchanges are one per pair and whose messages are capped at two thousand
+    /// protocol whose exchanges are one per pair and whose messages are capped at a few thousand
     /// characters. The exception is <c>Notify</c>, which has no guard of its own until SPEC.md
     /// §13's per-sender rate limits exist — a sender producing faster than this would keep a log
     /// growing under a policy that was applying correctly. That is the same gap §13 already

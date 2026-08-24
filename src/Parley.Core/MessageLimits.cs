@@ -24,10 +24,30 @@ public static class MessageLimits
     /// The most characters one message's payload may carry.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// A context-poisoning defence rather than a style preference: what a peer sends lands in
     /// another agent's context, so an unbounded message is an unbounded claim on somebody else's
     /// working memory. §8 makes terseness a rule for the same reason, and this is the part of it
     /// that does not depend on a model having read the rule.
+    /// </para>
+    /// <para>
+    /// <b>The number is a judgement and has never been anything else.</b> It was two thousand,
+    /// chosen because it sounded like enough, and it is four thousand now for the same quality of
+    /// reason — roughly a thousand tokens, small beside any modern context and far too small to
+    /// paste a file into. What the cap defends is bounded more strongly elsewhere anyway: one
+    /// open exchange per pair and a cap on clarification rounds bound the volume, so this is the
+    /// third control on the same risk rather than the only one.
+    /// </para>
+    /// <para>
+    /// What it buys that those do not is editorial. A bounded answer forces the answerer to
+    /// decide what matters; an unbounded one hands that job to the asker, which is the
+    /// shared-context problem arriving by another route.
+    /// </para>
+    /// <para>
+    /// Every refusal is now counted — see <c>SizeRefusalRepository</c> and the operator's
+    /// <c>refusals</c> command. The next value for this constant should come from that record.
+    /// A limit nobody measures is a limit that moves whenever somebody complains.
+    /// </para>
     /// </remarks>
-    public const int MaxPayloadCharacters = 2000;
+    public const int MaxPayloadCharacters = 4000;
 }

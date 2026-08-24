@@ -242,7 +242,7 @@ public sealed class MessageRepository(SqliteConnection connection)
     /// </para>
     /// <para>
     /// <strong>Callers delivering into an agent's context should pass a limit.</strong> The
-    /// 2,000-character cap bounds one message; nothing bounds a backlog. An agent offline for
+    /// message size cap bounds one message; nothing bounds a backlog. An agent offline for
     /// a day, or one peer sending steadily, produces an inbox whose total size is limited only
     /// by how long it went undrained — and injecting that wholesale recreates the
     /// context-poisoning problem the per-message cap exists to prevent, just in aggregate.

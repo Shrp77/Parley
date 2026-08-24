@@ -44,6 +44,8 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
     /// Refuses a payload that exceeds the message cap, or returns nothing if it fits.
     /// </summary>
     /// <param name="payloadJson">The assembled payload.</param>
+    /// <param name="type">The message type being sent, recorded with the refusal.</param>
+    /// <param name="cancellationToken">Cancels the recording.</param>
     /// <returns>The refusal to return to the caller, or <see langword="null"/> to proceed.</returns>
     /// <remarks>
     /// <para>
@@ -65,19 +67,32 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
     /// checking.
     /// </para>
     /// </remarks>
-    private static JsonNode? TooLong(string payloadJson) =>
-        payloadJson.Length <= MessageLimits.MaxPayloadCharacters
-            ? null
-            : new JsonObject
-            {
-                ["ok"] = false,
-                ["refused"] = "toolong",
-                ["why"] =
-                    $"That message is {payloadJson.Length} characters and the limit is " +
-                    $"{MessageLimits.MaxPayloadCharacters}. The cap is a rule of the protocol, " +
-                    "not a buffer size: what you send lands in a peer's context. Say the same " +
-                    "thing in fewer words, or split it into separate questions."
-            };
+    private async Task<JsonNode?> TooLongAsync(
+        string payloadJson, MessageType type, CancellationToken cancellationToken)
+    {
+        if (payloadJson.Length <= MessageLimits.MaxPayloadCharacters)
+        {
+            return null;
+        }
+
+        // Counted before the refusal is returned, because the number this cap should be set to
+        // is the one question about it nobody has ever had evidence for. Only the length is
+        // kept — never the payload, which is the material the cap exists to keep out. Failing
+        // to record is silent: the agent's refusal must not depend on the bookkeeping behind it.
+        await _session.RecordSizeRefusalAsync(type, payloadJson.Length, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new JsonObject
+        {
+            ["ok"] = false,
+            ["refused"] = "toolong",
+            ["why"] =
+                $"That message is {payloadJson.Length} characters and the limit is " +
+                $"{MessageLimits.MaxPayloadCharacters}. The cap is a rule of the protocol, " +
+                "not a buffer size: what you send lands in a peer's context. Say the same " +
+                "thing in fewer words, or split it into separate questions."
+        };
+    }
 
     /// <summary>Resolves the responder identity for a call, defaulting to the configured one.</summary>
     /// <param name="responderModel">What the caller said produced the message, if anything.</param>
@@ -203,7 +218,8 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
 
         var json = payload.ToJsonString();
 
-        if (TooLong(json) is { } refused)
+        if (await TooLongAsync(json, MessageType.Question, cancellationToken).ConfigureAwait(false)
+            is { } refused)
         {
             return refused;
         }
@@ -265,7 +281,8 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
 
         var json = payload.ToJsonString();
 
-        if (TooLong(json) is { } refused)
+        if (await TooLongAsync(json, MessageType.Clarify, cancellationToken).ConfigureAwait(false)
+            is { } refused)
         {
             return refused;
         }
@@ -358,7 +375,8 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
 
         var json = payload.ToJsonString();
 
-        if (TooLong(json) is { } refused)
+        if (await TooLongAsync(json, MessageType.Answer, cancellationToken).ConfigureAwait(false)
+            is { } refused)
         {
             return refused;
         }
@@ -431,7 +449,8 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
 
         var json = payload.ToJsonString();
 
-        if (TooLong(json) is { } refused)
+        if (await TooLongAsync(json, MessageType.Notify, cancellationToken).ConfigureAwait(false)
+            is { } refused)
         {
             return refused;
         }

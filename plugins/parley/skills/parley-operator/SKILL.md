@@ -51,6 +51,7 @@ parley [--db <path>] reinstate <agent>       the only thing that clears a retire
 parley [--db <path>] export <conversation>   every message in a discussion, across agents
 parley [--db <path>] force-conclude <conv>   close a discussion over its participants' votes
 parley [--db <path>] prune                   apply the retention policy now
+parley [--db <path>] refusals                what the message size cap refused
 parley --help                                the same list, on stdout, exiting zero
 ```
 
@@ -71,6 +72,12 @@ idle and thirty days maximum age if unset.
 So `prune` prints the policy it applied before it prints what it removed. Read that line. If it
 does not match what the servers were launched with, the numbers you are looking at are your
 shell's, not the deployment's, and the agents have been quietly enforcing something else.
+
+`refusals` is the evidence for the message size cap. It reports, per agent and message type,
+how often a message was refused for length, the worst case and the mean, and the cap in force at
+the time. No refused text is kept anywhere - only how long it was - because storing the payload
+that was refused for being too long would retain exactly what the cap exists to keep out. If
+somebody wants the cap raised, this is what the argument should be made from.
 
 **It removes text permanently.** Export first if the discussion is worth keeping - the export is
 a file the person owns, and it is the only copy that outlives the policy.

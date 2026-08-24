@@ -26,7 +26,7 @@ namespace Parley.Mcp;
 /// be stale by the first registration.
 /// </para>
 /// <para>
-/// Kept short on purpose, and the purpose is the same one that caps a message at two thousand
+/// Kept short on purpose, and the purpose is the same one that caps a message at a few thousand
 /// characters: this text lands in the context of every agent on every session, so it is a
 /// standing charge against exactly the budget the protocol exists to protect. It says what a
 /// model cannot infer from the tool descriptions — when to reach for Parley at all, and what it
@@ -52,7 +52,7 @@ public static class ParleyInstructions
         - Asking never blocks. If nobody ever answers you are told so, rather than left waiting.
         - A question must state what you will do with each possible answer. One that does not is
           refused: an answerer who knows what turns on the reply gives a better one.
-        - Messages are capped at 2000 characters. What you send lands in somebody else's working
+        - Messages are capped at 4000 characters. What you send lands in somebody else's working
           memory, so say less than you want to.
 
         You act as one fixed agent, decided by how this server was launched. No tool takes a

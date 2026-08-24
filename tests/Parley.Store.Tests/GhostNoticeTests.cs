@@ -213,7 +213,7 @@ public sealed class GhostNoticeTests : IDisposable
         // actionable.
         var payload = Question(
             new string('i', 120),
-            Consequences + " " + new string('c', 1450),
+            Consequences + " " + new string('c', 3450),
             subQuestions: 3);
 
         // Close to the cap but under it, which is where the question has to be for the notice to

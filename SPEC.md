@@ -793,8 +793,23 @@ model. That is worth stating plainly rather than leaving the list to imply unifo
    five Questions cost it five. Nothing is serialised any more (§4.2), so this is no longer
    about round trips — it is about the only currency that still matters, which is the
    context you spend on the other end.
-5. **Hard size cap.** 2,000 characters per message, enforced by the broker.
+5. **Hard size cap.** 4,000 characters per message, enforced by the broker.
    Truncation is a protocol error, not a warning.
+
+   The number is a judgement, not a measurement, and it is worth saying which parts of it
+   are load-bearing. What the cap defends is how much of one agent's context can be poured
+   into another's; at four thousand characters a message is roughly a thousand tokens, which
+   is small beside any modern context and far too small to paste a file into. Volume is
+   bounded separately and more strongly — one open exchange per pair (§7.1) and a cap on
+   clarification rounds (§5.2) — so this is the third control on the same risk rather than
+   the only one.
+
+   What it buys beyond that is editorial: a bounded answer forces the answerer to decide
+   what matters, and an unbounded one hands that job to the asker, which is the shared-context
+   problem arriving by another route.
+
+   It was 2,000 until refusals were instrumented (§10.2, `refusals`). Set the next value from
+   that record rather than from judgement again.
 6. **Answer from authority, not inference.** Three outcomes, and choosing correctly between
    them is most of what makes an answer useful. If you own it and know, answer. If you own it
    and do not know, `unknown` beats a confident fabrication the peer will act on. If you do
@@ -1119,7 +1134,7 @@ CREATE TABLE messages (
 
   CHECK (from_agent <> to_agent),
   CHECK ((type = 'notify') = (exchange_id IS NULL)),
-  CHECK (length(payload_json) <= 2000),
+  CHECK (length(payload_json) <= 4000),
   CHECK (json_valid(payload_json)),
 
   -- Rule 1: a Question states what the asker will do with each possible answer. §5.1 calls
@@ -1163,6 +1178,37 @@ CREATE TABLE messages (
   -- convention until now.
   FOREIGN KEY (exchange_id, conversation_id)
     REFERENCES exchanges(id, conversation_id)
+) STRICT;
+
+-- What the size cap actually refused, so the next value for it is measured rather than
+-- judged. Rule 8.5 fixes a number that no evidence has ever been offered for; this is the
+-- evidence, and §17 says the same thing about the clarify cap without ever collecting it.
+--
+-- **No payload is stored, ever.** Only how long it was. Recording the text that was refused
+-- for being too long would keep the exact material the cap exists to keep out, put it beyond
+-- the retention policy that governs messages, and make instrumenting a poisoning control a
+-- poisoning vector. The measurement is the whole point and the text is none of it.
+--
+-- One row per agent and message type rather than one per event, so the table is bounded by
+-- the registry rather than by how often an agent misbehaves: an agent looping on an oversized
+-- answer updates a row instead of filling a disk. What is lost is the distribution; what is
+-- kept is how often, how far over at worst, and how far over on average, which is what
+-- choosing a number needs.
+CREATE TABLE size_refusals (
+  agent       TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  type        TEXT    NOT NULL CHECK (type IN ('question', 'clarify', 'answer', 'notify')),
+  refusals    INTEGER NOT NULL CHECK (refusals > 0),
+  worst       INTEGER NOT NULL CHECK (worst > 0),
+  total       INTEGER NOT NULL CHECK (total > 0),
+  -- The cap in force at the most recent refusal. Without it a row recorded under one cap is
+  -- unreadable after the cap moves, which is precisely when this table is consulted.
+  cap         INTEGER NOT NULL CHECK (cap > 0),
+  last_utc    TEXT    NOT NULL,
+
+  PRIMARY KEY (agent, type),
+
+  CHECK (worst > cap),
+  CHECK (total >= worst)
 ) STRICT;
 
 -- The two triggers below sit after the table they guard rather than beside the rules they
@@ -1330,8 +1376,10 @@ decayed.
 - **`pair_key` is genuinely derived from its participants.** Cycle detection (§7.2) and the
   retention rules both key on it, and a mismatched key would make two unrelated pairs
   indistinguishable to every rule built on it.
-- **Message size cap.** Terseness is the context-poisoning defence (rule 8.5), so 2,000
-  characters is a constraint rather than a guideline.
+- **Message size cap.** Terseness is the context-poisoning defence (rule 8.5), so 4,000
+  characters is a constraint rather than a guideline. A refusal is counted (§10.2), because a
+  limit nobody measures is a limit that gets changed on the strength of whoever complains
+  most recently.
 - **Every message names its responder.** §11.3 is a MUST and is not limited to answers: the
   envelope in §13 renders responder identity on every delivered message, so a nullable column
   would leave the envelope with a hole the schema permitted. Non-model responders use the
@@ -1550,6 +1598,7 @@ any of these into an agent's tool set would breach §10.1 and, through it, §16.
 |---|---|
 | `export(conversation_id)` | Emit every message in a conversation. The one query that reads across agents, which is why it is here and not in §10.1. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
+| `refusals()` | Report what the size cap of rule 8.5 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
 | `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. |
 | `reinstate(agent)` | Withdraw a retirement. Registration does not, and must not, do this. |
 | `force_conclude(conversation)` | Close a conversation regardless of its participants' votes. |

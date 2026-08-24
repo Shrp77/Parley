@@ -31,6 +31,7 @@ const string Help = """
       parley [--db <path>] export <conversation>       emit every message in a discussion
       parley [--db <path>] force-conclude <conv>       close a discussion over its votes
       parley [--db <path>] prune                       apply the retention policy now
+      parley [--db <path>] refusals                    what the message size cap refused
 
     --db defaults to PARLEY_DB, the same variable the agents' servers are launched with.
     prune reads PARLEY_RETENTION_IDLE_HOURS and PARLEY_RETENTION_MAX_AGE_HOURS from the same
@@ -203,6 +204,9 @@ using (holder)
 
         case "prune" when rest.Length == 0:
             return await PruneAsync(commands).ConfigureAwait(false);
+
+        case "refusals" when rest.Length == 0:
+            return await commands.RefusalsAsync(CancellationToken.None).ConfigureAwait(false);
 
         default:
             await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
