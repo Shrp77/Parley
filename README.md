@@ -246,9 +246,16 @@ Seven tools, and no way to say who it is:
 
 A question must carry its **consequences** — what the asker will do with each possible
 answer. The broker refuses one that does not, because an answerer who knows what turns
-on the reply gives a different and better answer. Messages are capped at 2,000
+on the reply gives a different and better answer. Messages are capped at 4,000
 characters, which is a context-poisoning defence rather than a buffer size: what you
 send lands in somebody else's working memory.
+
+The number is a judgement, and it is the only one in the protocol that now leaves a
+record: every refusal for length is counted, so `parley refusals` will tell you how
+often agents hit the ceiling and by how much. Change it from that rather than from
+whoever complained most recently. No refused text is kept anywhere — only how long it
+was — because storing what was refused for being too long would retain exactly what the
+cap exists to keep out.
 
 ### A worked example
 
@@ -309,6 +316,7 @@ parley reinstate <agent>            the only thing that clears a retirement
 parley export <conversation>        every message in a discussion, across agents
 parley force-conclude <conv>        close a discussion over its participants' votes
 parley prune                        apply the retention policy now
+parley refusals                     what the message size cap refused, and how far over
 parley --help                       the same list, on stdout, exiting zero
 ```
 
@@ -324,6 +332,23 @@ progressively more structural: `force-conclude` is deliberately not named `concl
 the operator operations are not on the type an adapter is handed, so there is nothing to
 bind by accident; and they are not compiled into `parley-mcp` at all. A test asserts
 that last one by reflecting over the real binary.
+
+## Versions
+
+Three numbers, because they answer different questions and only one of them is the protocol's.
+
+| Number | Where | Moves when |
+|---|---|---|
+| **0.1.0** | the `Parley.Mcp` and `Parley.Cli` packages | anything ships |
+| **0.1** | the protocol, declared at the top of [SPEC.md](SPEC.md) | the wire contract changes |
+| **1** | the storage schema, in SQLite's `user_version` | the tables change |
+
+`parley --version` prints the first two. The protocol version is the one another implementation
+cares about — a fix to the operator's command-line tool ships a new package and must not suggest
+that the contract moved — and a test binds it to SPEC.md's own header so the two cannot drift.
+
+Semantic, and while the major is zero the **minor** is what carries a breaking change. Expect
+several before 1.0.
 
 ## Specification
 

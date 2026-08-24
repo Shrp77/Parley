@@ -89,7 +89,8 @@ public sealed class SurfaceBoundaryTests
             nameof(OperatorConsole.ReinstateAsync),
             nameof(OperatorConsole.DescribeAgentsAsync),
             nameof(OperatorConsole.ExportAsync),
-            nameof(OperatorConsole.PruneAsync)
+            nameof(OperatorConsole.PruneAsync),
+            nameof(OperatorConsole.DescribeRefusalsAsync)
         ];
 
         var unexpected = PublicMethodsOf(typeof(OperatorConsole)).Where(n => !declared.Contains(n));

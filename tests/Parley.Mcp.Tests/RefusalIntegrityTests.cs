@@ -1,4 +1,5 @@
 using Dapper;
+using Parley.Core;
 using Parley.Store;
 using Xunit;
 
@@ -47,7 +48,8 @@ public sealed class RefusalIntegrityTests
         await orders.AskAsync("billing", "intent", [one], Consequences,
             responderModel: "parley:broker", cancellationToken: ct);
         await orders.AskAsync("billing", "intent",
-            [new SubQuestion("q1", new string('x', 3000))], Consequences, cancellationToken: ct);
+            [new SubQuestion("q1", new string('x', MessageLimits.MaxPayloadCharacters + 1000))],
+            Consequences, cancellationToken: ct);
         await orders.NotifyAsync("orders", "talking to myself", cancellationToken: ct);
 
         using var connection = ParleyDatabase.OpenAndMigrate(fixture.DatabasePath);
@@ -55,6 +57,16 @@ public sealed class RefusalIntegrityTests
         Assert.Equal(0, connection.ExecuteScalar<long>("SELECT count(*) FROM exchanges;"));
         Assert.Equal(0, connection.ExecuteScalar<long>("SELECT count(*) FROM messages;"));
         Assert.Equal(0, connection.ExecuteScalar<long>("SELECT count(*) FROM conversations;"));
+
+        // One exception, and it is deliberate: a refusal for length is counted. That is not
+        // protocol state — no exchange, no message, no conversation, nothing another agent can
+        // observe — and it is the only record anyone will ever have of whether the cap is set
+        // anywhere near right. The row holds how long the payload was and never the payload,
+        // because keeping the text refused for being too long would retain exactly what the cap
+        // exists to keep out.
+        Assert.Equal(1, connection.ExecuteScalar<long>("SELECT count(*) FROM size_refusals;"));
+        Assert.Equal(0, connection.ExecuteScalar<long>(
+            "SELECT count(*) FROM size_refusals WHERE type <> 'question';"));
     }
 
     [Fact]

@@ -283,6 +283,7 @@ CREATE INDEX ix_open_expiry
 CREATE INDEX ix_orphaned_owed
     ON exchanges (owed_by) WHERE state = 'ORPHANED';
 
+
 CREATE TABLE messages (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     -- NULL for Notify, which opens no exchange and takes no pair slot.
@@ -332,7 +333,7 @@ CREATE TABLE messages (
     -- SPEC.md rule 8.5: 2,000 characters per message, enforced rather than advised.
     -- Terseness is the context-poisoning defence, so the limit lives in the schema
     -- where no code path can route around it.
-    CHECK (length(payload_json) <= 2000),
+    CHECK (length(payload_json) <= 4000),
 
     -- The column is named _json and the readers parse it as such.
     CHECK (json_valid(payload_json)),
@@ -414,6 +415,46 @@ CREATE TABLE messages (
     -- as a convention.
     FOREIGN KEY (exchange_id, conversation_id)
         REFERENCES exchanges(id, conversation_id)
+) STRICT;
+
+  -- What the size cap actually refused, so the next value for it is measured rather than
+-- judged. Rule 8.5 fixes a number that no evidence has ever been offered for; this is the
+-- evidence, and section 17 says the same thing about the clarify cap without ever collecting it.
+--
+-- No payload is stored, ever. Only how long it was. Recording the text that was refused
+-- for being too long would keep the exact material the cap exists to keep out, put it beyond
+-- the retention policy that governs messages, and make instrumenting a poisoning control a
+-- poisoning vector. The measurement is the whole point and the text is none of it.
+--
+-- One row per agent and message type rather than one per event, so the table is bounded by
+-- the registry rather than by how often an agent misbehaves: an agent looping on an oversized
+-- answer updates a row instead of filling a disk. What is lost is the distribution; what is
+-- kept is how often, how far over at worst, and how far over on average, which is what
+-- choosing a number needs.
+--
+-- Deliberately outside the retention policy of section 9.4, which is the one surprise here and so is
+-- said rather than left to be noticed. That policy forgets message text on a schedule because
+-- an unbounded log recreates the shared store the protocol replaces; these rows carry no text
+-- at all, and their whole value is being readable years after the traffic they describe is
+-- gone. A count pruned on the same schedule as the thing it counts answers nothing.
+--
+-- total is 64-bit because it accumulates: fifty thousand refusals at forty thousand characters
+-- passes what 32 bits holds, which is one looping agent for an afternoon.
+CREATE TABLE size_refusals (
+    agent       TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+    type        TEXT    NOT NULL CHECK (type IN ('question', 'clarify', 'answer', 'notify')),
+    refusals    INTEGER NOT NULL CHECK (refusals > 0),
+    worst       INTEGER NOT NULL CHECK (worst > 0),
+    total       INTEGER NOT NULL CHECK (total > 0),
+    -- The cap in force at the most recent refusal. Without it a row recorded under one cap is
+    -- unreadable after the cap moves, which is precisely when this table is consulted.
+    cap         INTEGER NOT NULL CHECK (cap > 0),
+    last_utc    TEXT    NOT NULL,
+
+    PRIMARY KEY (agent, type),
+
+    CHECK (worst > cap),
+    CHECK (total >= worst)
 ) STRICT;
 
 -- Deduplication backstop. SPEC.md section 13.1 requires byte-identical messages to be

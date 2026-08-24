@@ -15,7 +15,7 @@ namespace Parley.Core;
 /// What produced this message. See SPEC.md §11.3 — required on every message, not only
 /// answers, and rendered into the trust envelope.
 /// </param>
-/// <param name="PayloadJson">The payload document, capped at 2,000 characters by the schema.</param>
+/// <param name="PayloadJson">The payload document, capped by the schema; see <see cref="MessageLimits"/>.</param>
 /// <param name="ConversationId">
 /// The discussion this message belongs to, or <see langword="null"/> for an exchange that
 /// stands alone. Chosen by the agent, since only the agent knows whether a question

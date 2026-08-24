@@ -46,6 +46,7 @@ public sealed class OperatorConsole
     private readonly AgentRepository _agents;
     private readonly MessageRepository _messages;
     private readonly Pruner _pruner;
+    private readonly SizeRefusalRepository _refusals;
 
     /// <summary>
     /// Creates a console over an open connection.
@@ -62,6 +63,7 @@ public sealed class OperatorConsole
         _agents = new AgentRepository(connection);
         _messages = new MessageRepository(connection);
         _pruner = new Pruner(connection);
+        _refusals = new SizeRefusalRepository(connection);
     }
 
     /// <summary>
@@ -168,6 +170,34 @@ public sealed class OperatorConsole
     public async Task<IReadOnlyList<AgentRecord>> DescribeAgentsAsync(
         CancellationToken cancellationToken = default) =>
         await _agents.GetAllAsync(cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Reports what the size cap of rule 8.5 refused, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>One entry per agent and message type that has ever been refused, worst first.</returns>
+    /// <remarks>
+    /// <para>
+    /// The evidence for the one number in this protocol that has never had any. Rule 8.5 fixes a
+    /// message size; §17 admits the clarify cap is a guess and asks for instrumentation before
+    /// tuning; neither has ever been measured. This is where the measuring shows up, and the next
+    /// change to either number should cite it.
+    /// </para>
+    /// <para>
+    /// An operator operation rather than an agent one, and not because the numbers are sensitive.
+    /// It reads across every agent at once, which is the property that puts <c>export</c> here
+    /// too — and an agent that could see how close its peers run to the cap would be reading
+    /// something about how they work rather than what they own.
+    /// </para>
+    /// <para>
+    /// No refused text is stored anywhere, so none can be returned. Keeping the payload that was
+    /// refused for being too long would retain exactly what the cap exists to keep out and put it
+    /// beyond the retention policy that governs messages.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<SizeRefusal>> DescribeRefusalsAsync(
+        CancellationToken cancellationToken = default) =>
+        await _refusals.GetAllAsync(cancellationToken).ConfigureAwait(false);
 
     /// <summary>
     /// Emits every message in a conversation, per SPEC.md §10.2.

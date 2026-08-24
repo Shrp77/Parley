@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Reflection;
 using Parley.Broker;
 using Parley.Cli;
 using Parley.Core;
@@ -31,6 +33,9 @@ const string Help = """
       parley [--db <path>] export <conversation>       emit every message in a discussion
       parley [--db <path>] force-conclude <conv>       close a discussion over its votes
       parley [--db <path>] prune                       apply the retention policy now
+      parley [--db <path>] refusals                    what the message size cap refused
+
+      parley --version                                 this build, and the protocol it speaks
 
     --db defaults to PARLEY_DB, the same variable the agents' servers are launched with.
     prune reads PARLEY_RETENTION_IDLE_HOURS and PARLEY_RETENTION_MAX_AGE_HOURS from the same
@@ -55,6 +60,29 @@ string? databasePath = null;
 if (arguments.Exists(a => a is "--help" or "-h"))
 {
     await Console.Out.WriteLineAsync(Help).ConfigureAwait(false);
+    return 0;
+}
+
+// Two numbers, because they answer different questions and only one of them is about this
+// program. The package version says which build is on PATH; the protocol version says what
+// this speaks, and it is the one another implementation cares about — SPEC.md is the contract
+// and alternative implementations are expected, so "which Parley is this" cannot be answered
+// by a package version that moves for a typo in a help string.
+if (arguments.Exists(a => a is "--version" or "-v"))
+{
+    var build = typeof(OperatorCommands).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? "unknown";
+
+    // The informational version carries a source-control suffix when one is built into it.
+    // Trimmed, because what somebody typing --version wants is the number they can compare.
+    var plus = build.IndexOf('+', StringComparison.Ordinal);
+
+    await Console.Out.WriteLineAsync(string.Create(
+        CultureInfo.InvariantCulture,
+        $"parley {(plus < 0 ? build : build[..plus])}, speaking Parley protocol " +
+        $"{ProtocolVersion.Current}")).ConfigureAwait(false);
+
     return 0;
 }
 
@@ -203,6 +231,9 @@ using (holder)
 
         case "prune" when rest.Length == 0:
             return await PruneAsync(commands).ConfigureAwait(false);
+
+        case "refusals" when rest.Length == 0:
+            return await commands.RefusalsAsync(CancellationToken.None).ConfigureAwait(false);
 
         default:
             await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);

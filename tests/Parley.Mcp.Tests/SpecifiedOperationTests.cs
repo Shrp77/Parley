@@ -172,4 +172,32 @@ public sealed class SpecifiedOperationTests
             Regex.Matches(text, @"§10\.[12]").Count >= 5,
             "SPEC.md barely mentions §10.1 or §10.2; the reference check is scanning nothing");
     }
+
+    [Fact]
+    public void The_protocol_version_the_code_reports_is_the_one_the_document_declares()
+    {
+        // Three numbers live in this repository and only one of them is the protocol's. The
+        // packages carry a version that moves when anything ships; the storage schema carries
+        // user_version; and this is what another implementation builds against, which is why the
+        // code has to be able to state it without SPEC.md beside it.
+        //
+        // Stating it from a constant means the constant can be wrong, and a broker announcing a
+        // protocol version it does not implement is worse than one that announces nothing. So
+        // the two are bound: the document's header is the authority and this fails when the code
+        // disagrees with it.
+        var declared = Regex.Match(Specification(), @"^\*\*Version:\*\* (\d+\.\d+)", RegexOptions.Multiline);
+
+        Assert.True(declared.Success, "SPEC.md no longer declares a version in its header");
+        Assert.Equal(Parley.Core.ProtocolVersion.Current, declared.Groups[1].Value);
+    }
+
+    [Fact]
+    public void The_protocol_version_has_no_patch_level()
+    {
+        // A protocol has no patch level: either a change is visible to something on the other
+        // side of the boundary or it is not a protocol change. A third number here would invite
+        // the packages' version to be copied in, which is the confusion the separate constant
+        // exists to prevent.
+        Assert.Matches(@"^\d+\.\d+$", Parley.Core.ProtocolVersion.Current);
+    }
 }

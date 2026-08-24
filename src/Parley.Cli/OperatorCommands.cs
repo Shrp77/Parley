@@ -77,6 +77,55 @@ public sealed class OperatorCommands
         return 0;
     }
 
+    /// <summary>Reports what the message size cap refused.</summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Zero.</returns>
+    /// <remarks>
+    /// <para>
+    /// The evidence for the one number in this protocol that has never had any. Rule 8.5 fixes a
+    /// message size and SPEC.md §17 admits the clarify cap is a guess and asks for instrumentation
+    /// before tuning; neither was ever measured. Raising the cap from two thousand to four
+    /// thousand was judgement again, and this is what makes the next change something else.
+    /// </para>
+    /// <para>
+    /// Prints the mean beside the worst, because they answer different questions. Forty refusals
+    /// averaging just over the cap is a cap set slightly too low; one refusal at forty thousand
+    /// characters is somebody trying to send a file, and only the first is an argument for
+    /// changing the number.
+    /// </para>
+    /// </remarks>
+    public async Task<int> RefusalsAsync(CancellationToken cancellationToken)
+    {
+        var refusals = await _console.DescribeRefusalsAsync(cancellationToken).ConfigureAwait(false);
+
+        if (refusals.Count == 0)
+        {
+            await _output.WriteLineAsync(string.Create(
+                CultureInfo.InvariantCulture,
+                $"Nothing has been refused for length. The cap is currently " +
+                $"{MessageLimits.MaxPayloadCharacters} characters; there is no evidence here " +
+                $"for changing it.")).ConfigureAwait(false);
+
+            return 0;
+        }
+
+        await _output.WriteLineAsync(
+            "agent                type      count  worst   mean   cap  last").ConfigureAwait(false);
+
+        foreach (var refusal in refusals)
+        {
+            var mean = refusal.Total / refusal.Refusals;
+
+            await _output.WriteLineAsync(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{refusal.Agent.Value,-20} {Lower(refusal.Type),-9} {refusal.Refusals,5}  " +
+                $"{refusal.Worst,5}  {mean,5} {refusal.Cap,5}  {refusal.LastUtc:u}"))
+                .ConfigureAwait(false);
+        }
+
+        return 0;
+    }
+
     /// <summary>Withdraws an agent's registration.</summary>
     /// <param name="agent">The agent to retire.</param>
     /// <param name="cancellationToken">Cancels the write.</param>

@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
+using Dapper;
 using Parley.Core;
+using Parley.Store;
 using Xunit;
 
 namespace Parley.Mcp.Tests;
@@ -9,7 +11,7 @@ namespace Parley.Mcp.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The 2,000-character cap is a context-poisoning defence rather than a buffer size, and it
+/// The message size cap is a context-poisoning defence rather than a buffer size, and it
 /// lives in the schema so no code path can route around it. That makes it unroutable-around and
 /// it also makes the failure a <c>SqliteException</c> carrying SQL — which is a limit an agent
 /// reaches by working normally, reported in a form it cannot act on. Models are verbose.
@@ -185,5 +187,105 @@ public sealed class MessageCapTests
 
         Assert.True(sent["ok"]?.GetValue<bool>() ?? false, sent.ToJsonString());
         Assert.Single((await billing.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
+    }
+
+    [Fact]
+    public async Task A_refusal_is_counted_where_the_cap_can_be_argued_from()
+    {
+        // The cap is the one number in this protocol nobody has ever had evidence for. This is
+        // where the evidence comes from, so the check is that a refusal an agent actually hits
+        // reaches the record with the type and the length intact -- and that the payload does
+        // not, because keeping the text refused for being too long would retain exactly what the
+        // cap exists to keep out.
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+
+        var (_, orders) = await fixture.LaunchAsync("orders", ct);
+        await fixture.LaunchAsync("billing", ct);
+
+        var oversized = new string('x', MessageLimits.MaxPayloadCharacters + 500);
+
+        var refused = await orders.NotifyAsync("billing", oversized, cancellationToken: ct);
+
+        Assert.False((bool)refused["ok"]!);
+        Assert.Equal("toolong", (string?)refused["refused"]);
+
+        using var connection = ParleyDatabase.OpenAndMigrate(fixture.DatabasePath);
+        var recorded = new SizeRefusalRepository(connection);
+        var only = Assert.Single(await recorded.GetAllAsync(ct));
+
+        Assert.Equal("orders", only.Agent.Value);
+        Assert.Equal(MessageType.Notify, only.Type);
+        Assert.Equal(1, only.Refusals);
+        Assert.True(only.Worst > MessageLimits.MaxPayloadCharacters);
+        Assert.Equal(MessageLimits.MaxPayloadCharacters, only.Cap);
+
+        // Nothing of what was sent survives anywhere.
+        Assert.Equal(0, connection.ExecuteScalar<long>("SELECT count(*) FROM messages;"));
+    }
+
+    [Fact]
+    public async Task A_refusal_survives_the_bookkeeping_behind_it_failing()
+    {
+        // The recording writes a row keyed on the agent, so anything that makes that write fail
+        // must not reach the agent as an exception: the refusal is the answer it needs, and
+        // instrumentation that can break the thing it measures is not instrumentation. Forced
+        // here by removing the registration the row references, which is the shape of every
+        // reason this write can fail -- a locked database, a full disk, a foreign key.
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+
+        var (_, orders) = await fixture.LaunchAsync("orders", ct);
+        await fixture.LaunchAsync("billing", ct);
+
+        using (var meddle = ParleyDatabase.OpenAndMigrate(fixture.DatabasePath))
+        {
+            meddle.Execute("PRAGMA foreign_keys = ON; DELETE FROM agents WHERE name = 'orders';");
+        }
+
+        var refused = await orders
+            .NotifyAsync("billing", new string('x', MessageLimits.MaxPayloadCharacters + 500),
+                cancellationToken: ct)
+            .WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        Assert.False((bool)refused["ok"]!);
+        Assert.Equal("toolong", (string?)refused["refused"]);
+
+        // And the write really did fail, so this is not a check that passes while testing
+        // nothing. ParleyDatabase turns foreign keys on per connection, so the row referencing
+        // a registration that is gone cannot be written.
+        using var connection = ParleyDatabase.OpenAndMigrate(fixture.DatabasePath);
+
+        Assert.Equal(0, connection.ExecuteScalar<long>("SELECT count(*) FROM size_refusals;"));
+    }
+
+    [Fact]
+    public async Task Refusing_does_not_deadlock_on_the_session_gate()
+    {
+        // The recording takes the same gate every tool call takes, and a SemaphoreSlim is not
+        // reentrant, so a refusal checked from inside the gate rather than before it would hang
+        // the server rather than fail it. The timeout is what turns that into a message: without
+        // it this suite would simply stop, and a hung run reads as infrastructure rather than as
+        // the defect it is.
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+
+        var (_, orders) = await fixture.LaunchAsync("orders", ct);
+        await fixture.LaunchAsync("billing", ct);
+
+        var oversized = new string('x', MessageLimits.MaxPayloadCharacters + 500);
+        var one = new SubQuestion("q1", oversized);
+
+        await orders.AskAsync("billing", "intent", [one], "If it fits I keep going; if not I say less.", cancellationToken: ct)
+            .WaitAsync(TimeSpan.FromSeconds(15), ct);
+        await orders.ClarifyAsync(1, oversized, cancellationToken: ct)
+            .WaitAsync(TimeSpan.FromSeconds(15), ct);
+        await orders.NotifyAsync("billing", oversized, cancellationToken: ct)
+            .WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        // And the session still works afterwards, which is what says the gate was released.
+        var roster = await orders.AgentsAsync(ct).WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        Assert.NotNull(roster["agents"]);
     }
 }
