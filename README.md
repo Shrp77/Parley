@@ -136,6 +136,13 @@ dotnet tool install -g --add-source src/Parley.Mcp/bin/Release Parley.Mcp
 
 That puts `parley-mcp` on PATH, which is what lets a launch configuration name it.
 
+**Reinstalling from a clone has two traps, and both fail quietly.** `--add-source` points at a
+directory, and NuGet takes the *highest* version it finds there rather than the newest build —
+so an old `.nupkg` left in `bin/Release` wins for ever, and the install reports success. Delete
+the stale ones. And `dotnet tool update` does nothing at all when the version has not changed,
+at some length, so a rebuilt tool appears to install and does not. `dotnet tool uninstall`
+followed by `install` is the reliable pair. Check what you got with `parley --version`.
+
 ### 2. Point each agent at the same database
 
 One file per project. Every agent that should be able to reach every other gets the same
