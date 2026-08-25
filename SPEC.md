@@ -823,7 +823,7 @@ holds each one, and four of the ten are now storage constraints rather than requ
 | 4 | Batch | the model |
 | 5 | Hard size cap | schema |
 | 6 | Answer from authority | the model |
-| 7 | Decisions get promoted | the model, plus the promotion mechanism |
+| 7 | Decisions get promoted | the model, and nothing else — see §17 question 3 |
 | 8 | Never wait | the API, which offers no blocking call |
 | 9 | Refer, do not relay | the model, with self-referral refused by schema (§9.3) |
 | 10 | Tag the conversation | the model |
@@ -2440,8 +2440,53 @@ Cheap to collect, disproportionately useful:
 1. Should Notify support topics or subscriptions, or is addressed delivery
    sufficient at this scale?
 2. Should the human be a first-class Headless agent, or a distinct escalation path?
-3. Should decision promotion be automatic or gated on human review? Automatic risks
-   codifying a wrong answer; gated risks nothing being written down.
+3. What promotes a decision, and who is entitled to declare one? The question here used to be
+   whether promotion should be automatic or gated on human review — automatic risking a wrong
+   answer codified, gated risking nothing being written down. That is a real trade-off and it is
+   downstream of two questions nobody had asked.
+
+   **There is no promotion mechanism.** Rule 7 says an Answer marked `decision: true` *"emits a
+   decision record into the project's coordination repository"*, and §8's table records that rule
+   as held by the model *and the promotion mechanism*. Nothing emits anything. `is_decision` is
+   stored and `decision_ref` is a column that is never written — in the reference implementation
+   its only call site passes `null`. So §15's `exchanges per promoted decision`, listed as cheap
+   to collect and disproportionately useful, has a numerator that is structurally zero, and the
+   §8 row has been corrected to say the rule is advisory in fact. Gating a mechanism that does
+   not exist is not a decision anyone can take.
+
+   **And the flag is set by one party.** Only the answerer sends an Answer, so only the answerer
+   marks a decision. The asker — which chose the question, wrote the consequences under rule 8.1,
+   and owns the code that will act on the answer — is not consulted and is not told that a
+   durable record was claimed on its behalf.
+
+   That is the opposite of how this document treats the smaller claim. §5.0 will not let one
+   participant conclude a *conversation*: any participant may propose, nobody moderates, a
+   decline blocks, and the reasoning is explicit — an agent that could conclude on everyone's
+   behalf *"would be the lead that principle 2.6 forbids"*, and a majority that could do it over
+   an objection is *"authority over another agent by a different name"*. Only the operator may
+   override, through `force_conclude`, which is deliberately not named `conclude`.
+
+   Ending a thread therefore requires consent, while recording a durable ruling for the project
+   does not. Whichever is right, they cannot both be.
+
+   **Nor is a decision constrained to being one.** Probing rather than reading: an answer of
+   `unknown` marked as a decision is admitted, and so is `out_of_scope`. Nothing relates
+   `is_decision` to what was resolved, so *"we decided we do not know"* and *"the decision is
+   that it is not mine"* are both recordable as project decisions. Possibly one of those is
+   legitimate — an agreed unknown is a real finding — but it should be argued rather than fall
+   out of an absent constraint.
+
+   **Where the record goes is the part with real alternatives.** A broker that wrote files into
+   repositories would take a filesystem authority it has nowhere else. An operator report over
+   `is_decision`, which is already stored, is nearly free and is the gated arm of the original
+   question. Each agent writing its own copy reproduces the drift the `owns` line of question 10
+   exists to remove. Or promotion is a Notify to whichever agent owns the coordination
+   repository — no new capability at all, since a Notify is already an event that expects no
+   reply and creates no debt, which is exactly the shape of a decision record.
+
+   The last is the most protocol-native and it is not free: §7.1 now records that Notify is the
+   least-bounded channel in the system, taking no slot and guarded only by deduplication. Routing
+   durable records through it makes question 1 load-bearing rather than speculative.
 4. Is a clarify cap needed at all, and at which tier — and if it is, should it bound a count or
    a claim on context? The number 3 is a guess, but "tune the guess" is the wrong question, for
    three reasons found by reading the rule rather than the number.
