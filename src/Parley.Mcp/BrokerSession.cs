@@ -342,6 +342,66 @@ public sealed class BrokerSession : IAsyncDisposable
             options.Agent,
             options.Owns,
             cancellationToken).ConfigureAwait(false);
+
+        // Consent to being started, refreshed on every launch for the same reason ownership is:
+        // withdrawing it must be as simple as removing the variable and opening the repository
+        // once. The command itself is the consent -- there is no separate flag to get out of step
+        // with it, and a deployment cannot take invocation from its peers without offering it back.
+        //
+        // Written here rather than kept local because a supervisor starts agents other than its
+        // own and has to read this somewhere. That it is written by this agent's own server, from
+        // this agent's own launch environment, is what keeps an executable command line in the
+        // registry no wider a trust than §13 already places in that environment.
+        await agents.RefreshInvocationConsentAsync(
+            options.Agent,
+            options.InvokeCommand,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs adapter-side bookkeeping against the database, through the same gate.
+    /// </summary>
+    /// <typeparam name="T">What the work returns.</typeparam>
+    /// <param name="work">The work, given the connection and the current instant.</param>
+    /// <param name="cancellationToken">Cancels the wait and the work.</param>
+    /// <returns>Whatever the work returned.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="work"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// The escape hatch for things that are the adapter's business rather than the broker's:
+    /// counting what the size cap refused, recording what an invocation cost. None of them is a
+    /// protocol operation and none belongs on <see cref="Parley.Broker.Broker"/>, whose surface
+    /// is guarded precisely so that operations are added by decision rather than by proximity.
+    /// </para>
+    /// <para>
+    /// It is a generic hatch rather than another bespoke method because the bespoke ones were
+    /// accumulating: one for refusals, and three more wanted for invocation. A widening set of
+    /// near-identical methods hides the fact that they are all the same escape, which is worth
+    /// naming once and being honest about.
+    /// </para>
+    /// <para>
+    /// It goes through the gate, and that is the whole reason it exists rather than a connection
+    /// property. The connection is not thread-safe, the sweep runs on its own thread, and a
+    /// caller holding the connection directly would be one <c>await</c> away from two writers.
+    /// </para>
+    /// </remarks>
+    public async Task<T> UseConnectionAsync<T>(
+        Func<SqliteConnection, DateTimeOffset, CancellationToken, Task<T>> work,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            return await work(_connection, _clock.GetUtcNow(), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     /// <summary>

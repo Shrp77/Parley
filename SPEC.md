@@ -940,6 +940,19 @@ CREATE TABLE agents (
   session_ref     TEXT,                    -- adapter-specific resume handle
   adapter_config  TEXT,                    -- opaque to the broker (see §12)
   owns            TEXT,                    -- one line, read by peers (see §17 q10)
+  -- Whether a supervisor may run this agent when it owes an answer and nobody is running it.
+  -- Not the tier: a repository with a live session genuinely IS Pull, and the same repository
+  -- with no session open is reachable only by starting one. This records a permission its
+  -- operator granted, so the two combine rather than compete. See §11.1.
+  invoke_when_idle INTEGER NOT NULL DEFAULT 0 CHECK (invoke_when_idle IN (0, 1)),
+  -- How to start it. Written by this agent's own server from this agent's own launch
+  -- environment, and by nothing else -- which is what keeps an executable command line here no
+  -- wider a trust than §13 already places in that environment. A supervisor runs agents other
+  -- than its own, so it has to read this somewhere; it splits the string and executes it as
+  -- argv, never through a shell.
+  invoke_command  TEXT
+                  CHECK (invoke_command IS NULL
+                         OR length(invoke_command) BETWEEN 1 AND 1000),
   last_seen_utc   TEXT,
   status          TEXT    NOT NULL
                   CHECK (status IN ('registered', 'live', 'offline', 'unreachable',
@@ -1006,6 +1019,63 @@ CREATE TABLE agent_credentials (
          OR reference LIKE 'keychain:_%'
          OR reference LIKE 'file:_%')
 ) STRICT;
+
+-- What giving an agent a turn has cost. Unbounded on purpose, like Notify (§17 question 1): the
+-- decision about whether to bound it waits for evidence, and the evidence must outlive the
+-- messages that produced it. An agent that answers without being asked is an agent that bills
+-- without being asked, so what is recorded is chosen to make a runaway visible early -- not only
+-- how many, but how long they took and how often they achieved nothing.
+--
+-- No output is kept. What the agent said travels as messages under §9.4's retention; capturing
+-- it here would make a second, unpruned copy of everything an agent ever wrote, outside every
+-- guard that governs the first.
+CREATE TABLE invocations (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent         TEXT    NOT NULL REFERENCES agents(name),
+  -- Before and after, so the record can say whether the turn changed anything. An agent that
+  -- ran and still owes what it owed is the one worth noticing.
+  owed_before   INTEGER NOT NULL CHECK (owed_before >= 0),
+  owed_after    INTEGER NOT NULL CHECK (owed_after >= 0),
+  started_utc   TEXT    NOT NULL,
+  elapsed_ms    INTEGER NOT NULL CHECK (elapsed_ms >= 0),
+  -- The turn's verdict: zero when it ran to a clean finish. Named for a process exit code
+  -- because it once was one, back when a turn and a process were the same thing.
+  exit_code     INTEGER NOT NULL,
+  -- A timeout is not a failure of the agent: it is a turn that took longer than the supervisor
+  -- was willing to wait for, and the two need different responses. It does not end the agent --
+  -- see §11.1.
+  timed_out     INTEGER NOT NULL DEFAULT 0 CHECK (timed_out IN (0, 1)),
+  -- What the runner charged, as the runner reported it.
+  cost_usd      REAL    NOT NULL DEFAULT 0.0 CHECK (cost_usd >= 0.0),
+  -- How many model turns went into one Parley turn. The count separates an agent that answered
+  -- a question from one that went and did an afternoon's work on the strength of it.
+  model_turns   INTEGER NOT NULL DEFAULT 0 CHECK (model_turns >= 0),
+  -- Tool calls refused for want of permission. A resident agent runs with nobody at the
+  -- keyboard, so a call needing approval is not paused for a human -- it is refused, and the
+  -- agent answers anyway and worse. Nothing else in the record distinguishes that from an agent
+  -- that has simply become unhelpful.
+  permission_denials INTEGER NOT NULL DEFAULT 0 CHECK (permission_denials >= 0)
+) STRICT;
+
+CREATE INDEX ix_invocations_agent ON invocations(agent, started_utc);
+
+-- Consent and command arrive together or not at all. A row consenting to be run with nothing to
+-- run is a candidate that fails on every pass, silently, because a missing command is not an
+-- error anywhere else. In storage rather than in the server for the reason §9.3 gives: an
+-- invariant the server holds is an invariant only while the server is the only writer.
+CREATE TRIGGER tr_agents_consent_needs_command_insert
+BEFORE INSERT ON agents
+WHEN NEW.invoke_when_idle = 1 AND NEW.invoke_command IS NULL
+BEGIN
+  SELECT RAISE(ABORT, 'an agent that consents to invocation must record how to start it');
+END;
+
+CREATE TRIGGER tr_agents_consent_needs_command_update
+BEFORE UPDATE ON agents
+WHEN NEW.invoke_when_idle = 1 AND NEW.invoke_command IS NULL
+BEGIN
+  SELECT RAISE(ABORT, 'an agent that consents to invocation must record how to start it');
+END;
 
 CREATE TABLE exchanges (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1862,11 +1932,51 @@ not by vendor.
 |---|---|---|---|
 | **Full** | Native tool calls | Push into a running turn | Agent can be interrupted with an arriving message. |
 | **Pull-only** | Native tool calls | Drain on demand | Agent asks and answers, but only notices inbound traffic when it calls `inbox()`. |
-| **Headless** | Broker invokes the agent | N/A | Broker sends the question as a one-shot prompt and captures the response. |
+| **Headless** | Native tool calls | A supervisor gives the agent a turn | The agent is resident: started once, kept alive, and told only that it has mail. |
 
 An adapter declares its tier at registration. The broker degrades gracefully: a
 Question to a Pull-only agent is queued rather than pushed; a Question to a Headless
-agent triggers an invocation.
+agent waits until a supervisor next gives that agent a turn.
+
+**A Headless agent is resident, not re-created.** This is worth stating flatly because
+the obvious design is the wrong one, and this document specified the wrong one until it
+was tried. Starting a process per waiting message works — the envelope of §5.3 carries
+the intent and consequences back, so a cold reader has what it needs — and it produces
+an agent that cannot hold a position across turns. It cannot remember why it asked a
+clarification, cannot get better at its own domain by answering thirty questions about
+it, and cannot negotiate a contested boundary. Contested boundaries are the case this
+protocol exists for, so a tier that cannot reach them is not a degraded tier; it is the
+wrong mechanism.
+
+So the supervisor starts each agent once and keeps it alive. Each holds one conversation
+for its whole life, accumulating the history of every exchange it has taken part in, and
+arrives at each new turn remembering the last.
+
+**The supervisor delegates a turn, never a judgement.** It passes no question, reads no
+message, and writes nothing to any exchange. An agent given a turn calls `inbox()`
+through its own adapter, under the identity §13 takes from its own launch environment,
+and decides for itself what to do — which is what keeps principle 2.6 intact under a
+design that would otherwise breach it, and what makes an unattended answer
+indistinguishable from an attended one. Passing the question in would be relaying (rule
+9 of §8), arriving under the supervisor's identity with consequences not written for it.
+
+Three things end a resident agent, and nothing else may:
+
+1. **The supervisor stops**, and tells every agent it started to quit.
+2. **The supervisor tells one agent to quit**, because its operator retired it (§14) or
+   withdrew the consent recorded in `agents.invoke_command`.
+3. **The agent's own process ends**, which the next pass notices and does not fight.
+
+A turn that runs past the supervisor's patience is **not** one of them. The process holds
+everything the agent has learned, and discarding that because a single turn ran long is a
+far worse trade than waiting: the turn is recorded as abandoned, the exchange is unharmed
+— still owed, still open — and the reply that eventually arrives is discarded rather than
+read as the answer to the next turn.
+
+Consent is per agent and comes from that agent's own launch environment, never from the
+supervisor's. An agent that has not offered `invoke_command` is never started, because
+starting a repository nobody offered spends its operator's tokens on its operator's
+machine.
 
 ### 11.2 The headless tier is the important one
 

@@ -21,6 +21,12 @@ namespace Parley.Mcp;
 /// One line saying what this agent owns, shown to every peer that lists the roster, or
 /// <see langword="null"/> if the launch did not say. See <see cref="OwnershipStatement"/>.
 /// </param>
+/// <param name="InvokeCommand">
+/// The command that starts an agent when it owes an answer and nobody is running it, or
+/// <see langword="null"/> to take no part in that. Two things at once: setting it is how this
+/// repository consents to being started, and it is what the sweep runs for <em>other</em> idle
+/// agents. See SPEC.md §11.1's Headless tier.
+/// </param>
 /// <param name="ClarifyDepthCap">
 /// How many clarifications an exchange opened by this server admits before the broker forces an
 /// <c>unknown</c>. Stamped onto each exchange at admission, so a change applies to questions
@@ -51,7 +57,8 @@ public sealed record ServerOptions(
     RetentionPolicy Retention,
     string? Workspace,
     string? Owns = null,
-    int ClarifyDepthCap = ServerOptions.DefaultClarifyDepthCap)
+    int ClarifyDepthCap = ServerOptions.DefaultClarifyDepthCap,
+    string? InvokeCommand = null)
 {
     /// <summary>The environment variable naming the database file.</summary>
     /// <remarks>
@@ -93,6 +100,26 @@ public sealed record ServerOptions(
     /// divergence between the documented default and the applied one is.
     /// </remarks>
     public const int DefaultClarifyDepthCap = 3;
+
+    /// <summary>
+    /// The environment variable holding the command that starts an idle agent.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Read from the launch environment and offered by no operation, like every other fact about
+    /// an agent's identity. Setting it means two things that are deliberately the same setting:
+    /// this repository may be started when it owes an answer, and this server will start other
+    /// idle agents that have said the same. Splitting them would let a deployment take invocation
+    /// without offering it, which is a free rider on somebody else's open session.
+    /// </para>
+    /// <para>
+    /// For a Claude Code agent this is <c>claude -p</c>; the prompt is appended by the invoker,
+    /// not written here, so no template can place it where it would be read as a flag. Unset
+    /// means this agent neither invokes nor is invoked, which is the state every deployment
+    /// starts in.
+    /// </para>
+    /// </remarks>
+    public const string InvokeCommandVariable = "PARLEY_INVOKE_COMMAND";
 
     /// <summary>The largest value <see cref="ClarifyCapVariable"/> may carry.</summary>
     /// <remarks>
@@ -244,7 +271,8 @@ public sealed record ServerOptions(
             RetentionPolicyEnvironment.Read(read),
             string.IsNullOrWhiteSpace(workspace) ? null : workspace,
             owns,
-            ReadClarifyDepthCap(read));
+            ReadClarifyDepthCap(read),
+            Blank(read(InvokeCommandVariable)));
     }
 
     /// <summary>Reads the clarify cap, or falls back to the default.</summary>
@@ -278,6 +306,16 @@ public sealed record ServerOptions(
 
         return cap;
     }
+
+    /// <summary>Normalises an optional variable, treating whitespace as absent.</summary>
+    /// <param name="value">The raw value.</param>
+    /// <returns>The value, or <see langword="null"/> if there was nothing in it.</returns>
+    /// <remarks>
+    /// A key declared with an empty value is a launch configuration in the middle of being
+    /// edited, not a request to run the empty string as a command.
+    /// </remarks>
+    private static string? Blank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
 
     /// <summary>Reads a required variable.</summary>
     /// <param name="read">The source of variables.</param>

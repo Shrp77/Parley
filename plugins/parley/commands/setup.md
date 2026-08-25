@@ -85,7 +85,7 @@ If the operator's tool is installed and the database already exists, show the us
 already registered before they choose a name:
 
 ```
-parley --db <path> agents
+parley --db <path> registry
 ```
 
 ## 3. Write the launch configuration
@@ -127,19 +127,48 @@ Substitute the real values. Three notes on the shape:
 
 These are optional and can be left out: `PARLEY_RESPONDER` (what to record as having produced a
 message, `unknown-model` if unset), `PARLEY_TICK_SECONDS` (how often the sweep runs, 60 if
-unset), `PARLEY_RETENTION_IDLE_HOURS` and `PARLEY_RETENTION_MAX_AGE_HOURS` (how long the message
+unset), `PARLEY_CLARIFY_CAP` (how many clarifications one exchange may carry, 3 if unset),
+`PARLEY_RETENTION_IDLE_HOURS` and `PARLEY_RETENTION_MAX_AGE_HOURS` (how long the message
 log keeps what it carried, 72 and 720 if unset). Set the retention pair on **every** agent's
 server or none: the servers are what apply the policy, so setting it in one place and not
 another has agents quietly enforcing different numbers on one file.
 
-## 4. Create the database's directory
+## 4. Ask whether this repository may answer unattended
+
+Everything so far needs a person to take a turn: this agent answers when its session does, and
+its session acts when the user sends it something. So an exchange with a peer needs a human at
+both ends unless this repository offers otherwise.
+
+`PARLEY_INVOKE_COMMAND` is that offer, and it is consent and command in one:
+
+```json
+"PARLEY_INVOKE_COMMAND": "claude"
+```
+
+Set it, and `parley up` may keep this agent resident — started once, given a turn whenever a
+peer needs one, kept alive so it remembers the conversations it is in. Leave it out and nothing
+ever starts this repository.
+
+**Ask the user, and take no for an answer.** This is the one setting that lets their machine run
+a model and spend their tokens with nobody watching, so it is theirs to grant rather than a
+default to apply. It is also per repository on purpose: it belongs in this repository's launch
+configuration because that is the only place the permission can honestly come from.
+
+Write only the runner. The supervisor appends the flags that make it speak the turn protocol,
+and the agent's own name from the registry, so `claude` on its own is the whole value. Any flags
+the user does want — a permission mode, a model — go after it and are kept.
+
+Withdrawing it later means removing the line and opening this repository once. That is enough;
+there is no second step somewhere the user will not look.
+
+## 5. Create the database's directory
 
 Create the parent directory of the database path if it does not exist. Do not create the file.
 
 If the database sits inside a repository despite step 2's advice, add it to that repository's
 `.gitignore`. It holds the full text of every question and answer.
 
-## 5. Name the peers
+## 6. Name the peers
 
 Run `/parley:peers`, which writes the block. If the peers are not registered yet - the usual
 case when this is the first repository being set up - skip it for now and come back once the
@@ -150,7 +179,7 @@ it *that there is anyone to ask*. An agent with the tools bound and no idea a pe
 answer from this repository and guess at the rest, which is the failure Parley exists to
 prevent, reached by installing it correctly and stopping one step early.
 
-## 6. Restart
+## 7. Restart
 
 MCP servers are launched when Claude Code starts, so the tools appear after a restart. Tell the
 user to restart, then check `/mcp` shows `parley` connected. `parley_agents` then lists the
