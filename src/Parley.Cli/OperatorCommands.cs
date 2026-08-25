@@ -43,9 +43,9 @@ public sealed class OperatorCommands
     /// Shows the workspace, which the agent-facing listing deliberately does not (§10.1 rule 3).
     /// An operator is looking at their own deployment; a peer is not.
     /// </remarks>
-    public async Task<int> AgentsAsync(CancellationToken cancellationToken)
+    public async Task<int> RegistryAsync(CancellationToken cancellationToken)
     {
-        var agents = await _console.DescribeAgentsAsync(cancellationToken).ConfigureAwait(false);
+        var agents = await _console.DescribeRegistryAsync(cancellationToken).ConfigureAwait(false);
 
         if (agents.Count == 0)
         {
@@ -120,6 +120,260 @@ public sealed class OperatorCommands
                 CultureInfo.InvariantCulture,
                 $"{refusal.Agent.Value,-20} {Lower(refusal.Type),-9} {refusal.Refusals,5}  " +
                 $"{refusal.Worst,5}  {mean,5} {refusal.Cap,5}  {refusal.LastUtc:u}"))
+                .ConfigureAwait(false);
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Reports where the ownership map is being argued about, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Zero. The report is the output.</returns>
+    /// <remarks>
+    /// <para>
+    /// Two halves from two tables, and the report says which is which because they have different
+    /// reach. The rate comes from <c>exchanges</c>, which retention never touches, so it covers
+    /// the whole life of the deployment. The targets come from the referral record, which exists
+    /// because the names used to live in a message payload that §9.4 deletes.
+    /// </para>
+    /// <para>
+    /// Written so a high number reads as a question rather than a verdict. A pair referring
+    /// constantly is not an agent behaving badly; it is two repositories that disagree about a
+    /// boundary, which is a thing people fix and not a thing an operator should read as a fault.
+    /// </para>
+    /// </remarks>
+    public async Task<int> ReferralsAsync(CancellationToken cancellationToken)
+    {
+        var report = await _console.DescribeReferralsAsync(cancellationToken).ConfigureAwait(false);
+
+        if (report.IsEmpty)
+        {
+            await _output.WriteLineAsync(
+                "Nothing has been referred. Either every question has found its owner first " +
+                "time, or too little has been asked to tell.").ConfigureAwait(false);
+
+            return 0;
+        }
+
+        await _output.WriteLineAsync(
+            "asker                answerer             closed  out of scope   rate")
+            .ConfigureAwait(false);
+
+        foreach (var pair in report.Pairs)
+        {
+            await _output.WriteLineAsync(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{pair.Asker,-20} {pair.Answerer,-20} {pair.Closed,6}  {pair.OutOfScope,12}  " +
+                $"{pair.Rate,5:0.0%}")).ConfigureAwait(false);
+        }
+
+        if (report.Targets.Count > 0)
+        {
+            await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+            await _output.WriteLineAsync(
+                "and where they were sent instead").ConfigureAwait(false);
+
+            foreach (var target in report.Targets)
+            {
+                await _output.WriteLineAsync(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{target.Asker,-20} {target.Answerer,-20} -> {target.RedirectedTo,-20} " +
+                    $"{target.Referrals,5}  {Readable(target.LastUtc)}")).ConfigureAwait(false);
+            }
+        }
+
+        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+
+        // The reading. §15 calls this the signal that the ownership map is wrong somewhere, and
+        // an operator looking at a table of counts should not have to reconstruct that.
+        await _output.WriteLineAsync(
+            "A high rate is a boundary two repositories disagree about, not an agent behaving " +
+            "badly. Fix it where ownership is written down, not here.").ConfigureAwait(false);
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Reports what Notify has carried, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Zero. The report is the output.</returns>
+    /// <remarks>
+    /// §17 question 1 records that nothing bounds Notify and that the answer is to measure rather
+    /// than pick a limit. This prints the two numbers that decide it — how many and how big — and
+    /// the per-recipient totals a survey reads, because asking an agent whether notifications are
+    /// worth having is only meaningful once it has had enough of them to judge.
+    /// </remarks>
+    public async Task<int> NotificationsAsync(CancellationToken cancellationToken)
+    {
+        var report = await _console.DescribeNotificationsAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (report.IsEmpty)
+        {
+            await _output.WriteLineAsync(
+                "No notifications have been sent. Nothing bounds them by design, so this is the " +
+                "evidence for whether anything should — and there is none yet.")
+                .ConfigureAwait(false);
+
+            return 0;
+        }
+
+        await _output.WriteLineAsync(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{report.Sent} notifications, mean {report.Mean} characters. The cap on a single " +
+            $"message is {MessageLimits.MaxPayloadCharacters}.")).ConfigureAwait(false);
+
+        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+        await _output.WriteLineAsync(
+            "from                 to                    sent    mean  largest  first        last")
+            .ConfigureAwait(false);
+
+        foreach (var flow in report.Flows)
+        {
+            await _output.WriteLineAsync(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{flow.From,-20} {flow.To,-20} {flow.Sent,6}  {flow.Mean,6} {flow.Largest,8}  " +
+                $"{Day(flow.FirstUtc)}  {Day(flow.LastUtc)}")).ConfigureAwait(false);
+        }
+
+        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+        await _output.WriteLineAsync("received in total").ConfigureAwait(false);
+
+        foreach (var (agent, received) in report.Received)
+        {
+            // The thresholds are where somebody goes and asks that agent whether any of it was
+            // worth having. Marked rather than left to be counted off a column, because the whole
+            // point of the survey is that it happens at all.
+            var due = received >= 10
+                ? string.Create(CultureInfo.InvariantCulture, $"  <- ask it, past {received / 10 * 10}")
+                : string.Empty;
+
+            await _output.WriteLineAsync(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{agent,-20} {received,6}{due}")).ConfigureAwait(false);
+        }
+
+        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+        await _output.WriteLineAsync(
+            "Nothing refuses a notification, deliberately. What to do with these numbers is in " +
+            "SPEC.md section 17, question 1.").ConfigureAwait(false);
+
+        return 0;
+    }
+
+    /// <summary>Renders a stored timestamp as a date, for a column that spans days.</summary>
+    /// <param name="stored">The value as the database holds it.</param>
+    /// <returns>The date, or the raw value if it cannot be read as one.</returns>
+    private static string Day(string stored) =>
+        DateTimeOffset.TryParse(
+            stored, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var moment)
+            ? moment.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : stored;
+
+    /// <summary>Renders a stored timestamp the way the other reports do.</summary>
+    /// <param name="stored">The value as the database holds it.</param>
+    /// <returns>The same instant, or the raw value if it cannot be read as one.</returns>
+    /// <remarks>
+    /// Storage keeps full round-trip precision because deduplication buckets are derived from it;
+    /// seven decimal places in a column an operator is scanning for a date is noise. Falls back to
+    /// the stored text rather than throwing: a report is what somebody runs when something has
+    /// already gone wrong, and refusing to print because one row is odd is the worst moment to
+    /// discover that.
+    /// </remarks>
+    private static string Readable(string stored) =>
+        DateTimeOffset.TryParse(
+            stored, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var moment)
+            ? moment.ToString("u", CultureInfo.InvariantCulture)
+            : stored;
+
+    /// <summary>
+    /// Reports what clarification cost, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Zero. The report is the output.</returns>
+    /// <remarks>
+    /// <para>
+    /// Written to be read by somebody deciding whether the cap of §5.2 should exist, so it says
+    /// what the numbers mean rather than only what they are. A distribution printed without the
+    /// caps that shaped it is a censored measurement presented as a natural one, which is the
+    /// specific mistake §17 question 4 exists to avoid.
+    /// </para>
+    /// <para>
+    /// The empty case says what is missing rather than printing an empty table, for the same
+    /// reason <see cref="RefusalsAsync"/> does: the person most likely to be looking is the one
+    /// who wants the number changed, and "nothing has happened yet" is an answer to that.
+    /// </para>
+    /// </remarks>
+    public async Task<int> ClarificationsAsync(CancellationToken cancellationToken)
+    {
+        var report = await _console.DescribeClarificationsAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (report.Exchanges == 0)
+        {
+            await _output.WriteLineAsync(
+                "No exchanges yet, so nothing has clarified. There is no evidence here for or " +
+                "against the clarify cap.").ConfigureAwait(false);
+
+            return 0;
+        }
+
+        await _output.WriteLineAsync(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{report.Exchanges} exchanges. Caps in force: {report.LowestCapInForce} to " +
+            $"{report.HighestCapInForce}.")).ConfigureAwait(false);
+
+        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+        await _output.WriteLineAsync("depth  exchanges  share").ConfigureAwait(false);
+
+        foreach (var bucket in report.Distribution)
+        {
+            var share = 100.0 * bucket.Exchanges / report.Exchanges;
+
+            await _output.WriteLineAsync(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{bucket.Depth,5}  {bucket.Exchanges,9}  {share,5:0.0}%")).ConfigureAwait(false);
+        }
+
+        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+
+        await _output.WriteLineAsync(string.Create(
+            CultureInfo.InvariantCulture,
+            $"Reached the cap:                             {report.ExchangesAtCap}")).ConfigureAwait(false);
+
+        await _output.WriteLineAsync(string.Create(
+            CultureInfo.InvariantCulture,
+            $"Answers resolving sub-questions differently: " +
+            $"{report.AnswersResolvingSubQuestionsDifferently} of {report.Answers}"))
+            .ConfigureAwait(false);
+
+        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+
+        // The reading, not just the numbers. Somebody who came here to pick a cap should not
+        // have to reconstruct from a histogram that a pile at the top means the measurement was
+        // truncated rather than that the truth was found.
+        if (report.ExchangesAtCap > 0 && report.DeepestReached >= report.HighestCapInForce)
+        {
+            await _output.WriteLineAsync(
+                "The distribution is censored: exchanges are stopping at the cap, so the depth " +
+                "they would have reached is not in this data. Raise the cap and measure again " +
+                "before choosing a number.").ConfigureAwait(false);
+        }
+        else if (report.DeepestReached == 0)
+        {
+            await _output.WriteLineAsync(
+                "Nothing has clarified even once. The cap is not what is keeping depth low, so " +
+                "there is nothing here to tune.").ConfigureAwait(false);
+        }
+        else
+        {
+            await _output.WriteLineAsync(string.Create(
+                CultureInfo.InvariantCulture,
+                $"Nothing reached the cap and the deepest was {report.DeepestReached}, so this " +
+                $"distribution is the real one rather than a truncated one."))
                 .ConfigureAwait(false);
         }
 

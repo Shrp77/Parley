@@ -445,3 +445,9 @@ agents.local.yaml
 # Transient session handoff. Untracked by design: it carries the originating
 # project name list used by the pre-commit check, which must never be committed.
 HANDOFF.md
+
+# The review ledger for the gate CLAUDE.md describes: three consecutive clean runs per lens,
+# any finding resetting that lens. It spans sessions and machines, so it is written down rather
+# than remembered -- and untracked, because it is the state of one person's review of one branch
+# and not a fact about the protocol.
+REVIEW-LEDGER.md

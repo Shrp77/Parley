@@ -87,10 +87,19 @@ public sealed class SurfaceBoundaryTests
             nameof(OperatorConsole.ForceConcludeAsync),
             nameof(OperatorConsole.RetireAsync),
             nameof(OperatorConsole.ReinstateAsync),
-            nameof(OperatorConsole.DescribeAgentsAsync),
+            nameof(OperatorConsole.DescribeRegistryAsync),
             nameof(OperatorConsole.ExportAsync),
             nameof(OperatorConsole.PruneAsync),
-            nameof(OperatorConsole.DescribeRefusalsAsync)
+            nameof(OperatorConsole.DescribeRefusalsAsync),
+
+            // Deliberately not named for the agent operation it reports on. §10.2's protection
+            // against an operator operation reaching an agent's tool set is that the names
+            // differ loudly, which is why force_conclude is not conclude — and the agent already
+            // has clarify(exchange_id, text). A console method called DescribeClarifyAsync beside
+            // a tool called parley_clarify is exactly the near-miss that convention exists for.
+            nameof(OperatorConsole.DescribeClarificationsAsync),
+            nameof(OperatorConsole.DescribeReferralsAsync),
+            nameof(OperatorConsole.DescribeNotificationsAsync)
         ];
 
         var unexpected = PublicMethodsOf(typeof(OperatorConsole)).Where(n => !declared.Contains(n));

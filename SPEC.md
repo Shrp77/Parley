@@ -393,13 +393,66 @@ Two fields do the heavy lifting:
 ### 5.2 Clarify
 
 The answerer cannot answer without something from the asker. Clarify **does not open
-a new exchange and does not take a slot** — if it did, it would deadlock inside the
-deadlock fix, since the pair's only slot is held by the very question being
-clarified. It flips `owed_by`, renews the working window (§6), and stays in place.
+a new exchange and does not take a slot.** It flips `owed_by`, renews the working window (§6),
+and stays in place.
 
-Clarify depth is capped (default 3). On breach the broker forces an Answer with
-`resolution: "unknown"` and flags the exchange. Models will otherwise ping-pong
-toward mutual precision indefinitely.
+**A Clarify is a Question that cannot be admitted as one**, and saying so is the shortest route
+to understanding everything else here. What the answerer wants is a question: it needs something
+from the asker before it can proceed. Sent as a Question it would be `answerer → asker` while
+`asker → answerer` is still open, which is a 2-cycle, and §7.2 refuses those at admission —
+completely, and for the two-party case specifically. Clarify is how the turn reverses without
+adding a second wait-for edge: one edge flips rather than two edges closing a loop.
+
+The pair cap of §7.1 is not the reason, and an earlier version of this section said it was:
+that the pair's only slot was held by the question being clarified. Slots are counted
+directionally and default to five, so a reverse Question would draw on the other direction's
+budget entirely — §7.2 says outright that the cap does not interact with cycle detection. That
+justification was left behind by the removal of pair serialisation, which §7.2 still refers to
+in the past tense. It is recorded here because a rule defended by the wrong mechanism invites
+the right mechanism to be removed as redundant.
+
+Clarify depth is capped (default 3). Models will otherwise ping-pong toward mutual precision
+indefinitely.
+
+**A breach refuses the clarification. It does not close the exchange, and the broker writes no
+answer.** The answerer is told it has run out of budget and to answer with what it has, using
+`unknown` for the parts it cannot determine. If it answers, the exchange closes normally with
+whatever it could resolve. If it does not, the exchange is unanswered like any other and §14
+reaches it on the ordinary schedule, closing it `ghosted` and returning the question to the asker
+with the asker's own stated consequences.
+
+This section used to say the broker forces an Answer with `resolution: "unknown"`. It does not,
+and it must not. **`unknown` means "I own this and I genuinely do not know"** (§5.3) — a
+statement about the answerer's own knowledge, which only the answerer is in a position to make.
+A broker writing it manufactures an agent's judgement, which is the same fault `ghosted` is
+protected against from the other direction: §5.3 makes `ghosted` the one resolution no agent may
+write, enforced by trigger, precisely because an agent claiming it would assert something it
+cannot know. The two guards are mirror images and only one of them was in place.
+
+The distinction survives the change, and it is the useful one. `ghosted` says nobody replied;
+running out of clarifications says somebody replied too many times without converging. The second
+is not a resolution at all — it is a fact about an exchange, readable from `clarify_depth` against
+`clarify_depth_cap`, and reported as such (§10.2, `clarifications()`).
+
+**Depth increments only when the answerer sends.** The asker's reply is supplying detail that
+was asked for, not opening a round, and charging both directions would halve the effective cap
+without saying so. A cap of 3 therefore buys three requests for detail and three replies, not
+one and a half exchanges of it.
+
+This is stated because it is not recoverable from the number. An implementation that charged
+every Clarify would satisfy every other sentence here and give its agents half the budget, and
+the two would be indistinguishable from the outside until an exchange died early.
+
+The cap is stored per exchange rather than read from configuration at the moment it is checked,
+so an exchange is held to the terms it was opened under, and a deployment may set its own. It
+is bounded: see §9.3.
+
+**It is the asker's cap, because the asker's broker admits the exchange.** That is the half of
+the arrangement that makes it a rule rather than a preference: the cap exists to bound how long
+an answerer may go on requesting detail, so an answerer that supplied its own number would be
+setting its own allowance. It cannot. What it may still do is stop clarifying and open a question
+of its own in the other direction, which §7.1 counts as a separate pair slot — the cap bounds one
+exchange, not a conversation.
 
 ### 5.3 Answer
 
@@ -619,6 +672,26 @@ independent, so a busy `orders → billing` cannot exhaust what `billing → ord
 they are unrelated lines of enquiry and coupling them would refuse one for the sins of the
 other.
 
+**What the cap does not bound, gathered in one place.** The cap rations a peer's attention
+rather than any resource of the broker's, and two of the three ways text reaches an agent are
+exempt from it. Each exemption is justified where it is granted; the consequence is only visible
+when they are read together, so it is stated here as well.
+
+A Clarify takes no slot (§5.2) and arrives in the other party's inbox exactly as a Question
+does, carrying the same 4,000 characters. The only thing bounding that channel is the
+clarification cap of rule 8.5 — which §5.2 justifies purely as an anti-ping-pong device, and
+which is therefore doing a second job nothing in this document claims for it. Raising that cap
+widens a context channel, not merely a patience allowance, and §17 question 4 must be read with
+that in mind.
+
+A Notify takes no slot either (§5.4), and its only guard is deduplication (§13.1) — for the type
+this specification expects to carry the highest volume in a mature deployment.
+
+So an agent that has exhausted its five open questions to a peer has not exhausted what it can
+put in front of that peer. Whether that is a hole or a correct division — a Question demands
+work while a Clarify and a Notify demand only reading — is not settled here, and is the second
+half of §17 question 4.
+
 **The cap is operator policy, and an agent never selects it.** Neither cap in this
 specification is a tuning knob. This one exists because terseness is a security control, and
 the clarification cap in §8 exists because two models will refine a question toward mutual
@@ -769,7 +842,7 @@ holds each one, and four of the ten are now storage constraints rather than requ
 | 4 | Batch | the model |
 | 5 | Hard size cap | schema |
 | 6 | Answer from authority | the model |
-| 7 | Decisions get promoted | the model, plus the promotion mechanism |
+| 7 | Decisions get promoted | the model, and nothing else — see §17 question 3 |
 | 8 | Never wait | the API, which offers no blocking call |
 | 9 | Refer, do not relay | the model, with self-referral refused by schema (§9.3) |
 | 10 | Tag the conversation | the model |
@@ -1059,6 +1132,25 @@ BEGIN
          >= NEW.open_pair_cap;
 END;
 
+-- The clarify cap is itself bounded (§9.3), for the reason open_pair_cap is: a value written
+-- outside the band would disable the rule while satisfying every constraint. A trigger rather
+-- than a CHECK because the bound arrived after the table existed, and SQLite cannot add a CHECK
+-- to a table that messages already references by foreign key.
+CREATE TRIGGER tr_clarify_cap_bounded_on_insert BEFORE INSERT ON exchanges
+FOR EACH ROW WHEN NEW.clarify_depth_cap NOT BETWEEN 0 AND 1000
+BEGIN
+  SELECT RAISE(ABORT, 'clarify_depth_cap must be between 0 and 1000');
+END;
+
+-- Guards a path no operation takes today. The cap is written once at admission, and that is a
+-- fact about the current broker rather than about the schema: raising it on a live exchange
+-- would grant depth retroactively that was refused when it was asked for.
+CREATE TRIGGER tr_clarify_cap_bounded_on_update BEFORE UPDATE OF clarify_depth_cap ON exchanges
+FOR EACH ROW WHEN NEW.clarify_depth_cap NOT BETWEEN 0 AND 1000
+BEGIN
+  SELECT RAISE(ABORT, 'clarify_depth_cap must be between 0 and 1000');
+END;
+
 -- Distinctness (§7.1). An index rather than a trigger: it is declarative, and it covers
 -- every path that can produce an OPEN row, including the UPDATE that resumes an orphan.
 CREATE UNIQUE INDEX ux_open_question
@@ -1326,6 +1418,116 @@ BEGIN
         AND t.type = 'text' AND t.value = NEW.from_agent);
 END;
 
+-- Referrals kept where retention cannot reach them. §15 wants the `out_of_scope` rate per pair
+-- and calls it the signal that the ownership map is wrong somewhere; `redirect_to` lives only in
+-- the payload, and §9.4 prunes by deleting the message, so that rate could never see further back
+-- than the retention window. The same move `exchanges.resolution` already makes, and no prose:
+-- three names, a sub-question identifier and a timestamp. §16 says this is a channel and not a
+-- store, and names are not the log §9.4 is bounding.
+CREATE TABLE message_referrals (
+  -- Deliberately not a foreign key. A reference would make the prune fail once a referral
+  -- pointed at the row; ON DELETE CASCADE would delete the referral with the message, which is
+  -- what this table exists to prevent. It names a message that may no longer exist.
+  message_id      INTEGER NOT NULL,
+  -- This one is a real reference: nothing deletes an exchange, so the join stays sound.
+  exchange_id     INTEGER REFERENCES exchanges(id),
+  sub_question    TEXT    NOT NULL CHECK (length(sub_question) BETWEEN 1 AND 64),
+  from_agent      TEXT    NOT NULL REFERENCES agents(name),
+  to_agent        TEXT    NOT NULL REFERENCES agents(name),
+  redirected_to   TEXT    NOT NULL REFERENCES agents(name),
+  created_utc     TEXT    NOT NULL,
+
+  PRIMARY KEY (message_id, sub_question, redirected_to),
+
+  -- Both halves of the contradiction a referral can carry: out_of_scope says the boundary is not
+  -- the sender's, so naming the sender denies itself, and naming the asker answers "not mine,
+  -- ask yourself", which is not a referral.
+  CHECK (redirected_to <> from_agent),
+  CHECK (redirected_to <> to_agent),
+  CHECK (from_agent <> to_agent)
+) STRICT;
+
+CREATE INDEX ix_referrals_pair ON message_referrals(from_agent, redirected_to);
+
+-- Populated by the schema on §9.3's argument: an invariant application code maintains is one it
+-- can route around, and a referral made but not recorded is invisible in the way a missing
+-- telemetry signal is. Anchored at $.resolutions[*].redirect_to rather than searched for anywhere
+-- in the payload, so what is recorded is a subset of what tr_referral_targets_exist validated.
+-- json_tree over the sub-object takes both shapes §5.3 admits: a bare name is one text node, a
+-- list is one per element.
+--
+-- DISTINCT rather than OR IGNORE. OR IGNORE discards a row failing any constraint, not only a
+-- duplicate key, so it silently swallowed the CHECKs above -- an answer referring the asker back
+-- to itself was accepted and recorded as nothing. The duplicate it absorbed is a repeated name in
+-- one list, which is identical across every column, so DISTINCT absorbs it while a contradiction
+-- still aborts.
+CREATE TRIGGER tr_referrals_recorded AFTER INSERT ON messages
+FOR EACH ROW WHEN NEW.type = 'answer' AND json_valid(NEW.payload_json)
+BEGIN
+  INSERT INTO message_referrals
+      (message_id, exchange_id, sub_question, from_agent, to_agent, redirected_to, created_utc)
+  SELECT DISTINCT NEW.id, NEW.exchange_id, json_extract(r.value, '$.id'),
+         NEW.from_agent, NEW.to_agent, t.value, NEW.created_utc
+    FROM json_each(NEW.payload_json, '$.resolutions') r
+    JOIN json_tree(r.value, '$.redirect_to') t
+   WHERE t.type = 'text' AND json_extract(r.value, '$.id') IS NOT NULL;
+END;
+
+-- What Notify costs, kept past the retention that removes the messages. §17 question 1 leaves
+-- the type unbounded on purpose and says the decision comes from evidence; this is the evidence.
+-- A rollup rather than a row per message, unlike message_referrals: a referral names a third
+-- agent and a counter cannot hold which, while a notification's value is prose that is pruned
+-- with the message and should be. Bounded by the roster, not by traffic.
+CREATE TABLE notify_volume (
+  from_agent  TEXT    NOT NULL REFERENCES agents(name),
+  to_agent    TEXT    NOT NULL REFERENCES agents(name),
+  sent        INTEGER NOT NULL CHECK (sent > 0),
+  characters  INTEGER NOT NULL CHECK (characters > 0),
+  -- A mean hides the shape: twenty short notices and one enormous one average out to something
+  -- unremarkable and are completely different problems.
+  largest     INTEGER NOT NULL CHECK (largest > 0),
+  -- Both ends, because a rate needs a span. Twenty in an hour and twenty in a month are the same
+  -- count and opposite findings.
+  first_utc   TEXT    NOT NULL,
+  last_utc    TEXT    NOT NULL,
+
+  PRIMARY KEY (from_agent, to_agent),
+
+  CHECK (from_agent <> to_agent),
+  -- A total smaller than its own largest member, or than one character per message, means the
+  -- accumulation went wrong -- which is invisible in a number that only ever grows.
+  CHECK (characters >= largest),
+  CHECK (characters >= sent)
+) STRICT;
+
+-- Length is measured on payload_json, which is what rule 8.5 caps, so these sizes are directly
+-- comparable to the limit they are weighed against. The §13 envelope is broker-authored and the
+-- same for every message, so counting it would add a constant and change no comparison.
+CREATE TRIGGER tr_notify_volume_recorded AFTER INSERT ON messages
+FOR EACH ROW WHEN NEW.type = 'notify'
+BEGIN
+  INSERT INTO notify_volume
+      (from_agent, to_agent, sent, characters, largest, first_utc, last_utc)
+  VALUES (NEW.from_agent, NEW.to_agent, 1, length(NEW.payload_json),
+          length(NEW.payload_json), NEW.created_utc, NEW.created_utc)
+  ON CONFLICT(from_agent, to_agent) DO UPDATE SET
+      sent       = sent + 1,
+      characters = characters + excluded.characters,
+      largest    = max(largest, excluded.largest),
+      last_utc   = excluded.last_utc;
+END;
+
+-- Whatever the message log still holds, counted when the table arrives. Without it the counter
+-- starts at zero on a deployment that has been running for weeks, and its first reading
+-- understates the volume by exactly what was already sent. A floor rather than a complete
+-- history: the messages retention has already removed cannot be counted.
+INSERT INTO notify_volume (from_agent, to_agent, sent, characters, largest, first_utc, last_utc)
+SELECT from_agent, to_agent, count(*), sum(length(payload_json)), max(length(payload_json)),
+       min(created_utc), max(created_utc)
+  FROM messages
+ WHERE type = 'notify'
+ GROUP BY from_agent, to_agent;
+
 CREATE UNIQUE INDEX ux_message_dedup
   ON messages(content_hash, dedup_bucket);
 ```
@@ -1365,8 +1567,13 @@ decayed.
   broker writes into them. A bug that wrote a large number would disable the cap while leaving
   every constraint satisfied and nothing to notice. The column is therefore range-checked, so
   the worst a broker bug can do is pick a bad value inside a sane band rather than switch the
-  rule off. `clarify_depth_cap` has the same shape and no such bound; that is a gap, not a
-  precedent to copy.
+  rule off. `clarify_depth_cap` has the same shape and is bounded the same way, by trigger
+  rather than by `CHECK` — the bound was added after the table existed, and SQLite cannot add a
+  `CHECK` to a table another table already references by foreign key. The band is 0 to 1000:
+  zero is a coherent policy, meaning answer with what you have, and a thousand is far above the
+  highest value anybody would set on purpose while remaining far below unbounded. The bound
+  matters more since the cap became configurable per deployment (§5.2), because the value now
+  arrives from a launch environment rather than from a constant.
 - **The open-question cap (§7.1).** A `BEFORE INSERT` trigger, because a cap of *n* cannot be
   written as a `CHECK`: reaching it requires counting other rows, `CHECK` forbids subqueries,
   and no index expresses "at most five" the way a partial unique index expresses "at most
@@ -1398,8 +1605,9 @@ decayed.
 - **Every message names its responder.** §11.3 is a MUST and is not limited to answers: the
   envelope in §13 renders responder identity on every delivered message, so a nullable column
   would leave the envelope with a hole the schema permitted. Non-model responders use the
-  scheme in §11.3; a broker-forced unknown, produced when the clarify cap breaks, records
-  `parley:broker`.
+  scheme in §11.3, and the one message the broker writes itself — §14's ghost — records
+  `parley:broker`. A breach of the clarify cap writes nothing at all and so records nothing;
+  see §5.2.
 - **A duplicate cannot be stored twice in one window.** The unique index on
   `(content_hash, dedup_bucket)` in §13. The broker also checks the exact window, but the
   index is what survives a broker that forgets to.
@@ -1452,7 +1660,8 @@ a floor overrides both.
 
 - undelivered — it is somebody's inbox;
 - attached to an exchange that is open or orphaned — §14 may still replay it;
-- inside the deduplication window (§13.1) or the rate-limit window.
+- inside the deduplication window (§13.1). The rate-limit window this clause used to
+  name as well does not exist; see §13 and §17 question 1.
 
 An operator configuring aggressive retention must not be able to break deduplication as
 a side effect. The floor is what makes the dial safe to turn.
@@ -1611,9 +1820,13 @@ any of these into an agent's tool set would breach §10.1 and, through it, §16.
 
 | Operation | Description |
 |---|---|
+| `registry()` | The whole registry, including the workspace directory each agent works in. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
 | `export(conversation_id)` | Emit every message in a conversation. The one query that reads across agents, which is why it is here and not in §10.1. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
 | `refusals()` | Report what the size cap of rule 8.5 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
+| `clarifications()` | Report the clarify depth distribution of §5.2, how often the cap was reached, and whether answers ever resolve sub-questions differently from one another. The evidence §17 question 4 asks for. |
+| `referrals()` | Report the `out_of_scope` rate per pair of §15, and which agents the work was sent to. The rate is read from `exchanges`, which retention never touches; the targets from the referral record, which exists because the names used to live in a payload §9.4 deletes. |
+| `notifications()` | Report what Notify has carried: how many, how big, between whom, and what each recipient has received. §17 question 1 leaves Notify unbounded on purpose; this is the evidence for whether that holds. |
 | `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. |
 | `reinstate(agent)` | Withdraw a retirement. Registration does not, and must not, do this. |
 | `force_conclude(conversation)` | Close a conversation regardless of its participants' votes. |
@@ -1901,12 +2114,20 @@ visibly not the broker's.
 as instruction arrives as the contents of a JSON string rather than as free-standing
 lines. Unwrapping a `text` field into the envelope would discard that protection.
 
-Additional controls:
+Additional controls, annotated with what actually holds each one — the same discipline §8
+applies to its rules, and for the same reason:
 
-- Per-sender rate limits and per-exchange message caps.
-- Deduplication of byte-identical messages within a short window.
-- Payloads are data, never interpolated into a position where they read as
-  system-level instruction.
+- **Per-exchange message caps.** Held: §7.1's open-question cap and rule 8.5's size cap are
+  both schema constraints.
+- **Deduplication of byte-identical messages within a short window.** Held: §13.1, a unique
+  index. It catches a repeat and nothing else — a single character's difference is a different
+  message, which is the correct behaviour for a deduplicator and not a volume control.
+- **Payloads are data, never interpolated into a position where they read as system-level
+  instruction.** Held: the envelope, and `json_valid` on the column.
+- **Per-sender rate limits.** *Not held by anything.* No such limit exists, here or in the
+  reference implementation, and §9.4's retention floor protects a "rate-limit window" that has
+  never existed either. Listing it among the controls made the set look closed when the one
+  control against volume was the one that was absent. See §17 question 1.
 
 ### 13.1 Deduplication
 
@@ -2292,9 +2513,12 @@ Cheap to collect, disproportionately useful:
   model; it is a fact about whether an agent is reachable and answering, which is exactly what
   an operator needs to see and cannot get from any other signal here.
 
-  Report at least `ghosted` closes per answering agent over time, and forced `unknown` closes
-  from the clarify cap, kept apart from each other: the first says nobody replied, the second
-  says someone replied too many times without converging.
+  Report at least `ghosted` closes per answering agent over time, and — kept apart from them —
+  exchanges that reached the clarify cap. The first says nobody replied; the second says somebody
+  replied too many times without converging. The second is not a close and produces no
+  resolution of its own: §5.2 is explicit that a breach refuses the clarification and leaves the
+  exchange to be answered or ghosted like any other, so it is counted from `clarify_depth` against
+  the cap rather than from anything the broker wrote.
 
   Attributing a ghost to a *model* takes one more step, and the shape of the data is worth
   stating because it is not obvious. The closing message records `parley:broker`, so the row
@@ -2358,12 +2582,161 @@ Cheap to collect, disproportionately useful:
 
 ## 17. Open questions
 
-1. Should Notify support topics or subscriptions, or is addressed delivery
-   sufficient at this scale?
+1. What bounds Notify? The question here used to be whether it should support topics or
+   subscriptions, or whether addressed delivery is sufficient at this scale — a routing question.
+   Routing is not the pressing part, and reading the type against the code says why.
+
+   **Notify is the least-bounded path into an agent's context, and every control named against
+   that is either absent or aimed elsewhere.** §5.4 grants it two exemptions and justifies both:
+   it takes no slot, so §7.1's cap does not bound it, and it creates no debt, so §7.2 finds no
+   cycle in it. §7.1 now gathers what that leaves. The remaining guard is §13.1's deduplication,
+   which catches a byte-identical repeat and is correct to catch nothing else — and §13's list of
+   controls named per-sender rate limits beside it, which do not exist and never have.
+
+   Probed rather than argued: sixty notifications differing by one digit, from one agent to one
+   peer, were all accepted in a tenth of a second, putting about 29,000 characters into the
+   recipient's next turn. That is seven times what rule 8.5 permits in a single message, from one
+   peer, arriving in one drain — because `inbox` with no limit collects everything pending.
+   Nothing refused anything, and nothing was misbehaving: every message was well-formed, terse
+   and distinct.
+
+   **Terseness is a security control (principle 2.2), and the type expected to carry the highest
+   volume in a mature deployment (§5.4) is the one with no volume control at all.** §7.1's cap
+   exists because "fifty questions is a context flood whether or not any single one is terse".
+   Fifty notifications are the same flood, admitted by a different door.
+
+   So the question is what bounds it, and topics and subscriptions are two candidate answers
+   rather than the question itself. A subscription is a fan-out and makes the volume worse before
+   it makes it better. A topic is a bound of a kind — a recipient that can decline a class of
+   event has a control it does not have today — but it is an opt-out, and the flood above used
+   one topic. A per-sender window is the direct answer and the one §13 already claimed; a
+   recipient-side budget, mirroring §7.1's directional slots, is the other.
+
+   Two things worth deciding alongside it. Question 3's most protocol-native answer routes
+   decision records through Notify, which would make durable output depend on the unbounded
+   channel. And whatever bounds it must not make an event undeliverable: §5.4 calls this the
+   highest-value traffic there is, and a limit that silently drops a contract change is worse
+   than the flood.
 2. Should the human be a first-class Headless agent, or a distinct escalation path?
-3. Should decision promotion be automatic or gated on human review? Automatic risks
-   codifying a wrong answer; gated risks nothing being written down.
-4. The clarify depth cap of 3 is a guess. Instrument before tuning.
+3. What promotes a decision, and who is entitled to declare one? The question here used to be
+   whether promotion should be automatic or gated on human review — automatic risking a wrong
+   answer codified, gated risking nothing being written down. That is a real trade-off and it is
+   downstream of two questions nobody had asked.
+
+   **There is no promotion mechanism.** Rule 7 says an Answer marked `decision: true` *"emits a
+   decision record into the project's coordination repository"*, and §8's table records that rule
+   as held by the model *and the promotion mechanism*. Nothing emits anything. `is_decision` is
+   stored and `decision_ref` is a column that is never written — in the reference implementation
+   its only call site passes `null`. So §15's `exchanges per promoted decision`, listed as cheap
+   to collect and disproportionately useful, has a numerator that is structurally zero, and the
+   §8 row has been corrected to say the rule is advisory in fact. Gating a mechanism that does
+   not exist is not a decision anyone can take.
+
+   **And the flag is set by one party.** Only the answerer sends an Answer, so only the answerer
+   marks a decision. The asker — which chose the question, wrote the consequences under rule 8.1,
+   and owns the code that will act on the answer — is not consulted and is not told that a
+   durable record was claimed on its behalf.
+
+   That is the opposite of how this document treats the smaller claim. §5.0 will not let one
+   participant conclude a *conversation*: any participant may propose, nobody moderates, a
+   decline blocks, and the reasoning is explicit — an agent that could conclude on everyone's
+   behalf *"would be the lead that principle 2.6 forbids"*, and a majority that could do it over
+   an objection is *"authority over another agent by a different name"*. Only the operator may
+   override, through `force_conclude`, which is deliberately not named `conclude`.
+
+   Ending a thread therefore requires consent, while recording a durable ruling for the project
+   does not. Whichever is right, they cannot both be.
+
+   **Nor is a decision constrained to being one.** Probing rather than reading: an answer of
+   `unknown` marked as a decision is admitted, and so is `out_of_scope`. Nothing relates
+   `is_decision` to what was resolved, so *"we decided we do not know"* and *"the decision is
+   that it is not mine"* are both recordable as project decisions. Possibly one of those is
+   legitimate — an agreed unknown is a real finding — but it should be argued rather than fall
+   out of an absent constraint.
+
+   **Where the record goes is the part with real alternatives.** A broker that wrote files into
+   repositories would take a filesystem authority it has nowhere else. An operator report over
+   `is_decision`, which is already stored, is nearly free and is the gated arm of the original
+   question. Each agent writing its own copy reproduces the drift the `owns` line of question 10
+   exists to remove. Or promotion is a Notify to whichever agent owns the coordination
+   repository — no new capability at all, since a Notify is already an event that expects no
+   reply and creates no debt, which is exactly the shape of a decision record.
+
+   The last is the most protocol-native and it is not free: §7.1 now records that Notify is the
+   least-bounded channel in the system, taking no slot and guarded only by deduplication. Routing
+   durable records through it makes question 1 load-bearing rather than speculative.
+4. Is a clarify cap needed at all, and at which tier — and if it is, should it bound a count or
+   a claim on context? The number 3 is a guess, but "tune the guess" is the wrong question, for
+   three reasons found by reading the rule rather than the number.
+
+   **The counter conflates two different things.** §5.2 justifies the cap by saying models
+   "ping-pong toward mutual precision indefinitely" — repeated clarification of *one* point.
+   But a question carries `sub_questions` with distinct ids, an Answer resolves each of them
+   separately, and Clarify is the one message type that names none: it is opaque text against
+   one exchange-wide counter. So three clarifications of a single point and three requests for
+   three genuinely different missing facts are charged identically, and the second — which is
+   convergence — is penalised as though it were the first. Tuning cannot separate them: raise
+   the number and ping-pong runs longer, lower it and honest multi-part questions die sooner.
+
+   A Clarify that named the sub-question it needs, with the budget per sub-question, would
+   separate them, and has a property worth noting: an answerer can only name sub-questions the
+   asker wrote, so the ceiling is the asker's own. Against it, the field would be self-declared
+   and therefore chosen by the party it constrains — the same shape as question 9, which is why
+   the two should be decided together rather than separately.
+
+   **And the cap has a second job nobody assigned it.** §7.1's pair cap exists because an
+   unbounded question stream is a context flood, and a Clarify takes no slot — so it reaches the
+   other party's inbox with the same 4,000 characters, outside the budget meant to bound exactly
+   that. The clarification cap is the only thing bounding that channel. Read as an anti-ping-pong
+   device it looks like patience; read against §7.1 it is a context control, and raising it
+   widens a channel rather than lengthening a conversation. At 200 a single exchange can put
+   800KB in front of an asker that §7.1 believes it is protecting.
+
+   That reframes what the answer might be. A count is a poor instrument for a context claim —
+   three long clarifications cost more than ten short ones — where a slot is the instrument §7.1
+   already uses for the same purpose. Whether Clarify should draw on a budget rather than a
+   counter is open, and it is a different question from what number the counter should hold.
+
+   **And the breach is not a stop.** Pair slots are counted directionally (§7.1), so an answerer
+   that has exhausted its clarifications can open its own Question back to the asker. The cap
+   does not end the conversation; it moves it, at the cost of a pair slot, a second exchange, and
+   the context the first one accumulated. Whether that is what actually happens is measurable and
+   unmeasured.
+
+   It does not even end the exchange, and §5.2 used to say otherwise. It had the broker force an
+   answer of `unknown` on breach; nothing ever did, and it has been removed rather than built.
+   `unknown` means "I own this and I genuinely do not know" — a claim about the answerer's own
+   knowledge that only the answerer can make, so a broker writing it manufactures an agent's
+   judgement. That is the mirror of the fault `ghosted` is trigger-protected against, and only
+   one of the two guards existed. A breach now refuses the clarification and does nothing else:
+   the answerer answers with what it has, or §14 ghosts the exchange like any other nobody
+   answered.
+
+   **What would answer it.** A cap censors its own evidence: depths pile at the cap whether the
+   true need was one more or forty more, so no report over capped data can say what the cap
+   should be. Since the cap is per exchange and now per deployment (§5.2), the cheap instrument
+   is to set it far above any plausible need, run real traffic, and read the distribution that
+   results. If depth is typically 1 the cap is not doing the work — the tool description telling
+   answerers to prefer answering with what they have is — and the honest conclusion is to drop
+   it at this tier rather than to tune it.
+
+   Note what that would and would not establish. The runaway this defends against needs an agent
+   that answers without a person present, which the pull inbox of §4.2 does not produce: nothing
+   arrives unprompted, so a ping-pong requires somebody to keep running both sides. A measurement
+   taken among interactive agents is evidence about interactive agents. §11.4 already says rule
+   enforcement degrades by tier, and this is a case of it: the Headless tier is where an
+   unbounded clarify chain is a real risk, and it will need its own answer.
+
+   `clarifications()` in §10.2 reports the distribution, the cap-reached count, and whether answers ever
+   resolve sub-questions differently from one another — that last one being the cheap test of
+   whether sub-questions carry information the counter is currently blind to.
+
+   One trap in running it, which follows from §5.2 and is easy to get wrong: the cap on an
+   exchange is the **asker's**. Raising it in one repository widens only the questions that
+   repository asks, and every question asked *of* it still carries whatever the asker was
+   configured with. A deployment-wide measurement means raising it on every agent that asks, and
+   `clarifications()` prints the range of caps in force precisely so a half-applied one is
+   visible rather than silently producing a distribution shaped by the number being measured.
 5. Should `ask` support a deadline, so a caller can prefer a fast `unknown` over a
    slow `answered`?
 6. Where does resume gate state live, and who reports the usage a budget gate reads?
@@ -2433,3 +2806,27 @@ Cheap to collect, disproportionately useful:
     survivable because a wrong guess is cheap — referral is a first-class outcome and *refer,
     do not relay* keeps the correction to a single hop — but it is still one copy of the same
     ownership map per repository, drifting independently.
+
+11. Should a Clarify be required to state its consequences, as rule 8.1 requires of a Question?
+
+    §5.2 now says plainly that a Clarify is a Question that cannot be admitted as one: what the
+    answerer wants is a question, and it is sent as a Clarify because a Question in that
+    direction is the 2-cycle §7.2 refuses. Accept that framing and an asymmetry follows that
+    nothing justifies. Rule 8.1 refuses a Question that does not say what it will do with each
+    possible answer, on the ground that an answerer who knows what turns on the reply gives a
+    better one. That argument is not about direction. It applies unchanged to *"does the schema
+    own this rule?"* asked by the answerer — *if it does I answer `out_of_scope` and name the
+    owner, if it does not I answer with the rule* — and the one message type exempt from it is
+    the one this document elsewhere describes as prone to refining toward mutual precision
+    indefinitely.
+
+    The case against is cost. Rule 8.1 is enforced by a length floor on `consequences`, and a
+    Clarify is often a single short request where the framing would be longer than the question.
+    A floor that produced ceremony would be routed around by writing something that satisfies it
+    and states nothing, which is the failure rule 8.1's floor already exists to prevent and would
+    reintroduce at a smaller scale.
+
+    Worth deciding alongside question 4 rather than separately. A Clarify that named the
+    sub-question it needed and said what turned on the answer would make the per-sub-question
+    budget fall out of the message shape instead of being a field invented to support it — and
+    would make a clarification look, in the log, like what it is.

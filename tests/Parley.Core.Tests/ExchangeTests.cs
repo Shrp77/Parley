@@ -114,20 +114,26 @@ public sealed class ExchangeTests
     }
 
     [Fact]
-    public void Clarify_cap_forces_an_unknown_answer()
+    public void Clarify_cap_refuses_and_leaves_the_exchange_open()
     {
+        // This asserted that a breach forced an answer of `unknown`, through a method written
+        // for it and called from nowhere. SPEC.md §5.2 said the same and was the defect: that
+        // resolution means "I own this and I do not know", which is a statement about the
+        // answerer's knowledge that only the answerer can make. A broker writing it manufactures
+        // an agent's judgement -- the mirror of the fault `ghosted` is trigger-protected against.
+        //
+        // So the breach refuses and does nothing else. The exchange stays open for the answerer
+        // to answer with what it has, and is ghosted by §14 if it never does.
         var exchange = OpenExchange(clarifyCap: 1);
 
         exchange.Clarify(Billing, T0);
         exchange.Clarify(Orders, T0);
 
         var blocked = exchange.Clarify(Billing, T0);
-        Assert.Equal(TransitionError.ClarifyDepthExceeded, blocked.Error);
 
-        // The broker's escape hatch: the answerer does not hold the turn at this point,
-        // so ForceUnknown must bypass the turn check.
-        Assert.True(exchange.ForceUnknown(T0).Succeeded);
-        Assert.Equal(ExchangeState.Closed, exchange.State);
+        Assert.Equal(TransitionError.ClarifyDepthExceeded, blocked.Error);
+        Assert.Equal(ExchangeState.Open, exchange.State);
+        Assert.Null(exchange.Resolution);
     }
 
     [Fact]

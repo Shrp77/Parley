@@ -446,11 +446,13 @@ public sealed class Broker
     /// asked for does not, since that is not a new round.
     /// </para>
     /// <para>
-    /// A breach of the clarify cap is refused here rather than closing the exchange. SPEC.md §7
-    /// has the broker call <see cref="Exchange.ForceUnknown"/> at that point, which is a
-    /// decision this method does not make on the agent's behalf — an agent that has exhausted
-    /// its budget should learn that, not have the exchange closed underneath it by the same
-    /// call it was refused by.
+    /// A breach of the clarify cap is refused here and nothing else happens. An agent that has
+    /// exhausted its budget should learn that, not have the exchange closed underneath it by the
+    /// same call it was refused by. SPEC.md §5.2 once had the broker force an answer of
+    /// <c>unknown</c> at this point and no longer does: that resolution means "I own this and I
+    /// do not know", which only the answerer can say, so a broker writing it manufactures an
+    /// agent's judgement. The exchange is answered by the answerer or ghosted by §14, like any
+    /// other.
     /// </para>
     /// </remarks>
     public Task<SayOutcome> ClarifyAsync(

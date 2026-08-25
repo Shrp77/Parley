@@ -36,11 +36,28 @@ public sealed class SeparationTests
         // method was already in.
         string[] expected =
         [
-            "AgentsAsync",
+            // Not "ClarifyAsync". §10.1 gives an agent clarify(exchange_id, text), and this
+            // check is one of the three that caught the collision when the report was first
+            // written under that name.
+            "ClarificationsAsync",
             "ExportAsync",
             "ForceConcludeAsync",
+            "NotificationsAsync",
             "PruneAsync",
+            // Two letters from RefusalsAsync below, which is worth noticing rather than
+            // renaming away: both are read-only reports, so typing one for the other costs a
+            // glance at unexpected output and nothing else. The §10.2 naming rule is about an
+            // operator operation being mistaken for an agent one, which neither of these is.
+            // If either ever gained a side effect, that reasoning expires and they must be
+            // pulled apart.
+            "ReferralsAsync",
             "RefusalsAsync",
+
+            // Not "AgentsAsync". §10.1 gives an agent agents(), and the operator's listing is a
+            // richer one carrying the workspace path that §10.1 withholds -- two operations
+            // differing only in what they disclose. The §10.2 table had no row for it at all,
+            // which is what hid the collision: adding the row made the spec check fail.
+            "RegistryAsync",
             "ReinstateAsync",
             "RetireAsync"
         ];

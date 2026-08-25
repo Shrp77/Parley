@@ -45,17 +45,20 @@ launched the servers with.** If `PARLEY_DB` is unset here, or set to something e
 ## The commands
 
 ```
-parley [--db <path>] agents                  every registered agent, with its workspace
+parley [--db <path>] registry                every registered agent, with its workspace
 parley [--db <path>] retire <agent>          withdraw a registration
 parley [--db <path>] reinstate <agent>       the only thing that clears a retirement
 parley [--db <path>] export <conversation>   every message in a discussion, across agents
 parley [--db <path>] force-conclude <conv>   close a discussion over its participants' votes
 parley [--db <path>] prune                   apply the retention policy now
 parley [--db <path>] refusals                what the message size cap refused
+parley [--db <path>] clarifications          how deep clarification went, and whether the cap binds
+parley [--db <path>] referrals               where questions are sent onward, and to whom
+parley [--db <path>] notifications           how much Notify carries, and who can judge it
 parley --help                                the same list, on stdout, exiting zero
 ```
 
-`agents` is the whole registry, including the workspace directory each agent works in - which
+`registry` is the whole roster, including the workspace directory each agent works in - which
 the agent-facing roster deliberately withholds. It is how you tell two similarly named agents
 apart, and how you find the repository behind a name.
 
@@ -73,18 +76,61 @@ So `prune` prints the policy it applied before it prints what it removed. Read t
 does not match what the servers were launched with, the numbers you are looking at are your
 shell's, not the deployment's, and the agents have been quietly enforcing something else.
 
-`refusals` is the evidence for the message size cap. It reports, per agent and message type,
-how often a message was refused for length, the worst case and the mean, and the cap in force at
-the time. No refused text is kept anywhere - only how long it was - because storing the payload
-that was refused for being too long would retain exactly what the cap exists to keep out. If
-somebody wants the cap raised, this is what the argument should be made from.
-
 **It removes text permanently.** Export first if the discussion is worth keeping - the export is
 a file the person owns, and it is the only copy that outlives the policy.
 
 A floor bounds it in the other direction and is not configurable: no amount of tightening
 deletes a message nobody has collected yet, the question of an exchange that is still open, or
 the recent rows deduplication is still reading.
+
+## The caps, and the evidence for them
+
+Two commands report what a limit actually did. Neither changes anything, and both
+exist because a number nobody measured is a number argued from taste.
+
+`refusals` is the evidence for the message size cap. It reports, per agent and message type,
+how often a message was refused for length, the worst case and the mean, and the cap in force at
+the time. No refused text is kept anywhere - only how long it was - because storing the payload
+that was refused for being too long would retain exactly what the cap exists to keep out. If
+somebody wants the cap raised, this is what the argument should be made from.
+
+`clarifications` is the same idea for the other cap, and it reads a question the spec has left
+open rather than settling one. It reports how deep clarification actually goes, how often an
+exchange reached its limit, whether the broker had to force an `unknown`, and whether answers
+ever resolve sub-questions differently from one another.
+
+Read the caps it prints beside the distribution, because a cap censors its own evidence: depths
+pile up at whatever limit was in force, whether the true need was one more or forty more. A
+distribution with a heap at the top is a truncated measurement, not a finding. Raising the cap
+far above any plausible need and watching where depth actually settles is the only way to learn
+what it should be - and if depth is almost always zero, the cap was never what kept it low.
+
+`referrals` is the third of these and the only one that points at something a person can fix. It
+reports, per pair, how many closed exchanges the answerer resolved as `out_of_scope` and who it
+named instead. A high rate is not an agent behaving badly - it is two repositories that disagree
+about where a boundary runs, or one holding a stale idea of what the other owns.
+
+The two halves come from different places and have different reach. The rate is counted from
+exchanges, which retention never touches, so it covers the whole life of the deployment. The
+names come from a record kept beside the messages, because `redirect_to` used to live only in a
+payload that `prune` deletes. Neither half keeps any text.
+
+When it points somewhere, the fix is in whatever the project uses to record ownership, and in the
+`PARLEY_OWNS` line of the agent being asked wrongly. Not here.
+
+`notifications` is a measurement rather than a check on anything. Nothing limits how many
+notifications an agent may send - deliberately, while there is no evidence for what a limit
+should be - so this reports how many were sent, how big they were, between whom, and over what
+span. Compare the mean against the single-message cap it prints beside it.
+
+It also totals what each agent has received, and marks the ones past ten. That is the cue to go
+and ask that agent whether any of it was worth having: volume alone cannot tell a useful stream
+of contract changes from noise, and the only participant who knows is the one reading them.
+
+The cap is set per agent, by `PARLEY_CLARIFY_CAP` in that repository's `.mcp.json`, and it is the
+**asker's** cap that governs an exchange. Raising it in one repository widens only the questions
+that repository asks. To measure across a project, raise it everywhere - and check the range this
+command prints, because a half-applied change shows up there as two different caps in force.
 
 ## Reporting back
 

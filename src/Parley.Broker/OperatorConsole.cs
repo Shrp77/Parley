@@ -47,6 +47,9 @@ public sealed class OperatorConsole
     private readonly MessageRepository _messages;
     private readonly Pruner _pruner;
     private readonly SizeRefusalRepository _refusals;
+    private readonly ClarifyReportRepository _clarify;
+    private readonly ReferralReportRepository _referrals;
+    private readonly NotifyVolumeRepository _notifications;
 
     /// <summary>
     /// Creates a console over an open connection.
@@ -64,6 +67,9 @@ public sealed class OperatorConsole
         _messages = new MessageRepository(connection);
         _pruner = new Pruner(connection);
         _refusals = new SizeRefusalRepository(connection);
+        _clarify = new ClarifyReportRepository(connection);
+        _referrals = new ReferralReportRepository(connection);
+        _notifications = new NotifyVolumeRepository(connection);
     }
 
     /// <summary>
@@ -167,7 +173,7 @@ public sealed class OperatorConsole
     /// looking at their own deployment; a peer is not.
     /// </para>
     /// </remarks>
-    public async Task<IReadOnlyList<AgentRecord>> DescribeAgentsAsync(
+    public async Task<IReadOnlyList<AgentRecord>> DescribeRegistryAsync(
         CancellationToken cancellationToken = default) =>
         await _agents.GetAllAsync(cancellationToken).ConfigureAwait(false);
 
@@ -198,6 +204,64 @@ public sealed class OperatorConsole
     public async Task<IReadOnlyList<SizeRefusal>> DescribeRefusalsAsync(
         CancellationToken cancellationToken = default) =>
         await _refusals.GetAllAsync(cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Reports what clarification cost, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the reads.</param>
+    /// <returns>The depth distribution and what it implies about the cap.</returns>
+    /// <remarks>
+    /// <para>
+    /// An operator operation rather than an agent one, and for a different reason than
+    /// <c>export</c>: this reads across every pair in the deployment, so an agent holding it
+    /// would learn who talks to whom and how badly it goes — which §10.1 withholds. It is also
+    /// not a thing an agent could act on. The decision it informs is what the cap should be, and
+    /// no agent sets that.
+    /// </para>
+    /// <para>
+    /// It returns counts and never text. The clarifications themselves are messages under the
+    /// retention policy of §9.4, and a report that quoted them would put one agent's requests in
+    /// front of an operator outside the envelope that marks them as somebody else's words.
+    /// </para>
+    /// </remarks>
+    public async Task<ClarifyReport> DescribeClarificationsAsync(
+        CancellationToken cancellationToken = default) =>
+        await _clarify.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Reports where the ownership map is being argued about, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the reads.</param>
+    /// <returns>The <c>out_of_scope</c> rate per pair, and who the work was sent to.</returns>
+    /// <remarks>
+    /// <para>
+    /// §15 lists this as cheap to collect and disproportionately useful, and it is the one
+    /// telemetry item that points at a fixable thing: two agents disagreeing about where a
+    /// boundary runs, or one holding a stale idea of what the other owns.
+    /// </para>
+    /// <para>
+    /// It names agents and counts, never text. What was said in a referral is a message under the
+    /// retention policy of §9.4; what this reads is the record kept beside it so the signal
+    /// outlives the prose.
+    /// </para>
+    /// </remarks>
+    public async Task<ReferralReport> DescribeReferralsAsync(
+        CancellationToken cancellationToken = default) =>
+        await _referrals.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Reports what Notify has carried, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Volume and size per sending pair, and what each recipient has received.</returns>
+    /// <remarks>
+    /// §17 question 1 records that nothing bounds Notify, and that the decision about whether
+    /// anything should is to be taken from evidence rather than from a number somebody picked.
+    /// This is that evidence: how many, how big, between whom, over what span.
+    /// </remarks>
+    public async Task<NotifyVolumeReport> DescribeNotificationsAsync(
+        CancellationToken cancellationToken = default) =>
+        await _notifications.ReadAsync(cancellationToken).ConfigureAwait(false);
 
     /// <summary>
     /// Emits every message in a conversation, per SPEC.md §10.2.

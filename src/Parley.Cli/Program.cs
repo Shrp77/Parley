@@ -7,7 +7,7 @@ using Parley.Store;
 
 // The operator's way in. SPEC.md §10.2 operations, and nothing else.
 //
-//   parley --db <path> agents
+//   parley --db <path> registry
 //   parley --db <path> retire <agent>
 //   parley --db <path> reinstate <agent>
 //   parley --db <path> export <conversation>
@@ -27,13 +27,16 @@ using Parley.Store;
 const string Help = """
     parley — the operator operations of SPEC.md 10.2.
 
-      parley [--db <path>] agents                      list every registered agent, whole
+      parley [--db <path>] registry                    every registered agent, with its workspace
       parley [--db <path>] retire <agent>              withdraw a registration
       parley [--db <path>] reinstate <agent>           withdraw a retirement
       parley [--db <path>] export <conversation>       emit every message in a discussion
       parley [--db <path>] force-conclude <conv>       close a discussion over its votes
       parley [--db <path>] prune                       apply the retention policy now
       parley [--db <path>] refusals                    what the message size cap refused
+      parley [--db <path>] clarifications              the clarify depth distribution, and whether the cap binds
+      parley [--db <path>] referrals                   where questions are sent onward, and to whom
+      parley [--db <path>] notifications               how much Notify carries, and who has had enough to judge
 
       parley --version                                 this build, and the protocol it speaks
 
@@ -177,7 +180,9 @@ try
     // reported "no agents registered". A typo should not install a schema.
     holder = new SqliteConnectionHolder(ParleyDatabase.Open(databasePath));
 
-    if (SchemaMigrator.GetUserVersion(holder.Connection) == 0)
+    var schema = SchemaMigrator.GetUserVersion(holder.Connection);
+
+    if (schema == 0)
     {
         holder.Dispose();
 
@@ -185,6 +190,32 @@ try
             $"'{databasePath}' is not a Parley database. It has a schema version of zero, which " +
             "means nothing here wrote it. Check the path — this command administers a database " +
             "an agent's server created, and will not create or alter one.").ConfigureAwait(false);
+
+        return Config;
+    }
+
+    // Behind, not absent. This tool never migrates -- see above -- so a database an older server
+    // last touched is missing whatever the newer migrations added, and a report reading one of
+    // those tables fails on a missing table with a stack trace. Which of the two is out of date
+    // is exactly what somebody needs to be told, and it is not recoverable from that exception.
+    //
+    // Only behind. A database AHEAD of this build is left alone deliberately: migrations here add
+    // tables and columns rather than remove them, so an older reader finds everything it knows
+    // about and ignores the rest -- verified by setting user_version past every migration and
+    // running the reports. Refusing that case would break every operator whose tool is a version
+    // behind their servers, which is the ordinary state of a machine mid-upgrade. The asymmetry
+    // is that behind is a certain failure and ahead is a likely success; if a migration ever
+    // removes something, this is the comment that was wrong.
+    if (schema < SchemaMigrator.LatestVersion)
+    {
+        holder.Dispose();
+
+        var expected = SchemaMigrator.LatestVersion;
+
+        await Console.Error.WriteLineAsync(string.Create(
+            CultureInfo.InvariantCulture,
+            $"'{databasePath}' is at schema version {schema}, and this build of parley expects {expected}. Start any agent's server against it once — the server migrates, this command deliberately does not."))
+            .ConfigureAwait(false);
 
         return Config;
     }
@@ -207,8 +238,8 @@ using (holder)
 
     switch (verb)
     {
-        case "agents" when rest.Length == 0:
-            return await commands.AgentsAsync(CancellationToken.None).ConfigureAwait(false);
+        case "registry" when rest.Length == 0:
+            return await commands.RegistryAsync(CancellationToken.None).ConfigureAwait(false);
 
         case "retire" when rest.Length == 1:
             return await WithAgent(rest[0], a => commands.RetireAsync(a, CancellationToken.None))
@@ -234,6 +265,15 @@ using (holder)
 
         case "refusals" when rest.Length == 0:
             return await commands.RefusalsAsync(CancellationToken.None).ConfigureAwait(false);
+
+        case "clarifications" when rest.Length == 0:
+            return await commands.ClarificationsAsync(CancellationToken.None).ConfigureAwait(false);
+
+        case "referrals" when rest.Length == 0:
+            return await commands.ReferralsAsync(CancellationToken.None).ConfigureAwait(false);
+
+        case "notifications" when rest.Length == 0:
+            return await commands.NotificationsAsync(CancellationToken.None).ConfigureAwait(false);
 
         default:
             await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
