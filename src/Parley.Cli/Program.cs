@@ -36,6 +36,7 @@ const string Help = """
       parley [--db <path>] refusals                    what the message size cap refused
       parley [--db <path>] clarifications              the clarify depth distribution, and whether the cap binds
       parley [--db <path>] referrals                   where questions are sent onward, and to whom
+      parley [--db <path>] notifications               how much Notify carries, and who has had enough to judge
 
       parley --version                                 this build, and the protocol it speaks
 
@@ -179,7 +180,9 @@ try
     // reported "no agents registered". A typo should not install a schema.
     holder = new SqliteConnectionHolder(ParleyDatabase.Open(databasePath));
 
-    if (SchemaMigrator.GetUserVersion(holder.Connection) == 0)
+    var schema = SchemaMigrator.GetUserVersion(holder.Connection);
+
+    if (schema == 0)
     {
         holder.Dispose();
 
@@ -187,6 +190,24 @@ try
             $"'{databasePath}' is not a Parley database. It has a schema version of zero, which " +
             "means nothing here wrote it. Check the path — this command administers a database " +
             "an agent's server created, and will not create or alter one.").ConfigureAwait(false);
+
+        return Config;
+    }
+
+    // Behind, not absent. This tool never migrates -- see above -- so a database an older server
+    // last touched is missing whatever the newer migrations added, and a report reading one of
+    // those tables fails on a missing table with a stack trace. Which of the two is out of date
+    // is exactly what somebody needs to be told, and it is not recoverable from that exception.
+    if (schema < SchemaMigrator.LatestVersion)
+    {
+        holder.Dispose();
+
+        var expected = SchemaMigrator.LatestVersion;
+
+        await Console.Error.WriteLineAsync(string.Create(
+            CultureInfo.InvariantCulture,
+            $"'{databasePath}' is at schema version {schema}, and this build of parley expects {expected}. Start any agent's server against it once — the server migrates, this command deliberately does not."))
+            .ConfigureAwait(false);
 
         return Config;
     }
@@ -242,6 +263,9 @@ using (holder)
 
         case "referrals" when rest.Length == 0:
             return await commands.ReferralsAsync(CancellationToken.None).ConfigureAwait(false);
+
+        case "notifications" when rest.Length == 0:
+            return await commands.NotificationsAsync(CancellationToken.None).ConfigureAwait(false);
 
         default:
             await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);

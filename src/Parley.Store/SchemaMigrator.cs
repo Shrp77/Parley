@@ -175,6 +175,18 @@ public static class SchemaMigrator
     }
 
     /// <summary>
+    /// Gets the schema version a database is brought to by everything this build ships.
+    /// </summary>
+    /// <remarks>
+    /// Read from the embedded migrations rather than written down, so it cannot disagree with
+    /// what <see cref="Migrate"/> would actually apply. It exists because a reader needs to know
+    /// whether a database is older than the code reading it: the operator's tool never migrates,
+    /// so without this a report against a database one migration behind fails on a missing table
+    /// with a stack trace, instead of saying which of the two is out of date.
+    /// </remarks>
+    public static int LatestVersion => LoadMigrations().Max(m => m.Version);
+
+    /// <summary>
     /// Reads the schema version currently recorded in the database.
     /// </summary>
     /// <param name="connection">The open connection to query.</param>

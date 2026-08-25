@@ -54,6 +54,7 @@ parley [--db <path>] prune                   apply the retention policy now
 parley [--db <path>] refusals                what the message size cap refused
 parley [--db <path>] clarifications          how deep clarification went, and whether the cap binds
 parley [--db <path>] referrals               where questions are sent onward, and to whom
+parley [--db <path>] notifications           how much Notify carries, and who can judge it
 parley --help                                the same list, on stdout, exiting zero
 ```
 
@@ -116,6 +117,15 @@ payload that `prune` deletes. Neither half keeps any text.
 
 When it points somewhere, the fix is in whatever the project uses to record ownership, and in the
 `PARLEY_OWNS` line of the agent being asked wrongly. Not here.
+
+`notifications` is a measurement rather than a check on anything. Nothing limits how many
+notifications an agent may send - deliberately, while there is no evidence for what a limit
+should be - so this reports how many were sent, how big they were, between whom, and over what
+span. Compare the mean against the single-message cap it prints beside it.
+
+It also totals what each agent has received, and marks the ones past ten. That is the cue to go
+and ask that agent whether any of it was worth having: volume alone cannot tell a useful stream
+of contract changes from noise, and the only participant who knows is the one reading them.
 
 The cap is set per agent, by `PARLEY_CLARIFY_CAP` in that repository's `.mcp.json`, and it is the
 **asker's** cap that governs an exchange. Raising it in one repository widens only the questions

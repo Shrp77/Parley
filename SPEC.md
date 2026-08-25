@@ -1454,6 +1454,61 @@ BEGIN
    WHERE t.type = 'text' AND json_extract(r.value, '$.id') IS NOT NULL;
 END;
 
+-- What Notify costs, kept past the retention that removes the messages. §17 question 1 leaves
+-- the type unbounded on purpose and says the decision comes from evidence; this is the evidence.
+-- A rollup rather than a row per message, unlike message_referrals: a referral names a third
+-- agent and a counter cannot hold which, while a notification's value is prose that is pruned
+-- with the message and should be. Bounded by the roster, not by traffic.
+CREATE TABLE notify_volume (
+  from_agent  TEXT    NOT NULL REFERENCES agents(name),
+  to_agent    TEXT    NOT NULL REFERENCES agents(name),
+  sent        INTEGER NOT NULL CHECK (sent > 0),
+  characters  INTEGER NOT NULL CHECK (characters > 0),
+  -- A mean hides the shape: twenty short notices and one enormous one average out to something
+  -- unremarkable and are completely different problems.
+  largest     INTEGER NOT NULL CHECK (largest > 0),
+  -- Both ends, because a rate needs a span. Twenty in an hour and twenty in a month are the same
+  -- count and opposite findings.
+  first_utc   TEXT    NOT NULL,
+  last_utc    TEXT    NOT NULL,
+
+  PRIMARY KEY (from_agent, to_agent),
+
+  CHECK (from_agent <> to_agent),
+  -- A total smaller than its own largest member, or than one character per message, means the
+  -- accumulation went wrong -- which is invisible in a number that only ever grows.
+  CHECK (characters >= largest),
+  CHECK (characters >= sent)
+) STRICT;
+
+-- Length is measured on payload_json, which is what rule 8.5 caps, so these sizes are directly
+-- comparable to the limit they are weighed against. The §13 envelope is broker-authored and the
+-- same for every message, so counting it would add a constant and change no comparison.
+CREATE TRIGGER tr_notify_volume_recorded AFTER INSERT ON messages
+FOR EACH ROW WHEN NEW.type = 'notify'
+BEGIN
+  INSERT INTO notify_volume
+      (from_agent, to_agent, sent, characters, largest, first_utc, last_utc)
+  VALUES (NEW.from_agent, NEW.to_agent, 1, length(NEW.payload_json),
+          length(NEW.payload_json), NEW.created_utc, NEW.created_utc)
+  ON CONFLICT(from_agent, to_agent) DO UPDATE SET
+      sent       = sent + 1,
+      characters = characters + excluded.characters,
+      largest    = max(largest, excluded.largest),
+      last_utc   = excluded.last_utc;
+END;
+
+-- Whatever the message log still holds, counted when the table arrives. Without it the counter
+-- starts at zero on a deployment that has been running for weeks, and its first reading
+-- understates the volume by exactly what was already sent. A floor rather than a complete
+-- history: the messages retention has already removed cannot be counted.
+INSERT INTO notify_volume (from_agent, to_agent, sent, characters, largest, first_utc, last_utc)
+SELECT from_agent, to_agent, count(*), sum(length(payload_json)), max(length(payload_json)),
+       min(created_utc), max(created_utc)
+  FROM messages
+ WHERE type = 'notify'
+ GROUP BY from_agent, to_agent;
+
 CREATE UNIQUE INDEX ux_message_dedup
   ON messages(content_hash, dedup_bucket);
 ```
@@ -1750,6 +1805,7 @@ any of these into an agent's tool set would breach §10.1 and, through it, §16.
 | `refusals()` | Report what the size cap of rule 8.5 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
 | `clarifications()` | Report the clarify depth distribution of §5.2, how often the cap was reached, and whether answers ever resolve sub-questions differently from one another. The evidence §17 question 4 asks for. |
 | `referrals()` | Report the `out_of_scope` rate per pair of §15, and which agents the work was sent to. The rate is read from `exchanges`, which retention never touches; the targets from the referral record, which exists because the names used to live in a payload §9.4 deletes. |
+| `notifications()` | Report what Notify has carried: how many, how big, between whom, and what each recipient has received. §17 question 1 leaves Notify unbounded on purpose; this is the evidence for whether that holds. |
 | `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. |
 | `reinstate(agent)` | Withdraw a retirement. Registration does not, and must not, do this. |
 | `force_conclude(conversation)` | Close a conversation regardless of its participants' votes. |

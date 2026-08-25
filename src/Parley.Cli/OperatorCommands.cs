@@ -195,6 +195,84 @@ public sealed class OperatorCommands
         return 0;
     }
 
+    /// <summary>
+    /// Reports what Notify has carried, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Zero. The report is the output.</returns>
+    /// <remarks>
+    /// §17 question 1 records that nothing bounds Notify and that the answer is to measure rather
+    /// than pick a limit. This prints the two numbers that decide it — how many and how big — and
+    /// the per-recipient totals a survey reads, because asking an agent whether notifications are
+    /// worth having is only meaningful once it has had enough of them to judge.
+    /// </remarks>
+    public async Task<int> NotificationsAsync(CancellationToken cancellationToken)
+    {
+        var report = await _console.DescribeNotificationsAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (report.IsEmpty)
+        {
+            await _output.WriteLineAsync(
+                "No notifications have been sent. Nothing bounds them by design, so this is the " +
+                "evidence for whether anything should — and there is none yet.")
+                .ConfigureAwait(false);
+
+            return 0;
+        }
+
+        await _output.WriteLineAsync(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{report.Sent} notifications, mean {report.Mean} characters. The cap on a single " +
+            $"message is {MessageLimits.MaxPayloadCharacters}.")).ConfigureAwait(false);
+
+        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+        await _output.WriteLineAsync(
+            "from                 to                    sent    mean  largest  first        last")
+            .ConfigureAwait(false);
+
+        foreach (var flow in report.Flows)
+        {
+            await _output.WriteLineAsync(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{flow.From,-20} {flow.To,-20} {flow.Sent,6}  {flow.Mean,6} {flow.Largest,8}  " +
+                $"{Day(flow.FirstUtc)}  {Day(flow.LastUtc)}")).ConfigureAwait(false);
+        }
+
+        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+        await _output.WriteLineAsync("received in total").ConfigureAwait(false);
+
+        foreach (var (agent, received) in report.Received)
+        {
+            // The thresholds are where somebody goes and asks that agent whether any of it was
+            // worth having. Marked rather than left to be counted off a column, because the whole
+            // point of the survey is that it happens at all.
+            var due = received >= 10
+                ? string.Create(CultureInfo.InvariantCulture, $"  <- ask it, past {received / 10 * 10}")
+                : string.Empty;
+
+            await _output.WriteLineAsync(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{agent,-20} {received,6}{due}")).ConfigureAwait(false);
+        }
+
+        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+        await _output.WriteLineAsync(
+            "Nothing refuses a notification, deliberately. What to do with these numbers is in " +
+            "SPEC.md section 17, question 1.").ConfigureAwait(false);
+
+        return 0;
+    }
+
+    /// <summary>Renders a stored timestamp as a date, for a column that spans days.</summary>
+    /// <param name="stored">The value as the database holds it.</param>
+    /// <returns>The date, or the raw value if it cannot be read as one.</returns>
+    private static string Day(string stored) =>
+        DateTimeOffset.TryParse(
+            stored, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var moment)
+            ? moment.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : stored;
+
     /// <summary>Renders a stored timestamp the way the other reports do.</summary>
     /// <param name="stored">The value as the database holds it.</param>
     /// <returns>The same instant, or the raw value if it cannot be read as one.</returns>

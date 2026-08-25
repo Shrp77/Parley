@@ -44,6 +44,7 @@ public sealed class SeparationTests
             "ClarificationsAsync",
             "ExportAsync",
             "ForceConcludeAsync",
+            "NotificationsAsync",
             "PruneAsync",
             // Two letters from RefusalsAsync below, which is worth noticing rather than
             // renaming away: both are read-only reports, so typing one for the other costs a

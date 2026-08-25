@@ -49,6 +49,7 @@ public sealed class OperatorConsole
     private readonly SizeRefusalRepository _refusals;
     private readonly ClarifyReportRepository _clarify;
     private readonly ReferralReportRepository _referrals;
+    private readonly NotifyVolumeRepository _notifications;
 
     /// <summary>
     /// Creates a console over an open connection.
@@ -68,6 +69,7 @@ public sealed class OperatorConsole
         _refusals = new SizeRefusalRepository(connection);
         _clarify = new ClarifyReportRepository(connection);
         _referrals = new ReferralReportRepository(connection);
+        _notifications = new NotifyVolumeRepository(connection);
     }
 
     /// <summary>
@@ -246,6 +248,20 @@ public sealed class OperatorConsole
     public async Task<ReferralReport> DescribeReferralsAsync(
         CancellationToken cancellationToken = default) =>
         await _referrals.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Reports what Notify has carried, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Volume and size per sending pair, and what each recipient has received.</returns>
+    /// <remarks>
+    /// §17 question 1 records that nothing bounds Notify, and that the decision about whether
+    /// anything should is to be taken from evidence rather than from a number somebody picked.
+    /// This is that evidence: how many, how big, between whom, over what span.
+    /// </remarks>
+    public async Task<NotifyVolumeReport> DescribeNotificationsAsync(
+        CancellationToken cancellationToken = default) =>
+        await _notifications.ReadAsync(cancellationToken).ConfigureAwait(false);
 
     /// <summary>
     /// Emits every message in a conversation, per SPEC.md §10.2.

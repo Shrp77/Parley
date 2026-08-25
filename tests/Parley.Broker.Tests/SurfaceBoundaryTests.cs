@@ -98,7 +98,8 @@ public sealed class SurfaceBoundaryTests
             // has clarify(exchange_id, text). A console method called DescribeClarifyAsync beside
             // a tool called parley_clarify is exactly the near-miss that convention exists for.
             nameof(OperatorConsole.DescribeClarificationsAsync),
-            nameof(OperatorConsole.DescribeReferralsAsync)
+            nameof(OperatorConsole.DescribeReferralsAsync),
+            nameof(OperatorConsole.DescribeNotificationsAsync)
         ];
 
         var unexpected = PublicMethodsOf(typeof(OperatorConsole)).Where(n => !declared.Contains(n));
