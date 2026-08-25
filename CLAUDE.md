@@ -58,9 +58,12 @@ dotnet test
 Tests run on Microsoft.Testing.Platform, selected in `global.json` under a `"test"` section
 beside `"sdk"`. A green build is the whole lint gate: warnings are errors, documentation is
 enforced, and NuGetAudit fails on high or critical advisories, so there is no separate lint
-step. CI runs the matrix on Windows, Linux, and macOS because the transport claims parity
-across named pipes and Unix domain sockets, and that claim is only worth making if it is
-tested on all three.
+step. CI runs on Windows and Linux. It used to include macOS, justified by the transport
+claiming parity across named pipes and Unix domain sockets — a claim nothing in this repository
+makes yet, because there is no transport: MCP over stdio and a local SQLite file are the whole
+of it. Linux covers the Unix side of what does exist. The macOS leg is deferred rather than
+deleted and runs from `workflow_dispatch` with the box ticked; it goes back into the matrix when
+the transport lands, and the sentence above goes back with it.
 
 ## Conventions the build enforces
 
@@ -151,7 +154,7 @@ next edit is checked too.
 
 Two traps this suite has already hit, both of which made checks pass while testing nothing:
 
-- **Line endings.** SPEC.md is CRLF on Windows and LF on the Linux and macOS runners, and
+- **Line endings.** SPEC.md is CRLF on Windows and LF on the Linux runner, and
   .NET anchors `$` before a bare line feed only. `SpecDocument` normalises on load. A pattern
   anchored to end-of-line otherwise matches everything on two runners and nothing on the third.
 - **Trigger bodies contain semicolons.** A pattern ending at the first `;` truncates a trigger
