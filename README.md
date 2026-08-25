@@ -161,7 +161,7 @@ One file per project. Every agent that should be able to reach every other gets 
         "PARLEY_WORKSPACE": "/src/acme-orders",       // optional, for the registry
         "PARLEY_TICK_SECONDS": "60",                  // optional, sweep cadence
         "PARLEY_CLARIFY_CAP": "3",                    // optional, clarifications per exchange
-        "PARLEY_INVOKE_COMMAND": "claude -p",         // optional, see Answering while nobody is watching
+        "PARLEY_INVOKE_COMMAND": "claude",            // optional, see Conversing unattended
         "PARLEY_RETENTION_IDLE_HOURS": "72",          // optional, see Retention below
         "PARLEY_RETENTION_MAX_AGE_HOURS": "720"       // optional, see Retention below
       }
@@ -178,6 +178,10 @@ no process, which is the point — a machine that reboots comes back with zero P
 processes and loses nothing, because the state is in the file and each agent's server
 starts when somebody opens that repository. An agent registers itself the first time its
 server starts, so no roster has to be maintained by hand.
+
+That stays true when agents converse unattended. `parley up` is a command you run in a
+terminal, not a service that is installed: it keeps agents alive for as long as it runs
+and stops all of them when you stop it. Nothing survives a reboot, and nothing needs to.
 
 **Identity comes from `PARLEY_AGENT` and from nowhere else.** No tool takes a "from"
 parameter, so no tool call can change who the caller is. Had it been a parameter, every
@@ -308,6 +312,46 @@ exchange that is still open, or the recent rows deduplication is still reading.
 
 Anything worth keeping beyond the policy, export — the export is a file you own.
 
+### Conversing unattended
+
+Everything above needs somebody to take a turn. An agent acts when its session does, and
+a session acts when a person sends it something — so an exchange between two repositories
+needs a human at both ends, which is not what the protocol is for.
+
+`PARLEY_INVOKE_COMMAND` is how a repository offers to be run without one:
+
+```json
+"PARLEY_INVOKE_COMMAND": "claude"
+```
+
+It is consent and command in one. Set it, and `parley up` may keep that agent resident —
+started once, given a turn whenever a peer needs one, and kept alive so it remembers the
+conversations it is in. Leave it out and nothing ever starts that repository. It lives in
+the agent's *own* launch configuration because that is the only place the permission can
+honestly come from: starting a repository nobody offered spends its owner's tokens on
+their machine.
+
+```
+parley up
+```
+
+Run it in a terminal and leave it. Ctrl+C stops the fleet and every agent in it. An agent
+is also told to quit when you `retire` it, or when you remove the variable and open that
+repository once — a withdrawal has to reach a process that is already running, or the
+register says one thing while the deployment does another.
+
+**It answers; it does not initiate.** The fleet starts agents that *owe* something, so
+with nothing owed it starts nobody. The first question still comes from an agent that has
+a reason to ask, and reasons come from work — an idle agent inventing questions would be
+worse than useless. After that first question the loop needs no one: the answerer is
+started to answer, a clarification puts the asker in debt, and it is started in its turn.
+
+**It spends money while nobody is watching.** That is the feature and the risk in one
+sentence. Every turn is a real session on your account, so `parley up` prints what each
+one cost, and `invocations` keeps the same numbers — count, duration, cost, and how often
+an agent ran and still owed exactly what it owed. That last figure is the shape a runaway
+takes before it looks like one.
+
 ## The operator's side
 
 `parley` is a second binary, installed by a person and never given to an agent:
@@ -326,6 +370,7 @@ parley export <conversation>        every message in a discussion, across agents
 parley force-conclude <conv>        close a discussion over its participants' votes
 parley prune                        apply the retention policy now
 parley refusals                     what the message size cap refused, and how far over
+parley up                           keep the agents resident so they can converse
 parley --help                       the same list, on stdout, exiting zero
 ```
 
