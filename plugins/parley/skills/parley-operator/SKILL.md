@@ -53,6 +53,7 @@ parley [--db <path>] force-conclude <conv>   close a discussion over its partici
 parley [--db <path>] prune                   apply the retention policy now
 parley [--db <path>] refusals                what the message size cap refused
 parley [--db <path>] clarifications          how deep clarification went, and whether the cap binds
+parley [--db <path>] referrals               where questions are sent onward, and to whom
 parley --help                                the same list, on stdout, exiting zero
 ```
 
@@ -102,6 +103,19 @@ pile up at whatever limit was in force, whether the true need was one more or fo
 distribution with a heap at the top is a truncated measurement, not a finding. Raising the cap
 far above any plausible need and watching where depth actually settles is the only way to learn
 what it should be - and if depth is almost always zero, the cap was never what kept it low.
+
+`referrals` is the third of these and the only one that points at something a person can fix. It
+reports, per pair, how many closed exchanges the answerer resolved as `out_of_scope` and who it
+named instead. A high rate is not an agent behaving badly - it is two repositories that disagree
+about where a boundary runs, or one holding a stale idea of what the other owns.
+
+The two halves come from different places and have different reach. The rate is counted from
+exchanges, which retention never touches, so it covers the whole life of the deployment. The
+names come from a record kept beside the messages, because `redirect_to` used to live only in a
+payload that `prune` deletes. Neither half keeps any text.
+
+When it points somewhere, the fix is in whatever the project uses to record ownership, and in the
+`PARLEY_OWNS` line of the agent being asked wrongly. Not here.
 
 The cap is set per agent, by `PARLEY_CLARIFY_CAP` in that repository's `.mcp.json`, and it is the
 **asker's** cap that governs an exchange. Raising it in one repository widens only the questions

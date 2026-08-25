@@ -45,6 +45,13 @@ public sealed class SeparationTests
             "ExportAsync",
             "ForceConcludeAsync",
             "PruneAsync",
+            // Two letters from RefusalsAsync below, which is worth noticing rather than
+            // renaming away: both are read-only reports, so typing one for the other costs a
+            // glance at unexpected output and nothing else. The §10.2 naming rule is about an
+            // operator operation being mistaken for an agent one, which neither of these is.
+            // If either ever gained a side effect, that reasoning expires and they must be
+            // pulled apart.
+            "ReferralsAsync",
             "RefusalsAsync",
             "ReinstateAsync",
             "RetireAsync"

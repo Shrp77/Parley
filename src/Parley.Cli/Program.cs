@@ -35,6 +35,7 @@ const string Help = """
       parley [--db <path>] prune                       apply the retention policy now
       parley [--db <path>] refusals                    what the message size cap refused
       parley [--db <path>] clarifications              the clarify depth distribution, and whether the cap binds
+      parley [--db <path>] referrals                   where questions are sent onward, and to whom
 
       parley --version                                 this build, and the protocol it speaks
 
@@ -238,6 +239,9 @@ using (holder)
 
         case "clarifications" when rest.Length == 0:
             return await commands.ClarificationsAsync(CancellationToken.None).ConfigureAwait(false);
+
+        case "referrals" when rest.Length == 0:
+            return await commands.ReferralsAsync(CancellationToken.None).ConfigureAwait(false);
 
         default:
             await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);

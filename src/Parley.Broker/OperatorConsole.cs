@@ -48,6 +48,7 @@ public sealed class OperatorConsole
     private readonly Pruner _pruner;
     private readonly SizeRefusalRepository _refusals;
     private readonly ClarifyReportRepository _clarify;
+    private readonly ReferralReportRepository _referrals;
 
     /// <summary>
     /// Creates a console over an open connection.
@@ -66,6 +67,7 @@ public sealed class OperatorConsole
         _pruner = new Pruner(connection);
         _refusals = new SizeRefusalRepository(connection);
         _clarify = new ClarifyReportRepository(connection);
+        _referrals = new ReferralReportRepository(connection);
     }
 
     /// <summary>
@@ -223,6 +225,27 @@ public sealed class OperatorConsole
     public async Task<ClarifyReport> DescribeClarificationsAsync(
         CancellationToken cancellationToken = default) =>
         await _clarify.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Reports where the ownership map is being argued about, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the reads.</param>
+    /// <returns>The <c>out_of_scope</c> rate per pair, and who the work was sent to.</returns>
+    /// <remarks>
+    /// <para>
+    /// §15 lists this as cheap to collect and disproportionately useful, and it is the one
+    /// telemetry item that points at a fixable thing: two agents disagreeing about where a
+    /// boundary runs, or one holding a stale idea of what the other owns.
+    /// </para>
+    /// <para>
+    /// It names agents and counts, never text. What was said in a referral is a message under the
+    /// retention policy of §9.4; what this reads is the record kept beside it so the signal
+    /// outlives the prose.
+    /// </para>
+    /// </remarks>
+    public async Task<ReferralReport> DescribeReferralsAsync(
+        CancellationToken cancellationToken = default) =>
+        await _referrals.ReadAsync(cancellationToken).ConfigureAwait(false);
 
     /// <summary>
     /// Emits every message in a conversation, per SPEC.md §10.2.

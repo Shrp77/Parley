@@ -97,7 +97,8 @@ public sealed class SurfaceBoundaryTests
             // differ loudly, which is why force_conclude is not conclude — and the agent already
             // has clarify(exchange_id, text). A console method called DescribeClarifyAsync beside
             // a tool called parley_clarify is exactly the near-miss that convention exists for.
-            nameof(OperatorConsole.DescribeClarificationsAsync)
+            nameof(OperatorConsole.DescribeClarificationsAsync),
+            nameof(OperatorConsole.DescribeReferralsAsync)
         ];
 
         var unexpected = PublicMethodsOf(typeof(OperatorConsole)).Where(n => !declared.Contains(n));

@@ -127,6 +127,91 @@ public sealed class OperatorCommands
     }
 
     /// <summary>
+    /// Reports where the ownership map is being argued about, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Zero. The report is the output.</returns>
+    /// <remarks>
+    /// <para>
+    /// Two halves from two tables, and the report says which is which because they have different
+    /// reach. The rate comes from <c>exchanges</c>, which retention never touches, so it covers
+    /// the whole life of the deployment. The targets come from the referral record, which exists
+    /// because the names used to live in a message payload that §9.4 deletes.
+    /// </para>
+    /// <para>
+    /// Written so a high number reads as a question rather than a verdict. A pair referring
+    /// constantly is not an agent behaving badly; it is two repositories that disagree about a
+    /// boundary, which is a thing people fix and not a thing an operator should read as a fault.
+    /// </para>
+    /// </remarks>
+    public async Task<int> ReferralsAsync(CancellationToken cancellationToken)
+    {
+        var report = await _console.DescribeReferralsAsync(cancellationToken).ConfigureAwait(false);
+
+        if (report.IsEmpty)
+        {
+            await _output.WriteLineAsync(
+                "Nothing has been referred. Either every question has found its owner first " +
+                "time, or too little has been asked to tell.").ConfigureAwait(false);
+
+            return 0;
+        }
+
+        await _output.WriteLineAsync(
+            "asker                answerer             closed  out of scope   rate")
+            .ConfigureAwait(false);
+
+        foreach (var pair in report.Pairs)
+        {
+            await _output.WriteLineAsync(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{pair.Asker,-20} {pair.Answerer,-20} {pair.Closed,6}  {pair.OutOfScope,12}  " +
+                $"{pair.Rate,5:0.0%}")).ConfigureAwait(false);
+        }
+
+        if (report.Targets.Count > 0)
+        {
+            await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+            await _output.WriteLineAsync(
+                "and where they were sent instead").ConfigureAwait(false);
+
+            foreach (var target in report.Targets)
+            {
+                await _output.WriteLineAsync(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{target.Asker,-20} {target.Answerer,-20} -> {target.RedirectedTo,-20} " +
+                    $"{target.Referrals,5}  {Readable(target.LastUtc)}")).ConfigureAwait(false);
+            }
+        }
+
+        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+
+        // The reading. §15 calls this the signal that the ownership map is wrong somewhere, and
+        // an operator looking at a table of counts should not have to reconstruct that.
+        await _output.WriteLineAsync(
+            "A high rate is a boundary two repositories disagree about, not an agent behaving " +
+            "badly. Fix it where ownership is written down, not here.").ConfigureAwait(false);
+
+        return 0;
+    }
+
+    /// <summary>Renders a stored timestamp the way the other reports do.</summary>
+    /// <param name="stored">The value as the database holds it.</param>
+    /// <returns>The same instant, or the raw value if it cannot be read as one.</returns>
+    /// <remarks>
+    /// Storage keeps full round-trip precision because deduplication buckets are derived from it;
+    /// seven decimal places in a column an operator is scanning for a date is noise. Falls back to
+    /// the stored text rather than throwing: a report is what somebody runs when something has
+    /// already gone wrong, and refusing to print because one row is odd is the worst moment to
+    /// discover that.
+    /// </remarks>
+    private static string Readable(string stored) =>
+        DateTimeOffset.TryParse(
+            stored, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var moment)
+            ? moment.ToString("u", CultureInfo.InvariantCulture)
+            : stored;
+
+    /// <summary>
     /// Reports what clarification cost, per SPEC.md §10.2.
     /// </summary>
     /// <param name="cancellationToken">Cancels the read.</param>

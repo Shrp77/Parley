@@ -1748,6 +1748,7 @@ any of these into an agent's tool set would breach §10.1 and, through it, §16.
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
 | `refusals()` | Report what the size cap of rule 8.5 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
 | `clarifications()` | Report the clarify depth distribution of §5.2, how often the cap was reached, and whether answers ever resolve sub-questions differently from one another. The evidence §17 question 4 asks for. |
+| `referrals()` | Report the `out_of_scope` rate per pair of §15, and which agents the work was sent to. The rate is read from `exchanges`, which retention never touches; the targets from the referral record, which exists because the names used to live in a payload §9.4 deletes. |
 | `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. |
 | `reinstate(agent)` | Withdraw a retirement. Registration does not, and must not, do this. |
 | `force_conclude(conversation)` | Close a conversation regardless of its participants' votes. |
