@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The macOS leg is deferred rather than deleted: run this by hand with the box
+  # ticked before a release, or whenever the transport work below actually lands.
+  workflow_dispatch:
+    inputs:
+      macos:
+        description: "Also run the macOS leg"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -16,10 +24,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The transport targets named pipes on Windows and Unix domain sockets
-        # elsewhere through the same .NET API. That claim is only worth making if
-        # it is tested on all three.
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        # Windows and Linux on every push; macOS only when asked for.
+        #
+        # The three-platform matrix was justified by the transport claiming parity
+        # across named pipes and Unix domain sockets. There is no transport: the
+        # only thing that crosses a process boundary today is MCP over stdio, and
+        # the store is a local SQLite file. So the macOS leg was defending a claim
+        # nothing in this repository makes yet, on a platform nobody here can
+        # reproduce a failure on.
+        #
+        # Linux still covers the Unix side of everything that does exist -- path
+        # handling, line endings, case sensitivity, and the SQLite build. What
+        # macOS would add is Darwin-specific behaviour, which becomes worth paying
+        # for when the transport lands and not before. Restore it by deleting the
+        # fromJSON below, and restore the sentence in CLAUDE.md with it.
+        os: >-
+          ${{ fromJSON(
+            (github.event_name == 'workflow_dispatch' && inputs.macos)
+              && '["windows-latest","ubuntu-latest","macos-latest"]'
+              || '["windows-latest","ubuntu-latest"]') }}
 
     steps:
       - uses: actions/checkout@v4
