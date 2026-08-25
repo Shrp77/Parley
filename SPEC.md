@@ -393,9 +393,23 @@ Two fields do the heavy lifting:
 ### 5.2 Clarify
 
 The answerer cannot answer without something from the asker. Clarify **does not open
-a new exchange and does not take a slot** — if it did, it would deadlock inside the
-deadlock fix, since the pair's only slot is held by the very question being
-clarified. It flips `owed_by`, renews the working window (§6), and stays in place.
+a new exchange and does not take a slot.** It flips `owed_by`, renews the working window (§6),
+and stays in place.
+
+**A Clarify is a Question that cannot be admitted as one**, and saying so is the shortest route
+to understanding everything else here. What the answerer wants is a question: it needs something
+from the asker before it can proceed. Sent as a Question it would be `answerer → asker` while
+`asker → answerer` is still open, which is a 2-cycle, and §7.2 refuses those at admission —
+completely, and for the two-party case specifically. Clarify is how the turn reverses without
+adding a second wait-for edge: one edge flips rather than two edges closing a loop.
+
+The pair cap of §7.1 is not the reason, and an earlier version of this section said it was:
+that the pair's only slot was held by the question being clarified. Slots are counted
+directionally and default to five, so a reverse Question would draw on the other direction's
+budget entirely — §7.2 says outright that the cap does not interact with cycle detection. That
+justification was left behind by the removal of pair serialisation, which §7.2 still refers to
+in the past tense. It is recorded here because a rule defended by the wrong mechanism invites
+the right mechanism to be removed as redundant.
 
 Clarify depth is capped (default 3). On breach the broker forces an Answer with
 `resolution: "unknown"` and flags the exchange. Models will otherwise ping-pong
@@ -638,6 +652,26 @@ flood whether or not any single one is terse. Counting directionally keeps the t
 independent, so a busy `orders → billing` cannot exhaust what `billing → orders` may open —
 they are unrelated lines of enquiry and coupling them would refuse one for the sins of the
 other.
+
+**What the cap does not bound, gathered in one place.** The cap rations a peer's attention
+rather than any resource of the broker's, and two of the three ways text reaches an agent are
+exempt from it. Each exemption is justified where it is granted; the consequence is only visible
+when they are read together, so it is stated here as well.
+
+A Clarify takes no slot (§5.2) and arrives in the other party's inbox exactly as a Question
+does, carrying the same 4,000 characters. The only thing bounding that channel is the
+clarification cap of rule 8.5 — which §5.2 justifies purely as an anti-ping-pong device, and
+which is therefore doing a second job nothing in this document claims for it. Raising that cap
+widens a context channel, not merely a patience allowance, and §17 question 4 must be read with
+that in mind.
+
+A Notify takes no slot either (§5.4), and its only guard is deduplication (§13.1) — for the type
+this specification expects to carry the highest volume in a mature deployment.
+
+So an agent that has exhausted its five open questions to a peer has not exhausted what it can
+put in front of that peer. Whether that is a hole or a correct division — a Question demands
+work while a Clarify and a Notify demand only reading — is not settled here, and is the second
+half of §17 question 4.
 
 **The cap is operator policy, and an agent never selects it.** Neither cap in this
 specification is a tuning knob. This one exists because terseness is a security control, and
@@ -2408,9 +2442,9 @@ Cheap to collect, disproportionately useful:
 2. Should the human be a first-class Headless agent, or a distinct escalation path?
 3. Should decision promotion be automatic or gated on human review? Automatic risks
    codifying a wrong answer; gated risks nothing being written down.
-4. Is a clarify cap needed at all, and at which tier? The number 3 is a guess, but "tune the
-   guess" is the wrong question, for two reasons found by reading the rule rather than the
-   number.
+4. Is a clarify cap needed at all, and at which tier — and if it is, should it bound a count or
+   a claim on context? The number 3 is a guess, but "tune the guess" is the wrong question, for
+   three reasons found by reading the rule rather than the number.
 
    **The counter conflates two different things.** §5.2 justifies the cap by saying models
    "ping-pong toward mutual precision indefinitely" — repeated clarification of *one* point.
@@ -2426,6 +2460,19 @@ Cheap to collect, disproportionately useful:
    asker wrote, so the ceiling is the asker's own. Against it, the field would be self-declared
    and therefore chosen by the party it constrains — the same shape as question 9, which is why
    the two should be decided together rather than separately.
+
+   **And the cap has a second job nobody assigned it.** §7.1's pair cap exists because an
+   unbounded question stream is a context flood, and a Clarify takes no slot — so it reaches the
+   other party's inbox with the same 4,000 characters, outside the budget meant to bound exactly
+   that. The clarification cap is the only thing bounding that channel. Read as an anti-ping-pong
+   device it looks like patience; read against §7.1 it is a context control, and raising it
+   widens a channel rather than lengthening a conversation. At 200 a single exchange can put
+   800KB in front of an asker that §7.1 believes it is protecting.
+
+   That reframes what the answer might be. A count is a poor instrument for a context claim —
+   three long clarifications cost more than ten short ones — where a slot is the instrument §7.1
+   already uses for the same purpose. Whether Clarify should draw on a budget rather than a
+   counter is open, and it is a different question from what number the counter should hold.
 
    **And the breach is not a stop.** Pair slots are counted directionally (§7.1), so an answerer
    that has exhausted its clarifications can open its own Question back to the asker. The cap
@@ -2527,3 +2574,27 @@ Cheap to collect, disproportionately useful:
     survivable because a wrong guess is cheap — referral is a first-class outcome and *refer,
     do not relay* keeps the correction to a single hop — but it is still one copy of the same
     ownership map per repository, drifting independently.
+
+11. Should a Clarify be required to state its consequences, as rule 8.1 requires of a Question?
+
+    §5.2 now says plainly that a Clarify is a Question that cannot be admitted as one: what the
+    answerer wants is a question, and it is sent as a Clarify because a Question in that
+    direction is the 2-cycle §7.2 refuses. Accept that framing and an asymmetry follows that
+    nothing justifies. Rule 8.1 refuses a Question that does not say what it will do with each
+    possible answer, on the ground that an answerer who knows what turns on the reply gives a
+    better one. That argument is not about direction. It applies unchanged to *"does the schema
+    own this rule?"* asked by the answerer — *if it does I answer `out_of_scope` and name the
+    owner, if it does not I answer with the rule* — and the one message type exempt from it is
+    the one this document elsewhere describes as prone to refining toward mutual precision
+    indefinitely.
+
+    The case against is cost. Rule 8.1 is enforced by a length floor on `consequences`, and a
+    Clarify is often a single short request where the framing would be longer than the question.
+    A floor that produced ceremony would be routed around by writing something that satisfies it
+    and states nothing, which is the failure rule 8.1's floor already exists to prevent and would
+    reintroduce at a smaller scale.
+
+    Worth deciding alongside question 4 rather than separately. A Clarify that named the
+    sub-question it needed and said what turned on the answer would make the per-sub-question
+    budget fall out of the message shape instead of being a field invented to support it — and
+    would make a clarification look, in the log, like what it is.
