@@ -45,7 +45,7 @@ launched the servers with.** If `PARLEY_DB` is unset here, or set to something e
 ## The commands
 
 ```
-parley [--db <path>] agents                  every registered agent, with its workspace
+parley [--db <path>] registry                every registered agent, with its workspace
 parley [--db <path>] retire <agent>          withdraw a registration
 parley [--db <path>] reinstate <agent>       the only thing that clears a retirement
 parley [--db <path>] export <conversation>   every message in a discussion, across agents
@@ -58,7 +58,7 @@ parley [--db <path>] notifications           how much Notify carries, and who ca
 parley --help                                the same list, on stdout, exiting zero
 ```
 
-`agents` is the whole registry, including the workspace directory each agent works in - which
+`registry` is the whole roster, including the workspace directory each agent works in - which
 the agent-facing roster deliberately withholds. It is how you tell two similarly named agents
 apart, and how you find the repository behind a name.
 

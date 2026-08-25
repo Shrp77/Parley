@@ -173,7 +173,7 @@ public sealed class OperatorConsole
     /// looking at their own deployment; a peer is not.
     /// </para>
     /// </remarks>
-    public async Task<IReadOnlyList<AgentRecord>> DescribeAgentsAsync(
+    public async Task<IReadOnlyList<AgentRecord>> DescribeRegistryAsync(
         CancellationToken cancellationToken = default) =>
         await _agents.GetAllAsync(cancellationToken).ConfigureAwait(false);
 

@@ -209,7 +209,7 @@ is withdrawn.
 
 It is optional. An agent without one is listed without one, and askers fall back to the name —
 which usually works, because a wrong guess costs one message: the answerer refers the question
-to whoever does own it rather than answering badly. `parley agents` shows you which of your
+to whoever does own it rather than answering badly. `parley registry` shows you which of your
 agents have not set it.
 
 ### 4. Name the peers and the boundary
@@ -317,7 +317,7 @@ dotnet tool install -g --add-source src/Parley.Cli/bin/Release Parley.Cli
 ```
 
 ```
-parley agents                       every agent, what it owns, and the workspace a peer
+parley registry                     every agent, what it owns, and the workspace a peer
                                     never sees
 parley retire <agent>               withdraw a registration; its server then refuses to start
 parley reinstate <agent>            the only thing that clears a retirement

@@ -7,7 +7,7 @@ using Parley.Store;
 
 // The operator's way in. SPEC.md §10.2 operations, and nothing else.
 //
-//   parley --db <path> agents
+//   parley --db <path> registry
 //   parley --db <path> retire <agent>
 //   parley --db <path> reinstate <agent>
 //   parley --db <path> export <conversation>
@@ -27,7 +27,7 @@ using Parley.Store;
 const string Help = """
     parley — the operator operations of SPEC.md 10.2.
 
-      parley [--db <path>] agents                      list every registered agent, whole
+      parley [--db <path>] registry                    every registered agent, with its workspace
       parley [--db <path>] retire <agent>              withdraw a registration
       parley [--db <path>] reinstate <agent>           withdraw a retirement
       parley [--db <path>] export <conversation>       emit every message in a discussion
@@ -238,8 +238,8 @@ using (holder)
 
     switch (verb)
     {
-        case "agents" when rest.Length == 0:
-            return await commands.AgentsAsync(CancellationToken.None).ConfigureAwait(false);
+        case "registry" when rest.Length == 0:
+            return await commands.RegistryAsync(CancellationToken.None).ConfigureAwait(false);
 
         case "retire" when rest.Length == 1:
             return await WithAgent(rest[0], a => commands.RetireAsync(a, CancellationToken.None))

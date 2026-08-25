@@ -1820,6 +1820,7 @@ any of these into an agent's tool set would breach §10.1 and, through it, §16.
 
 | Operation | Description |
 |---|---|
+| `registry()` | The whole registry, including the workspace directory each agent works in. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
 | `export(conversation_id)` | Emit every message in a conversation. The one query that reads across agents, which is why it is here and not in §10.1. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
 | `refusals()` | Report what the size cap of rule 8.5 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |

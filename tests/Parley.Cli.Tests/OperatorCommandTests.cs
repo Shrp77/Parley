@@ -70,7 +70,7 @@ public sealed class OperatorCommandTests : IDisposable
         // no business knowing where another repository lives. An operator is looking at their
         // own deployment, so this is the projection that does show it — which is exactly why the
         // two operations are named apart.
-        Assert.Equal(0, await _commands.AgentsAsync(Ct));
+        Assert.Equal(0, await _commands.RegistryAsync(Ct));
 
         Assert.Contains("orders", Printed, StringComparison.Ordinal);
         Assert.Contains("/src/acme-orders", Printed, StringComparison.Ordinal);
@@ -85,7 +85,7 @@ public sealed class OperatorCommandTests : IDisposable
 
         var commands = new OperatorCommands(new OperatorConsole(connection), output);
 
-        Assert.Equal(0, await commands.AgentsAsync(Ct));
+        Assert.Equal(0, await commands.RegistryAsync(Ct));
         Assert.Contains("first time its server starts", output.ToString(), StringComparison.Ordinal);
     }
 

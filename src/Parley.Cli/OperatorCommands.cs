@@ -43,9 +43,9 @@ public sealed class OperatorCommands
     /// Shows the workspace, which the agent-facing listing deliberately does not (§10.1 rule 3).
     /// An operator is looking at their own deployment; a peer is not.
     /// </remarks>
-    public async Task<int> AgentsAsync(CancellationToken cancellationToken)
+    public async Task<int> RegistryAsync(CancellationToken cancellationToken)
     {
-        var agents = await _console.DescribeAgentsAsync(cancellationToken).ConfigureAwait(false);
+        var agents = await _console.DescribeRegistryAsync(cancellationToken).ConfigureAwait(false);
 
         if (agents.Count == 0)
         {
