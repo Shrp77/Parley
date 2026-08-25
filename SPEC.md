@@ -1399,6 +1399,61 @@ BEGIN
         AND t.type = 'text' AND t.value = NEW.from_agent);
 END;
 
+-- Referrals kept where retention cannot reach them. §15 wants the `out_of_scope` rate per pair
+-- and calls it the signal that the ownership map is wrong somewhere; `redirect_to` lives only in
+-- the payload, and §9.4 prunes by deleting the message, so that rate could never see further back
+-- than the retention window. The same move `exchanges.resolution` already makes, and no prose:
+-- three names, a sub-question identifier and a timestamp. §16 says this is a channel and not a
+-- store, and names are not the log §9.4 is bounding.
+CREATE TABLE message_referrals (
+  -- Deliberately not a foreign key. A reference would make the prune fail once a referral
+  -- pointed at the row; ON DELETE CASCADE would delete the referral with the message, which is
+  -- what this table exists to prevent. It names a message that may no longer exist.
+  message_id      INTEGER NOT NULL,
+  -- This one is a real reference: nothing deletes an exchange, so the join stays sound.
+  exchange_id     INTEGER REFERENCES exchanges(id),
+  sub_question    TEXT    NOT NULL CHECK (length(sub_question) BETWEEN 1 AND 64),
+  from_agent      TEXT    NOT NULL REFERENCES agents(name),
+  to_agent        TEXT    NOT NULL REFERENCES agents(name),
+  redirected_to   TEXT    NOT NULL REFERENCES agents(name),
+  created_utc     TEXT    NOT NULL,
+
+  PRIMARY KEY (message_id, sub_question, redirected_to),
+
+  -- Both halves of the contradiction a referral can carry: out_of_scope says the boundary is not
+  -- the sender's, so naming the sender denies itself, and naming the asker answers "not mine,
+  -- ask yourself", which is not a referral.
+  CHECK (redirected_to <> from_agent),
+  CHECK (redirected_to <> to_agent),
+  CHECK (from_agent <> to_agent)
+) STRICT;
+
+CREATE INDEX ix_referrals_pair ON message_referrals(from_agent, redirected_to);
+
+-- Populated by the schema on §9.3's argument: an invariant application code maintains is one it
+-- can route around, and a referral made but not recorded is invisible in the way a missing
+-- telemetry signal is. Anchored at $.resolutions[*].redirect_to rather than searched for anywhere
+-- in the payload, so what is recorded is a subset of what tr_referral_targets_exist validated.
+-- json_tree over the sub-object takes both shapes §5.3 admits: a bare name is one text node, a
+-- list is one per element.
+--
+-- DISTINCT rather than OR IGNORE. OR IGNORE discards a row failing any constraint, not only a
+-- duplicate key, so it silently swallowed the CHECKs above -- an answer referring the asker back
+-- to itself was accepted and recorded as nothing. The duplicate it absorbed is a repeated name in
+-- one list, which is identical across every column, so DISTINCT absorbs it while a contradiction
+-- still aborts.
+CREATE TRIGGER tr_referrals_recorded AFTER INSERT ON messages
+FOR EACH ROW WHEN NEW.type = 'answer' AND json_valid(NEW.payload_json)
+BEGIN
+  INSERT INTO message_referrals
+      (message_id, exchange_id, sub_question, from_agent, to_agent, redirected_to, created_utc)
+  SELECT DISTINCT NEW.id, NEW.exchange_id, json_extract(r.value, '$.id'),
+         NEW.from_agent, NEW.to_agent, t.value, NEW.created_utc
+    FROM json_each(NEW.payload_json, '$.resolutions') r
+    JOIN json_tree(r.value, '$.redirect_to') t
+   WHERE t.type = 'text' AND json_extract(r.value, '$.id') IS NOT NULL;
+END;
+
 CREATE UNIQUE INDEX ux_message_dedup
   ON messages(content_hash, dedup_bucket);
 ```

@@ -105,7 +105,7 @@ public sealed class RefusalIntegrityTests
             exchangeId,
             [
                 new Resolution("q1", "answered", "Yes. invoice_lines.tax_rate is stamped at issue."),
-                new Resolution("q2", "out_of_scope", "Refunds are not mine.", RedirectTo: "inventory")
+                new Resolution("q2", "out_of_scope", "Refunds are not mine.", RedirectTo: ["inventory"])
             ],
             responderModel: "human:on-call",
             cancellationToken: ct);
@@ -135,7 +135,7 @@ public sealed class RefusalIntegrityTests
 
         var refused = await billing.AnswerAsync(
             asked["exchange_id"]!.GetValue<long>(),
-            [new Resolution("q1", "out_of_scope", "Not mine.", RedirectTo: "billing")],
+            [new Resolution("q1", "out_of_scope", "Not mine.", RedirectTo: ["billing"])],
             cancellationToken: ct);
 
         Assert.False(refused["ok"]!.GetValue<bool>(), refused.ToJsonString());
@@ -170,7 +170,7 @@ public sealed class RefusalIntegrityTests
 
         var refused = await billing.AnswerAsync(
             asked["exchange_id"]!.GetValue<long>(),
-            [new Resolution("q1", "out_of_scope", "Refunds are not mine.", RedirectTo: "inventory")],
+            [new Resolution("q1", "out_of_scope", "Refunds are not mine.", RedirectTo: ["inventory"])],
             cancellationToken: ct);
 
         Assert.False(refused["ok"]!.GetValue<bool>(), refused.ToJsonString());
@@ -199,7 +199,7 @@ public sealed class RefusalIntegrityTests
 
         var refused = await billing.AnswerAsync(
             asked["exchange_id"]!.GetValue<long>(),
-            [new Resolution("q1", "out_of_scope", "Not mine.", RedirectTo: "inventory")],
+            [new Resolution("q1", "out_of_scope", "Not mine.", RedirectTo: ["inventory"])],
             cancellationToken: ct);
 
         Assert.False(refused["ok"]!.GetValue<bool>(), refused.ToJsonString());

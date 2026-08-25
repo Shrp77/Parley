@@ -276,7 +276,7 @@ public sealed class MalformedInputTests
         AssertMalformed(
             await billing.AnswerAsync(
                 asked["exchange_id"]!.GetValue<long>(),
-                [new Resolution("q1", "out_of_scope", "not mine", RedirectTo: "parley:broker")],
+                [new Resolution("q1", "out_of_scope", "not mine", RedirectTo: ["parley:broker"])],
                 cancellationToken: ct),
             "parley_agents");
     }
