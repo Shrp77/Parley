@@ -200,6 +200,34 @@ one has not yet registered, which reports green for a commit that was never buil
 shape as reading the dependency graph before restoring. Compare the run's commit against
 `git rev-parse HEAD`.
 
+## Surveying the peers
+
+SPEC.md §17 question 1 leaves Notify uncapped on purpose and decides the question from evidence.
+Half that evidence is counted — `parley notifications` reports volume, size and what each agent
+has received, marking anyone past ten. The other half cannot be counted at all: whether any of it
+was worth reading. Only the agent receiving it knows, so somebody has to ask.
+
+**The person runs the report; this agent does the asking.** That division is not ceremony. The
+report reads across every pair in the deployment, which is exactly the disclosure §10.1 withholds
+from an agent — so this agent must not run `parley notifications`, `parley referrals` or any
+other operator command, and does not need to. It is told which peers are due and asks them
+through Parley like any other question.
+
+Ask it as a real question, because it is one, and rule 8.1 applies here as much as anywhere:
+
+> *Intent:* deciding whether Parley should bound how many notifications one agent may send.
+> *q1:* Of the notifications you have received, roughly how many were worth reading?
+> *Consequences:* if most were useful I will argue against a cap and record that; if most were
+> noise I will propose a per-sender limit and cite your answer; if you cannot tell, that is
+> evidence the volume is already past what is readable, and I will say so.
+
+Ask at ten, then again at twenty and thirty. The same agent's answer changing as the count rises
+is the finding — a stream that was useful at ten and noise at thirty says the limit is somewhere
+between, which no counter can tell you.
+
+Record what comes back in §17 question 1 rather than acting on it. One agent's opinion is not a
+protocol change, and the question is the durable place for evidence to accumulate.
+
 ## Repository hygiene
 
 This repository is public and its git history goes with it. No trace of the originating
