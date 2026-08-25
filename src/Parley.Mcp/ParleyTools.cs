@@ -976,7 +976,7 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         Resolution[]? resolutions, CancellationToken cancellationToken)
     {
         var referrals = (resolutions ?? [])
-            .Select(r => r.RedirectTo)
+            .SelectMany(r => r.RedirectTo ?? [])
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
@@ -1046,13 +1046,19 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
                 // The redirect names a peer, so it is a peer name. Left unchecked it reaches a
                 // column constrained to the agent grammar and comes back as SQL — and this is
                 // the field §8's referral rule pushes an agent towards, so it is reached often.
-                if (!string.IsNullOrWhiteSpace(resolution.RedirectTo) &&
-                    !AgentName.TryCreate(resolution.RedirectTo, out _))
+                // Every entry, not the first. A list is checked the same way the schema's
+                // referral trigger checks one -- against all of it -- because a bad name that
+                // travels because it was second in a list is exactly the hiding place a
+                // first-only check creates.
+                foreach (var target in resolution.RedirectTo ?? [])
                 {
-                    return Malformed(
-                        $"'{resolution.RedirectTo}' is not an agent name, so it cannot be who " +
-                        "owns this. Call parley_agents to find the right owner, or say 'unknown' " +
-                        "rather than guessing.");
+                    if (!string.IsNullOrWhiteSpace(target) && !AgentName.TryCreate(target, out _))
+                    {
+                        return Malformed(
+                            $"'{target}' is not an agent name, so it cannot be who owns this. " +
+                            "Call parley_agents to find the right owner, or say 'unknown' rather " +
+                            "than guessing.");
+                    }
                 }
 
                 continue;
@@ -1246,8 +1252,10 @@ public sealed record Resolution(
     [property: Description("The sub-question id being answered.")] string Id,
     [property: Description("One of: answered, unknown, out_of_scope.")] string Outcome,
     [property: Description("The answer, or why it is unknown.")] string Text,
-    [property: Description("On out_of_scope, the agent that owns it. Name them and stop.")]
-    string? RedirectTo = null)
+    [property: Description(
+        "On out_of_scope, the agents that own it. Name them and stop. A sub-question may span " +
+        "two boundaries; name both rather than picking one.")]
+    string[]? RedirectTo = null)
 {
     /// <summary>Renders this into the stored payload shape.</summary>
     /// <returns>The resolution as SPEC.md §5.3 stores it.</returns>
@@ -1265,9 +1273,18 @@ public sealed record Resolution(
             ["text"] = Text
         };
 
-        if (!string.IsNullOrWhiteSpace(RedirectTo))
+        // A JSON array even when there is one name, rather than a bare string for one and an
+        // array for two. SPEC.md 5.3 defines the field as a list, and a shape that varies with
+        // its own length makes every reader handle both -- including the schema trigger that
+        // checks referral targets, which would then be validating two grammars.
+        var targets = (RedirectTo ?? [])
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToArray();
+
+        if (targets.Length > 0)
         {
-            json["redirect_to"] = RedirectTo;
+            json["redirect_to"] = new JsonArray(
+                targets.Select(name => (JsonNode?)JsonValue.Create(name)).ToArray());
         }
 
         return json;

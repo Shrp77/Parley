@@ -52,7 +52,7 @@ public sealed class OwnershipListingTests : IDisposable
     {
         await Register(Billing, "Invoicing and tax. Does not price orders.");
 
-        Assert.Equal(0, await _commands.AgentsAsync(Ct));
+        Assert.Equal(0, await _commands.RegistryAsync(Ct));
 
         Assert.Contains(
             "Invoicing and tax. Does not price orders.",
@@ -67,7 +67,7 @@ public sealed class OwnershipListingTests : IDisposable
         // and a missing line would read as an agent that is fine.
         await Register(Orders, null);
 
-        await _commands.AgentsAsync(Ct);
+        await _commands.RegistryAsync(Ct);
 
         var printed = _output.ToString();
 
@@ -85,7 +85,7 @@ public sealed class OwnershipListingTests : IDisposable
         // and what it claims, which every peer does.
         await Register(Billing, "Invoicing and tax.");
 
-        await _commands.AgentsAsync(Ct);
+        await _commands.RegistryAsync(Ct);
 
         var printed = _output.ToString();
 

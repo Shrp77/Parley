@@ -408,9 +408,10 @@ public sealed class AgentVerbTests : IDisposable
     [Fact]
     public async Task Breaching_the_clarify_cap_is_refused_rather_than_closing_the_exchange()
     {
-        // SPEC.md §7 has the broker call ForceUnknown at this point, which is an operator
-        // decision this call does not make on the agent's behalf. The agent learns it has run
-        // out of budget; the exchange stays open for somebody to dispose of deliberately.
+        // A breach refuses and does nothing else. SPEC.md §5.2 once had the broker force an
+        // answer of `unknown` here; it no longer does, because that resolution means "I own this
+        // and I do not know" and only the answerer can say it. The agent learns it has run out of
+        // budget, answers with what it has, and §14 ghosts the exchange if it never does.
         var strict = ExchangePolicy.Default with { ClarifyDepthCap = 1 };
         var broker = new Broker(_connection, BrokerOptions.Default with { ExchangePolicy = strict });
         await broker.StartAsync(Orders, T0, TestContext.Current.CancellationToken);

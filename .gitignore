@@ -452,3 +452,9 @@ HANDOFF.md
 # paths and would register every clone as the agent 'parley' against a database it has no
 # copy of. Each working copy writes its own.
 .mcp.json
+
+# The review ledger for the gate CLAUDE.md describes: three consecutive clean runs per lens,
+# any finding resetting that lens. It spans sessions and machines, so it is written down rather
+# than remembered -- and untracked, because it is the state of one person's review of one
+# checkout and not a fact about the protocol.
+REVIEW-LEDGER.md

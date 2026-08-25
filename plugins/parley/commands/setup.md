@@ -120,7 +120,7 @@ Substitute the real values. Three notes on the shape:
   every machine, because they name what this repository is rather than where it lives. Omit
   `PARLEY_OWNS` entirely if the user had no answer; an empty string means the same as absent,
   but a placeholder left in by accident is a claim they did not make.
-- `PARLEY_WORKSPACE` is optional and only an operator ever sees it; it is how `parley agents`
+- `PARLEY_WORKSPACE` is optional and only an operator ever sees it; it is how `parley registry`
   tells two similarly named agents apart. Write the absolute path, not `.` - the server
   deliberately does not default it, because a plausible and wrong workspace is worse than an
   honest blank.

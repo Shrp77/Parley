@@ -1,4 +1,5 @@
 ﻿using Microsoft.Data.Sqlite;
+using Parley.Store;
 using Xunit;
 
 namespace Parley.Mcp.Tests;
@@ -118,6 +119,34 @@ public sealed class ForeignDatabaseTests : IDisposable
 
         var (version, _) = Inspect(path);
 
-        Assert.Equal(1, version);
+        // Every migration, not the first one. This asserted 1 while there was only ever one
+        // migration, which made it a check on the count rather than on the outcome — a second
+        // migration failed it without anything being wrong. What matters here is that an empty
+        // file was taken as a new project and brought fully up to date.
+        Assert.Equal(LatestSchemaVersion, version);
     }
+
+    /// <summary>
+    /// The version an up-to-date database carries: the highest numbered migration shipped.
+    /// </summary>
+    /// <remarks>
+    /// Read from the embedded resources rather than written down, so it cannot disagree with what
+    /// the migrator would actually apply.
+    /// <para>
+    /// <see cref="SchemaMigrator.LatestVersion"/> now computes the same number, and this stays a
+    /// separate implementation on purpose. Calling the production property here would make the
+    /// assertion "Migrate reached whatever Migrate thinks the latest is", which a broken resource
+    /// scan satisfies at zero — both sides would agree, and the test would pass on an empty
+    /// database that had been migrated not at all. An independent oracle is the only version of
+    /// this check that can fail.
+    /// </para>
+    /// </remarks>
+    private static int LatestSchemaVersion =>
+        typeof(SchemaMigrator).Assembly.GetManifestResourceNames()
+            .Where(n => n.Contains(".Migrations.", StringComparison.Ordinal)
+                        && n.EndsWith(".sql", StringComparison.Ordinal))
+            .Select(n => n[(n.IndexOf(".Migrations.", StringComparison.Ordinal) + 12)..])
+            .Select(n => int.Parse(n[..n.IndexOf('_', StringComparison.Ordinal)],
+                                   System.Globalization.CultureInfo.InvariantCulture))
+            .Max();
 }

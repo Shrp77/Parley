@@ -79,7 +79,7 @@ public sealed class ForeignDatabaseTests : IDisposable
     {
         var path = MakeForeignDatabase();
 
-        var (exitCode, error) = ToolProcess.Run("--db", path, "agents");
+        var (exitCode, error) = ToolProcess.Run("--db", path, "registry");
 
         Assert.Equal(78, exitCode);
         Assert.Contains("not a Parley database", error, StringComparison.Ordinal);
@@ -98,7 +98,7 @@ public sealed class ForeignDatabaseTests : IDisposable
         // question about the wrong directory.
         var path = Path.Combine(_directory, "nowhere.db");
 
-        var (exitCode, error) = ToolProcess.Run("--db", path, "agents");
+        var (exitCode, error) = ToolProcess.Run("--db", path, "registry");
 
         Assert.Equal(78, exitCode);
         Assert.Contains("created by the first agent server", error, StringComparison.Ordinal);
@@ -134,7 +134,7 @@ public sealed class ForeignDatabaseTests : IDisposable
         var (exitCode, error) = ToolProcess.Run();
 
         Assert.Equal(64, exitCode);
-        Assert.Contains("parley [--db <path>] agents", error, StringComparison.Ordinal);
+        Assert.Contains("parley [--db <path>] registry", error, StringComparison.Ordinal);
         Assert.DoesNotContain("No database.", error, StringComparison.Ordinal);
     }
 

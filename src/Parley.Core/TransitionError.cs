@@ -38,9 +38,12 @@ public enum TransitionError
     /// The clarification depth cap was reached.
     /// </summary>
     /// <remarks>
-    /// The broker responds by forcing an answer of <see cref="Resolution.Unknown"/> through
-    /// <see cref="Exchange.ForceUnknown"/>. Left unbounded, two models will refine a question
-    /// toward mutual precision indefinitely and never produce a decision.
+    /// Nothing else follows from it. The exchange stays open, the broker writes no answer, and
+    /// the answerer is told to answer with what it has. A broker-written
+    /// <see cref="Resolution.Unknown"/> was once specified here and is not produced: it means
+    /// "I own this and I do not know", which only the answerer can say. Left unbounded, two
+    /// models will refine a question toward mutual precision indefinitely and never produce a
+    /// decision -- the cap bounds that and does no more.
     /// </remarks>
     ClarifyDepthExceeded,
 
