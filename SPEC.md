@@ -411,9 +411,15 @@ justification was left behind by the removal of pair serialisation, which §7.2 
 in the past tense. It is recorded here because a rule defended by the wrong mechanism invites
 the right mechanism to be removed as redundant.
 
-Clarify depth is capped (default 3). On breach the broker forces an Answer with
-`resolution: "unknown"` and flags the exchange. Models will otherwise ping-pong
-toward mutual precision indefinitely.
+Clarify depth is capped (default 3). Models will otherwise ping-pong toward mutual precision
+indefinitely.
+
+**What a breach does is unsettled, and the implementation and this section disagree.** This
+section has always said the broker forces an Answer with `resolution: "unknown"` and flags the
+exchange. The reference implementation refuses the clarification and tells the answerer to answer
+with what it has, leaving the exchange open until §14's window reaches it — `ForceUnknown` is
+written and never called. See §17 question 4: the disagreement is recorded rather than resolved,
+because the two behaviours serve different parties and choosing between them is a decision.
 
 **Depth increments only when the answerer sends.** The asker's reply is supplying detail that
 was asked for, not opening a round, and charging both directions would halve the effective cap
@@ -2675,9 +2681,17 @@ Cheap to collect, disproportionately useful:
 
    **And the breach is not a stop.** Pair slots are counted directionally (§7.1), so an answerer
    that has exhausted its clarifications can open its own Question back to the asker. The cap
-   does not end the conversation; it moves it, at the cost of a pair slot, a second exchange,
-   and the context the first one accumulated — while recording a `parley:broker` `unknown` that
-   the asker then acts on. Whether that is what actually happens is measurable and unmeasured.
+   does not end the conversation; it moves it, at the cost of a pair slot, a second exchange, and
+   the context the first one accumulated. Whether that is what actually happens is measurable and
+   unmeasured.
+
+   It does not even end the exchange. §5.2 says the broker forces an `unknown` on breach, and
+   nothing does: `ForceUnknown` exists and is called from nowhere. What happens is that the
+   clarification is refused and the answerer is told to answer with what it has, leaving the
+   exchange open until §14's window orphans it. Whether the spec or the implementation is the
+   defect is an open decision — the forced close returns the asker its own consequences at once,
+   while refusing lets an answerer resolve the parts it can. Recorded here rather than settled,
+   because it is the fourth mechanism in this document described and not built.
 
    **What would answer it.** A cap censors its own evidence: depths pile at the cap whether the
    true need was one more or forty more, so no report over capped data can say what the cap

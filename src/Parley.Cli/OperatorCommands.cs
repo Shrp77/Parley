@@ -344,9 +344,19 @@ public sealed class OperatorCommands
             CultureInfo.InvariantCulture,
             $"Reached the cap:                             {report.ExchangesAtCap}")).ConfigureAwait(false);
 
+        // Structurally zero today, and printed anyway with the reason. §5.2 says the broker forces
+        // an `unknown` when the cap breaks; nothing does -- ForceUnknown is written and never
+        // called (§17 question 4). Dropping the line would hide a documented behaviour that is
+        // absent; printing a bare zero would read as "the cap never fires", which is a different
+        // and false statement. So it says which it is.
+        var forcedNote = report.ForcedUnknownCloses == 0
+            ? "  (nothing produces one; see SPEC.md 17, question 4)"
+            : string.Empty;
+
         await _output.WriteLineAsync(string.Create(
             CultureInfo.InvariantCulture,
-            $"Broker-forced unknown:                       {report.ForcedUnknownCloses}")).ConfigureAwait(false);
+            $"Broker-forced unknown:                       {report.ForcedUnknownCloses}{forcedNote}"))
+            .ConfigureAwait(false);
 
         await _output.WriteLineAsync(string.Create(
             CultureInfo.InvariantCulture,
