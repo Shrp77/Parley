@@ -103,6 +103,11 @@ distribution with a heap at the top is a truncated measurement, not a finding. R
 far above any plausible need and watching where depth actually settles is the only way to learn
 what it should be - and if depth is almost always zero, the cap was never what kept it low.
 
+The cap is set per agent, by `PARLEY_CLARIFY_CAP` in that repository's `.mcp.json`, and it is the
+**asker's** cap that governs an exchange. Raising it in one repository widens only the questions
+that repository asks. To measure across a project, raise it everywhere - and check the range this
+command prints, because a half-applied change shows up there as two different caps in force.
+
 ## Reporting back
 
 These commands print for a person. Summarise what came back; do not re-paste an export in full

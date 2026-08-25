@@ -2451,6 +2451,13 @@ Cheap to collect, disproportionately useful:
    `clarifications()` in §10.2 reports the distribution, the cap-reached count, and whether answers ever
    resolve sub-questions differently from one another — that last one being the cheap test of
    whether sub-questions carry information the counter is currently blind to.
+
+   One trap in running it, which follows from §5.2 and is easy to get wrong: the cap on an
+   exchange is the **asker's**. Raising it in one repository widens only the questions that
+   repository asks, and every question asked *of* it still carries whatever the asker was
+   configured with. A deployment-wide measurement means raising it on every agent that asks, and
+   `clarifications()` prints the range of caps in force precisely so a half-applied one is
+   visible rather than silently producing a distribution shaped by the number being measured.
 5. Should `ask` support a deadline, so a caller can prefer a fast `unknown` over a
    slow `answered`?
 6. Where does resume gate state live, and who reports the usage a budget gate reads?
