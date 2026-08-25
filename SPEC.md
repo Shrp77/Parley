@@ -1585,7 +1585,8 @@ a floor overrides both.
 
 - undelivered — it is somebody's inbox;
 - attached to an exchange that is open or orphaned — §14 may still replay it;
-- inside the deduplication window (§13.1) or the rate-limit window.
+- inside the deduplication window (§13.1). The rate-limit window this clause used to
+  name as well does not exist; see §13 and §17 question 1.
 
 An operator configuring aggressive retention must not be able to break deduplication as
 a side effect. The floor is what makes the dial safe to turn.
@@ -2036,12 +2037,20 @@ visibly not the broker's.
 as instruction arrives as the contents of a JSON string rather than as free-standing
 lines. Unwrapping a `text` field into the envelope would discard that protection.
 
-Additional controls:
+Additional controls, annotated with what actually holds each one — the same discipline §8
+applies to its rules, and for the same reason:
 
-- Per-sender rate limits and per-exchange message caps.
-- Deduplication of byte-identical messages within a short window.
-- Payloads are data, never interpolated into a position where they read as
-  system-level instruction.
+- **Per-exchange message caps.** Held: §7.1's open-question cap and rule 8.5's size cap are
+  both schema constraints.
+- **Deduplication of byte-identical messages within a short window.** Held: §13.1, a unique
+  index. It catches a repeat and nothing else — a single character's difference is a different
+  message, which is the correct behaviour for a deduplicator and not a volume control.
+- **Payloads are data, never interpolated into a position where they read as system-level
+  instruction.** Held: the envelope, and `json_valid` on the column.
+- **Per-sender rate limits.** *Not held by anything.* No such limit exists, here or in the
+  reference implementation, and §9.4's retention floor protects a "rate-limit window" that has
+  never existed either. Listing it among the controls made the set look closed when the one
+  control against volume was the one that was absent. See §17 question 1.
 
 ### 13.1 Deduplication
 
@@ -2493,8 +2502,41 @@ Cheap to collect, disproportionately useful:
 
 ## 17. Open questions
 
-1. Should Notify support topics or subscriptions, or is addressed delivery
-   sufficient at this scale?
+1. What bounds Notify? The question here used to be whether it should support topics or
+   subscriptions, or whether addressed delivery is sufficient at this scale — a routing question.
+   Routing is not the pressing part, and reading the type against the code says why.
+
+   **Notify is the least-bounded path into an agent's context, and every control named against
+   that is either absent or aimed elsewhere.** §5.4 grants it two exemptions and justifies both:
+   it takes no slot, so §7.1's cap does not bound it, and it creates no debt, so §7.2 finds no
+   cycle in it. §7.1 now gathers what that leaves. The remaining guard is §13.1's deduplication,
+   which catches a byte-identical repeat and is correct to catch nothing else — and §13's list of
+   controls named per-sender rate limits beside it, which do not exist and never have.
+
+   Probed rather than argued: sixty notifications differing by one digit, from one agent to one
+   peer, were all accepted in a tenth of a second, putting about 29,000 characters into the
+   recipient's next turn. That is seven times what rule 8.5 permits in a single message, from one
+   peer, arriving in one drain — because `inbox` with no limit collects everything pending.
+   Nothing refused anything, and nothing was misbehaving: every message was well-formed, terse
+   and distinct.
+
+   **Terseness is a security control (principle 2.2), and the type expected to carry the highest
+   volume in a mature deployment (§5.4) is the one with no volume control at all.** §7.1's cap
+   exists because "fifty questions is a context flood whether or not any single one is terse".
+   Fifty notifications are the same flood, admitted by a different door.
+
+   So the question is what bounds it, and topics and subscriptions are two candidate answers
+   rather than the question itself. A subscription is a fan-out and makes the volume worse before
+   it makes it better. A topic is a bound of a kind — a recipient that can decline a class of
+   event has a control it does not have today — but it is an opt-out, and the flood above used
+   one topic. A per-sender window is the direct answer and the one §13 already claimed; a
+   recipient-side budget, mirroring §7.1's directional slots, is the other.
+
+   Two things worth deciding alongside it. Question 3's most protocol-native answer routes
+   decision records through Notify, which would make durable output depend on the unbounded
+   channel. And whatever bounds it must not make an event undeliverable: §5.4 calls this the
+   highest-value traffic there is, and a limit that silently drops a contract change is worse
+   than the flood.
 2. Should the human be a first-class Headless agent, or a distinct escalation path?
 3. What promotes a decision, and who is entitled to declare one? The question here used to be
    whether promotion should be automatic or gated on human review — automatic risking a wrong
