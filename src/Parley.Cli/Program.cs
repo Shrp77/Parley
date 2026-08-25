@@ -198,6 +198,14 @@ try
     // last touched is missing whatever the newer migrations added, and a report reading one of
     // those tables fails on a missing table with a stack trace. Which of the two is out of date
     // is exactly what somebody needs to be told, and it is not recoverable from that exception.
+    //
+    // Only behind. A database AHEAD of this build is left alone deliberately: migrations here add
+    // tables and columns rather than remove them, so an older reader finds everything it knows
+    // about and ignores the rest -- verified by setting user_version past every migration and
+    // running the reports. Refusing that case would break every operator whose tool is a version
+    // behind their servers, which is the ordinary state of a machine mid-upgrade. The asymmetry
+    // is that behind is a certain failure and ahead is a likely success; if a migration ever
+    // removes something, this is the comment that was wrong.
     if (schema < SchemaMigrator.LatestVersion)
     {
         holder.Dispose();

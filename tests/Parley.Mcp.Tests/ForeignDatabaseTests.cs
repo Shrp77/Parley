@@ -132,6 +132,14 @@ public sealed class ForeignDatabaseTests : IDisposable
     /// <remarks>
     /// Read from the embedded resources rather than written down, so it cannot disagree with what
     /// the migrator would actually apply.
+    /// <para>
+    /// <see cref="SchemaMigrator.LatestVersion"/> now computes the same number, and this stays a
+    /// separate implementation on purpose. Calling the production property here would make the
+    /// assertion "Migrate reached whatever Migrate thinks the latest is", which a broken resource
+    /// scan satisfies at zero — both sides would agree, and the test would pass on an empty
+    /// database that had been migrated not at all. An independent oracle is the only version of
+    /// this check that can fail.
+    /// </para>
     /// </remarks>
     private static int LatestSchemaVersion =>
         typeof(SchemaMigrator).Assembly.GetManifestResourceNames()
