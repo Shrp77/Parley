@@ -414,12 +414,25 @@ the right mechanism to be removed as redundant.
 Clarify depth is capped (default 3). Models will otherwise ping-pong toward mutual precision
 indefinitely.
 
-**What a breach does is unsettled, and the implementation and this section disagree.** This
-section has always said the broker forces an Answer with `resolution: "unknown"` and flags the
-exchange. The reference implementation refuses the clarification and tells the answerer to answer
-with what it has, leaving the exchange open until §14's window reaches it — `ForceUnknown` is
-written and never called. See §17 question 4: the disagreement is recorded rather than resolved,
-because the two behaviours serve different parties and choosing between them is a decision.
+**A breach refuses the clarification. It does not close the exchange, and the broker writes no
+answer.** The answerer is told it has run out of budget and to answer with what it has, using
+`unknown` for the parts it cannot determine. If it answers, the exchange closes normally with
+whatever it could resolve. If it does not, the exchange is unanswered like any other and §14
+reaches it on the ordinary schedule, closing it `ghosted` and returning the question to the asker
+with the asker's own stated consequences.
+
+This section used to say the broker forces an Answer with `resolution: "unknown"`. It does not,
+and it must not. **`unknown` means "I own this and I genuinely do not know"** (§5.3) — a
+statement about the answerer's own knowledge, which only the answerer is in a position to make.
+A broker writing it manufactures an agent's judgement, which is the same fault `ghosted` is
+protected against from the other direction: §5.3 makes `ghosted` the one resolution no agent may
+write, enforced by trigger, precisely because an agent claiming it would assert something it
+cannot know. The two guards are mirror images and only one of them was in place.
+
+The distinction survives the change, and it is the useful one. `ghosted` says nobody replied;
+running out of clarifications says somebody replied too many times without converging. The second
+is not a resolution at all — it is a fact about an exchange, readable from `clarify_depth` against
+`clarify_depth_cap`, and reported as such (§10.2, `clarifications()`).
 
 **Depth increments only when the answerer sends.** The asker's reply is supplying detail that
 was asked for, not opening a round, and charging both directions would halve the effective cap
@@ -2498,9 +2511,12 @@ Cheap to collect, disproportionately useful:
   model; it is a fact about whether an agent is reachable and answering, which is exactly what
   an operator needs to see and cannot get from any other signal here.
 
-  Report at least `ghosted` closes per answering agent over time, and forced `unknown` closes
-  from the clarify cap, kept apart from each other: the first says nobody replied, the second
-  says someone replied too many times without converging.
+  Report at least `ghosted` closes per answering agent over time, and — kept apart from them —
+  exchanges that reached the clarify cap. The first says nobody replied; the second says somebody
+  replied too many times without converging. The second is not a close and produces no
+  resolution of its own: §5.2 is explicit that a breach refuses the clarification and leaves the
+  exchange to be answered or ghosted like any other, so it is counted from `clarify_depth` against
+  the cap rather than from anything the broker wrote.
 
   Attributing a ghost to a *model* takes one more step, and the shape of the data is worth
   stating because it is not obvious. The closing message records `parley:broker`, so the row
@@ -2685,13 +2701,14 @@ Cheap to collect, disproportionately useful:
    the context the first one accumulated. Whether that is what actually happens is measurable and
    unmeasured.
 
-   It does not even end the exchange. §5.2 says the broker forces an `unknown` on breach, and
-   nothing does: `ForceUnknown` exists and is called from nowhere. What happens is that the
-   clarification is refused and the answerer is told to answer with what it has, leaving the
-   exchange open until §14's window orphans it. Whether the spec or the implementation is the
-   defect is an open decision — the forced close returns the asker its own consequences at once,
-   while refusing lets an answerer resolve the parts it can. Recorded here rather than settled,
-   because it is the fourth mechanism in this document described and not built.
+   It does not even end the exchange, and §5.2 used to say otherwise. It had the broker force an
+   answer of `unknown` on breach; nothing ever did, and it has been removed rather than built.
+   `unknown` means "I own this and I genuinely do not know" — a claim about the answerer's own
+   knowledge that only the answerer can make, so a broker writing it manufactures an agent's
+   judgement. That is the mirror of the fault `ghosted` is trigger-protected against, and only
+   one of the two guards existed. A breach now refuses the clarification and does nothing else:
+   the answerer answers with what it has, or §14 ghosts the exchange like any other nobody
+   answered.
 
    **What would answer it.** A cap censors its own evidence: depths pile at the cap whether the
    true need was one more or forty more, so no report over capped data can say what the cap

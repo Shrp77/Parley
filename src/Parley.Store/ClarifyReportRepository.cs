@@ -13,8 +13,12 @@ public sealed record ClarifyDepthBucket(int Depth, long Exchanges);
 /// The evidence SPEC.md §17 question 4 asks for and has never had.
 /// </summary>
 /// <param name="Distribution">Exchanges by the depth they reached, ascending, zero included.</param>
-/// <param name="ExchangesAtCap">Exchanges whose depth equals the cap they were admitted under.</param>
-/// <param name="ForcedUnknownCloses">Exchanges the broker closed as <c>unknown</c> itself.</param>
+/// <param name="ExchangesAtCap">
+/// Exchanges whose depth equals the cap they were admitted under. This is the whole of what a
+/// breach produces: SPEC.md §5.2 refuses the clarification and writes nothing, so there is no
+/// broker-authored close to count. An earlier version of this report counted one, which could
+/// never be anything but zero.
+/// </param>
 /// <param name="LowestCapInForce">The smallest cap any counted exchange carries.</param>
 /// <param name="HighestCapInForce">The largest cap any counted exchange carries.</param>
 /// <remarks>
@@ -59,7 +63,6 @@ public sealed record ClarifyDepthBucket(int Depth, long Exchanges);
 public sealed record ClarifyReport(
     IReadOnlyList<ClarifyDepthBucket> Distribution,
     long ExchangesAtCap,
-    long ForcedUnknownCloses,
     long LowestCapInForce,
     long HighestCapInForce,
     long Answers,
@@ -167,32 +170,6 @@ public sealed class ClarifyReportRepository(SqliteConnection connection)
             atCap = reader.GetInt64(2);
         }
 
-        long forced;
-
-        // Attributed to the broker rather than inferred from the resolution, because an agent may
-        // answer 'unknown' honestly and often should. Counting those among forced closes would
-        // report a well-behaved deployment as one whose cap keeps firing.
-        using (var command = _connection.CreateCommand())
-        {
-            command.CommandText =
-                """
-                SELECT count(*)
-                  FROM exchanges e
-                 WHERE e.resolution = 'unknown'
-                   AND EXISTS (SELECT 1 FROM messages m
-                                WHERE m.exchange_id = e.id
-                                  AND m.type = 'answer'
-                                  AND m.responder_model = 'parley:broker');
-                """;
-
-            using var reader = await command
-                .ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-
-            await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-
-            forced = reader.GetInt64(0);
-        }
-
         long answers;
         long mixed;
 
@@ -219,6 +196,6 @@ public sealed class ClarifyReportRepository(SqliteConnection connection)
         }
 
         return new ClarifyReport(
-            buckets, atCap, forced, lowestCap, highestCap, answers, mixed);
+            buckets, atCap, lowestCap, highestCap, answers, mixed);
     }
 }

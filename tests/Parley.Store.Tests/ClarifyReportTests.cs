@@ -156,20 +156,20 @@ public sealed class ClarifyReportTests : IDisposable
     }
 
     [Fact]
-    public async Task Only_the_brokers_own_unknown_counts_as_forced()
+    public async Task An_agents_own_unknown_is_just_an_answer()
     {
-        // An agent answering 'unknown' honestly is the behaviour the tool description asks for,
-        // and SPEC.md §11.3 keeps the two apart by responder. Counting them together would make
-        // a well-behaved deployment indistinguishable from one whose cap keeps breaking.
-        var forced = Exchange("forced", depth: 3, cap: 3, resolution: "unknown");
-        Answer(forced, "parley:broker", Resolutions("unknown"));
-
+        // This used to assert that a broker-authored `unknown` was counted apart from an agent's
+        // own. Nothing writes one: SPEC.md §5.2 refuses a breach and leaves the exchange alone,
+        // because `unknown` means "I own this and I do not know" and only the answerer can say
+        // it. What remains worth pinning is that an honest `unknown` -- which the tool
+        // description actively asks for -- is an ordinary answer and inflates nothing.
         var honest = Exchange("honest", depth: 0, cap: 3, resolution: "unknown");
         Answer(honest, "some-model-9", Resolutions("unknown"));
 
         var report = await _report.ReadAsync(Ct);
 
-        Assert.Equal(1, report.ForcedUnknownCloses);
+        Assert.Equal(0, report.ExchangesAtCap);
+        Assert.Equal(1, report.Answers);
     }
 
     [Fact]

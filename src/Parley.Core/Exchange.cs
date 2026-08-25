@@ -406,8 +406,12 @@ public sealed class Exchange
     /// directions would halve the effective cap without saying so.
     /// </para>
     /// <para>
-    /// When the cap is reached this refuses, and the broker is expected to call
-    /// <see cref="ForceUnknown"/> to close the exchange rather than leaving it open.
+    /// When the cap is reached this refuses and nothing else happens. It does not close the
+    /// exchange and the broker writes no answer: <c>unknown</c> means "I own this and I do not
+    /// know", which is a statement about the answerer's knowledge that only the answerer can
+    /// make. A broker writing it would manufacture an agent's judgement -- the same fault
+    /// <c>ghosted</c> is protected against from the other side. The answerer answers with what it
+    /// has, or the exchange goes unanswered and SPEC.md 14 ghosts it like any other.
     /// </para>
     /// </remarks>
     public TransitionResult Clarify(AgentName from, DateTimeOffset nowUtc)
@@ -507,35 +511,6 @@ public sealed class Exchange
         ClosedUtc = nowUtc;
         IsDecision = isDecision;
         Resolution = resolution;
-        OwedBy = Answerer;
-        return TransitionResult.Ok;
-    }
-
-    /// <summary>
-    /// Closes the exchange unresolved after the clarification cap has been breached.
-    /// </summary>
-    /// <param name="nowUtc">The current instant, in UTC.</param>
-    /// <returns>
-    /// <see cref="TransitionResult.Ok"/> on success, or a failure carrying
-    /// <see cref="TransitionError.ExchangeNotOpen"/>.
-    /// </returns>
-    /// <remarks>
-    /// This deliberately bypasses the turn check that <see cref="Answer"/> applies. At the
-    /// moment the cap is breached the answerer is mid-clarification and the turn sits with
-    /// the asker, so a strict answer would be refused — and the cap would create exactly the
-    /// deadlock it exists to prevent. This is the broker's escape hatch and should not be
-    /// called on the ordinary path.
-    /// </remarks>
-    public TransitionResult ForceUnknown(DateTimeOffset nowUtc)
-    {
-        if (State != ExchangeState.Open)
-        {
-            return TransitionResult.Fail(TransitionError.ExchangeNotOpen);
-        }
-
-        State = ExchangeState.Closed;
-        ClosedUtc = nowUtc;
-        Resolution = Core.Resolution.Unknown;
         OwedBy = Answerer;
         return TransitionResult.Ok;
     }
