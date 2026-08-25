@@ -111,7 +111,10 @@ public sealed class AgentFleet : IAsyncDisposable
 
             try
             {
-                command = InvocationCommand.Parse(candidate.InvokeCommand);
+                // Named from the registry, so a person opening these sessions later sees which
+                // agent each one is rather than nineteen listed by their first line.
+                command = InvocationCommand.Parse(
+                    candidate.InvokeCommand, candidate.Agent.Value);
             }
             catch (ArgumentException ex)
             {

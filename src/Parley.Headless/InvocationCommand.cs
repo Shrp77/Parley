@@ -74,6 +74,28 @@ public sealed record InvocationCommand(
         "--verbose"
     ];
 
+    /// <summary>
+    /// The arguments that make a resident session identifiable as the agent it is.
+    /// </summary>
+    /// <param name="agent">The registry name.</param>
+    /// <returns>The runner's naming flag and its value.</returns>
+    /// <remarks>
+    /// <para>
+    /// Supplied by the fleet from the registry rather than written into each launch
+    /// configuration. The name already exists there as <c>PARLEY_AGENT</c>, and a second copy in
+    /// a <c>-n</c> flag beside it is a copy that can disagree — at which point the session
+    /// listing names one agent and the protocol names another, and the listing is the one a
+    /// person reads.
+    /// </para>
+    /// <para>
+    /// Worth almost nothing under the one-shot form this replaces, which is why it was passed
+    /// over then: a printing session that exits has no prompt box and no terminal to title. A
+    /// resident agent persists, so its session is one an operator will later open by hand, and
+    /// nineteen of them listed by first line rather than by name is a list nobody can use.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<string> NamingArguments(string agent) => ["-n", agent];
+
     /// <summary>How long to wait for one turn, when nothing says.</summary>
     /// <remarks>
     /// Generous, and it can afford to be now. Under the one-shot invoker a timeout killed the
@@ -88,6 +110,9 @@ public sealed record InvocationCommand(
     /// Builds the command from a template written by an operator.
     /// </summary>
     /// <param name="template">The command line, with arguments separated by spaces.</param>
+    /// <param name="agent">
+    /// The registry name to label the session with, or <see langword="null"/> to leave it unnamed.
+    /// </param>
     /// <param name="timeout">How long to wait for a turn, or <see langword="null"/> for the default.</param>
     /// <returns>The parsed command.</returns>
     /// <exception cref="ArgumentException"><paramref name="template"/> is empty.</exception>
@@ -105,7 +130,8 @@ public sealed record InvocationCommand(
     /// omit one and leave the fleet talking to a process that cannot answer.
     /// </para>
     /// </remarks>
-    public static InvocationCommand Parse(string template, TimeSpan? timeout = null)
+    public static InvocationCommand Parse(
+        string template, string? agent = null, TimeSpan? timeout = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(template);
 
@@ -122,9 +148,22 @@ public sealed record InvocationCommand(
 
         // A template that names its own input format is configuring a different runner, and
         // appending Claude Code's flags to it would produce a command line that means nothing to
-        // either. Taking the template at its word is the escape hatch.
-        var arguments = given.Contains("--input-format", StringComparer.Ordinal)
-            ? given
+        // either. Taking the template at its word is the escape hatch, and it covers the naming
+        // flag too: `-n` is this runner's spelling, not a universal one.
+        if (given.Contains("--input-format", StringComparer.Ordinal))
+        {
+            return new InvocationCommand(fileName, given, timeout ?? DefaultTimeout);
+        }
+
+        // An operator who named the session themselves meant it. Appending a second `-n` would
+        // leave the runner to pick between them, which is a coin toss written as configuration.
+        var named =
+            agent is { Length: > 0 } &&
+            !given.Contains("-n", StringComparer.Ordinal) &&
+            !given.Contains("--name", StringComparer.Ordinal);
+
+        List<string> arguments = named
+            ? [.. given, .. NamingArguments(agent!), .. ProtocolArguments]
             : [.. given, .. ProtocolArguments];
 
         return new InvocationCommand(fileName, arguments, timeout ?? DefaultTimeout);
