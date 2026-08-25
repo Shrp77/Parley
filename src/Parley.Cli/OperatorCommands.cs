@@ -126,6 +126,101 @@ public sealed class OperatorCommands
         return 0;
     }
 
+    /// <summary>
+    /// Reports what clarification cost, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Zero. The report is the output.</returns>
+    /// <remarks>
+    /// <para>
+    /// Written to be read by somebody deciding whether the cap of §5.2 should exist, so it says
+    /// what the numbers mean rather than only what they are. A distribution printed without the
+    /// caps that shaped it is a censored measurement presented as a natural one, which is the
+    /// specific mistake §17 question 4 exists to avoid.
+    /// </para>
+    /// <para>
+    /// The empty case says what is missing rather than printing an empty table, for the same
+    /// reason <see cref="RefusalsAsync"/> does: the person most likely to be looking is the one
+    /// who wants the number changed, and "nothing has happened yet" is an answer to that.
+    /// </para>
+    /// </remarks>
+    public async Task<int> ClarificationsAsync(CancellationToken cancellationToken)
+    {
+        var report = await _console.DescribeClarificationsAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (report.Exchanges == 0)
+        {
+            await _output.WriteLineAsync(
+                "No exchanges yet, so nothing has clarified. There is no evidence here for or " +
+                "against the clarify cap.").ConfigureAwait(false);
+
+            return 0;
+        }
+
+        await _output.WriteLineAsync(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{report.Exchanges} exchanges. Caps in force: {report.LowestCapInForce} to " +
+            $"{report.HighestCapInForce}.")).ConfigureAwait(false);
+
+        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+        await _output.WriteLineAsync("depth  exchanges  share").ConfigureAwait(false);
+
+        foreach (var bucket in report.Distribution)
+        {
+            var share = 100.0 * bucket.Exchanges / report.Exchanges;
+
+            await _output.WriteLineAsync(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{bucket.Depth,5}  {bucket.Exchanges,9}  {share,5:0.0}%")).ConfigureAwait(false);
+        }
+
+        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+
+        await _output.WriteLineAsync(string.Create(
+            CultureInfo.InvariantCulture,
+            $"Reached the cap:     {report.ExchangesAtCap}")).ConfigureAwait(false);
+
+        await _output.WriteLineAsync(string.Create(
+            CultureInfo.InvariantCulture,
+            $"Broker-forced unknown: {report.ForcedUnknownCloses}")).ConfigureAwait(false);
+
+        await _output.WriteLineAsync(string.Create(
+            CultureInfo.InvariantCulture,
+            $"Answers resolving sub-questions differently: " +
+            $"{report.AnswersResolvingSubQuestionsDifferently} of {report.Answers}"))
+            .ConfigureAwait(false);
+
+        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+
+        // The reading, not just the numbers. Somebody who came here to pick a cap should not
+        // have to reconstruct from a histogram that a pile at the top means the measurement was
+        // truncated rather than that the truth was found.
+        if (report.ExchangesAtCap > 0 && report.DeepestReached >= report.HighestCapInForce)
+        {
+            await _output.WriteLineAsync(
+                "The distribution is censored: exchanges are stopping at the cap, so the depth " +
+                "they would have reached is not in this data. Raise the cap and measure again " +
+                "before choosing a number.").ConfigureAwait(false);
+        }
+        else if (report.DeepestReached == 0)
+        {
+            await _output.WriteLineAsync(
+                "Nothing has clarified even once. The cap is not what is keeping depth low, so " +
+                "there is nothing here to tune.").ConfigureAwait(false);
+        }
+        else
+        {
+            await _output.WriteLineAsync(string.Create(
+                CultureInfo.InvariantCulture,
+                $"Nothing reached the cap and the deepest was {report.DeepestReached}, so this " +
+                $"distribution is the real one rather than a truncated one."))
+                .ConfigureAwait(false);
+        }
+
+        return 0;
+    }
+
     /// <summary>Withdraws an agent's registration.</summary>
     /// <param name="agent">The agent to retire.</param>
     /// <param name="cancellationToken">Cancels the write.</param>

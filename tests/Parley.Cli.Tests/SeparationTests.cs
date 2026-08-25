@@ -37,6 +37,11 @@ public sealed class SeparationTests
         string[] expected =
         [
             "AgentsAsync",
+
+            // Not "ClarifyAsync". §10.1 gives an agent clarify(exchange_id, text), and this
+            // check is one of the three that caught the collision when the report was first
+            // written under that name.
+            "ClarificationsAsync",
             "ExportAsync",
             "ForceConcludeAsync",
             "PruneAsync",

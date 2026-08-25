@@ -401,6 +401,19 @@ Clarify depth is capped (default 3). On breach the broker forces an Answer with
 `resolution: "unknown"` and flags the exchange. Models will otherwise ping-pong
 toward mutual precision indefinitely.
 
+**Depth increments only when the answerer sends.** The asker's reply is supplying detail that
+was asked for, not opening a round, and charging both directions would halve the effective cap
+without saying so. A cap of 3 therefore buys three requests for detail and three replies, not
+one and a half exchanges of it.
+
+This is stated because it is not recoverable from the number. An implementation that charged
+every Clarify would satisfy every other sentence here and give its agents half the budget, and
+the two would be indistinguishable from the outside until an exchange died early.
+
+The cap is stored per exchange rather than read from configuration at the moment it is checked,
+so an exchange is held to the terms it was opened under, and a deployment may set its own. It
+is bounded: see §9.3.
+
 ### 5.3 Answer
 
 Closes the exchange. Carries a per-sub-question resolution:
@@ -1059,6 +1072,25 @@ BEGIN
          >= NEW.open_pair_cap;
 END;
 
+-- The clarify cap is itself bounded (§9.3), for the reason open_pair_cap is: a value written
+-- outside the band would disable the rule while satisfying every constraint. A trigger rather
+-- than a CHECK because the bound arrived after the table existed, and SQLite cannot add a CHECK
+-- to a table that messages already references by foreign key.
+CREATE TRIGGER tr_clarify_cap_bounded_on_insert BEFORE INSERT ON exchanges
+FOR EACH ROW WHEN NEW.clarify_depth_cap NOT BETWEEN 0 AND 1000
+BEGIN
+  SELECT RAISE(ABORT, 'clarify_depth_cap must be between 0 and 1000');
+END;
+
+-- Guards a path no operation takes today. The cap is written once at admission, and that is a
+-- fact about the current broker rather than about the schema: raising it on a live exchange
+-- would grant depth retroactively that was refused when it was asked for.
+CREATE TRIGGER tr_clarify_cap_bounded_on_update BEFORE UPDATE OF clarify_depth_cap ON exchanges
+FOR EACH ROW WHEN NEW.clarify_depth_cap NOT BETWEEN 0 AND 1000
+BEGIN
+  SELECT RAISE(ABORT, 'clarify_depth_cap must be between 0 and 1000');
+END;
+
 -- Distinctness (§7.1). An index rather than a trigger: it is declarative, and it covers
 -- every path that can produce an OPEN row, including the UPDATE that resumes an orphan.
 CREATE UNIQUE INDEX ux_open_question
@@ -1365,8 +1397,13 @@ decayed.
   broker writes into them. A bug that wrote a large number would disable the cap while leaving
   every constraint satisfied and nothing to notice. The column is therefore range-checked, so
   the worst a broker bug can do is pick a bad value inside a sane band rather than switch the
-  rule off. `clarify_depth_cap` has the same shape and no such bound; that is a gap, not a
-  precedent to copy.
+  rule off. `clarify_depth_cap` has the same shape and is bounded the same way, by trigger
+  rather than by `CHECK` — the bound was added after the table existed, and SQLite cannot add a
+  `CHECK` to a table another table already references by foreign key. The band is 0 to 1000:
+  zero is a coherent policy, meaning answer with what you have, and a thousand is far above the
+  highest value anybody would set on purpose while remaining far below unbounded. The bound
+  matters more since the cap became configurable per deployment (§5.2), because the value now
+  arrives from a launch environment rather than from a constant.
 - **The open-question cap (§7.1).** A `BEFORE INSERT` trigger, because a cap of *n* cannot be
   written as a `CHECK`: reaching it requires counting other rows, `CHECK` forbids subqueries,
   and no index expresses "at most five" the way a partial unique index expresses "at most
@@ -1614,6 +1651,7 @@ any of these into an agent's tool set would breach §10.1 and, through it, §16.
 | `export(conversation_id)` | Emit every message in a conversation. The one query that reads across agents, which is why it is here and not in §10.1. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
 | `refusals()` | Report what the size cap of rule 8.5 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
+| `clarifications()` | Report the clarify depth distribution of §5.2, how often the cap was reached, and whether answers ever resolve sub-questions differently from one another. The evidence §17 question 4 asks for. |
 | `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. |
 | `reinstate(agent)` | Withdraw a retirement. Registration does not, and must not, do this. |
 | `force_conclude(conversation)` | Close a conversation regardless of its participants' votes. |
@@ -2363,7 +2401,49 @@ Cheap to collect, disproportionately useful:
 2. Should the human be a first-class Headless agent, or a distinct escalation path?
 3. Should decision promotion be automatic or gated on human review? Automatic risks
    codifying a wrong answer; gated risks nothing being written down.
-4. The clarify depth cap of 3 is a guess. Instrument before tuning.
+4. Is a clarify cap needed at all, and at which tier? The number 3 is a guess, but "tune the
+   guess" is the wrong question, for two reasons found by reading the rule rather than the
+   number.
+
+   **The counter conflates two different things.** §5.2 justifies the cap by saying models
+   "ping-pong toward mutual precision indefinitely" — repeated clarification of *one* point.
+   But a question carries `sub_questions` with distinct ids, an Answer resolves each of them
+   separately, and Clarify is the one message type that names none: it is opaque text against
+   one exchange-wide counter. So three clarifications of a single point and three requests for
+   three genuinely different missing facts are charged identically, and the second — which is
+   convergence — is penalised as though it were the first. Tuning cannot separate them: raise
+   the number and ping-pong runs longer, lower it and honest multi-part questions die sooner.
+
+   A Clarify that named the sub-question it needs, with the budget per sub-question, would
+   separate them, and has a property worth noting: an answerer can only name sub-questions the
+   asker wrote, so the ceiling is the asker's own. Against it, the field would be self-declared
+   and therefore chosen by the party it constrains — the same shape as question 9, which is why
+   the two should be decided together rather than separately.
+
+   **And the breach is not a stop.** Pair slots are counted directionally (§7.1), so an answerer
+   that has exhausted its clarifications can open its own Question back to the asker. The cap
+   does not end the conversation; it moves it, at the cost of a pair slot, a second exchange,
+   and the context the first one accumulated — while recording a `parley:broker` `unknown` that
+   the asker then acts on. Whether that is what actually happens is measurable and unmeasured.
+
+   **What would answer it.** A cap censors its own evidence: depths pile at the cap whether the
+   true need was one more or forty more, so no report over capped data can say what the cap
+   should be. Since the cap is per exchange and now per deployment (§5.2), the cheap instrument
+   is to set it far above any plausible need, run real traffic, and read the distribution that
+   results. If depth is typically 1 the cap is not doing the work — the tool description telling
+   answerers to prefer answering with what they have is — and the honest conclusion is to drop
+   it at this tier rather than to tune it.
+
+   Note what that would and would not establish. The runaway this defends against needs an agent
+   that answers without a person present, which the pull inbox of §4.2 does not produce: nothing
+   arrives unprompted, so a ping-pong requires somebody to keep running both sides. A measurement
+   taken among interactive agents is evidence about interactive agents. §11.4 already says rule
+   enforcement degrades by tier, and this is a case of it: the Headless tier is where an
+   unbounded clarify chain is a real risk, and it will need its own answer.
+
+   `clarifications()` in §10.2 reports the distribution, the cap-reached count, and whether answers ever
+   resolve sub-questions differently from one another — that last one being the cheap test of
+   whether sub-questions carry information the counter is currently blind to.
 5. Should `ask` support a deadline, so a caller can prefer a fast `unknown` over a
    slow `answered`?
 6. Where does resume gate state live, and who reports the usage a budget gate reads?

@@ -1,4 +1,5 @@
-﻿using Parley.Core;
+﻿using System.Globalization;
+using Parley.Core;
 
 namespace Parley.Mcp;
 
@@ -19,6 +20,11 @@ namespace Parley.Mcp;
 /// <param name="Owns">
 /// One line saying what this agent owns, shown to every peer that lists the roster, or
 /// <see langword="null"/> if the launch did not say. See <see cref="OwnershipStatement"/>.
+/// </param>
+/// <param name="ClarifyDepthCap">
+/// How many clarifications an exchange opened by this server admits before the broker forces an
+/// <c>unknown</c>. Stamped onto each exchange at admission, so a change applies to questions
+/// asked after it and not to any already in flight. See SPEC.md §5.2 and §17 question 4.
 /// </param>
 /// <remarks>
 /// <para>
@@ -44,7 +50,8 @@ public sealed record ServerOptions(
     TimeSpan TickInterval,
     RetentionPolicy Retention,
     string? Workspace,
-    string? Owns = null)
+    string? Owns = null,
+    int ClarifyDepthCap = ServerOptions.DefaultClarifyDepthCap)
 {
     /// <summary>The environment variable naming the database file.</summary>
     /// <remarks>
@@ -62,6 +69,39 @@ public sealed record ServerOptions(
 
     /// <summary>The environment variable overriding the sweep interval, in seconds.</summary>
     public const string TickVariable = "PARLEY_TICK_SECONDS";
+
+    /// <summary>
+    /// The environment variable overriding how many clarifications an exchange admits.
+    /// </summary>
+    /// <remarks>
+    /// Exists so the number can be measured rather than argued. SPEC.md §17 question 4 asks whether a
+    /// clarify cap is needed at all, and a cap censors the evidence that would answer it: depths
+    /// pile up at whatever the cap is, whether the true need was one more or forty more. Setting
+    /// it far above any plausible need for a while is the only way to read the distribution
+    /// agents actually produce. The column has always been per exchange, which is what makes
+    /// this a launch setting rather than a schema change.
+    /// </remarks>
+    public const string ClarifyCapVariable = "PARLEY_CLARIFY_CAP";
+
+    /// <summary>
+    /// How many clarifications an exchange admits when the launch configuration does not say.
+    /// </summary>
+    /// <remarks>
+    /// Held equal to <see cref="ExchangePolicy.Default"/>'s value by a test rather than by
+    /// reference, because a positional record's default must be a compile-time constant. The
+    /// test is what stops the two drifting; the duplication is not the risk, an unnoticed
+    /// divergence between the documented default and the applied one is.
+    /// </remarks>
+    public const int DefaultClarifyDepthCap = 3;
+
+    /// <summary>The largest value <see cref="ClarifyCapVariable"/> may carry.</summary>
+    /// <remarks>
+    /// The schema's band, restated so the refusal happens at start-up rather than on the first
+    /// question. SPEC.md §9.3 bounds the column by trigger; a server launched above the bound
+    /// would start cleanly and then fail to admit any exchange at all, reporting a launch
+    /// configuration mistake to the model rather than to whoever made it.
+    /// </remarks>
+    public const int MaxClarifyDepthCap = 1000;
 
     /// <summary>
     /// What a message is attributed to when the launch configuration names nothing.
@@ -203,7 +243,40 @@ public sealed record ServerOptions(
             // numbers to the same file. See RetentionPolicyEnvironment.
             RetentionPolicyEnvironment.Read(read),
             string.IsNullOrWhiteSpace(workspace) ? null : workspace,
-            owns);
+            owns,
+            ReadClarifyDepthCap(read));
+    }
+
+    /// <summary>Reads the clarify cap, or falls back to the default.</summary>
+    /// <param name="read">The source of variables.</param>
+    /// <returns>How many clarifications an exchange opened by this server admits.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The value is not a whole number within the band SPEC.md §9.3 bounds the column to.
+    /// </exception>
+    private static int ReadClarifyDepthCap(Func<string, string?> read)
+    {
+        var configured = read(ClarifyCapVariable);
+
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return DefaultClarifyDepthCap;
+        }
+
+        // Zero is admitted, and is not the same as unset. It means an answerer must answer with
+        // what it has, which is a policy somebody may want and which the schema permits. Reading
+        // it as "no value" would silently turn the strictest setting into the default one.
+        if (!int.TryParse(configured, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cap)
+            || cap < 0
+            || cap > MaxClarifyDepthCap)
+        {
+            throw new InvalidOperationException(
+                $"{ClarifyCapVariable} is '{configured}', which is not a whole number between 0 " +
+                $"and {MaxClarifyDepthCap.ToString(CultureInfo.InvariantCulture)}. The column is " +
+                "bounded in the schema (SPEC.md §9.3), so a value outside that band would be " +
+                "refused on every exchange this server tried to open.");
+        }
+
+        return cap;
     }
 
     /// <summary>Reads a required variable.</summary>

@@ -52,6 +52,7 @@ parley [--db <path>] export <conversation>   every message in a discussion, acro
 parley [--db <path>] force-conclude <conv>   close a discussion over its participants' votes
 parley [--db <path>] prune                   apply the retention policy now
 parley [--db <path>] refusals                what the message size cap refused
+parley [--db <path>] clarifications          how deep clarification went, and whether the cap binds
 parley --help                                the same list, on stdout, exiting zero
 ```
 
@@ -73,18 +74,34 @@ So `prune` prints the policy it applied before it prints what it removed. Read t
 does not match what the servers were launched with, the numbers you are looking at are your
 shell's, not the deployment's, and the agents have been quietly enforcing something else.
 
-`refusals` is the evidence for the message size cap. It reports, per agent and message type,
-how often a message was refused for length, the worst case and the mean, and the cap in force at
-the time. No refused text is kept anywhere - only how long it was - because storing the payload
-that was refused for being too long would retain exactly what the cap exists to keep out. If
-somebody wants the cap raised, this is what the argument should be made from.
-
 **It removes text permanently.** Export first if the discussion is worth keeping - the export is
 a file the person owns, and it is the only copy that outlives the policy.
 
 A floor bounds it in the other direction and is not configurable: no amount of tightening
 deletes a message nobody has collected yet, the question of an exchange that is still open, or
 the recent rows deduplication is still reading.
+
+## The caps, and the evidence for them
+
+Two commands report what a limit actually did. Neither changes anything, and both
+exist because a number nobody measured is a number argued from taste.
+
+`refusals` is the evidence for the message size cap. It reports, per agent and message type,
+how often a message was refused for length, the worst case and the mean, and the cap in force at
+the time. No refused text is kept anywhere - only how long it was - because storing the payload
+that was refused for being too long would retain exactly what the cap exists to keep out. If
+somebody wants the cap raised, this is what the argument should be made from.
+
+`clarifications` is the same idea for the other cap, and it reads a question the spec has left
+open rather than settling one. It reports how deep clarification actually goes, how often an
+exchange reached its limit, whether the broker had to force an `unknown`, and whether answers
+ever resolve sub-questions differently from one another.
+
+Read the caps it prints beside the distribution, because a cap censors its own evidence: depths
+pile up at whatever limit was in force, whether the true need was one more or forty more. A
+distribution with a heap at the top is a truncated measurement, not a finding. Raising the cap
+far above any plausible need and watching where depth actually settles is the only way to learn
+what it should be - and if depth is almost always zero, the cap was never what kept it low.
 
 ## Reporting back
 

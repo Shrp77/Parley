@@ -165,7 +165,16 @@ public sealed class BrokerSession : IAsyncDisposable
             LivenessLease = options.TickInterval * 3 > BrokerOptions.DefaultLivenessLease
                 ? options.TickInterval * 3
                 : BrokerOptions.DefaultLivenessLease,
-            Retention = options.Retention
+            Retention = options.Retention,
+
+            // Stamped onto every exchange this server opens, so raising it affects questions
+            // asked from here after the change and nothing already in flight. That is the point
+            // of the column being per row: the measurement SPEC.md §17 question 4 wants can begin without
+            // rewriting the terms of exchanges that were admitted under the old number.
+            ExchangePolicy = BrokerOptions.Default.ExchangePolicy with
+            {
+                ClarifyDepthCap = options.ClarifyDepthCap
+            }
         };
 
     /// <summary>
