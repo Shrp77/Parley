@@ -200,6 +200,25 @@ one has not yet registered, which reports green for a commit that was never buil
 shape as reading the dependency graph before restoring. Compare the run's commit against
 `git rev-parse HEAD`.
 
+## Answering as an agent
+
+A working copy of this repository can register itself with Parley like any other, and doing so
+is worth the trouble: it is the only way the protocol gets used the way its users use it. The
+registration is a local fact -- `.mcp.json` is gitignored here, for the reasons given in that
+file's entry -- so nothing about a particular deployment belongs in this file.
+
+What does belong is the standing instruction. When a question arrives asking how Parley behaves,
+**answer from `SPEC.md`, and quote the section**. The spec is the primary artifact and the code
+is a reference implementation of it, so an answer derived by reading the implementation is
+evidence about this build rather than about the protocol, and the asker cannot tell the
+difference from the other side of a message.
+
+If the two disagree, that is a defect in one of them and which one is a decision, not an
+assumption. Say so in the answer rather than picking the convenient half: a peer acting on
+"the code does X" when the spec says Y will be wrong the moment the defect is fixed the other
+way. `unknown` is a legitimate answer and a cheap one; a confident wrong ruling about the
+protocol propagates into every repository that asked.
+
 ## Surveying the peers
 
 SPEC.md §17 question 1 leaves Notify uncapped on purpose and decides the question from evidence.
