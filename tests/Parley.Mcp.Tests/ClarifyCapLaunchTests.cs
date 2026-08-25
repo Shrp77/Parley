@@ -114,11 +114,45 @@ public sealed class ClarifyCapLaunchTests
     [Fact]
     public void The_band_the_server_enforces_is_the_band_the_schema_enforces()
     {
-        // Restated in two places on purpose — one refuses at launch, the other at the insert —
-        // so this is what keeps them equal. A server band wider than the schema's would move the
-        // failure from start-up to every exchange, which is the outcome the start-up check exists
-        // to prevent.
-        Assert.Equal(1000, ServerOptions.MaxClarifyDepthCap);
+        // Restated in two places on purpose — one refuses at launch, the other at the insert — so
+        // something has to keep them equal. This asserted `1000 == 1000`, which reads as a guard
+        // and checks nothing: it would have passed unchanged while the schema moved underneath it,
+        // which is precisely the drift it was written to catch. It now writes real rows.
+        //
+        // A server band wider than the schema's moves the failure from start-up to every exchange,
+        // which is the outcome the start-up check exists to prevent. A narrower one silently
+        // refuses settings the deployment is entitled to.
+        using var connection = ParleyDatabase.OpenInMemory();
+
+        Execute(connection,
+            "INSERT INTO agents (name, adapter, tier, status) VALUES "
+          + "('orders','test','full','registered'),('billing','test','full','registered');");
+
+        Insert(connection, ServerOptions.MaxClarifyDepthCap, "at-the-top");
+
+        Assert.Throws<Microsoft.Data.Sqlite.SqliteException>(
+            () => Insert(connection, ServerOptions.MaxClarifyDepthCap + 1, "one-past"));
+    }
+
+    private static void Execute(Microsoft.Data.Sqlite.SqliteConnection connection, string sql)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.ExecuteNonQuery();
+    }
+
+    private static void Insert(
+        Microsoft.Data.Sqlite.SqliteConnection connection, int cap, string question)
+    {
+        const string stamp = "2026-01-01T00:00:00.0000000+00:00";
+
+        Execute(connection,
+            "INSERT INTO exchanges (pair_key, asker, answerer, owed_by, state, clarify_depth, "
+          + "clarify_depth_cap, open_pair_cap, delivery_window_ms, working_window_ms, "
+          + "grace_period_ms, opened_utc, expires_utc, question_hash) VALUES "
+          + "('billing' || char(31) || 'orders','orders','billing','billing','OPEN',0,"
+          + cap.ToString(System.Globalization.CultureInfo.InvariantCulture)
+          + ",5,900000,14400000,86400000,'" + stamp + "','" + stamp + "','" + question + "');");
     }
 
     [Fact]
@@ -153,5 +187,45 @@ public sealed class ClarifyCapLaunchTests
         command.CommandText = "SELECT clarify_depth_cap FROM exchanges;";
 
         Assert.Equal(200L, (long)command.ExecuteScalar()!);
+    }
+
+    [Fact]
+    public async Task The_askers_cap_governs_the_exchange_and_not_the_answerers()
+    {
+        // Which side configures the budget decides whether the rule can be defeated by the party
+        // it constrains. The cap exists to stop an answerer clarifying forever, so if the
+        // answerer's launch configuration set it, the answerer would set its own allowance -- and
+        // .mcp.json is a file in that agent's own repository.
+        //
+        // It is the asker's, because the asker's broker admits the exchange. Probed rather than
+        // reasoned: the two servers share a database, so nothing about the call site makes the
+        // answer obvious from reading it.
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(new DateTimeOffset(2026, 3, 1, 9, 0, 0, TimeSpan.Zero));
+
+        var askerOptions = fixture.OptionsFor("orders") with { ClarifyDepthCap = 7 };
+        var asker = await BrokerSession.StartAsync(askerOptions, fixture.Clock, ct);
+        var tools = new ParleyTools(asker, askerOptions);
+
+        var answererOptions = fixture.OptionsFor("billing") with { ClarifyDepthCap = 900 };
+        var answerer = await BrokerSession.StartAsync(answererOptions, fixture.Clock, ct);
+
+        var asked = await tools.AskAsync(
+            "billing",
+            "Whether this repository applies tax.",
+            [new SubQuestion("q1", "Does billing freeze the rate at invoice time?")],
+            "If it freezes I stop recomputing and record the contract; if not I keep recomputing.",
+            cancellationToken: ct);
+
+        Assert.True(asked["ok"]!.GetValue<bool>(), asked.ToJsonString());
+
+        await asker.DisposeAsync();
+        await answerer.DisposeAsync();
+
+        using var connection = ParleyDatabase.Open(fixture.DatabasePath);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT clarify_depth_cap FROM exchanges;";
+
+        Assert.Equal(7L, (long)command.ExecuteScalar()!);
     }
 }

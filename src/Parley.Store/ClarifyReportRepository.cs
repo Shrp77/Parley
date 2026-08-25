@@ -17,6 +17,12 @@ public sealed record ClarifyDepthBucket(int Depth, long Exchanges);
 /// <param name="ForcedUnknownCloses">Exchanges the broker closed as <c>unknown</c> itself.</param>
 /// <param name="LowestCapInForce">The smallest cap any counted exchange carries.</param>
 /// <param name="HighestCapInForce">The largest cap any counted exchange carries.</param>
+/// <remarks>
+/// The caps are 64-bit for a reason that is not symmetry with the counts. Rows written before
+/// the bound of SPEC.md §9.3 existed carry no constraint at all, so one of them can hold a
+/// value no <c>int</c> can. Narrowing it would wrap, and it would wrap in the one field whose
+/// entire job is to say what bound produced the distribution beside it.
+/// </remarks>
 /// <param name="Answers">Answers sent, whatever they resolved to.</param>
 /// <param name="AnswersResolvingSubQuestionsDifferently">
 /// Answers whose sub-questions did not all resolve the same way.
@@ -54,8 +60,8 @@ public sealed record ClarifyReport(
     IReadOnlyList<ClarifyDepthBucket> Distribution,
     long ExchangesAtCap,
     long ForcedUnknownCloses,
-    int LowestCapInForce,
-    int HighestCapInForce,
+    long LowestCapInForce,
+    long HighestCapInForce,
     long Answers,
     long AnswersResolvingSubQuestionsDifferently)
 {
@@ -102,6 +108,13 @@ public sealed class ClarifyReportRepository(SqliteConnection connection)
     /// </remarks>
     public async Task<ClarifyReport> ReadAsync(CancellationToken cancellationToken = default)
     {
+        // One snapshot across all four statements. They are read separately to avoid a join
+        // multiplying exchanges by their messages, which leaves them free to straddle a write
+        // on a live deployment -- and the visible symptom of that is an at-cap count larger
+        // than the total it is counted from, which reads as a bug in the report rather than as
+        // the race it is. Deferred, because nothing here writes.
+        using var snapshot = _connection.BeginTransaction(deferred: true);
+
         // Depth zero is included on purpose. "How many exchanges never clarified at all" is the
         // single most decisive number here: if it is nearly all of them, the cap is not what is
         // keeping depth low and tuning it changes nothing.
@@ -206,6 +219,6 @@ public sealed class ClarifyReportRepository(SqliteConnection connection)
         }
 
         return new ClarifyReport(
-            buckets, atCap, forced, (int)lowestCap, (int)highestCap, answers, mixed);
+            buckets, atCap, forced, lowestCap, highestCap, answers, mixed);
     }
 }

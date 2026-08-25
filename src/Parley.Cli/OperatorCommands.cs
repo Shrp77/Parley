@@ -179,11 +179,11 @@ public sealed class OperatorCommands
 
         await _output.WriteLineAsync(string.Create(
             CultureInfo.InvariantCulture,
-            $"Reached the cap:     {report.ExchangesAtCap}")).ConfigureAwait(false);
+            $"Reached the cap:                             {report.ExchangesAtCap}")).ConfigureAwait(false);
 
         await _output.WriteLineAsync(string.Create(
             CultureInfo.InvariantCulture,
-            $"Broker-forced unknown: {report.ForcedUnknownCloses}")).ConfigureAwait(false);
+            $"Broker-forced unknown:                       {report.ForcedUnknownCloses}")).ConfigureAwait(false);
 
         await _output.WriteLineAsync(string.Create(
             CultureInfo.InvariantCulture,

@@ -414,6 +414,13 @@ The cap is stored per exchange rather than read from configuration at the moment
 so an exchange is held to the terms it was opened under, and a deployment may set its own. It
 is bounded: see §9.3.
 
+**It is the asker's cap, because the asker's broker admits the exchange.** That is the half of
+the arrangement that makes it a rule rather than a preference: the cap exists to bound how long
+an answerer may go on requesting detail, so an answerer that supplied its own number would be
+setting its own allowance. It cannot. What it may still do is stop clarifying and open a question
+of its own in the other direction, which §7.1 counts as a separate pair slot — the cap bounds one
+exchange, not a conversation.
+
 ### 5.3 Answer
 
 Closes the exchange. Carries a per-sub-question resolution:
