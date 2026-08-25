@@ -519,6 +519,46 @@ public sealed class AgentRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>
+    /// Records whether this agent may be started when it owes an answer and nobody is running it.
+    /// </summary>
+    /// <param name="name">The agent.</param>
+    /// <param name="invokeWhenIdle">Whether the sweep may start it.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Rows updated.</returns>
+    /// <remarks>
+    /// <para>
+    /// Refreshed on every launch and from the launch environment only, exactly as
+    /// <see cref="RefreshOwnershipAsync"/> is and for the same reason: it is a permission the
+    /// person who configured the repository grants, not a property an agent decides about itself.
+    /// No operation accepts it, so an agent cannot volunteer to be started any more than it can
+    /// choose its own name.
+    /// </para>
+    /// <para>
+    /// Cleared when a launch stops supplying it, which is what makes withdrawal work: removing
+    /// the variable from a launch configuration and opening the repository once is enough, and
+    /// nobody has to remember a second step in a place they will not look.
+    /// </para>
+    /// <para>
+    /// Skips a retired agent, as ownership does. Retirement is a person saying the agent will not
+    /// come back; a launch quietly re-granting permission to start it would overrule that.
+    /// </para>
+    /// </remarks>
+    public async Task<int> RefreshInvocationConsentAsync(
+        AgentName name,
+        bool invokeWhenIdle,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                UPDATE agents
+                   SET invoke_when_idle = @Invoke
+                 WHERE name = @Name
+                   AND status <> 'retired';
+                """,
+                new { Name = name.Value, Invoke = invokeWhenIdle ? 1 : 0 },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>
     /// Marks an agent live and records that it has just communicated.
     /// </summary>
     /// <param name="name">The agent to mark.</param>

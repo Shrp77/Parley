@@ -36,6 +36,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Parley.Broker\Parley.Broker.csproj" />
+    <ProjectReference Include="..\Parley.Headless\Parley.Headless.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -940,6 +940,11 @@ CREATE TABLE agents (
   session_ref     TEXT,                    -- adapter-specific resume handle
   adapter_config  TEXT,                    -- opaque to the broker (see §12)
   owns            TEXT,                    -- one line, read by peers (see §17 q10)
+  -- Whether the sweep may start this agent when it owes an answer and nobody is running it.
+  -- Not the tier: a repository with a live session genuinely IS Pull, and the same repository
+  -- with no session open is reachable only by starting one. This records a permission its
+  -- operator granted, so the two combine rather than compete. See §11.1.
+  invoke_when_idle INTEGER NOT NULL DEFAULT 0 CHECK (invoke_when_idle IN (0, 1)),
   last_seen_utc   TEXT,
   status          TEXT    NOT NULL
                   CHECK (status IN ('registered', 'live', 'offline', 'unreachable',
@@ -1006,6 +1011,32 @@ CREATE TABLE agent_credentials (
          OR reference LIKE 'keychain:_%'
          OR reference LIKE 'file:_%')
 ) STRICT;
+
+-- What starting an agent has cost. Unbounded on purpose, like Notify (§17 question 1): the
+-- decision about whether to bound it waits for evidence, and the evidence must outlive the
+-- messages that produced it. An agent that answers without being asked is an agent that bills
+-- without being asked, so what is recorded is chosen to make a runaway visible early -- not only
+-- how many, but how long they took and how often they achieved nothing.
+--
+-- No output is kept. What the agent said travels as messages under §9.4's retention; capturing
+-- stdout here would make a second, unpruned copy of everything an agent ever wrote, outside
+-- every guard that governs the first.
+CREATE TABLE invocations (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent         TEXT    NOT NULL REFERENCES agents(name),
+  -- Before and after, so the record can say whether the process changed anything. An agent that
+  -- ran and still owes what it owed is the one worth noticing.
+  owed_before   INTEGER NOT NULL CHECK (owed_before >= 0),
+  owed_after    INTEGER NOT NULL CHECK (owed_after >= 0),
+  started_utc   TEXT    NOT NULL,
+  elapsed_ms    INTEGER NOT NULL CHECK (elapsed_ms >= 0),
+  exit_code     INTEGER NOT NULL,
+  -- A timeout is not a failure of the agent: it is a question that took longer than the invoker
+  -- would hold a process open for, and the two need different responses.
+  timed_out     INTEGER NOT NULL DEFAULT 0 CHECK (timed_out IN (0, 1))
+) STRICT;
+
+CREATE INDEX ix_invocations_agent ON invocations(agent, started_utc);
 
 CREATE TABLE exchanges (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -55,6 +55,9 @@ builder.Services.AddSingleton(provider =>
             TimeProvider.System)
         .GetAwaiter().GetResult());
 
+// Registered as a singleton the sweep depends on, rather than constructed inside it, so a test
+// can substitute one and so its own dependencies are resolved the same way everything else is.
+builder.Services.AddSingleton<InvocationSweep>();
 builder.Services.AddHostedService<SweepService>();
 
 builder.Services
