@@ -1605,8 +1605,9 @@ decayed.
 - **Every message names its responder.** §11.3 is a MUST and is not limited to answers: the
   envelope in §13 renders responder identity on every delivered message, so a nullable column
   would leave the envelope with a hole the schema permitted. Non-model responders use the
-  scheme in §11.3; a broker-forced unknown, produced when the clarify cap breaks, records
-  `parley:broker`.
+  scheme in §11.3, and the one message the broker writes itself — §14's ghost — records
+  `parley:broker`. A breach of the clarify cap writes nothing at all and so records nothing;
+  see §5.2.
 - **A duplicate cannot be stored twice in one window.** The unique index on
   `(content_hash, dedup_bucket)` in §13. The broker also checks the exact window, but the
   index is what survives a broker that forgets to.
