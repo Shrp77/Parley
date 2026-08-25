@@ -1,4 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Parley.Mcp;
@@ -57,7 +57,6 @@ builder.Services.AddSingleton(provider =>
 
 // Registered as a singleton the sweep depends on, rather than constructed inside it, so a test
 // can substitute one and so its own dependencies are resolved the same way everything else is.
-builder.Services.AddSingleton<InvocationSweep>();
 builder.Services.AddHostedService<SweepService>();
 
 builder.Services

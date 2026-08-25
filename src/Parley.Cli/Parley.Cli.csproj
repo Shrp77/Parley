@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <!--
     The operator's way in, and a second binary rather than a flag on the first.
@@ -26,8 +26,16 @@
     <IsPackable>true</IsPackable>
   </PropertyGroup>
 
+  <!--
+    Parley.Headless is the fleet supervisor behind `parley up`. It is referenced here, and no
+    longer by the server, because keeping agents resident is an operator capability rather than
+    something one agent's server does to its peers. SPEC.md section 10.2 keeps operator
+    operations off the type an adapter is handed, and starting another agent's process is the
+    clearest case of an operation that belongs on this side of that line.
+  -->
   <ItemGroup>
     <ProjectReference Include="..\Parley.Broker\Parley.Broker.csproj" />
+    <ProjectReference Include="..\Parley.Headless\Parley.Headless.csproj" />
   </ItemGroup>
 
 </Project>

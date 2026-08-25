@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <!--
     The transport, and the only project that knows what MCP is. SPEC.md principle 2.3 makes the
@@ -36,7 +36,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Parley.Broker\Parley.Broker.csproj" />
-    <ProjectReference Include="..\Parley.Headless\Parley.Headless.csproj" />
   </ItemGroup>
 
   <ItemGroup>

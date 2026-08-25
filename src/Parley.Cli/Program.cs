@@ -38,12 +38,19 @@ const string Help = """
       parley [--db <path>] referrals                   where questions are sent onward, and to whom
       parley [--db <path>] notifications               how much Notify carries, and who has had enough to judge
 
+      parley [--db <path>] up                          keep the agents resident so they can converse
+
       parley --version                                 this build, and the protocol it speaks
 
     --db defaults to PARLEY_DB, the same variable the agents' servers are launched with.
     prune reads PARLEY_RETENTION_IDLE_HOURS and PARLEY_RETENTION_MAX_AGE_HOURS from the same
     place, and prints the policy it applied. It removes text permanently; export first if you
     want to keep a discussion.
+
+    up runs until you stop it. It starts every agent that owes an answer and has offered a
+    PARLEY_INVOKE_COMMAND, keeps each one resident so it remembers the conversations it is in,
+    and gives it a turn whenever a peer needs one. Ctrl+C stops the fleet and every agent in it.
+    Its pass interval comes from PARLEY_TICK_SECONDS, the same variable the servers read.
 
     These are never available to an agent. parley-mcp, the server an MCP client launches, has
     none of them compiled into it.
@@ -275,14 +282,67 @@ using (holder)
         case "notifications" when rest.Length == 0:
             return await commands.NotificationsAsync(CancellationToken.None).ConfigureAwait(false);
 
+        case "up" when rest.Length == 0:
+            return await UpAsync().ConfigureAwait(false);
+
         default:
             await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
             return Usage;
     }
 }
 
+// The only command that does not return promptly: it runs until the operator stops it.
+//
+// Ctrl+C is intercepted rather than allowed to kill the process, and that is the whole reason
+// this is wired up here instead of inside FleetCommand. The default handling would end this
+// process and leave every agent it started orphaned -- resident, holding sessions, answering
+// nobody. Cancelling instead gives the fleet the chance to tell each of them to quit, which is
+// one of the three ways SPEC.md §11.1 says a resident agent ends.
+async Task<int> UpAsync()
+{
+    using var stopping = new CancellationTokenSource();
+
+    void Stop(object? sender, ConsoleCancelEventArgs e)
+    {
+        // A second Ctrl+C is left to the default handling on purpose. If shutting the fleet down
+        // has itself wedged, an operator must still be able to get their terminal back.
+        e.Cancel = true;
+        Console.CancelKeyPress -= Stop;
+
+        stopping.Cancel();
+    }
+
+    Console.CancelKeyPress += Stop;
+
+    try
+    {
+        var fleet = new FleetCommand(holder.Connection, Console.Out);
+
+        return await fleet.UpAsync(FleetInterval(), stopping.Token).ConfigureAwait(false);
+    }
+    finally
+    {
+        Console.CancelKeyPress -= Stop;
+    }
+}
+
+// Read from the same variable the servers read, so a deployment has one number rather than two
+// that drift. Bounded rather than trusted: a pass costs a query per agent with mail, and a
+// mistyped "1" would turn that into a spin.
+static TimeSpan FleetInterval()
+{
+    var configured = Environment.GetEnvironmentVariable("PARLEY_TICK_SECONDS");
+
+    if (!int.TryParse(configured, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds))
+    {
+        return TimeSpan.FromMinutes(1);
+    }
+
+    return TimeSpan.FromSeconds(Math.Clamp(seconds, 5, 3600));
+}
+
 // The policy is read here rather than beside --db, so a variable an operator got wrong stops
-// prune and nothing else. Refusing `parley agents` because a retention hour is unparseable
+// prune and nothing else. Refusing `parley registry` because a retention hour is unparseable
 // would be strictly worse: listing changes nothing, and the reason somebody is at a terminal
 // asking what is registered is usually that something has already gone wrong.
 async Task<int> PruneAsync(OperatorCommands commands)

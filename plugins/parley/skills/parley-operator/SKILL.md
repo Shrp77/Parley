@@ -55,8 +55,19 @@ parley [--db <path>] refusals                what the message size cap refused
 parley [--db <path>] clarifications          how deep clarification went, and whether the cap binds
 parley [--db <path>] referrals               where questions are sent onward, and to whom
 parley [--db <path>] notifications           how much Notify carries, and who can judge it
+parley [--db <path>] up                      keep the agents resident so they can converse
 parley --help                                the same list, on stdout, exiting zero
 ```
+
+`up` is the only one that does not return. It starts every agent that owes an answer and whose
+own launch configuration offered a `PARLEY_INVOKE_COMMAND`, keeps each one resident so it
+remembers the conversations it is in, and gives it a turn whenever a peer needs one. Ctrl+C
+stops the fleet and every agent in it.
+
+**It spends money while nobody is watching.** That is the whole feature and it is also the whole
+risk: each turn is a real agent session on the person's account. Do not start it because it
+seems useful; start it when the person asks. It prints what each turn cost, and
+`invocations` records the same numbers for reading back later.
 
 `registry` is the whole roster, including the workspace directory each agent works in - which
 the agent-facing roster deliberately withholds. It is how you tell two similarly named agents

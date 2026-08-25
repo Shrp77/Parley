@@ -345,11 +345,16 @@ public sealed class BrokerSession : IAsyncDisposable
 
         // Consent to being started, refreshed on every launch for the same reason ownership is:
         // withdrawing it must be as simple as removing the variable and opening the repository
-        // once. Derived from whether a command was configured rather than from a separate flag,
-        // so a deployment cannot take invocation from its peers without offering it back.
+        // once. The command itself is the consent -- there is no separate flag to get out of step
+        // with it, and a deployment cannot take invocation from its peers without offering it back.
+        //
+        // Written here rather than kept local because a supervisor starts agents other than its
+        // own and has to read this somewhere. That it is written by this agent's own server, from
+        // this agent's own launch environment, is what keeps an executable command line in the
+        // registry no wider a trust than §13 already places in that environment.
         await agents.RefreshInvocationConsentAsync(
             options.Agent,
-            options.InvokeCommand is not null,
+            options.InvokeCommand,
             cancellationToken).ConfigureAwait(false);
     }
 

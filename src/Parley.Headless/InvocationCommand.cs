@@ -3,58 +3,92 @@ using System.Globalization;
 namespace Parley.Headless;
 
 /// <summary>
-/// What to run to give an agent a turn, and where to run it.
+/// What to run to keep an agent resident, and where to run it.
 /// </summary>
 /// <param name="FileName">The executable.</param>
 /// <param name="Arguments">Its arguments, already split.</param>
-/// <param name="Timeout">How long to wait before giving up on the process.</param>
+/// <param name="Timeout">How long to wait for one turn before giving up on it.</param>
 /// <remarks>
 /// <para>
 /// The command carries no question. That is the whole design and it is worth stating plainly,
-/// because the obvious implementation is the wrong one: an invoker that passed the question in
+/// because the obvious implementation is the wrong one: a fleet that passed the question in
 /// would be relaying, and §8's rule 9 — refer, do not relay — exists because a relayed question
 /// arrives under the relayer's identity with consequences that were not written for it. It would
 /// also have to choose which of several owed questions to pass, and be wrong whenever there were
 /// two.
 /// </para>
 /// <para>
-/// So the invoker's only job is to give the model a turn. The agent then calls
-/// <c>parley_inbox</c> through its own server, under its own identity, and sees exactly what it
-/// would have seen had a person opened the session — which is what makes an invoked answer
-/// indistinguishable from an attended one, and what keeps §13's trust boundary intact.
+/// So the fleet's only job is to give the agent a turn. The agent then calls <c>parley_inbox</c>
+/// through its own server, under its own identity, and sees exactly what it would have seen had
+/// a person opened the session — which is what makes an unattended answer indistinguishable from
+/// an attended one, and what keeps §13's trust boundary intact.
 /// </para>
 /// </remarks>
-public sealed record InvocationCommand(string FileName, IReadOnlyList<string> Arguments, TimeSpan Timeout)
+public sealed record InvocationCommand(
+    string FileName, IReadOnlyList<string> Arguments, TimeSpan Timeout)
 {
     /// <summary>
-    /// The prompt handed to an invoked agent.
+    /// The text that gives a resident agent a turn.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Deliberately short, and deliberately not a description of the work. It names the tool to
     /// call and stops: the messages carry their own instructions, wrapped in the envelope of §13
     /// that marks them as a peer's words rather than the operator's. A prompt that summarised the
     /// waiting questions would be the operator paraphrasing one agent to another, outside that
     /// envelope and above it in authority.
+    /// </para>
+    /// <para>
+    /// "End your turn" rather than "stop", because the agent is resident now and stopping is a
+    /// different instruction with a process attached to it. What ends is the turn; the session,
+    /// and everything the agent has learned in it, continues.
+    /// </para>
     /// </remarks>
     public const string Prompt =
-        "You have Parley messages waiting. Call parley_inbox, deal with what is there, and stop. " +
-        "Do not start other work.";
+        "You have Parley messages waiting. Call parley_inbox, deal with what is there, and end " +
+        "your turn. Do not start unrelated work.";
 
-    /// <summary>How long to wait for an invoked agent before giving up, when nothing says.</summary>
+    /// <summary>
+    /// The arguments that make a runner speak the fleet's turn protocol.
+    /// </summary>
     /// <remarks>
-    /// Long enough for a real answer and short enough that a wedged process is not held open for
-    /// an afternoon. SPEC.md §4.2 expects an answer to take minutes and sometimes hours, but that
-    /// is the *exchange's* budget, not one process's: an agent that has not finished in ten
-    /// minutes has almost certainly stopped rather than slowed, and the exchange survives a
-    /// timeout unharmed — it is still owed, and the next sweep tries again.
+    /// <para>
+    /// <b>The one vendor-specific thing in this project, isolated here on purpose.</b> A resident
+    /// agent is a process the fleet writes turns to and reads results from, and that requires
+    /// agreeing on a wire format with whatever is on the other end. These are Claude Code's
+    /// flags for it: a printing session that reads newline-delimited JSON turns from standard
+    /// input and writes newline-delimited JSON events back.
+    /// </para>
+    /// <para>
+    /// They are appended rather than required, and skipped entirely when a template names its own
+    /// <c>--input-format</c>. A different runner therefore needs a different launch
+    /// configuration and no change to this code, which is the standing constraint that the
+    /// transport is disposable applied to the one place a vendor leaked in.
+    /// </para>
     /// </remarks>
-    public static TimeSpan DefaultTimeout { get; } = TimeSpan.FromMinutes(10);
+    public static IReadOnlyList<string> ProtocolArguments { get; } =
+    [
+        "-p",
+        "--input-format", "stream-json",
+        "--output-format", "stream-json",
+        "--verbose"
+    ];
+
+    /// <summary>How long to wait for one turn, when nothing says.</summary>
+    /// <remarks>
+    /// Generous, and it can afford to be now. Under the one-shot invoker a timeout killed the
+    /// process, so waiting too long held a wedged agent open for an afternoon. A resident agent
+    /// survives its own timeouts, so the cost of waiting is small and the cost of giving up early
+    /// is real: an abandoned turn leaves a reply owed to nobody, which has to be discarded before
+    /// the next turn can trust what it reads.
+    /// </remarks>
+    public static TimeSpan DefaultTimeout { get; } = TimeSpan.FromMinutes(20);
 
     /// <summary>
     /// Builds the command from a template written by an operator.
     /// </summary>
     /// <param name="template">The command line, with arguments separated by spaces.</param>
-    /// <param name="timeout">How long to wait, or <see langword="null"/> for the default.</param>
+    /// <param name="timeout">How long to wait for a turn, or <see langword="null"/> for the default.</param>
     /// <returns>The parsed command.</returns>
     /// <exception cref="ArgumentException"><paramref name="template"/> is empty.</exception>
     /// <remarks>
@@ -63,11 +97,12 @@ public sealed record InvocationCommand(string FileName, IReadOnlyList<string> Ar
     /// not a shell: no pipes, no redirection, no variable expansion. That is a limitation and it
     /// is the safe direction — this string comes from a launch configuration, and a template
     /// interpreted by a shell would turn a typo in one into arbitrary command execution on the
-    /// machine running the sweep.
+    /// machine running the fleet.
     /// </para>
     /// <para>
-    /// <see cref="Prompt"/> is appended as the final argument rather than interpolated into the
-    /// template, so no template can place it somewhere it would be read as a flag.
+    /// <see cref="ProtocolArguments"/> is appended rather than interpolated, so no template can
+    /// place a protocol flag somewhere it would be read as a value, and no template can quietly
+    /// omit one and leave the fleet talking to a process that cannot answer.
     /// </para>
     /// </remarks>
     public static InvocationCommand Parse(string template, TimeSpan? timeout = null)
@@ -83,7 +118,14 @@ public sealed record InvocationCommand(string FileName, IReadOnlyList<string> Ar
         }
 
         var fileName = parts[0];
-        var arguments = parts.Skip(1).Append(Prompt).ToArray();
+        var given = parts.Skip(1).ToList();
+
+        // A template that names its own input format is configuring a different runner, and
+        // appending Claude Code's flags to it would produce a command line that means nothing to
+        // either. Taking the template at its word is the escape hatch.
+        var arguments = given.Contains("--input-format", StringComparer.Ordinal)
+            ? given
+            : [.. given, .. ProtocolArguments];
 
         return new InvocationCommand(fileName, arguments, timeout ?? DefaultTimeout);
     }

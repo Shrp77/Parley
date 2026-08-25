@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Hosting;
+﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Parley.Mcp;
@@ -23,12 +23,10 @@ namespace Parley.Mcp;
 /// </remarks>
 /// <param name="session">The broker to sweep.</param>
 /// <param name="options">The launch configuration, for the interval.</param>
-/// <param name="invocations">Starts idle agents that owe answers. See SPEC.md §11.1.</param>
 /// <param name="logger">Where to report what a sweep did.</param>
 public sealed class SweepService(
     BrokerSession session,
     ServerOptions options,
-    InvocationSweep invocations,
     ILogger<SweepService> logger) : BackgroundService
 {
     /// <inheritdoc />
@@ -57,11 +55,6 @@ public sealed class SweepService(
                         result.Exchanges.Orphaned, result.Exchanges.Ghosted,
                         result.ConversationsConcluded);
                 }
-
-                // After the tick, not before. TickAsync is what orphans a dead session's debts
-                // and renews liveness, so running the invoker first would read a roster one
-                // sweep out of date and start agents the tick was about to mark as gone.
-                await invocations.RunAsync(stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
