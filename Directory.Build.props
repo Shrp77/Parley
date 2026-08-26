@@ -52,15 +52,18 @@
     both tools were advertising themselves as a stable 1.0 of a protocol whose own README says
     to expect breaking changes. It also silently broke reinstalling: `dotnet tool update` sees
     the same version it already has and does nothing, at some length, so a local rebuild
-    appears to install and does not. Bump this when you want a rebuilt tool to actually
-    replace the one on PATH.
+    appears to install and does not.
+
+    Bump this in the same change that alters shipped behaviour, per the Versioning section of
+    CLAUDE.md. A change that leaves it alone cannot be delivered by the documented upgrade
+    path, and fails silently on the machine still running the old build.
 
     This is the *package* version and it is not the protocol's. SPEC.md carries its own, because
     it is what other implementations build against and a fix to the operator's CLI must not
     imply that the wire contract moved. The storage schema carries a third, in user_version.
   -->
   <PropertyGroup>
-    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionPrefix>0.2.0</VersionPrefix>
   </PropertyGroup>
 
   <PropertyGroup>
