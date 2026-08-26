@@ -33,8 +33,8 @@ public sealed class ReferralLinkTests : IDisposable
         _connection = ParleyDatabase.OpenInMemory();
 
         Execute("INSERT INTO agents (name, adapter, tier, status) VALUES "
-              + "('orders','test','full','registered'),('billing','test','full','registered'),"
-              + "('inventory','test','full','registered'),('pricing','test','full','registered');");
+              + "('orders','test','full','offline'),('billing','test','full','offline'),"
+              + "('inventory','test','full','offline'),('pricing','test','full','offline');");
 
         Execute(
             "INSERT INTO exchanges (pair_key, asker, answerer, owed_by, state, clarify_depth, "

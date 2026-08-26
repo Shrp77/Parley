@@ -165,13 +165,54 @@ public sealed class AgentFleet : IAsyncDisposable
                     _running[candidate.Agent.Value] = resident;
                     started = true;
                 }
-                catch (Exception ex) when (
-                    ex is InvocationFailedException or DirectoryNotFoundException)
+                catch (DirectoryNotFoundException ex)
+                {
+                    // A missing workspace is two different facts wearing one exception, and only
+                    // one of them justifies a tombstone. If the directory above it is still
+                    // there, this repository was deleted and the observation is sound. If that
+                    // is missing too, the drive is unmounted or the share is down -- and every
+                    // agent on it would be retired in a single pass, each needing a person to
+                    // reinstate it, because a volume was briefly away.
+                    //
+                    // So the parent is the discriminator. Absent it, this skips and tries again
+                    // next pass, which is what the old behaviour did for every case and is right
+                    // for this one.
+                    var parent = Path.GetDirectoryName(candidate.Workspace.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+                    if (string.IsNullOrEmpty(parent) || !Directory.Exists(parent))
+                    {
+                        actions.Add(Skip(
+                            candidate,
+                            "its workspace is unreachable and so is what contains it, which is a "
+                            + $"mount rather than a deletion: {ex.Message}"));
+                        continue;
+                    }
+
+                    // The workspace is gone, which is an observation the broker can make by
+                    // looking rather than an inference from silence -- so it retires the agent
+                    // rather than retrying a path that is not there.
+                    //
+                    // §14 used to reserve retirement for a person, on the ground that a missing
+                    // directory is frequently temporary: a re-clone, a moved worktree, an
+                    // unmounted drive. That cost is real and is recorded rather than argued
+                    // away -- a repository that comes back needs `parley reinstate`, and will
+                    // not recover on its own. What it buys is a registry that stops describing
+                    // repositories that are not there, and a supervisor that stops starting
+                    // them once per pass for ever.
+                    await new AgentRepository(_connection)
+                        .RetireAsync(candidate.Agent, CancellationToken.None).ConfigureAwait(false);
+
+                    actions.Add(Skip(
+                        candidate,
+                        $"its workspace is gone, so it is retired: {ex.Message}"));
+                    continue;
+                }
+                catch (InvocationFailedException ex)
                 {
                     // Retried on the next pass rather than backed off. Starting a process that
                     // fails costs no tokens, and the failure is usually something an operator is
-                    // in the middle of fixing -- a path, a runner being installed. A cooldown
-                    // would mostly delay recovery.
+                    // in the middle of fixing -- a runner being installed, a command being
+                    // corrected. A cooldown would mostly delay recovery.
                     actions.Add(Skip(candidate, ex.Message));
                     continue;
                 }

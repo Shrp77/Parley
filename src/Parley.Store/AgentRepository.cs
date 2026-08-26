@@ -243,9 +243,10 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// Reports whether an agent carries a status that stops the broker routing to it.
     /// </summary>
     /// <param name="agent">The agent.</param>
+    /// <param name="nowUtc">The current time, against which silence is measured.</param>
     /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns><see langword="true"/> if it is <c>unreachable</c> or <c>retired</c>.</returns>
+    /// <returns><see langword="true"/> if it is retired, or silent past the limit.</returns>
     /// <remarks>
     /// <para>
     /// The pair of statuses admission already refuses a question to (§14). Stated once here so a
@@ -265,12 +266,27 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// </remarks>
     public async Task<bool> IsUnroutableAsync(
         AgentName agent,
+        DateTimeOffset nowUtc,
         SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default) =>
         await _connection.ExecuteScalarAsync<long>(
             new CommandDefinition(
-                "SELECT count(*) FROM agents WHERE name = @Name " +
-                "AND status NOT IN ('unreachable', 'retired');",
+                // Retirement alone, and silence deliberately not. This changed with the move to
+                // derived liveness and the reasoning is worth keeping, because the obvious wiring
+                // is wrong in a way that disables the protocol.
+                //
+                // The old 'unreachable' meant "spawning was tried and failed repeatedly", which
+                // is evidence that starting this agent does not work and therefore a fair reason
+                // to refuse a question. The derived one means only that nobody has the repository
+                // open at the moment -- which is the ordinary resting state of a lazily spawned
+                // agent, and the state most agents are in most of the time. Refusing traffic to
+                // it would refuse the very traffic meant to wake it, exactly as the schema has
+                // always said of Offline, and a supervisor would then never see a debt to act on
+                // because no debt could ever be created.
+                //
+                // So silence is reported and never routed on. Retirement is a judgement that the
+                // agent will not come back, and only it refuses.
+                "SELECT count(*) FROM agents WHERE name = @Name AND status <> 'retired';",
                 new { Name = agent.Value },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false) == 0;
@@ -623,45 +639,6 @@ public sealed class AgentRepository(SqliteConnection connection)
                 },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-    /// <summary>
-    /// Records that an agent could not be spawned and should not be routed to.
-    /// </summary>
-    /// <param name="name">The agent to mark.</param>
-    /// <param name="cancellationToken">Cancels the operation.</param>
-    /// <returns>The number of rows affected: one on success, zero if the agent is unknown.</returns>
-    /// <remarks>
-    /// <para>
-    /// Called by the broker after a threshold of consecutive failed spawns, not after the
-    /// first: a single failure is as likely to be a slow clone or a transient lock as a
-    /// deleted repository. How many failures constitute a threshold is broker policy, and the
-    /// count itself is deliberately not stored — a restart should retry, because a restart is
-    /// often precisely when the situation has changed.
-    /// </para>
-    /// <para>
-    /// This does not resolve the agent's outstanding exchanges. It stops new ones being
-    /// admitted and makes the state visible; deciding what becomes of the questions already
-    /// asked is the operator's, through retirement. See SPEC.md §14.
-    /// </para>
-    /// <para>
-    /// The session handle is left intact, so an agent that reappears can resume rather than
-    /// start cold.
-    /// </para>
-    /// <para>
-    /// This is a routing kill-switch and belongs to the broker alone. §10.1 exposes nothing
-    /// like it, and nothing like it may be added: an agent able to mark a peer unreachable
-    /// could silence it — every question to that peer refused, indefinitely, on one agent's
-    /// say-so. No agent has authority over another, and this is one of the places that would
-    /// be easy to give away by accident.
-    /// </para>
-    /// </remarks>
-    public async Task<int> MarkUnreachableAsync(
-        AgentName name,
-        CancellationToken cancellationToken = default) =>
-        await _connection.ExecuteAsync(
-            new CommandDefinition(
-                "UPDATE agents SET status = 'unreachable' WHERE name = @Name;",
-                new { Name = name.Value },
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>
     /// Retires an agent whose repository is gone for good.
@@ -974,11 +951,18 @@ public sealed class AgentRepository(SqliteConnection connection)
 
     private static string FormatStatus(AgentStatus status) => status switch
     {
-        AgentStatus.Registered => "registered",
-        AgentStatus.Live => "live",
         AgentStatus.Offline => "offline",
-        AgentStatus.Unreachable => "unreachable",
+        AgentStatus.Live => "live",
         AgentStatus.Retired => "retired",
+
+        // NotResponding and Unreachable are readings of last_seen_utc rather than values, so
+        // there is nothing to write for them and a caller trying is a caller that has confused
+        // a derivation for a fact. See AgentLiveness.
+        AgentStatus.NotResponding or AgentStatus.Unreachable =>
+            throw new ArgumentOutOfRangeException(
+                nameof(status),
+                status,
+                "Liveness is derived from last_seen_utc and cannot be stored."),
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
     };
 
@@ -1032,11 +1016,15 @@ public sealed class AgentRepository(SqliteConnection connection)
         /// </exception>
         public static AgentStatus ParseStatus(string value) => value switch
         {
-            "registered" => AgentStatus.Registered,
-            "live" => AgentStatus.Live,
             "offline" => AgentStatus.Offline,
-            "unreachable" => AgentStatus.Unreachable,
+            "live" => AgentStatus.Live,
             "retired" => AgentStatus.Retired,
+
+            // Accepted for the length of one upgrade. Migration 008 rewrites both to 'offline',
+            // so a row carrying either is one written by a build older than this reader against
+            // a database newer than it -- which happens while a fleet is being upgraded one
+            // repository at a time, and should not crash the reader that notices.
+            "registered" or "unreachable" => AgentStatus.Offline,
             _ => throw new InvalidOperationException($"Unrecognised status '{value}'.")
         };
 

@@ -38,7 +38,7 @@ public sealed class PolicyBoundsTests : IDisposable
     {
         _connection = ParleyDatabase.OpenInMemory();
         Execute("INSERT INTO agents (name, adapter, tier, status) VALUES "
-              + "('orders','test','full','registered'),('billing','test','full','registered');");
+              + "('orders','test','full','offline'),('billing','test','full','offline');");
     }
 
     public void Dispose() => _connection.Dispose();

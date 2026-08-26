@@ -134,7 +134,7 @@ Substitute the real values. Four notes on the shape:
   honest blank.
 
 These are optional and can be left out: `PARLEY_RESPONDER` (what to record as having produced a
-message, `unknown-model` if unset), `PARLEY_TICK_SECONDS` (how often the sweep runs, 60 if
+message, `unknown-model` if unset), `PARLEY_TICK_SECONDS` (how often the sweep runs, 5 if
 unset), `PARLEY_RETENTION_IDLE_HOURS` and `PARLEY_RETENTION_MAX_AGE_HOURS` (how long the message
 log keeps what it carried, 72 and 720 if unset). Set the retention pair on **every** agent's
 server or none: the servers are what apply the policy, so setting it in one place and not

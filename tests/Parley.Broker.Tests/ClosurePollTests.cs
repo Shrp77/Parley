@@ -49,7 +49,7 @@ public sealed class ClosurePollTests : IDisposable
         {
             _agents.UpsertAsync(
                 new AgentRecord(name, "test", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Registered),
+                    AgentStatus.Offline),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
@@ -284,18 +284,23 @@ public sealed class ClosurePollTests : IDisposable
     }
 
     [Fact]
-    public async Task A_decline_lapses_when_its_holder_is_unreachable()
+    public async Task A_decline_does_not_lapse_merely_because_its_holder_is_silent()
     {
+        // §5.0's lapse follows routability, and routability is retirement alone. A decline that
+        // lapsed on five minutes of silence would close discussions under agents that were only
+        // closed at the time -- which is every agent overnight, and would make an objection
+        // something a peer could outwait rather than answer.
         await Ask(Orders, Billing);
         await Conclude(Orders, finished: true);
         await Conclude(Billing, finished: false, at: T0.AddMinutes(6));
 
-        await _agents.MarkUnreachableAsync(Billing, TestContext.Current.CancellationToken);
+        GoSilent(Billing);
 
         var swept = await _broker.TickAsync(
             T0.AddMinutes(10), TestContext.Current.CancellationToken);
 
-        Assert.Equal(1, swept.ConversationsConcluded);
+        Assert.Equal(0, swept.ConversationsConcluded);
+        Assert.Equal(ConversationState.Closing, await StateAsync());
     }
 
     [Fact]
@@ -726,4 +731,24 @@ public sealed class ClosurePollTests : IDisposable
         await Assert.ThrowsAsync<InvalidOperationException>(() => broker.ConcludeAsync(
             Conversation, Orders, true, T0, TestContext.Current.CancellationToken));
     }
+
+    /// <summary>Ages an agent's heartbeat until it reads as unreachable.</summary>
+    /// <param name="agent">The agent to silence.</param>
+    /// <remarks>
+    /// Unreachable is a reading of <c>last_seen_utc</c> now rather than a status anybody writes,
+    /// so this is the only way a deployment can produce one: the agent stops checking in. There
+    /// is deliberately no method to call instead — a test that could write the status directly
+    /// would be testing a path the product does not have.
+    /// </remarks>
+    private void GoSilent(AgentName agent)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            "UPDATE agents SET status = 'live', last_seen_utc = @Then WHERE name = @Name;";
+        command.Parameters.AddWithValue(
+            "@Then", DateTimeOffset.UtcNow.AddHours(-1).ToString("o"));
+        command.Parameters.AddWithValue("@Name", agent.Value);
+        command.ExecuteNonQuery();
+    }
+
 }

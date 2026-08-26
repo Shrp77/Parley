@@ -34,7 +34,7 @@ public sealed class LivenessLeaseTests : IDisposable
         _agents = new AgentRepository(_connection);
         _agents.UpsertAsync(
             new AgentRecord(Orders, "mcp", AgentTier.Pull, null, null, null, null,
-                AgentStatus.Registered),
+                AgentStatus.Offline),
             TestContext.Current.CancellationToken).GetAwaiter().GetResult();
     }
 

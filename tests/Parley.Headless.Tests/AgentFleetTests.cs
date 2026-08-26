@@ -488,6 +488,69 @@ public sealed class AgentFleetTests : IDisposable
     }
 
     [Fact]
+    public async Task An_agent_whose_workspace_is_gone_is_retired()
+    {
+        // §14's new half. A missing directory is an observation the broker can make by looking,
+        // rather than an inference from silence, so it is allowed to conclude from it. The cost
+        // is recorded where the code is: a repository that comes back needs `parley reinstate`.
+        Register("orders");
+        Register("billing", StubRunner.Answering(Workspace("billing")));
+        Owe("orders", "billing");
+
+        using (var command = _connection.CreateCommand())
+        {
+            command.CommandText =
+                "UPDATE agents SET workspace = @Gone WHERE name = 'billing';";
+            command.Parameters.AddWithValue(
+                "@Gone", Path.Combine(Path.GetTempPath(), "parley-no-such-workspace-9e3a1"));
+            command.ExecuteNonQuery();
+        }
+
+        await using var fleet = Fleet();
+        var action = Assert.Single(await fleet.TickAsync(Ct));
+
+        Assert.False(action.Started);
+        Assert.Contains("workspace is gone", action.Skipped!, StringComparison.Ordinal);
+
+        using var query = _connection.CreateCommand();
+        query.CommandText = "SELECT status FROM agents WHERE name = 'billing';";
+
+        Assert.Equal("retired", query.ExecuteScalar());
+    }
+
+    [Fact]
+    public async Task An_absent_mount_is_not_mistaken_for_a_deleted_repository()
+    {
+        // The hazard the parent check exists for. Directory.Exists is false for a repository
+        // somebody deleted and for a drive that is briefly unmounted, and only the first is a
+        // judgement worth making -- every agent on that volume would otherwise be retired in one
+        // pass, each needing a person to reinstate it, because a share was down for a minute.
+        Register("orders");
+        Register("billing", StubRunner.Answering(Workspace("billing")));
+        Owe("orders", "billing");
+
+        using (var command = _connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE agents SET workspace = @Gone WHERE name = 'billing';";
+            command.Parameters.AddWithValue(
+                "@Gone",
+                Path.Combine(Path.GetTempPath(), "parley-absent-volume-4c1f", "billing"));
+            command.ExecuteNonQuery();
+        }
+
+        await using var fleet = Fleet();
+        var action = Assert.Single(await fleet.TickAsync(Ct));
+
+        Assert.False(action.Started);
+        Assert.Contains("mount rather than a deletion", action.Skipped!, StringComparison.Ordinal);
+
+        using var query = _connection.CreateCommand();
+        query.CommandText = "SELECT status FROM agents WHERE name = 'billing';";
+
+        Assert.Equal("live", query.ExecuteScalar());
+    }
+
+    [Fact]
     public async Task An_agent_with_nothing_waiting_is_still_left_alone()
     {
         // The widening must not become "start everything that consented". A turn given to an

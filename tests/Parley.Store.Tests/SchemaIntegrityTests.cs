@@ -38,7 +38,7 @@ public sealed class SchemaIntegrityTests : IDisposable
             Execute(
                 """
                 INSERT INTO agents (name, adapter, tier, status)
-                VALUES ($name, 'test', 'full', 'registered');
+                VALUES ($name, 'test', 'full', 'offline');
                 """,
                 ("$name", name));
         }
@@ -281,7 +281,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         Execute(
             """
             INSERT INTO agents (name, adapter, tier, status)
-            VALUES ($name, 'test', 'full', 'registered');
+            VALUES ($name, 'test', 'full', 'offline');
             """,
             ("$name", name));
     }
@@ -299,7 +299,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         Assert.Throws<SqliteException>(() => Execute(
             """
             INSERT INTO agents (name, adapter, tier, status)
-            VALUES ($name, 'test', 'full', 'registered');
+            VALUES ($name, 'test', 'full', 'offline');
             """,
             ("$name", name)));
     }
@@ -315,7 +315,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         Assert.Throws<SqliteException>(() => Execute(
             """
             INSERT INTO agents (name, adapter, tier, status)
-            VALUES ($name, 'test', 'full', 'registered');
+            VALUES ($name, 'test', 'full', 'offline');
             """,
             ("$name", "b\u001Fc")));
     }
@@ -425,7 +425,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         Execute(
             """
             INSERT INTO agents (name, adapter, tier, status, adapter_config)
-            VALUES ('shipping', 'test', 'headless', 'registered', $config);
+            VALUES ('shipping', 'test', 'headless', 'offline', $config);
             """,
             ("$config", config));
     }
@@ -438,7 +438,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         Assert.Throws<SqliteException>(() => Execute(
             """
             INSERT INTO agents (name, adapter, tier, status, adapter_config)
-            VALUES ('shipping', 'test', 'headless', 'registered', 'model=claude-opus-5');
+            VALUES ('shipping', 'test', 'headless', 'offline', 'model=claude-opus-5');
             """));
     }
 
@@ -450,7 +450,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         Assert.Throws<SqliteException>(() => Execute(
             """
             INSERT INTO agents (name, adapter, tier, status, adapter_config)
-            VALUES ('shipping', 'test', 'headless', 'registered', $config);
+            VALUES ('shipping', 'test', 'headless', 'offline', $config);
             """,
             ("$config", $$"""{"note":"{{new string('x', 4000)}}"}""")));
     }

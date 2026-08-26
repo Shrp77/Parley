@@ -141,7 +141,7 @@ public sealed class ClarifyCapLaunchTests
 
         Execute(connection,
             "INSERT INTO agents (name, adapter, tier, status) VALUES "
-          + "('orders','test','full','registered'),('billing','test','full','registered');");
+          + "('orders','test','full','offline'),('billing','test','full','offline');");
 
         Insert(connection, ServerOptions.MaxClarifyDepthCap, "at-the-top");
 

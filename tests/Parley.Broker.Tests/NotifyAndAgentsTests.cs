@@ -47,7 +47,7 @@ public sealed class NotifyAndAgentsTests : IDisposable
                     SessionRef: "session-abc123",
                     AdapterConfig: """{"endpoint":"https://internal.example/v1"}""",
                     LastSeenUtc: null,
-                    Status: AgentStatus.Registered),
+                    Status: AgentStatus.Offline),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
@@ -137,8 +137,10 @@ public sealed class NotifyAndAgentsTests : IDisposable
         await _agents.RetireAsync(Billing, TestContext.Current.CancellationToken);
         Assert.Equal(NotifyRejection.RecipientUnroutable, (await Notify()).Rejection);
 
-        await _agents.MarkUnreachableAsync(Inventory, TestContext.Current.CancellationToken);
-        Assert.Equal(NotifyRejection.RecipientUnroutable, (await Notify(to: Inventory)).Rejection);
+        // Silence deliberately does not refuse: an agent nobody has open is the ordinary case,
+        // and a notification is one of the things that gives a supervisor a reason to start it.
+        GoSilent(Inventory);
+        Assert.True((await Notify(to: Inventory)).Succeeded);
     }
 
     [Fact]
@@ -334,12 +336,13 @@ public sealed class NotifyAndAgentsTests : IDisposable
         // §14 treats these differently on purpose. Unreachable is visible so a peer can stop
         // asking rather than infer it from silence; retired is absent, because listing an agent
         // that admission will refuse teaches the asker nothing and costs it a turn.
-        await _agents.MarkUnreachableAsync(Billing, TestContext.Current.CancellationToken);
+        GoSilent(Billing);
         await _agents.RetireAsync(Inventory, TestContext.Current.CancellationToken);
 
         var listed = await _broker.ListAgentsAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(AgentStatus.Unreachable, Assert.Single(listed, a => a.Name == Billing).Status);
+        // Derived from silence rather than read from a column: nothing wrote that status.
         Assert.DoesNotContain(listed, a => a.Name == Inventory);
     }
 
@@ -364,4 +367,24 @@ public sealed class NotifyAndAgentsTests : IDisposable
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => broker.ListAgentsAsync(TestContext.Current.CancellationToken));
     }
+
+    /// <summary>Ages an agent's heartbeat until it reads as unreachable.</summary>
+    /// <param name="agent">The agent to silence.</param>
+    /// <remarks>
+    /// Unreachable is a reading of <c>last_seen_utc</c> now rather than a status anybody writes,
+    /// so this is the only way a deployment can produce one: the agent stops checking in. There
+    /// is deliberately no method to call instead — a test that could write the status directly
+    /// would be testing a path the product does not have.
+    /// </remarks>
+    private void GoSilent(AgentName agent)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            "UPDATE agents SET status = 'live', last_seen_utc = @Then WHERE name = @Name;";
+        command.Parameters.AddWithValue(
+            "@Then", DateTimeOffset.UtcNow.AddHours(-1).ToString("o"));
+        command.Parameters.AddWithValue("@Name", agent.Value);
+        command.ExecuteNonQuery();
+    }
+
 }

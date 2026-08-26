@@ -42,7 +42,7 @@ public sealed class EnvelopeDeliveryTests : IDisposable
         {
             agents.UpsertAsync(
                 new AgentRecord(name, "test", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Registered),
+                    AgentStatus.Offline),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
@@ -190,7 +190,7 @@ public sealed class EnvelopeDeliveryTests : IDisposable
         var inventory = AgentName.Create("inventory");
         await new AgentRepository(_connection).UpsertAsync(
             new AgentRecord(inventory, "test", AgentTier.Full, null, null, null, null,
-                AgentStatus.Registered),
+                AgentStatus.Offline),
             TestContext.Current.CancellationToken);
 
         await _broker.NotifyAsync(

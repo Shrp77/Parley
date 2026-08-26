@@ -36,7 +36,7 @@ public sealed class MixedWorkloadTests : IDisposable
         {
             _agents.UpsertAsync(
                 new AgentRecord(name, "test", AgentTier.Full, "/w", "s", "{}", null,
-                    AgentStatus.Registered),
+                    AgentStatus.Offline),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 

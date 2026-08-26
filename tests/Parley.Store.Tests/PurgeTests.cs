@@ -40,7 +40,7 @@ public sealed class PurgeTests : IDisposable
         {
             _agents.UpsertAsync(
                 new AgentRecord(name, "test", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Registered),
+                    AgentStatus.Offline),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
@@ -81,7 +81,7 @@ public sealed class PurgeTests : IDisposable
 
         await _agents.UpsertAsync(
             new AgentRecord(Orders, "test", AgentTier.Pull, "/src/acme-orders", null, null, null,
-                AgentStatus.Registered),
+                AgentStatus.Offline),
             TestContext.Current.CancellationToken);
 
         Assert.Contains(Orders, await Registered());
@@ -106,7 +106,7 @@ public sealed class PurgeTests : IDisposable
         {
             await _agents.RegisterIfAbsentAsync(
                 new AgentRecord(name, "mcp", AgentTier.Headless, "/src/acme", null, null, null,
-                    AgentStatus.Registered),
+                    AgentStatus.Offline),
                 TestContext.Current.CancellationToken);
         }
 

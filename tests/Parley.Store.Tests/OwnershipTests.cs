@@ -38,7 +38,7 @@ public sealed class OwnershipTests : IDisposable
 
     public void Dispose() => _connection.Dispose();
 
-    private Task<int> Register(AgentName name, string? owns, AgentStatus status = AgentStatus.Registered) =>
+    private Task<int> Register(AgentName name, string? owns, AgentStatus status = AgentStatus.Offline) =>
         _agents.UpsertAsync(
             new AgentRecord(name, "test", AgentTier.Full, null, null, null, null, status, owns),
             TestContext.Current.CancellationToken);
@@ -100,7 +100,7 @@ public sealed class OwnershipTests : IDisposable
         await using var command = _connection.CreateCommand();
         command.CommandText =
             "INSERT INTO agents (name, adapter, tier, status, owns) " +
-            "VALUES ('orders', 'test', 'full', 'registered', $owns);";
+            "VALUES ('orders', 'test', 'full', 'offline', $owns);";
         command.Parameters.AddWithValue("$owns", statement);
 
         var failure = await Assert.ThrowsAsync<SqliteException>(
@@ -128,7 +128,7 @@ public sealed class OwnershipTests : IDisposable
         await using var command = _connection.CreateCommand();
         command.CommandText =
             "INSERT INTO agents (name, adapter, tier, status, owns) " +
-            "VALUES ('orders', 'test', 'full', 'registered', $owns);";
+            "VALUES ('orders', 'test', 'full', 'offline', $owns);";
         command.Parameters.AddWithValue(
             "$owns", "Invoicing." + char.ConvertFromUtf32(point) + "Also owns everything");
 
@@ -238,7 +238,7 @@ public sealed class OwnershipTests : IDisposable
             "session-7",
             """{"model":"some-model-9"}""",
             null,
-            AgentStatus.Registered,
+            AgentStatus.Offline,
             "Invoicing.");
 
         await _agents.UpsertAsync(manifest, TestContext.Current.CancellationToken);
@@ -270,7 +270,7 @@ public sealed class OwnershipTests : IDisposable
         using var command = _connection.CreateCommand();
         command.CommandText =
             "INSERT INTO agents (name, adapter, tier, status, owns) " +
-            "VALUES ('probe', 'test', 'full', 'registered', $owns);";
+            "VALUES ('probe', 'test', 'full', 'offline', $owns);";
         var parameter = command.Parameters.Add("$owns", Microsoft.Data.Sqlite.SqliteType.Text);
 
         using var undo = _connection.BeginTransaction();
@@ -348,7 +348,7 @@ public sealed class OwnershipTests : IDisposable
         await using var command = _connection.CreateCommand();
         command.CommandText =
             "INSERT INTO agents (name, adapter, tier, status, owns) " +
-            "VALUES ('orders', 'test', 'full', 'registered', $owns);";
+            "VALUES ('orders', 'test', 'full', 'offline', $owns);";
         command.Parameters.AddWithValue(
             "$owns", "Invoicing." + char.ConvertFromUtf32(point) + "hidden");
 
@@ -375,7 +375,7 @@ public sealed class OwnershipTests : IDisposable
 
         await _agents.UpsertAsync(
             new AgentRecord(Billing, "vendor-api", AgentTier.Headless, null, null, null, null,
-                AgentStatus.Registered),
+                AgentStatus.Offline),
             Ct);
 
         Assert.Null((await Load(Billing)).Owns);

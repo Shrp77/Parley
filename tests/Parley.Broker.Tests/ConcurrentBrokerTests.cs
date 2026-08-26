@@ -60,7 +60,7 @@ public sealed class ConcurrentBrokerTests : IDisposable
         {
             await agents.UpsertAsync(
                 new AgentRecord(name, "test", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Registered),
+                    AgentStatus.Offline),
                 TestContext.Current.CancellationToken);
         }
 

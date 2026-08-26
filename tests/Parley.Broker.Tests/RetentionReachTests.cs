@@ -47,7 +47,7 @@ public sealed class RetentionReachTests : IDisposable
         {
             agents.UpsertAsync(
                 new AgentRecord(name, "test", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Registered),
+                    AgentStatus.Offline),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
     }

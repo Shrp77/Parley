@@ -121,7 +121,7 @@ public sealed class BrokerSessionTests
             SessionRef: null,
             """{"model":"some-model-9","endpoint":"https://api.example.invalid"}""",
             LastSeenUtc: null,
-            AgentStatus.Registered);
+            AgentStatus.Offline);
 
         using (var connection = ParleyDatabase.OpenAndMigrate(fixture.DatabasePath))
         {

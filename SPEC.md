@@ -1120,6 +1120,30 @@ BEGIN
   SELECT RAISE(ABORT, 'an agent that consents to invocation must record how to start it');
 END;
 
+-- Liveness is derived from last_seen_utc and is never stored, so only three of the five statuses
+-- are writable. The other two -- NotResponding and Unreachable -- are readings, and a column
+-- holding one would be a claim that nothing withdraws: the old design wrote 'live' on attach and
+-- again on every sweep, and had no writer at all for the way out, so a killed session read live
+-- for ever beside a frozen timestamp.
+--
+-- Enforced by trigger rather than by narrowing the CHECK above, because narrowing a constraint in
+-- SQLite means rebuilding the table -- and this one carries the control-character class that stops
+-- a peer's `owns` line imitating its neighbours in a roster. Retyping that to change an IN list is
+-- how a security control gets dropped by an edit about something else.
+CREATE TRIGGER tr_agents_status_is_storable_on_insert
+BEFORE INSERT ON agents
+FOR EACH ROW WHEN NEW.status NOT IN ('offline', 'live', 'retired')
+BEGIN
+  SELECT RAISE(ABORT, 'status must be offline, live or retired; liveness is derived');
+END;
+
+CREATE TRIGGER tr_agents_status_is_storable_on_update
+BEFORE UPDATE OF status ON agents
+FOR EACH ROW WHEN NEW.status NOT IN ('offline', 'live', 'retired')
+BEGIN
+  SELECT RAISE(ABORT, 'status must be offline, live or retired; liveness is derived');
+END;
+
 CREATE TABLE exchanges (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   pair_key          TEXT    NOT NULL,
@@ -2438,14 +2462,55 @@ the attach sequence releases them on the way back in, which is the moment it is 
 that nobody did. A detach that orphaned eagerly would discard work every time somebody closed a
 laptop.
 
-**Liveness is best-effort, and that is affordable.** An adapter marks its agent `live` on
-attach, renews it on each sweep, and marks it `offline` on a clean detach; a crashed process
-stops renewing and its lease lapses. Nothing a peer depends on is left to a clean shutdown: deadlines are enforced by the
-sweep, and debts are released on attach. That mark is cosmetic: `offline` does not block routing, deliberately, because it is
-the ordinary resting state of a lazily spawned agent between questions and refusing traffic to
-one would refuse the very traffic meant to wake it. The statuses that *do* gate routing —
-`unreachable` and `retired` — are set by evidence and by a person respectively, and neither is
-inferred from a process going away.
+**Liveness is read, not written.** An agent has five statuses and only two of them are values
+anybody stores:
+
+| status | meaning | how it is arrived at |
+|---|---|---|
+| `offline` | registered and never activated | stored; no session has ever attached |
+| `live` | sweeping normally | derived: last heard from within three sweeps |
+| `not_responding` | has missed its recent sweeps | derived: silent longer than that, under five minutes |
+| `unreachable` | silent for five minutes | derived: silent longer than five minutes |
+| `retired` | gone for good | stored; a person's word, or a workspace the broker cannot find |
+
+The three in the middle are readings of `last_seen_utc` rather than columns, and the reason is
+the case that matters most. A stored liveness has to be withdrawn by something, and a session
+that is killed, crashes, or loses its machine is precisely the case where nothing is left
+running to withdraw it: the earlier design wrote `live` on attach and again on every sweep, and
+had no writer at all for the way out, so a dead session's row read `live` for ever with a frozen
+timestamp beside it that only the supervisor ever compared. Every other reader believed it. A
+timestamp cannot lie in that direction, because it stops advancing when the process stops,
+however impolitely.
+
+`not_responding` exists because `live` was doing two jobs badly. The useful question a peer asks
+is whether to keep waiting, and "answering slowly" and "gone" are different answers to it.
+Three missed sweeps rather than one, because a late sweep says nothing about the agent — a busy
+machine, a contended write, a suspended laptop — and a status that flickered on each of those
+would train everybody to ignore it.
+
+**Only retirement gates routing, and that is a change.** `unreachable` used to refuse questions,
+on the ground that spawning had been tried and had failed. The derived one means something
+weaker — nobody has that repository open at the moment — which is where most agents are most of
+the time. Refusing traffic to it would refuse the very traffic meant to wake it, exactly as this
+section has always said of `offline`, and a supervisor would then never see a debt to act on
+because no debt could ever be created. So silence is reported and never routed on.
+
+**The broker may now retire an agent whose workspace is gone**, and the cost of that is recorded
+rather than argued away. This section previously reserved retirement for a person alone,
+because a missing directory is frequently temporary — a re-clone, a moved worktree, an unmounted
+drive — and a broker tombstoning one would need a human to undo it. That is still true: a
+repository that comes back needs `reinstate`, and will not recover on its own. What it buys is a
+registry that stops describing repositories that are not there, and a supervisor that stops
+trying to start them once per pass for ever. A missing directory is an observation the broker
+can make by looking, which is what distinguishes it from silence.
+
+**The directory above it decides whether that observation means anything.** `Directory.Exists`
+is false for a repository somebody deleted and for a drive that is briefly unmounted, and only
+the first is a judgement worth making. Absent the discriminator, one unavailable volume would
+retire every agent on it in a single pass, each needing a person to reinstate it. So the broker
+retires only when the workspace is gone *and its parent is still there*; when both are missing
+it concludes nothing and tries again, which is what it did for every case before it was allowed
+to conclude anything at all.
 
 **Resume is a user decision, not a protocol rule.** Two restarts that are byte-identical
 to the broker carry opposite intent, and the broker cannot tell them apart:

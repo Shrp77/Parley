@@ -302,7 +302,7 @@ public sealed class BrokerSession : IAsyncDisposable
     /// more to the point, cannot overwrite a registration an operator made. An agent described
     /// in a manifest as Headless, with the endpoint the broker needs in order to invoke it,
     /// would otherwise be rewritten as a configuration-free Pull agent by one person opening
-    /// that repository once. The <see cref="AgentStatus.Registered"/> passed here therefore
+    /// that repository once. The <see cref="AgentStatus.Offline"/> passed here therefore
     /// applies to the first launch only, which is the one where it is true.
     /// </para>
     /// <para>
@@ -329,7 +329,7 @@ public sealed class BrokerSession : IAsyncDisposable
                 SessionRef: null,
                 AdapterConfig: null,
                 LastSeenUtc: null,
-                AgentStatus.Registered,
+                AgentStatus.Offline,
                 options.Owns),
             cancellationToken).ConfigureAwait(false);
 

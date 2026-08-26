@@ -391,7 +391,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         var agents = new AgentRepository(_connection);
 
         var unroutable = await agents
-            .IsUnroutableAsync(answerer, scope.Transaction, cancellationToken)
+            .IsUnroutableAsync(answerer, nowUtc, scope.Transaction, cancellationToken)
             .ConfigureAwait(false);
 
         if (unroutable)

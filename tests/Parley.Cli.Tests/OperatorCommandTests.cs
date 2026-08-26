@@ -43,7 +43,7 @@ public sealed class OperatorCommandTests : IDisposable
         {
             _agents.UpsertAsync(
                 new AgentRecord(name, "mcp", AgentTier.Pull, $"/src/acme-{name.Value}", null, null,
-                    null, AgentStatus.Registered),
+                    null, AgentStatus.Offline),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
@@ -74,7 +74,7 @@ public sealed class OperatorCommandTests : IDisposable
 
         Assert.Contains("orders", Printed, StringComparison.Ordinal);
         Assert.Contains("/src/acme-orders", Printed, StringComparison.Ordinal);
-        Assert.Contains("registered", Printed, StringComparison.Ordinal);
+        Assert.Contains("offline", Printed, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -132,14 +132,14 @@ public sealed class OperatorCommandTests : IDisposable
         // is the ordinary resting state of a lazily spawned agent between questions. It is
         // routable again, which is what reinstating means.
         Assert.Equal(AgentStatus.Offline, await StatusOf(Billing));
-        Assert.False(await _agents.IsUnroutableAsync(Billing, cancellationToken: Ct));
+        Assert.False(await _agents.IsUnroutableAsync(Billing, DateTimeOffset.UtcNow, cancellationToken: Ct));
     }
 
     [Fact]
     public async Task Reinstating_an_agent_that_was_not_retired_changes_nothing()
     {
         Assert.Equal(1, await _commands.ReinstateAsync(Billing, Ct));
-        Assert.Equal(AgentStatus.Registered, await StatusOf(Billing));
+        Assert.Equal(AgentStatus.Offline, await StatusOf(Billing));
         Assert.Contains("not retired", Printed, StringComparison.Ordinal);
     }
 
@@ -191,7 +191,7 @@ public sealed class OperatorCommandTests : IDisposable
 
         await _agents.UpsertAsync(
             new AgentRecord(typo, "mcp", AgentTier.Pull, "/src/acme-billing", null, null, null,
-                AgentStatus.Registered),
+                AgentStatus.Offline),
             Ct);
 
         await _commands.RetireAsync(typo, Ct);

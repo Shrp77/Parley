@@ -29,7 +29,7 @@ public sealed class ReaperTests : IDisposable
         foreach (var name in new[] { Orders, Billing, Inventory })
         {
             agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Full, null, null, null, null, AgentStatus.Registered),
+                new AgentRecord(name, "test", AgentTier.Full, null, null, null, null, AgentStatus.Offline),
                 TestContext.Current.CancellationToken)
                 .GetAwaiter().GetResult();
         }

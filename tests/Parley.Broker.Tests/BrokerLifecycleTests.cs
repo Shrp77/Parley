@@ -48,7 +48,7 @@ public sealed class BrokerLifecycleTests : IDisposable
         {
             _agents.UpsertAsync(
                 new AgentRecord(name, "test", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Registered),
+                    AgentStatus.Offline),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
     }
@@ -186,14 +186,14 @@ public sealed class BrokerLifecycleTests : IDisposable
         // An unreachable mark clears by the agent proving it wrong, and attaching is that proof.
         // Better evidence than the old broker restart, which cleared the mark on an agent
         // nobody had heard from.
-        await _agents.MarkUnreachableAsync(Orders, TestContext.Current.CancellationToken);
+        GoSilent(Orders);
 
         var result = await NewBroker().StartAsync(
             Orders, T0.AddHours(1), TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.AgentMarkedLive);
         Assert.Equal(AgentStatus.Live, await StatusOf(Orders));
-        Assert.Equal(AgentStatus.Registered, await StatusOf(Billing));
+        Assert.Equal(AgentStatus.Offline, await StatusOf(Billing));
     }
 
     [Fact]
@@ -437,4 +437,24 @@ public sealed class BrokerLifecycleTests : IDisposable
         // deployment opts into always rather than inheriting it.
         Assert.Equal(ResumePolicy.Never, BrokerOptions.Default.ResumePolicy);
     }
+
+    /// <summary>Ages an agent's heartbeat until it reads as unreachable.</summary>
+    /// <param name="agent">The agent to silence.</param>
+    /// <remarks>
+    /// Unreachable is a reading of <c>last_seen_utc</c> now rather than a status anybody writes,
+    /// so this is the only way a deployment can produce one: the agent stops checking in. There
+    /// is deliberately no method to call instead — a test that could write the status directly
+    /// would be testing a path the product does not have.
+    /// </remarks>
+    private void GoSilent(AgentName agent)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            "UPDATE agents SET status = 'live', last_seen_utc = @Then WHERE name = @Name;";
+        command.Parameters.AddWithValue(
+            "@Then", DateTimeOffset.UtcNow.AddHours(-1).ToString("o"));
+        command.Parameters.AddWithValue("@Name", agent.Value);
+        command.ExecuteNonQuery();
+    }
+
 }

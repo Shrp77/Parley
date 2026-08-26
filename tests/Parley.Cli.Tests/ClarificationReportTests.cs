@@ -36,7 +36,7 @@ public sealed class ClarificationReportTests : IDisposable
         _commands = new OperatorCommands(new OperatorConsole(_connection), _output);
 
         Execute("INSERT INTO agents (name, adapter, tier, status) VALUES "
-              + "('orders','test','full','registered'),('billing','test','full','registered');");
+              + "('orders','test','full','offline'),('billing','test','full','offline');");
     }
 
     public void Dispose()

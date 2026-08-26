@@ -729,7 +729,7 @@ public sealed class Broker
         // but "narrow and benign" is not a property to leave resting on nothing.
         using var scope = WriteScope.Begin(_connection, ambient: null);
 
-        if (await _agents.IsUnroutableAsync(to, scope.Transaction, cancellationToken)
+        if (await _agents.IsUnroutableAsync(to, nowUtc, scope.Transaction, cancellationToken)
             .ConfigureAwait(false))
         {
             return NotifyOutcome.Refused(NotifyRejection.RecipientUnroutable);
@@ -814,7 +814,17 @@ public sealed class Broker
     {
         RequireStarted("listing agents");
 
-        return await _agents.ListRoutableAsync(cancellationToken).ConfigureAwait(false);
+        var listed = await _agents.ListRoutableAsync(cancellationToken).ConfigureAwait(false);
+        var now = DateTimeOffset.UtcNow;
+
+        // Liveness is a reading of last_seen_utc rather than a stored value, so the roster
+        // computes it here rather than repeating whatever the column happens to hold. A peer
+        // deciding whether to ask now or wait is the whole audience for this field, and the
+        // stored value could not tell it apart from a session that died a fortnight ago.
+        return [.. listed.Select(a => a with
+        {
+            Status = AgentLiveness.Derive(a.Status, a.LastSeenUtc, now)
+        })];
     }
 
     /// <summary>

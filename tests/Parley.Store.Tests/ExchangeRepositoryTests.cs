@@ -37,7 +37,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
         foreach (var name in new[] { Orders, Billing, Inventory })
         {
             agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Full, null, null, null, null, AgentStatus.Registered),
+                new AgentRecord(name, "test", AgentTier.Full, null, null, null, null, AgentStatus.Offline),
                 TestContext.Current.CancellationToken)
                 .GetAwaiter().GetResult();
         }
@@ -252,7 +252,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task A_question_to_an_unreachable_agent_is_refused_immediately()
+    public async Task A_question_to_a_silent_agent_is_admitted_because_that_is_how_it_is_woken()
     {
         // The failure this exists for: a repository is deleted while its agent is still
         // registered. The agent row survives, so the foreign key is satisfied and the pair slot
@@ -260,22 +260,24 @@ public sealed class ExchangeRepositoryTests : IDisposable
         // waits a full inactivity window, orphans unanswered, and costs the same again on the
         // next attempt, forever, while nobody learns why.
         var agents = new AgentRepository(_connection);
-        Assert.Equal(1, await agents.MarkUnreachableAsync(
-            Billing, TestContext.Current.CancellationToken));
+        GoSilent(Billing);
 
         var outcome = await _exchanges.TryOpenAsync(
             Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Equal(OpenRejection.AnswererUnreachable, outcome.Rejection);
-        Assert.False(outcome.Succeeded);
+        // Reversed deliberately. Silence now means only that nobody has that repository open,
+        // which is where most agents are most of the time -- and a question is precisely what
+        // gives a supervisor a reason to start one. Refusing here would make the wake path
+        // unreachable: no debt could be created, so none could ever be acted on.
+        Assert.True(outcome.Succeeded);
 
-        // The one refusal that hands back no work, because there is none to hand back.
-        Assert.Null(outcome.Exchange);
-        Assert.Empty(outcome.Outstanding);
-        Assert.Empty(outcome.CyclePath);
+        // And it hands back a real exchange, which is the debt a supervisor acts on.
+        Assert.NotNull(outcome.Exchange);
+        Assert.Equal(Billing, outcome.Exchange!.OwedBy);
 
-        // And nothing was written, so no slot is consumed by a question that cannot land.
-        Assert.Empty(await _exchanges.GetOpenAsync(
+        // And it is on the open list, which is the list a supervisor reads to decide who to
+        // start. That is the whole path this reversal exists to keep open.
+        Assert.Single(await _exchanges.GetOpenAsync(
             cancellationToken: TestContext.Current.CancellationToken));
     }
 
@@ -297,7 +299,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
     public async Task An_agent_that_comes_back_is_routable_again()
     {
         var agents = new AgentRepository(_connection);
-        await agents.MarkUnreachableAsync(Billing, TestContext.Current.CancellationToken);
+        GoSilent(Billing);
         await agents.MarkLiveAsync(Billing, null, T0, TestContext.Current.CancellationToken);
 
         var outcome = await _exchanges.TryOpenAsync(
@@ -313,7 +315,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
         // An agent running well enough to ask is evidently reachable, and refusing it here
         // would strand it on a stale mark until something else cleared it.
         var agents = new AgentRepository(_connection);
-        await agents.MarkUnreachableAsync(Orders, TestContext.Current.CancellationToken);
+        GoSilent(Orders);
 
         var outcome = await _exchanges.TryOpenAsync(
             Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
@@ -521,4 +523,24 @@ public sealed class ExchangeRepositoryTests : IDisposable
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => _exchanges.GetOpenAsync(cancellationToken: cts.Token));
     }
+
+    /// <summary>Ages an agent's heartbeat until it reads as unreachable.</summary>
+    /// <param name="agent">The agent to silence.</param>
+    /// <remarks>
+    /// Unreachable is a reading of <c>last_seen_utc</c> now rather than a status anybody writes,
+    /// so this is the only way a deployment can produce one: the agent stops checking in. There
+    /// is deliberately no method to call instead — a test that could write the status directly
+    /// would be testing a path the product does not have.
+    /// </remarks>
+    private void GoSilent(AgentName agent)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            "UPDATE agents SET status = 'live', last_seen_utc = @Then WHERE name = @Name;";
+        command.Parameters.AddWithValue(
+            "@Then", DateTimeOffset.UtcNow.AddHours(-1).ToString("o"));
+        command.Parameters.AddWithValue("@Name", agent.Value);
+        command.ExecuteNonQuery();
+    }
+
 }

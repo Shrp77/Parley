@@ -176,7 +176,7 @@ public sealed record ServerOptions(
     /// bursty here: a sweep that ran hourly would leave an exchange orphaned for up to an hour
     /// after its window closed, and the asker waiting on a deadline that had already passed.
     /// </remarks>
-    public static TimeSpan DefaultTickInterval { get; } = TimeSpan.FromMinutes(1);
+    public static TimeSpan DefaultTickInterval { get; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// Reads the configuration from the process environment.

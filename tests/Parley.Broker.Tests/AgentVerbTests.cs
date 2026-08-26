@@ -44,7 +44,7 @@ public sealed class AgentVerbTests : IDisposable
         {
             _agents.UpsertAsync(
                 new AgentRecord(name, "test", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Registered),
+                    AgentStatus.Offline),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
@@ -458,9 +458,12 @@ public sealed class AgentVerbTests : IDisposable
     }
 
     [Fact]
-    public async Task An_unreachable_answerer_is_refused_immediately()
+    public async Task A_retired_answerer_is_refused_immediately()
     {
-        await _agents.MarkUnreachableAsync(Billing, TestContext.Current.CancellationToken);
+        // Retirement rather than silence. Silence means only that nobody has that repository
+        // open at the moment, which is where most agents are most of the time -- refusing it
+        // would refuse the traffic meant to wake them. Retirement is the judgement that refuses.
+        await _agents.RetireAsync(Billing, TestContext.Current.CancellationToken);
 
         var asked = await Ask();
 
@@ -629,4 +632,24 @@ public sealed class AgentVerbTests : IDisposable
 
         Assert.Equal("pricing-model", answered.Message!.ConversationId);
     }
+
+    /// <summary>Ages an agent's heartbeat until it reads as unreachable.</summary>
+    /// <param name="agent">The agent to silence.</param>
+    /// <remarks>
+    /// Unreachable is a reading of <c>last_seen_utc</c> now rather than a status anybody writes,
+    /// so this is the only way a deployment can produce one: the agent stops checking in. There
+    /// is deliberately no method to call instead — a test that could write the status directly
+    /// would be testing a path the product does not have.
+    /// </remarks>
+    private void GoSilent(AgentName agent)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            "UPDATE agents SET status = 'live', last_seen_utc = @Then WHERE name = @Name;";
+        command.Parameters.AddWithValue(
+            "@Then", DateTimeOffset.UtcNow.AddHours(-1).ToString("o"));
+        command.Parameters.AddWithValue("@Name", agent.Value);
+        command.ExecuteNonQuery();
+    }
+
 }

@@ -183,7 +183,7 @@ public sealed class OwnershipRoutingTests
                     "session-7",
                     """{"model":"some-model-9","endpoint":"https://api.example.invalid"}""",
                     null,
-                    AgentStatus.Registered,
+                    AgentStatus.Offline,
                     BillingOwns),
                 ct);
         }

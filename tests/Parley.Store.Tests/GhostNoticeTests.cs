@@ -48,7 +48,7 @@ public sealed class GhostNoticeTests : IDisposable
         {
             agents.UpsertAsync(
                 new AgentRecord(name, "test", AgentTier.Pull, null, null, null, null,
-                    AgentStatus.Registered),
+                    AgentStatus.Offline),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 

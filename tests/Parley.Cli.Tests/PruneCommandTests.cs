@@ -52,7 +52,7 @@ public sealed class PruneCommandTests : IDisposable
         {
             agents.UpsertAsync(
                 new AgentRecord(name, "mcp", AgentTier.Pull, null, null, null, null,
-                    AgentStatus.Registered),
+                    AgentStatus.Offline),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
@@ -175,7 +175,7 @@ public sealed class PruneCommandTests : IDisposable
             {
                 await agents.UpsertAsync(
                     new AgentRecord(name, "mcp", AgentTier.Pull, null, null, null, null,
-                        AgentStatus.Registered), Ct);
+                        AgentStatus.Offline), Ct);
             }
 
             var broker = new Broker.Broker(connection, BrokerOptions.Default);
@@ -272,7 +272,7 @@ public sealed class PruneCommandTests : IDisposable
             {
                 await agents.UpsertAsync(
                     new AgentRecord(name, "mcp", AgentTier.Pull, null, null, null, null,
-                        AgentStatus.Registered), Ct);
+                        AgentStatus.Offline), Ct);
             }
 
             var broker = new Broker.Broker(connection, BrokerOptions.Default);

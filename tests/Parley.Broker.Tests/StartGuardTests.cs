@@ -47,7 +47,7 @@ public sealed class StartGuardTests : IDisposable
         {
             _agents.UpsertAsync(
                 new AgentRecord(name, "test", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Registered),
+                    AgentStatus.Offline),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
@@ -67,7 +67,7 @@ public sealed class StartGuardTests : IDisposable
         // reinstalled, so the mark has to be proved again. Admitted here, the ask comes back
         // AnswererUnreachable, which is the one refusal that hands back no work and tells the
         // asker to stop asking and inform its principal.
-        await _agents.MarkUnreachableAsync(Billing, TestContext.Current.CancellationToken);
+        GoSilent(Billing);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => _broker.AskAsync(
             Orders, Billing, Model, Question, T0,
@@ -172,4 +172,24 @@ public sealed class StartGuardTests : IDisposable
         await Assert.ThrowsAsync<InvalidOperationException>(() => _broker.TickAsync(
             T0, TestContext.Current.CancellationToken));
     }
+
+    /// <summary>Ages an agent's heartbeat until it reads as unreachable.</summary>
+    /// <param name="agent">The agent to silence.</param>
+    /// <remarks>
+    /// Unreachable is a reading of <c>last_seen_utc</c> now rather than a status anybody writes,
+    /// so this is the only way a deployment can produce one: the agent stops checking in. There
+    /// is deliberately no method to call instead — a test that could write the status directly
+    /// would be testing a path the product does not have.
+    /// </remarks>
+    private void GoSilent(AgentName agent)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            "UPDATE agents SET status = 'live', last_seen_utc = @Then WHERE name = @Name;";
+        command.Parameters.AddWithValue(
+            "@Then", DateTimeOffset.UtcNow.AddHours(-1).ToString("o"));
+        command.Parameters.AddWithValue("@Name", agent.Value);
+        command.ExecuteNonQuery();
+    }
+
 }

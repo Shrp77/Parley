@@ -44,7 +44,7 @@ public sealed class OwnershipListingTests : IDisposable
     private Task<int> Register(AgentName name, string? owns) =>
         _agents.UpsertAsync(
             new AgentRecord(name, "mcp", AgentTier.Pull, $"/src/acme-{name.Value}", null, null,
-                null, AgentStatus.Registered, owns),
+                null, AgentStatus.Offline, owns),
             Ct);
 
     [Fact]

@@ -67,7 +67,7 @@ public sealed class ConcurrentPruneTests : IDisposable
         {
             await agents.UpsertAsync(
                 new AgentRecord(name, "test", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Registered), Ct);
+                    AgentStatus.Offline), Ct);
         }
 
         var exchanges = new ExchangeRepository(connection);
