@@ -175,19 +175,31 @@ Create the parent directory of the database path if it does not exist. Do not cr
 If the database sits inside a repository despite step 2's advice, add it to that repository's
 `.gitignore`. It holds the full text of every question and answer.
 
-## 6. Name the peers
-
-Run `/parley:peers`, which writes the block. If the peers are not registered yet - the usual
-case when this is the first repository being set up - skip it for now and come back once the
-other side is configured.
-
-Do not skip it permanently. Binding the tools tells this agent *how* to ask; it does not tell
-it *that there is anyone to ask*. An agent with the tools bound and no idea a peer exists will
-answer from this repository and guess at the rest, which is the failure Parley exists to
-prevent, reached by installing it correctly and stopping one step early.
-
-## 7. Restart
+## 6. Restart
 
 MCP servers are launched when Claude Code starts, so the tools appear after a restart. Tell the
 user to restart, then check `/mcp` shows `parley` connected. `parley_agents` then lists the
 roster, and this agent's own registration will be in it.
+
+This step is sixth rather than last because everything below it needs the tools, and nothing
+above it did. Naming the peers used to come first here, which could not work: it calls
+`parley_agents`, and until the restart there is no such tool to call.
+
+## 7. Name the peers, in the session that comes back
+
+**This one is the user's to run, and it happens after the restart.** `/parley:peers` is marked
+`disable-model-invocation`, so this agent cannot invoke it - and the session reading these
+instructions will not survive the restart to relay it either. So say it before restarting, as
+part of handing over:
+
+> Once you have restarted and `/mcp` shows `parley` connected, run `/parley:peers`.
+
+If no other repository is registered yet - the usual case when this is the first one being set
+up - there is nothing for it to write, and it should be run again once the other side is
+configured. It builds the block from the live roster rather than from memory, which is the
+whole reason it is a command and not a paragraph in this file.
+
+Do not let the user skip it permanently. Binding the tools tells this agent *how* to ask; it
+does not tell it *that there is anyone to ask*. An agent with the tools bound and no idea a peer
+exists will answer from this repository and guess at the rest, which is the failure Parley
+exists to prevent, reached by installing it correctly and stopping one step early.
