@@ -914,6 +914,14 @@ model. That is worth stating plainly rather than leaving the list to imply unifo
    should read this paragraph first, and whoever lowers the clarify cap again closes part of it
    for free.
 
+   **And since §11.1, an uncollected message also buys a turn.** A supervised agent is started
+   for anything waiting on it, so a peer sending notifications no longer merely occupies the
+   recipient's context — it spends the recipient's money, one model session per new message.
+   Deduplication bounds repeats of the same text and the no-progress guard bounds repeats of the
+   same backlog, but neither bounds a peer with something new to say each time. The recipient
+   consented to being started, not to being started by anybody at any rate, and until §13's
+   per-sender limits exist the only control is withdrawing `PARLEY_INVOKE_COMMAND`.
+
    **And the party who sets that number is not the only party who pays it.** The counter is
    incremented by the answerer's requests alone — the asker's replies are Clarify messages that
    neither count nor are refused, because turn-taking already bounds them at one per request.
@@ -974,7 +982,8 @@ CREATE TABLE agents (
   session_ref     TEXT,                    -- adapter-specific resume handle
   adapter_config  TEXT,                    -- opaque to the broker (see §12)
   owns            TEXT,                    -- one line, read by peers (see §17 q10)
-  -- Whether a supervisor may run this agent when it owes an answer and nobody is running it.
+  -- Whether a supervisor may run this agent when something is waiting on it and nobody is
+  -- running it: an answer it owes, or a message it has not collected.
   -- Not the tier: a repository with a live session genuinely IS Pull, and the same repository
   -- with no session open is reachable only by starting one. This records a permission its
   -- operator granted, so the two combine rather than compete. See §11.1.
@@ -1999,6 +2008,26 @@ and decides for itself what to do — which is what keeps principle 2.6 intact u
 design that would otherwise breach it, and what makes an unattended answer
 indistinguishable from an attended one. Passing the question in would be relaying (rule
 9 of §8), arriving under the supervisor's identity with consequences not written for it.
+
+**What makes an agent a candidate is anything waiting on it, not only a debt.** An exchange it
+owes is the obvious case and was once the only one. It is not sufficient: an `answer` closes the
+exchange it resolves, and a `ghost` (§14) closes it too, so the agent that asked the question ends
+up owing nothing and would never be started to read the reply it was waiting for. A `notify` (§5.4)
+never had an exchange at all. Three of the five message types therefore left a message nobody had
+collected and no debt behind it, and an unattended deployment could produce answers that nothing
+ever read. The rule is now any uncollected message, whatever its type, together with any exchange
+the agent owes.
+
+**A turn that collects nothing does not buy another until something new arrives.** The two triggers
+expire differently and only one of them expires at all. An owed exchange ages out through §14
+whether or not the agent cooperates — its window elapses, it orphans, it is ghosted — so a debt an
+agent refuses stops being a reason to start it. An uncollected message has no such schedule, because
+§9.4's floor holds undelivered messages against retention precisely so that nothing is lost. Without
+a guard, one unread notification would buy a real model session every pass for as long as the
+supervisor ran, and the deployment paying for it is the recipient's rather than the sender's. So an
+agent whose most recent turn left as much waiting as it found is not given another until the count
+rises. The bound is one wasted turn per new message, and the evidence is the invocation record
+§10.2 already keeps.
 
 Three things end a resident agent, and nothing else may:
 

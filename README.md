@@ -342,11 +342,19 @@ is also told to quit when you `retire` it, or when you remove the variable and o
 repository once — a withdrawal has to reach a process that is already running, or the
 register says one thing while the deployment does another.
 
-**It answers; it does not initiate.** The fleet starts agents that *owe* something, so
-with nothing owed it starts nobody. The first question still comes from an agent that has
-a reason to ask, and reasons come from work — an idle agent inventing questions would be
-worse than useless. After that first question the loop needs no one: the answerer is
-started to answer, a clarification puts the asker in debt, and it is started in its turn.
+**It answers; it does not initiate.** The fleet starts agents that have something *waiting*
+— an answer they owe, or a message they have not collected — so with nothing waiting it
+starts nobody. The first question still comes from an agent that has a reason to ask, and
+reasons come from work; an idle agent inventing questions would be worse than useless.
+After that first question the loop needs no one: the answerer is started to answer, a
+clarification puts the asker in debt, and it is started in its turn.
+
+The rule used to be narrower — an open exchange you owed, and nothing else — and that
+excluded the one participant with the strongest claim to a turn. An answer closes the
+exchange it resolves, so the agent that asked the question ends up owing nothing and was
+never started to read the reply it was waiting for. A ghost, which is the notice that
+nobody answered, arrived the same way. So an unattended fleet could produce answers that
+nothing ever collected. Anything uncollected now counts, whatever its type.
 
 **It spends money while nobody is watching.** That is the feature and the risk in one
 sentence. Every turn is a real session on your account, so `parley up` prints what each

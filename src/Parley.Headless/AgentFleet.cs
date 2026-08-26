@@ -10,19 +10,19 @@ namespace Parley.Headless;
 /// <param name="Agent">Who.</param>
 /// <param name="Started">Whether this pass is what started them.</param>
 /// <param name="Turn">How their turn went, or null if they were not given one.</param>
-/// <param name="OwedBefore">What they owed when the pass found them.</param>
-/// <param name="OwedAfter">What they owed after their turn.</param>
+/// <param name="WaitingBefore">What was waiting on them when the pass found them.</param>
+/// <param name="WaitingAfter">What was waiting on them after their turn.</param>
 /// <param name="Skipped">Why they were passed over, or null if they were not.</param>
 public sealed record FleetAction(
     AgentName Agent,
     bool Started,
     TurnOutcome? Turn,
-    long OwedBefore,
-    long OwedAfter,
+    long WaitingBefore,
+    long WaitingAfter,
     string? Skipped)
 {
     /// <summary>Gets whether the turn left the agent owing less than it did.</summary>
-    public bool MadeProgress => Turn is not null && OwedAfter < OwedBefore;
+    public bool MadeProgress => Turn is not null && WaitingAfter < WaitingBefore;
 }
 
 /// <summary>
@@ -97,7 +97,7 @@ public sealed class AgentFleet : IAsyncDisposable
         await ReapAsync().ConfigureAwait(false);
         await StopWithdrawnAsync(repository, actions, cancellationToken).ConfigureAwait(false);
 
-        var candidates = await repository.FindOwedAsync(cancellationToken).ConfigureAwait(false);
+        var candidates = await repository.FindWaitingAsync(cancellationToken).ConfigureAwait(false);
         var now = _clock.GetUtcNow();
 
         foreach (var candidate in candidates)
@@ -119,6 +119,26 @@ public sealed class AgentFleet : IAsyncDisposable
             catch (ArgumentException ex)
             {
                 actions.Add(Skip(candidate, $"its invoke command is unusable: {ex.Message}"));
+                continue;
+            }
+
+            // An agent that already spent a turn on this work and changed nothing is not given
+            // another until something new arrives. Checked here rather than beside the start,
+            // because it is the turn that costs money and a resident agent skips the start
+            // entirely -- the first version of this guard sat inside the start and did nothing
+            // from the second pass onward, which is precisely when it was needed.
+            //
+            // The trigger it guards does not expire on its own: an owed exchange ages out
+            // through §14 whether or not the agent cooperates, but an uncollected message is
+            // held against retention by §9.4's floor, so without this one unread notification
+            // would buy a real session every pass for as long as the fleet ran. One wasted turn
+            // per new message is the bound -- a fresh message raises the count above what was
+            // still waiting last time, which re-arms it.
+            if (candidate.StuckAt is { } stuck && candidate.Waiting <= stuck)
+            {
+                actions.Add(Skip(
+                    candidate,
+                    "its last turn collected nothing and nothing new has arrived since"));
                 continue;
             }
 
@@ -185,16 +205,16 @@ public sealed class AgentFleet : IAsyncDisposable
             }
 
             var after = await repository
-                .CountOwedAsync(candidate.Agent, CancellationToken.None).ConfigureAwait(false);
+                .CountWaitingAsync(candidate.Agent, CancellationToken.None).ConfigureAwait(false);
 
             await repository.RecordAsync(
-                candidate.Agent, candidate.Owed, after, turnStarted, outcome.Elapsed,
+                candidate.Agent, candidate.Waiting, after, turnStarted, outcome.Elapsed,
                 outcome.Succeeded ? 0 : 1, outcome.TimedOut, outcome.CostUsd,
                 outcome.ModelTurns, outcome.PermissionDenials,
                 CancellationToken.None).ConfigureAwait(false);
 
             actions.Add(new FleetAction(
-                candidate.Agent, started, outcome, candidate.Owed, after, Skipped: null));
+                candidate.Agent, started, outcome, candidate.Waiting, after, Skipped: null));
         }
 
         return actions;
@@ -293,14 +313,14 @@ public sealed class AgentFleet : IAsyncDisposable
                 .ConfigureAwait(false))
             {
                 actions.Add(new FleetAction(
-                    agent, Started: false, Turn: null, OwedBefore: 0, OwedAfter: 0,
+                    agent, Started: false, Turn: null, WaitingBefore: 0, WaitingAfter: 0,
                     Skipped: "withdrawn by the operator; told to quit"));
             }
         }
     }
 
     private static FleetAction Skip(InvocationCandidate candidate, string why) =>
-        new(candidate.Agent, Started: false, Turn: null, candidate.Owed, candidate.Owed, why);
+        new(candidate.Agent, Started: false, Turn: null, candidate.Waiting, candidate.Waiting, why);
 
     /// <summary>A running agent and the command line it was started with.</summary>
     /// <param name="Agent">The process.</param>

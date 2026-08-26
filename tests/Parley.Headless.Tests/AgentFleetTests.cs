@@ -87,6 +87,75 @@ public sealed class AgentFleetTests : IDisposable
         command.ExecuteNonQuery();
     }
 
+    /// <summary>The 64-character lower-case hex the schema requires of a content hash.</summary>
+    /// <param name="text">Whatever distinguishes this row from its neighbours.</param>
+    /// <returns>A hash the CHECK constraint accepts.</returns>
+    private static string Hash(string text) =>
+        Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)))
+            .ToLowerInvariant();
+
+    /// <summary>Writes a message nobody has collected, leaving no debt behind it.</summary>
+    /// <param name="from">Who sent it.</param>
+    /// <param name="to">Who has not collected it.</param>
+    /// <param name="type">The message type to write.</param>
+    private void SendUncollected(string from, string to, string type)
+    {
+        // A message with no exchange behind it, which is what an answer, a ghost and a notify
+        // all leave once the exchange they belonged to has closed -- or, for a notify, never
+        // had one. Written directly because the point is the row, not the path that made it.
+        // Only a notify may stand alone: the schema enforces
+        // (type = 'notify') = (exchange_id IS NULL). An answer and a ghost belong to an
+        // exchange that has since closed, which is exactly the shape that leaves a message
+        // waiting and no debt behind it -- so the closed exchange is written too rather than
+        // worked around.
+        long? exchange = null;
+
+        if (type != "notify")
+        {
+            using var closing = _connection.CreateCommand();
+            closing.CommandText =
+                """
+                INSERT INTO exchanges
+                    (pair_key, asker, answerer, owed_by, state, delivery_window_ms,
+                     working_window_ms, grace_period_ms, opened_utc, expires_utc,
+                     question_hash, closed_utc, resolution)
+                VALUES (@Pair, @To, @From, @From, 'CLOSED', 60000, 60000, 60000,
+                        @Now, @Now, @Hash, @Now, 'answered')
+                RETURNING id;
+                """;
+            closing.Parameters.AddWithValue("@Pair", string.CompareOrdinal(from, to) < 0
+                ? from + Separator + to
+                : to + Separator + from);
+            closing.Parameters.AddWithValue("@To", to);
+            closing.Parameters.AddWithValue("@From", from);
+            closing.Parameters.AddWithValue("@Now", DateTimeOffset.UtcNow.ToString("o"));
+            closing.Parameters.AddWithValue("@Hash", Hash($"{from}-{to}-{type}-q"));
+            exchange = (long)closing.ExecuteScalar()!;
+        }
+
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO messages
+                (exchange_id, type, from_agent, to_agent, responder_model, payload_json,
+                 content_hash, created_utc)
+            VALUES (@Exchange, @Type, @From, @To, @Responder, '{"text":"x"}', @Hash, @Now);
+            """;
+
+        // A ghost is the broker's own notice and the schema refuses any other attribution --
+        // the same trigger that stops an agent forging one. §14.
+        command.Parameters.AddWithValue(
+            "@Responder", type == "ghost" ? "parley:broker" : "some-model-9");
+        command.Parameters.AddWithValue("@Exchange", (object?)exchange ?? DBNull.Value);
+        command.Parameters.AddWithValue("@Type", type);
+        command.Parameters.AddWithValue("@From", from);
+        command.Parameters.AddWithValue("@To", to);
+        command.Parameters.AddWithValue("@Hash", Hash($"{from}-{to}-{type}"));
+        command.Parameters.AddWithValue("@Now", DateTimeOffset.UtcNow.ToString("o"));
+        command.ExecuteNonQuery();
+    }
+
     /// <summary>Opens an exchange that leaves one agent owing an answer.</summary>
     /// <param name="asker">Who asked.</param>
     /// <param name="answerer">Who owes.</param>
@@ -318,7 +387,7 @@ public sealed class AgentFleetTests : IDisposable
 
         using var query = _connection.CreateCommand();
         query.CommandText =
-            "SELECT agent, owed_before, cost_usd, model_turns, timed_out FROM invocations;";
+            "SELECT agent, waiting_before, cost_usd, model_turns, timed_out FROM invocations;";
 
         using var reader = query.ExecuteReader();
 
@@ -328,6 +397,108 @@ public sealed class AgentFleetTests : IDisposable
         Assert.Equal(0.25, reader.GetDouble(2), 3);
         Assert.Equal(2L, reader.GetInt64(3));
         Assert.Equal(0L, reader.GetInt64(4));
+    }
+
+    [Theory]
+    [InlineData("answer")]
+    [InlineData("ghost")]
+    [InlineData("notify")]
+    public async Task An_uncollected_message_starts_an_agent_that_owes_nothing(string type)
+    {
+        // The hole this closes. Only an OPEN exchange used to start anybody, and three of the
+        // five message types leave none: an answer and a ghost close the exchange they belong
+        // to, and a notify never had one. So the fleet could answer a question autonomously and
+        // never start the agent that asked it to read the reply -- the one participant with the
+        // strongest reason to be woken was the only one excluded.
+        Register("orders", StubRunner.Answering(Workspace("orders")));
+        Register("billing");
+        SendUncollected("billing", "orders", type);
+
+        await using var fleet = Fleet();
+        var actions = await fleet.TickAsync(Ct);
+
+        var started = Assert.Single(actions);
+
+        Assert.Equal("orders", started.Agent.Value);
+        Assert.True(started.Started, started.Skipped ?? "not started");
+        Assert.Equal(1, started.WaitingBefore);
+    }
+
+    [Fact]
+    public async Task A_debt_and_an_uncollected_message_are_counted_once_each()
+    {
+        // Counted as distinct items rather than summed from two overlapping queries: an OPEN
+        // exchange and a message that has not been collected are two things to deal with, and
+        // an agent holding both should sort above one holding either.
+        Register("orders");
+        Register("billing", StubRunner.Answering(Workspace("billing")));
+        Owe("orders", "billing");
+        SendUncollected("orders", "billing", "notify");
+
+        await using var fleet = Fleet();
+        var actions = await fleet.TickAsync(Ct);
+
+        Assert.Equal(2, Assert.Single(actions).WaitingBefore);
+    }
+
+    [Fact]
+    public async Task A_turn_that_collected_nothing_is_not_repeated_until_something_arrives()
+    {
+        // The runaway this guards. An owed exchange ages out through §14 whether or not the
+        // agent cooperates, so a debt it refuses eventually stops being a reason to start it.
+        // An uncollected message has no such schedule -- §9.4's floor holds it against
+        // retention precisely so nothing is lost -- so without a guard, one unread notification
+        // starts a real session every pass, for as long as the fleet runs, on somebody's
+        // account. The stub answers its turn and touches no database, which is exactly the
+        // shape of an agent that is started and collects nothing.
+        Register("orders", StubRunner.Answering(Workspace("orders")));
+        Register("billing");
+        SendUncollected("billing", "orders", "notify");
+
+        await using var fleet = Fleet();
+
+        Assert.True(Assert.Single(await fleet.TickAsync(Ct)).Started);
+
+        var second = Assert.Single(await fleet.TickAsync(Ct));
+
+        Assert.False(second.Started);
+        Assert.Contains("collected nothing", second.Skipped!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_new_message_re_arms_an_agent_that_was_stuck()
+    {
+        // The bound is one wasted turn per new message, not one wasted turn ever. A second
+        // message raises the count above what was still waiting after the last turn, which is
+        // the evidence that there is something the previous turn cannot have seen.
+        Register("orders", StubRunner.Answering(Workspace("orders")));
+        Register("billing");
+        SendUncollected("billing", "orders", "notify");
+
+        await using var fleet = Fleet();
+        await fleet.TickAsync(Ct);
+        Assert.False(Assert.Single(await fleet.TickAsync(Ct)).Started);
+
+        SendUncollected("billing", "orders", "answer");
+
+        var third = Assert.Single(await fleet.TickAsync(Ct));
+
+        Assert.Null(third.Skipped);
+        Assert.Equal(2, third.WaitingBefore);
+    }
+
+    [Fact]
+    public async Task An_agent_with_nothing_waiting_is_still_left_alone()
+    {
+        // The widening must not become "start everything that consented". A turn given to an
+        // agent with no reason to take one is tokens spent on nothing, which is the first of
+        // the four conditions FindWaitingAsync exists to enforce.
+        Register("orders", StubRunner.Answering(Workspace("orders")));
+        Register("billing", StubRunner.Answering(Workspace("billing")));
+
+        await using var fleet = Fleet();
+
+        Assert.Empty(await fleet.TickAsync(Ct));
     }
 
     [Fact]

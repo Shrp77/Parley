@@ -49,9 +49,10 @@ const string Help = """
     place, and prints the policy it applied. It removes text permanently; export first if you
     want to keep a discussion.
 
-    up runs until you stop it. It starts every agent that owes an answer and has offered a
-    PARLEY_INVOKE_COMMAND, keeps each one resident so it remembers the conversations it is in,
-    and gives it a turn whenever a peer needs one. Ctrl+C stops the fleet and every agent in it.
+    up runs until you stop it. It starts every agent that has something waiting -- an answer it
+    owes, or a message it has not collected -- and has offered a PARLEY_INVOKE_COMMAND, keeps
+    each one resident so it remembers the conversations it is in, and gives it a turn whenever a
+    peer needs one. Ctrl+C stops the fleet and every agent in it.
     Its pass interval comes from PARLEY_TICK_SECONDS, the same variable the servers read.
 
     These are never available to an agent. parley-mcp, the server an MCP client launches, has
