@@ -56,6 +56,11 @@ Put it in this repository's standing instructions - `CLAUDE.md` at the repositor
 `AGENTS.md` if that is what the project uses. Replace an existing `## Peers` section rather
 than appending a second one. Leave the rest of the file untouched.
 
+`/parley:setup` step 6 will usually have left a frame there already, carrying the invariants and
+a placeholder line saying the roster has not been read. Replacing the whole section is what
+clears it - a block that still says the roster has not been read, under a list of peers, is
+worse than either half alone.
+
 ```markdown
 ## Peers
 

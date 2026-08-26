@@ -175,17 +175,53 @@ Create the parent directory of the database path if it does not exist. Do not cr
 If the database sits inside a repository despite step 2's advice, add it to that repository's
 `.gitignore`. It holds the full text of every question and answer.
 
-## 6. Restart
+## 6. Write the peers block, with what is knowable now
+
+**Do not leave this until after the restart.** Everything below needs the tools; this does not,
+and skipping it is how a repository ends up configured, connected, and with standing
+instructions that never mention Parley. Step 8 says why that state is the failure this whole
+command exists to prevent - and it is reached by stopping one step early, behind a restart that
+ends the session that would have reminded the user.
+
+The block has two halves and only one of them needs the roster. The frame - that peers exist,
+that they cannot be seen from here, that guessing is the mistake - is true of every deployment
+and can be written now. Which peers, and what each owns, cannot: that is what `/parley:peers`
+reads from the live roster once the tools are bound.
+
+So write the frame, in this repository's standing instructions - `CLAUDE.md` at the repository
+root, or `AGENTS.md` if that is what the project uses. Replace an existing `## Peers` section
+rather than appending a second one, and leave the rest of the file alone.
+
+```markdown
+## Peers
+
+Other repositories have their own agents, reachable through Parley. They cannot see this
+repository and this repository cannot see theirs: only the text of a question and its answer
+crosses between them. `parley_inbox` is pull rather than push - call it when you start work,
+and again when you are waiting on a reply.
+
+- The roster has not been read yet. Run `/parley:peers` to fill this in.
+
+**Do not guess at what these repositories do, and do not edit them. Ask.** A question must say
+what you will do with each possible answer.
+```
+
+The placeholder line is deliberate and is not a to-do nobody will action. An agent reading this
+block before the roster is filled in knows the two things that keep it from doing damage - that
+peers exist and that it must not invent them - and knows the one command that completes it.
+An agent reading no block at all knows neither.
+
+## 7. Restart
 
 MCP servers are launched when Claude Code starts, so the tools appear after a restart. Tell the
 user to restart, then check `/mcp` shows `parley` connected. `parley_agents` then lists the
 roster, and this agent's own registration will be in it.
 
-This step is sixth rather than last because everything below it needs the tools, and nothing
+This step is seventh rather than last because everything below it needs the tools, and nothing
 above it did. Naming the peers used to come first here, which could not work: it calls
 `parley_agents`, and until the restart there is no such tool to call.
 
-## 7. Name the peers, in the session that comes back
+## 8. Name the peers, in the session that comes back
 
 **This one is the user's to run, and it happens after the restart.** `/parley:peers` is marked
 `disable-model-invocation`, so this agent cannot invoke it - and the session reading these
@@ -203,3 +239,8 @@ Do not let the user skip it permanently. Binding the tools tells this agent *how
 does not tell it *that there is anyone to ask*. An agent with the tools bound and no idea a peer
 exists will answer from this repository and guess at the rest, which is the failure Parley
 exists to prevent, reached by installing it correctly and stopping one step early.
+
+Step 6 is what makes stopping here survivable rather than silent: the frame is already in the
+file, so an agent that gets this far knows peers exist and knows it must not invent them. What
+this step adds is who they are. The placeholder line it leaves behind is the reminder, sitting
+in the one file that is read on every turn.
