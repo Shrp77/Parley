@@ -61,11 +61,20 @@ a placeholder line saying the roster has not been read. Replacing the whole sect
 clears it - a block that still says the roster has not been read, under a list of peers, is
 worse than either half alone.
 
+**Keep the frame as it is written above.** Step 6 wrote those same two sentences, and replacing
+the section means writing them again rather than inheriting them - so a template here that
+stopped at "cannot see theirs" would silently delete the line telling this agent that the inbox
+is pull and must be drained. That line is the difference between an agent that collects its
+messages and one that sits connected beside them, which is not a difference worth losing to a
+paragraph that looked like boilerplate.
+
 ```markdown
 ## Peers
 
 Other repositories have their own agents, reachable through Parley. They cannot see this
-repository and this repository cannot see theirs.
+repository and this repository cannot see theirs: only the text of a question and its answer
+crosses between them. `parley_inbox` is pull rather than push - call it when you start work,
+and again when you are waiting on a reply.
 
 - `billing` says it owns invoicing and tax. This repository computes a net order total and
   does not apply VAT.
