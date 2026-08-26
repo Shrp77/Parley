@@ -65,6 +65,27 @@ of it. Linux covers the Unix side of what does exist. The macOS leg is deferred 
 deleted and runs from `workflow_dispatch` with the box ticked; it goes back into the matrix when
 the transport lands, and the sentence above goes back with it.
 
+## Versioning
+
+**Bump `VersionPrefix` in `Directory.Build.props` in the same change that alters shipped
+behaviour.** Not afterwards, not at release time — in the commit, so the version and the code
+it names travel together. Semantic versioning, and while the major is zero the minor moves on
+a breaking change and the patch on everything else.
+
+Applies to a change in `src`. Documentation, tests, CI and the plugin's prose do not ship
+behaviour and do not move the number on their own.
+
+The reason is mechanical rather than ceremonial. `dotnet tool update` compares versions, so a
+rebuilt tool at a version already on PATH is *not installed* — the command reports success at
+some length and replaces nothing. Every change that leaves the number alone is therefore a
+change that cannot be delivered by the documented upgrade path, and the failure is silent on
+the machine that most needs it: the one already running the old build. Uninstall-then-install
+is the workaround, and it is a workaround for this.
+
+Nothing enforces this. It is the one convention in this file that the build cannot catch, so
+it is written here rather than left to the comment in `Directory.Build.props` that only
+somebody already editing the version would read.
+
 ## Conventions the build enforces
 
 Breaking any of these fails the build. That is intentional: a rule the compiler cannot
