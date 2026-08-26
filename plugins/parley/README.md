@@ -34,6 +34,19 @@ reason to trust. A number cannot carry an instruction. The agent still has to go
 
 It is silent when nothing is waiting, and silent in repositories that are not Parley agents.
 
+It is also silent on every error, including a missing Python interpreter - a session you cannot
+work in because its mail-check threw is worse than one that does not know it has mail. The cost
+of that is real and worth stating: **a hook that fails safe also fails invisibly**, so there is
+no way to tell "nothing is waiting" from "this never ran". To check, run it by hand from a
+repository that is a Parley agent:
+
+```
+python ~/.claude/plugins/cache/parley/parley/*/hooks/parley_waiting.py <<< '{"cwd":"."}'
+```
+
+Silence means nothing is waiting. An error means the hook would have been silent for the wrong
+reason.
+
 ## What it deliberately does not ship
 
 **The MCP server configuration.** A plugin can bundle one, and can prompt for the values it

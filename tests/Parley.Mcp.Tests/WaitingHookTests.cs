@@ -48,6 +48,13 @@ public sealed class WaitingHookTests
         // Swallows its own failure. A hook that exits non-zero on a machine without the
         // interpreter would block the prompt it was meant to annotate.
         Assert.Contains("|| exit 0", declared, StringComparison.Ordinal);
+
+        // Both interpreter names. Windows installs 'python' and most Linux and macOS machines
+        // have only 'python3', and picking one would leave the hook silently never running on
+        // half of them -- silently because it is designed to swallow its own failure, which is
+        // right and is exactly what would hide this.
+        Assert.Contains("python ", declared, StringComparison.Ordinal);
+        Assert.Contains("python3 ", declared, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/parley_waiting.py\" || exit 0",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/parley_waiting.py\" || python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/parley_waiting.py\" || exit 0",
             "timeout": 10,
             "statusMessage": "Checking for Parley messages..."
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/parley_waiting.py\" || exit 0",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/parley_waiting.py\" || python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/parley_waiting.py\" || exit 0",
             "timeout": 10
           }
         ]
