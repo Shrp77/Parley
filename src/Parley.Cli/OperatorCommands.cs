@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Parley.Broker;
 using Parley.Core;
+using Parley.Store;
 
 namespace Parley.Cli;
 
@@ -406,6 +407,60 @@ public sealed class OperatorCommands
             .ConfigureAwait(false);
 
         return 0;
+    }
+
+    /// <summary>Deletes a registration that never traded.</summary>
+    /// <param name="agent">The agent to purge.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>Zero if the agent was deleted, one if it was not.</returns>
+    /// <remarks>
+    /// A refusal names every reference that held it, down to the column, because "it has
+    /// history" is not actionable and "it is named by three rows of exchanges.asker" is: an
+    /// operator can export those, decide they are worth nothing, and still be the one who
+    /// decides. The command does not offer to delete them — the whole distinction between this
+    /// and <see cref="RetireAsync"/> collapses if it does.
+    /// </remarks>
+    public async Task<int> PurgeAsync(AgentName agent, CancellationToken cancellationToken)
+    {
+        var outcome = await _console.PurgeAsync(agent, cancellationToken).ConfigureAwait(false);
+
+        switch (outcome.Verdict)
+        {
+            case PurgeVerdict.Gone:
+                await _output.WriteLineAsync(
+                    $"'{agent.Value}' is purged. Nothing referenced it, so there was no record " +
+                    "to lose, and the name is free to register again.").ConfigureAwait(false);
+
+                return 0;
+
+            case PurgeVerdict.NotRegistered:
+                await _output.WriteLineAsync(
+                    $"'{agent.Value}' is not registered.").ConfigureAwait(false);
+
+                return 1;
+
+            default:
+                await _output.WriteLineAsync(
+                    $"'{agent.Value}' has traded and was not purged. It is named by:")
+                    .ConfigureAwait(false);
+
+                var width = outcome.Holds.Max(hold => hold.Table.Length + hold.Column.Length) + 1;
+
+                foreach (var hold in outcome.Holds)
+                {
+                    await _output.WriteLineAsync(string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"  {$"{hold.Table}.{hold.Column}".PadRight(width)}  {hold.Rows}"))
+                        .ConfigureAwait(false);
+                }
+
+                await _output.WriteLineAsync(
+                    "Retire it instead. Deleting it would take that record with it, and every " +
+                    "counterparty's history of dealing with it — which is what retirement is for.")
+                    .ConfigureAwait(false);
+
+                return 1;
+        }
     }
 
     /// <summary>Withdraws a retirement.</summary>

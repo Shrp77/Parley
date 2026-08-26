@@ -10,6 +10,7 @@ using Parley.Store;
 //   parley --db <path> registry
 //   parley --db <path> retire <agent>
 //   parley --db <path> reinstate <agent>
+//   parley --db <path> purge <agent>
 //   parley --db <path> export <conversation>
 //   parley --db <path> force-conclude <conversation>
 //   parley --db <path> prune
@@ -30,6 +31,7 @@ const string Help = """
       parley [--db <path>] registry                    every registered agent, with its workspace
       parley [--db <path>] retire <agent>              withdraw a registration
       parley [--db <path>] reinstate <agent>           withdraw a retirement
+      parley [--db <path>] purge <agent>               delete a registration that never traded
       parley [--db <path>] export <conversation>       emit every message in a discussion
       parley [--db <path>] force-conclude <conv>       close a discussion over its votes
       parley [--db <path>] prune                       apply the retention policy now
@@ -254,6 +256,10 @@ using (holder)
 
         case "reinstate" when rest.Length == 1:
             return await WithAgent(rest[0], a => commands.ReinstateAsync(a, CancellationToken.None))
+                .ConfigureAwait(false);
+
+        case "purge" when rest.Length == 1:
+            return await WithAgent(rest[0], a => commands.PurgeAsync(a, CancellationToken.None))
                 .ConfigureAwait(false);
 
         case "export" when rest.Length == 1:

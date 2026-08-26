@@ -154,6 +154,24 @@ public sealed class OperatorConsole
         await _agents.ReinstateAsync(agent, cancellationToken).ConfigureAwait(false) > 0;
 
     /// <summary>
+    /// Deletes a registration that never traded, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="agent">The agent to purge.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>What the purge did, or what held it.</returns>
+    /// <remarks>
+    /// The complement to <see cref="RetireAsync"/> and not a stronger version of it. §14's
+    /// argument for a tombstone is about preserving what an agent said; an agent that never
+    /// spoke has nothing to preserve, and the registry row is then only clutter with a name
+    /// locked up inside it. Anything that has traded is refused here and belongs in retirement,
+    /// which is why this returns what held it rather than a bare failure.
+    /// </remarks>
+    public async Task<PurgeOutcome> PurgeAsync(
+        AgentName agent,
+        CancellationToken cancellationToken = default) =>
+        await _agents.PurgeAsync(agent, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
     /// Describes every registered agent, whole.
     /// </summary>
     /// <param name="cancellationToken">Cancels the read.</param>

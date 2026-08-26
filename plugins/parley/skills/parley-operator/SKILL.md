@@ -1,6 +1,6 @@
 ---
 name: parley-operator
-description: Run the Parley operator commands - list registered agents, export a discussion, retire or reinstate an agent, force-conclude a discussion, or prune the message log. Use when someone asks who is registered with Parley, what was said in a discussion, or to close, withdraw or clean up.
+description: Run the Parley operator commands - list registered agents, export a discussion, retire, reinstate or purge an agent, force-conclude a discussion, or prune the message log. Use when someone asks who is registered with Parley, what was said in a discussion, or to close, withdraw or clean up.
 when_to_use: The user asks who is registered with Parley, what two agents said to each other, to remove or restore an agent, to close a discussion its participants have not closed, or to apply the retention policy now.
 ---
 
@@ -25,6 +25,9 @@ Run these when the person asks for them. Do not run them to get around the proto
   agent another's reasoning. Do not paste an export into an agent's session as a shortcut for
   asking it.
 - `retire` stops an agent's server from starting at all. It is a withdrawal, not a mute.
+- `purge` deletes a registration outright, and is refused the moment anything references
+  the agent. It is for a registration that should never have existed - a mistyped name,
+  a repository somebody opened once. An agent that has traded is retired, never purged.
 
 None of this is a rule the tool enforces; it is the reason the tool is separate from the tools.
 No agent has authority over another, and these commands are how a **person** intervenes.
@@ -48,6 +51,7 @@ launched the servers with.** If `PARLEY_DB` is unset here, or set to something e
 parley [--db <path>] registry                every registered agent, with its workspace
 parley [--db <path>] retire <agent>          withdraw a registration
 parley [--db <path>] reinstate <agent>       the only thing that clears a retirement
+parley [--db <path>] purge <agent>           delete a registration that never traded
 parley [--db <path>] export <conversation>   every message in a discussion, across agents
 parley [--db <path>] force-conclude <conv>   close a discussion over its participants' votes
 parley [--db <path>] prune                   apply the retention policy now
@@ -75,6 +79,13 @@ apart, and how you find the repository behind a name.
 
 `retire` makes that agent's server refuse to start; the person running it will see a
 configuration error, not a crash. `reinstate` is the only way back.
+
+`purge` is the narrow complement to it, not a stronger version. Retirement costs a name
+that can never be registered again and a row that outlives the repository, and it buys
+the record of what that agent said and every counterparty's history of dealing with it.
+An agent that never traded has nothing to buy, so purge deletes those and refuses
+everything else - naming the table and column that held it, so the refusal is something
+the person can act on. It never deletes an exchange or a message to make room.
 
 ## Retention, and the thing that goes wrong
 

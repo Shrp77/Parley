@@ -144,6 +144,63 @@ public sealed class OperatorCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Purging_removes_a_registration_that_never_traded()
+    {
+        Assert.Equal(0, await _commands.PurgeAsync(Billing, Ct));
+
+        Assert.DoesNotContain(Billing, (await _agents.GetAllAsync(Ct)).Select(a => a.Name));
+        Assert.Contains("free to register again", Printed, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Purging_a_name_that_does_not_exist_says_so_rather_than_inventing_a_history()
+    {
+        Assert.Equal(1, await _commands.PurgeAsync(AgentName.Create("nobody"), Ct));
+        Assert.Contains("not registered", Printed, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Purging_an_agent_that_has_traded_names_what_held_it()
+    {
+        // The refusal has to be actionable. "It has history" leaves an operator with nowhere to
+        // go; naming the column tells them exactly what to export and read before deciding the
+        // record is worth nothing — and it is still their decision, which is why this points at
+        // retire rather than offering to delete the traffic.
+        var broker = new Broker.Broker(_connection, BrokerOptions.Default);
+        await broker.StartAsync(Orders, T0, Ct);
+
+        await broker.AskAsync(
+            Orders, Billing, "some-model-9",
+            $$"""{"intent":"where does price live","sub_questions":[{"id":"q1","text":"gross or net?"}],"consequences":"{{Consequences}}"}""",
+            T0.AddMinutes(1), cancellationToken: Ct);
+
+        Assert.Equal(1, await _commands.PurgeAsync(Billing, Ct));
+
+        Assert.Contains(Billing, (await _agents.GetAllAsync(Ct)).Select(a => a.Name));
+        Assert.Contains("exchanges.answerer", Printed, StringComparison.Ordinal);
+        Assert.Contains("Retire it instead", Printed, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Purging_undoes_a_retirement_entered_for_an_agent_that_never_existed()
+    {
+        // The case §14 had no remedy for. A mistyped PARLEY_AGENT registers, and retirement was
+        // the only thing available — leaving a tombstone for an agent that never was, and the
+        // name locked up where the correctly-spelled one might want it.
+        var typo = AgentName.Create("bulling");
+
+        await _agents.UpsertAsync(
+            new AgentRecord(typo, "mcp", AgentTier.Pull, "/src/acme-billing", null, null, null,
+                AgentStatus.Registered),
+            Ct);
+
+        await _commands.RetireAsync(typo, Ct);
+
+        Assert.Equal(0, await _commands.PurgeAsync(typo, Ct));
+        Assert.DoesNotContain(typo, (await _agents.GetAllAsync(Ct)).Select(a => a.Name));
+    }
+
+    [Fact]
     public async Task Exporting_reads_across_agents_which_is_why_it_is_an_operator_operation()
     {
         var broker = new Broker.Broker(_connection, BrokerOptions.Default);

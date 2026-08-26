@@ -733,6 +733,138 @@ public sealed class AgentRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>
+    /// Deletes a registration that never traded, freeing its name.
+    /// </summary>
+    /// <param name="name">The agent to purge.</param>
+    /// <param name="transaction">A transaction to join, or <see langword="null"/> to own one.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>
+    /// <see cref="PurgeOutcome.Gone"/>, <see cref="PurgeOutcome.NotRegistered"/>, or a held
+    /// outcome naming every reference that stopped it.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// The operator operation from SPEC.md section 10.2, and the narrow complement to
+    /// <see cref="RetireAsync"/> rather than a replacement for it. Retirement pays a real price
+    /// — the name is never registrable again and the row outlives the repository — and section
+    /// 14 is right that the price buys something: the record of what the agent said, and every
+    /// counterparty history of dealing with it. An agent that never traded has no such record,
+    /// so for that agent alone the price buys nothing. This deletes exactly those, and nothing
+    /// else: a mistyped name, an experiment, a manifest reload that registered a repository
+    /// somebody was only looking at.
+    /// </para>
+    /// <para>
+    /// What counts as "never traded" is read from the schema rather than listed here, and that
+    /// is the load-bearing decision in this method. A hand-written list of tables is correct
+    /// only until the next migration adds a reference to <c>agents(name)</c> and nobody thinks
+    /// to update it — at which point a purge would delete rows the new table needed, or trip a
+    /// foreign key and surface as an unhandled <see cref="SqliteException"/> where an operator
+    /// expected an explanation. Asking the database which tables point at it cannot drift.
+    /// </para>
+    /// <para>
+    /// Cascading references are deliberately excluded from that scan. <c>agent_credentials</c>
+    /// and <c>size_refusals</c> are declared <c>ON DELETE CASCADE</c>, which is the schema
+    /// already saying they belong to the agent rather than to a counterparty, and they go with
+    /// it. A credential reference for an agent that no longer exists is not history anybody can
+    /// use.
+    /// </para>
+    /// <para>
+    /// The check and the delete share one <c>IMMEDIATE</c> transaction, so an exchange opened
+    /// between them cannot be orphaned by a purge that had already decided there was none. The
+    /// foreign keys stay as the backstop underneath that: if this scan were ever wrong, the
+    /// delete fails rather than silently taking the traffic with it.
+    /// </para>
+    /// </remarks>
+    public async Task<PurgeOutcome> PurgeAsync(
+        AgentName name,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var scope = WriteScope.Begin(_connection, transaction);
+
+        var registered = await _connection.ExecuteScalarAsync<long>(
+            new CommandDefinition(
+                "SELECT count(*) FROM agents WHERE name = @Name;",
+                new { Name = name.Value },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
+
+        if (!registered)
+        {
+            scope.Complete();
+            return PurgeOutcome.NotRegistered;
+        }
+
+        var holds = new List<PurgeHold>();
+
+        foreach (var reference in await ReferencesToAgentsAsync(scope.Transaction, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            var rows = await _connection.ExecuteScalarAsync<long>(
+                new CommandDefinition(
+                    // Interpolated because a table name cannot be a parameter. Both halves come
+                    // from this connection's own schema and never from a caller, so there is
+                    // nothing here for a name to inject into -- and an AgentName could not carry
+                    // it anyway, being validated on construction.
+                    $"""SELECT count(*) FROM "{reference.TableName}" WHERE "{reference.ColumnName}" = @Name;""",
+                    new { Name = name.Value },
+                    scope.Transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+            if (rows > 0)
+            {
+                holds.Add(new PurgeHold(reference.TableName, reference.ColumnName, (int)rows));
+            }
+        }
+
+        if (holds.Count > 0)
+        {
+            scope.Complete();
+            return PurgeOutcome.HeldBy(holds);
+        }
+
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "DELETE FROM agents WHERE name = @Name;",
+                new { Name = name.Value },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        scope.Complete();
+        return PurgeOutcome.Gone;
+    }
+
+    /// <summary>
+    /// Asks the schema which columns reference <c>agents(name)</c> without cascading.
+    /// </summary>
+    /// <param name="transaction">The transaction the scan runs in.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>Every non-cascading reference, ordered by table then column.</returns>
+    private async Task<IReadOnlyList<AgentReference>> ReferencesToAgentsAsync(
+        SqliteTransaction transaction,
+        CancellationToken cancellationToken) =>
+        (await _connection.QueryAsync<AgentReference>(
+            new CommandDefinition(
+                """
+                SELECT m.name AS TableName, f."from" AS ColumnName
+                  FROM sqlite_master AS m
+                  JOIN pragma_foreign_key_list(m.name) AS f
+                 WHERE m.type = 'table'
+                   AND f."table" = 'agents'
+                   AND f."on_delete" <> 'CASCADE'
+                 ORDER BY m.name, f."from";
+                """,
+                transaction: transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
+
+    /// <summary>
+    /// A column somewhere in the schema that names an agent.
+    /// </summary>
+    /// <param name="TableName">The referencing table.</param>
+    /// <param name="ColumnName">The referencing column.</param>
+    private sealed record AgentReference(string TableName, string ColumnName);
+
+    /// <summary>
     /// Records where one of an agent's secrets lives, replacing any reference of that name.
     /// </summary>
     /// <param name="agent">The agent the credential belongs to.</param>
