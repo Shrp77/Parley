@@ -889,6 +889,13 @@ model. That is worth stating plainly rather than leaving the list to imply unifo
    clarifications in each direction, so at a cap of three the most one peer can place in
    another's context through a single exchange went from eight thousand characters to sixteen
    thousand. That is the figure to weigh against, not the per-message one.
+
+   **And the clarify cap now dominates that figure.** The default is 200 (§17 question 4), so
+   the worst case is `(200 + 1) × 4,000` — about 804,000 characters, two orders of magnitude
+   above the number the paragraph above weighs. The message cap is no longer the binding
+   constraint on what one peer can place in another's context; the clarify counter is. Whoever
+   next reasons about the message size should reason about that product rather than about this
+   number alone.
 6. **Answer from authority, not inference.** Three outcomes, and choosing correctly between
    them is most of what makes an answer useful. If you own it and know, answer. If you own it
    and do not know, `unknown` beats a confident fabrication the peer will act on. If you do
@@ -1085,6 +1092,11 @@ CREATE TABLE exchanges (
   owed_by           TEXT    NOT NULL REFERENCES agents(name),
   state             TEXT    NOT NULL CHECK (state IN ('OPEN', 'CLOSED', 'ORPHANED')),
   clarify_depth     INTEGER NOT NULL DEFAULT 0,
+  -- The column default is not the protocol default, which is 200 (17 question 4). The
+  -- broker resolves a policy before admission and always writes this column explicitly,
+  -- so this value is reached only by a row written by hand. Left at 3 deliberately: a
+  -- hand-written row is not a measurement, and the bound that matters is the trigger
+  -- below rather than this.
   clarify_depth_cap INTEGER NOT NULL DEFAULT 3,
   open_pair_cap     INTEGER NOT NULL DEFAULT 5
                     CHECK (open_pair_cap BETWEEN 1 AND 50),
@@ -2850,11 +2862,20 @@ Cheap to collect, disproportionately useful:
    the answerer answers with what it has, or §14 ghosts the exchange like any other nobody
    answered.
 
-   **What would answer it.** A cap censors its own evidence: depths pile at the cap whether the
-   true need was one more or forty more, so no report over capped data can say what the cap
-   should be. Since the cap is per exchange and now per deployment (§5.2), the cheap instrument
-   is to set it far above any plausible need, run real traffic, and read the distribution that
-   results. If depth is typically 1 the cap is not doing the work — the tool description telling
+   **What would answer it, and what is now running.** A cap censors its own evidence: depths
+   pile at the cap whether the true need was one more or forty more, so no report over capped
+   data can say what the cap should be. Since the cap is per exchange and now per deployment
+   (§5.2), the cheap instrument is to set it far above any plausible need, run real traffic, and
+   read the distribution that results.
+
+   **That instrument is the default, at 200.** It was 3, which meant the measurement was only
+   taken by deployments that had already decided the number was wrong — the ones least in need
+   of the evidence, and the fewest. A default nobody changes collects nothing, so the guess was
+   self-perpetuating. The number is not a claim that 200 is right; it is far above any plausible
+   need on purpose, and the intent is to lower it from `clarifications()` once the distribution
+   says where depth actually settles. Read the cost in §5.3 before treating it as settled: at
+   200 a single exchange can place roughly 800KB in front of an asker, and the clarify counter
+   rather than the message cap is now what bounds that channel. If depth is typically 1 the cap is not doing the work — the tool description telling
    answerers to prefer answering with what they have is — and the honest conclusion is to drop
    it at this tier rather than to tune it.
 
@@ -2864,6 +2885,18 @@ Cheap to collect, disproportionately useful:
    taken among interactive agents is evidence about interactive agents. §11.4 already says rule
    enforcement degrades by tier, and this is a case of it: the Headless tier is where an
    unbounded clarify chain is a real risk, and it will need its own answer.
+
+   **That tier is no longer hypothetical, and the default was raised anyway.** §11.1's resident
+   agents answer with nobody watching, which is exactly the condition the paragraph above names
+   as the one where this cap earns its keep — and the same change made a turn cost money without
+   a person present to notice it being spent. The two decisions are recorded together because
+   they were taken together and the second is only defensible while the first is being measured:
+   a per-tier default, bounded for Headless and lifted for the tiers a person is sitting in
+   front of, is the shape the answer probably takes. It is not written yet because the
+   distribution that would set the bounded number does not exist yet. What is written is that
+   the reader who finds an 800KB clarify chain in a resident agent's context should look here
+   first, and that `clarifications()` and the per-turn cost recorded in §11.1 are the two
+   reports that would show it happening.
 
    `clarifications()` in §10.2 reports the distribution, the cap-reached count, and whether answers ever
    resolve sub-questions differently from one another — that last one being the cheap test of

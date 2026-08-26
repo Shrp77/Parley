@@ -53,9 +53,24 @@ public sealed class ClarifyCapLaunchTests
     }
 
     [Fact]
-    public void The_measurement_setting_is_accepted()
+    public void The_default_is_the_measurement_setting()
     {
-        Assert.Equal(200, ServerOptions.Read(Env(With("200"))).ClarifyDepthCap);
+        // The measurement is the default now rather than something a deployment had to know to
+        // opt into, because a cap censors the evidence that would justify it and only the
+        // deployments already doubting the number were collecting any.
+        Assert.Equal(200, ServerOptions.DefaultClarifyDepthCap);
+    }
+
+    [Fact]
+    public void A_configured_cap_is_read_rather_than_defaulted()
+    {
+        // Deliberately not 200. This test used to assert exactly the measurement value, which
+        // was sound while the default was 3 and became vacuous the moment the default moved to
+        // 200: a build that ignored the variable entirely would have passed it. That is the
+        // same shape as the regex that silently matched nothing — a green answer to a question
+        // that was never asked — so the value here must differ from the default to mean
+        // anything, and this comment is why it will look arbitrary to the next reader.
+        Assert.Equal(37, ServerOptions.Read(Env(With("37"))).ClarifyDepthCap);
     }
 
     [Fact]

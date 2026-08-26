@@ -160,7 +160,7 @@ One file per project. Every agent that should be able to reach every other gets 
         "PARLEY_RESPONDER": "some-model-9",           // optional, which model answers
         "PARLEY_WORKSPACE": "/src/acme-orders",       // optional, for the registry
         "PARLEY_TICK_SECONDS": "60",                  // optional, sweep cadence
-        "PARLEY_CLARIFY_CAP": "3",                    // optional, clarifications per exchange
+        "PARLEY_CLARIFY_CAP": "200",                  // optional, 200 if unset; see Clarify cap
         "PARLEY_INVOKE_COMMAND": "claude",            // optional, see Conversing unattended
         "PARLEY_RETENTION_IDLE_HOURS": "72",          // optional, see Retention below
         "PARLEY_RETENTION_MAX_AGE_HOURS": "720"       // optional, see Retention below

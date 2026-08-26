@@ -49,16 +49,36 @@ public sealed record ExchangePolicy(
     /// The policy applied when a deployment configures none.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Every number here is a starting estimate meant to be tuned against real traffic rather
     /// than argued about in advance, and SPEC.md §17 open question 4 says as much about the
     /// clarification cap specifically. They are defaults so that a deployment can start without
     /// deciding five things it has no evidence about yet.
+    /// </para>
+    /// <para>
+    /// <see cref="ClarifyDepthCap"/> is 200 rather than 3 because a cap censors the evidence
+    /// that would justify it: depths pile up at whatever the cap is, whether the true need was
+    /// one more or forty more, so no report taken over capped data can say what the cap should
+    /// be. §17 question 4 names setting it far above any plausible need and reading the
+    /// resulting distribution as the cheap instrument, and a default of 3 meant only the
+    /// deployments that already doubted the number ever collected any. Lower it from
+    /// <c>clarifications()</c>, not from judgement — that is the whole point of the move.
+    /// </para>
+    /// <para>
+    /// What it costs is written down in §5.3 rather than implied: a Clarify takes no slot and
+    /// carries a full message, so this counter is the only thing bounding that channel, and at
+    /// 200 a single exchange can put roughly 800KB in front of an asker that §7.1 believes it
+    /// is protecting. That trade is defensible while a person is in the loop on both sides, and
+    /// §17 question 4 says plainly that the Headless tier is where an unbounded clarify chain
+    /// is a real risk. That tier now exists, so this default is on borrowed time and the
+    /// measurement is what buys it back.
+    /// </para>
     /// </remarks>
     public static ExchangePolicy Default { get; } = new(
         DeliveryWindow: TimeSpan.FromMinutes(15),
         WorkingWindow: TimeSpan.FromHours(4),
         GracePeriod: TimeSpan.FromHours(3),
-        ClarifyDepthCap: 3,
+        ClarifyDepthCap: 200,
         OpenPairCap: 5);
 
     /// <summary>

@@ -98,8 +98,14 @@ public sealed record ServerOptions(
     /// reference, because a positional record's default must be a compile-time constant. The
     /// test is what stops the two drifting; the duplication is not the risk, an unnoticed
     /// divergence between the documented default and the applied one is.
+    /// <para>
+    /// 200 rather than 3 since the measurement §17 question 4 asks for became the default
+    /// rather than something each deployment had to know to opt into. The consequence is on
+    /// <see cref="ExchangePolicy.Default"/>, where the number is applied; read it there before
+    /// raising this further.
+    /// </para>
     /// </remarks>
-    public const int DefaultClarifyDepthCap = 3;
+    public const int DefaultClarifyDepthCap = 200;
 
     /// <summary>
     /// The environment variable holding the command that starts an idle agent.

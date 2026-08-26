@@ -103,19 +103,27 @@ the file.
         "PARLEY_DB": "${PARLEY_DB:-<absolute path to the database>}",
         "PARLEY_AGENT": "<the agent name>",
         "PARLEY_OWNS": "<what this repository owns, and what it does not>",
-        "PARLEY_WORKSPACE": "${PARLEY_WORKSPACE:-<absolute path to this repository>}"
+        "PARLEY_WORKSPACE": "${PARLEY_WORKSPACE:-<absolute path to this repository>}",
+        "PARLEY_CLARIFY_CAP": "200"
       }
     }
   }
 }
 ```
 
-Substitute the real values. Three notes on the shape:
+Substitute the real values. Four notes on the shape:
 
 - The `${VAR:-default}` form is environment-variable expansion, which `.mcp.json` supports.
   `.mcp.json` is usually committed and both paths are machine-specific, so the default is what
   this machine uses and a teammate overrides it by setting the variable rather than by editing
   a shared file.
+- `PARLEY_CLARIFY_CAP` is written explicitly even though 200 is also what the server uses when
+  it is absent. The number is a measurement rather than a considered limit - SPEC.md 17
+  question 4 wants the distribution real traffic produces, and a cap censors the evidence that
+  would justify it - so it is put where an operator will see it and can lower it, instead of
+  being a default nobody knows is in force. Say so if the user asks: it is high on purpose, one
+  exchange can carry a great deal of text at that setting, and `parley clarifications` is what
+  says where depth actually settles.
 - `PARLEY_AGENT` and `PARLEY_OWNS` are written plainly, with no fallback. Both are the same on
   every machine, because they name what this repository is rather than where it lives. Omit
   `PARLEY_OWNS` entirely if the user had no answer; an empty string means the same as absent,
@@ -127,8 +135,7 @@ Substitute the real values. Three notes on the shape:
 
 These are optional and can be left out: `PARLEY_RESPONDER` (what to record as having produced a
 message, `unknown-model` if unset), `PARLEY_TICK_SECONDS` (how often the sweep runs, 60 if
-unset), `PARLEY_CLARIFY_CAP` (how many clarifications one exchange may carry, 3 if unset),
-`PARLEY_RETENTION_IDLE_HOURS` and `PARLEY_RETENTION_MAX_AGE_HOURS` (how long the message
+unset), `PARLEY_RETENTION_IDLE_HOURS` and `PARLEY_RETENTION_MAX_AGE_HOURS` (how long the message
 log keeps what it carried, 72 and 720 if unset). Set the retention pair on **every** agent's
 server or none: the servers are what apply the policy, so setting it in one place and not
 another has agents quietly enforcing different numbers on one file.
