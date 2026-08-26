@@ -44,6 +44,12 @@ public sealed class SeparationTests
             "ForceConcludeAsync",
             "NotificationsAsync",
             "PruneAsync",
+
+            // No agent operation deletes anything, so there is no name here to collide with —
+            // the §10.2 rule bites where an operator operation shadows an agent one, and an
+            // agent that could purge a peer would be an agent with authority over another,
+            // which the whole protocol refuses.
+            "PurgeAsync",
             // Two letters from RefusalsAsync below, which is worth noticing rather than
             // renaming away: both are read-only reports, so typing one for the other costs a
             // glance at unexpected output and nothing else. The §10.2 naming rule is about an

@@ -87,6 +87,12 @@ public sealed class SurfaceBoundaryTests
             nameof(OperatorConsole.ForceConcludeAsync),
             nameof(OperatorConsole.RetireAsync),
             nameof(OperatorConsole.ReinstateAsync),
+
+            // On this side because it is a judgement about the registry that no agent may make
+            // about itself or any other, which is the same reason retire is here. It is the
+            // narrower of the two: retire is for an agent with a history, purge only for one
+            // that never traded, and §14 keeps them apart on that fact rather than on severity.
+            nameof(OperatorConsole.PurgeAsync),
             nameof(OperatorConsole.DescribeRegistryAsync),
             nameof(OperatorConsole.ExportAsync),
             nameof(OperatorConsole.PruneAsync),
