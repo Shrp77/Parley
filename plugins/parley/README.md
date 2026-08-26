@@ -13,6 +13,39 @@
 | `/parley:setup` | Configures this repository as a Parley agent: checks the server is installed, writes `.mcp.json`, creates the database directory, and sends you to restart - which is when the tools appear, and therefore before `/parley:peers` can read anything |
 | `/parley:peers` | Writes or refreshes the `## Peers` block in this repository's standing instructions, from the live roster |
 | `parley-operator` skill | The `parley` command-line tool - the operations that are deliberately not tools |
+| `parley_waiting` hook | Tells an attended session when mail is waiting, on session start and on every prompt |
+
+## Why there is a hook
+
+The inbox is pull, and an agent can only pull when its session takes a turn. A supervisor gives
+an unattended agent a turn precisely because something is waiting; nothing gives one to a
+repository somebody has open. That session sweeps, reports `live`, and never looks - a message
+sat in one for four and a half hours while every indicator said the deployment was healthy.
+
+The hook runs on the events that mean a person is interacting with this repository and says, in
+one line, that there is mail. The human becomes the clock. It is not a push - nothing can push
+into a running model's context - but it removes the failure where an agent is deaf because
+nobody reminded it.
+
+It reports **counts and never contents**. SPEC.md 13 requires a peer's words to arrive wrapped in
+the envelope that marks them as data rather than instruction, and `parley_inbox` is what applies
+that wrapping; text injected by a hook arrives with no envelope, in a channel the model has every
+reason to trust. A number cannot carry an instruction. The agent still has to go and collect.
+
+It is silent when nothing is waiting, and silent in repositories that are not Parley agents.
+
+It is also silent on every error, including a missing Python interpreter - a session you cannot
+work in because its mail-check threw is worse than one that does not know it has mail. The cost
+of that is real and worth stating: **a hook that fails safe also fails invisibly**, so there is
+no way to tell "nothing is waiting" from "this never ran". To check, run it by hand from a
+repository that is a Parley agent:
+
+```
+python ~/.claude/plugins/cache/parley/parley/*/hooks/parley_waiting.py <<< '{"cwd":"."}'
+```
+
+Silence means nothing is waiting. An error means the hook would have been silent for the wrong
+reason.
 
 ## What it deliberately does not ship
 
