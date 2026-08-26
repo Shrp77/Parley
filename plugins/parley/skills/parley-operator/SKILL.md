@@ -63,9 +63,10 @@ parley [--db <path>] up                      keep the agents resident so they ca
 parley --help                                the same list, on stdout, exiting zero
 ```
 
-`up` is the only one that does not return. It starts every agent that owes an answer and whose
-own launch configuration offered a `PARLEY_INVOKE_COMMAND`, keeps each one resident so it
-remembers the conversations it is in, and gives it a turn whenever a peer needs one. Ctrl+C
+`up` is the only one that does not return. It starts every agent that has something waiting -
+an answer it owes, or a message it has not collected - and whose own launch configuration
+offered a `PARLEY_INVOKE_COMMAND`, keeps each one resident so it remembers the conversations it
+is in, and gives it a turn whenever a peer needs one. Ctrl+C
 stops the fleet and every agent in it.
 
 **It spends money while nobody is watching.** That is the whole feature and it is also the whole

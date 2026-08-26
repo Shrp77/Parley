@@ -9,8 +9,24 @@ namespace Parley.Store;
 /// <param name="Agent">Who to start.</param>
 /// <param name="Workspace">The directory it works in.</param>
 /// <param name="InvokeCommand">The command its own launch configuration supplied.</param>
-/// <param name="Owed">How many exchanges are waiting on it.</param>
+/// <param name="Waiting">
+/// How many things are waiting on it: exchanges it owes an answer, plus messages it has not
+/// collected. Counted together because both are reasons to give an agent a turn and neither is
+/// visible to the other — an answer to a question this agent asked leaves no debt at all, and
+/// was the case that went unnoticed until an agent sat live beside an uncollected message for
+/// twenty minutes.
+/// </param>
 /// <param name="LastSeenUtc">When it last communicated, or null if it never has.</param>
+/// <param name="StuckAt">
+/// What was still waiting after this agent's most recent turn, if that turn changed nothing --
+/// and null if it made progress or has never run. A trigger that does not expire needs this.
+/// An owed exchange clears itself on §14's schedule whether or not the agent cooperates, but an
+/// uncollected message does not: §9.4's floor holds it against retention precisely so nothing
+/// is lost, so an agent that is started and does not collect is a candidate again on the next
+/// pass, and every pass after that, each one a real session on somebody's account. Reported
+/// rather than filtered on, like liveness, because whether to spend again on an agent that
+/// spent and achieved nothing is the supervisor's judgement.
+/// </param>
 /// <remarks>
 /// <see cref="LastSeenUtc"/> is reported rather than filtered on, which is a change from the
 /// one-shot form and a necessary one. Liveness used to mean "somebody else is running this, do
@@ -23,8 +39,9 @@ public sealed record InvocationCandidate(
     AgentName Agent,
     string Workspace,
     string InvokeCommand,
-    long Owed,
-    DateTimeOffset? LastSeenUtc);
+    long Waiting,
+    DateTimeOffset? LastSeenUtc,
+    long? StuckAt);
 
 /// <summary>
 /// What invocation has cost, per agent.
@@ -96,7 +113,7 @@ public sealed class InvocationRepository(SqliteConnection connection)
     /// one a query can make.
     /// </para>
     /// </remarks>
-    public async Task<IReadOnlyList<InvocationCandidate>> FindOwedAsync(
+    public async Task<IReadOnlyList<InvocationCandidate>> FindWaitingAsync(
         CancellationToken cancellationToken = default)
     {
         var candidates = new List<InvocationCandidate>();
@@ -104,16 +121,27 @@ public sealed class InvocationRepository(SqliteConnection connection)
         using var command = _connection.CreateCommand();
         command.CommandText =
             """
-            SELECT a.name, a.workspace, a.invoke_command, count(*) AS owed, a.last_seen_utc
-              FROM exchanges e
-              JOIN agents a ON a.name = e.owed_by
-             WHERE e.state = 'OPEN'
-               AND a.invoke_when_idle = 1
+            WITH waiting(agent, item) AS (
+                SELECT owed_by, 'x' || id FROM exchanges WHERE state = 'OPEN'
+                UNION
+                SELECT to_agent, 'm' || id FROM messages WHERE delivered_utc IS NULL
+            )
+            SELECT a.name, a.workspace, a.invoke_command,
+                   count(*) AS waiting, a.last_seen_utc,
+                   (SELECT CASE WHEN i.waiting_after >= i.waiting_before
+                                THEN i.waiting_after END
+                      FROM invocations i
+                     WHERE i.agent = a.name
+                     ORDER BY i.id DESC
+                     LIMIT 1) AS stuck_at
+              FROM waiting w
+              JOIN agents a ON a.name = w.agent
+             WHERE a.invoke_when_idle = 1
                AND a.status <> 'retired'
                AND a.workspace IS NOT NULL
                AND a.invoke_command IS NOT NULL
              GROUP BY a.name, a.workspace, a.invoke_command, a.last_seen_utc
-             ORDER BY owed DESC, a.name;
+             ORDER BY waiting DESC, a.name;
             """;
 
         using var reader = await command
@@ -126,7 +154,8 @@ public sealed class InvocationRepository(SqliteConnection connection)
                 reader.GetString(1),
                 reader.GetString(2),
                 reader.GetInt64(3),
-                reader.IsDBNull(4) ? null : ExchangeRow.ParseTimestamp(reader.GetString(4))));
+                reader.IsDBNull(4) ? null : ExchangeRow.ParseTimestamp(reader.GetString(4)),
+                reader.IsDBNull(5) ? null : reader.GetInt64(5)));
         }
 
         return candidates;
@@ -185,13 +214,21 @@ public sealed class InvocationRepository(SqliteConnection connection)
     /// Read before and after an invocation, so the record can say whether the process changed
     /// anything. An agent that ran and still owes exactly what it owed is the one worth noticing.
     /// </remarks>
-    public async Task<long> CountOwedAsync(
+    public async Task<long> CountWaitingAsync(
         AgentName agent,
         CancellationToken cancellationToken = default)
     {
         using var command = _connection.CreateCommand();
         command.CommandText =
-            "SELECT count(*) FROM exchanges WHERE state = 'OPEN' AND owed_by = @Agent;";
+            """
+            SELECT count(*) FROM (
+                SELECT 'x' || id AS item FROM exchanges
+                 WHERE state = 'OPEN' AND owed_by = @Agent
+                UNION
+                SELECT 'm' || id FROM messages
+                 WHERE delivered_utc IS NULL AND to_agent = @Agent
+            );
+            """;
         command.Parameters.AddWithValue("@Agent", agent.Value);
 
         using var reader = await command
@@ -247,7 +284,7 @@ public sealed class InvocationRepository(SqliteConnection connection)
         command.CommandText =
             """
             INSERT INTO invocations
-                (agent, owed_before, owed_after, started_utc, elapsed_ms, exit_code, timed_out,
+                (agent, waiting_before, waiting_after, started_utc, elapsed_ms, exit_code, timed_out,
                  cost_usd, model_turns, permission_denials)
             VALUES (@Agent, @Before, @After, @Started, @Elapsed, @Exit, @TimedOut,
                     @Cost, @Turns, @Denials);
@@ -284,7 +321,7 @@ public sealed class InvocationRepository(SqliteConnection connection)
             """
             SELECT agent,
                    count(*),
-                   coalesce(sum(owed_after < owed_before), 0),
+                   coalesce(sum(waiting_after < waiting_before), 0),
                    coalesce(sum(timed_out), 0),
                    coalesce(sum(timed_out = 0 AND exit_code <> 0), 0),
                    coalesce(sum(elapsed_ms), 0),

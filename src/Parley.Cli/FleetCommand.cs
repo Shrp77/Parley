@@ -153,8 +153,8 @@ public sealed class FleetCommand
         var lead = action.Started ? "started, then took a turn" : "took a turn";
 
         var progress = action.MadeProgress
-            ? string.Create(CultureInfo.InvariantCulture, $"owed {action.OwedBefore} → {action.OwedAfter}")
-            : string.Create(CultureInfo.InvariantCulture, $"owed {action.OwedBefore}, unchanged");
+            ? string.Create(CultureInfo.InvariantCulture, $"waiting {action.WaitingBefore} → {action.WaitingAfter}")
+            : string.Create(CultureInfo.InvariantCulture, $"waiting {action.WaitingBefore}, unchanged");
 
         // Cost is shown on every line that has one, not just the expensive ones. A fleet is the
         // first thing in this project that spends money while nobody is watching it, and a
