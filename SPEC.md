@@ -411,8 +411,12 @@ justification was left behind by the removal of pair serialisation, which §7.2 
 in the past tense. It is recorded here because a rule defended by the wrong mechanism invites
 the right mechanism to be removed as redundant.
 
-Clarify depth is capped (default 3). Models will otherwise ping-pong toward mutual precision
-indefinitely.
+Clarify depth is capped (default 200). Models will otherwise ping-pong toward mutual precision
+indefinitely — but read that default as what it is: not a considered limit, but the
+measurement §17 question 4 asks for, set far above any plausible need so the distribution real
+traffic produces can be read rather than manufactured by the cap. It is expected to come down
+once `clarifications()` says where depth settles. What the cap protects at that setting is
+§5.3's channel rather than anybody's patience.
 
 **A breach refuses the clarification. It does not close the exchange, and the broker writes no
 answer.** The answerer is told it has run out of budget and to answer with what it has, using
@@ -896,6 +900,29 @@ model. That is worth stating plainly rather than leaving the list to imply unifo
    constraint on what one peer can place in another's context; the clarify counter is. Whoever
    next reasons about the message size should reason about that product rather than about this
    number alone.
+
+   **And it compounds with the one control that is not applied.** Nothing bounds a *backlog*.
+   The per-message cap bounds one message and this counter bounds one exchange, but an agent
+   that has not drained its inbox holds however much arrived while it was away, and the delivery
+   path takes its page size as an optional argument that defaults to unbounded. §13 names
+   per-sender rate limits as the control for this and they are not implemented, so the page size
+   is the only thing in the way — and it is chosen by the receiving agent, which at least means
+   the party choosing is the party paying. Raising the clarify cap from 3 to 200 did not create
+   that gap, but it multiplied what a single exchange can leave sitting in it by the same two
+   orders of magnitude the paragraph below computes — deliberately not restated here, because a
+   number written twice is a number that will be corrected once. Whoever implements §13's rate limits
+   should read this paragraph first, and whoever lowers the clarify cap again closes part of it
+   for free.
+
+   **And the party who sets that number is not the only party who pays it.** The counter is
+   incremented by the answerer's requests alone — the asker's replies are Clarify messages that
+   neither count nor are refused, because turn-taking already bounds them at one per request.
+   But the cap is stamped at admission from the *asker's* policy, and each request draws a
+   reply, so a cap of N admits roughly N messages into the asker's context and N into the
+   answerer's. The asker chooses both. Raising it is therefore not purely self-inflicted, which
+   is the reading "800KB in front of an asker" invites and the reason this paragraph exists: an
+   answerer configured at 3 can still be handed 200 replies by an asker configured at 200. What
+   bounds that for everyone is `MaxClarifyDepthCap`, not the default.
 6. **Answer from authority, not inference.** Three outcomes, and choosing correctly between
    them is most of what makes an answer useful. If you own it and know, answer. If you own it
    and do not know, `unknown` beats a confident fabrication the peer will act on. If you do
@@ -2868,7 +2895,7 @@ Cheap to collect, disproportionately useful:
    (§5.2), the cheap instrument is to set it far above any plausible need, run real traffic, and
    read the distribution that results.
 
-   **That instrument is the default, at 200.** It was 3, which meant the measurement was only
+   **That instrument is now the default.** It was 3, which meant the measurement was only
    taken by deployments that had already decided the number was wrong — the ones least in need
    of the evidence, and the fewest. A default nobody changes collects nothing, so the guess was
    self-perpetuating. The number is not a claim that 200 is right; it is far above any plausible

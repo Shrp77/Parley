@@ -107,9 +107,11 @@ Parley ships a plugin, and this repository is its marketplace:
 ```
 
 `/parley:setup` walks the steps below with you — it checks the server is installed, asks for
-this repository's name and what it owns, and writes the launch configuration — then hands you
-to `/parley:peers`, which builds the peers block from the roster rather than from what you can
-remember. The plugin also carries the operator commands as a skill, so you can ask for a
+this repository's name and what it owns, and writes the launch configuration — then asks you to
+restart, because that is when the tools appear. In the session that comes back you run
+`/parley:peers`, which builds the peers block from the live roster rather than from what you can
+remember. That order is not incidental: `/parley:peers` reads the roster through the very tools
+the restart binds, so there is nothing for it to read before then. The plugin also carries the operator commands as a skill, so you can ask for a
 roster or an export in words rather than remembering the flags.
 
 It stops short of supplying the server itself, and that is deliberate: Claude Code stores a
