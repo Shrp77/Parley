@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/parley_waiting.py\" || exit 0",
+            "timeout": 10,
+            "statusMessage": "Checking for Parley messages..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/parley_waiting.py\" || exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
