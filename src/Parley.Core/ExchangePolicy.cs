@@ -68,7 +68,10 @@ public sealed record ExchangePolicy(
     /// What it costs is written down in §5.3 rather than implied: a Clarify takes no slot and
     /// carries a full message, so this counter is the only thing bounding that channel, and at
     /// 200 a single exchange can put roughly 800KB in front of an asker that §7.1 believes it
-    /// is protecting. That trade is defensible while a person is in the loop on both sides, and
+    /// is protecting. Note which party sets it, because it is not the only one who pays: the
+    /// counter is stamped from the *asker's* policy at admission, and every request it admits
+    /// draws a reply, so this number bounds what lands in both contexts and only one of them
+    /// chose it. That trade is defensible while a person is in the loop on both sides, and
     /// §17 question 4 says plainly that the Headless tier is where an unbounded clarify chain
     /// is a real risk. That tier now exists, so this default is on borrowed time and the
     /// measurement is what buys it back.
