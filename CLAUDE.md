@@ -19,6 +19,10 @@ src/Parley.Store    Persistence. SQLite via Dapper. ParleyDatabase (connection
 src/Parley.Broker   Orchestration. Decides when the other two run. Broker holds the
                     agent operations of SPEC.md §10.1; OperatorConsole holds §10.2.
                     Knows nothing of transports or adapters, and must not learn.
+src/Parley.Bridge   The operator's console: an HTTP window onto a deployment, and a
+                    host for agents it starts so their streams can be watched. Reaches
+                    OperatorConsole and nothing else, so it grows no operator power of
+                    its own. Not required -- Parley runs unchanged without it.
 tests/Parley.Core.Tests   Domain tests. Deliberately does NOT reference Parley.Store —
                           the absent dependency is the point. Keep it that way.
 tests/Parley.Store.Tests  Repository and schema-constraint tests.

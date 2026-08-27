@@ -65,6 +65,73 @@ public sealed class GateTests
         Assert.True(AccessToken.Admits("secret", "secret", null, Origin));
     }
 
+    [Theory]
+    [InlineData("/API/agents/docs/retire")]
+    [InlineData("/Api/fleet")]
+    [InlineData("/api/fleet")]
+    [InlineData("/api/agents/docs/purge")]
+    [InlineData("//")]
+    [InlineData("/index.html")]
+    public void Only_the_page_may_carry_its_token_in_the_url(string path)
+    {
+        // Found by probing a running bridge, not by reading the middleware. The rule was written
+        // as a denial -- "paths beginning /api/ need the header" -- with StringComparison.Ordinal,
+        // while ASP.NET routing matches case-insensitively. So POST /API/agents/docs/retire fell
+        // through to the query-token branch and was then dispatched to the endpoint regardless.
+        // It returned 200 and retired a real agent in the live store.
+        //
+        // The severity is not the casing. It is that every destructive operation became reachable
+        // by a URL, which puts a credential that can start agents into browser history and makes
+        // one link enough. A custom header exists precisely to stop that.
+        Assert.False(AccessToken.MayPresentTokenInQuery(path));
+    }
+
+    [Theory]
+    [InlineData("/")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void The_page_itself_may(string? path)
+    {
+        // Because it has no choice: a browser fetching a typed URL cannot set a header. Everything
+        // it then asks for is a script's request, and a script can.
+        Assert.True(AccessToken.MayPresentTokenInQuery(path));
+    }
+
+    [Theory]
+    [InlineData("evil.example")]
+    [InlineData("evil.example:7777")]
+    [InlineData("192.168.1.20:7777")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void A_request_addressed_to_somebody_else_name_is_refused(string? host)
+    {
+        // DNS rebinding, which is the standard attack on anything that trusts loopback. The
+        // attacker's domain resolves to their server, the page loads, the record is re-pointed at
+        // 127.0.0.1 -- and the browser now treats requests to that name as same-origin, so it
+        // sends no Origin header and the check above never fires.
+        //
+        // The Host header still names the attacker's domain, because that is what the browser was
+        // asked for. This is the only place that survives the rebind.
+        Assert.False(AccessToken.AddressedThisMachine(host, exposed: false));
+    }
+
+    [Theory]
+    [InlineData("127.0.0.1:7777")]
+    [InlineData("localhost:7777")]
+    [InlineData("localhost")]
+    [InlineData("[::1]:7777")]
+    public void A_request_addressed_to_this_machine_is_admitted(string host) =>
+        Assert.True(AccessToken.AddressedThisMachine(host, exposed: false));
+
+    [Fact]
+    public void An_operator_who_widened_the_bind_is_not_second_guessed()
+    {
+        // Once listening beyond this machine, the legitimate host is a name this process has no
+        // way to know, and a guess would refuse the operator rather than the attacker. The flag
+        // is the consent; the warning at startup is where the cost is stated.
+        Assert.True(AccessToken.AddressedThisMachine("192.168.1.20:7777", exposed: true));
+    }
+
     [Fact]
     public void Two_tokens_are_never_the_same()
     {

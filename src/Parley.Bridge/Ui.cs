@@ -125,8 +125,13 @@ let selected = null;
 const lines = new Map();
 
 const el = id => document.getElementById(id);
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c =>
-  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// Single quotes included. Agent names match ^[a-z][a-z0-9-]{0,31}$ so none can appear today,
+// but the button handlers interpolate a name inside a JS string literal, and that safety is a
+// property of a regex in another assembly. A later relaxation of the name grammar would turn
+// this page -- which holds a token that can start agents -- into script injection, and nothing
+// in either place would mention the other.
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const shade = s => s === 'live' ? 'live'
   : s === 'not responding' ? 'doubt'

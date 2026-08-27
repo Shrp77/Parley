@@ -137,8 +137,7 @@ public sealed class AgentHost : IAsyncDisposable
     /// </summary>
     /// <param name="name">The agent.</param>
     /// <param name="text">What to say to it.</param>
-    /// <param name="cancellationToken">Cancels the wait.</param>
-    /// <returns>The reason it could not, or <see langword="null"/> on success.</returns>
+    /// <returns>The reason the turn could not be started, or <see langword="null"/> if it was.</returns>
     /// <remarks>
     /// <para>
     /// This is the most dangerous capability in the project and it is worth naming as such: it is
@@ -149,11 +148,11 @@ public sealed class AgentHost : IAsyncDisposable
     /// </para>
     /// <para>
     /// One turn at a time is enforced by <see cref="ResidentAgent"/> itself; a second while one is
-    /// in flight waits rather than interleaving on the stream.
+    /// in flight waits rather than interleaving on the stream. It returns as soon as the turn is
+    /// accepted, not when it finishes -- see the body.
     /// </para>
     /// </remarks>
-    public async Task<string?> SendAsync(
-        string name, string text, CancellationToken cancellationToken = default)
+    public string? Send(string name, string text)
     {
         if (!_hosted.TryGetValue(name, out var entry))
         {
@@ -167,20 +166,35 @@ public sealed class AgentHost : IAsyncDisposable
 
         Publish(name, "lifecycle", $"operator: {text}");
 
-        try
+        // Started, not awaited, and the distinction is the whole point. A turn's default budget
+        // is twenty minutes; awaiting it here would hold the operator's HTTP request open for
+        // that long, so the browser would show a spinner for the entire turn while the stream
+        // beside it printed every word as it arrived. The request's job is to say the turn was
+        // accepted. The stream already reports everything that follows, including failure, which
+        // is what makes discarding the task safe rather than careless.
+        //
+        // Deliberately not passing the request's cancellation token: the caller's token is
+        // cancelled when the response completes, which is immediately, and that would abort the
+        // turn the instant it was accepted.
+        _ = Task.Run(async () =>
         {
-            var outcome = await entry.Agent
-                .TakeTurnAsync(text, entry.Command.Timeout, cancellationToken)
-                .ConfigureAwait(false);
+            try
+            {
+                var outcome = await entry.Agent
+                    .TakeTurnAsync(text, entry.Command.Timeout, CancellationToken.None)
+                    .ConfigureAwait(false);
 
-            Publish(name, "lifecycle", outcome.Describe());
-            return null;
-        }
-        catch (Exception ex) when (ex is InvocationFailedException or InvalidOperationException)
-        {
-            Publish(name, "error", ex.Message);
-            return ex.Message;
-        }
+                Publish(name, "lifecycle", outcome.Describe());
+            }
+#pragma warning disable CA1031 // nothing above this can report; the stream is the report
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                Publish(name, "error", ex.Message);
+            }
+        }, CancellationToken.None);
+
+        return null;
     }
 
     /// <summary>

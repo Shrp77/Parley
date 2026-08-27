@@ -78,14 +78,22 @@ using (store)
     // ---------------------------------------------------------------------------------------
     app.Use(async (context, next) =>
     {
-        var path = context.Request.Path.Value ?? "/";
+        // Refused before the token is looked at: a rebound name resolving here is same-origin to
+        // the browser, so the Origin check below never fires for it.
+        if (!AccessToken.AddressedThisMachine(
+                context.Request.Headers.Host.FirstOrDefault(), options.IsExposed))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsync("Forbidden.").ConfigureAwait(false);
+            return;
+        }
 
-        // The page itself cannot set a header -- the browser is fetching it from a typed URL --
-        // so it is the one thing admitted on a query token. It carries no data of its own; it is
-        // a script that then asks for everything else with the header.
-        var presented = path.StartsWith("/api/", StringComparison.Ordinal)
-            ? context.Request.Headers[AccessToken.Header].FirstOrDefault()
-            : context.Request.Query["t"].FirstOrDefault();
+        // Allow-listed, never deny-listed: only the page may carry its token in the query, and
+        // only because a browser fetching a typed URL cannot set a header. See
+        // AccessToken.MayPresentTokenInQuery for the bypass the other shape had.
+        var presented = AccessToken.MayPresentTokenInQuery(context.Request.Path.Value)
+            ? context.Request.Query["t"].FirstOrDefault()
+            : context.Request.Headers[AccessToken.Header].FirstOrDefault();
 
         if (!AccessToken.Admits(
                 presented, options.Token, context.Request.Headers.Origin.FirstOrDefault(), origin))
@@ -206,11 +214,9 @@ using (store)
         return failure is null ? Results.Ok() : Results.BadRequest(failure);
     });
 
-    app.MapPost("/api/agents/{name}/send", async (
-        string name, SendRequest request, CancellationToken token) =>
+    app.MapPost("/api/agents/{name}/send", (string name, SendRequest request) =>
     {
-        var failure = await agents
-            .SendAsync(name, request?.Text ?? "", token).ConfigureAwait(false);
+        var failure = agents.Send(name, request?.Text ?? "");
 
         return failure is null ? Results.Ok() : Results.BadRequest(failure);
     });

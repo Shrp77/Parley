@@ -35,6 +35,78 @@ public static class AccessToken
     public const string Header = "X-Parley-Token";
 
     /// <summary>
+    /// Whether a request may present its token in the query string rather than the header.
+    /// </summary>
+    /// <param name="path">The request path.</param>
+    /// <returns><see langword="true"/> only for the page itself.</returns>
+    /// <remarks>
+    /// <para>
+    /// Only the page, because only the page has no choice: a browser fetching a typed URL cannot
+    /// set a header. Everything the page then asks for is a script's request and can.
+    /// </para>
+    /// <para>
+    /// <b>Stated as what is allowed, never as what is denied.</b> The first version said "if the
+    /// path begins with /api/ require the header, otherwise accept a query token", which reads
+    /// the same and is not: it fails open. Routing in ASP.NET matches case-insensitively while
+    /// <see cref="StringComparison.Ordinal"/> does not, so <c>POST /API/agents/x/retire</c> missed
+    /// the rule, took the query-token branch, and was dispatched to the endpoint anyway. Probed
+    /// against a running bridge it returned 200 and retired a real agent.
+    /// </para>
+    /// <para>
+    /// The severity is not the casing. It puts a credential that can start agents into a URL --
+    /// browser history, a screenshot, a shell log -- and makes every destructive operation
+    /// reachable by a link, which is precisely the shape a custom header exists to prevent. An
+    /// allow-list of exactly one path cannot fail that way, and a route added later is
+    /// header-only by default rather than by whoever remembers.
+    /// </para>
+    /// </remarks>
+    public static bool MayPresentTokenInQuery(string? path) =>
+        string.IsNullOrEmpty(path) || string.Equals(path, "/", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether a request addressed this machine by a name this bridge answers to.
+    /// </summary>
+    /// <param name="host">The request's <c>Host</c> header.</param>
+    /// <param name="exposed">Whether the operator opted into listening beyond this machine.</param>
+    /// <returns><see langword="true"/> if the request may be served.</returns>
+    /// <remarks>
+    /// <para>
+    /// The defence against DNS rebinding, the standard attack on a service that trusts loopback.
+    /// An attacker's domain resolves to their server, the page loads, and the record is then
+    /// re-pointed at 127.0.0.1; the browser now considers requests to that name same-origin, and
+    /// a same-origin GET carries no <c>Origin</c> header at all -- so the check that stops a
+    /// cross-site page never fires.
+    /// </para>
+    /// <para>
+    /// The <c>Host</c> header still names the attacker's domain, because that is what the browser
+    /// was asked for. Refusing a host this bridge was never reachable at closes it.
+    /// </para>
+    /// <para>
+    /// Skipped when the operator has widened the bind, because the legitimate host is then a
+    /// machine name this process cannot know, and a guess would refuse the operator rather than
+    /// the attacker.
+    /// </para>
+    /// </remarks>
+    public static bool AddressedThisMachine(string? host, bool exposed)
+    {
+        if (exposed)
+        {
+            return true;
+        }
+
+        if (string.IsNullOrEmpty(host))
+        {
+            return false;
+        }
+
+        var name = host.Contains(']', StringComparison.Ordinal)
+            ? host[..(host.IndexOf(']', StringComparison.Ordinal) + 1)]
+            : host.Split(':')[0];
+
+        return name is "127.0.0.1" or "localhost" or "[::1]";
+    }
+
+    /// <summary>
     /// Mints a token for one run of the bridge.
     /// </summary>
     /// <returns>A URL-safe secret.</returns>
