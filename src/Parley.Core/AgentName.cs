@@ -4,8 +4,8 @@ using System.Text.RegularExpressions;
 namespace Parley.Core;
 
 /// <summary>
-/// A validated agent identifier: a short lowercase slug such as <c>orders</c> or
-/// <c>billing</c>.
+/// A validated agent identifier: a role and the machine it runs on, such as
+/// <c>orders@server-b</c>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -16,10 +16,23 @@ namespace Parley.Core;
 /// spawned agent, and be replayed into its inbox.
 /// </para>
 /// <para>
-/// The grammar is <c>^[a-z][a-z0-9-]{0,31}$</c>. It is narrow on purpose: names appear
-/// inside <see cref="PairKey"/> values, log lines, and adapter tool calls, so excluding
-/// whitespace, case variation, and the pair separator removes whole categories of
-/// ambiguity rather than handling them.
+/// <b>Two parts, because one was not enough.</b> The same repository checked out on five
+/// machines gives five agents, and under a single-token grammar they collided into one
+/// registry row and silently shared an identity. The role says what the agent is for; the
+/// machine says which one is being addressed. See SPEC.md §4.1.1.
+/// </para>
+/// <para>
+/// The machine half is detected by the node that reports the agent, never configured, because
+/// a machine that can be told what it is called can be told the wrong thing — and two boxes
+/// answering to the same name is a failure that shows up as messages arriving somewhere
+/// nobody expected, long after the mistake.
+/// </para>
+/// <para>
+/// The grammar is <c>^[a-z][a-z0-9-]{0,31}@[a-z0-9][a-z0-9.-]{0,63}$</c>. Narrow on purpose:
+/// names appear inside <see cref="PairKey"/> values, log lines, and adapter tool calls, so
+/// excluding whitespace, case variation, the pair separator, and a second <c>@</c> removes
+/// whole categories of ambiguity rather than handling them. A dot is admitted in the machine
+/// half alone, because a fully qualified host name is a reasonable thing for a node to detect.
 /// </para>
 /// <para>
 /// All comparison is ordinal. Culture-sensitive comparison of a value used in a lock key
@@ -29,9 +42,26 @@ namespace Parley.Core;
 public readonly partial struct AgentName : IEquatable<AgentName>, IComparable<AgentName>
 {
     /// <summary>
-    /// The maximum number of characters permitted in an agent name.
+    /// The maximum number of characters permitted in the role half of a name.
     /// </summary>
-    public const int MaxLength = 32;
+    public const int MaxRoleLength = 32;
+
+    /// <summary>
+    /// The maximum number of characters permitted in the machine half of a name.
+    /// </summary>
+    /// <remarks>
+    /// Longer than the role because it is detected rather than chosen, and a fully qualified
+    /// host name is a reasonable thing for a node to find itself called.
+    /// </remarks>
+    public const int MaxMachineLength = 64;
+
+    /// <summary>
+    /// The maximum number of characters permitted in a whole name.
+    /// </summary>
+    public const int MaxLength = MaxRoleLength + 1 + MaxMachineLength;
+
+    /// <summary>The character separating the role from the machine.</summary>
+    public const char Separator = '@';
 
     private readonly string _value;
 
@@ -47,8 +77,69 @@ public readonly partial struct AgentName : IEquatable<AgentName>, IComparable<Ag
     /// </exception>
     public string Value => _value ?? throw new InvalidOperationException("Uninitialised AgentName.");
 
-    [GeneratedRegex("^[a-z][a-z0-9-]{0,31}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^[a-z][a-z0-9-]{0,31}@[a-z0-9][a-z0-9.-]{0,63}$", RegexOptions.CultureInvariant)]
     private static partial Regex Pattern { get; }
+
+    /// <summary>The grammar a role half must match on its own.</summary>
+    [GeneratedRegex("^[a-z][a-z0-9-]{0,31}$", RegexOptions.CultureInvariant)]
+    private static partial Regex RolePattern { get; }
+
+    /// <summary>The grammar a machine half must match on its own.</summary>
+    [GeneratedRegex("^[a-z0-9][a-z0-9.-]{0,63}$", RegexOptions.CultureInvariant)]
+    private static partial Regex MachinePattern { get; }
+
+    /// <summary>
+    /// Gets the role half: what this agent is for.
+    /// </summary>
+    /// <value>The text before the separator, for example <c>orders</c>.</value>
+    /// <exception cref="InvalidOperationException">The instance is the default value.</exception>
+    /// <remarks>
+    /// A capability rather than a scope. Five agents sharing a role own the same thing and can
+    /// execute different parts of it, which is why <c>owns</c> stays per agent — see §4.1.1.
+    /// </remarks>
+    public string Role => Value[..Value.IndexOf(Separator, StringComparison.Ordinal)];
+
+    /// <summary>
+    /// Gets the machine half: which one is being addressed.
+    /// </summary>
+    /// <value>The text after the separator, for example <c>server-b</c>.</value>
+    /// <exception cref="InvalidOperationException">The instance is the default value.</exception>
+    public string Machine => Value[(Value.IndexOf(Separator, StringComparison.Ordinal) + 1)..];
+
+    /// <summary>
+    /// Whether a role, on its own, could name a group of agents.
+    /// </summary>
+    /// <param name="candidate">The text to check.</param>
+    /// <returns><see langword="true"/> if it is a well-formed role.</returns>
+    /// <remarks>
+    /// Used to tell <c>infra</c> from <c>infra@server-b</c> at the point a question is addressed:
+    /// the first opens one exchange per registered agent under that role (§5.5), the second
+    /// opens one. Deliberately not a method that guesses — a caller asks which shape it has and
+    /// gets a straight answer, because "it had no @ so we treated it as a group" is the sort of
+    /// inference that sends a question to nineteen machines by accident.
+    /// </remarks>
+    public static bool IsRole([NotNullWhen(true)] string? candidate) =>
+        candidate is not null && RolePattern.IsMatch(candidate);
+
+    /// <summary>
+    /// Builds a name from its two halves.
+    /// </summary>
+    /// <param name="role">What the agent is for.</param>
+    /// <param name="machine">The machine reporting it.</param>
+    /// <param name="name">The validated name, when this returns <see langword="true"/>.</param>
+    /// <returns><see langword="true"/> if both halves are well formed.</returns>
+    public static bool TryJoin(string? role, string? machine, out AgentName name)
+    {
+        if (role is not null && machine is not null
+            && RolePattern.IsMatch(role) && MachinePattern.IsMatch(machine))
+        {
+            name = new AgentName(role + Separator + machine);
+            return true;
+        }
+
+        name = default;
+        return false;
+    }
 
     /// <summary>
     /// Attempts to create an <see cref="AgentName"/> from arbitrary text.

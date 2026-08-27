@@ -1,4 +1,4 @@
-namespace Parley.Core;
+﻿namespace Parley.Core;
 
 /// <summary>
 /// Which version of the Parley protocol this implementation speaks.
@@ -18,6 +18,13 @@ namespace Parley.Core;
 /// about its state.
 /// </para>
 /// <para>
+/// <b>0.2 introduced the transport.</b> 0.1 was MCP over stdio against a shared file: there was
+/// no wire, so there was nothing for a second implementation to speak and the number moved for
+/// nothing. There is one now — <c>proto/parley.proto</c>, three services, and a held connection
+/// that decides what reachable means — and every one of those is visible from the other side of
+/// the boundary. See §18 for what changed.
+/// </para>
+/// <para>
 /// Kept here rather than read from the document at run time, so an implementation that ships
 /// without SPEC.md beside it can still say what it speaks. <c>SpecConsistencyTests</c> binds the
 /// two, so the constant and the document cannot drift apart in a build that passes.
@@ -26,5 +33,5 @@ namespace Parley.Core;
 public static class ProtocolVersion
 {
     /// <summary>The protocol version, as SPEC.md declares it.</summary>
-    public const string Current = "0.1";
+    public const string Current = "0.2";
 }

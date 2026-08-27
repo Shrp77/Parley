@@ -16,8 +16,8 @@ namespace Parley.Broker.Tests;
 /// </remarks>
 public sealed class InboxTests : IDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private const string Consequences =
@@ -36,8 +36,7 @@ public sealed class InboxTests : IDisposable
         foreach (var name in new[] { Orders, Billing })
         {
             agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Offline),
+                new AgentRecord(name, "test", AgentTier.Full, null, null, null, false, AgentStatus.Active),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
@@ -390,6 +389,13 @@ public sealed class InboxTests : IDisposable
         Assert.True(await _exchanges.SaveAsync(
             exchange, cancellationToken: TestContext.Current.CancellationToken));
         await Send(MessageType.Clarify, Billing, Orders, exchange.Id, "gross of what tax?");
+
+        // The fixture's session ends first, because this test is about one session restarting
+        // rather than a second window opening beside a live one. That distinction used to be
+        // made by a lease expiring -- the fixture attached an hour before T0, so it had lapsed --
+        // and a lapse is a guess. A connection is counted, so the session that is finished says
+        // so, and two sessions genuinely open now read as two.
+        await _broker.DetachAsync(TestContext.Current.CancellationToken);
 
         var resuming = new Broker(_connection, BrokerOptions.Default with
         {

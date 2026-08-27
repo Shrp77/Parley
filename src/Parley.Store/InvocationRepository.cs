@@ -8,7 +8,6 @@ namespace Parley.Store;
 /// </summary>
 /// <param name="Agent">Who to start.</param>
 /// <param name="Workspace">The directory it works in.</param>
-/// <param name="InvokeCommand">The command its own launch configuration supplied.</param>
 /// <param name="Waiting">
 /// How many things are waiting on it: exchanges it owes an answer, plus messages it has not
 /// collected. Counted together because both are reasons to give an agent a turn and neither is
@@ -16,7 +15,7 @@ namespace Parley.Store;
 /// was the case that went unnoticed until an agent sat live beside an uncollected message for
 /// twenty minutes.
 /// </param>
-/// <param name="LastSeenUtc">When it last communicated, or null if it never has.</param>
+/// <param name="Connected">Whether its own adapter is attached right now.</param>
 /// <param name="StuckAt">
 /// What was still waiting after this agent's most recent turn, if that turn changed nothing --
 /// and null if it made progress or has never run. A trigger that does not expire needs this.
@@ -28,19 +27,27 @@ namespace Parley.Store;
 /// spent and achieved nothing is the supervisor's judgement.
 /// </param>
 /// <remarks>
-/// <see cref="LastSeenUtc"/> is reported rather than filtered on, which is a change from the
-/// one-shot form and a necessary one. Liveness used to mean "somebody else is running this, do
-/// not start a second copy". A supervisor that keeps agents resident makes its own agents live —
-/// they hold open sessions precisely because it started them — so a query that excluded live
-/// agents would return every candidate exactly once and then never again. Who is live and who is
-/// mine is a distinction only the supervisor can draw, so it draws it.
+/// <para>
+/// <b>No launch command.</b> The node on the agent's machine owns how to start it, and the
+/// broker holds no executable command line at all — see SPEC.md §4. A candidate says who needs
+/// a turn and how much is waiting; whether it can be started, and starting it, belong to the
+/// machine it is on. This also removes a chicken-and-egg the older design had: the command was
+/// written by the agent itself, so an agent that had never run had no record of how to start it.
+/// </para>
+/// <para>
+/// <see cref="Connected"/> is reported rather than filtered on, which is a change from the
+/// one-shot form and a necessary one. It used to mean "somebody else is running this, do not
+/// start a second copy". A supervisor that keeps agents resident connects its own agents —
+/// they hold open sessions precisely because it started them — so a query that excluded
+/// connected agents would return every candidate exactly once and then never again. Who is
+/// connected and who is mine is a distinction only the supervisor can draw, so it draws it.
+/// </para>
 /// </remarks>
 public sealed record InvocationCandidate(
     AgentName Agent,
     string Workspace,
-    string InvokeCommand,
     long Waiting,
-    DateTimeOffset? LastSeenUtc,
+    bool Connected,
     long? StuckAt);
 
 /// <summary>
@@ -126,8 +133,8 @@ public sealed class InvocationRepository(SqliteConnection connection)
                 UNION
                 SELECT to_agent, 'm' || id FROM messages WHERE delivered_utc IS NULL
             )
-            SELECT a.name, a.workspace, a.invoke_command,
-                   count(*) AS waiting, a.last_seen_utc,
+            SELECT a.name, a.workspace,
+                   count(*) AS waiting, a.connected,
                    (SELECT CASE WHEN i.waiting_after >= i.waiting_before
                                 THEN i.waiting_after END
                       FROM invocations i
@@ -136,11 +143,9 @@ public sealed class InvocationRepository(SqliteConnection connection)
                      LIMIT 1) AS stuck_at
               FROM waiting w
               JOIN agents a ON a.name = w.agent
-             WHERE a.invoke_when_idle = 1
-               AND a.status <> 'retired'
+             WHERE a.status <> 'retired'
                AND a.workspace IS NOT NULL
-               AND a.invoke_command IS NOT NULL
-             GROUP BY a.name, a.workspace, a.invoke_command, a.last_seen_utc
+             GROUP BY a.name, a.workspace, a.connected
              ORDER BY waiting DESC, a.name;
             """;
 
@@ -152,10 +157,9 @@ public sealed class InvocationRepository(SqliteConnection connection)
             candidates.Add(new InvocationCandidate(
                 AgentName.Create(reader.GetString(0)),
                 reader.GetString(1),
-                reader.GetString(2),
-                reader.GetInt64(3),
-                reader.IsDBNull(4) ? null : ExchangeRow.ParseTimestamp(reader.GetString(4)),
-                reader.IsDBNull(5) ? null : reader.GetInt64(5)));
+                reader.GetInt64(2),
+                reader.GetInt64(3) != 0,
+                reader.IsDBNull(4) ? null : reader.GetInt64(4)));
         }
 
         return candidates;
@@ -193,7 +197,12 @@ public sealed class InvocationRepository(SqliteConnection connection)
 
         using var command = _connection.CreateCommand();
         command.CommandText =
-            "SELECT name FROM agents WHERE status = 'retired' OR invoke_when_idle = 0;";
+            // Retirement alone. Withdrawing the permission to start an agent is now removing it
+            // from the node's own catalogue, which the node reads and the broker never sees --
+            // so an agent that has been de-listed there simply stops being started, with no row
+            // to notice. What is left here is the operator's judgement, which is the one
+            // statement about an agent that does live in the store.
+            "SELECT name FROM agents WHERE status = 'retired';";
 
         using var reader = await command
             .ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);

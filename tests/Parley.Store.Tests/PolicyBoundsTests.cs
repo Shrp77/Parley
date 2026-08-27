@@ -37,8 +37,8 @@ public sealed class PolicyBoundsTests : IDisposable
     public PolicyBoundsTests()
     {
         _connection = ParleyDatabase.OpenInMemory();
-        Execute("INSERT INTO agents (name, adapter, tier, status) VALUES "
-              + "('orders','test','full','offline'),('billing','test','full','offline');");
+        Execute("INSERT INTO nodes (machine, connected, first_seen_utc) VALUES ('test', 1, '2026-01-01T00:00:00+00:00') ON CONFLICT DO NOTHING; INSERT INTO agents (name, adapter, tier, status) VALUES "
+              + "('orders@test','test','full','active'),('billing@test','test','full','active');");
     }
 
     public void Dispose() => _connection.Dispose();
@@ -55,7 +55,7 @@ public sealed class PolicyBoundsTests : IDisposable
         "INSERT INTO exchanges (pair_key, asker, answerer, owed_by, state, clarify_depth, "
       + "clarify_depth_cap, open_pair_cap, delivery_window_ms, working_window_ms, "
       + "grace_period_ms, opened_utc, expires_utc, question_hash) VALUES "
-      + "('billing' || char(31) || 'orders','orders','billing','billing','OPEN',0,3,"
+      + "('billing@test' || char(31) || 'orders@test','orders@test','billing@test','billing@test','OPEN',0,3,"
       + openPairCap + ",900000,14400000," + graceMs + ",'" + Stamp + "','" + Stamp + "','"
       + question + "');");
 
@@ -128,7 +128,7 @@ public sealed class PolicyBoundsTests : IDisposable
         };
 
         var opened = await repository.TryOpenAsync(
-            AgentName.Create("orders"), AgentName.Create("billing"),
+            AgentName.Create("orders@test"), AgentName.Create("billing@test"),
             new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
             "q", admitted, cancellationToken: TestContext.Current.CancellationToken);
 
@@ -137,7 +137,7 @@ public sealed class PolicyBoundsTests : IDisposable
         // A transition and a save, which is every write path an exchange has.
         var exchange = opened.Exchange!;
         Assert.True(exchange.Clarify(
-            AgentName.Create("billing"),
+            AgentName.Create("billing@test"),
             new DateTimeOffset(2026, 1, 1, 0, 5, 0, TimeSpan.Zero)).Succeeded);
         Assert.True(await repository.SaveAsync(
             exchange, cancellationToken: TestContext.Current.CancellationToken));

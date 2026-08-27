@@ -23,7 +23,7 @@ public sealed class ManyAgentsTests : IDisposable
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private static readonly AgentName[] Agents =
-        [.. Enumerable.Range(1, Repositories).Select(i => AgentName.Create($"repo-{i}"))];
+        [.. Enumerable.Range(1, Repositories).Select(i => AgentName.Create($"repo-{i}@test"))];
 
     private readonly SqliteConnection _connection;
     private readonly ExchangeRepository _exchanges;
@@ -36,8 +36,7 @@ public sealed class ManyAgentsTests : IDisposable
         foreach (var agent in Agents)
         {
             registry.UpsertAsync(
-                new AgentRecord(agent, "mcp", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Offline),
+                new AgentRecord(agent, "mcp", AgentTier.Full, null, null, null, false, AgentStatus.Active),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 

@@ -55,36 +55,57 @@ public sealed class AgentFleetTests : IDisposable
         return path;
     }
 
-    /// <summary>Registers an agent, optionally consenting to being run.</summary>
+    /// <summary>Registers an agent, and tells this machine how to start it.</summary>
     /// <param name="name">The agent.</param>
-    /// <param name="invokeCommand">How to start it, or null for no consent.</param>
-    /// <param name="lastSeen">When it was last heard from.</param>
+    /// <param name="invokeCommand">How to start it, or null if this machine does not know.</param>
+    /// <param name="connected">Whether its adapter is attached.</param>
     /// <param name="status">Its registry status.</param>
+    /// <remarks>
+    /// Two writes to two places, which is the change these tests exist to describe. The
+    /// registration goes in the store; how to start the agent goes in the node's own catalogue
+    /// and never leaves this machine (SPEC.md §4). An agent registered without a catalogue entry
+    /// is one the fleet declines to start, which used to be expressed as withheld consent and is
+    /// now simply a machine that has not been told about it.
+    /// </remarks>
     private void Register(
         string name,
         string? invokeCommand = null,
-        DateTimeOffset? lastSeen = null,
-        string status = "live")
+        bool connected = false,
+        string status = "active")
     {
         using var command = _connection.CreateCommand();
         command.CommandText =
             """
-            INSERT INTO agents
-                (name, adapter, tier, workspace, status, last_seen_utc,
-                 invoke_when_idle, invoke_command)
-            VALUES (@Name, 'test', 'headless', @Workspace, @Status, @Seen, @Consent, @Command);
+            INSERT INTO agents (name, adapter, tier, workspace, status, connected)
+            VALUES (@Name, 'test', 'headless', @Workspace, @Status, @Connected);
             """;
 
         command.Parameters.AddWithValue("@Name", name);
         command.Parameters.AddWithValue("@Workspace", Workspace(name));
         command.Parameters.AddWithValue("@Status", status);
-        command.Parameters.AddWithValue(
-            "@Seen",
-            lastSeen is { } seen ? ExchangeRow.FormatTimestamp(seen) : DBNull.Value);
-        command.Parameters.AddWithValue("@Consent", invokeCommand is null ? 0 : 1);
-        command.Parameters.AddWithValue("@Command", (object?)invokeCommand ?? DBNull.Value);
-
+        command.Parameters.AddWithValue("@Connected", connected ? 1 : 0);
         command.ExecuteNonQuery();
+
+        if (invokeCommand is not null)
+        {
+            _catalogue[AgentName.Create(name).Role] = invokeCommand;
+        }
+    }
+
+    /// <summary>What this machine has been told it can start, by role.</summary>
+    private readonly Dictionary<string, string> _catalogue = new(StringComparer.Ordinal);
+
+    /// <summary>Builds a catalogue file for the current fixture and reads it back.</summary>
+    /// <returns>The catalogue the fleet consults.</returns>
+    private NodeCatalogue Catalogue()
+    {
+        var agents = string.Join(",", _catalogue.Select(e =>
+            $"\"{e.Key}\": {{ \"command\": {System.Text.Json.JsonSerializer.Serialize(e.Value)} }}"));
+
+        var path = Path.Combine(_root, "node.json");
+        File.WriteAllText(path, $"{{ \"agents\": {{ {agents} }} }}");
+
+        return NodeCatalogue.Read(Path.Combine(_root, "parley.db"));
     }
 
     /// <summary>The 64-character lower-case hex the schema requires of a content hash.</summary>
@@ -191,15 +212,17 @@ public sealed class AgentFleetTests : IDisposable
         command.ExecuteNonQuery();
     }
 
-    private AgentFleet Fleet() => new(_connection, TimeProvider.System, Lease);
+    /// <summary>The fleet under test, consulting this machine's catalogue.</summary>
+    /// <returns>A fleet that can start whatever Register was given a command for.</returns>
+    private AgentFleet Fleet() => new(_connection, TimeProvider.System, Lease, Catalogue());
 
     [Fact]
     public async Task An_agent_that_owes_an_answer_is_started_and_given_a_turn()
     {
         // The feature in one assertion: nobody took a turn, and an agent ran anyway.
-        Register("orders");
-        Register("billing", StubRunner.Answering(Workspace("billing")));
-        Owe("orders", "billing");
+        Register("orders@test");
+        Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
+        Owe("orders@test", "billing@test");
 
         await using var fleet = Fleet();
 
@@ -207,11 +230,11 @@ public sealed class AgentFleetTests : IDisposable
 
         var action = Assert.Single(actions);
 
-        Assert.Equal("billing", action.Agent.Value);
+        Assert.Equal("billing@test", action.Agent.Value);
         Assert.True(action.Started);
         Assert.Null(action.Skipped);
         Assert.True(action.Turn?.Succeeded, action.Turn?.Describe());
-        Assert.Contains("billing", fleet.Running, StringComparer.Ordinal);
+        Assert.Contains("billing@test", fleet.Running, StringComparer.Ordinal);
     }
 
     [Fact]
@@ -219,36 +242,42 @@ public sealed class AgentFleetTests : IDisposable
     {
         // The whole point of residency. Starting a fresh process per pass would be the one-shot
         // design wearing a supervisor's clothes, and the agent would remember nothing.
-        Register("orders");
-        Register("billing", StubRunner.Answering(Workspace("billing")));
-        Owe("orders", "billing");
+        Register("orders@test");
+        Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
+        Owe("orders@test", "billing@test");
 
         await using var fleet = Fleet();
 
         var first = await fleet.TickAsync(Ct);
-        var session = fleet.SessionOf(AgentName.Create("billing"));
+        var session = fleet.SessionOf(AgentName.Create("billing@test"));
 
-        Owe("orders", "billing");
+        Owe("orders@test", "billing@test");
 
         var second = await fleet.TickAsync(Ct);
 
         Assert.True(Assert.Single(first).Started);
         Assert.False(Assert.Single(second).Started, "the fleet started a second process");
-        Assert.Equal(session, fleet.SessionOf(AgentName.Create("billing")));
+        Assert.Equal(session, fleet.SessionOf(AgentName.Create("billing@test")));
     }
 
     [Fact]
-    public async Task An_agent_that_has_not_consented_is_never_started()
+    public async Task An_agent_this_machine_cannot_start_is_reported_not_started()
     {
         // Consent comes from the invoked agent's own launch configuration and nowhere else.
         // Starting a repository nobody offered is spending somebody's tokens on their machine.
-        Register("orders");
-        Register("billing");
-        Owe("orders", "billing");
+        Register("orders@test");
+        Register("billing@test");
+        Owe("orders@test", "billing@test");
 
         await using var fleet = Fleet();
 
-        Assert.Empty(await fleet.TickAsync(Ct));
+        // Reported rather than silent. An agent this machine has no command for is a
+        // configuration gap somebody has to see: under the old design it was withheld consent
+        // and produced nothing at all, which looked identical to a healthy quiet pass.
+        var skipped = Assert.Single(await fleet.TickAsync(Ct));
+
+        Assert.False(skipped.Started);
+        Assert.Contains("no launch command", skipped.Skipped, StringComparison.Ordinal);
         Assert.Empty(fleet.Running);
     }
 
@@ -258,13 +287,13 @@ public sealed class AgentFleetTests : IDisposable
         // Two processes behind one identity would drain one inbox, and the exchange's turn check
         // refuses the loser -- after both have spent tokens getting there. §14's lease is the
         // only evidence available that a person has that repository open.
-        Register("orders");
+        Register("orders@test");
         Register(
-            "billing",
-            StubRunner.Answering(Workspace("billing")),
-            lastSeen: DateTimeOffset.UtcNow);
+            "billing@test",
+            StubRunner.Answering(Workspace("billing@test")),
+            connected: true);
 
-        Owe("orders", "billing");
+        Owe("orders@test", "billing@test");
 
         await using var fleet = Fleet();
 
@@ -275,15 +304,15 @@ public sealed class AgentFleetTests : IDisposable
     }
 
     [Fact]
-    public async Task An_agent_last_seen_before_the_lease_is_treated_as_unattended()
+    public async Task An_agent_with_no_connection_is_treated_as_unattended()
     {
-        Register("orders");
+        Register("orders@test");
         Register(
-            "billing",
-            StubRunner.Answering(Workspace("billing")),
-            lastSeen: DateTimeOffset.UtcNow - Lease - TimeSpan.FromMinutes(1));
+            "billing@test",
+            StubRunner.Answering(Workspace("billing@test")),
+            connected: false);
 
-        Owe("orders", "billing");
+        Owe("orders@test", "billing@test");
 
         await using var fleet = Fleet();
 
@@ -295,11 +324,11 @@ public sealed class AgentFleetTests : IDisposable
     {
         // Retirement is a person's judgement that the agent will not come back. §14 refuses to
         // route to one; starting a process against it would overrule the same decision.
-        Register("orders");
+        Register("orders@test");
         Register(
-            "billing", StubRunner.Answering(Workspace("billing")), status: "retired");
+            "billing@test", StubRunner.Answering(Workspace("billing@test")), status: "retired");
 
-        Owe("orders", "billing");
+        Owe("orders@test", "billing@test");
 
         await using var fleet = Fleet();
 
@@ -311,19 +340,19 @@ public sealed class AgentFleetTests : IDisposable
     {
         // The control has to reach a process that is already running, or it is the shape of
         // control §14 warns about: the register says one thing and the deployment does another.
-        Register("orders");
-        Register("billing", StubRunner.Answering(Workspace("billing")));
-        Owe("orders", "billing");
+        Register("orders@test");
+        Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
+        Owe("orders@test", "billing@test");
 
         await using var fleet = Fleet();
 
         await fleet.TickAsync(Ct);
 
-        Assert.Contains("billing", fleet.Running, StringComparer.Ordinal);
+        Assert.Contains("billing@test", fleet.Running, StringComparer.Ordinal);
 
         using (var retire = _connection.CreateCommand())
         {
-            retire.CommandText = "UPDATE agents SET status = 'retired' WHERE name = 'billing';";
+            retire.CommandText = "UPDATE agents SET status = 'retired' WHERE name = 'billing@test';";
             retire.ExecuteNonQuery();
         }
 
@@ -336,42 +365,55 @@ public sealed class AgentFleetTests : IDisposable
     }
 
     [Fact]
-    public async Task Withdrawing_consent_from_a_running_agent_tells_it_to_quit()
+    public async Task Delisting_a_running_agent_tells_it_to_quit()
     {
-        // The other half of withdrawal: an operator removing PARLEY_INVOKE_COMMAND and opening
-        // the repository once. It must reach a process that is already resident.
-        Register("orders");
-        Register("billing", StubRunner.Answering(Workspace("billing")));
-        Owe("orders", "billing");
+        // Withdrawal used to be removing PARLEY_INVOKE_COMMAND and opening the repository once,
+        // so the registry learned about it and the fleet acted on a column. It is now removing
+        // the agent from this machine's own catalogue, which is a smaller and more direct thing:
+        // the party that starts agents is the party that stops being told to.
+        Register("orders@test");
+        Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
+        Owe("orders@test", "billing@test");
 
         await using var fleet = Fleet();
 
         await fleet.TickAsync(Ct);
+        Assert.Contains("billing@test", fleet.Running);
 
-        var agents = new AgentRepository(_connection);
-        await agents.RefreshInvocationConsentAsync(
-            AgentName.Create("billing"), null, invokeWhenIdle: false, Ct);
+        // Delisted. The fleet holds the catalogue it was constructed with, so this reaches the
+        // next pass the way an operator editing node.json and restarting the supervisor would.
+        _catalogue.Remove("billing");
 
-        await fleet.TickAsync(Ct);
+        await using var delisted = Fleet();
 
-        Assert.Empty(fleet.Running);
+        await delisted.TickAsync(Ct);
+
+        Assert.Empty(delisted.Running);
     }
 
     [Fact]
-    public async Task Consent_without_a_command_is_refused_by_storage()
+    public void An_agent_on_another_machine_is_never_started_from_here()
     {
-        // A row consenting to be run with nothing to run is a candidate that fails on every pass,
-        // silently, since a missing command is not an error anywhere else. §9.3's argument
-        // applies: the server is one writer among the ones a future adapter might add.
-        Register("orders");
+        // The check that stops a catalogue meaning more than it says. It describes one machine,
+        // so an entry for `billing` here means billing@thisMachine and nothing else — quietly
+        // matching billing@server-b would have this node start a process for a repository that is
+        // not on it, under a name somebody else holds.
+        _catalogue["billing"] = "runner";
 
-        using var command = _connection.CreateCommand();
-        command.CommandText =
-            "UPDATE agents SET invoke_when_idle = 1, invoke_command = NULL WHERE name = 'orders';";
+        var catalogue = Catalogue();
 
-        var error = Assert.Throws<SqliteException>(() => command.ExecuteNonQuery());
+        Assert.NotNull(catalogue.CommandFor(AgentName.Create("billing@test")));
+        Assert.Null(catalogue.CommandFor(AgentName.Create("billing@server-b")));
+    }
 
-        Assert.Contains("how to start it", error.Message, StringComparison.Ordinal);
+    [Fact]
+    public void A_machine_told_about_nothing_starts_nothing_rather_than_failing()
+    {
+        // The ordinary state of a machine somebody has only registered agents on. It must read
+        // as "starts nothing" rather than as an error, or a supervisor could not run anywhere it
+        // had not been configured first — and it still has reaping and reporting to do.
+        Assert.Null(NodeCatalogue.Empty.CommandFor(AgentName.Create("billing@test")));
+        Assert.Empty(NodeCatalogue.Empty.Roles);
     }
 
     [Fact]
@@ -379,9 +421,9 @@ public sealed class AgentFleetTests : IDisposable
     {
         // §17 question 1 settled a comparable question by measuring rather than guessing, and a
         // resident fleet costs considerably more than a notification.
-        Register("orders");
-        Register("billing", StubRunner.Answering(Workspace("billing")));
-        Owe("orders", "billing");
+        Register("orders@test");
+        Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
+        Owe("orders@test", "billing@test");
 
         await using var fleet = Fleet();
         await fleet.TickAsync(Ct);
@@ -393,7 +435,7 @@ public sealed class AgentFleetTests : IDisposable
         using var reader = query.ExecuteReader();
 
         Assert.True(reader.Read(), "the turn was not recorded");
-        Assert.Equal("billing", reader.GetString(0));
+        Assert.Equal("billing@test", reader.GetString(0));
         Assert.Equal(1L, reader.GetInt64(1));
         Assert.Equal(0.25, reader.GetDouble(2), 3);
         Assert.Equal(2L, reader.GetInt64(3));
@@ -411,16 +453,16 @@ public sealed class AgentFleetTests : IDisposable
         // to, and a notify never had one. So the fleet could answer a question autonomously and
         // never start the agent that asked it to read the reply -- the one participant with the
         // strongest reason to be woken was the only one excluded.
-        Register("orders", StubRunner.Answering(Workspace("orders")));
-        Register("billing");
-        SendUncollected("billing", "orders", type);
+        Register("orders@test", StubRunner.Answering(Workspace("orders@test")));
+        Register("billing@test");
+        SendUncollected("billing@test", "orders@test", type);
 
         await using var fleet = Fleet();
         var actions = await fleet.TickAsync(Ct);
 
         var started = Assert.Single(actions);
 
-        Assert.Equal("orders", started.Agent.Value);
+        Assert.Equal("orders@test", started.Agent.Value);
         Assert.True(started.Started, started.Skipped ?? "not started");
         Assert.Equal(1, started.WaitingBefore);
     }
@@ -431,10 +473,10 @@ public sealed class AgentFleetTests : IDisposable
         // Counted as distinct items rather than summed from two overlapping queries: an OPEN
         // exchange and a message that has not been collected are two things to deal with, and
         // an agent holding both should sort above one holding either.
-        Register("orders");
-        Register("billing", StubRunner.Answering(Workspace("billing")));
-        Owe("orders", "billing");
-        SendUncollected("orders", "billing", "notify");
+        Register("orders@test");
+        Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
+        Owe("orders@test", "billing@test");
+        SendUncollected("orders@test", "billing@test", "notify");
 
         await using var fleet = Fleet();
         var actions = await fleet.TickAsync(Ct);
@@ -452,9 +494,9 @@ public sealed class AgentFleetTests : IDisposable
         // starts a real session every pass, for as long as the fleet runs, on somebody's
         // account. The stub answers its turn and touches no database, which is exactly the
         // shape of an agent that is started and collects nothing.
-        Register("orders", StubRunner.Answering(Workspace("orders")));
-        Register("billing");
-        SendUncollected("billing", "orders", "notify");
+        Register("orders@test", StubRunner.Answering(Workspace("orders@test")));
+        Register("billing@test");
+        SendUncollected("billing@test", "orders@test", "notify");
 
         await using var fleet = Fleet();
 
@@ -472,15 +514,15 @@ public sealed class AgentFleetTests : IDisposable
         // The bound is one wasted turn per new message, not one wasted turn ever. A second
         // message raises the count above what was still waiting after the last turn, which is
         // the evidence that there is something the previous turn cannot have seen.
-        Register("orders", StubRunner.Answering(Workspace("orders")));
-        Register("billing");
-        SendUncollected("billing", "orders", "notify");
+        Register("orders@test", StubRunner.Answering(Workspace("orders@test")));
+        Register("billing@test");
+        SendUncollected("billing@test", "orders@test", "notify");
 
         await using var fleet = Fleet();
         await fleet.TickAsync(Ct);
         Assert.False(Assert.Single(await fleet.TickAsync(Ct)).Started);
 
-        SendUncollected("billing", "orders", "answer");
+        SendUncollected("billing@test", "orders@test", "answer");
 
         var third = Assert.Single(await fleet.TickAsync(Ct));
 
@@ -494,14 +536,14 @@ public sealed class AgentFleetTests : IDisposable
         // §14's new half. A missing directory is an observation the broker can make by looking,
         // rather than an inference from silence, so it is allowed to conclude from it. The cost
         // is recorded where the code is: a repository that comes back needs `parley reinstate`.
-        Register("orders");
-        Register("billing", StubRunner.Answering(Workspace("billing")));
-        Owe("orders", "billing");
+        Register("orders@test");
+        Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
+        Owe("orders@test", "billing@test");
 
         using (var command = _connection.CreateCommand())
         {
             command.CommandText =
-                "UPDATE agents SET workspace = @Gone WHERE name = 'billing';";
+                "UPDATE agents SET workspace = @Gone WHERE name = 'billing@test';";
             command.Parameters.AddWithValue(
                 "@Gone", Path.Combine(Path.GetTempPath(), "parley-no-such-workspace-9e3a1"));
             command.ExecuteNonQuery();
@@ -514,7 +556,7 @@ public sealed class AgentFleetTests : IDisposable
         Assert.Contains("workspace is gone", action.Skipped!, StringComparison.Ordinal);
 
         using var query = _connection.CreateCommand();
-        query.CommandText = "SELECT status FROM agents WHERE name = 'billing';";
+        query.CommandText = "SELECT status FROM agents WHERE name = 'billing@test';";
 
         Assert.Equal("retired", query.ExecuteScalar());
     }
@@ -526,16 +568,16 @@ public sealed class AgentFleetTests : IDisposable
         // somebody deleted and for a drive that is briefly unmounted, and only the first is a
         // judgement worth making -- every agent on that volume would otherwise be retired in one
         // pass, each needing a person to reinstate it, because a share was down for a minute.
-        Register("orders");
-        Register("billing", StubRunner.Answering(Workspace("billing")));
-        Owe("orders", "billing");
+        Register("orders@test");
+        Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
+        Owe("orders@test", "billing@test");
 
         using (var command = _connection.CreateCommand())
         {
-            command.CommandText = "UPDATE agents SET workspace = @Gone WHERE name = 'billing';";
+            command.CommandText = "UPDATE agents SET workspace = @Gone WHERE name = 'billing@test';";
             command.Parameters.AddWithValue(
                 "@Gone",
-                Path.Combine(Path.GetTempPath(), "parley-absent-volume-4c1f", "billing"));
+                Path.Combine(Path.GetTempPath(), "parley-absent-volume-4c1f", "billing@test"));
             command.ExecuteNonQuery();
         }
 
@@ -546,9 +588,9 @@ public sealed class AgentFleetTests : IDisposable
         Assert.Contains("mount rather than a deletion", action.Skipped!, StringComparison.Ordinal);
 
         using var query = _connection.CreateCommand();
-        query.CommandText = "SELECT status FROM agents WHERE name = 'billing';";
+        query.CommandText = "SELECT status FROM agents WHERE name = 'billing@test';";
 
-        Assert.Equal("live", query.ExecuteScalar());
+        Assert.Equal("active", query.ExecuteScalar());
     }
 
     [Fact]
@@ -557,8 +599,8 @@ public sealed class AgentFleetTests : IDisposable
         // The widening must not become "start everything that consented". A turn given to an
         // agent with no reason to take one is tokens spent on nothing, which is the first of
         // the four conditions FindWaitingAsync exists to enforce.
-        Register("orders", StubRunner.Answering(Workspace("orders")));
-        Register("billing", StubRunner.Answering(Workspace("billing")));
+        Register("orders@test", StubRunner.Answering(Workspace("orders@test")));
+        Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
 
         await using var fleet = Fleet();
 
@@ -570,31 +612,31 @@ public sealed class AgentFleetTests : IDisposable
     {
         // One misconfigured agent must not end the pass that serves all of them, and it must not
         // be silent either -- the exchange simply stays owed and nobody learns why.
-        Register("orders");
-        Register("billing", "parley-no-such-runner --input-format stream-json");
-        Register("shipping", StubRunner.Answering(Workspace("shipping")));
+        Register("orders@test");
+        Register("billing@test", "parley-no-such-runner --input-format stream-json");
+        Register("shipping@test", StubRunner.Answering(Workspace("shipping@test")));
 
-        Owe("orders", "billing");
-        Owe("orders", "shipping");
+        Owe("orders@test", "billing@test");
+        Owe("orders@test", "shipping@test");
 
         await using var fleet = Fleet();
 
         var actions = await fleet.TickAsync(Ct);
 
         Assert.Equal(2, actions.Count);
-        Assert.Contains(actions, a => a.Agent.Value == "billing" && a.Skipped is not null);
-        Assert.Contains(actions, a => a.Agent.Value == "shipping" && a.Turn is not null);
+        Assert.Contains(actions, a => a.Agent.Value == "billing@test" && a.Skipped is not null);
+        Assert.Contains(actions, a => a.Agent.Value == "shipping@test" && a.Turn is not null);
     }
 
     [Fact]
     public async Task Stopping_the_fleet_stops_every_agent()
     {
-        Register("orders");
-        Register("billing", StubRunner.Answering(Workspace("billing")));
-        Register("shipping", StubRunner.Answering(Workspace("shipping")));
+        Register("orders@test");
+        Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
+        Register("shipping@test", StubRunner.Answering(Workspace("shipping@test")));
 
-        Owe("orders", "billing");
-        Owe("orders", "shipping");
+        Owe("orders@test", "billing@test");
+        Owe("orders@test", "shipping@test");
 
         var fleet = Fleet();
 

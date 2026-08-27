@@ -1,6 +1,6 @@
-# Parley Protocol Specification
+﻿# Parley Protocol Specification
 
-**Version:** 0.1 (draft)
+**Version:** 0.2 (draft)
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -66,33 +66,97 @@ lazy spawning work.
 ## 4. Architecture
 
 ```
-┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-│ agent:orders │   │ agent:billing│   │agent:inventory│
-└──────┬───────┘   └──────┬───────┘   └──────┬───────┘
-       │                  │                  │
-┌──────┴───────┐   ┌──────┴───────┐   ┌──────┴───────┐
-│   adapter    │   │   adapter    │   │   adapter    │
-└──────┬───────┘   └──────┬───────┘   └──────┬───────┘
-       │                  │                  │
-       └────────── transport (pipe/UDS) ─────┘
-                          │
-                 ┌────────┴────────┐
-                 │  Parley Broker  │
-                 │  ┌───────────┐  │
-                 │  │  SQLite   │  │
-                 │  └───────────┘  │
-                 └─────────────────┘
+  SERVER-A                 SERVER-B                 SERVER-C
+ ┌────────────────┐      ┌────────────────┐      ┌────────────────┐
+ │ agent          │      │ agent          │      │ agent          │
+ │  docs@server-a │      │ infra@server-b │      │ infra@server-c │
+ │      │         │      │      │         │      │      │         │
+ │  adapter       │      │  adapter       │      │  adapter       │
+ │      │         │      │      │         │      │      │         │
+ │  node ─────────┼──┐   │  node ─────────┼──┐   │  node ─────────┼──┐
+ └────────────────┘  │   └────────────────┘  │   └────────────────┘  │
+                     └───────────┬───────────┴──────────────────────┘
+                                 │  gRPC
+                        ┌────────┴────────┐
+                        │     Broker      │
+                        │  ┌───────────┐  │
+                        │  │  SQLite   │  │
+                        │  └───────────┘  │
+                        └─────────────────┘
 ```
 
-**Broker.** Owns the registry, all exchange state, admission control, cycle detection, deadline
-reaping, and agent spawning. Holds no conversation context of its own. Long-lived:
-a Windows Service, systemd unit, or launchd agent.
+**Broker.** One process. Owns the registry, all exchange state, admission control, cycle
+detection, deadline reaping, and the store. Holds no conversation context of its own.
+Long-lived: a Windows Service, systemd unit, or launchd agent.
+
+**It is the only process that opens the database.** Everything else reaches it over the
+transport, and that is not a preference. SQLite in WAL mode requires coherent shared memory
+between every process touching the file, which no network filesystem provides — so a store
+on a share is not a slower deployment but a corrupt one. Confining the file to the broker's
+own machine is what makes agents on other machines possible at all.
+
+**Node.** One per machine, and the only thing on that machine the broker talks to. It knows
+which agents live there and how to start them, it starts them when they are needed, and it
+owns their standard input and output — which is what makes an agent's work watchable, since
+a process's output belongs to whoever spawned it and to nobody else.
+
+A node is not a relay for messages. Its agents speak to the broker through their own
+adapters, under their own identities; the node's job is process lifecycle and pipes.
 
 **Adapter.** Thin, per-agent, vendor-specific. Translates between the agent's native
-integration surface and the Parley wire protocol. See §11.
+integration surface and the Parley wire protocol, and is a client of the broker. See §11.
 
-**Store.** SQLite in WAL mode. Single file, transactional, no service dependency,
-survives hard power loss. The transport carries no state.
+**Store.** SQLite in WAL mode on the broker's machine. Single file, transactional, no
+service dependency, survives hard power loss. The transport carries no state.
+
+**Local is not a special case.** An agent on the broker's own machine reaches it the same
+way one on `server-b` does, over a loopback connection, through the same code. A short cut for
+local agents would be a second implementation of every operation and a second way for them
+to disagree — and the disagreement would show up only in the deployment that had both.
+
+### 4.0 The transport
+
+gRPC over HTTP/2, and what earns it is not efficiency but the held connection.
+
+**A connection is evidence.** Everything that has to be known about whether an agent can be
+reached is a fact about a socket: the node is connected or it is not, the agent's process is
+running or it is not. Both are things the node knows for certain and can say. The
+alternative — and what this document specified until it was tried — is to write a timestamp
+down and have every reader guess how stale is too stale, which produces a registry that
+reports a session killed on Tuesday as healthy on Friday.
+
+**A held connection lets the broker speak first.** Without one, an adapter can only ask
+whether anything has arrived, so the whole protocol is shaped around polling on a timer.
+With one, the broker says so the moment something arrives.
+
+Be precise about what that does and does not fix. It wakes the *adapter*, not the model.
+Whether the model then sees anything depends on its host, and for most hosts the answer is
+that it sees nothing until its next turn — which is why §4.2 stands unchanged and why a
+Pull-only agent is still Pull-only. Push shortens the gap between *sent* and *the adapter
+knows*. It does nothing about *the model has taken a turn*.
+
+**The wire contract is a second schema, and it is not the authority.** This document is,
+exactly as it is for the storage schema of §9.2. A message defined in the transport and
+absent here is a defect in the transport; the reverse is a defect in the transport too.
+
+**Three services, because there are three kinds of caller.** `Agents` carries §10.1, `Operators`
+carries §10.2, and `Nodes` carries what a machine does on behalf of the agents it hosts. §10.2
+warns that an adapter surfacing an operator operation into an agent's tool set would breach
+§10.1, and offers a naming convention as the protection — `force_conclude` is deliberately not
+`conclude`. Splitting the wire makes it structural instead: an adapter binds `Agents`, and
+`Agents` has no method that retires anybody.
+
+**Attaching and detaching are the stream, not two operations.** An agent opens `Attach` and
+holds it; the broker counts it connected while it is open and decrements when it ends, however
+it ends. There is no `Detach` and there must not be one — it could only ever be a second,
+optional way to say what the stream already says for certain, and the failure it invites is an
+agent that died without calling it. A node's `Join` works the same way, one level out.
+
+**A notice carries counts and never words.** The broker pushes how much is waiting; the adapter
+drains to find out what it is. §13 has a peer's words reach a model wrapped as data, and the
+envelope is applied on the way out of a drain — so a notice carrying the words would be a second
+path for the same text with no envelope on it, and the more attractive path, because it arrives
+sooner.
 
 ### 4.1 Projects are a deployment concept
 
@@ -129,6 +193,58 @@ Running one process per project is a deployment choice, not a protocol one. syst
 template units make it nearly free; Windows requires a separate service registration per
 instance, so a single service hosting several brokers is the configuration with
 cross-platform parity.
+
+### 4.1.1 Names are role and machine
+
+An agent is named `role@machine`. `docs@server-a`, `infra@server-b`,
+`infra@server-c`.
+
+The role names what the agent is for and is chosen by whoever configures the repository. The
+machine is detected by the node, never configured, because a machine that can be told what it
+is called is a machine that can be told the wrong thing — and two boxes both answering to
+`server-b` is a failure that shows up as messages going to the wrong place, long after the
+mistake.
+
+**The role is not a scope, it is a capability.** The same repository checked out on five
+machines gives five agents with the same role and different capabilities, and the difference
+is what each can *do* rather than what each is responsible for. If `server-b` is a domain
+controller and `server-c` is the host that provisions machines, then `infra@server-b` can
+answer what the directory believes and `infra@server-c` can create a machine — and neither can
+do the other's half. They own the same thing and can execute different parts of it, which is
+why `owns` (§10.1) stays per agent and says nothing about the role.
+
+**Both forms are addressable.** A full name reaches exactly one agent. A bare role reaches
+every agent registered with it — see §5.5.
+
+**Registration refuses a collision.** Two repositories on one machine claiming the same role
+is a mistake, and until this document required a machine part it was an invisible one: both
+wrote to the same registry row and silently shared an identity. The broker now refuses the
+second and says which node holds the first. This costs nothing and removes a class of
+confusion nobody could have diagnosed from the symptoms.
+
+**Two registrations are the same repository when their workspaces match, and matching is
+defined here because two implementations comparing differently would admit different
+registrations.** The comparison is textual and MUST NOT consult a filesystem: the broker
+performs it and need not be on the machine whose paths it is comparing, so resolving a link
+or expanding a relative path would be inventing facts about a box it cannot see. A path
+qualified by a drive letter or beginning `\\` is Windows-spelled, and in those `\` and `/`
+are the same separator; anywhere else `\` is an ordinary character in a name and rewriting it
+would merge two directories. A trailing separator is spelling and is ignored, except where
+trimming it would leave a bare drive.
+
+**Case is significant, and the asymmetry is the reason.** Whether two paths differing only in
+case name one directory is a property of a filesystem this comparison cannot inspect — the
+same on NTFS, different on ext4 — so it must be wrong in one direction. Treating them as
+equal admits a second repository under a name that already belongs to one, which is this
+paragraph's own failure, silent where it happens and surfacing later as a peer receiving
+replies about a repository it never asked about. Treating them as different refuses a
+registration that may have been legitimate, loudly, to the person who can correct it. A
+broker MUST prefer the refusal.
+
+**A name outlives a connection.** Registration is a durable fact about the deployment, not a
+description of what happens to be running. A machine that is switched off still has its
+agents in the registry, and asking a role still includes them — see §5.5 for why that is the
+whole point rather than an inconvenience.
 
 ### 4.2 Nothing waits
 
@@ -293,7 +409,7 @@ The poll works as follows.
   discussion single-handed, and the answer its peer still owed would be replayed into a closed
   conversation nobody may add to.
 - **Silence assents.** A participant that does not answer within the same window §14 uses to
-  abandon an orphan is taken to agree. Without this one unreachable agent could hold a
+  abandon an orphan is taken to agree. Without this one stranded agent could hold a
   discussion open indefinitely.
 - **A decline blocks.** Closure requires that no polled participant declined. An agent with
   a live concern is not outvoted, because a majority that can conclude over an objection is
@@ -308,10 +424,14 @@ inbox. Anything else would depend on that agent choosing to revisit the subject 
 which §7.3 says plainly does not work. The agent never has to remember; it only has to
 answer.
 
-**A decline lapses with its holder.** An agent marked `unreachable` or `retired` (§14) no
-longer blocks closure. A judgement is only worth honouring while the agent that made it can
-still act on it, and a discussion held open by a repository that no longer exists is the
-churn §14 exists to stop.
+**A decline lapses with its holder.** A `retired` agent (§14) no longer blocks closure. A
+judgement is only worth honouring while the agent that made it can still act on it, and a
+discussion held open by a repository that no longer exists is the churn §14 exists to stop.
+
+A `stranded` agent's decline stands, and the asymmetry is deliberate. Retirement is a person
+saying the agent is finished; a stranded machine is one somebody will switch on again, and
+discarding its objection because it happens to be off is how a concern gets lost by waiting
+for the right moment.
 
 **Outcomes are shared; tallies are not.** A participant learns whether the conversation is
 open or closed, which is its own discussion and no more than it already needed to know to
@@ -531,9 +651,9 @@ agent, so a referral tells the asker who owns something, not that someone exists
 unregistered name is either a typo or, more importantly, an internal leaking out — rule 3 is
 the single rule most responsible for preventing context poisoning, and this is the one place
 it can be checked mechanically rather than trusted, because a referral is the one part of an
-answer that must be a name from the registry rather than free prose. A referral to a `retired` or `unreachable` agent (§14) is
-permitted and delivered with that status attached, so the asker learns the boundary *and* that
-nobody currently holds it, rather than discovering the second fact one refused question later.
+answer that must be a name from the registry rather than free prose. A referral to a `retired` or `stranded` agent (§14) is
+permitted and delivered with that state attached, so the asker learns the boundary *and* how
+reachable its holder is, rather than discovering the second fact one refused question later.
 Refusing such a referral outright would be worse: the answerer would have to guess at its
 peers' liveness to answer a question about ownership, which is not something it knows or should
 have to.
@@ -589,10 +709,62 @@ highest-value traffic in a mature deployment.
 Taking no slot means §7.1's cap does not bound it, and creating no debt means it adds no edge
 for §7.2 to find a cycle in. Two consequences follow. Deduplication (§13.1) is the *only* guard
 it has, which is why that section calls this the type where the control does the most work. And
-the routing rules of §14 still apply: a notification addressed to an `unreachable` or `retired`
+the routing rules of §14 still apply: a notification addressed to a `retired`
 agent is refused, and one *from* a retired agent is too. Neither costs anybody a wait, which is
 exactly why it would otherwise go unnoticed — a sender whose announcements silently succeed into
 a peer that no longer exists never learns to stop.
+
+### 5.5 Asking a role
+
+A question addressed to a bare role — `infra` rather than `infra@server-b` — opens **one ordinary
+exchange with each agent registered under that role**. Not a new kind of message and not a new
+state machine: N Questions, N exchanges, each admitted, clarified, answered, orphaned and
+ghosted exactly as it would have been on its own. They share only a group identifier, so the
+asker can tell which answers belong together.
+
+That is the whole design, and the restraint is deliberate. A one-to-many exchange would need
+its own admission rules, its own cap arithmetic, its own definition of concluded, and a
+resolution for the case where two answerers disagree. Everything already written in §6 and §7
+would need a second reading for the plural case. N ordinary exchanges need none of that.
+
+**The responders do not know.** An agent asked as part of a group receives an ordinary
+Question and answers as itself. It is not told how many others were asked, who they were, or
+whether any has answered — because none of that is knowable to it, and a peer that believed it
+was one voice of five would start hedging on the assumption somebody else had the better
+answer. §8's rule that no agent has authority over another is easier to keep when no agent
+knows it is in a crowd.
+
+**The asker tracks who said what.** Answers arrive as they arrive, each under its author's
+identity (§11.3), and the asker decides when it has enough. A question about the state of one
+domain is answered by the agent on the domain controller and nowhere else — the other four
+answers are `unknown` and the asker acts on the one that is not. A question about running
+inventory needs all five, and the asker waits or acts early and appends.
+
+Nothing in the protocol decides which of those it is, because nothing in the protocol can
+know. The broker reports how many were asked, how many have answered, and how many will never
+answer. What that adds up to is the asker's judgement.
+
+**A switched-off machine is included, and this is the point.** Membership is every agent
+*registered* under the role, not every agent currently reachable. A node that is down still has
+its agents in the registry, so a question to `infra` still opens an exchange with the agent on
+the machine that is off — and that exchange orphans on the ordinary schedule and is ghosted.
+
+The alternative is worse in a way that is hard to see. If a role question went only to
+connected agents, a switched-off domain controller would be silently omitted: four confident
+answers arrive, the asker concludes, and nobody ever learns that the one agent whose answer
+mattered was never asked. Silence about a missing answer is the failure this whole document
+keeps returning to. An orphan says so.
+
+**It multiplies.** Five agents means five exchanges, five clarify budgets, and five answers
+into one asker's context. §5.3 already argues that a backlog compounds at one-to-one; a role
+question is that with a multiplier, and the multiplier is set by how many machines somebody
+installed rather than by any judgement about the question. So the broker bounds the size of a
+group and refuses past it, for the same reason §7.1 caps open questions per pair: the party
+choosing the number is not the only party who pays for it.
+
+**A role with no registered agents is a refusal, not an empty group.** Asking `infra` when
+nothing is registered under that role is almost always a misspelling, and returning "asked
+zero agents, all done" answers it in a way that looks like success.
 
 ## 6. Exchange state machine
 
@@ -819,7 +991,7 @@ the asker can act on immediately:
 |---|---|
 | Cycle | The cycle path, so the asker can choose a different peer or escalate to its human. |
 | Pair cap reached (§7.1) | The open exchanges it already holds with that peer, so it can see what it is waiting on and whether this question is among them. |
-| Answerer unreachable (§14) | That the peer cannot be reached, so the asker stops rather than burning a window. |
+| Answerer retired (§14) | That the peer is gone for good, so the asker finds another rather than burning a window. |
 | Duplicate of a live question | The exchange already carrying it. |
 | Conversation concluded (§5.0) | That the discussion is closed, so the asker opens a new one rather than reviving a settled thread. |
 
@@ -973,33 +1145,83 @@ The schema requires **SQLite 3.38 or later**. It uses `STRICT` tables (3.37), ge
 columns (3.31), and `unixepoch()` (3.38). An older engine fails at `CREATE TABLE` with an
 error that does not explain itself, so the floor is stated here rather than discovered.
 
+**Nodes.** One row per machine that has ever registered agents, written only by the node
+running on it and from what that node can observe about itself. Declared before `agents`
+because `agents.machine` references it.
+
+```sql
+CREATE TABLE nodes (
+  -- Detected, never configured, per §4.1.1. The primary key rather than a surrogate, because
+  -- the machine's identity is the thing agents are named after.
+  machine        TEXT    PRIMARY KEY
+                 CHECK (length(machine) BETWEEN 1 AND 64
+                        AND machine GLOB '[a-z0-9]*'
+                        AND machine NOT GLOB '*[^a-z0-9.-]*'),
+  -- Reported for the operator, and used for nothing. A machine is reached through the
+  -- connection its node already holds, never by an address the broker dials, so none of this
+  -- is a route in -- it is what somebody reading a fleet listing needs in order to know which
+  -- box they are looking at. Recording an address the broker then connected to would invert
+  -- §13's trust direction, letting a registration tell the broker where to send traffic.
+  os             TEXT,
+  os_version     TEXT,
+  address        TEXT,
+  domain         TEXT,
+  -- The same observation agents.connected records, one level up, and the one that decides
+  -- whether an agent here can be started at all. An agent on a disconnected node is not
+  -- unreachable in some derived sense; there is simply nothing left that could start it.
+  connected      INTEGER NOT NULL DEFAULT 0 CHECK (connected IN (0, 1)),
+  changed_utc    TEXT,
+  first_seen_utc TEXT    NOT NULL
+) STRICT;
+```
+
 ```sql
 CREATE TABLE agents (
+  -- role@machine, per §4.1.1. Stored whole because it is what every other table references
+  -- and what every operator types, and split as well because a role question (§5.5) has to
+  -- find every agent sharing a role, which a substring match on the whole name cannot do
+  -- safely: 'infra' is a prefix of 'infrastructure'.
   name            TEXT    PRIMARY KEY,     -- logical name, NOT a session id
+  -- Generated rather than supplied, so the halves cannot disagree with the name they came from.
+  -- They exist as columns at all because a role question (§5.5) has to find every agent sharing
+  -- a role, and a substring match on the whole name cannot do that safely -- 'infra' is a
+  -- prefix of 'infrastructure'. Storing them as ordinary columns would make that indexable and
+  -- make it possible for a writer to set role='infra' on an agent named 'billing@server-b'.
+  --
+  -- A name with no '@' produces an empty role, which the CHECK below refuses. That is the
+  -- malformed case failing at the point of insertion rather than becoming a row nothing can
+  -- address.
+  role            TEXT    NOT NULL
+                  GENERATED ALWAYS AS (substr(name, 1, instr(name, '@') - 1)) STORED,
+  -- The node that reported this agent. Detected there and never configured, so two machines
+  -- cannot both claim to be server-b -- see §4.1.1.
+  machine         TEXT    NOT NULL
+                  GENERATED ALWAYS AS (substr(name, instr(name, '@') + 1)) STORED
+                  REFERENCES nodes(machine),
   adapter         TEXT    NOT NULL,
   tier            TEXT    NOT NULL CHECK (tier IN ('full', 'pull', 'headless')),
   workspace       TEXT,
   session_ref     TEXT,                    -- adapter-specific resume handle
   adapter_config  TEXT,                    -- opaque to the broker (see §12)
   owns            TEXT,                    -- one line, read by peers (see §17 q10)
-  -- Whether a supervisor may run this agent when something is waiting on it and nobody is
-  -- running it: an answer it owes, or a message it has not collected.
-  -- Not the tier: a repository with a live session genuinely IS Pull, and the same repository
-  -- with no session open is reachable only by starting one. This records a permission its
-  -- operator granted, so the two combine rather than compete. See §11.1.
-  invoke_when_idle INTEGER NOT NULL DEFAULT 0 CHECK (invoke_when_idle IN (0, 1)),
-  -- How to start it. Written by this agent's own server from this agent's own launch
-  -- environment, and by nothing else -- which is what keeps an executable command line here no
-  -- wider a trust than §13 already places in that environment. A supervisor runs agents other
-  -- than its own, so it has to read this somewhere; it splits the string and executes it as
-  -- argv, never through a shell.
-  invoke_command  TEXT
-                  CHECK (invoke_command IS NULL
-                         OR length(invoke_command) BETWEEN 1 AND 1000),
-  last_seen_utc   TEXT,
-  status          TEXT    NOT NULL
-                  CHECK (status IN ('registered', 'live', 'offline', 'unreachable',
-                                    'retired')),
+  -- How many of this agent's adapters are connected right now, raised on connect and lowered
+  -- on disconnect, and written by nothing else. Not derived from a timestamp: §4.0 gives the
+  -- broker a held connection, so this is an observation rather than the guess a last-seen
+  -- column forces on every reader -- and the guess is what let a session killed on Tuesday
+  -- read as healthy on Friday.
+  --
+  -- A count rather than a flag, because an agent may have two sessions open. With a flag the
+  -- second one closing says the agent is gone while the first is still mid-answer, and the
+  -- next attach releases work somebody is doing -- which is exactly the failure the timestamp
+  -- lease this replaced was invented to avoid. Counting keeps that property without needing an
+  -- expiry to guess at.
+  connected       INTEGER NOT NULL DEFAULT 0 CHECK (connected >= 0),
+  -- When that last changed. For reports, never for decisions; nothing routes on it.
+  changed_utc     TEXT,
+  -- Two values, because there are only two judgements a person makes about a registration:
+  -- it stands, or it is finished. Everything else that used to live here was a description
+  -- of reachability, which is now observed rather than stored -- see §14.
+  status          TEXT    NOT NULL CHECK (status IN ('active', 'retired')),
 
   CHECK (adapter_config IS NULL
          OR (json_valid(adapter_config) AND length(adapter_config) <= 4000)),
@@ -1045,10 +1267,20 @@ CREATE TABLE agents (
              || ']*'
              AND length(owns) = length(owns || '.') - 1)),
 
-  -- mirrors the AgentName grammar; see §9.3
-  CHECK (length(name) BETWEEN 1 AND 32
-         AND name GLOB '[a-z]*'
-         AND name NOT GLOB '*[^a-z0-9-]*')
+  -- The grammar of §4.1.1, enforced here rather than in the server for the reason §9.3
+  -- gives: an invariant the server holds is an invariant only while the server is the only
+  -- writer. There is no clause tying the name to its parts, because generation does that: the
+  -- parts are computed from the name and cannot be set independently of it.
+  --
+  -- What is left bounds each part and refuses anything outside its class, which is what stops a
+  -- name carrying a space, a control character, or a second '@' that would make "which part is
+  -- the machine" a question with two answers.
+  CHECK (length(role) BETWEEN 1 AND 32
+         AND role GLOB '[a-z]*'
+         AND role NOT GLOB '*[^a-z0-9-]*'),
+  CHECK (length(machine) BETWEEN 1 AND 64
+         AND machine GLOB '[a-z0-9]*'
+         AND machine NOT GLOB '*[^a-z0-9.-]*')
 ) STRICT;
 
 CREATE TABLE agent_credentials (
@@ -1076,9 +1308,14 @@ CREATE TABLE invocations (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   agent         TEXT    NOT NULL REFERENCES agents(name),
   -- Before and after, so the record can say whether the turn changed anything. An agent that
-  -- ran and still owes what it owed is the one worth noticing.
-  owed_before   INTEGER NOT NULL CHECK (owed_before >= 0),
-  owed_after    INTEGER NOT NULL CHECK (owed_after >= 0),
+  -- ran and is still owed as much as it was is the one worth noticing.
+  --
+  -- "Waiting" rather than "owed", because the two stopped being the same thing: an answer to a
+  -- question this agent asked leaves no debt at all, and an uncollected message is a reason to
+  -- give an agent a turn that no count of debts can see. That distinction is what let an agent
+  -- sit connected beside an uncollected message for twenty minutes with nothing wrong anywhere.
+  waiting_before INTEGER NOT NULL CHECK (waiting_before >= 0),
+  waiting_after  INTEGER NOT NULL CHECK (waiting_after >= 0),
   started_utc   TEXT    NOT NULL,
   elapsed_ms    INTEGER NOT NULL CHECK (elapsed_ms >= 0),
   -- The turn's verdict: zero when it ran to a clean finish. Named for a process exit code
@@ -1102,47 +1339,42 @@ CREATE TABLE invocations (
 
 CREATE INDEX ix_invocations_agent ON invocations(agent, started_utc);
 
--- Consent and command arrive together or not at all. A row consenting to be run with nothing to
--- run is a candidate that fails on every pass, silently, because a missing command is not an
--- error anywhere else. In storage rather than in the server for the reason §9.3 gives: an
--- invariant the server holds is an invariant only while the server is the only writer.
-CREATE TRIGGER tr_agents_consent_needs_command_insert
-BEFORE INSERT ON agents
-WHEN NEW.invoke_when_idle = 1 AND NEW.invoke_command IS NULL
-BEGIN
-  SELECT RAISE(ABORT, 'an agent that consents to invocation must record how to start it');
-END;
-
-CREATE TRIGGER tr_agents_consent_needs_command_update
-BEFORE UPDATE ON agents
-WHEN NEW.invoke_when_idle = 1 AND NEW.invoke_command IS NULL
-BEGIN
-  SELECT RAISE(ABORT, 'an agent that consents to invocation must record how to start it');
-END;
-
--- Liveness is derived from last_seen_utc and is never stored, so only three of the five statuses
--- are writable. The other two -- NotResponding and Unreachable -- are readings, and a column
--- holding one would be a claim that nothing withdraws: the old design wrote 'live' on attach and
--- again on every sweep, and had no writer at all for the way out, so a killed session read live
--- for ever beside a frozen timestamp.
+-- A machine appears in `nodes` the first time it registers an agent, which is what that table
+-- means: one row per machine that has ever had agents on it. Written as a trigger rather than
+-- left to the caller because `agents.machine` references it, so every writer would otherwise
+-- have to insert the parent first and in the right order -- an obligation nothing states, that
+-- fails as a foreign key error naming neither the machine nor the agent, and that a second
+-- implementation would have to rediscover.
 --
--- Enforced by trigger rather than by narrowing the CHECK above, because narrowing a constraint in
--- SQLite means rebuilding the table -- and this one carries the control-character class that stops
--- a peer's `owns` line imitating its neighbours in a roster. Retyping that to change an IN list is
--- how a security control gets dropped by an edit about something else.
-CREATE TRIGGER tr_agents_status_is_storable_on_insert
+-- The machine is recomputed here from NEW.name rather than read from NEW.machine, because a
+-- generated column is not guaranteed to be populated in a BEFORE trigger. The expression is the
+-- same one the column is generated by, and it has to stay that way: the two disagreeing would
+-- create a node row nothing referenced while the insert failed anyway.
+--
+-- `connected` starts at zero. Registering an agent says a machine exists, never that anything
+-- on it is running -- and a node that reported itself up merely by being mentioned would be the
+-- stored-liveness mistake of section 14 arriving through a side door.
+CREATE TRIGGER tr_agent_declares_its_machine
 BEFORE INSERT ON agents
-FOR EACH ROW WHEN NEW.status NOT IN ('offline', 'live', 'retired')
 BEGIN
-  SELECT RAISE(ABORT, 'status must be offline, live or retired; liveness is derived');
+  INSERT INTO nodes (machine, connected, first_seen_utc)
+  VALUES (substr(NEW.name, instr(NEW.name, '@') + 1), 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  ON CONFLICT(machine) DO NOTHING;
 END;
 
-CREATE TRIGGER tr_agents_status_is_storable_on_update
-BEFORE UPDATE OF status ON agents
-FOR EACH ROW WHEN NEW.status NOT IN ('offline', 'live', 'retired')
-BEGIN
-  SELECT RAISE(ABORT, 'status must be offline, live or retired; liveness is derived');
-END;
+-- Two trigger pairs stood here and both are gone, which is worth recording rather than
+-- silently dropping.
+--
+-- The first refused a row that consented to unattended invocation without recording how to
+-- start it. Neither column exists now: how to start an agent is the node's local
+-- configuration and never leaves the machine it applies to (§4), so the broker holds no
+-- executable command line at all -- a smaller trusted surface than the trigger was
+-- protecting.
+--
+-- The second refused a status that was really a reading of a timestamp. There are now two
+-- statuses and both are judgements a person made, so the CHECK on the column says everything
+-- the trigger used to. Reachability is observed on a connection (§4.0) instead of inferred,
+-- and lives in `connected` where it cannot be mistaken for a decision somebody recorded.
 
 CREATE TABLE exchanges (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1151,6 +1383,19 @@ CREATE TABLE exchanges (
   answerer          TEXT    NOT NULL REFERENCES agents(name),
   owed_by           TEXT    NOT NULL REFERENCES agents(name),
   state             TEXT    NOT NULL CHECK (state IN ('OPEN', 'CLOSED', 'ORPHANED')),
+  -- Set when this exchange was opened by a question addressed to a role (§5.5), and null
+  -- otherwise. It binds the exchanges of one fan-out together so an asker can tell which
+  -- answers belong to the same question; it does nothing else, and in particular no rule in §6
+  -- or §7 reads it. That is deliberate -- a group question is N ordinary exchanges, and giving
+  -- the group any authority over their states would make it the plural exchange §5.5 declines
+  -- to introduce.
+  --
+  -- Opaque and generated by the broker rather than supplied. An asker choosing its own would be
+  -- able to bind together exchanges that were never one question.
+  ask_group         TEXT
+                    CHECK (ask_group IS NULL
+                           OR (length(ask_group) BETWEEN 1 AND 64
+                               AND ask_group NOT GLOB '*[^a-zA-Z0-9._-]*')),
   clarify_depth     INTEGER NOT NULL DEFAULT 0,
   -- The column default is not the protocol default, which is 200 (17 question 4). The
   -- broker resolves a policy before admission and always writes this column explicitly,
@@ -1905,7 +2150,7 @@ is no shared memory to poison; §10.1 is what makes that true.
 | Operation | Description |
 |---|---|
 | `agents()` | List registered agents: what each one owns (§17 q10), their adapters, and liveness. |
-| `ask(to, intent, sub_questions, consequences)` | Open an exchange. Returns its identifier, or a refusal (§7.3). Never returns an answer. |
+| `ask(to, intent, sub_questions, consequences)` | Open an exchange. `to` is a full name or a bare role (§5.5). Returns an identifier per exchange opened, or a refusal (§7.3). Never returns an answer. |
 | `clarify(exchange_id, text)` | Request detail within an open exchange you owe. |
 | `answer(exchange_id, resolutions, decision?)` | Close an exchange. |
 | `notify(to, text)` | Fire-and-forget event. |
@@ -1920,6 +2165,13 @@ splitting them would ask it to know which situation it was in.
 A closure poll is surfaced through `inbox()` rather than as a message, because §5 admits four
 message types and no others. A fifth type carrying broker questions would also make the
 broker a participant that agents address, which it is not.
+
+**`ask` takes a role or a name, and the difference is only in how many exchanges it opens.**
+A bare role opens one per registered agent under it and returns all their identifiers with a
+group identifier binding them; a full name opens one. Everything downstream is identical,
+because §5.5 deliberately declines to introduce a plural exchange. An adapter that surfaced
+only the single form would work, and would leave its agents unable to ask a question of every
+machine at once — which is the case the naming scheme of §4.1.1 exists for.
 
 `inbox()` returns each message **already wrapped in the §13 envelope**, never the raw payload.
 The requirement is §13's — the broker wraps and never the sender — but it is restated here
@@ -2084,35 +2336,37 @@ rises. The bound is one wasted turn per new message, and the evidence is the inv
 
 Three things end a resident agent, and nothing else may:
 
-1. **The supervisor stops**, and tells every agent it started to quit.
-2. **The supervisor tells one agent to quit**, because its operator retired it (§14) or
-   withdrew the consent recorded in `agents.invoke_command`.
-3. **The agent's own process ends**, which the next pass notices and does not fight.
+1. **The node stops**, and tells every agent it started to quit.
+2. **The node is told to stop one agent**, because its operator retired it (§14) or removed
+   it from that machine's configuration.
+3. **The agent's own process ends**, which the node observes directly and does not fight.
 
-A turn that runs past the supervisor's patience is **not** one of them. The process holds
+A turn that runs past the node's patience is **not** one of them. The process holds
 everything the agent has learned, and discarding that because a single turn ran long is a
 far worse trade than waiting: the turn is recorded as abandoned, the exchange is unharmed
 — still owed, still open — and the reply that eventually arrives is discarded rather than
 read as the answer to the next turn.
 
-Consent is per agent and comes from that agent's own launch environment, never from the
-supervisor's. An agent that has not granted `invoke_when_idle` is never started by a
-supervisor, because starting a repository nobody offered spends its operator's tokens on
-its operator's machine.
+**Starting is the node's business, and the broker never learns how.** A launch command is
+local configuration on the machine it applies to, and it stays there. The broker asks a node
+to start one of its agents; the node decides whether it knows how, and refuses if it does
+not. Nothing in the store holds an executable command line, which is a smaller trusted
+surface than any arrangement where it does — and it removes the older design's
+chicken-and-egg, where an agent that had never run had no record of how to start it because
+the record was written by the agent itself.
 
-**Recording a command is not granting consent.** The two columns answer two questions —
-`invoke_command` is how to start a repository, `invoke_when_idle` is whether a supervisor
-may do it with nobody watching — and only the second is a permission. An operator who
-starts an agent from a console has not invoked it unattended; they have opened the session
-by hand, with a slower path to the same place, and requiring the unattended grant for that
-would be asking for permission that was never at stake.
+**Consent is installing the node.** A machine runs a node because somebody put it there and
+listed the repositories on it, and that listing is the permission: these agents may be
+started when a peer needs one. There is no second flag, and there was one — it existed
+because recording *how* to start a repository had been read as consent to run it unwatched,
+so the two had to be prised apart. When starting is the node's local configuration, the
+question does not arise.
 
-The distinction is worth stating because an implementation is likely to derive one from the
-other, and this one did. The cost lands at configuration time rather than at runtime, which
-is why it survives: recording how to start a repository becomes a question about spending
-its operator's tokens unwatched, the honest answer is usually no, and the deployment ends up
-unable to start anything at all — including from its own operator's hands. The schema has
-always permitted a command without consent. Nothing should read the first as the second.
+**Starting an agent is free; giving it a turn is not.** Worth separating even though nothing
+currently acts on the difference, because it decides where a future control belongs. A
+deployment that wants a person in the loop does not want the start held back — it wants the
+*turn* held. The agent is stood up, sees it has mail, and waits. That is a small change to a
+design that keeps the two apart and an awkward one to a design that has fused them.
 
 ### 11.2 The headless tier is the important one
 
@@ -2229,11 +2483,13 @@ Rationale:
 
 Because the manifest holds only references, it is safe to commit.
 
-**Expiry needs no special handling.** When an agent's own authentication lapses, spawning
-it fails; repeated failures mark it `unreachable` (§14), so questions to it are refused
-with a reason instead of each burning an inactivity window. The operator re-authenticates
-out of band and a restart clears the mark. The path already exists and no credential
-machinery is involved.
+**Expiry needs no special handling, and it is now visible rather than inferred.** When an
+agent's own authentication lapses, the node's attempt to start it fails, and the node says so
+— naming the agent and the failure. Nothing has to conclude anything from silence, which is
+what the older design did: repeated failures marked the agent `unreachable`, a status that
+also meant four other things, so an expired credential and a switched-off laptop were reported
+identically. The operator re-authenticates out of band and the next start succeeds. No
+credential machinery is involved.
 
 ### 12.1 What an adapter needs, and who decides
 
@@ -2505,38 +2761,50 @@ the attach sequence releases them on the way back in, which is the moment it is 
 that nobody did. A detach that orphaned eagerly would discard work every time somebody closed a
 laptop.
 
-**Liveness is read, not written.** An agent has five statuses and only two of them are values
-anybody stores:
+**Liveness is observed, not stored and not derived.** An agent's reachability is two facts
+about connections, and both are things some process knows for certain rather than infers:
 
-| status | meaning | how it is arrived at |
-|---|---|---|
-| `offline` | registered and never activated | stored; no session has ever attached |
-| `live` | sweeping normally | derived: last heard from within three sweeps |
-| `not_responding` | has missed its recent sweeps | derived: silent longer than that, under five minutes |
-| `unreachable` | silent for five minutes | derived: silent longer than five minutes |
-| `retired` | gone for good | stored; a person's word, or a workspace the broker cannot find |
+| reported as | node connected | agent connected | what it means |
+|---|---|---|---|
+| `running` | yes | yes | the agent is up; route to it now |
+| `startable` | yes | no | nobody has it open; the node can start it when needed |
+| `stranded` | no | — | the machine is unreachable; nothing can start it |
+| `retired` | — | — | a person's word; stored, and outranks the rest |
 
-The three in the middle are readings of `last_seen_utc` rather than columns, and the reason is
-the case that matters most. A stored liveness has to be withdrawn by something, and a session
-that is killed, crashes, or loses its machine is precisely the case where nothing is left
-running to withdraw it: the earlier design wrote `live` on attach and again on every sweep, and
-had no writer at all for the way out, so a dead session's row read `live` for ever with a frozen
-timestamp beside it that only the supervisor ever compared. Every other reader believed it. A
-timestamp cannot lie in that direction, because it stops advancing when the process stops,
-however impolitely.
+Only `retired` is a column. The others are read from `nodes.connected` and `agents.connected`,
+which are written when a connection opens and when it closes, and by nothing else.
 
-`not_responding` exists because `live` was doing two jobs badly. The useful question a peer asks
-is whether to keep waiting, and "answering slowly" and "gone" are different answers to it.
-Three missed sweeps rather than one, because a late sweep says nothing about the agent — a busy
-machine, a contended write, a suspended laptop — and a status that flickered on each of those
-would train everybody to ignore it.
+This replaced two designs, and both failures are worth keeping.
 
-**Only retirement gates routing, and that is a change.** `unreachable` used to refuse questions,
-on the ground that spawning had been tried and had failed. The derived one means something
-weaker — nobody has that repository open at the moment — which is where most agents are most of
-the time. Refusing traffic to it would refuse the very traffic meant to wake it, exactly as this
-section has always said of `offline`, and a supervisor would then never see a debt to act on
-because no debt could ever be created. So silence is reported and never routed on.
+The first stored liveness outright: `live` was written on attach and again on every sweep, and
+nothing at all wrote the way out. A session that was killed, crashed, or lost its machine is
+exactly the case where nothing is left running to withdraw the claim — so a dead agent's row
+read `live` for ever, and every reader believed it.
+
+The second derived liveness from a timestamp, which fixed that, because a timestamp stops
+advancing when the process stops however impolitely. But it could only ever produce a guess
+dressed as a status: three sweeps of silence meant `not_responding` and five minutes meant
+`unreachable`, and both were really "we have not heard anything and are estimating what that
+implies." Every reader had to assume the deployment's sweep cadence to interpret them, which no
+reader could see.
+
+A connection needs no estimate. It is open or it is not, and the process holding it says so.
+
+**`startable` is the ordinary state, not a fault.** Most agents most of the time have nobody
+running them, which is what a repository nobody has open looks like. It must never gate routing:
+a question to a `startable` agent is what causes it to be started, so refusing traffic on the
+grounds that nothing is running would refuse the very traffic that would fix it.
+
+**`stranded` does not gate routing either, and this is the harder call.** A question to an agent
+on a switched-off machine is admitted, sits, orphans on the ordinary schedule, and is ghosted —
+and the asker is told. Refusing it at the door would be tidier and is wrong, because the asker
+would learn "that machine is off" at a moment when it may not be off by the time the answer
+mattered, and because §5.5 depends on this: a role question includes agents on machines that
+are down precisely so that a missing answer arrives as an orphan rather than as silence.
+
+**Only retirement gates routing.** A person saying an agent is finished is the one statement
+about reachability that is a judgement rather than an observation, and the only one durable
+enough to route on.
 
 **The broker may now retire an agent whose workspace is gone**, and the cost of that is recorded
 rather than argued away. This section previously reserved retirement for a person alone,
@@ -2600,41 +2868,30 @@ replay landing inside the deduplication window of §13.1 would additionally be d
 outright, so on a fast restart the replay path could defeat itself; after a longer
 outage it would instead succeed and quietly double the record.
 
-**An agent whose workspace is gone.** A repository can be deleted, moved, or renamed
-while its agent is still registered and still owed answers. The broker discovers this by
-failing to spawn it, and after a threshold of consecutive failures marks it
-`unreachable`.
+**An agent whose workspace is gone.** A repository can be deleted, moved, or renamed while
+its agent is still registered and still owed answers. The node discovers this the moment it
+tries to start the agent, and says so: it names the agent and the reason, and the broker
+records that starting failed.
 
-That state exists because `offline` cannot carry the meaning. Offline is the ordinary
-condition of a lazily-spawned agent between questions, and treating it as a fault would
-refuse the traffic that is supposed to wake it. Unreachable says something different:
-spawning was attempted and failed, repeatedly, so there is no point routing here.
+**It is reported, and it does not gate routing.** An earlier design marked such an agent
+`unreachable` and refused new questions to it at admission, reasoning that a dead repository
+would otherwise absorb a full delivery window per question, for ever, with no asker ever
+learning why. The reasoning was right about the harm and wrong about the remedy: `unreachable`
+was arrived at by counting failures, so it also caught a laptop that was shut, a machine
+mid-reboot, and an expired credential — and refusing traffic to those refuses the very traffic
+that would have woken them.
 
-Two things follow, and only two. New questions to an unreachable agent are **refused at
-admission** rather than accepted and left to expire — without this a dead repository
-absorbs a full delivery window per question, forever, and no asker ever learns why. And the
-state is
-**visible in `agents()`**, so a peer or an operator can see it rather than infer it from
-silence.
+What replaces it is the same information without the inference. A start that fails is an event
+the node observed and reported, carrying its own reason, so `agents()` can show *why* an agent
+could not be started rather than a status that means five things. A question to it takes the
+ordinary path: the window elapses, it orphans, and it is ghosted like any other abandoned
+exchange — handing the question back to the asker with the asker's own consequences attached,
+which is what a human would have arranged anyway.
 
-What the mark does *not* do is resolve what is already outstanding — but nor does anything
-stall waiting for a human. Those exchanges take the ordinary path: their windows elapse, they
-orphan, and after the grace period they are ghosted like any other abandoned exchange (above).
-An unreachable agent is one particularly reliable way of producing orphans, not a separate
-case needing separate handling.
-
-This is a change from an earlier reading of this section, which held that the broker marks and
-reports but never closes, and that an operator's `retire` was the only thing that could
-resolve an unreachable agent's outstanding exchanges. The objection then was that an automatic
-close would discard real questions to save a human a decision they were better placed to make.
-Ghosting does not discard: it hands the question back to the asker with the asker's own stated
-consequences, which is what the human would have arranged anyway. What is left for `retire` is
-the registry, not the exchanges.
-
-The division that survives is about the *registry* rather than the traffic. A deleted
-repository is frequently temporary — a re-clone, a moved worktree, a restored backup — so the
-broker never removes an agent on its own evidence. The churn stops
-immediately either way, which is the harm worth stopping automatically.
+**The broker still never removes an agent on its own evidence.** A missing repository is
+frequently temporary — a re-clone, a moved worktree, a restored backup, a drive that was not
+mounted yet — and a broker that tombstoned one would need a person to undo it. The churn stops
+either way, because a failed start is cheap and reported rather than retried in silence.
 
 **Retiring an agent.** When a repository is gone for good rather than temporarily, an
 operator retires its agent. The agent is marked `retired`: it is not routed to, not offered
@@ -2880,6 +3137,27 @@ Cheap to collect, disproportionately useful:
   problem in the asker rather than anything about the peer.
 
 ## 16. Non-goals
+
+- **Not a protocol for a hostile network.** This is the one that changed when the transport
+  did, and it is stated first because a reader who assumes otherwise will assume it silently.
+
+  An agent's identity is the name it presents when it connects. The broker checks that the
+  name is well formed (§4.1.1) and that nobody else holds it, and that is the whole of it —
+  anything able to reach the broker can claim to be any agent, read its mail, and answer in
+  its name.
+
+  That was always true and used to be enforced by something physical: the store was a file on
+  one machine, so the only processes that could speak were ones a person had launched there.
+  Reaching over a network removes that floor without replacing it. **So the transport must be
+  confined to a trusted path** — a loopback connection, a private network somebody controls,
+  or a tunnel authenticated outside this protocol, such as key-based SSH. It must not be
+  exposed to anything else.
+
+  What would fix it properly is a credential per agent, presented on connect and checked by
+  the broker, which is a real design with real key distribution behind it and is not in this
+  document. It is worth naming precisely because the collision check of §4.1.1 looks like
+  authentication and is not: refusing a second agent that claims a name in use is bookkeeping,
+  and it stops a mistake rather than an attacker.
 
 - **Not a task queue.** Parley coordinates *understanding*, not work. Agents do not
   delegate implementation to each other.
@@ -3182,3 +3460,82 @@ Cheap to collect, disproportionately useful:
     sub-question it needed and said what turned on the answer would make the per-sub-question
     budget fall out of the message shape instead of being a field invented to support it — and
     would make a clarification look, in the log, like what it is.
+
+12. What bounds a role question? §5.5 opens one exchange per agent registered under a role, so
+    the cost of asking `infra` is set by how many machines somebody installed rather than by any
+    judgement about the question. Five is fine. Fifty is a context-flooding primitive that one
+    agent can aim at another deployment's asker, and it needs no malice — a fleet grows a machine
+    at a time, and nobody notices the day a routine question started costing twenty answers.
+
+    The obvious bound is a cap on group size, refused past it, in the shape §7.1 already uses
+    for the per-pair question cap. What is not obvious is the number, and this document has
+    learnt not to guess one: §5.2's clarify cap was set to 3 on taste, defended at length, and
+    turned out to be wrong by nearly two orders of magnitude when anybody measured. The same
+    mistake here would refuse legitimate fleet-wide questions, and would be discovered as
+    "Parley cannot ask more than N machines anything", which is a hard reputation to lose.
+
+13. Should `startable` be per agent rather than per machine? §14 reads an agent's presence from
+    two connections: its own, and its machine's node. An agent that is not running on a machine
+    whose node is connected therefore reads as `startable` — which is right about the machine and
+    can be wrong about the agent, because what a node can launch comes from a local file the
+    broker never sees. A repository registered on a machine but absent from that machine's
+    `node.json` is reported as startable and will never start.
+
+    The information exists. A node names the roles it can launch when it joins, and the broker
+    already refuses to send a start command for a role that was not named — so the registry could
+    say `unstartable` instead of `startable` for exactly those agents. What stops it today is
+    that presence is computed in storage from two columns, and the roles a node offers are held
+    only in the process.
+
+    The cost of leaving it is one misleading word in one operator report, mitigated by the node
+    printing the mismatch at join. The cost of fixing it is another column that a node writes and
+    the schema derives from, which is the shape §9.3 prefers but is not free: it makes what a
+    machine can launch a durable fact in a shared store, and §4 has kept that firmly local until
+    now. Decide it when somebody has been misled by the word, not before.
+
+    So: instrument first. Record the size of every group question and how many of its answers
+    were `unknown`, which is the number that says whether the fan-out bought anything — a
+    question answered by one agent and shrugged at by nineteen is a question that should have
+    named its agent. Set the cap from that evidence, and record the evidence here.
+
+    Related to question 1, and for the same underlying reason. Both are paths where one agent
+    can put text into another's context without a debt bounding how much.
+
+---
+
+## 18. Version history
+
+A protocol that expects alternative implementations owes them a record of what moved and when.
+This is that record, and it is deliberately about the wire rather than about the reference
+implementation: a change that no second implementation could observe does not belong here, and
+does not move the number.
+
+The version is `major.minor` and has no patch level, because a protocol change is either visible
+across the boundary or is not a protocol change at all. **While the major is zero, the minor
+carries breaking changes.** Two implementations whose minors differ do not interoperate, and
+§4.0's `Attach` refuses the pairing rather than discovering it later.
+
+### 0.2 — the transport
+
+**There is a wire.** 0.1 had none: agents reached the broker by opening its database, so the
+whole of the protocol that could be spoken between processes was a SQLite schema. A second
+implementation had nothing to implement. `proto/parley.proto` is the contract now, and this
+document remains the authority over it.
+
+- **Three services**, splitting §10.1, §10.2 and §4 at the wire rather than by convention.
+  An adapter binds `Agents`, and `Agents` has no method that retires anybody.
+- **`Attach` and `Join` are held streams**, and holding one is what "connected" means (§4.0).
+  There is no `Detach`: a clean shutdown, a killed process and a severed cable are one event.
+- **Liveness is observed**, replacing the timestamp of 0.1 that every reader had to interpret
+  against a sweep cadence it could not see (§14).
+- **The broker speaks first.** A notice carries counts and never words, so §13's envelope stays
+  the only path a peer's text travels.
+- **Names carry a machine** (§4.1.1), and a bare role addresses every agent under it (§5.5).
+- **One process owns the store.** §4 states it as a constraint on deployment rather than a
+  preference: WAL requires coherent shared memory, so a store on a share is corrupt rather than
+  slow.
+
+### 0.1 — the protocol without a transport
+
+Exchanges, the state machine of §6, admission control, cycle detection, the ownership model and
+the storage schema of §9. Everything a single machine needs, and nothing that crosses one.

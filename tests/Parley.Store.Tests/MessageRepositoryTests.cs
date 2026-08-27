@@ -6,9 +6,9 @@ namespace Parley.Store.Tests;
 
 public sealed class MessageRepositoryTests : IDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
-    private static readonly AgentName Inventory = AgentName.Create("inventory");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
+    private static readonly AgentName Inventory = AgentName.Create("inventory@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(15);
 
@@ -31,7 +31,7 @@ public sealed class MessageRepositoryTests : IDisposable
         foreach (var name in new[] { Orders, Billing, Inventory })
         {
             agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Full, null, null, null, null, AgentStatus.Offline),
+                new AgentRecord(name, "test", AgentTier.Full, null, null, null, false, AgentStatus.Active),
                 TestContext.Current.CancellationToken)
                 .GetAwaiter().GetResult();
         }

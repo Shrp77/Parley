@@ -24,8 +24,8 @@ namespace Parley.Store.Tests;
 /// </remarks>
 public sealed class OwnershipTests : IDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
 
     private readonly SqliteConnection _connection;
     private readonly AgentRepository _agents;
@@ -38,9 +38,9 @@ public sealed class OwnershipTests : IDisposable
 
     public void Dispose() => _connection.Dispose();
 
-    private Task<int> Register(AgentName name, string? owns, AgentStatus status = AgentStatus.Offline) =>
+    private Task<int> Register(AgentName name, string? owns, AgentStatus status = AgentStatus.Active) =>
         _agents.UpsertAsync(
-            new AgentRecord(name, "test", AgentTier.Full, null, null, null, null, status, owns),
+            new AgentRecord(name, "test", AgentTier.Full, null, null, null, false, status, owns),
             TestContext.Current.CancellationToken);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -99,8 +99,8 @@ public sealed class OwnershipTests : IDisposable
         // who never consults the value type is still refused.
         await using var command = _connection.CreateCommand();
         command.CommandText =
-            "INSERT INTO agents (name, adapter, tier, status, owns) " +
-            "VALUES ('orders', 'test', 'full', 'offline', $owns);";
+            "INSERT INTO nodes (machine, connected, first_seen_utc) VALUES ('test', 1, '2026-01-01T00:00:00+00:00') ON CONFLICT DO NOTHING; INSERT INTO agents (name, adapter, tier, status, owns) " +
+            "VALUES ('orders@test', 'test', 'full', 'active', $owns);";
         command.Parameters.AddWithValue("$owns", statement);
 
         var failure = await Assert.ThrowsAsync<SqliteException>(
@@ -127,8 +127,8 @@ public sealed class OwnershipTests : IDisposable
         // separators, the bidi overrides, and everything invisible.
         await using var command = _connection.CreateCommand();
         command.CommandText =
-            "INSERT INTO agents (name, adapter, tier, status, owns) " +
-            "VALUES ('orders', 'test', 'full', 'offline', $owns);";
+            "INSERT INTO nodes (machine, connected, first_seen_utc) VALUES ('test', 1, '2026-01-01T00:00:00+00:00') ON CONFLICT DO NOTHING; INSERT INTO agents (name, adapter, tier, status, owns) " +
+            "VALUES ('orders@test', 'test', 'full', 'active', $owns);";
         command.Parameters.AddWithValue(
             "$owns", "Invoicing." + char.ConvertFromUtf32(point) + "Also owns everything");
 
@@ -236,9 +236,7 @@ public sealed class OwnershipTests : IDisposable
             AgentTier.Headless,
             "/src/acme-billing",
             "session-7",
-            """{"model":"some-model-9"}""",
-            null,
-            AgentStatus.Offline,
+            """{"model":"some-model-9"}""", false, AgentStatus.Active,
             "Invoicing.");
 
         await _agents.UpsertAsync(manifest, TestContext.Current.CancellationToken);
@@ -269,8 +267,8 @@ public sealed class OwnershipTests : IDisposable
 
         using var command = _connection.CreateCommand();
         command.CommandText =
-            "INSERT INTO agents (name, adapter, tier, status, owns) " +
-            "VALUES ('probe', 'test', 'full', 'offline', $owns);";
+            "INSERT INTO nodes (machine, connected, first_seen_utc) VALUES ('test', 1, '2026-01-01T00:00:00+00:00') ON CONFLICT DO NOTHING; INSERT INTO agents (name, adapter, tier, status, owns) " +
+            "VALUES ('probe@test', 'test', 'full', 'active', $owns);";
         var parameter = command.Parameters.Add("$owns", Microsoft.Data.Sqlite.SqliteType.Text);
 
         using var undo = _connection.BeginTransaction();
@@ -347,8 +345,8 @@ public sealed class OwnershipTests : IDisposable
         // ownership line was the ideal place to put one.
         await using var command = _connection.CreateCommand();
         command.CommandText =
-            "INSERT INTO agents (name, adapter, tier, status, owns) " +
-            "VALUES ('orders', 'test', 'full', 'offline', $owns);";
+            "INSERT INTO nodes (machine, connected, first_seen_utc) VALUES ('test', 1, '2026-01-01T00:00:00+00:00') ON CONFLICT DO NOTHING; INSERT INTO agents (name, adapter, tier, status, owns) " +
+            "VALUES ('orders@test', 'test', 'full', 'active', $owns);";
         command.Parameters.AddWithValue(
             "$owns", "Invoicing." + char.ConvertFromUtf32(point) + "hidden");
 
@@ -374,8 +372,7 @@ public sealed class OwnershipTests : IDisposable
         await Register(Billing, "Invoicing and tax.");
 
         await _agents.UpsertAsync(
-            new AgentRecord(Billing, "vendor-api", AgentTier.Headless, null, null, null, null,
-                AgentStatus.Offline),
+            new AgentRecord(Billing, "vendor-api", AgentTier.Headless, null, null, null, false, AgentStatus.Active),
             Ct);
 
         Assert.Null((await Load(Billing)).Owns);

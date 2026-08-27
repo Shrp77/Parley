@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Broker;
 using Parley.Core;
 using Parley.Store;
@@ -24,14 +24,15 @@ namespace Parley.Cli.Tests;
 /// the code that prints.
 /// </para>
 /// </remarks>
-public sealed class ExportSafetyTests : IDisposable
+public sealed class ExportSafetyTests : IAsyncDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private readonly SqliteConnection _connection;
     private readonly StringWriter _output = new();
+    private readonly LoopbackOperator _broker;
     private readonly OperatorCommands _commands;
 
     public ExportSafetyTests()
@@ -43,16 +44,19 @@ public sealed class ExportSafetyTests : IDisposable
         foreach (var name in new[] { Orders, Billing })
         {
             agents.UpsertAsync(
-                new AgentRecord(name, "mcp", AgentTier.Pull, null, null, null, null,
-                    AgentStatus.Offline),
+                new AgentRecord(name, "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
-        _commands = new OperatorCommands(new OperatorConsole(_connection), _output);
+        _broker = LoopbackOperator.Start(_connection);
+        _commands = new OperatorCommands(_broker.Operators, _output);
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
+        // The broker first: it borrowed this connection and its shutdown writes to it.
+        await _broker.DisposeAsync();
+
         _connection.Dispose();
         _output.Dispose();
     }

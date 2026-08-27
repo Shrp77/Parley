@@ -22,9 +22,9 @@ namespace Parley.Broker.Tests;
 /// </remarks>
 public sealed class NotifyAndAgentsTests : IDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
-    private static readonly AgentName Inventory = AgentName.Create("inventory");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
+    private static readonly AgentName Inventory = AgentName.Create("inventory@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private const string Model = "claude-opus-5";
@@ -46,8 +46,8 @@ public sealed class NotifyAndAgentsTests : IDisposable
                     Workspace: "/home/someone/secret-repo",
                     SessionRef: "session-abc123",
                     AdapterConfig: """{"endpoint":"https://internal.example/v1"}""",
-                    LastSeenUtc: null,
-                    Status: AgentStatus.Offline),
+                    Connected: false,
+                    Status: AgentStatus.Active),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
@@ -150,7 +150,7 @@ public sealed class NotifyAndAgentsTests : IDisposable
         // unroutable peer returns a refusal: an agent cannot register itself, so there is nothing
         // for it to act on. Found by probe — it was previously a foreign-key violation from three
         // layers down, arriving on whichever operation happened to run first.
-        var ghost = AgentName.Create("ghost");
+        var ghost = AgentName.Create("ghost@test");
 
         var notifying = await Assert.ThrowsAsync<InvalidOperationException>(
             () => _broker.NotifyAsync(
@@ -187,7 +187,7 @@ public sealed class NotifyAndAgentsTests : IDisposable
         // foreign-key violation, which is a raw storage exception for an ordinary mistake — a
         // typo, or a name remembered from before a re-registration. §7.3 asks for a refusal the
         // caller can act on, and agents() is what it should act on.
-        var sent = await Notify(to: AgentName.Create("ghost"));
+        var sent = await Notify(to: AgentName.Create("ghost@test"));
 
         Assert.Equal(NotifyRejection.RecipientUnroutable, sent.Rejection);
     }
@@ -198,7 +198,7 @@ public sealed class NotifyAndAgentsTests : IDisposable
         // §14 keeps retired agents out of agents(). Answering differently for a retired name
         // than for one that never existed would hand that state straight back, and the two mean
         // the same thing to a sender anyway: a name it cannot address.
-        var unknown = await Notify(to: AgentName.Create("ghost"));
+        var unknown = await Notify(to: AgentName.Create("ghost@test"));
 
         await _agents.RetireAsync(Billing, TestContext.Current.CancellationToken);
         var retired = await Notify(to: Billing);
@@ -211,7 +211,7 @@ public sealed class NotifyAndAgentsTests : IDisposable
     {
         // The same defect on the question path, which shares the predicate.
         var asked = await _broker.AskAsync(
-            Orders, AgentName.Create("ghost"), Model,
+            Orders, AgentName.Create("ghost@test"), Model,
             """{"text":"gross or net?","consequences":"If gross I stop adding tax; if net I keep it."}""",
             T0.AddMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
 
@@ -341,8 +341,11 @@ public sealed class NotifyAndAgentsTests : IDisposable
 
         var listed = await _broker.ListAgentsAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(AgentStatus.Unreachable, Assert.Single(listed, a => a.Name == Billing).Status);
-        // Derived from silence rather than read from a column: nothing wrote that status.
+        // Listed with whatever presence the connections say, because presence never gates the
+        // listing. Retirement does: an agent an operator has finished with is absent entirely
+        // rather than shown with a status, so a peer is never invited to ask a question that
+        // admission would then refuse.
+        Assert.Contains(listed, a => a.Name == Billing);
         Assert.DoesNotContain(listed, a => a.Name == Inventory);
     }
 
@@ -368,21 +371,23 @@ public sealed class NotifyAndAgentsTests : IDisposable
             () => broker.ListAgentsAsync(TestContext.Current.CancellationToken));
     }
 
-    /// <summary>Ages an agent's heartbeat until it reads as unreachable.</summary>
-    /// <param name="agent">The agent to silence.</param>
+    /// <summary>Takes an agent's machine off the air, the way a lost node does.</summary>
+    /// <param name="agent">The agent to strand.</param>
     /// <remarks>
-    /// Unreachable is a reading of <c>last_seen_utc</c> now rather than a status anybody writes,
-    /// so this is the only way a deployment can produce one: the agent stops checking in. There
-    /// is deliberately no method to call instead — a test that could write the status directly
-    /// would be testing a path the product does not have.
+    /// This used to age a heartbeat into the past, because unreachability was arithmetic on a
+    /// timestamp and there was no other way to produce one. It is now an observation with a
+    /// writer -- the node's connection closed -- so the test performs the same write the broker
+    /// does, and there is nothing left to simulate.
     /// </remarks>
     private void GoSilent(AgentName agent)
     {
         using var command = _connection.CreateCommand();
         command.CommandText =
-            "UPDATE agents SET status = 'live', last_seen_utc = @Then WHERE name = @Name;";
-        command.Parameters.AddWithValue(
-            "@Then", DateTimeOffset.UtcNow.AddHours(-1).ToString("o"));
+            """
+            UPDATE agents SET connected = 0 WHERE name = @Name;
+            UPDATE nodes  SET connected = 0
+             WHERE machine = (SELECT machine FROM agents WHERE name = @Name);
+            """;
         command.Parameters.AddWithValue("@Name", agent.Value);
         command.ExecuteNonQuery();
     }

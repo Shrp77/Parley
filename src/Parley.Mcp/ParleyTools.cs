@@ -1,9 +1,9 @@
 ﻿using System.ComponentModel;
 using System.Text.Json.Nodes;
+using Grpc.Core;
 using ModelContextProtocol.Server;
-using Parley.Broker;
 using Parley.Core;
-using Parley.Store;
+using Wire = Parley.Transport;
 
 namespace Parley.Mcp;
 
@@ -13,10 +13,11 @@ namespace Parley.Mcp;
 /// <remarks>
 /// <para>
 /// Seven tools and no eighth. §10.2's operator operations are deliberately unreachable from
-/// here: this type is constructed with a <see cref="BrokerSession"/>, which holds a
-/// <see cref="Parley.Broker.Broker"/>, and a broker carries no operator operation to bind. §10.2
-/// warns that an adapter surfacing one would breach §10.1 and, through it, §16 — so the
-/// separation is structural rather than a matter of remembering which method to call.
+/// here: this type is constructed with a <see cref="BrokerLink"/>, which holds a client for the
+/// <c>Agents</c> service, and that service has no method that retires anybody. §10.2 warns that
+/// an adapter surfacing one would breach §10.1 and, through it, §16 — so the separation is
+/// structural rather than a matter of remembering which method to call, and it is now enforced
+/// by the wire rather than by which class the connection happened to be in.
 /// </para>
 /// <para>
 /// There is also no history and no search, and none may be added. §10.1 is explicit: an agent
@@ -32,10 +33,10 @@ namespace Parley.Mcp;
 /// </para>
 /// </remarks>
 [McpServerToolType]
-public sealed class ParleyTools(BrokerSession session, ServerOptions options)
+public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 {
-    private readonly BrokerSession _session =
-        session ?? throw new ArgumentNullException(nameof(session));
+    private readonly BrokerLink _link =
+        link ?? throw new ArgumentNullException(nameof(link));
 
     private readonly ServerOptions _options =
         options ?? throw new ArgumentNullException(nameof(options));
@@ -79,8 +80,14 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         // is the one question about it nobody has ever had evidence for. Only the length is
         // kept — never the payload, which is the material the cap exists to keep out. Failing
         // to record is silent: the agent's refusal must not depend on the bookkeeping behind it.
-        await _session.RecordSizeRefusalAsync(type, payloadJson.Length, cancellationToken)
-            .ConfigureAwait(false);
+        _ = await _link.Agents.RecordRefusalAsync(
+            new Wire.RecordRefusalRequest
+            {
+                Agent = _options.Agent.Value,
+                Type = WireCodec.Out(type),
+                Characters = payloadJson.Length
+            },
+            cancellationToken: cancellationToken);
 
         return new JsonObject
         {
@@ -158,7 +165,10 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
           repository implements something.
         """)]
     public async Task<JsonNode> AskAsync(
-        [Description("The agent to ask. Use parley_agents to see who exists.")] string to,
+        [Description(
+            "Who to ask: one agent by its whole name (infra@server-b), or a role (infra) to ask "
+            + "every agent registered under it. Use parley_agents to see who exists.")]
+        string to,
         [Description("One sentence on what you are trying to decide.")] string intent,
         [Description(
             "The sub-questions. Each needs a unique id and text; add a gate {on, equals} when it " +
@@ -176,72 +186,109 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         [Description("Optional. The model that produced this question.")] string? responderModel = null,
         CancellationToken cancellationToken = default)
     {
-        if (BadAgent(to, out var peer) is { } badPeer)
+        try
         {
-            return badPeer;
+            // A bare role addresses every agent under it (SPEC.md §5.5); a whole name addresses one.
+            // Told apart by shape rather than guessed at, because "it had no @ so we treated it as a
+            // group" is the sort of inference that asks nineteen machines a question by accident.
+            var group = AgentName.IsRole(to);
+            var peer = default(AgentName);
+
+            if (!group)
+            {
+                if (BadAgent(to, out peer) is { } badPeer)
+                {
+                    return badPeer;
+                }
+            }
+
+            if (BadResponder(responderModel) is { } badResponder)
+            {
+                return badResponder;
+            }
+
+            if (!group && peer == _options.Agent)
+            {
+                return Malformed(
+                    "You cannot address yourself. Parley carries questions between agents that own " +
+                    "different things; whatever this is, it is yours to decide.");
+            }
+
+            if (BadConversation(conversationId) is { } badConversation)
+            {
+                return badConversation;
+            }
+
+            if (BadFraming(intent, consequences) is { } badFraming)
+            {
+                return badFraming;
+            }
+
+            if (BadSubQuestions(subQuestions) is { } badQuestions)
+            {
+                return badQuestions;
+            }
+
+            var payload = new JsonObject
+            {
+                ["intent"] = intent,
+                ["sub_questions"] = new JsonArray(
+                    (subQuestions ?? []).Select(q => q.ToJson()).ToArray<JsonNode?>()),
+                ["consequences"] = consequences
+            };
+
+            var json = payload.ToJsonString();
+
+            if (await TooLongAsync(json, MessageType.Question, cancellationToken).ConfigureAwait(false)
+                is { } refused)
+            {
+                return refused;
+            }
+
+            if (group)
+            {
+                var opened = await _link.Agents.AskRoleAsync(
+                    new Wire.AskRoleRequest
+                    {
+                        From = _options.Agent.Value,
+                        Role = to,
+                        ResponderModel = Responder(responderModel),
+                        PayloadJson = json,
+                        ConversationId = conversationId ?? string.Empty
+                    },
+                    cancellationToken: cancellationToken);
+
+                return AskedRole(to, opened.Outcomes);
+            }
+
+            var outcome = await _link.Agents.AskAsync(
+                new Wire.AskRequest
+                {
+                    From = _options.Agent.Value,
+                    To = peer.Value,
+                    ResponderModel = Responder(responderModel),
+                    PayloadJson = json,
+                    ConversationId = conversationId ?? string.Empty
+                },
+                cancellationToken: cancellationToken);
+
+            if (!outcome.Ok)
+            {
+                return Refusal(outcome);
+            }
+
+            return new JsonObject
+            {
+                ["ok"] = true,
+                ["exchange_id"] = outcome.ExchangeId,
+                ["note"] = "Asked. The answer will arrive in your inbox carrying this exchange_id. " +
+                           "Do not wait for it."
+            };
         }
-
-        if (BadResponder(responderModel) is { } badResponder)
+        catch (RpcException failure)
         {
-            return badResponder;
+            return Unreachable(failure);
         }
-
-        if (peer == _options.Agent)
-        {
-            return Malformed(
-                "You cannot address yourself. Parley carries questions between agents that own " +
-                "different things; whatever this is, it is yours to decide.");
-        }
-
-        if (BadConversation(conversationId) is { } badConversation)
-        {
-            return badConversation;
-        }
-
-        if (BadFraming(intent, consequences) is { } badFraming)
-        {
-            return badFraming;
-        }
-
-        if (BadSubQuestions(subQuestions) is { } badQuestions)
-        {
-            return badQuestions;
-        }
-
-        var payload = new JsonObject
-        {
-            ["intent"] = intent,
-            ["sub_questions"] = new JsonArray(
-                (subQuestions ?? []).Select(q => q.ToJson()).ToArray<JsonNode?>()),
-            ["consequences"] = consequences
-        };
-
-        var json = payload.ToJsonString();
-
-        if (await TooLongAsync(json, MessageType.Question, cancellationToken).ConfigureAwait(false)
-            is { } refused)
-        {
-            return refused;
-        }
-
-        var outcome = await _session.RunAsync(
-            (broker, now, ct) => broker.AskAsync(
-                _options.Agent, peer, Responder(responderModel), json, now,
-                conversationId, ct),
-            cancellationToken).ConfigureAwait(false);
-
-        if (!outcome.Succeeded)
-        {
-            return Refusal(outcome);
-        }
-
-        return new JsonObject
-        {
-            ["ok"] = true,
-            ["exchange_id"] = outcome.Exchange!.Id,
-            ["note"] = "Asked. The answer will arrive in your inbox carrying this exchange_id. " +
-                       "Do not wait for it."
-        };
     }
 
     /// <summary>Requests or supplies detail within an open exchange.</summary>
@@ -272,30 +319,41 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         [Description("Optional. The model that produced this.")] string? responderModel = null,
         CancellationToken cancellationToken = default)
     {
-        if (BadResponder(responderModel) is { } badResponder)
+        try
         {
-            return badResponder;
+            if (BadResponder(responderModel) is { } badResponder)
+            {
+                return badResponder;
+            }
+
+            var payload = new JsonObject { ["text"] = text };
+
+            var json = payload.ToJsonString();
+
+            if (await TooLongAsync(json, MessageType.Clarify, cancellationToken).ConfigureAwait(false)
+                is { } refused)
+            {
+                return refused;
+            }
+
+            var outcome = await _link.Agents.ClarifyAsync(
+                new Wire.ClarifyRequest
+                {
+                    From = _options.Agent.Value,
+                    ExchangeId = exchangeId,
+                    ResponderModel = Responder(responderModel),
+                    PayloadJson = json
+                },
+                cancellationToken: cancellationToken);
+
+            return outcome.Ok
+                ? new JsonObject { ["ok"] = true, ["turn_is_now_with"] = "the other party" }
+                : Refusal(outcome.Refusal);
         }
-
-        var payload = new JsonObject { ["text"] = text };
-
-        var json = payload.ToJsonString();
-
-        if (await TooLongAsync(json, MessageType.Clarify, cancellationToken).ConfigureAwait(false)
-            is { } refused)
+        catch (RpcException failure)
         {
-            return refused;
+            return Unreachable(failure);
         }
-
-        var outcome = await _session.RunAsync(
-            (broker, now, ct) => broker.ClarifyAsync(
-                exchangeId, _options.Agent, Responder(responderModel), json,
-                now, ct),
-            cancellationToken).ConfigureAwait(false);
-
-        return outcome.Succeeded
-            ? new JsonObject { ["ok"] = true, ["turn_is_now_with"] = "the other party" }
-            : Refusal(outcome.Error);
     }
 
     /// <summary>Answers a question and closes its exchange.</summary>
@@ -338,58 +396,71 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         [Description("Optional. The model that produced this answer.")] string? responderModel = null,
         CancellationToken cancellationToken = default)
     {
-        if (BadResponder(responderModel) is { } badResponder)
+        try
         {
-            return badResponder;
+            if (BadResponder(responderModel) is { } badResponder)
+            {
+                return badResponder;
+            }
+
+            if (BadResolutions(resolutions) is { } badResolutions)
+            {
+                return badResolutions;
+            }
+
+            if (await UnknownReferralAsync(resolutions, cancellationToken).ConfigureAwait(false)
+                is { } badReferral)
+            {
+                return badReferral;
+            }
+
+            if (await MismatchedResolutionsAsync(exchangeId, resolutions, cancellationToken)
+                    .ConfigureAwait(false) is { } mismatched)
+            {
+                return mismatched;
+            }
+
+            var entries = resolutions ?? [];
+
+            var payload = new JsonObject
+            {
+                ["resolutions"] = new JsonArray(entries.Select(r => r.ToJson()).ToArray<JsonNode?>())
+            };
+
+            // The exchange records the least resolved of the per-sub-question outcomes, per §5.3.
+            // Rolling up here rather than asking the caller for it keeps the two from disagreeing:
+            // an agent that reported every sub-question "unknown" and the aggregate "answered" would
+            // make §15's telemetry describe a deployment that does not exist.
+            var rollup = RollUp(entries);
+
+            var json = payload.ToJsonString();
+
+            if (await TooLongAsync(json, MessageType.Answer, cancellationToken).ConfigureAwait(false)
+                is { } refused)
+            {
+                return refused;
+            }
+
+            var outcome = await _link.Agents.AnswerAsync(
+                new Wire.AnswerRequest
+                {
+                    From = _options.Agent.Value,
+                    ExchangeId = exchangeId,
+                    ResponderModel = Responder(responderModel),
+                    PayloadJson = json,
+                    Resolution = WireCodec.Out(rollup),
+                    IsDecision = isDecision
+                },
+                cancellationToken: cancellationToken);
+
+            return outcome.Ok
+                ? new JsonObject { ["ok"] = true, ["closed"] = true }
+                : Refusal(outcome.Refusal);
         }
-
-        if (BadResolutions(resolutions) is { } badResolutions)
+        catch (RpcException failure)
         {
-            return badResolutions;
+            return Unreachable(failure);
         }
-
-        if (await UnknownReferralAsync(resolutions, cancellationToken).ConfigureAwait(false)
-            is { } badReferral)
-        {
-            return badReferral;
-        }
-
-        if (await MismatchedResolutionsAsync(exchangeId, resolutions, cancellationToken)
-                .ConfigureAwait(false) is { } mismatched)
-        {
-            return mismatched;
-        }
-
-        var entries = resolutions ?? [];
-
-        var payload = new JsonObject
-        {
-            ["resolutions"] = new JsonArray(entries.Select(r => r.ToJson()).ToArray<JsonNode?>())
-        };
-
-        // The exchange records the least resolved of the per-sub-question outcomes, per §5.3.
-        // Rolling up here rather than asking the caller for it keeps the two from disagreeing:
-        // an agent that reported every sub-question "unknown" and the aggregate "answered" would
-        // make §15's telemetry describe a deployment that does not exist.
-        var rollup = RollUp(entries);
-
-        var json = payload.ToJsonString();
-
-        if (await TooLongAsync(json, MessageType.Answer, cancellationToken).ConfigureAwait(false)
-            is { } refused)
-        {
-            return refused;
-        }
-
-        var outcome = await _session.RunAsync(
-            (broker, now, ct) => broker.AnswerAsync(
-                exchangeId, _options.Agent, Responder(responderModel), json,
-                now, rollup, isDecision, ct),
-            cancellationToken).ConfigureAwait(false);
-
-        return outcome.Succeeded
-            ? new JsonObject { ["ok"] = true, ["closed"] = true }
-            : Refusal(outcome.Error);
     }
 
     /// <summary>Announces an event to a peer, owing nothing.</summary>
@@ -423,47 +494,59 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         [Description("Optional. The model that produced this.")] string? responderModel = null,
         CancellationToken cancellationToken = default)
     {
-        if (BadAgent(to, out var peer) is { } badPeer)
+        try
         {
-            return badPeer;
-        }
+            if (BadAgent(to, out var peer) is { } badPeer)
+            {
+                return badPeer;
+            }
 
-        if (BadResponder(responderModel) is { } badResponder)
+            if (BadResponder(responderModel) is { } badResponder)
+            {
+                return badResponder;
+            }
+
+            if (peer == _options.Agent)
+            {
+                return Malformed(
+                    "You cannot address yourself. Parley carries questions between agents that own " +
+                    "different things; whatever this is, it is yours to decide.");
+            }
+
+            if (BadConversation(conversationId) is { } badConversation)
+            {
+                return badConversation;
+            }
+
+            var payload = new JsonObject { ["text"] = text };
+
+            var json = payload.ToJsonString();
+
+            if (await TooLongAsync(json, MessageType.Notify, cancellationToken).ConfigureAwait(false)
+                is { } refused)
+            {
+                return refused;
+            }
+
+            var outcome = await _link.Agents.NotifyAsync(
+                new Wire.NotifyRequest
+                {
+                    From = _options.Agent.Value,
+                    To = peer.Value,
+                    ResponderModel = Responder(responderModel),
+                    PayloadJson = json,
+                    ConversationId = conversationId ?? string.Empty
+                },
+                cancellationToken: cancellationToken);
+
+            return outcome.Ok
+                ? new JsonObject { ["ok"] = true, ["was_new"] = !outcome.Deduplicated }
+                : Refusal(outcome.Refusal);
+        }
+        catch (RpcException failure)
         {
-            return badResponder;
+            return Unreachable(failure);
         }
-
-        if (peer == _options.Agent)
-        {
-            return Malformed(
-                "You cannot address yourself. Parley carries questions between agents that own " +
-                "different things; whatever this is, it is yours to decide.");
-        }
-
-        if (BadConversation(conversationId) is { } badConversation)
-        {
-            return badConversation;
-        }
-
-        var payload = new JsonObject { ["text"] = text };
-
-        var json = payload.ToJsonString();
-
-        if (await TooLongAsync(json, MessageType.Notify, cancellationToken).ConfigureAwait(false)
-            is { } refused)
-        {
-            return refused;
-        }
-
-        var outcome = await _session.RunAsync(
-            (broker, now, ct) => broker.NotifyAsync(
-                _options.Agent, peer, Responder(responderModel), json, now,
-                conversationId, ct),
-            cancellationToken).ConfigureAwait(false);
-
-        return outcome.Succeeded
-            ? new JsonObject { ["ok"] = true, ["was_new"] = outcome.Stored }
-            : Refusal(outcome.Rejection);
     }
 
     /// <summary>Collects what peers have sent, and any closure poll outstanding.</summary>
@@ -497,41 +580,52 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         [Description("Optional. The most messages to collect at once.")] int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        var inbox = await _session.RunAsync(
-            (broker, now, ct) => broker.DrainInboxAsync(_options.Agent, now, limit, ct),
-            cancellationToken).ConfigureAwait(false);
-
-        var messages = new JsonArray();
-
-        foreach (var delivered in inbox.Messages)
+        try
         {
-            messages.Add(new JsonObject
+            var inbox = await _link.Agents.DrainInboxAsync(
+                new Wire.DrainInboxRequest
+                {
+                    Agent = _options.Agent.Value,
+                    Limit = limit ?? 0
+                },
+                cancellationToken: cancellationToken);
+
+            var messages = new JsonArray();
+
+            foreach (var delivered in inbox.Messages)
             {
-                ["exchange_id"] = delivered.Message.ExchangeId,
-                ["type"] = MessageIdentity.FormatType(delivered.Message.Type),
-                ["from"] = delivered.Message.From.Value,
+                messages.Add(new JsonObject
+                {
+                    ["exchange_id"] = delivered.Message.ExchangeId,
+                    ["type"] = MessageIdentity.FormatType(WireCodec.In(delivered.Message.Type)),
+                    ["from"] = delivered.Message.From,
 
-                // The envelope, not the payload. §13 requires the framing around a peer's words,
-                // and the only way to be sure an adapter never delivers them bare is for it never
-                // to hand the payload over separately.
-                ["message"] = delivered.Envelope
-            });
+                    // The envelope, not the payload. §13 requires the framing around a peer's words,
+                    // and the only way to be sure an adapter never delivers them bare is for it never
+                    // to hand the payload over separately.
+                    ["message"] = delivered.Envelope
+                });
+            }
+
+            var polls = new JsonArray();
+
+            foreach (var poll in inbox.ClosurePolls)
+            {
+                polls.Add(new JsonObject
+                {
+                    ["conversation_id"] = poll.ConversationId,
+                    ["silence_assents_after"] = poll.ExpiresUtc,
+                    ["note"] = "Somebody proposed that this discussion is finished. Answer with " +
+                               "parley_conclude. Saying nothing counts as agreeing."
+                });
+            }
+
+            return new JsonObject { ["messages"] = messages, ["closure_polls"] = polls };
         }
-
-        var polls = new JsonArray();
-
-        foreach (var poll in inbox.ClosurePolls)
+        catch (RpcException failure)
         {
-            polls.Add(new JsonObject
-            {
-                ["conversation_id"] = poll.ConversationId,
-                ["silence_assents_after"] = poll.ExpiresUtc.ToString("O"),
-                ["note"] = "Somebody proposed that this discussion is finished. Answer with " +
-                           "parley_conclude. Saying nothing counts as agreeing."
-            });
+            return Unreachable(failure);
         }
-
-        return new JsonObject { ["messages"] = messages, ["closure_polls"] = polls };
     }
 
     /// <summary>Lists the peers this agent may address.</summary>
@@ -559,34 +653,51 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         """)]
     public async Task<JsonNode> AgentsAsync(CancellationToken cancellationToken = default)
     {
-        var agents = await _session.RunAsync(
-            (broker, _, ct) => broker.ListAgentsAsync(ct),
-            cancellationToken).ConfigureAwait(false);
-
-        var listed = new JsonArray();
-
-        foreach (var agent in agents.Where(a => a.Name != _options.Agent))
+        try
         {
-            var entry = new JsonObject
-            {
-                ["name"] = agent.Name.Value,
-                ["adapter"] = agent.Adapter,
-                ["tier"] = agent.Tier.ToString().ToLowerInvariant(),
-                ["status"] = agent.Status.ToString().ToLowerInvariant()
-            };
+            var agents = await _link.Agents.ListAgentsAsync(
+                new Wire.ListAgentsRequest { AskingAs = _options.Agent.Value },
+                cancellationToken: cancellationToken);
 
-            // Omitted rather than null when the launch did not say. An absent key reads as
-            // unknown, which is what it is; a null one invites the reader to treat "owns
-            // nothing" as a claim that peer made about itself.
-            if (agent.Owns is { } owns)
+            var listed = new JsonArray();
+
+            foreach (var agent in agents.Agents.Where(
+                a => !string.Equals(a.Name, _options.Agent.Value, StringComparison.Ordinal)))
             {
-                entry["owns"] = owns;
+                var entry = new JsonObject
+                {
+                    ["name"] = agent.Name,
+                    ["adapter"] = agent.Adapter,
+                    ["tier"] = agent.Tier.ToString().ToLowerInvariant(),
+                    // Presence rather than a stored status, and the two are different questions:
+                    // an operator's retirement never reaches here because a retired agent is not
+                    // listed at all (§14), so everything a peer sees is an observation about
+                    // reachability. It is advisory -- nothing here tells an asker not to ask.
+                    ["presence"] = agent.Presence.ToString().ToLowerInvariant()
+                };
+
+                // Omitted rather than empty when the launch did not say. An absent key reads as
+                // unknown, which is what it is; an empty one invites the reader to treat "owns
+                // nothing" as a claim that peer made about itself.
+                //
+                // Emptiness is the test because proto3 has no null for a scalar, so an unset field
+                // and one set to "" arrive identically. That collapse is harmless here and is worth
+                // naming: an ownership statement of no characters says nothing that an absent one
+                // does not, so there is no case the wire has made unrepresentable.
+                if (agent.Owns is { Length: > 0 } owns)
+                {
+                    entry["owns"] = owns;
+                }
+
+                listed.Add(entry);
             }
 
-            listed.Add(entry);
+            return new JsonObject { ["agents"] = listed };
         }
-
-        return new JsonObject { ["agents"] = listed };
+        catch (RpcException failure)
+        {
+            return Unreachable(failure);
+        }
     }
 
     /// <summary>Says whether the caller considers a discussion finished.</summary>
@@ -615,30 +726,41 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
         [Description("True if you consider the discussion over.")] bool finished,
         CancellationToken cancellationToken = default)
     {
-        var outcome = await _session.RunAsync(
-            (broker, now, ct) => broker.ConcludeAsync(
-                conversationId, _options.Agent, finished, now, ct),
-            cancellationToken).ConfigureAwait(false);
-
-        if (!outcome.Succeeded)
+        try
         {
+            var outcome = await _link.Agents.ConcludeAsync(
+                new Wire.ConcludeRequest
+                {
+                    From = _options.Agent.Value,
+                    ConversationId = conversationId,
+                    Vote = finished ? Wire.Vote.Done : Wire.Vote.NotDone
+                },
+                cancellationToken: cancellationToken);
+
+            if (!outcome.Ok)
+            {
+                return new JsonObject
+                {
+                    ["ok"] = false,
+                    // The same spelling the enum-derived codes produce. Two spellings of one
+                    // condition is worse here than in most places: the refusal code is the part a
+                    // model matches on to decide what to do next, and the prose is the part it
+                    // reads. An agent handling 'notaparticipant' would silently miss this one.
+                    ["refused"] = "notaparticipant",
+                    ["why"] = "You are not part of that discussion, or it does not exist."
+                };
+            }
+
             return new JsonObject
             {
-                ["ok"] = false,
-                // The same spelling the enum-derived codes produce. Two spellings of one
-                // condition is worse here than in most places: the refusal code is the part a
-                // model matches on to decide what to do next, and the prose is the part it
-                // reads. An agent handling 'notaparticipant' would silently miss this one.
-                ["refused"] = "notaparticipant",
-                ["why"] = "You are not part of that discussion, or it does not exist."
+                ["ok"] = true,
+                ["conversation_closed"] = outcome.Concluded
             };
         }
-
-        return new JsonObject
+        catch (RpcException failure)
         {
-            ["ok"] = true,
-            ["conversation_closed"] = outcome.Concluded
-        };
+            return Unreachable(failure);
+        }
     }
 
     /// <summary>Resolves a peer name supplied by the agent.</summary>
@@ -661,6 +783,43 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
             $"'{name}' is not an agent name. Names are lowercase letters, digits and hyphens, " +
             "starting with a letter. Call parley_agents to see who exists.");
     }
+
+    /// <summary>Reports that the broker could not be reached, or refused at the transport.</summary>
+    /// <param name="failure">What the transport said.</param>
+    /// <returns>The refusal, with what to do about it.</returns>
+    /// <remarks>
+    /// <para>
+    /// Every tool ends in this, and it is the failure the new architecture made possible. The
+    /// broker is a separate process now: it can be stopped, upgraded, or on a machine that has
+    /// gone away, and when it is, every operation here fails at the socket rather than at a rule.
+    /// </para>
+    /// <para>
+    /// Without it the model receives "An error occurred invoking 'parley_ask'", which names no
+    /// cause and suggests no remedy — so it retries, and retries, and eventually works around a
+    /// peer it has decided is unreachable. That is the §7.3 failure exactly: a refusal a model
+    /// cannot act on becomes a token-burning loop or a silent abandonment.
+    /// </para>
+    /// <para>
+    /// It says the work was not done and that this is not the agent's fault, because both halves
+    /// matter. An agent told only "failed" may reasonably conclude its message was malformed and
+    /// spend a turn rewriting it.
+    /// </para>
+    /// </remarks>
+    private static JsonNode Unreachable(RpcException failure) => new JsonObject
+    {
+        ["ok"] = false,
+        ["refused"] = "brokerunreachable",
+        ["why"] =
+            failure.StatusCode == StatusCode.Unavailable
+                ? "Parley's broker is not answering, so nothing was sent and nothing was " +
+                  "collected. This is not something you did and not something you can fix by " +
+                  "rephrasing: the process that carries messages between repositories is down. " +
+                  "Tell your principal it needs starting, and carry on with what you can do " +
+                  "alone."
+                : "Parley refused that at the transport, so nothing was sent. This is a " +
+                  $"deployment fault rather than a mistake in your message: {failure.Status.Detail} " +
+                  "Tell your principal rather than retrying."
+    };
 
     /// <summary>
     /// Refuses a malformed request, or returns nothing if it is usable.
@@ -704,12 +863,11 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
             return null;
         }
 
-        if (responderModel.StartsWith(
-                Parley.Broker.Broker.ReservedResponderPrefix, StringComparison.OrdinalIgnoreCase))
+        if (Core.Responder.IsReserved(responderModel))
         {
             return Malformed(
                 $"'{responderModel}' claims the reserved " +
-                $"'{Parley.Broker.Broker.ReservedResponderPrefix}' namespace, which only the " +
+                $"'{Core.Responder.ReservedPrefix}' namespace, which only the " +
                 "broker writes. Name the model that produced this, or leave it out and the " +
                 "server will use the one it was launched with.");
         }
@@ -882,9 +1040,15 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
     private async Task<JsonNode?> MismatchedResolutionsAsync(
         long exchangeId, Resolution[]? resolutions, CancellationToken cancellationToken)
     {
-        var asked = await _session.RunAsync(
-            (broker, _, ct) => broker.GetSubQuestionIdsAsync(exchangeId, _options.Agent, ct),
-            cancellationToken).ConfigureAwait(false);
+        var reply = await _link.Agents.GetSubQuestionIdsAsync(
+            new Wire.SubQuestionsRequest
+            {
+                ExchangeId = exchangeId,
+                AskingAs = _options.Agent.Value
+            },
+            cancellationToken: cancellationToken);
+
+        var asked = reply.Ids;
 
         if (asked.Count == 0)
         {
@@ -986,10 +1150,11 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
             return null;
         }
 
-        var known = await _session.RunAsync(
-            (broker, _, ct) => broker.ListAgentsAsync(ct), cancellationToken).ConfigureAwait(false);
+        var known = await _link.Agents.ListAgentsAsync(
+            new Wire.ListAgentsRequest { AskingAs = _options.Agent.Value },
+            cancellationToken: cancellationToken);
 
-        var routable = known.Select(a => a.Name.Value).ToHashSet(StringComparer.Ordinal);
+        var routable = known.Agents.Select(a => a.Name).ToHashSet(StringComparer.Ordinal);
 
         foreach (var referral in referrals)
         {
@@ -1103,6 +1268,63 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
     }
 
     /// <summary>Renders an admission refusal as something the model can act on.</summary>
+    /// <summary>Reports what became of a question addressed to a role.</summary>
+    /// <param name="role">The role that was asked.</param>
+    /// <param name="outcomes">One outcome per agent, in name order.</param>
+    /// <returns>The reply to hand back.</returns>
+    /// <remarks>
+    /// <para>
+    /// Every member is reported, refused ones included, because a refusal for one says nothing
+    /// about the rest and an asker that saw only the successes could not tell a peer that was
+    /// busy from a peer that was never there. The count of each is stated rather than left to be
+    /// worked out from a list, since that is what the asker will act on.
+    /// </para>
+    /// <para>
+    /// A whole-group refusal — an unknown role, or one too large to ask — arrives as a single
+    /// outcome and is reported as an ordinary refusal, because nothing was opened and there is
+    /// no group to describe.
+    /// </para>
+    /// </remarks>
+    private static JsonNode AskedRole(string role, IReadOnlyList<Wire.AskReply> outcomes)
+    {
+        if (outcomes.Count == 1 && !outcomes[0].Ok)
+        {
+            return Refusal(outcomes[0]);
+        }
+
+        var asked = new JsonArray();
+        var refused = new JsonArray();
+
+        foreach (var outcome in outcomes)
+        {
+            if (outcome.Ok)
+            {
+                asked.Add(new JsonObject
+                {
+                    ["agent"] = outcome.Answerer,
+                    ["exchange"] = outcome.ExchangeId
+                });
+            }
+            else
+            {
+                refused.Add(Refusal(outcome));
+            }
+        }
+
+        return new JsonObject
+        {
+            ["ok"] = true,
+            ["role"] = role,
+            ["asked"] = asked,
+            ["refused"] = refused,
+
+            // Said plainly because it is the number the asker has to reason about: how many
+            // answers to expect before it has heard from everybody. §5.5 leaves deciding whether
+            // it needs all of them to the asker, and it cannot decide that without knowing.
+            ["expect_answers"] = asked.Count
+        };
+    }
+
     /// <param name="outcome">The refused ask.</param>
     /// <returns>The refusal, with what to do about it.</returns>
     /// <remarks>
@@ -1110,7 +1332,7 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
     /// §7.3 refuses to do: instructing a language model to remember something for later produces
     /// a token-burning loop or silent abandonment.
     /// </remarks>
-    private static JsonNode Refusal(AskOutcome outcome)
+    private static JsonNode Refusal(Wire.AskReply outcome)
     {
         var refusal = new JsonObject
         {
@@ -1120,41 +1342,35 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
 
         refusal["why"] = outcome.Rejection switch
         {
-            OpenRejection.PairSaturated =>
+            Wire.OpenRejection.PairSaturated =>
                 "You already have the maximum questions open with that peer. One of the answers " +
                 "you are waiting for may well cover this. See open_exchanges.",
-            OpenRejection.DuplicateQuestion =>
+            Wire.OpenRejection.DuplicateQuestion =>
                 "You already asked that peer this exact question and it is still open. The " +
                 "answer is coming. See open_exchanges.",
-            OpenRejection.WouldDeadlock =>
+            Wire.OpenRejection.WouldDeadlock =>
                 "Admitting this would close a loop of questions none of which could ever be " +
                 "answered, because every agent in it would be waiting on the next. Ask somebody " +
                 "else, or ask your principal.",
-            OpenRejection.AnswererUnreachable =>
+            Wire.OpenRejection.AnswererUnreachable =>
                 "That peer is not being routed to — it cannot be spawned, has been retired, or " +
                 "is not a registered name. Tell your principal rather than retrying. Call " +
                 "parley_agents to see who exists.",
-            OpenRejection.ConversationClosed =>
+            Wire.OpenRejection.ConversationClosed =>
                 "That discussion has concluded and stays concluded. Ask again without a " +
                 "conversation id, or with a new one — identifiers cost nothing.",
-            OpenRejection.AskerRetired =>
+            Wire.OpenRejection.AskerRetired =>
                 "Your own registration has been withdrawn by an operator. Tell your principal; " +
                 "you cannot open new exchanges.",
             _ => "Refused."
         };
 
-        if (outcome.Admission.Outstanding.Count > 0)
+        if (outcome.WaitingOn.Count > 0)
         {
             refusal["open_exchanges"] = new JsonArray(
-                outcome.Admission.Outstanding
-                    .Select(e => (JsonNode?)new JsonObject { ["exchange_id"] = e.Id })
+                outcome.WaitingOn
+                    .Select(id => (JsonNode?)new JsonObject { ["exchange_id"] = id })
                     .ToArray());
-        }
-
-        if (outcome.Admission.CyclePath.Count > 0)
-        {
-            refusal["cycle"] = new JsonArray(
-                outcome.Admission.CyclePath.Select(a => (JsonNode?)JsonValue.Create(a.Value)).ToArray());
         }
 
         return refusal;
@@ -1163,18 +1379,18 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
     /// <summary>Renders a notification refusal.</summary>
     /// <param name="rejection">Why it was refused.</param>
     /// <returns>The refusal, with what to do about it.</returns>
-    private static JsonNode Refusal(NotifyRejection rejection) => new JsonObject
+    private static JsonNode Refusal(Wire.NotifyRejection rejection) => new JsonObject
     {
         ["ok"] = false,
         ["refused"] = rejection.ToString().ToLowerInvariant(),
         ["why"] = rejection switch
         {
-            NotifyRejection.RecipientUnroutable =>
+            Wire.NotifyRejection.RecipientUnroutable =>
                 "That peer is not being routed to — it cannot be spawned, has been retired, or " +
                 "is not a registered name. Call parley_agents to see who exists.",
-            NotifyRejection.SenderRetired =>
+            Wire.NotifyRejection.SenderRetired =>
                 "Your own registration has been withdrawn by an operator. Tell your principal.",
-            NotifyRejection.ConversationClosed =>
+            Wire.NotifyRejection.ConversationClosed =>
                 "That discussion has concluded and nothing further may be added to it.",
             _ => "Refused."
         }
@@ -1183,27 +1399,27 @@ public sealed class ParleyTools(BrokerSession session, ServerOptions options)
     /// <summary>Renders a refused transition.</summary>
     /// <param name="error">Why the exchange refused the move.</param>
     /// <returns>The refusal, with what to do about it.</returns>
-    private static JsonNode Refusal(TransitionError? error) => new JsonObject
+    private static JsonNode Refusal(Wire.TransitionError error) => new JsonObject
     {
         ["ok"] = false,
-        ["refused"] = (error ?? TransitionError.None).ToString().ToLowerInvariant(),
+        ["refused"] = error.ToString().ToLowerInvariant(),
         ["why"] = error switch
         {
-            TransitionError.ExchangeNotOpen =>
+            Wire.TransitionError.ExchangeNotOpen =>
                 "That exchange is not open. It may have been answered already, or abandoned " +
                 "because nobody returned to it in time.",
-            TransitionError.NotYourTurn =>
+            Wire.TransitionError.NotYourTurn =>
                 "The other party owes the next move on that exchange, not you. Wait for it to " +
                 "arrive in your inbox.",
-            TransitionError.NotAParticipant =>
+            Wire.TransitionError.NotAParticipant =>
                 "You are not party to that exchange.",
-            TransitionError.OnlyAnswererMayAnswer =>
+            Wire.TransitionError.OnlyAnswererMayAnswer =>
                 "You asked that question; you cannot answer it. Reply with parley_clarify if " +
                 "detail was requested.",
-            TransitionError.ClarifyDepthExceeded =>
+            Wire.TransitionError.ClarifyDepthExceeded =>
                 "You have asked for clarification as many times as this exchange allows. Answer " +
                 "with what you have, using \"unknown\" for the parts you cannot determine.",
-            TransitionError.GhostIsNotAnAnswer =>
+            Wire.TransitionError.GhostIsNotAnAnswer =>
                 "\"ghosted\" records that nobody answered, so it cannot be used as an answer.",
             _ => "Refused."
         }

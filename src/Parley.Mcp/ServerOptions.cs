@@ -1,18 +1,15 @@
-﻿using System.Globalization;
 using Parley.Core;
 
 namespace Parley.Mcp;
 
 /// <summary>
-/// How this server was launched: which database, and which agent it speaks for.
+/// How this server was launched: which broker to reach, and which agent it speaks for.
 /// </summary>
-/// <param name="DatabasePath">The project's Parley database.</param>
+/// <param name="Broker">Where the broker of SPEC.md §4 is listening.</param>
 /// <param name="Agent">The agent every operation from this process acts as.</param>
 /// <param name="ResponderModel">
 /// What to record as having produced a message when a call does not say. See SPEC.md §11.3.
 /// </param>
-/// <param name="TickInterval">How often the sweep runs.</param>
-/// <param name="Retention">How long the message log keeps what it carried. See SPEC.md §9.4.</param>
 /// <param name="Workspace">
 /// The directory this agent works in, recorded in the registry so an operator can tell which
 /// repository a name belongs to, or <see langword="null"/> if the launch did not say.
@@ -20,21 +17,6 @@ namespace Parley.Mcp;
 /// <param name="Owns">
 /// One line saying what this agent owns, shown to every peer that lists the roster, or
 /// <see langword="null"/> if the launch did not say. See <see cref="OwnershipStatement"/>.
-/// </param>
-/// <param name="InvokeCommand">
-/// How to start this repository, or <see langword="null"/> if it cannot be started at all.
-/// Recording it is not by itself permission to run unattended -- see
-/// <paramref name="InvokeWhenIdle"/>. See SPEC.md §11.1's Headless tier.
-/// </param>
-/// <param name="InvokeWhenIdle">
-/// Whether a supervisor may start this repository when something is waiting on it and nobody is
-/// running it. Requires <paramref name="InvokeCommand"/>: consent with nothing to run is a
-/// candidate that fails silently on every pass, which the schema refuses by trigger.
-/// </param>
-/// <param name="ClarifyDepthCap">
-/// How many clarifications an exchange opened by this server admits before the broker forces an
-/// <c>unknown</c>. Stamped onto each exchange at admission, so a change applies to questions
-/// asked after it and not to any already in flight. See SPEC.md §5.2 and §17 question 4.
 /// </param>
 /// <remarks>
 /// <para>
@@ -48,30 +30,33 @@ namespace Parley.Mcp;
 /// </para>
 /// <para>
 /// One process per agent per project follows from that, and matches SPEC.md §4.1: a project is
-/// a deployment concept, and a broker's connection cannot see another's file. Two agents on one
-/// machine are two launches, two databases only if they are two projects, and never two
+/// a deployment concept, and membership is which endpoint an agent connects to. Two agents on
+/// one machine are two launches, two brokers only if they are two projects, and never two
 /// identities inside one process.
+/// </para>
+/// <para>
+/// <b>What is no longer here is the point of the current shape.</b> This record used to carry a
+/// database path, a sweep interval, a retention policy and a clarify cap — every one of which
+/// describes the deployment rather than the launch, and every one of which each repository could
+/// therefore set differently for the same store. They belong to the broker now, which is the one
+/// process that owns the deployment, and an adapter cannot express an opinion about them because
+/// there is nowhere left to put one.
 /// </para>
 /// </remarks>
 public sealed record ServerOptions(
-    string DatabasePath,
+    string Broker,
     AgentName Agent,
     string ResponderModel,
-    TimeSpan TickInterval,
-    RetentionPolicy Retention,
     string? Workspace,
-    string? Owns = null,
-    int ClarifyDepthCap = ServerOptions.DefaultClarifyDepthCap,
-    string? InvokeCommand = null,
-    bool InvokeWhenIdle = false)
+    string? Owns = null)
 {
-    /// <summary>The environment variable naming the database file.</summary>
+    /// <summary>The environment variable naming the broker to connect to.</summary>
     /// <remarks>
-    /// The name itself lives in <see cref="DeploymentEnvironment"/>, because the operator's tool
-    /// reads the same variable and does not reference this assembly. Kept here as well so a
-    /// launch configuration's vocabulary is readable from the type that describes a launch.
+    /// The name itself lives in <see cref="BrokerEndpoint"/>, because all three processes read
+    /// the same variable and none references another. Kept here as well so a launch
+    /// configuration's vocabulary is readable from the type that describes a launch.
     /// </remarks>
-    public const string DatabaseVariable = DeploymentEnvironment.DatabaseVariable;
+    public const string BrokerVariable = BrokerEndpoint.Variable;
 
     /// <summary>The environment variable naming the agent this server speaks for.</summary>
     public const string AgentVariable = "PARLEY_AGENT";
@@ -79,102 +64,6 @@ public sealed record ServerOptions(
     /// <summary>The environment variable naming the default responder identity.</summary>
     public const string ResponderVariable = "PARLEY_RESPONDER";
 
-    /// <summary>The environment variable overriding the sweep interval, in seconds.</summary>
-    public const string TickVariable = "PARLEY_TICK_SECONDS";
-
-    /// <summary>
-    /// The environment variable overriding how many clarifications an exchange admits.
-    /// </summary>
-    /// <remarks>
-    /// Exists so the number can be measured rather than argued. SPEC.md §17 question 4 asks whether a
-    /// clarify cap is needed at all, and a cap censors the evidence that would answer it: depths
-    /// pile up at whatever the cap is, whether the true need was one more or forty more. Setting
-    /// it far above any plausible need for a while is the only way to read the distribution
-    /// agents actually produce. The column has always been per exchange, which is what makes
-    /// this a launch setting rather than a schema change.
-    /// </remarks>
-    public const string ClarifyCapVariable = "PARLEY_CLARIFY_CAP";
-
-    /// <summary>
-    /// How many clarifications an exchange admits when the launch configuration does not say.
-    /// </summary>
-    /// <remarks>
-    /// Held equal to <see cref="ExchangePolicy.Default"/>'s value by a test rather than by
-    /// reference, because a positional record's default must be a compile-time constant. The
-    /// test is what stops the two drifting; the duplication is not the risk, an unnoticed
-    /// divergence between the documented default and the applied one is.
-    /// <para>
-    /// 200 rather than 3 since the measurement §17 question 4 asks for became the default
-    /// rather than something each deployment had to know to opt into. The consequence is on
-    /// <see cref="ExchangePolicy.Default"/>, where the number is applied; read it there before
-    /// raising this further.
-    /// </para>
-    /// </remarks>
-    public const int DefaultClarifyDepthCap = 200;
-
-    /// <summary>
-    /// The environment variable holding the command that starts an idle agent.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Read from the launch environment and offered by no operation, like every other fact about
-    /// an agent's identity. Setting it means two things that are deliberately the same setting:
-    /// this repository may be started when it owes an answer, and this server will start other
-    /// idle agents that have said the same. Splitting them would let a deployment take invocation
-    /// without offering it, which is a free rider on somebody else's open session.
-    /// </para>
-    /// <para>
-    /// For a Claude Code agent this is <c>claude -p</c>; the prompt is appended by the invoker,
-    /// not written here, so no template can place it where it would be read as a flag. Unset
-    /// means this agent neither invokes nor is invoked, which is the state every deployment
-    /// starts in.
-    /// </para>
-    /// </remarks>
-    public const string InvokeCommandVariable = "PARLEY_INVOKE_COMMAND";
-
-    /// <summary>The environment variable granting unattended invocation.</summary>
-    /// <remarks>
-    /// <para>
-    /// Separate from <see cref="InvokeCommandVariable"/>, and the separation is the point. The
-    /// schema has always had two columns -- <c>invoke_command</c> is "how to start it",
-    /// <c>invoke_when_idle</c> is "whether a supervisor may" -- and its trigger enforces only
-    /// that consent implies a command, never the reverse. A command without consent is legal by
-    /// design.
-    /// </para>
-    /// <para>
-    /// This server nonetheless derived one from the other, writing consent whenever a command
-    /// was present, so the two could not be held apart by anybody configuring a repository. The
-    /// cost was paid at setup: recording how to start a repository became a question about
-    /// spending the operator's tokens unwatched, most operators sensibly declined, and the
-    /// deployment ended up unable to start anything at all -- including from an operator's own
-    /// console, with a person watching, which was never the thing being consented to.
-    /// </para>
-    /// <para>
-    /// So: the command says a repository <em>can</em> be started. This says a supervisor may do
-    /// it with nobody there. An operator pressing a button is not that, and never needed this.
-    /// </para>
-    /// <para>
-    /// Truthy spellings are accepted because a launch configuration is written by hand and
-    /// <c>true</c>, <c>1</c> and <c>yes</c> are all things people write. Anything else is no:
-    /// the safe reading of an unrecognised value is that permission was not granted.
-    /// </para>
-    /// </remarks>
-    public const string InvokeWhenIdleVariable = "PARLEY_INVOKE_WHEN_IDLE";
-
-    /// <summary>Reads a granted permission from a launch configuration.</summary>
-    /// <param name="value">What the variable carried.</param>
-    /// <returns><see langword="true"/> only for a recognised yes.</returns>
-    internal static bool Granted(string? value) =>
-        value?.Trim().ToLowerInvariant() is "1" or "true" or "yes" or "on";
-
-    /// <summary>The largest value <see cref="ClarifyCapVariable"/> may carry.</summary>
-    /// <remarks>
-    /// The schema's band, restated so the refusal happens at start-up rather than on the first
-    /// question. SPEC.md §9.3 bounds the column by trigger; a server launched above the bound
-    /// would start cleanly and then fail to admit any exchange at all, reporting a launch
-    /// configuration mistake to the model rather than to whoever made it.
-    /// </remarks>
-    public const int MaxClarifyDepthCap = 1000;
 
     /// <summary>
     /// What a message is attributed to when the launch configuration names nothing.
@@ -207,18 +96,6 @@ public sealed record ServerOptions(
     public const string OwnsVariable = DeploymentEnvironment.OwnsVariable;
 
     /// <summary>
-    /// How often the sweep runs when the launch configuration does not say.
-    /// </summary>
-    /// <remarks>
-    /// A minute is far below every deadline it enforces — the shortest is §6's fifteen-minute
-    /// delivery window — so nothing waits materially longer than it should, and the cost is a
-    /// handful of indexed queries against a local file. Frequent and cheap beats rare and
-    /// bursty here: a sweep that ran hourly would leave an exchange orphaned for up to an hour
-    /// after its window closed, and the asker waiting on a deadline that had already passed.
-    /// </remarks>
-    public static TimeSpan DefaultTickInterval { get; } = TimeSpan.FromSeconds(5);
-
-    /// <summary>
     /// Reads the configuration from the process environment.
     /// </summary>
     /// <returns>The options this server was launched with.</returns>
@@ -234,8 +111,9 @@ public sealed record ServerOptions(
     /// that always errors.
     /// </para>
     /// <para>
-    /// The database is not created here if it is missing. <see cref="BrokerSession"/> opens and
-    /// migrates it, and a path that does not exist yet is the ordinary first run of a project.
+    /// Nothing here contacts the broker. An address that resolves to nothing is not a
+    /// configuration error — the broker may simply not be running yet — and the failure it
+    /// produces has its own message and its own remedy. See <see cref="BrokerUnreachableException"/>.
     /// </para>
     /// </remarks>
     public static ServerOptions FromEnvironment() => Read(Environment.GetEnvironmentVariable);
@@ -260,15 +138,30 @@ public sealed record ServerOptions(
     {
         ArgumentNullException.ThrowIfNull(read);
 
-        var databasePath = Require(read, DatabaseVariable);
+        var broker = BrokerEndpoint.Read(read);
         var agentName = Require(read, AgentVariable);
 
-        if (!AgentName.TryCreate(agentName, out var agent))
+        // A launch configuration names a role; the machine half is detected here and appended.
+        //
+        // That split is SPEC.md §4.1.1's and it is the reason `.mcp.json` needs no change to
+        // work on a second machine: the same committed file gives docs@server-b on one box and
+        // docs@server-a on another. It is also the only honest arrangement -- a machine
+        // that can be told what it is called can be told the wrong thing, and two boxes both
+        // claiming to be server-b is a failure that shows up as messages arriving somewhere nobody
+        // expected, with nothing in the registry that looks wrong.
+        //
+        // A whole name is accepted too, and only when its machine half is this machine. An
+        // operator who writes one out is being explicit rather than mistaken; one who writes
+        // another machine's name is telling this process to speak for a repository it is not
+        // in, which is the impersonation the detection exists to prevent.
+        if (!MachineName.TryNameHere(agentName, out var agent)
+            && !(AgentName.TryCreate(agentName, out agent)
+                 && string.Equals(agent.Machine, MachineName.Current, StringComparison.Ordinal)))
         {
             throw new InvalidOperationException(
-                $"{AgentVariable} is '{agentName}', which is not a valid agent name. Names are " +
-                "lowercase letters, digits and hyphens, starting with a letter, up to 32 " +
-                "characters.");
+                $"{AgentVariable} is '{agentName}', which is not a valid agent name. Give a " +
+                "role -- lowercase letters, digits and hyphens, starting with a letter, up to " +
+                $"32 characters -- and this machine ({MachineName.Current}) is appended to it.");
         }
 
         // Defaulted rather than required, because most deployments have one and the same answer
@@ -285,10 +178,10 @@ public sealed record ServerOptions(
         // server configured this way launches cleanly and then fails every single operation —
         // which is the failure mode this whole method exists to avoid, reported to the model
         // rather than to whoever wrote the launch configuration.
-        if (responder.StartsWith(Parley.Broker.Broker.ReservedResponderPrefix, StringComparison.OrdinalIgnoreCase))
+        if (Responder.IsReserved(responder))
         {
             throw new InvalidOperationException(
-                $"{ResponderVariable} is '{responder}', and the '{Parley.Broker.Broker.ReservedResponderPrefix}' " +
+                $"{ResponderVariable} is '{responder}', and the '{Responder.ReservedPrefix}' " +
                 "namespace is reserved for the broker's own attributions. See SPEC.md §11.3: an " +
                 "adapter claiming it could forge a broker-authored close, so every message this " +
                 "server sent would be refused.");
@@ -307,51 +200,11 @@ public sealed record ServerOptions(
         }
 
         return new ServerOptions(
-            databasePath,
+            broker,
             agent,
             responder,
-            ReadTickInterval(read),
-            // Read from the same names the operator's tool reads, through the same code, so the
-            // sweep this server runs and a `parley prune` cannot silently apply different
-            // numbers to the same file. See RetentionPolicyEnvironment.
-            RetentionPolicyEnvironment.Read(read),
             string.IsNullOrWhiteSpace(workspace) ? null : workspace,
-            owns,
-            ReadClarifyDepthCap(read),
-            Blank(read(InvokeCommandVariable)),
-            Granted(read(InvokeWhenIdleVariable)));
-    }
-
-    /// <summary>Reads the clarify cap, or falls back to the default.</summary>
-    /// <param name="read">The source of variables.</param>
-    /// <returns>How many clarifications an exchange opened by this server admits.</returns>
-    /// <exception cref="InvalidOperationException">
-    /// The value is not a whole number within the band SPEC.md §9.3 bounds the column to.
-    /// </exception>
-    private static int ReadClarifyDepthCap(Func<string, string?> read)
-    {
-        var configured = read(ClarifyCapVariable);
-
-        if (string.IsNullOrWhiteSpace(configured))
-        {
-            return DefaultClarifyDepthCap;
-        }
-
-        // Zero is admitted, and is not the same as unset. It means an answerer must answer with
-        // what it has, which is a policy somebody may want and which the schema permits. Reading
-        // it as "no value" would silently turn the strictest setting into the default one.
-        if (!int.TryParse(configured, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cap)
-            || cap < 0
-            || cap > MaxClarifyDepthCap)
-        {
-            throw new InvalidOperationException(
-                $"{ClarifyCapVariable} is '{configured}', which is not a whole number between 0 " +
-                $"and {MaxClarifyDepthCap.ToString(CultureInfo.InvariantCulture)}. The column is " +
-                "bounded in the schema (SPEC.md §9.3), so a value outside that band would be " +
-                "refused on every exchange this server tried to open.");
-        }
-
-        return cap;
+            owns);
     }
 
     /// <summary>Normalises an optional variable, treating whitespace as absent.</summary>
@@ -376,34 +229,9 @@ public sealed record ServerOptions(
         return string.IsNullOrWhiteSpace(value)
             ? throw new InvalidOperationException(
                 $"{name} is not set. A Parley MCP server is configured by its launch " +
-                $"environment: {DatabaseVariable} names the project's database and " +
-                $"{AgentVariable} names the agent this process speaks for.")
+                $"environment: {AgentVariable} names the agent this process speaks for, and " +
+                $"{BrokerVariable} names the broker to reach if it is not the local default.")
             : value;
     }
 
-    /// <summary>Reads the sweep interval, or falls back to the default.</summary>
-    /// <param name="read">The source of variables.</param>
-    /// <returns>How often to sweep.</returns>
-    /// <exception cref="InvalidOperationException">The value is not a positive number of seconds.</exception>
-    private static TimeSpan ReadTickInterval(Func<string, string?> read)
-    {
-        var configured = read(TickVariable);
-
-        if (string.IsNullOrWhiteSpace(configured))
-        {
-            return DefaultTickInterval;
-        }
-
-        // Refused rather than defaulted quietly. An operator who set this meant something by it,
-        // and silently ignoring an unreadable value gives them a deadline machinery running at a
-        // cadence they did not choose and cannot see.
-        if (!int.TryParse(configured, out var seconds) || seconds <= 0)
-        {
-            throw new InvalidOperationException(
-                $"{TickVariable} is '{configured}', which is not a positive whole number of " +
-                "seconds.");
-        }
-
-        return TimeSpan.FromSeconds(seconds);
-    }
 }

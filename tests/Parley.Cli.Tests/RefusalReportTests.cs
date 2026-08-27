@@ -1,5 +1,4 @@
-using Microsoft.Data.Sqlite;
-using Parley.Broker;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -15,36 +14,40 @@ namespace Parley.Cli.Tests;
 /// somebody trying to send a file, would leave the number being argued from opinion exactly as
 /// before.
 /// </remarks>
-public sealed class RefusalReportTests : IDisposable
+public sealed class RefusalReportTests : IAsyncDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private readonly SqliteConnection _connection;
     private readonly SizeRefusalRepository _refusals;
     private readonly StringWriter _output = new();
+    private readonly LoopbackOperator _broker;
     private readonly OperatorCommands _commands;
 
     public RefusalReportTests()
     {
         _connection = ParleyDatabase.OpenInMemory();
         _refusals = new SizeRefusalRepository(_connection);
-        _commands = new OperatorCommands(new OperatorConsole(_connection), _output);
+        _broker = LoopbackOperator.Start(_connection);
+        _commands = new OperatorCommands(_broker.Operators, _output);
 
         var agents = new AgentRepository(_connection);
 
         foreach (var name in new[] { Orders, Billing })
         {
             agents.UpsertAsync(
-                new AgentRecord(name, "mcp", AgentTier.Pull, null, null, null, null,
-                    AgentStatus.Offline),
+                new AgentRecord(name, "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
+        // The broker first: it borrowed this connection and its shutdown writes to it.
+        await _broker.DisposeAsync();
+
         _connection.Dispose();
         _output.Dispose();
     }
@@ -81,8 +84,8 @@ public sealed class RefusalReportTests : IDisposable
 
         // Both agents, both types, the counts, the worst cases, and the mean that separates
         // them: 4,200 for the pair just over the line, 40,000 for the one sending a file.
-        Assert.Contains("orders", printed, StringComparison.Ordinal);
-        Assert.Contains("billing", printed, StringComparison.Ordinal);
+        Assert.Contains("orders@test", printed, StringComparison.Ordinal);
+        Assert.Contains("billing@test", printed, StringComparison.Ordinal);
         Assert.Contains("answer", printed, StringComparison.Ordinal);
         Assert.Contains("question", printed, StringComparison.Ordinal);
         Assert.Contains("4300", printed, StringComparison.Ordinal);

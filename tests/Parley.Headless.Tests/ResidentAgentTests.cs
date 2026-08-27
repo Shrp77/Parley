@@ -42,7 +42,7 @@ public sealed class ResidentAgentTests : IDisposable
 
     private ResidentAgent Start(string template) =>
         ResidentAgent.Start(
-            AgentName.Create("billing"),
+            AgentName.Create("billing@test"),
             InvocationCommand.Parse(template),
             _workspace,
             TimeProvider.System);
@@ -206,7 +206,7 @@ public sealed class ResidentAgentTests : IDisposable
 
         var error = Assert.Throws<DirectoryNotFoundException>(() =>
             ResidentAgent.Start(
-                AgentName.Create("billing"),
+                AgentName.Create("billing@test"),
                 InvocationCommand.Parse(StubRunner.Answering(_workspace)),
                 missing,
                 TimeProvider.System));
@@ -220,12 +220,12 @@ public sealed class ResidentAgentTests : IDisposable
         // One misconfigured agent must not read as the fleet being broken.
         var error = Assert.Throws<InvocationFailedException>(() =>
             ResidentAgent.Start(
-                AgentName.Create("billing"),
+                AgentName.Create("billing@test"),
                 InvocationCommand.Parse("parley-no-such-runner --input-format stream-json"),
                 _workspace,
                 TimeProvider.System));
 
-        Assert.Contains("billing", error.Message, StringComparison.Ordinal);
+        Assert.Contains("billing@test", error.Message, StringComparison.Ordinal);
         Assert.Contains("parley-no-such-runner", error.Message, StringComparison.Ordinal);
     }
 }

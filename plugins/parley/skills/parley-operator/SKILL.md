@@ -1,4 +1,4 @@
----
+﻿---
 name: parley-operator
 description: Run the Parley operator commands - list registered agents, export a discussion, retire, reinstate or purge an agent, force-conclude a discussion, or prune the message log. Use when someone asks who is registered with Parley, what was said in a discussion, or to close, withdraw or clean up.
 when_to_use: The user asks who is registered with Parley, what two agents said to each other, to remove or restore an agent, to close a discussion its participants have not closed, or to apply the retention policy now.
@@ -32,42 +32,74 @@ Run these when the person asks for them. Do not run them to get around the proto
 None of this is a rule the tool enforces; it is the reason the tool is separate from the tools.
 No agent has authority over another, and these commands are how a **person** intervenes.
 
-## The database
+## The broker
 
-Every command needs one:
+Every command is a client. One process owns the store and everything else connects to it, so
+there is no path to get wrong any more - only an address:
 
 ```
-parley --db <path> <command>
+parley --broker <host:port> <command>
 ```
 
-`--db` defaults to `PARLEY_DB`. That is the same variable the agents' servers are launched with,
-which is the point - and also the trap. **Your shell is not the environment the MCP client
-launched the servers with.** If `PARLEY_DB` is unset here, or set to something else, read the
-`parley` entry in the project's `.mcp.json` and use that path.
+`--broker` defaults to `PARLEY_BROKER`, and that to the local broker on port 51707. Most of the
+time nothing needs setting. If nothing is listening, every command says so and says how to
+start one - **that is a broker nobody started, not a mistake in what you typed.**
+
+**Your shell is not the environment the broker was started with**, and that used to matter a
+great deal: `prune` read the retention variables from wherever it ran, so an operator could
+delete text to a floor the deployment had not chosen. It cannot now. The broker holds the
+policy, applies it, and this command asks it to.
 
 ## The commands
 
 ```
-parley [--db <path>] registry                every registered agent, with its workspace
-parley [--db <path>] retire <agent>          withdraw a registration
-parley [--db <path>] reinstate <agent>       the only thing that clears a retirement
-parley [--db <path>] purge <agent>           delete a registration that never traded
-parley [--db <path>] export <conversation>   every message in a discussion, across agents
-parley [--db <path>] force-conclude <conv>   close a discussion over its participants' votes
-parley [--db <path>] prune                   apply the retention policy now
-parley [--db <path>] refusals                what the message size cap refused
-parley [--db <path>] clarifications          how deep clarification went, and whether the cap binds
-parley [--db <path>] referrals               where questions are sent onward, and to whom
-parley [--db <path>] notifications           how much Notify carries, and who can judge it
-parley [--db <path>] up                      keep the agents resident so they can converse
-parley --help                                the same list, on stdout, exiting zero
+parley serve --db <path>              run the broker: the one process that opens the store
+parley autostart install              start the broker whenever you log in
+parley autostart remove               stop doing that
+parley autostart status               say whether it is set up
+parley up                             run this machine's node, so its agents can be started
+
+parley registry                       every registered agent, with its workspace
+parley retire <agent>                 withdraw a registration
+parley reinstate <agent>              the only thing that clears a retirement
+parley purge <agent>                  DESTROY an agent and everything it was party to
+parley export <conversation>          every message in a discussion, across agents
+parley force-conclude <conv>          close a discussion over its participants' votes
+parley prune                          apply the retention policy now
+parley refusals                       what the message size cap refused
+parley clarifications                 how deep clarification went, and whether the cap binds
+parley referrals                      where questions are sent onward, and to whom
+parley notifications                  how much Notify carries, and who can judge it
+parley waiting <agent>                how many messages and polls await an agent
+parley --help                         the same list, on stdout, exiting zero
 ```
 
-`up` is the only one that does not return. It starts every agent that has something waiting -
-an answer it owes, or a message it has not collected - and whose own launch configuration
-offered a `PARLEY_INVOKE_COMMAND`, keeps each one resident so it remembers the conversations it
-is in, and gives it a turn whenever a peer needs one. Ctrl+C
-stops the fleet and every agent in it.
+`autostart` is what stops "nothing works until somebody runs `parley serve`" being a thing a
+person has to remember. It installs a scheduled task on Windows, a systemd user unit on Linux,
+or a launch agent on macOS.
+
+**All three are user-level and none needs administrator rights.** That is worth saying because
+the opposite is widely assumed, and because it was assumed here: `schtasks.exe /Create` refuses
+with "Access is denied" from an ordinary shell, while the same task registered through the Task
+Scheduler API from the same shell succeeds. Parley uses the API. What genuinely needs privilege
+is a task that runs elevated or as SYSTEM, and a broker needs neither -- it binds a loopback
+port and writes under the user's own profile.
+
+**What it costs is that the broker starts at logon and stops at logout.** For a machine somebody
+works at that is exactly right: the agents are editor sessions, and there are none when nobody
+is signed in. For a server that must answer with nobody signed in it is wrong, and the answer
+there is a real service, which does need privilege.
+
+`serve` and `up` are the two that do not return.
+
+`serve` is the broker. It opens the store, migrates it, and serves every agent and node in the
+project. Nothing else opens the file - so this is also the only command that can create one, and
+the only one that takes `--db`.
+
+`up` is this machine's node. It tells the broker the machine is here, which is what makes the
+agents registered to it startable rather than stranded, and starts one when a question arrives
+for it. What it can start comes from `node.json`, on this machine - the broker never holds a
+command line for a box it is not on. Ctrl+C stops the node and every agent it started.
 
 **It spends money while nobody is watching.** That is the whole feature and it is also the whole
 risk: each turn is a real agent session on the person's account. Do not start it because it

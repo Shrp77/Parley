@@ -304,6 +304,13 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// The terms to admit under, or <see langword="null"/> for
     /// <see cref="ExchangePolicy.Default"/>. Resolved, never named.
     /// </param>
+    /// <param name="askGroup">
+    /// The group binding this exchange to the others opened by one question addressed to a role
+    /// (SPEC.md §5.5), or <see langword="null"/> for an ordinary one-to-one question. It is
+    /// recorded and nothing reads it: no rule of §6 or §7 consults it, deliberately, because a
+    /// group with authority over its members' states would be the plural exchange §5.5 declines
+    /// to introduce.
+    /// </param>
     /// <param name="transaction">
     /// A transaction to enlist in, or <see langword="null"/> to own one. Supplied when this
     /// write is one step of a larger operation that must commit or fail whole; see
@@ -349,6 +356,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         string questionHash,
         ExchangePolicy? policy = null,
         string? conversationId = null,
+        string? askGroup = null,
         SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
@@ -511,18 +519,19 @@ public sealed class ExchangeRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 INSERT INTO exchanges
-                    (pair_key, asker, answerer, owed_by, state, clarify_depth, clarify_depth_cap,
-                     delivery_window_ms, working_window_ms, grace_period_ms,
+                    (pair_key, asker, answerer, owed_by, state, ask_group, clarify_depth,
+                     clarify_depth_cap, delivery_window_ms, working_window_ms, grace_period_ms,
                      opened_utc, expires_utc, question_hash, conversation_id, open_pair_cap,
                      version)
                 VALUES
-                    (@PairKey, @Asker, @Answerer, @Answerer, 'OPEN', 0, @Cap,
-                     @DeliveryWindowMs, @WorkingWindowMs, @GracePeriodMs,
+                    (@PairKey, @Asker, @Answerer, @Answerer, 'OPEN', @AskGroup, 0,
+                     @Cap, @DeliveryWindowMs, @WorkingWindowMs, @GracePeriodMs,
                      @OpenedUtc, @ExpiresUtc, @QuestionHash, @ConversationId, @OpenPairCap, 0)
                 RETURNING id;
                 """,
                 new
                 {
+                    AskGroup = askGroup,
                     PairKey = pairKey.Value,
                     Asker = asker.Value,
                     Answerer = answerer.Value,

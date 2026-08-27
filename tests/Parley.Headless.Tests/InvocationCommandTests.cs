@@ -37,9 +37,9 @@ public sealed class InvocationCommandTests
         // It exists in the launch configuration already, as PARLEY_AGENT. A second copy beside
         // it is a copy that can disagree, and then the session listing names one agent while the
         // protocol names another -- with the listing being the one a person reads.
-        var command = InvocationCommand.Parse("claude", "billing");
+        var command = InvocationCommand.Parse("claude", "billing@test");
 
-        Assert.Contains("billing", command.Arguments);
+        Assert.Contains("billing@test", command.Arguments);
         Assert.DoesNotContain("PARLEY_AGENT", command.ToString(), StringComparison.Ordinal);
     }
 
@@ -48,20 +48,20 @@ public sealed class InvocationCommandTests
     {
         // Two -n flags leave the runner to pick between them, which is a coin toss written as
         // configuration.
-        var command = InvocationCommand.Parse("claude -n mine", "billing");
+        var command = InvocationCommand.Parse("claude -n mine", "billing@test");
 
         Assert.Equal(["-n", "mine", .. InvocationCommand.ProtocolArguments], command.Arguments);
-        Assert.DoesNotContain("billing", command.Arguments);
+        Assert.DoesNotContain("billing@test", command.Arguments);
     }
 
     [Fact]
     public void A_different_runner_is_not_given_this_runners_naming_flag()
     {
         // -n is Claude Code's spelling, not a universal one.
-        var command = InvocationCommand.Parse("my-agent --input-format jsonl", "billing");
+        var command = InvocationCommand.Parse("my-agent --input-format jsonl", "billing@test");
 
         Assert.DoesNotContain("-n", command.Arguments);
-        Assert.DoesNotContain("billing", command.Arguments);
+        Assert.DoesNotContain("billing@test", command.Arguments);
     }
 
     [Fact]

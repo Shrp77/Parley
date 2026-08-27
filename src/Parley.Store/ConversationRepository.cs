@@ -556,6 +556,49 @@ public sealed class ConversationRepository(SqliteConnection connection)
     }
 
     /// <summary>
+    /// Which polls an agent still owes a vote on, shared by the read and the count of it.
+    /// </summary>
+    /// <remarks>
+    /// Shared rather than written twice. The transport pushes a notice saying how much is
+    /// waiting and the adapter then drains to find out what it is, so a count computed from a
+    /// looser predicate than the read uses reports work the read will not hand over -- and the
+    /// adapter wakes, asks, receives nothing, and cannot tell that from a race worth retrying.
+    /// </remarks>
+    private const string OutstandingPolls =
+        """
+          FROM conversation_participants p
+          JOIN conversations c ON c.id = p.conversation_id
+         WHERE p.agent = @Agent
+           AND c.state = 'CLOSING'
+           AND p.polled_utc IS NOT NULL
+           AND p.vote IS NULL
+        """;
+
+    /// <summary>
+    /// How many closure polls an agent has not voted on.
+    /// </summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The number of polls awaiting this agent.</returns>
+    /// <remarks>
+    /// Takes no silence window, unlike <see cref="GetOutstandingPollsAsync"/>. The window says
+    /// when an unanswered poll lapses into consent, which the caller needs in order to say when
+    /// each expires; it does not decide which polls are outstanding, so it has no part in
+    /// counting them.
+    /// </remarks>
+    public async Task<int> CountOutstandingPollsAsync(
+        AgentName agent,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(
+                $"""
+                SELECT count(*)
+                {OutstandingPolls};
+                """,
+                new { Agent = agent.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>
     /// Lists the closure polls outstanding against one agent.
     /// </summary>
     /// <param name="agent">The agent collecting its inbox.</param>
@@ -580,14 +623,9 @@ public sealed class ConversationRepository(SqliteConnection connection)
     {
         var rows = await _connection.QueryAsync<PollRow>(
             new CommandDefinition(
-                """
+                $"""
                 SELECT p.conversation_id AS ConversationId, p.polled_utc AS PolledUtc
-                  FROM conversation_participants p
-                  JOIN conversations c ON c.id = p.conversation_id
-                 WHERE p.agent = @Agent
-                   AND c.state = 'CLOSING'
-                   AND p.polled_utc IS NOT NULL
-                   AND p.vote IS NULL
+                {OutstandingPolls}
                  ORDER BY p.polled_utc, p.conversation_id;
                 """,
                 new { Agent = agent.Value },

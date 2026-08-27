@@ -24,8 +24,8 @@ namespace Parley.Store.Tests;
 /// </remarks>
 public sealed class ConcurrentPruneTests : IDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private readonly string _directory =
@@ -66,8 +66,7 @@ public sealed class ConcurrentPruneTests : IDisposable
         foreach (var name in new[] { Orders, Billing })
         {
             await agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Offline), Ct);
+                new AgentRecord(name, "test", AgentTier.Full, null, null, null, false, AgentStatus.Active), Ct);
         }
 
         var exchanges = new ExchangeRepository(connection);

@@ -1,4 +1,4 @@
-# Parley
+﻿# Parley
 
 Cross-session agent-to-agent messaging with a durable store and a registry. **`SPEC.md` is
 the primary artifact of this repository; the code is a reference implementation of it.** If
@@ -12,18 +12,30 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ```
 src/Parley.Core     Domain. No I/O, no dependencies. AgentName, PairKey, Exchange,
-                    WaitForGraph, and the enums.
+                    WaitForGraph, BrokerEndpoint, MachineName, Responder,
+                    ProtocolVersion, WorkspacePath, and the enums. WorkspacePath is
+                    string comparison rather than path handling on purpose: the broker
+                    compares workspaces from machines it is not on, so touching a
+                    filesystem here would both break the no-I/O rule and answer the
+                    wrong question.
 src/Parley.Store    Persistence. SQLite via Dapper. ParleyDatabase (connection
                     factory), SchemaMigrator, WriteScope, and the repositories:
                     Exchange, Message, Agent, Conversation.
 src/Parley.Broker   Orchestration. Decides when the other two run. Broker holds the
                     agent operations of SPEC.md §10.1; OperatorConsole holds §10.2.
                     Knows nothing of transports or adapters, and must not learn.
+src/Parley.Transport The wire contract, generated from proto/parley.proto. No
+                    hand-written code at all, which is why its warnings are silenced.
+src/Parley.Server   The broker process of SPEC.md §4: the only thing that opens the
+                    database. Joins Parley.Broker to Parley.Transport, and exists so
+                    that Parley.Broker does not have to learn about either.
 tests/Parley.Core.Tests   Domain tests. Deliberately does NOT reference Parley.Store —
                           the absent dependency is the point. Keep it that way.
 tests/Parley.Store.Tests  Repository and schema-constraint tests.
 tests/Parley.Broker.Tests Lifecycle, the agent operations, and the surface boundary
                           below.
+tests/Parley.Server.Tests Whole exchanges over a real loopback socket, and the adversarial
+                          probes. Nothing in it touches a Broker or a SqliteConnection.
 tests/Parley.Spec.Tests   Checks SPEC.md: references resolve, tables are well formed, and
                           the schema it documents executes. References neither Core nor
                           Store, so a check cannot drift into asserting what the code does.
@@ -43,10 +55,17 @@ accident of the current code. A `using` that pulls I/O into Core is a review fin
 that an adapter surfacing an operator operation into an agent's tool set would breach §10.1,
 and the protection the document offers is a naming convention — `force_conclude` is
 deliberately not `conclude`. That is thin: it depends on whoever writes the adapter reading
-carefully. So an adapter is handed a `Broker`, and a `Broker` has no operator operation to
-bind. `SurfaceBoundaryTests` enumerates the broker's public surface and fails when it grows,
+carefully. So the split is made twice, structurally.
+
+Inside the process, an adapter is handed a `Broker`, and a `Broker` has no operator operation
+to bind. `SurfaceBoundaryTests` enumerates the broker's public surface and fails when it grows,
 which makes adding an operation a decision about which side it belongs on rather than a
 question of which class the connection was already in.
+
+On the wire, they are separate gRPC services. An adapter binds `Agents`; `Agents` has no method
+that retires anybody, and `Operators` is a different service on a different client. That matters
+more than the type split now, because the type split protects a process that no longer holds
+the operator's console at all -- `Parley.Mcp` does not reference `Parley.Broker`.
 
 ## Build and test
 
@@ -60,10 +79,9 @@ beside `"sdk"`. A green build is the whole lint gate: warnings are errors, docum
 enforced, and NuGetAudit fails on high or critical advisories, so there is no separate lint
 step. CI runs on Windows and Linux. It used to include macOS, justified by the transport
 claiming parity across named pipes and Unix domain sockets — a claim nothing in this repository
-makes yet, because there is no transport: MCP over stdio and a local SQLite file are the whole
-of it. Linux covers the Unix side of what does exist. The macOS leg is deferred rather than
-deleted and runs from `workflow_dispatch` with the box ticked; it goes back into the matrix when
-the transport lands, and the sentence above goes back with it.
+makes: three processes hold gRPC connections to each other, and sockets, keep-alives and
+graceful shutdown are where platforms differ. The macOS leg was deferred while that claim was
+still hypothetical and is back in the matrix now that it is not.
 
 ## Versioning
 

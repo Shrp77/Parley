@@ -22,8 +22,8 @@ namespace Parley.Core.Tests;
 /// </remarks>
 public sealed class ClarifyCapAtTheDefaultTests
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private static int Cap => ExchangePolicy.Default.ClarifyDepthCap;

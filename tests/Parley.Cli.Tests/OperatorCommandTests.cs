@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Broker;
 using Parley.Core;
 using Parley.Store;
@@ -20,10 +20,10 @@ namespace Parley.Cli.Tests;
 /// what it says. The entry point keeps only argument shape and exit codes.
 /// </para>
 /// </remarks>
-public sealed class OperatorCommandTests : IDisposable
+public sealed class OperatorCommandTests : IAsyncDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private const string Consequences =
@@ -32,6 +32,7 @@ public sealed class OperatorCommandTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AgentRepository _agents;
     private readonly StringWriter _output = new();
+    private readonly LoopbackOperator _broker;
     private readonly OperatorCommands _commands;
 
     public OperatorCommandTests()
@@ -42,16 +43,19 @@ public sealed class OperatorCommandTests : IDisposable
         foreach (var name in new[] { Orders, Billing })
         {
             _agents.UpsertAsync(
-                new AgentRecord(name, "mcp", AgentTier.Pull, $"/src/acme-{name.Value}", null, null,
-                    null, AgentStatus.Offline),
+                new AgentRecord(name, "mcp", AgentTier.Pull, $"/src/acme-{name.Value}", null, null, false, AgentStatus.Active),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
-        _commands = new OperatorCommands(new OperatorConsole(_connection), _output);
+        _broker = LoopbackOperator.Start(_connection);
+        _commands = new OperatorCommands(_broker.Operators, _output);
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
+        // The broker first: it borrowed this connection and its shutdown writes to it.
+        await _broker.DisposeAsync();
+
         _connection.Dispose();
         _output.Dispose();
     }
@@ -72,9 +76,9 @@ public sealed class OperatorCommandTests : IDisposable
         // two operations are named apart.
         Assert.Equal(0, await _commands.RegistryAsync(Ct));
 
-        Assert.Contains("orders", Printed, StringComparison.Ordinal);
+        Assert.Contains("orders@test", Printed, StringComparison.Ordinal);
         Assert.Contains("/src/acme-orders", Printed, StringComparison.Ordinal);
-        Assert.Contains("offline", Printed, StringComparison.Ordinal);
+        Assert.Contains("stranded", Printed, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -83,7 +87,9 @@ public sealed class OperatorCommandTests : IDisposable
         using var connection = ParleyDatabase.OpenInMemory();
         using var output = new StringWriter();
 
-        var commands = new OperatorCommands(new OperatorConsole(connection), output);
+        await using var broker = LoopbackOperator.Start(connection);
+
+        var commands = new OperatorCommands(broker.Operators, output);
 
         Assert.Equal(0, await commands.RegistryAsync(Ct));
         Assert.Contains("first time its server starts", output.ToString(), StringComparison.Ordinal);
@@ -114,7 +120,7 @@ public sealed class OperatorCommandTests : IDisposable
     [Fact]
     public async Task Retiring_an_agent_that_does_not_exist_is_refused_rather_than_silent()
     {
-        Assert.Equal(1, await _commands.RetireAsync(AgentName.Create("nobody"), Ct));
+        Assert.Equal(1, await _commands.RetireAsync(AgentName.Create("nobody@test"), Ct));
         Assert.Contains("not registered", Printed, StringComparison.Ordinal);
     }
 
@@ -131,7 +137,7 @@ public sealed class OperatorCommandTests : IDisposable
         // Offline rather than registered, which is right: the agent is not attached, and offline
         // is the ordinary resting state of a lazily spawned agent between questions. It is
         // routable again, which is what reinstating means.
-        Assert.Equal(AgentStatus.Offline, await StatusOf(Billing));
+        Assert.Equal(AgentStatus.Active, await StatusOf(Billing));
         Assert.False(await _agents.IsUnroutableAsync(Billing, DateTimeOffset.UtcNow, cancellationToken: Ct));
     }
 
@@ -139,7 +145,7 @@ public sealed class OperatorCommandTests : IDisposable
     public async Task Reinstating_an_agent_that_was_not_retired_changes_nothing()
     {
         Assert.Equal(1, await _commands.ReinstateAsync(Billing, Ct));
-        Assert.Equal(AgentStatus.Offline, await StatusOf(Billing));
+        Assert.Equal(AgentStatus.Active, await StatusOf(Billing));
         Assert.Contains("not retired", Printed, StringComparison.Ordinal);
     }
 
@@ -155,7 +161,7 @@ public sealed class OperatorCommandTests : IDisposable
     [Fact]
     public async Task Purging_a_name_that_does_not_exist_says_so_rather_than_inventing_a_history()
     {
-        Assert.Equal(1, await _commands.PurgeAsync(AgentName.Create("nobody"), Ct));
+        Assert.Equal(1, await _commands.PurgeAsync(AgentName.Create("nobody@test"), Ct));
         Assert.Contains("not registered", Printed, StringComparison.Ordinal);
     }
 
@@ -196,11 +202,10 @@ public sealed class OperatorCommandTests : IDisposable
         // The case §14 had no remedy for. A mistyped PARLEY_AGENT registers, and retirement was
         // the only thing available — leaving a tombstone for an agent that never was, and the
         // name locked up where the correctly-spelled one might want it.
-        var typo = AgentName.Create("bulling");
+        var typo = AgentName.Create("bulling@test");
 
         await _agents.UpsertAsync(
-            new AgentRecord(typo, "mcp", AgentTier.Pull, "/src/acme-billing", null, null, null,
-                AgentStatus.Offline),
+            new AgentRecord(typo, "mcp", AgentTier.Pull, "/src/acme-billing", null, null, false, AgentStatus.Active),
             Ct);
 
         await _commands.RetireAsync(typo, Ct);
@@ -233,7 +238,7 @@ public sealed class OperatorCommandTests : IDisposable
 
         // Readable rather than merely present. The longest type name is exactly the width the
         // column was first padded to, so every question ran into its sender.
-        Assert.Contains("question orders -> billing", Printed, StringComparison.Ordinal);
+        Assert.Contains("question orders@test -> billing@test", Printed, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -297,7 +302,7 @@ public sealed class OperatorCommandTests : IDisposable
 
         await broker.AskAsync(Orders, Billing, "some-model-9", question, T0.AddMinutes(1), "pricing", Ct);
 
-        Assert.Equal(0, await _commands.ForceConcludeAsync("pricing", T0.AddMinutes(2), Ct));
+        Assert.Equal(0, await _commands.ForceConcludeAsync("pricing", Ct));
 
         // And it stays closed: a new question naming it is refused, which is what the operator
         // was reaching for.
@@ -312,7 +317,7 @@ public sealed class OperatorCommandTests : IDisposable
     [Fact]
     public async Task Force_concluding_something_that_is_not_open_reports_it()
     {
-        Assert.Equal(1, await _commands.ForceConcludeAsync("never-happened", T0, Ct));
+        Assert.Equal(1, await _commands.ForceConcludeAsync("never-happened", Ct));
         Assert.Contains("not open", Printed, StringComparison.Ordinal);
     }
 }

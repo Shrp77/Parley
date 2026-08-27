@@ -1,4 +1,4 @@
-# Parley
+﻿# Parley
 
 A durable, vendor-neutral coordination protocol for AI coding agents. Lets per-repo
 agents ask each other questions and get answers without sharing context, files, or
@@ -126,29 +126,92 @@ the first release is for.
 The rest of this section is the general path: what the plugin does for you, and what to do
 in any other client.
 
-### 1. Install the server
-
-Parley ships an MCP server: one process per agent per project, launched by whatever MCP
-client the agent lives in.
+### 1. Install it
 
 ```
-dotnet pack src/Parley.Mcp -c Release
-dotnet tool install -g --add-source src/Parley.Mcp/bin/Release Parley.Mcp
+git clone https://github.com/Shrp77/Parley
+cd Parley
+
+./install.ps1        # Windows
+./install.sh         # Linux, macOS
 ```
 
-That puts `parley-mcp` on PATH, which is what lets a launch configuration name it.
+That is the whole of it. The script packs both tools and installs them, registers the broker to
+start when you log in, starts it, and then checks that it answers. It asks where the store
+should go, defaulting to `.parley` in your home directory; `-Store <path>` on Windows or
+`--store <path>` elsewhere answers that in advance, for an unattended run.
 
-**Reinstalling from a clone has two traps, and both fail quietly.** `--add-source` points at a
-directory, and NuGet takes the *highest* version it finds there rather than the newest build —
-so an old `.nupkg` left in `bin/Release` wins for ever, and the install reports success. Delete
-the stale ones. And `dotnet tool update` does nothing at all when the version has not changed,
-at some length, so a rebuilt tool appears to install and does not. `dotnet tool uninstall`
-followed by `install` is the reliable pair. Check what you got with `parley --version`.
+`parley` is the operator's tool and the broker itself; `parley-mcp` is the MCP server a launch
+configuration names.
 
-### 2. Point each agent at the same database
+**The two checks are the point of the script rather than a flourish.** Each guards a failure
+that otherwise reports success:
 
-One file per project. Every agent that should be able to reach every other gets the same
-`PARLEY_DB` and a different `PARLEY_AGENT`:
+- **What is on PATH afterwards**, because `dotnet tool update` does nothing at all when the
+  version has not changed. It reports success, at some length, and replaces nothing — so a
+  rebuilt tool appears to install and does not, on the machine most likely to be running the
+  old one. The script uninstalls first, which makes the install unconditional. It also clears
+  `bin/Release` before packing, because `--add-source` treats a directory as a feed and NuGet
+  takes the highest version it finds there rather than the newest build.
+- **Whether the broker answers**, which is a different claim from whether it was registered.
+  Installing the tools is not the same as having Parley working, and the gap between the two
+  shows up as agents failing to attach — in an editor, days later, a long way from here.
+
+`./install.ps1 -Uninstall` (or `./install.sh --uninstall`) stops the broker, removes the
+autostart entry, removes both tools, and then checks that they are actually gone. It leaves the
+store and any `.mcp.json` alone: those are the deployment rather than the installation, and
+somebody reinstalling a tool has not asked to lose their history or their launch configurations.
+
+### 2. Know what the broker is
+
+The script already started one, so this is here to explain what it started rather than to be
+run. One process owns the store and everything else connects to it:
+
+```
+parley serve --db /src/acme/.parley/parley.db
+```
+
+It listens on `127.0.0.1:51707` unless `--listen` says otherwise, and runs until it is stopped.
+What the script registered is that same command under a supervisor:
+
+```
+parley autostart install --db /src/acme/.parley/parley.db
+```
+
+That installs a scheduled task on Windows, a systemd user unit on Linux, or a launch agent on
+macOS, and starts it. **None of them needs administrator rights** — they are user-level, run as
+you, and start the broker again at logon. `parley autostart status` says whether it is set up
+and `parley autostart remove` undoes it, leaving a broker that is already running alone.
+
+The trade is that a user-level supervisor stops the broker at logout. For a machine somebody
+works at that is right — the agents are editor sessions, and there are none when nobody is
+signed in. A server that must answer with nobody signed in wants a real service, and that does
+need privilege. Nothing else opens the file, which is what lets agents live on other machines: SQLite
+in WAL mode needs coherent shared memory between every process touching the database, so a
+store on a network share is corrupt rather than slow.
+
+Everything that describes the deployment rather than one repository belongs to this process,
+because it is the one process applying it:
+
+```
+PARLEY_DB=/src/acme/.parley/parley.db   # instead of --db
+PARLEY_RETENTION_IDLE_HOURS=72          # how long the log keeps what it carried
+PARLEY_RETENTION_MAX_AGE_HOURS=720
+PARLEY_TICK_SECONDS=5                   # how often deadlines are swept
+```
+
+Each of these used to be set per repository, which meant one store could be swept on three
+cadences and pruned to two floors with nothing anywhere to say which was in force.
+
+The clarify cap moved here too, and is not configurable yet: an exchange admits 200
+clarifications before the broker forces an `unknown`. That number is a measurement rather than
+a considered limit — a cap censors the evidence that would justify it, so it is set far above
+any plausible need until `parley clarifications` says where depth actually settles.
+
+### 3. Point each agent at the broker
+
+Every agent that should be able to reach every other connects to the same broker and gets a
+different `PARLEY_AGENT`:
 
 ```jsonc
 {
@@ -156,42 +219,63 @@ One file per project. Every agent that should be able to reach every other gets 
     "parley": {
       "command": "parley-mcp",
       "env": {
-        "PARLEY_DB": "/src/acme/.parley/parley.db",   // one file per project
-        "PARLEY_AGENT": "orders",                     // who this process speaks for
+        "PARLEY_AGENT": "orders",                     // the role; the machine is appended
         "PARLEY_OWNS": "Carts, orders, line totals. No tax, no stock.", // what peers route by
+        "PARLEY_BROKER": "127.0.0.1:51707",           // optional, this is the default
         "PARLEY_RESPONDER": "some-model-9",           // optional, which model answers
         "PARLEY_WORKSPACE": "/src/acme-orders",       // optional, for the registry
-        "PARLEY_TICK_SECONDS": "5",                   // optional, sweep cadence
-        "PARLEY_CLARIFY_CAP": "200",                  // optional, 200 if unset; see Clarify cap
-        "PARLEY_INVOKE_COMMAND": "claude",            // optional, how to start this repository
-        "PARLEY_INVOKE_WHEN_IDLE": "true",            // optional, see Conversing unattended
-        "PARLEY_RETENTION_IDLE_HOURS": "72",          // optional, see Retention below
-        "PARLEY_RETENTION_MAX_AGE_HOURS": "720"       // optional, see Retention below
+        "PARLEY_MACHINE": "server-b"                      // optional, detected if unset
       }
     }
   }
 }
 ```
 
+The same committed file works on every machine: the role is configured and the machine half is
+detected, so `orders` becomes `orders@server-b` on one box and `orders@server-a` on another.
+For an agent on another machine, set `PARLEY_BROKER` to the broker's host and port, and start
+the broker with `--listen` on an address that machine can reach — `127.0.0.1` is the default
+and nothing outside the box can reach it.
+
+**Put that address on a trusted path, and treat this as the decision it is.** The wire carries
+no credentials, so anything that can reach the broker can claim to be any agent, read its mail
+and answer in its name — and can reach the operator commands too, which export whole
+conversations and purge agents. A private network you control, or a tunnel authenticated
+outside Parley such as key-based SSH, is what "trusted" means here; a broker bound to
+`0.0.0.0` on a network you share with anything else is not. This is not a hardening tip: the
+protocol's threat model puts a hostile network out of scope and says the transport **must not**
+be exposed to anything else, which makes confining it the operator's job rather than the
+broker's.
+
 For Claude Code that file is `.mcp.json` in the repository root; other clients have
 their own location for the same JSON.
 
-There is no daemon, no port and no service to supervise. Agents that are not open have
-no process, which is the point — a machine that reboots comes back with zero Parley
-processes and loses nothing, because the state is in the file and each agent's server
-starts when somebody opens that repository. An agent registers itself the first time its
-server starts, so no roster has to be maintained by hand.
+Agents that are not open have no process, which is the point: closing the last window on a
+repository leaves nothing running for it. What does run is the broker — one process per
+project, holding the store and the port every agent connects to. It is the single thing that
+has to be up, and an agent whose broker is not listening does not start degraded, it refuses
+to start at all.
 
-That stays true when agents converse unattended. `parley up` is a command you run in a
-terminal, not a service that is installed: it keeps agents alive for as long as it runs
-and stops all of them when you stop it. Nothing survives a reboot, and nothing needs to.
+So it is supervised, and `parley autostart install` is what registers it — a scheduled task,
+a user systemd unit, or a launch agent, depending on the machine. That is what makes a
+reboot uneventful: the broker comes back at logon and each agent's server starts when
+somebody opens its repository. Skipping that step is the one failure that looks like a broken
+install, because every agent then fails to attach with *no broker is listening* and nothing
+says why.
+
+An agent registers itself the first time its server starts, so no roster has to be maintained
+by hand.
+
+`parley up` is separate and is still a command you run in a terminal rather than a service:
+it keeps agents alive for as long as it runs and stops all of them when you stop it. It is
+how agents converse unattended, and stopping it stops that — the broker is unaffected.
 
 **Identity comes from `PARLEY_AGENT` and from nowhere else.** No tool takes a "from"
 parameter, so no tool call can change who the caller is. Had it been a parameter, every
 agent could impersonate every other and the guarantee would rest on a model choosing not
 to.
 
-### 3. Say what each agent owns
+### 4. Say what each agent owns
 
 `PARLEY_OWNS` is one line, written by you, that every other agent sees beside that agent's
 name when it lists the roster. It is how an asker picks who to ask:
@@ -220,7 +304,7 @@ which usually works, because a wrong guess costs one message: the answerer refer
 to whoever does own it rather than answering badly. `parley registry` shows you which of your
 agents have not set it.
 
-### 4. Name the peers and the boundary
+### 5. Name the peers and the boundary
 
 The server introduces itself. When a client connects, Parley sends it a short description
 of what it is for — that peers exist in other repositories, that guessing at their code is
@@ -321,36 +405,28 @@ Everything above needs somebody to take a turn. An agent acts when its session d
 a session acts when a person sends it something — so an exchange between two repositories
 needs a human at both ends, which is not what the protocol is for.
 
-Two settings, because they answer two questions:
+How to start a repository is configuration belonging to the machine it is on, so it lives in
+`node.json` — beside where you run `parley up`, or wherever `PARLEY_NODE_CONFIG` points — and
+never reaches the broker:
 
 ```json
-"PARLEY_INVOKE_COMMAND": "claude",
-"PARLEY_INVOKE_WHEN_IDLE": "true"
+{
+  "agents": {
+    "orders": { "command": "claude" }
+  }
+}
 ```
 
-The command says *how* to start this repository. On its own it grants nothing: it means an
-operator at a console can start this agent and watch it work, which is the same thing as
-opening the session by hand.
+Listing a repository there is the permission. `parley up` may start it when a peer needs one,
+kept alive so it remembers the conversations it is in; leave it out and nothing starts that
+repository unless a person asks. It is keyed by *role* — an agent is `role@machine` and the
+machine half is detected, so the file describes this machine and can only ever mean agents on it.
 
-`PARLEY_INVOKE_WHEN_IDLE` is the permission. Set it too, and `parley up` may keep the agent
-resident — started once, given a turn whenever a peer needs one, kept alive so it remembers
-the conversations it is in. Leave it out and nothing starts that repository unless a person
-asks it to. Both live in the agent's *own* launch configuration, because that is the only
-place the permission can honestly come from: starting a repository nobody offered spends its
-owner's tokens on their machine.
-
-They were one setting until they were not. Recording how to start a repository had meant
-consenting to run it unwatched, so the honest answer at setup was usually "no" — and a
-deployment that had declined could not be started even by its owner, standing over it. The
-schema always kept the two apart; only this implementation ran them together.
-
-**Upgrading from before 0.6.0:** a repository whose launch configuration has only
-`PARLEY_INVOKE_COMMAND` used to be consenting, and now is not. Nothing breaks and nothing
-is at risk — the permission narrows rather than widens, and the agent stays startable from a
-console — but `parley up` will stop picking it up. Add `PARLEY_INVOKE_WHEN_IDLE` to every
-repository that should still answer unattended, and open each one once. There is no way for
-a deployment to detect the difference on your behalf: a launch configuration that says
-nothing about a permission has to be read as not granting it.
+That the broker holds no launch command at all is the point rather than a detail. It is a
+smaller trusted surface, it stays smaller as a deployment spreads across machines, and it
+removes a chicken-and-egg the previous design never escaped: the command used to be written into
+the registry by the agent's own server, so an agent that had never run had no record of how to
+start it — the one case where knowing would have mattered.
 
 ```
 parley up
@@ -383,12 +459,9 @@ takes before it looks like one.
 
 ## The operator's side
 
-`parley` is a second binary, installed by a person and never given to an agent:
-
-```
-dotnet pack src/Parley.Cli -c Release
-dotnet tool install -g --add-source src/Parley.Cli/bin/Release Parley.Cli
-```
+`parley` is a second binary, installed by a person and never given to an agent. The install
+script above puts both on PATH together, which is deliberate: they ship from one build and a
+deployment where the two disagree is one where the adapter cannot attach at all.
 
 ```
 parley registry                     every agent, what it owns, and the workspace a peer
@@ -402,14 +475,16 @@ parley export <conversation>        every message in a discussion, across agents
 parley force-conclude <conv>        close a discussion over its participants' votes
 parley prune                        apply the retention policy now
 parley refusals                     what the message size cap refused, and how far over
-parley up                           keep the agents resident so they can converse
+parley waiting <agent>              how many messages and polls await an agent
+parley serve                        run the broker: the one process that opens the store
+parley up                           run this machine's node, so its agents can be started
 parley --help                       the same list, on stdout, exiting zero
 ```
 
-It reads `PARLEY_DB` — the same variable the agents' servers are launched with — or
-takes `--db`. `prune` reads the retention variables the same way, and prints the policy
-it applied before it prints what it removed, because your shell is not the environment
-your MCP client launched the servers with.
+Every one of these is a client: they connect to the broker at `--broker`, or `PARLEY_BROKER`,
+and default to the local one. None of them opens the store, so none can be pointed at the wrong
+file — `--db` belongs to `parley serve` alone. `prune` applies the policy the broker was started
+with, which is the only policy in the deployment; your shell no longer has an opinion about it.
 
 A separate program on purpose. An adapter that surfaced an operator command into an
 agent's tool set would hand an agent the power to end a discussion over its peers'

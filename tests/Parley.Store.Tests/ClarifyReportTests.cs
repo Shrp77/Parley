@@ -36,8 +36,8 @@ public sealed class ClarifyReportTests : IDisposable
         _connection = ParleyDatabase.OpenInMemory();
         _report = new ClarifyReportRepository(_connection);
 
-        Execute("INSERT INTO agents (name, adapter, tier, status) VALUES "
-              + "('orders','test','full','offline'),('billing','test','full','offline');");
+        Execute("INSERT INTO nodes (machine, connected, first_seen_utc) VALUES ('test', 1, '2026-01-01T00:00:00+00:00') ON CONFLICT DO NOTHING; INSERT INTO agents (name, adapter, tier, status) VALUES "
+              + "('orders@test','test','full','active'),('billing@test','test','full','active');");
     }
 
     public void Dispose() => _connection.Dispose();
@@ -61,7 +61,7 @@ public sealed class ClarifyReportTests : IDisposable
             "INSERT INTO exchanges (pair_key, asker, answerer, owed_by, state, clarify_depth, "
           + "clarify_depth_cap, open_pair_cap, delivery_window_ms, working_window_ms, "
           + "grace_period_ms, opened_utc, expires_utc, closed_utc, resolution, question_hash) "
-          + "VALUES ('billing' || char(31) || 'orders','orders','billing','billing','" + state
+          + "VALUES ('billing@test' || char(31) || 'orders@test','orders@test','billing@test','billing@test','" + state
           + "'," + depth + "," + cap + ",5,900000,14400000,86400000,'" + Stamp + "','" + Stamp
           + "'," + closed + "," + res + ",'" + question + "');");
 
@@ -73,7 +73,7 @@ public sealed class ClarifyReportTests : IDisposable
     private void Answer(long exchangeId, string responder, string payload) => Execute(
         "INSERT INTO messages (exchange_id, type, from_agent, to_agent, responder_model, "
       + "payload_json, content_hash, created_utc) VALUES (" + exchangeId
-      + ",'answer','billing','orders','" + responder + "','" + payload + "','"
+      + ",'answer','billing@test','orders@test','" + responder + "','" + payload + "','"
       + (++_hashes).ToString("D64", System.Globalization.CultureInfo.InvariantCulture) + "','"
       + Stamp + "');");
 

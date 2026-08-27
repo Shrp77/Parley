@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using Parley.Core;
 using Xunit;
 
@@ -31,7 +31,15 @@ internal static class DeploymentVariables
             {
                 typeof(ServerOptions),
                 typeof(RetentionPolicyEnvironment),
-                typeof(DeploymentEnvironment)
+                typeof(DeploymentEnvironment),
+                typeof(BrokerEndpoint),
+
+                // The node's, which the setup command documents because a person editing
+                // node.json needs them. They were missing while nothing outside the adapter
+                // read a variable at all, and their absence made the "only variables a server
+                // reads" check refuse two names the plugin was right to mention.
+                typeof(MachineName),
+                typeof(Parley.Headless.NodeCatalogue)
             }
             .SelectMany(t => t.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly))
             .Where(f => f.IsLiteral && f.FieldType == typeof(string))
@@ -47,4 +55,49 @@ internal static class DeploymentVariables
 
         return names;
     }
+
+    /// <summary>
+    /// The variables an agent's launch configuration carries.
+    /// </summary>
+    /// <returns>The names an MCP server reads from its own environment.</returns>
+    /// <remarks>
+    /// The set split when the broker became a separate process, and the split is the point
+    /// rather than an inconvenience for these tests. A launch configuration says what this
+    /// repository is and where to find the broker; how often the sweep runs, how long the log is
+    /// kept and how deep clarification may go describe the deployment, and a deployment has one
+    /// of each. Setting them per repository meant a store could be swept on three cadences and
+    /// pruned to two floors, with nothing anywhere to say which was in force.
+    /// </remarks>
+    public static IReadOnlyList<string> Adapter() =>
+    [
+        .. All().Where(v =>
+            !Broker().Contains(v, StringComparer.Ordinal)
+            && !Node().Contains(v, StringComparer.Ordinal))
+    ];
+
+    /// <summary>
+    /// The variables this machine's node reads.
+    /// </summary>
+    /// <returns>The names `parley up` reads from its own environment.</returns>
+    /// <remarks>
+    /// A third set, because there is a third process. What a node reads describes the machine
+    /// it runs on — which agents are here and how to start them — and belongs in neither an
+    /// agent's launch configuration nor the broker's.
+    /// </remarks>
+    public static IReadOnlyList<string> Node() =>
+    [
+        Parley.Headless.NodeCatalogue.PathVariable
+    ];
+
+    /// <summary>
+    /// The variables the broker process reads.
+    /// </summary>
+    /// <returns>The names `parley serve` reads from its own environment.</returns>
+    public static IReadOnlyList<string> Broker() =>
+    [
+        DeploymentEnvironment.DatabaseVariable,
+        RetentionPolicyEnvironment.IdleVariable,
+        RetentionPolicyEnvironment.MaximumAgeVariable,
+        "PARLEY_TICK_SECONDS"
+    ];
 }

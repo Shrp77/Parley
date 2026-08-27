@@ -1,8 +1,7 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
-using Parley.Broker;
 using Parley.Core;
-using Parley.Store;
+using Wire = Parley.Transport;
 
 namespace Parley.Cli;
 
@@ -21,14 +20,14 @@ namespace Parley.Cli;
 /// </remarks>
 public sealed class OperatorCommands
 {
-    private readonly OperatorConsole _console;
+    private readonly Wire.Operators.OperatorsClient _console;
     private readonly TextWriter _output;
 
     /// <summary>Creates the commands over an open database.</summary>
     /// <param name="console">The operator console to drive.</param>
     /// <param name="output">Where to write.</param>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public OperatorCommands(OperatorConsole console, TextWriter output)
+    public OperatorCommands(Wire.Operators.OperatorsClient console, TextWriter output)
     {
         ArgumentNullException.ThrowIfNull(console);
         ArgumentNullException.ThrowIfNull(output);
@@ -46,7 +45,10 @@ public sealed class OperatorCommands
     /// </remarks>
     public async Task<int> RegistryAsync(CancellationToken cancellationToken)
     {
-        var agents = await _console.DescribeRegistryAsync(cancellationToken).ConfigureAwait(false);
+        var reply = await _console.DescribeRegistryAsync(
+            new Wire.Empty(), cancellationToken: cancellationToken);
+
+        var agents = reply.Rows;
 
         if (agents.Count == 0)
         {
@@ -57,12 +59,18 @@ public sealed class OperatorCommands
             return 0;
         }
 
-        foreach (var agent in agents.OrderBy(a => a.Name.Value, StringComparer.Ordinal))
+        foreach (var agent in agents.OrderBy(a => a.Name, StringComparer.Ordinal))
         {
             await _output.WriteLineAsync(string.Create(
                 CultureInfo.InvariantCulture,
-                $"{agent.Name.Value,-20} {Lower(agent.Status),-12} {Lower(agent.Tier),-9} " +
-                $"{agent.Adapter,-12} {agent.Workspace ?? ""}")).ConfigureAwait(false);
+                // Two columns rather than one, because they answer different questions and an
+                // operator needs both. Status is a judgement somebody recorded -- active, or
+                // retired. Presence is what the connections say right now, and nothing about it
+                // gates routing: an agent that is `startable` is simply one nobody has open,
+                // which is where most agents are most of the time.
+                $"{agent.Name,-20} {Lower(agent.Status),-9} {Lower(agent.Presence),-10} " +
+                $"{Lower(agent.Tier),-9} {agent.Adapter,-12} " +
+                $"{agent.Workspace}")).ConfigureAwait(false);
 
             // The statement its peers route by, on its own line because it is prose rather than
             // a column. Its absence is printed rather than skipped: the field is optional and
@@ -71,7 +79,7 @@ public sealed class OperatorCommands
             // start-up would land in whichever log the client keeps for a server that is
             // misbehaving, which nobody reads while nothing is wrong.
             await _output.WriteLineAsync(
-                $"  owns: {agent.Owns ?? $"(unset — set {DeploymentEnvironment.OwnsVariable} where that agent's server is launched)"}")
+                $"  owns: {(agent.Owns is { Length: > 0 } owns ? owns : $"(unset — set {DeploymentEnvironment.OwnsVariable} where that agent's server is launched)")}")
                 .ConfigureAwait(false);
         }
 
@@ -97,7 +105,10 @@ public sealed class OperatorCommands
     /// </remarks>
     public async Task<int> RefusalsAsync(CancellationToken cancellationToken)
     {
-        var refusals = await _console.DescribeRefusalsAsync(cancellationToken).ConfigureAwait(false);
+        var refusalsReply = await _console.DescribeRefusalsAsync(
+            new Wire.Empty(), cancellationToken: cancellationToken);
+
+        var refusals = refusalsReply.Refusals;
 
         if (refusals.Count == 0)
         {
@@ -119,8 +130,8 @@ public sealed class OperatorCommands
 
             await _output.WriteLineAsync(string.Create(
                 CultureInfo.InvariantCulture,
-                $"{refusal.Agent.Value,-20} {Lower(refusal.Type),-9} {refusal.Refusals,5}  " +
-                $"{refusal.Worst,5}  {mean,5} {refusal.Cap,5}  {refusal.LastUtc:u}"))
+                $"{refusal.Agent,-20} {Lower(refusal.Type),-9} {refusal.Refusals,5}  " +
+                $"{refusal.Worst,5}  {mean,5} {refusal.Cap,5}  {Readable(refusal.LastUtc)}"))
                 .ConfigureAwait(false);
         }
 
@@ -147,9 +158,10 @@ public sealed class OperatorCommands
     /// </remarks>
     public async Task<int> ReferralsAsync(CancellationToken cancellationToken)
     {
-        var report = await _console.DescribeReferralsAsync(cancellationToken).ConfigureAwait(false);
+        var report = await _console.DescribeReferralsAsync(
+            new Wire.Empty(), cancellationToken: cancellationToken);
 
-        if (report.IsEmpty)
+        if (IsEmpty(report))
         {
             await _output.WriteLineAsync(
                 "Nothing has been referred. Either every question has found its owner first " +
@@ -167,7 +179,7 @@ public sealed class OperatorCommands
             await _output.WriteLineAsync(string.Create(
                 CultureInfo.InvariantCulture,
                 $"{pair.Asker,-20} {pair.Answerer,-20} {pair.Closed,6}  {pair.OutOfScope,12}  " +
-                $"{pair.Rate,5:0.0%}")).ConfigureAwait(false);
+                $"{Rate(pair),5:0.0%}")).ConfigureAwait(false);
         }
 
         if (report.Targets.Count > 0)
@@ -209,10 +221,10 @@ public sealed class OperatorCommands
     /// </remarks>
     public async Task<int> NotificationsAsync(CancellationToken cancellationToken)
     {
-        var report = await _console.DescribeNotificationsAsync(cancellationToken)
+        var report = await _console.DescribeNotificationsAsync(new Wire.Empty(), cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        if (report.IsEmpty)
+        if (IsEmpty(report))
         {
             await _output.WriteLineAsync(
                 "No notifications have been sent. Nothing bounds them by design, so this is the " +
@@ -224,7 +236,7 @@ public sealed class OperatorCommands
 
         await _output.WriteLineAsync(string.Create(
             CultureInfo.InvariantCulture,
-            $"{report.Sent} notifications, mean {report.Mean} characters. The cap on a single " +
+            $"{Sent(report)} notifications, mean {Mean(report)} characters. The cap on a single " +
             $"message is {MessageLimits.MaxPayloadCharacters}.")).ConfigureAwait(false);
 
         await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
@@ -236,14 +248,14 @@ public sealed class OperatorCommands
         {
             await _output.WriteLineAsync(string.Create(
                 CultureInfo.InvariantCulture,
-                $"{flow.From,-20} {flow.To,-20} {flow.Sent,6}  {flow.Mean,6} {flow.Largest,8}  " +
+                $"{flow.From,-20} {flow.To,-20} {flow.Sent,6}  {Mean(flow),6} {flow.Largest,8}  " +
                 $"{Day(flow.FirstUtc)}  {Day(flow.LastUtc)}")).ConfigureAwait(false);
         }
 
         await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
         await _output.WriteLineAsync("received in total").ConfigureAwait(false);
 
-        foreach (var (agent, received) in report.Received)
+        foreach (var (agent, received) in Received(report))
         {
             // The thresholds are where somebody goes and asks that agent whether any of it was
             // worth having. Marked rather than left to be counted off a column, because the whole
@@ -310,10 +322,10 @@ public sealed class OperatorCommands
     /// </remarks>
     public async Task<int> ClarificationsAsync(CancellationToken cancellationToken)
     {
-        var report = await _console.DescribeClarificationsAsync(cancellationToken)
+        var report = await _console.DescribeClarificationsAsync(new Wire.Empty(), cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        if (report.Exchanges == 0)
+        if (Exchanges(report) == 0)
         {
             await _output.WriteLineAsync(
                 "No exchanges yet, so nothing has clarified. There is no evidence here for or " +
@@ -324,7 +336,7 @@ public sealed class OperatorCommands
 
         await _output.WriteLineAsync(string.Create(
             CultureInfo.InvariantCulture,
-            $"{report.Exchanges} exchanges. Caps in force: {report.LowestCapInForce} to " +
+            $"{Exchanges(report)} exchanges. Caps in force: {report.LowestCapInForce} to " +
             $"{report.HighestCapInForce}.")).ConfigureAwait(false);
 
         await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
@@ -332,7 +344,7 @@ public sealed class OperatorCommands
 
         foreach (var bucket in report.Distribution)
         {
-            var share = 100.0 * bucket.Exchanges / report.Exchanges;
+            var share = 100.0 * bucket.Exchanges / Exchanges(report);
 
             await _output.WriteLineAsync(string.Create(
                 CultureInfo.InvariantCulture,
@@ -356,14 +368,14 @@ public sealed class OperatorCommands
         // The reading, not just the numbers. Somebody who came here to pick a cap should not
         // have to reconstruct from a histogram that a pile at the top means the measurement was
         // truncated rather than that the truth was found.
-        if (report.ExchangesAtCap > 0 && report.DeepestReached >= report.HighestCapInForce)
+        if (report.ExchangesAtCap > 0 && DeepestReached(report) >= report.HighestCapInForce)
         {
             await _output.WriteLineAsync(
                 "The distribution is censored: exchanges are stopping at the cap, so the depth " +
                 "they would have reached is not in this data. Raise the cap and measure again " +
                 "before choosing a number.").ConfigureAwait(false);
         }
-        else if (report.DeepestReached == 0)
+        else if (DeepestReached(report) == 0)
         {
             await _output.WriteLineAsync(
                 "Nothing has clarified even once. The cap is not what is keeping depth low, so " +
@@ -373,7 +385,7 @@ public sealed class OperatorCommands
         {
             await _output.WriteLineAsync(string.Create(
                 CultureInfo.InvariantCulture,
-                $"Nothing reached the cap and the deepest was {report.DeepestReached}, so this " +
+                $"Nothing reached the cap and the deepest was {DeepestReached(report)}, so this " +
                 $"distribution is the real one rather than a truncated one."))
                 .ConfigureAwait(false);
         }
@@ -392,7 +404,10 @@ public sealed class OperatorCommands
     /// </remarks>
     public async Task<int> RetireAsync(AgentName agent, CancellationToken cancellationToken)
     {
-        if (!await _console.RetireAsync(agent, cancellationToken).ConfigureAwait(false))
+        var retired = await _console.RetireAsync(
+            new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
+
+        if (!retired.Changed)
         {
             await _output.WriteLineAsync(
                 $"'{agent.Value}' is not registered, or was already retired.").ConfigureAwait(false);
@@ -422,11 +437,12 @@ public sealed class OperatorCommands
     /// </remarks>
     public async Task<int> PurgeAsync(AgentName agent, CancellationToken cancellationToken)
     {
-        var outcome = await _console.PurgeAsync(agent, cancellationToken).ConfigureAwait(false);
+        var outcome = await _console.PurgeAsync(
+            new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
 
         switch (outcome.Verdict)
         {
-            case PurgeVerdict.Gone:
+            case Wire.PurgeVerdict.Gone:
                 if (outcome.Destroyed.Count == 0)
                 {
                     await _output.WriteLineAsync(
@@ -473,7 +489,10 @@ public sealed class OperatorCommands
     /// <returns>Zero if the registry changed, one if it did not.</returns>
     public async Task<int> ReinstateAsync(AgentName agent, CancellationToken cancellationToken)
     {
-        if (!await _console.ReinstateAsync(agent, cancellationToken).ConfigureAwait(false))
+        var reinstated = await _console.ReinstateAsync(
+            new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
+
+        if (!reinstated.Changed)
         {
             await _output.WriteLineAsync(
                 $"'{agent.Value}' is not registered, or was not retired.").ConfigureAwait(false);
@@ -500,7 +519,13 @@ public sealed class OperatorCommands
     /// </remarks>
     public async Task<int> ExportAsync(string conversationId, CancellationToken cancellationToken)
     {
-        var messages = await _console.ExportAsync(conversationId, cancellationToken)
+        var exported = await _console.ExportAsync(
+            new Wire.ExportRequest { ConversationId = conversationId },
+            cancellationToken: cancellationToken);
+
+        var messages = exported.Messages;
+
+        await Task.CompletedTask
             .ConfigureAwait(false);
 
         if (messages.Count == 0)
@@ -515,14 +540,14 @@ public sealed class OperatorCommands
         foreach (var message in messages)
         {
             var text = new StringBuilder()
-                .Append(message.CreatedUtc.ToString("O", CultureInfo.InvariantCulture))
+                .Append(message.CreatedUtc)
                 .Append("  ")
                 // Nine, not eight: "question" is exactly eight characters, so padding to its
                 // own length runs the type into the sender. Found by reading the output.
-                .Append(MessageIdentity.FormatType(message.Type).PadRight(9))
-                .Append(message.From.Value)
+                .Append(Lower(message.Type).PadRight(9))
+                .Append(message.From)
                 .Append(" -> ")
-                .Append(message.To.Value)
+                .Append(message.To)
                 .Append("  (")
                 .Append(message.ResponderModel)
                 .Append(')');
@@ -536,7 +561,6 @@ public sealed class OperatorCommands
 
     /// <summary>Closes a conversation over its participants' votes.</summary>
     /// <param name="conversationId">The discussion to close.</param>
-    /// <param name="nowUtc">The instant to record as the close.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>Zero if it closed, one if it did not.</returns>
     /// <remarks>
@@ -546,10 +570,13 @@ public sealed class OperatorCommands
     /// over another's objection, and the person running the broker is not an agent.
     /// </remarks>
     public async Task<int> ForceConcludeAsync(
-        string conversationId, DateTimeOffset nowUtc, CancellationToken cancellationToken)
+        string conversationId, CancellationToken cancellationToken)
     {
-        if (!await _console.ForceConcludeAsync(conversationId, nowUtc, cancellationToken)
-                .ConfigureAwait(false))
+        var concluded = await _console.ForceConcludeAsync(
+            new Wire.ForceConcludeRequest { ConversationId = conversationId },
+            cancellationToken: cancellationToken);
+
+        if (!concluded.Changed)
         {
             await _output.WriteLineAsync(
                 $"'{conversationId}' is not open, or does not exist.").ConfigureAwait(false);
@@ -565,17 +592,19 @@ public sealed class OperatorCommands
     }
 
     /// <summary>Applies the retention policy of SPEC.md §9.4 now.</summary>
-    /// <param name="policy">The policy to apply.</param>
-    /// <param name="nowUtc">The instant to measure ages against.</param>
     /// <param name="cancellationToken">Cancels the pass.</param>
     /// <returns>Zero.</returns>
     /// <remarks>
     /// <para>
-    /// Prints the policy before the counts, and that is the load-bearing part. The numbers come
-    /// from the environment, and an operator's shell is not the environment their MCP client
-    /// launched the servers with — so the command that deletes text on a configured schedule
-    /// must say which schedule it used. Reporting only what went would let a default policy
-    /// remove a year of log from a deployment configured to keep one, silently.
+    /// The policy is the broker's, and it is no longer printed here — which is a loss worth
+    /// stating rather than glossing. This used to read the retention variables from the
+    /// operator's own shell and print what it applied, because a shell is not the environment an
+    /// MCP client launched the servers with and a command that deletes text on a schedule must
+    /// say which schedule it used. That reasoning was right and its premise is gone: there is one
+    /// process holding the store now, it was started with one policy, and this command cannot
+    /// apply a different one however the shell is configured. The remaining gap is that an
+    /// operator on another machine cannot see the numbers from here, and that is a reason to add
+    /// them to the reply rather than to read a local variable that no longer decides anything.
     /// </para>
     /// <para>
     /// Zero even when nothing was removed, unlike <see cref="RetireAsync"/> and
@@ -585,24 +614,15 @@ public sealed class OperatorCommands
     /// would train whoever reads it to ignore the one night it meant something.
     /// </para>
     /// </remarks>
-    public async Task<int> PruneAsync(
-        RetentionPolicy policy, DateTimeOffset nowUtc, CancellationToken cancellationToken)
+    public async Task<int> PruneAsync(CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(policy);
-
-        // Every value interpolated below is already a string, so nothing here formats a number
-        // against a culture. The two that were numbers are converted invariantly first, which is
-        // also why they are converted rather than interpolated: string.Create's handler takes a
-        // single interpolated literal and refuses a concatenation, and these lines are too long
-        // to be one.
         await _output.WriteLineAsync(
-            $"Retention: idle after {Hours(policy.IdlePeriod)}, nothing older than " +
-            $"{Hours(policy.MaximumAge)}. Set {RetentionPolicyEnvironment.IdleVariable} and " +
-            $"{RetentionPolicyEnvironment.MaximumAgeVariable} to change them, in the same " +
-            "environment the agents' servers are launched with.").ConfigureAwait(false);
+            $"Retention is the broker's, set from {RetentionPolicyEnvironment.IdleVariable} and " +
+            $"{RetentionPolicyEnvironment.MaximumAgeVariable} in the environment `parley serve` " +
+            "was started with.").ConfigureAwait(false);
 
-        var result = await _console.PruneAsync(policy, nowUtc, cancellationToken)
-            .ConfigureAwait(false);
+        var result = await _console.PruneAsync(
+            new Wire.Empty(), cancellationToken: cancellationToken);
 
         var removed = result.Removed.ToString(CultureInfo.InvariantCulture);
 
@@ -636,15 +656,15 @@ public sealed class OperatorCommands
         if (result.Contended > 0)
         {
             // Reported apart from the floor because it means the opposite thing. The floor
-            // holding traffic is worth looking into; another sweep having got there first is the
-            // system working — every agent's server prunes on its own schedule, and this command
-            // is not the only thing applying the policy.
+            // holding traffic is worth looking into; the broker's own sweep having got there
+            // first is the system working — it applies the same policy on its own schedule, and
+            // this command is not the only thing applying it.
             var contended = result.Contended.ToString(CultureInfo.InvariantCulture);
 
             await _output.WriteLineAsync(
-                $"{contended} were already gone: an agent's server swept them between this " +
-                "command deciding and doing. Nothing is wrong — every server applies the same " +
-                "policy on its own schedule.").ConfigureAwait(false);
+                $"{contended} were already gone: the broker's own sweep took them between this " +
+                "command deciding and doing. Nothing is wrong — it applies the same policy on " +
+                "its own schedule.").ConfigureAwait(false);
         }
 
         return 0;
@@ -660,6 +680,81 @@ public sealed class OperatorCommands
     /// </remarks>
     private static string Hours(TimeSpan value) =>
         string.Create(CultureInfo.InvariantCulture, $"{value.TotalHours:0.##} hours");
+
+    /// <summary>Whether a referral report found nothing.</summary>
+    /// <param name="report">The report.</param>
+    /// <returns><see langword="true"/> if there is nothing to show.</returns>
+    private static bool IsEmpty(Wire.ReferralsReply report) =>
+        report.Pairs.Count == 0 && report.Targets.Count == 0;
+
+    /// <summary>Whether a notification report found nothing.</summary>
+    /// <param name="report">The report.</param>
+    /// <returns><see langword="true"/> if there is nothing to show.</returns>
+    private static bool IsEmpty(Wire.NotificationsReply report) => report.Flows.Count == 0;
+
+    /// <summary>Every notification sent, across all flows.</summary>
+    /// <param name="report">The report.</param>
+    /// <returns>The total.</returns>
+    private static long Sent(Wire.NotificationsReply report) => report.Flows.Sum(f => f.Sent);
+
+    /// <summary>The mean size of a notification across all flows.</summary>
+    /// <param name="report">The report.</param>
+    /// <returns>The mean, in characters.</returns>
+    /// <remarks>
+    /// Weighted by the messages rather than averaged across the flows, so one pair sending a
+    /// thousand short notices is not balanced out by a pair that sent one long one.
+    /// </remarks>
+    private static long Mean(Wire.NotificationsReply report)
+    {
+        var sent = Sent(report);
+
+        return sent == 0 ? 0 : report.Flows.Sum(f => f.Characters) / sent;
+    }
+
+    /// <summary>How much each agent has received, most first.</summary>
+    /// <param name="report">The report.</param>
+    /// <returns>One entry per recipient.</returns>
+    /// <remarks>
+    /// The half of SPEC.md §17 question 1 that a counter can answer: how much an agent has been
+    /// sent. Whether any of it was worth reading only that agent knows, which is why the answer
+    /// is asked for rather than measured.
+    /// </remarks>
+    private static IReadOnlyList<(string Agent, long Received)> Received(
+        Wire.NotificationsReply report) =>
+        [.. report.Flows
+            .GroupBy(f => f.To, StringComparer.Ordinal)
+            .Select(g => (Agent: g.Key, Received: g.Sum(f => f.Sent)))
+            .OrderByDescending(x => x.Received)
+            .ThenBy(x => x.Agent, StringComparer.Ordinal)];
+
+    /// <summary>How many exchanges the clarify distribution covers.</summary>
+    /// <param name="report">The report.</param>
+    /// <returns>The total.</returns>
+    private static long Exchanges(Wire.ClarificationsReply report) =>
+        report.Distribution.Sum(b => b.Exchanges);
+
+    /// <summary>The deepest clarification any exchange reached.</summary>
+    /// <param name="report">The report.</param>
+    /// <returns>The depth, or zero if none did.</returns>
+    private static int DeepestReached(Wire.ClarificationsReply report) =>
+        report.Distribution.Count == 0 ? 0 : report.Distribution.Max(b => b.Depth);
+
+    /// <summary>The share of a pair's closed exchanges the answerer declined as not its own.</summary>
+    /// <param name="pair">The pair.</param>
+    /// <returns>The rate, between zero and one.</returns>
+    /// <remarks>
+    /// Computed here because the wire carries the two counts and not the quotient. A derived
+    /// field on the wire would be a second place the arithmetic could be done differently, and
+    /// this is the one number in SPEC.md §15 that an operator acts on.
+    /// </remarks>
+    private static double Rate(Wire.ReferralPair pair) =>
+        pair.Closed == 0 ? 0 : (double)pair.OutOfScope / pair.Closed;
+
+    /// <summary>The mean size of a notification on one flow.</summary>
+    /// <param name="flow">The flow.</param>
+    /// <returns>The mean, in characters.</returns>
+    private static long Mean(Wire.NotifyFlow flow) =>
+        flow.Sent == 0 ? 0 : flow.Characters / flow.Sent;
 
     /// <summary>Renders an enum member the way the registry stores it.</summary>
     /// <param name="value">The member.</param>

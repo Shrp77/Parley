@@ -60,7 +60,7 @@ public sealed class LiveRunnerTests : IDisposable
         var patience = TimeSpan.FromMinutes(5);
 
         await using var agent = ResidentAgent.Start(
-            AgentName.Create("billing"),
+            AgentName.Create("billing@test"),
             InvocationCommand.Parse(template),
             _workspace,
             TimeProvider.System);

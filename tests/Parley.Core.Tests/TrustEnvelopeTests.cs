@@ -4,7 +4,7 @@ namespace Parley.Core.Tests;
 
 public sealed class TrustEnvelopeTests
 {
-    private static readonly AgentName Billing = AgentName.Create("billing");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
 
     private const string Payload = """{"text":"invoice totals are net"}""";
     private const string Token = "7f3a9c2e1b4d6a80";
@@ -14,7 +14,7 @@ public sealed class TrustEnvelopeTests
     {
         var wrapped = TrustEnvelope.Wrap(Billing, "claude-opus-5", Payload, Token);
 
-        Assert.Contains("billing", wrapped, StringComparison.Ordinal);
+        Assert.Contains("billing@test", wrapped, StringComparison.Ordinal);
         Assert.Contains("claude-opus-5", wrapped, StringComparison.Ordinal);
     }
 

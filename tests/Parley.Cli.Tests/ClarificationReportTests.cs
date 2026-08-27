@@ -1,5 +1,4 @@
-using Microsoft.Data.Sqlite;
-using Parley.Broker;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Store;
 using Xunit;
 
@@ -22,25 +21,30 @@ namespace Parley.Cli.Tests;
 /// identical as a table of counts and mean opposite things.
 /// </para>
 /// </remarks>
-public sealed class ClarificationReportTests : IDisposable
+public sealed class ClarificationReportTests : IAsyncDisposable
 {
     private const string Stamp = "2026-01-01T00:00:00.0000000+00:00";
 
     private readonly SqliteConnection _connection;
     private readonly StringWriter _output = new();
+    private readonly LoopbackOperator _broker;
     private readonly OperatorCommands _commands;
 
     public ClarificationReportTests()
     {
         _connection = ParleyDatabase.OpenInMemory();
-        _commands = new OperatorCommands(new OperatorConsole(_connection), _output);
+        _broker = LoopbackOperator.Start(_connection);
+        _commands = new OperatorCommands(_broker.Operators, _output);
 
-        Execute("INSERT INTO agents (name, adapter, tier, status) VALUES "
-              + "('orders','test','full','offline'),('billing','test','full','offline');");
+        Execute("INSERT INTO nodes (machine, connected, first_seen_utc) VALUES ('test', 1, '2026-01-01T00:00:00+00:00') ON CONFLICT DO NOTHING; INSERT INTO agents (name, adapter, tier, status) VALUES "
+              + "('orders@test','test','full','active'),('billing@test','test','full','active');");
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
+        // The broker first: it borrowed this connection and its shutdown writes to it.
+        await _broker.DisposeAsync();
+
         _connection.Dispose();
         _output.Dispose();
     }
@@ -60,7 +64,7 @@ public sealed class ClarificationReportTests : IDisposable
         "INSERT INTO exchanges (pair_key, asker, answerer, owed_by, state, clarify_depth, "
       + "clarify_depth_cap, open_pair_cap, delivery_window_ms, working_window_ms, "
       + "grace_period_ms, opened_utc, expires_utc, question_hash) VALUES "
-      + "('billing' || char(31) || 'orders','orders','billing','billing','OPEN'," + depth + ","
+      + "('billing@test' || char(31) || 'orders@test','orders@test','billing@test','billing@test','OPEN'," + depth + ","
       + cap + ",5,900000,14400000,86400000,'" + Stamp + "','" + Stamp + "','" + question + "');");
 
     [Fact]
@@ -142,6 +146,6 @@ public sealed class ClarificationReportTests : IDisposable
         await _commands.ClarificationsAsync(Ct);
 
         Assert.DoesNotContain("payload", Printed, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("orders", Printed, StringComparison.Ordinal);
+        Assert.DoesNotContain("orders@test", Printed, StringComparison.Ordinal);
     }
 }

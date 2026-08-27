@@ -1,4 +1,4 @@
----
+﻿---
 description: Configure this repository as a Parley agent - check the server is installed, write the launch configuration, and name the peers.
 disable-model-invocation: true
 ---
@@ -14,6 +14,15 @@ Work through the steps below with the user. **Ask before running anything that i
 software or writes a file.** This command deliberately grants no pre-approved tools: it
 installs a global .NET tool and edits configuration the user may already have, and both belong
 in the normal permission flow.
+
+**Do not assume the repository is clean.** Every file below may already exist, and the ways it
+can be wrong are not the same: `.mcp.json` may carry variables from an older shape that nothing
+reads any more, `node.json` may still hold consent to start a repository whose registration was
+deleted, and a `## Peers` section may carry project rules this command did not write and cannot
+recreate. Being told to treat the setup as new says nothing about the files - a purge clears the
+broker's store and touches neither the repository nor the machine. So read each one before
+writing it, and say what was found. A step that quietly overwrites something is a step that
+reports success either way.
 
 ## 1. Check the server is installed
 
@@ -66,6 +75,26 @@ that stops somebody asking the wrong agent:
 >
 > `Invoicing, tax and payment capture. Does not price orders or reserve stock.`
 
+**Put the repository's own words in front of them first, and do not write the line.** A cold
+prompt gets a vague answer or none, and there is something honest to offer instead: quote what
+the project already says about itself - the description line of its `README`, the `description`
+field of its package manifest, the top-level directories - and name where each came from, so
+the user is reading their own project rather than this agent's reading of it. Then ask.
+
+The distinction is not a nicety. Evidence invites them to write a line; a draft invites them to
+approve one, and an approved draft is model-written text that looks person-written from every
+other repository in the deployment - nobody on the far side can tell. SPEC.md §17 question 10
+closes this deliberately: *"It is not self-declared, and that is the whole of why it is worth
+reading. A field a model could write would be no more trustworthy than the prose it replaces,
+merely centralised."* The field is worth routing by because a person meant it.
+
+**Never propose the exclusion half.** A repository cannot supply it: no tax code in the tree
+does not mean this repository does not own tax, only that it has not been written yet - and
+that half is the one that stops somebody asking the wrong agent. Suggesting it is inventing the
+load-bearing part with confidence. Ask, and take "I don't know yet" for an answer; a name and
+no line still leaves an asker with referral, which is what §17 question 10 says it falls back
+to.
+
 It must be one line and it is refused at start-up if it is not, so do not paste prose with a
 line break in it. It goes into a JSON file, so escape a quotation mark or a backslash if the
 user's wording has one - an unescaped one makes the whole launch configuration unreadable and
@@ -74,18 +103,27 @@ repository, because a boundary is a decision somebody made rather than something
 listing implies. If they are unsure, leaving it out is better than guessing - an agent with
 none is listed with none, and askers fall back to its name.
 
-**The database path.** One SQLite file, shared by every repository that should be able to reach
-every other. It therefore has to live outside all of them - a path under one repository makes
-that repository's clone a prerequisite for everybody else's agent, and a path inside each
-repository gives every agent its own private database in which no peer exists. Something like
-`~/.parley/<project>/parley.db` works. The file does not need to exist; the server creates and
-migrates it on first launch.
+**The broker.** One process owns the store and everything else connects to it, so what this
+repository needs is an address rather than a path. `127.0.0.1:51707` is the default and needs no
+configuration; a broker on another machine goes in `PARLEY_BROKER`.
 
-If the operator's tool is installed and the database already exists, show the user who is
-already registered before they choose a name:
+The user needs one running. If nothing is listening, nothing works - the server exits at launch
+saying so rather than starting and failing every tool. Starting one:
 
 ```
-parley --db <path> registry
+parley serve --db <path to the store>
+```
+
+The store is one SQLite file shared by every repository that should be able to reach every
+other, so it lives outside all of them - a path under one repository makes that repository's
+clone a prerequisite for everybody else's agent. Something like `~/.parley/<project>/parley.db`
+works. The file does not need to exist; `parley serve` creates and migrates it, and nothing else
+does.
+
+If a broker is running, show the user who is already registered before they choose a name:
+
+```
+parley registry
 ```
 
 ## 3. Write the launch configuration
@@ -100,12 +138,9 @@ the file.
     "parley": {
       "command": "parley-mcp",
       "env": {
-        "PARLEY_DB": "${PARLEY_DB:-<absolute path to the database>}",
         "PARLEY_AGENT": "<the agent name>",
         "PARLEY_OWNS": "<what this repository owns, and what it does not>",
-        "PARLEY_WORKSPACE": "${PARLEY_WORKSPACE:-<absolute path to this repository>}",
-        "PARLEY_CLARIFY_CAP": "200",
-        "PARLEY_INVOKE_COMMAND": "claude"
+        "PARLEY_WORKSPACE": "${PARLEY_WORKSPACE:-<absolute path to this repository>}"
       }
     }
   }
@@ -118,13 +153,11 @@ Substitute the real values. Four notes on the shape:
   `.mcp.json` is usually committed and both paths are machine-specific, so the default is what
   this machine uses and a teammate overrides it by setting the variable rather than by editing
   a shared file.
-- `PARLEY_CLARIFY_CAP` is written explicitly even though 200 is also what the server uses when
-  it is absent. The number is a measurement rather than a considered limit - SPEC.md 17
-  question 4 wants the distribution real traffic produces, and a cap censors the evidence that
-  would justify it - so it is put where an operator will see it and can lower it, instead of
-  being a default nobody knows is in force. Say so if the user asks: it is high on purpose, one
-  exchange can carry a great deal of text at that setting, and `parley clarifications` is what
-  says where depth actually settles.
+- The clarify cap is **not** here. It used to be, set per repository, which meant one
+  deployment could admit forty clarifications on one exchange and three on another with nothing
+  to say why. It belongs to the broker now, and it is still the measurement SPEC.md 17 question
+  4 asks for rather than a considered limit - `parley clarifications` is what says where depth
+  actually settles.
 - `PARLEY_AGENT` and `PARLEY_OWNS` are written plainly, with no fallback. Both are the same on
   every machine, because they name what this repository is rather than where it lives. Omit
   `PARLEY_OWNS` entirely if the user had no answer; an empty string means the same as absent,
@@ -135,56 +168,68 @@ Substitute the real values. Four notes on the shape:
   honest blank.
 
 These are optional and can be left out: `PARLEY_RESPONDER` (what to record as having produced a
-message, `unknown-model` if unset), `PARLEY_TICK_SECONDS` (how often the sweep runs, 5 if
-unset), `PARLEY_RETENTION_IDLE_HOURS` and `PARLEY_RETENTION_MAX_AGE_HOURS` (how long the message
-log keeps what it carried, 72 and 720 if unset). Set the retention pair on **every** agent's
-server or none: the servers are what apply the policy, so setting it in one place and not
-another has agents quietly enforcing different numbers on one file.
+message, `unknown-model` if unset), `PARLEY_BROKER` (where the broker is, the local default if
+unset), `PARLEY_MACHINE` (this machine's name, detected if unset).
+
+The sweep cadence and the retention pair are **not** here any more, and that is worth saying to
+a user who has seen an older configuration. They describe the deployment rather than this
+repository, and they now belong to `parley serve` - one process applies them, so there is one
+answer. Setting them per agent used to mean a deployment could enforce different numbers on one
+file with nothing to show which was in force.
 
 ## 4. Ask whether this repository may answer unattended
 
 Everything so far needs a person to take a turn: this agent answers when its session does, and
 its session acts when the user sends it something. So an exchange with a peer needs a human at
-both ends unless this repository offers otherwise.
+both ends unless this machine offers otherwise.
 
-Two settings, and they are not the same question.
-
-`PARLEY_INVOKE_COMMAND` is already in the block above, and **write it without asking**. It says
-how to start this repository, which is not a permission: what it buys is that an operator at a
-console can start this agent and watch it work — the same thing as opening the session by hand,
-by a shorter route. Write only the runner. The supervisor appends the flags that make it speak
-the turn protocol and the agent's own name from the registry, so `claude` on its own is the
-whole value; any flags the user does want — a permission mode, a model — go after it and are
-kept.
-
-`PARLEY_INVOKE_WHEN_IDLE` is the permission, and it is a separate line:
+**The offer is not in `.mcp.json` any more.** How to start a repository is configuration
+belonging to the machine it is on, so it lives in `node.json` - beside where `parley up` is run,
+or wherever `PARLEY_NODE_CONFIG` points - and never reaches the broker at all. The store holds no
+executable command line, and an agent that has never run still has a record of how to start it.
 
 ```json
-"PARLEY_INVOKE_WHEN_IDLE": "true"
+{
+  "agents": {
+    "<the agent's role>": {
+      "command": "claude",
+      "workspace": "<absolute path to this repository>"
+    }
+  }
+}
 ```
 
-Set it, and `parley up` may keep this agent resident — started once, given a turn whenever a
-peer needs one, kept alive so it remembers the conversations it is in. Leave it out and nothing
-starts this repository unless a person asks it to.
+Write only the runner. The node appends the flags that make it speak the turn protocol and the
+agent's own name, so `claude` on its own is the whole value; flags the user does want — a
+permission mode, a model — go after it and are kept.
 
-**Ask the user about this one, and take no for an answer.** It is the setting that lets their
-machine run a model and spend their tokens with nobody watching, so it is theirs to grant rather
-than a default to apply. It is per repository on purpose: it belongs in this repository's launch
-configuration because that is the only place the permission can honestly come from.
+The workspace is where the node starts it, and it is read from this file rather than from the
+registry on purpose. The registry's workspace is what an agent's adapter reported about itself,
+which describes where it ran last rather than instructing where to run it — and a node taking a
+directory from a registration would be taking a path from the network.
 
-The two were one setting until recently, and the failure is worth knowing because it is easy to
-recreate: recording how to start a repository meant consenting to run it unwatched, so the
-honest answer here was usually no — and a deployment that had declined could not then be started
-by anybody, including its own operator standing over it.
+**Ask the user before adding this repository to that file, and take no for an answer.** Listing
+it here is the permission: it says the node may start this repository when a peer asks it
+something,
+which spends their tokens with nobody watching. There is no second flag, and there used to be —
+recording *how* to start a repository had been read as consent to run it unwatched, so the two
+had to be prised apart. When starting is the machine's own configuration the question does not
+arise.
 
-Withdrawing either means removing the line and opening this repository once. That is enough;
-there is no second step somewhere the user will not look.
+Withdrawing it later means removing that entry. Nothing else, and nowhere else.
 
-## 5. Create the database's directory
+**One thing to check while editing it:** `node.json` is keyed by *role*, not by the full agent
+name. An agent is `role@machine` and the machine half is detected, so this file describes this
+machine and an entry here can only ever mean an agent on it.
 
-Create the parent directory of the database path if it does not exist. Do not create the file.
+## 5. Check the broker is reachable
 
-If the database sits inside a repository despite step 2's advice, add it to that repository's
+`parley registry` answers if one is running, and says how to start one if not. This is worth
+doing before the restart rather than after: a repository configured against a broker that is not
+there produces a server that exits at launch, which the user meets as a plugin that installed
+and did nothing.
+
+If the store sits inside a repository despite step 2's advice, add it to that repository's
 `.gitignore`. It holds the full text of every question and answer.
 
 ## 6. Write the peers block, with what is knowable now
@@ -203,6 +248,18 @@ reads from the live roster once the tools are bound.
 So write the frame, in this repository's standing instructions - `CLAUDE.md` at the repository
 root, or `AGENTS.md` if that is what the project uses. Replace an existing `## Peers` section
 rather than appending a second one, and leave the rest of the file alone.
+
+**A `## Peers` section already in the file may not be one this command wrote.** It holds three
+kinds of line and only two of them are yours: the frame below, the roster of peers, and
+whatever the project has added about how that roster is to be read - which document is
+authoritative when a peer's claim conflicts with it, which entries are still open, what an
+`owns` line does not settle. Rewrite the first two. Carry the third across unchanged.
+
+A line that cannot be sorted into one of the three is a line to show the user, not one to
+decide about. It is in the file because somebody put it there, and rules about how to read the
+roster belong beside the roster - moving them out is not a tidier answer, it is the same
+deletion with an extra step. The command that cannot tell whose line it is, is the command
+about to delete it.
 
 ```markdown
 ## Peers

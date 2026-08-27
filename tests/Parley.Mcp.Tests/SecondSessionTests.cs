@@ -23,11 +23,11 @@ public sealed class SecondSessionTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billingA) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billingA) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            to: "billing",
+            to: "billing@test",
             intent: "Deciding where the tax rate lives.",
             subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
             consequences: "If it does I read it from you; if not I snapshot my own copy.",
@@ -40,7 +40,7 @@ public sealed class SecondSessionTests
 
         // Somebody opens a second window on the same repository.
         fixture.Clock.Advance(TimeSpan.FromMinutes(1));
-        await fixture.LaunchAsync("billing", ct);
+        await fixture.LaunchAsync("billing@test", ct);
 
         var answered = await billingA.AnswerAsync(
             exchangeId,
@@ -63,12 +63,12 @@ public sealed class SecondSessionTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billingA) = await fixture.LaunchAsync("billing", ct);
-        var (sessionB, _) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billingA) = await fixture.LaunchAsync("billing@test", ct);
+        var (sessionB, _) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            to: "billing",
+            to: "billing@test",
             intent: "Deciding where the tax rate lives.",
             subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
             consequences: "If it does I read it from you; if not I snapshot my own copy.",
@@ -80,7 +80,7 @@ public sealed class SecondSessionTests
         // The second window closes while the first is still working, and a third opens.
         await fixture.ShutDownAsync(sessionB);
         fixture.Clock.Advance(TimeSpan.FromMinutes(1));
-        await fixture.LaunchAsync("billing", ct);
+        await fixture.LaunchAsync("billing@test", ct);
 
         var answered = await billingA.AnswerAsync(
             exchangeId,
@@ -104,11 +104,11 @@ public sealed class SecondSessionTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (sessionA, billingA) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (sessionA, billingA) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            to: "billing",
+            to: "billing@test",
             intent: "Deciding where the tax rate lives.",
             subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
             consequences: "If it does I read it from you; if not I snapshot my own copy.",
@@ -121,11 +121,11 @@ public sealed class SecondSessionTests
         for (var minute = 0; minute < 60; minute++)
         {
             fixture.Clock.Advance(TimeSpan.FromMinutes(1));
-            await sessionA.RunAsync((broker, now, c) => broker.TickAsync(now, c), ct);
+            await fixture.TickAsync(ct);
         }
 
         // Somebody opens a second window.
-        await fixture.LaunchAsync("billing", ct);
+        await fixture.LaunchAsync("billing@test", ct);
 
         var answered = await billingA.AnswerAsync(
             exchangeId,
@@ -146,11 +146,11 @@ public sealed class SecondSessionTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (billingSession, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (billingSession, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            to: "billing",
+            to: "billing@test",
             intent: "Deciding where the tax rate lives.",
             subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
             consequences: "If it does I read it from you; if not I snapshot my own copy.",
@@ -162,7 +162,7 @@ public sealed class SecondSessionTests
         await fixture.ShutDownAsync(billingSession);
         fixture.Clock.Advance(TimeSpan.FromHours(2));
 
-        var (_, billingAgain) = await fixture.LaunchAsync("billing", ct);
+        var (_, billingAgain) = await fixture.LaunchAsync("billing@test", ct);
 
         var refused = await billingAgain.AnswerAsync(
             exchangeId,
@@ -178,22 +178,21 @@ public sealed class SecondSessionTests
         // The first run of every project. PARLEY_DB conventionally names .parley/parley.db and
         // nothing has created .parley, which SQLite reports as "unable to open database file" —
         // true, and no help at all to somebody setting this up for the first time.
-        var ct = TestContext.Current.CancellationToken;
+        //
+        // Through the broker now, because the adapter no longer opens anything. The check is the
+        // same one and it matters more: there used to be many processes that could create the
+        // directory and any of them would do, and now there is exactly one.
         var root = Path.Combine(Path.GetTempPath(), "parley-fresh-" + Guid.NewGuid().ToString("N"));
-        var options = new ServerOptions(
-            Path.Combine(root, ".parley", "parley.db"),
-            Parley.Core.AgentName.Create("orders"),
-            "test-model",
-            TimeSpan.FromMinutes(1),
-            Parley.Core.RetentionPolicy.Default,
-            null);
+        var path = Path.Combine(root, ".parley", "parley.db");
 
         try
         {
-            var session = await BrokerSession.StartAsync(options, new StubClock(T0), ct);
-            await session.DisposeAsync();
+            var runtime = Parley.Server.BrokerRuntime.Open(
+                path, Parley.Broker.BrokerOptions.Default, new StubClock(T0));
 
-            Assert.True(File.Exists(options.DatabasePath));
+            await runtime.DisposeAsync();
+
+            Assert.True(File.Exists(path));
         }
         finally
         {

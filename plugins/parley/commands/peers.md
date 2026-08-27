@@ -57,9 +57,21 @@ Put it in this repository's standing instructions - `CLAUDE.md` at the repositor
 than appending a second one. Leave the rest of the file untouched.
 
 `/parley:setup` step 6 will usually have left a frame there already, carrying the invariants and
-a placeholder line saying the roster has not been read. Replacing the whole section is what
-clears it - a block that still says the roster has not been read, under a list of peers, is
+a placeholder line saying the roster has not been read. Rewriting the frame and the roster is
+what clears it - a block that still says the roster has not been read, under a list of peers, is
 worse than either half alone.
+
+**Rewriting is not the same as replacing, and this is the command where the difference bites.**
+The section may also carry lines the project added about how the roster is to be read - which
+document is authoritative when a peer's claim conflicts with it, which boundaries are still
+open, what an `owns` line does not settle. Those are not yours. Carry them across unchanged,
+and show the user any line you cannot place rather than deciding about it.
+
+This command runs again every time the roster changes, so the cost of getting that wrong is not
+paid once. Each run replaces what the last one wrote and has no memory of it, which means a
+curated line survives exactly as long as nobody runs `/parley:peers` - and the whole design of
+this command is that it is run often. A rule that dies on the third run, silently, in a file
+read on every turn, is worse than one that was never written down.
 
 **Keep the frame as it is written above.** Step 6 wrote those same two sentences, and replacing
 the section means writing them again rather than inheriting them - so a template here that

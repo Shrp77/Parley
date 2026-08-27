@@ -35,6 +35,12 @@ public sealed class SurfaceBoundaryTests
     [
         // §10.1, as far as it is built.
         nameof(Broker.AskAsync),
+
+        // The same §10.1 operation with a role for a recipient (§5.5), not a second one. It
+        // opens N ordinary exchanges and can do nothing AskAsync could not do N times, which is
+        // why it belongs on this side: an agent addressing a role is addressing peers, and the
+        // operator surface has no ask at all.
+        nameof(Broker.AskRoleAsync),
         nameof(Broker.ClarifyAsync),
         nameof(Broker.AnswerAsync),
         nameof(Broker.ConcludeAsync),
@@ -51,6 +57,15 @@ public sealed class SurfaceBoundaryTests
         // Lifecycle. Driven by the host, not exposed to an agent by any adapter.
         nameof(Broker.StartAsync),
         nameof(Broker.DetachAsync),
+
+        // Neither §10.1 nor §10.2, and that is the finding rather than an exemption from it.
+        // ServeFrom starts the ghosting clock for a broker that speaks for no agent, which is
+        // what the sweep runs on now that SPEC.md §4 gives a deployment one broker process. An
+        // agent must never reach it -- it would move the clock and silently grant every orphan
+        // in the deployment a fresh grace period -- and neither must an operator, who has no
+        // business deciding when the host came up. It is on this list beside the other lifecycle
+        // entries because a host drives it and nothing else may.
+        nameof(Broker.ServeFrom),
         nameof(Broker.TickAsync),
         nameof(Broker.ResumeOwedByAsync),
         "get_StartedUtc",

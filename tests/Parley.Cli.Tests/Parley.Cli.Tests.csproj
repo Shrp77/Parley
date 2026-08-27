@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <!--
@@ -26,6 +26,8 @@
   -->
   <ItemGroup>
     <ProjectReference Include="..\..\src\Parley.Mcp\Parley.Mcp.csproj" />
+    <ProjectReference Include="..\..\src\Parley.Server\Parley.Server.csproj" />
+    <ProjectReference Include="..\..\src\Parley.Transport\Parley.Transport.csproj" />
   </ItemGroup>
 
   <ItemGroup>

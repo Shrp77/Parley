@@ -1,70 +1,92 @@
 using System.Globalization;
 using System.Reflection;
-using Parley.Broker;
+using Grpc.Core;
+using Grpc.Net.Client;
 using Parley.Cli;
 using Parley.Core;
-using Parley.Store;
+using Wire = Parley.Transport;
 
-// The operator's way in. SPEC.md §10.2 operations, and nothing else.
+// The operator's way in, and the broker's. SPEC.md §10.2 operations, plus the two processes a
+// deployment needs somebody to start.
 //
-//   parley --db <path> registry
-//   parley --db <path> retire <agent>
-//   parley --db <path> reinstate <agent>
-//   parley --db <path> purge <agent>
-//   parley --db <path> export <conversation>
-//   parley --db <path> force-conclude <conversation>
-//   parley --db <path> prune
-//   parley --help
+//   parley serve                     the broker of §4: the one process that opens the store
+//   parley up                        the node of §4: this machine's supervisor
+//   parley registry                  and the rest of §10.2, over the transport
 //
-// PARLEY_DB is read when --db is absent, so the same variable that configures an agent's server
-// configures the operator's view of the same project.
+// Everything but `serve` is a client. That is the whole shape of the change: this command used
+// to open the database itself, which was safe only while it and every agent were on one machine
+// — SQLite in WAL mode needs coherent shared memory between every process touching the file, so
+// a store on a share is corrupt rather than slow.
 //
 // A second binary rather than a flag on parley-mcp. §10.2 warns that an adapter surfacing an
 // operator operation into an agent's tool set would breach §10.1, and the safeguards against
-// that get progressively more structural: force_conclude is not conclude, OperatorConsole is not
-// Broker, and this is not the server. An MCP client launches what it was configured with, and
-// what it was configured with has no operator operation compiled into it.
+// that get progressively more structural: force_conclude is not conclude, the Operators service
+// is not the Agents service, and this is not the server. An MCP client launches what it was
+// configured with, and what it was configured with has no operator operation compiled into it.
 
 const string Help = """
-    parley — the operator operations of SPEC.md 10.2.
+    parley — the broker, this machine's node, and the operator operations of SPEC.md 10.2.
 
-      parley [--db <path>] registry                    every registered agent, with its workspace
-      parley [--db <path>] retire <agent>              withdraw a registration
-      parley [--db <path>] reinstate <agent>           withdraw a retirement
-      parley [--db <path>] purge <agent>               DESTROY an agent and its conversations
-      parley [--db <path>] export <conversation>       emit every message in a discussion
-      parley [--db <path>] force-conclude <conv>       close a discussion over its votes
-      parley [--db <path>] prune                       apply the retention policy now
-      parley [--db <path>] refusals                    what the message size cap refused
-      parley [--db <path>] clarifications              the clarify depth distribution, and whether the cap binds
-      parley [--db <path>] referrals                   where questions are sent onward, and to whom
-      parley [--db <path>] notifications               how much Notify carries, and who has had enough to judge
+      parley serve [--db <path>] [--listen <url>]      run the broker: the one process that
+                   [--log <path>]
+                                                       opens the store, and what everything
+                                                       else connects to
 
-      parley [--db <path>] up                          keep the agents resident so they can converse
+      parley autostart install [--db <path>]           start the broker when you log in
+      parley autostart remove                          stop doing that
+      parley autostart status                          say whether it is set up
+
+      parley up                                        run this machine's node: report it to
+                                                       the broker and start the agents on it
+                                                       when a question arrives
+
+      parley registry                                  every registered agent, with its workspace
+      parley retire <agent>                            withdraw a registration
+      parley reinstate <agent>                         withdraw a retirement
+      parley purge <agent>                             DESTROY an agent and its conversations
+      parley export <conversation>                     emit every message in a discussion
+      parley force-conclude <conv>                     close a discussion over its votes
+      parley prune                                     apply the retention policy now
+      parley refusals                                  what the message size cap refused
+      parley clarifications                            the clarify depth distribution, and whether the cap binds
+      parley referrals                                 where questions are sent onward, and to whom
+      parley notifications                             how much Notify carries, and who has had enough to judge
+      parley waiting <agent>                           how many messages and polls await an agent
 
       parley --version                                 this build, and the protocol it speaks
 
-    --db defaults to PARLEY_DB, the same variable the agents' servers are launched with.
-    prune reads PARLEY_RETENTION_IDLE_HOURS and PARLEY_RETENTION_MAX_AGE_HOURS from the same
-    place, and prints the policy it applied. It removes text permanently; export first if you
-    want to keep a discussion.
+    autostart installs a scheduled task on Windows, a systemd user unit on Linux, or a launch
+    agent on macOS -- all of them user-level, all installable without administrator rights. They
+    start the broker at logon and stop it at logout; a machine that must answer with nobody
+    signed in wants a system service instead, and that does need privilege.
 
-    up runs until you stop it. It starts every agent that has something waiting -- an answer it
-    owes, or a message it has not collected -- and has offered a PARLEY_INVOKE_COMMAND, keeps
-    each one resident so it remembers the conversations it is in, and gives it a turn whenever a
-    peer needs one. Ctrl+C stops the fleet and every agent in it.
-    Its pass interval comes from PARLEY_TICK_SECONDS, the same variable the servers read.
+    Every command except `serve` and `autostart` connects to a broker, at --broker or
+    PARLEY_BROKER, and
+    defaults to the local one. Nothing works until a broker is running: start one with
+    `parley serve`, as a service or a scheduled task if you want it there after a reboot.
 
-    These are never available to an agent. parley-mcp, the server an MCP client launches, has
-    none of them compiled into it.
+    serve reads --db, or PARLEY_DB, for the store it owns — and it is the only command that
+    touches a file. It migrates the schema, which nothing else does. prune applies the policy
+    the broker was started with, from PARLEY_RETENTION_IDLE_HOURS and
+    PARLEY_RETENTION_MAX_AGE_HOURS on the broker's machine; it removes text permanently, so
+    export first if you want to keep a discussion.
+
+    up runs until you stop it. It tells the broker this machine is here, which is what makes the
+    agents registered to it startable rather than stranded, and starts one when a question
+    arrives for it. What it can start comes from node.json beside the store, or
+    PARLEY_NODE_CONFIG — the broker never holds a command line for a machine it is not on.
+    Ctrl+C stops the node and every agent it started.
+
+    These are never available to an agent. parley-mcp, the server an MCP client launches, binds
+    the Agents service, which has no method that retires anybody.
     """;
 
-const int Usage = 64;      // EX_USAGE
-const int Config = 78;     // EX_CONFIG
-const int IoError = 74;    // EX_IOERR
+const int Usage = 64;          // EX_USAGE
+const int Config = 78;         // EX_CONFIG
+const int IoError = 74;        // EX_IOERR
+const int Unavailable = 69;    // EX_UNAVAILABLE
 
 var arguments = new List<string>(args);
-string? databasePath = null;
 
 // Asked for rather than fallen into, so it goes to standard output and exits zero. Every other
 // path here prints the same text to standard error with a non-zero code, because there it is
@@ -99,45 +121,24 @@ if (arguments.Exists(a => a is "--version" or "-v"))
     return 0;
 }
 
-for (var i = 0; i < arguments.Count - 1; i++)
+var databasePath = TakeOption("--db", "-d");
+var listenOn = TakeOption("--listen", "-l");
+var brokerAddress = TakeOption("--broker", "-b");
+var logPath = TakeOption("--log", null);
+
+if (Repeated() is { } repeated)
 {
-    if (arguments[i] is "--db" or "-d")
-    {
-        databasePath = arguments[i + 1];
-        arguments.RemoveRange(i, 2);
-        break;
-    }
-}
-
-// A --db the loop did not consume is one that had no path after it, or a second one. Both used
-// to fall through to the stray-option refusal below and be told that '--db' is not an option
-// this command takes — which is false, and false in the most confusing direction: it names the
-// one option the command does have and denies having it. Found by typing `parley --db` and
-// forgetting the path.
-var repeated = arguments.FindIndex(a => a is "--db" or "-d");
-
-if (repeated >= 0)
-{
-    await Console.Error.WriteLineAsync(
-        repeated == arguments.Count - 1
-            ? $"'{arguments[repeated]}' needs a path after it."
-            : $"'{arguments[repeated]}' was given more than once.").ConfigureAwait(false);
-
+    await Console.Error.WriteLineAsync(repeated).ConfigureAwait(false);
     await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
 
     return Usage;
 }
 
-// The name comes from Parley.Core rather than being spelled again here. It used to be a bare
-// literal, agreeing with the server's constant by nothing but coincidence — and if they had ever
-// diverged, this command would have administered a database the agents were not using while
-// reporting success.
-databasePath ??= Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable);
-
 // Anything left starting with a hyphen is an option this does not have, and refusing it is the
-// point rather than tidiness: without this, `parley export --db` reaches the export with "--db"
-// as the conversation identifier and runs a real query against it. A flag in the wrong place
-// silently becoming data is the worst reading of a mistyped command, because it succeeds.
+// point rather than tidiness: without this, `parley export --broker` reaches the export with
+// "--broker" as the conversation identifier and runs a real query against it. A flag in the
+// wrong place silently becoming data is the worst reading of a mistyped command, because it
+// succeeds.
 var stray = arguments.Find(a => a.StartsWith('-'));
 
 if (stray is not null)
@@ -149,102 +150,77 @@ if (stray is not null)
     return Usage;
 }
 
-// Before the database, because `parley` on its own is somebody asking what this does, and
-// answering "no database" tells them nothing they can act on — least of all that there is a
-// list of commands to see. Found by installing it and typing the name.
+// Before anything else, because `parley` on its own is somebody asking what this does, and
+// answering "no broker" tells them nothing they can act on — least of all that there is a list
+// of commands to see. Found by installing it and typing the name.
 if (arguments.Count == 0)
 {
     await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
     return Usage;
 }
 
-if (string.IsNullOrWhiteSpace(databasePath))
-{
-    await Console.Error.WriteLineAsync(
-        "No database. Pass --db <path>, or set PARLEY_DB to the same value the agents' servers " +
-        "are launched with.").ConfigureAwait(false);
+var verb = arguments[0];
+var rest = arguments.Skip(1).ToArray();
 
-    return Config;
+// `serve` first and separately, because it is the one command that is not a client. Everything
+// below it needs a broker to talk to; this is the broker.
+if (verb == "serve" && rest.Length == 0)
+{
+    return await ServeCommand.RunAsync(
+        databasePath ?? Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable),
+        listenOn,
+        logPath,
+        Console.Out,
+        Console.Error).ConfigureAwait(false);
 }
 
-// Opened rather than created. An operator command against a project that has never run is a
-// mistyped path far more often than it is a first use, and silently creating an empty database
-// would answer "no agents registered" to a question about the wrong directory.
-if (!File.Exists(databasePath))
+// Beside `serve`, because it installs `serve` and takes the same --db. It is not a client
+// either: registering a scheduled task or writing a unit file needs no broker, and needing one
+// would make the command that fixes "no broker is running" require a broker.
+if (verb == "autostart" && rest.Length == 1)
 {
-    await Console.Error.WriteLineAsync(
-        $"No Parley database at '{databasePath}'. It is created by the first agent server to " +
-        "start in that project, not by this command.").ConfigureAwait(false);
-
-    return Config;
+    return await AutostartCommand.RunAsync(
+        rest[0],
+        databasePath ?? Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable),
+        listenOn,
+        Console.Out,
+        Console.Error).ConfigureAwait(false);
 }
 
-SqliteConnectionHolder holder;
+if (databasePath is not null)
+{
+    await Console.Error.WriteLineAsync(
+        "--db is only for `parley serve` and `parley autostart install`. Every other command reaches the broker over the " +
+        "transport and never opens the store: pass --broker, or set " +
+        $"{BrokerEndpoint.Variable}.").ConfigureAwait(false);
+
+    return Usage;
+}
+
+string endpoint;
 
 try
 {
-    // Opened, never migrated. This is the operator's tool, and it administers a database the
-    // agents' servers created — so migrating from here is never the intent, and doing it is
-    // actively dangerous: pointed at somebody's application database by a mistyped path, it
-    // wrote Parley's seven tables and triggers into it, bumped user_version from 0 to 1, and
-    // reported "no agents registered". A typo should not install a schema.
-    holder = new SqliteConnectionHolder(ParleyDatabase.Open(databasePath));
-
-    var schema = SchemaMigrator.GetUserVersion(holder.Connection);
-
-    if (schema == 0)
-    {
-        holder.Dispose();
-
-        await Console.Error.WriteLineAsync(
-            $"'{databasePath}' is not a Parley database. It has a schema version of zero, which " +
-            "means nothing here wrote it. Check the path — this command administers a database " +
-            "an agent's server created, and will not create or alter one.").ConfigureAwait(false);
-
-        return Config;
-    }
-
-    // Behind, not absent. This tool never migrates -- see above -- so a database an older server
-    // last touched is missing whatever the newer migrations added, and a report reading one of
-    // those tables fails on a missing table with a stack trace. Which of the two is out of date
-    // is exactly what somebody needs to be told, and it is not recoverable from that exception.
-    //
-    // Only behind. A database AHEAD of this build is left alone deliberately: migrations here add
-    // tables and columns rather than remove them, so an older reader finds everything it knows
-    // about and ignores the rest -- verified by setting user_version past every migration and
-    // running the reports. Refusing that case would break every operator whose tool is a version
-    // behind their servers, which is the ordinary state of a machine mid-upgrade. The asymmetry
-    // is that behind is a certain failure and ahead is a likely success; if a migration ever
-    // removes something, this is the comment that was wrong.
-    if (schema < SchemaMigrator.LatestVersion)
-    {
-        holder.Dispose();
-
-        var expected = SchemaMigrator.LatestVersion;
-
-        await Console.Error.WriteLineAsync(string.Create(
-            CultureInfo.InvariantCulture,
-            $"'{databasePath}' is at schema version {schema}, and this build of parley expects {expected}. Start any agent's server against it once — the server migrates, this command deliberately does not."))
-            .ConfigureAwait(false);
-
-        return Config;
-    }
+    endpoint = brokerAddress is { Length: > 0 }
+        ? BrokerEndpoint.Read(name => name == BrokerEndpoint.Variable ? brokerAddress : null)
+        : BrokerEndpoint.Read(Environment.GetEnvironmentVariable);
 }
-#pragma warning disable CA1031 // Do not catch general exception types
-catch (Exception ex)
-#pragma warning restore CA1031
+catch (InvalidOperationException ex)
 {
-    await Console.Error.WriteLineAsync($"Could not open '{databasePath}': {ex.Message}")
-        .ConfigureAwait(false);
-
-    return IoError;
+    await Console.Error.WriteLineAsync(ex.Message).ConfigureAwait(false);
+    return Config;
 }
 
-using (holder)
+using var channel = GrpcChannel.ForAddress(endpoint);
+
+try
 {
-    var commands = new OperatorCommands(new OperatorConsole(holder.Connection), Console.Out);
-    var verb = arguments[0];
-    var rest = arguments.Skip(1).ToArray();
+    if (verb == "up" && rest.Length == 0)
+    {
+        return await UpAsync().ConfigureAwait(false);
+    }
+
+    var commands = new OperatorCommands(new Wire.Operators.OperatorsClient(channel), Console.Out);
 
     switch (verb)
     {
@@ -270,12 +246,11 @@ using (holder)
 
         case "force-conclude" when rest.Length == 1:
             return await WithConversation(
-                rest[0],
-                id => commands.ForceConcludeAsync(id, DateTimeOffset.UtcNow, CancellationToken.None))
+                rest[0], id => commands.ForceConcludeAsync(id, CancellationToken.None))
                 .ConfigureAwait(false);
 
         case "prune" when rest.Length == 0:
-            return await PruneAsync(commands).ConfigureAwait(false);
+            return await commands.PruneAsync(CancellationToken.None).ConfigureAwait(false);
 
         case "refusals" when rest.Length == 0:
             return await commands.RefusalsAsync(CancellationToken.None).ConfigureAwait(false);
@@ -289,21 +264,58 @@ using (holder)
         case "notifications" when rest.Length == 0:
             return await commands.NotificationsAsync(CancellationToken.None).ConfigureAwait(false);
 
-        case "up" when rest.Length == 0:
-            return await UpAsync().ConfigureAwait(false);
+        // Not an operator operation, and it is here because a caller that is not an agent needs
+        // it: an editor hook that wants to say "two answers are waiting" before a turn used to
+        // read the database, and cannot now. It discloses only counts, for one named agent, and
+        // §16 already says the wire cannot tell who is asking — so this adds no disclosure that
+        // was not already available to anything that could reach the broker.
+        case "waiting" when rest.Length == 1:
+            return await WithAgent(
+                rest[0],
+                async a =>
+                {
+                    var counts = await new Wire.Agents.AgentsClient(channel).WaitingAsync(
+                        new Wire.WaitingRequest { Agent = a.Value }).ConfigureAwait(false);
+
+                    await Console.Out.WriteLineAsync(string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{counts.MessagesWaiting} {counts.ClosurePollsWaiting}"))
+                        .ConfigureAwait(false);
+
+                    return 0;
+                }).ConfigureAwait(false);
 
         default:
             await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
             return Usage;
     }
 }
+catch (RpcException failure) when (failure.StatusCode == StatusCode.Unavailable)
+{
+    // The failure a new deployment meets first, and the one whose message has to earn its place:
+    // somebody has typed an operator command and nothing has told them a second process exists.
+    await Console.Error.WriteLineAsync(
+        $"No broker is listening at {endpoint}. Parley keeps its store in one process and " +
+        "everything else connects to it, so nothing works until that process is running: start " +
+        $"it with `parley serve`. If it is running elsewhere, pass --broker or set " +
+        $"{BrokerEndpoint.Variable}.").ConfigureAwait(false);
+
+    return Unavailable;
+}
+catch (RpcException failure)
+{
+    await Console.Error.WriteLineAsync($"The broker refused that: {failure.Status.Detail}")
+        .ConfigureAwait(false);
+
+    return IoError;
+}
 
 // The only command that does not return promptly: it runs until the operator stops it.
 //
 // Ctrl+C is intercepted rather than allowed to kill the process, and that is the whole reason
-// this is wired up here instead of inside FleetCommand. The default handling would end this
+// this is wired up here instead of inside NodeCommand. The default handling would end this
 // process and leave every agent it started orphaned -- resident, holding sessions, answering
-// nobody. Cancelling instead gives the fleet the chance to tell each of them to quit, which is
+// nobody. Cancelling instead gives the node the chance to tell each of them to quit, which is
 // one of the three ways SPEC.md §11.1 says a resident agent ends.
 async Task<int> UpAsync()
 {
@@ -311,7 +323,7 @@ async Task<int> UpAsync()
 
     void Stop(object? sender, ConsoleCancelEventArgs e)
     {
-        // A second Ctrl+C is left to the default handling on purpose. If shutting the fleet down
+        // A second Ctrl+C is left to the default handling on purpose. If shutting the node down
         // has itself wedged, an operator must still be able to get their terminal back.
         e.Cancel = true;
         Console.CancelKeyPress -= Stop;
@@ -323,51 +335,13 @@ async Task<int> UpAsync()
 
     try
     {
-        var fleet = new FleetCommand(holder.Connection, Console.Out);
-
-        return await fleet.UpAsync(FleetInterval(), stopping.Token).ConfigureAwait(false);
+        return await NodeCommand.RunAsync(channel, endpoint, Console.Out, stopping.Token)
+            .ConfigureAwait(false);
     }
     finally
     {
         Console.CancelKeyPress -= Stop;
     }
-}
-
-// Read from the same variable the servers read, so a deployment has one number rather than two
-// that drift. Bounded rather than trusted: a pass costs a query per agent with mail, and a
-// mistyped "1" would turn that into a spin.
-static TimeSpan FleetInterval()
-{
-    var configured = Environment.GetEnvironmentVariable("PARLEY_TICK_SECONDS");
-
-    if (!int.TryParse(configured, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds))
-    {
-        return TimeSpan.FromMinutes(1);
-    }
-
-    return TimeSpan.FromSeconds(Math.Clamp(seconds, 5, 3600));
-}
-
-// The policy is read here rather than beside --db, so a variable an operator got wrong stops
-// prune and nothing else. Refusing `parley registry` because a retention hour is unparseable
-// would be strictly worse: listing changes nothing, and the reason somebody is at a terminal
-// asking what is registered is usually that something has already gone wrong.
-async Task<int> PruneAsync(OperatorCommands commands)
-{
-    RetentionPolicy policy;
-
-    try
-    {
-        policy = RetentionPolicyEnvironment.Read(Environment.GetEnvironmentVariable);
-    }
-    catch (InvalidOperationException ex)
-    {
-        await Console.Error.WriteLineAsync(ex.Message).ConfigureAwait(false);
-        return Config;
-    }
-
-    return await commands.PruneAsync(policy, DateTimeOffset.UtcNow, CancellationToken.None)
-        .ConfigureAwait(false);
 }
 
 // `parley export ""` used to reach the repository, hit an ArgumentException on the way in, and
@@ -399,11 +373,46 @@ async Task<int> WithAgent(string name, Func<AgentName, Task<int>> run)
     if (!AgentName.TryCreate(name, out var agent))
     {
         await Console.Error.WriteLineAsync(
-            $"'{name}' is not an agent name. Names are lowercase letters, digits and hyphens, " +
-            "starting with a letter, up to 32 characters.").ConfigureAwait(false);
+            $"'{name}' is not an agent name. Names are role@machine — a role of lowercase " +
+            "letters, digits and hyphens starting with a letter, then the machine it runs on. " +
+            "`parley registry` lists them as they are stored.").ConfigureAwait(false);
 
         return Usage;
     }
 
     return await run(agent).ConfigureAwait(false);
+}
+
+// Consumes an option and its value from the argument list, or returns null.
+string? TakeOption(string longName, string? shortName)
+{
+    for (var i = 0; i < arguments.Count - 1; i++)
+    {
+        if (arguments[i] == longName || (shortName is not null && arguments[i] == shortName))
+        {
+            var value = arguments[i + 1];
+            arguments.RemoveRange(i, 2);
+
+            return value;
+        }
+    }
+
+    return null;
+}
+
+// An option the loop did not consume is one that had no value after it, or a second one. Both
+// used to fall through to the stray-option refusal above and be told that '--db' is not an
+// option this command takes — which is false, and false in the most confusing direction: it
+// names the one option the command does have and denies having it. Found by typing `parley --db`
+// and forgetting the path.
+string? Repeated()
+{
+    var index = arguments.FindIndex(
+        a => a is "--db" or "-d" or "--listen" or "-l" or "--broker" or "-b" or "--log");
+
+    return index < 0
+        ? null
+        : index == arguments.Count - 1
+            ? $"'{arguments[index]}' needs a value after it."
+            : $"'{arguments[index]}' was given more than once.";
 }

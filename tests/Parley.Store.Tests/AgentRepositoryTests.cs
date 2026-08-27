@@ -6,8 +6,8 @@ namespace Parley.Store.Tests;
 
 public sealed class AgentRepositoryTests : IDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private readonly SqliteConnection _connection;
@@ -21,25 +21,27 @@ public sealed class AgentRepositoryTests : IDisposable
 
     public void Dispose() => _connection.Dispose();
 
-    private Task<int> Register(AgentName name, AgentStatus status = AgentStatus.Offline) =>
+    private Task<int> Register(AgentName name, AgentStatus status = AgentStatus.Active) =>
         _agents.UpsertAsync(
-            new AgentRecord(name, "test", AgentTier.Full, null, null, null, null, status),
+            new AgentRecord(name, "test", AgentTier.Full, null, null, null, false, status),
             TestContext.Current.CancellationToken);
 
-    /// <summary>What the registry would report for a record, now.</summary>
-    /// <param name="record">The stored record.</param>
-    /// <returns>The derived status.</returns>
-    private static AgentStatus Derived(AgentRecord record) =>
-        AgentLiveness.Derive(
-            record.Status, record.LastSeenUtc, DateTimeOffset.UtcNow, TimeSpan.FromSeconds(5));
+    /// <summary>What the registry reports for a record.</summary>
+    /// <param name="record">The loaded record.</param>
+    /// <returns>Its presence, which the read observed rather than this test computing.</returns>
+    /// <remarks>
+    /// Kept as a helper even though it is now a property access, because every assertion below
+    /// used to call a derivation and the point of the change is that there is no longer one to
+    /// call. Inlining it would hide that these tests stopped doing arithmetic.
+    /// </remarks>
+    private static AgentPresence Reported(AgentRecord record) => record.Presence;
 
     private async Task<AgentRecord> Load(AgentName name) =>
         (await _agents.GetAllAsync(TestContext.Current.CancellationToken))
             .Single(a => a.Name == name);
 
     [Theory]
-    [InlineData(AgentStatus.Offline)]
-    [InlineData(AgentStatus.Live)]
+    [InlineData(AgentStatus.Active)]
     [InlineData(AgentStatus.Retired)]
     public async Task Every_storable_status_round_trips(AgentStatus status)
     {
@@ -47,35 +49,30 @@ public sealed class AgentRepositoryTests : IDisposable
         // formatter and the parser have to agree. A value added to one and not the other
         // compiles cleanly and fails only when a row carrying it is read back.
         //
-        // Three rather than five: NotResponding and Unreachable are readings of last_seen_utc
-        // and have nothing to round-trip. The test below is what stops them being written.
+        // Two rather than five, and the three that left were never really statuses: offline,
+        // not-responding and unreachable all described how reachable an agent was, which is now
+        // observed on a connection and has nothing to round-trip through storage.
         await Register(Orders, status);
 
         Assert.Equal(status, (await Load(Orders)).Status);
     }
 
-    [Theory]
-    [InlineData(AgentStatus.NotResponding)]
-    [InlineData(AgentStatus.Unreachable)]
-    public async Task A_derived_status_cannot_be_stored(AgentStatus derived)
+    [Fact]
+    public void A_reachability_reading_is_not_a_status_the_compiler_will_let_you_store()
     {
-        // Refused where the mistake is made rather than accepted and half-honoured. A stored
-        // liveness is a claim nothing withdraws -- which is the whole defect this replaced, and
-        // it would come straight back the first time a caller wrote one of these down.
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => Register(Orders, derived));
-    }
+        // This replaces a theory that tried to store NotResponding and Unreachable and expected
+        // a throw. Those values are gone from AgentStatus entirely and live in AgentPresence, so
+        // the mistake the theory guarded against no longer compiles -- which is a better guard
+        // than a runtime one and worth asserting rather than silently deleting.
+        //
+        // What is left to check is that the two enums have not quietly grown back together.
+        Assert.Equal(
+            ["Active", "Retired"],
+            Enum.GetNames<AgentStatus>().Order(StringComparer.Ordinal));
 
-    [Theory]
-    [InlineData(AgentTier.Full)]
-    [InlineData(AgentTier.Pull)]
-    [InlineData(AgentTier.Headless)]
-    public async Task Every_tier_round_trips(AgentTier tier)
-    {
-        await _agents.UpsertAsync(
-            new AgentRecord(Orders, "test", tier, null, null, null, null, AgentStatus.Offline),
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal(tier, (await Load(Orders)).Tier);
+        Assert.Equal(
+            ["Running", "Startable", "Stranded"],
+            Enum.GetNames<AgentPresence>().Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -85,41 +82,29 @@ public sealed class AgentRepositoryTests : IDisposable
         // that could write it was a process that had stopped. Read off the timestamp instead and
         // the answer is right whether or not anything is running.
         await Register(Orders);
-        GoSilent(Orders);
+        Disconnect(Orders);
 
-        Assert.Equal(AgentStatus.Unreachable, Derived(await Load(Orders)));
+        Assert.Equal(AgentPresence.Stranded, Reported(await Load(Orders)));
     }
 
     [Fact]
-    public async Task An_agent_nobody_has_opened_is_offline_rather_than_unreachable()
+    public async Task An_agent_nobody_has_opened_is_registered_and_routable()
     {
-        // Offline must stay routable -- it is a repository somebody configured and has not
-        // opened yet, and refusing traffic to it would refuse the very traffic meant to wake it.
-        // Silence for five minutes is a different claim and needs a timestamp to make it.
+        // The ordinary state of a repository somebody configured and has not opened. It must
+        // stay routable, because refusing traffic to it would refuse the very traffic meant to
+        // wake it -- which is the same argument the old `offline` carried, and the one thing
+        // about that model that was always right.
+        //
+        // A registration on its own says nothing about a node, so the read finds no connection
+        // anywhere and reports Stranded. That is honest: nothing has told the broker this
+        // machine exists yet.
         await Register(Orders);
 
-        Assert.Null((await Load(Orders)).LastSeenUtc);
-        Assert.Equal(AgentStatus.Offline, Derived(await Load(Orders)));
-    }
+        var record = await Load(Orders);
 
-    [Fact]
-    public async Task A_missed_sweep_or_two_is_not_yet_a_verdict()
-    {
-        // Three sweeps rather than one, because a late sweep says nothing about the agent -- a
-        // busy machine, a contended write, a moment of suspend -- and a status that flickered on
-        // each of those would train everybody to ignore it.
-        await Register(Orders);
-        await _agents.MarkLiveAsync(Orders, null, T0, TestContext.Current.CancellationToken);
-
-        var sweep = TimeSpan.FromSeconds(5);
-
-        Assert.Equal(
-            AgentStatus.Live,
-            AgentLiveness.Derive(AgentStatus.Live, T0, T0 + (sweep * 2), sweep));
-
-        Assert.Equal(
-            AgentStatus.NotResponding,
-            AgentLiveness.Derive(AgentStatus.Live, T0, T0 + (sweep * 4), sweep));
+        Assert.Equal(AgentStatus.Active, record.Status);
+        Assert.Equal(AgentPresence.Stranded, Reported(record));
+        Assert.True(AgentLiveness.Routable(record.Status));
     }
 
     [Fact]
@@ -129,14 +114,14 @@ public sealed class AgentRepositoryTests : IDisposable
         // resumption possible must survive falling silent. Nothing writes on the way out now,
         // which makes this easier to guarantee than it was.
         await _agents.UpsertAsync(
-            new AgentRecord(Orders, "test", AgentTier.Full, null, "sess-1", null, null, AgentStatus.Offline),
+            new AgentRecord(Orders, "test", AgentTier.Full, null, "sess-1", null, false, AgentStatus.Active),
             TestContext.Current.CancellationToken);
         await _agents.MarkLiveAsync(Orders, "sess-1", T0, TestContext.Current.CancellationToken);
 
-        GoSilent(Orders);
+        Disconnect(Orders);
 
         var loaded = await Load(Orders);
-        Assert.Equal(AgentStatus.Unreachable, Derived(loaded));
+        Assert.Equal(AgentPresence.Stranded, Reported(loaded));
         Assert.Equal("sess-1", loaded.SessionRef);
     }
 
@@ -144,12 +129,12 @@ public sealed class AgentRepositoryTests : IDisposable
     public async Task An_agent_that_comes_back_reads_as_live_again()
     {
         await Register(Orders);
-        GoSilent(Orders);
+        Disconnect(Orders);
 
         await _agents.MarkLiveAsync(
             Orders, null, DateTimeOffset.UtcNow, TestContext.Current.CancellationToken);
 
-        Assert.Equal(AgentStatus.Live, Derived(await Load(Orders)));
+        Assert.Equal(AgentPresence.Running, Reported(await Load(Orders)));
     }
 
     [Fact]
@@ -159,11 +144,11 @@ public sealed class AgentRepositoryTests : IDisposable
         // survive a reload is the timestamp the derivation reads, because a reload that
         // refreshed it would report every agent live the moment somebody edited a manifest.
         await Register(Orders);
-        GoSilent(Orders);
+        Disconnect(Orders);
 
         await Register(Orders);
 
-        Assert.Equal(AgentStatus.Unreachable, Derived(await Load(Orders)));
+        Assert.Equal(AgentPresence.Stranded, Reported(await Load(Orders)));
     }
 
     [Fact]
@@ -176,12 +161,12 @@ public sealed class AgentRepositoryTests : IDisposable
         // but so is the repository still being gone.
         await Register(Orders);
         await Register(Billing);
-        GoSilent(Orders);
+        Disconnect(Orders);
 
         await _agents.MarkLiveAsync(Orders, null, T0, TestContext.Current.CancellationToken);
 
-        Assert.Equal(AgentStatus.Live, (await Load(Orders)).Status);
-        Assert.Equal(AgentStatus.Offline, (await Load(Billing)).Status);
+        Assert.Equal(AgentStatus.Active, (await Load(Orders)).Status);
+        Assert.Equal(AgentStatus.Active, (await Load(Billing)).Status);
     }
 
     // ---- retirement ----
@@ -211,7 +196,7 @@ public sealed class AgentRepositoryTests : IDisposable
         await Register(Orders);
         await Register(Billing);
         await _agents.RetireAsync(Orders, TestContext.Current.CancellationToken);
-        GoSilent(Billing);
+        Disconnect(Billing);
 
         // Neither end of the lifecycle disturbs a retirement. Attaching is the closest thing to
         // registration there is, and §14 says registration never clears one.
@@ -221,7 +206,7 @@ public sealed class AgentRepositoryTests : IDisposable
         await _agents.MarkOfflineAsync(Billing, TestContext.Current.CancellationToken);
 
         Assert.Equal(AgentStatus.Retired, (await Load(Orders)).Status);
-        Assert.Equal(AgentStatus.Offline, (await Load(Billing)).Status);
+        Assert.Equal(AgentStatus.Active, (await Load(Billing)).Status);
     }
 
     [Fact]
@@ -248,7 +233,7 @@ public sealed class AgentRepositoryTests : IDisposable
 
         // Offline rather than live: nothing has yet demonstrated that this agent can be
         // reached, and offline is the ordinary resting state of one that can.
-        Assert.Equal(AgentStatus.Offline, (await Load(Orders)).Status);
+        Assert.Equal(AgentStatus.Active, (await Load(Orders)).Status);
     }
 
     [Fact]
@@ -258,10 +243,10 @@ public sealed class AgentRepositoryTests : IDisposable
         // Silence is an observation and retirement is a judgement; the operator's command
         // withdraws the judgement and has nothing to say about the observation.
         await Register(Orders);
-        GoSilent(Orders);
+        Disconnect(Orders);
 
         Assert.Equal(0, await _agents.ReinstateAsync(Orders, TestContext.Current.CancellationToken));
-        Assert.Equal(AgentStatus.Unreachable, Derived(await Load(Orders)));
+        Assert.Equal(AgentPresence.Stranded, Reported(await Load(Orders)));
     }
 
     [Fact]
@@ -373,7 +358,7 @@ public sealed class AgentRepositoryTests : IDisposable
         const string config = """{"model":"claude-opus-5","timeout_ms":30000}""";
 
         await _agents.UpsertAsync(
-            new AgentRecord(Orders, "test", AgentTier.Headless, null, null, config, null, AgentStatus.Offline),
+            new AgentRecord(Orders, "test", AgentTier.Headless, null, null, config, false, AgentStatus.Active),
             TestContext.Current.CancellationToken);
 
         Assert.Equal(config, (await Load(Orders)).AdapterConfig);
@@ -404,21 +389,22 @@ public sealed class AgentRepositoryTests : IDisposable
             () => _agents.UpsertAsync(null!, TestContext.Current.CancellationToken));
     }
 
-    /// <summary>Ages an agent's heartbeat until it reads as unreachable.</summary>
-    /// <param name="agent">The agent to silence.</param>
+    /// <summary>Takes an agent's machine off the air, the way a lost node does.</summary>
+    /// <param name="agent">The agent to strand.</param>
     /// <remarks>
-    /// Unreachable is a reading of <c>last_seen_utc</c> now rather than a status anybody writes,
-    /// so this is the only way a deployment can produce one: the agent stops checking in. There
-    /// is deliberately no method to call instead — a test that could write the status directly
-    /// would be testing a path the product does not have.
+    /// This used to rewind a heartbeat into the past, because unreachability was arithmetic on a
+    /// timestamp and there was no other way to produce one. It is now an event with a writer, so
+    /// the test performs the same two writes the broker does and there is nothing to simulate.
     /// </remarks>
-    private void GoSilent(AgentName agent)
+    private void Disconnect(AgentName agent)
     {
         using var command = _connection.CreateCommand();
         command.CommandText =
-            "UPDATE agents SET status = 'live', last_seen_utc = @Then WHERE name = @Name;";
-        command.Parameters.AddWithValue(
-            "@Then", DateTimeOffset.UtcNow.AddHours(-1).ToString("o"));
+            """
+            UPDATE agents SET connected = 0 WHERE name = @Name;
+            UPDATE nodes  SET connected = 0
+             WHERE machine = (SELECT machine FROM agents WHERE name = @Name);
+            """;
         command.Parameters.AddWithValue("@Name", agent.Value);
         command.ExecuteNonQuery();
     }

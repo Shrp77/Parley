@@ -1,126 +1,90 @@
-namespace Parley.Core;
+﻿namespace Parley.Core;
 
 /// <summary>
-/// Works out what an agent's liveness actually is, from when it was last heard from.
+/// Reports how reachable an agent is, from what is known about connections.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Liveness is derived rather than stored, and that is the whole point of this type. A stored
-/// status is a claim somebody has to remember to withdraw, and the one case where withdrawing
-/// matters most — a session that is killed, crashes, or loses its machine — is exactly the case
-/// where nothing is left running to withdraw it. The old design wrote <c>live</c> on attach and
-/// again on every sweep, and had no writer at all for the transition out, so a dead session's
-/// row read <c>live</c> for ever with a frozen timestamp beside it that only the supervisor
-/// ever compared. Everything that read the registry believed it.
+/// This type has been written three times and the two earlier versions are worth recording,
+/// because each fixed the previous one's failure and introduced its own.
 /// </para>
 /// <para>
-/// A timestamp cannot lie in that direction. <c>last_seen_utc</c> stops advancing the moment the
-/// process stops, whether it stopped politely or not, so a reader comparing it against the clock
-/// gets the truth without anything having to write the truth down.
+/// The first <b>stored</b> liveness: <c>live</c> was written on attach and again on every
+/// sweep, and nothing at all wrote the way out. A session that was killed, crashed, or lost its
+/// machine is exactly the case where nothing is left running to withdraw the claim, so a dead
+/// agent's row read <c>live</c> for ever and every reader believed it.
 /// </para>
 /// <para>
-/// <see cref="AgentStatus.Retired"/> is the exception and is stored, because it is a judgement
-/// about the future rather than an observation of the past: no timestamp implies "this is not
-/// coming back", and a derived rule would clear it the moment a folder reappeared.
+/// The second <b>derived</b> liveness from a timestamp, which fixed that — a timestamp stops
+/// advancing when the process stops, however impolitely. But it could only produce a guess
+/// dressed as a status: three sweeps of silence meant one thing and five minutes meant another,
+/// and both were really "we have not heard anything and are estimating what that implies."
+/// Worse, every reader had to assume the deployment's sweep cadence to interpret them, and no
+/// reader could see it — a registry that reported healthy agents as <c>NotResponding</c> would
+/// have been the result of somebody raising the tick.
+/// </para>
+/// <para>
+/// This one <b>observes</b>. A connection is open or it is not, and the process holding it says
+/// so. There is no window, no cadence, and nothing to assume. See SPEC.md §4.0 and §14.
 /// </para>
 /// </remarks>
 public static class AgentLiveness
 {
     /// <summary>
-    /// How many sweeps an agent may miss before it stops counting as live.
+    /// Reports an agent's presence.
     /// </summary>
+    /// <param name="nodeConnected">Whether the node on the agent's machine is connected.</param>
+    /// <param name="agentConnected">Whether the agent's own adapter is connected.</param>
+    /// <returns>What to report.</returns>
     /// <remarks>
-    /// Three rather than one, because a single missed sweep is ordinary. A sweep can be late for
-    /// reasons that say nothing about the agent — a busy machine, a slow write against a
-    /// contended database, a laptop that suspended for a moment — and a status that flickered on
-    /// each of those would train everybody to ignore it. Three consecutive misses is the point
-    /// at which "late" stops being the better explanation.
+    /// <para>
+    /// <b>The agent's own connection is checked first, and this is a correction.</b> An earlier
+    /// version asked about the node first and treated its answer as final, on the grounds that
+    /// an agent cannot be connected through a node that is not. That premise is false here and
+    /// SPEC.md §4 says so in as many words: a node is not a relay, and its agents speak to the
+    /// broker through their own adapters under their own identities. So the two connections are
+    /// independent, and a machine may perfectly well have a working agent and no node — somebody
+    /// opened an editor without running a supervisor there.
+    /// </para>
+    /// <para>
+    /// Under the old order that agent read as <see cref="AgentPresence.Stranded"/> while it was
+    /// answering questions, which is the worst of the three to be wrong about: it means
+    /// unreachable, and it would have been reported for the agents most obviously reachable of
+    /// all. The node's connection decides only whether an agent that is <em>not</em> running can
+    /// be made to run, which is the one question it actually answers.
+    /// </para>
+    /// <para>
+    /// Retirement is not considered. It is a judgement rather than an observation and it
+    /// outranks all of this, so it is reported from <see cref="AgentStatus"/> by whoever puts
+    /// the two together — keeping them apart is what stops a retired agent's registration being
+    /// quietly resurrected by a node reconnecting.
+    /// </para>
     /// </remarks>
-    public const int SweepsBeforeDoubt = 3;
+    public static AgentPresence Read(bool nodeConnected, bool agentConnected) =>
+        agentConnected ? AgentPresence.Running
+        : nodeConnected ? AgentPresence.Startable
+        : AgentPresence.Stranded;
 
     /// <summary>
-    /// How long silence lasts before an agent is not worth routing to.
+    /// Whether traffic may be routed to an agent in this state.
     /// </summary>
+    /// <param name="status">What an operator has decided about the registration.</param>
+    /// <returns><see langword="true"/> unless the agent is retired.</returns>
     /// <remarks>
-    /// Independent of the sweep interval on purpose. The doubt window scales with how often the
-    /// agent should have checked in, because that is a fact about configuration; this is a fact
-    /// about people — five minutes is roughly how long a peer will wait before the answer stops
-    /// being useful, and shortening it with a faster sweep would make a busy deployment write
-    /// off agents that a quiet one tolerates.
+    /// <para>
+    /// Presence is deliberately not a parameter, and that is the whole content of this method.
+    /// A question to a <see cref="AgentPresence.Startable"/> agent is what causes it to be
+    /// started, so refusing on the grounds that nothing is running would refuse the very traffic
+    /// that would fix it. A question to a <see cref="AgentPresence.Stranded"/> one is admitted,
+    /// orphans on the ordinary schedule, and is ghosted — which tells the asker something, where
+    /// a refusal at the door would tell it only about a moment that may have passed by the time
+    /// the answer mattered.
+    /// </para>
+    /// <para>
+    /// SPEC.md §5.5 depends on the second of those: a role question reaches agents on machines
+    /// that are switched off precisely so a missing answer arrives as an orphan rather than as
+    /// silence.
+    /// </para>
     /// </remarks>
-    public static TimeSpan SilenceBeforeUnreachable { get; } = TimeSpan.FromMinutes(5);
-
-    /// <summary>
-    /// The sweep cadence assumed when a caller does not know the deployment's own.
-    /// </summary>
-    /// <remarks>
-    /// Every server reads <c>PARLEY_TICK_SECONDS</c> and most leave it alone, so a reader that
-    /// cannot see one agent's launch environment — which is every reader, since the registry
-    /// does not record it — is right far more often than not. It only affects the boundary
-    /// between Live and NotResponding, never the five-minute one, so being wrong here delays a
-    /// verdict rather than producing the wrong verdict.
-    /// </remarks>
-    public static TimeSpan DefaultSweepInterval { get; } = TimeSpan.FromSeconds(5);
-
-    /// <summary>
-    /// Reports what an agent's status is now, at the usual sweep cadence.
-    /// </summary>
-    /// <param name="stored">The status held in the registry.</param>
-    /// <param name="lastSeenUtc">When the agent last swept, or <see langword="null"/> if never.</param>
-    /// <param name="nowUtc">The current time.</param>
-    /// <returns>The status to report.</returns>
-    public static AgentStatus Derive(
-        AgentStatus stored,
-        DateTimeOffset? lastSeenUtc,
-        DateTimeOffset nowUtc) =>
-        Derive(stored, lastSeenUtc, nowUtc, DefaultSweepInterval);
-
-    /// <summary>
-    /// Reports what an agent's status is now.
-    /// </summary>
-    /// <param name="stored">The status held in the registry.</param>
-    /// <param name="lastSeenUtc">When the agent last swept, or <see langword="null"/> if never.</param>
-    /// <param name="nowUtc">The current time.</param>
-    /// <param name="sweepInterval">How often this deployment's agents sweep.</param>
-    /// <returns>The status to report.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="sweepInterval"/> is not positive.</exception>
-    /// <remarks>
-    /// Order matters and is not arbitrary. Retirement wins over everything, including a live
-    /// heartbeat: an agent whose operator retired it while its session was still running is
-    /// retired, and reporting it as live would be the control-that-does-not-hold §14 describes.
-    /// Never-seen wins over the age rules next, because an agent with no timestamp has not been
-    /// silent for five minutes — it has not started, which is a different thing and routable.
-    /// </remarks>
-    public static AgentStatus Derive(
-        AgentStatus stored,
-        DateTimeOffset? lastSeenUtc,
-        DateTimeOffset nowUtc,
-        TimeSpan sweepInterval)
-    {
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(sweepInterval, TimeSpan.Zero);
-
-        if (stored == AgentStatus.Retired)
-        {
-            return AgentStatus.Retired;
-        }
-
-        if (lastSeenUtc is not { } seen)
-        {
-            return AgentStatus.Offline;
-        }
-
-        var silence = nowUtc - seen;
-
-        // A clock that has gone backwards, or a timestamp written by a machine slightly ahead of
-        // this one, produces a negative silence. Treated as live rather than as an error: the
-        // agent demonstrably wrote recently, which is the question being asked.
-        if (silence <= sweepInterval * SweepsBeforeDoubt)
-        {
-            return AgentStatus.Live;
-        }
-
-        return silence <= SilenceBeforeUnreachable
-            ? AgentStatus.NotResponding
-            : AgentStatus.Unreachable;
-    }
+    public static bool Routable(AgentStatus status) => status != AgentStatus.Retired;
 }

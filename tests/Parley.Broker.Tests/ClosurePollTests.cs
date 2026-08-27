@@ -24,9 +24,9 @@ namespace Parley.Broker.Tests;
 /// </remarks>
 public sealed class ClosurePollTests : IDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
-    private static readonly AgentName Inventory = AgentName.Create("inventory");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
+    private static readonly AgentName Inventory = AgentName.Create("inventory@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private const string Model = "claude-opus-5";
@@ -48,8 +48,7 @@ public sealed class ClosurePollTests : IDisposable
         foreach (var name in new[] { Orders, Billing, Inventory })
         {
             _agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Offline),
+                new AgentRecord(name, "test", AgentTier.Full, null, null, null, false, AgentStatus.Active),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
@@ -732,21 +731,23 @@ public sealed class ClosurePollTests : IDisposable
             Conversation, Orders, true, T0, TestContext.Current.CancellationToken));
     }
 
-    /// <summary>Ages an agent's heartbeat until it reads as unreachable.</summary>
-    /// <param name="agent">The agent to silence.</param>
+    /// <summary>Takes an agent's machine off the air, the way a lost node does.</summary>
+    /// <param name="agent">The agent to strand.</param>
     /// <remarks>
-    /// Unreachable is a reading of <c>last_seen_utc</c> now rather than a status anybody writes,
-    /// so this is the only way a deployment can produce one: the agent stops checking in. There
-    /// is deliberately no method to call instead — a test that could write the status directly
-    /// would be testing a path the product does not have.
+    /// This used to age a heartbeat into the past, because unreachability was arithmetic on a
+    /// timestamp and there was no other way to produce one. It is now an observation with a
+    /// writer -- the node's connection closed -- so the test performs the same write the broker
+    /// does, and there is nothing left to simulate.
     /// </remarks>
     private void GoSilent(AgentName agent)
     {
         using var command = _connection.CreateCommand();
         command.CommandText =
-            "UPDATE agents SET status = 'live', last_seen_utc = @Then WHERE name = @Name;";
-        command.Parameters.AddWithValue(
-            "@Then", DateTimeOffset.UtcNow.AddHours(-1).ToString("o"));
+            """
+            UPDATE agents SET connected = 0 WHERE name = @Name;
+            UPDATE nodes  SET connected = 0
+             WHERE machine = (SELECT machine FROM agents WHERE name = @Name);
+            """;
         command.Parameters.AddWithValue("@Name", agent.Value);
         command.ExecuteNonQuery();
     }

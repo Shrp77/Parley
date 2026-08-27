@@ -34,8 +34,22 @@
     <IsPackable>true</IsPackable>
   </PropertyGroup>
 
+  <!--
+    The transport and the domain, and deliberately not the store or the broker.
+
+    This used to reference Parley.Broker, and through it Parley.Store, because the adapter opened
+    the database itself. It cannot now: SPEC.md §4 gives the store to one process and everything
+    else reaches it over the wire, and the absent reference is what enforces that. An adapter
+    with no SQLite on its graph cannot open a file on a network share, which is the deployment
+    that silently corrupts rather than failing.
+
+    Parley.Core stays, and carries no I/O by its own design constraint — agent names, the size
+    cap, the reserved responder namespace. Those are rules both sides enforce, and a second copy
+    on this side is how the two come to disagree.
+  -->
   <ItemGroup>
-    <ProjectReference Include="..\Parley.Broker\Parley.Broker.csproj" />
+    <ProjectReference Include="..\Parley.Core\Parley.Core.csproj" />
+    <ProjectReference Include="..\Parley.Transport\Parley.Transport.csproj" />
   </ItemGroup>
 
   <ItemGroup>

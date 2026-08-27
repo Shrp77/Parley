@@ -27,6 +27,39 @@ namespace Parley.Store;
 /// </param>
 public sealed class MessageRepository(SqliteConnection connection)
 {
+    /// <summary>
+    /// What counts as waiting for an agent, shared by the drain and the count of it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Shared rather than written twice, and that is the whole reason it is a constant. The
+    /// transport pushes a notice carrying how much is waiting (SPEC.md §4.0) and the adapter
+    /// then drains to find out what it is. A count computed from a looser predicate than the
+    /// drain uses reports work that the drain will not hand over, so the adapter wakes, asks,
+    /// receives nothing, and has no way to tell that from a race it should retry.
+    /// </para>
+    /// <para>
+    /// A question whose exchange is no longer open asks for a move that can no longer be made.
+    /// Handing it over spends an agent's turn on something it will be refused for -- and after a
+    /// ghost it does so while the asker is being told nobody answered, which is the two halves
+    /// of one exchange disagreeing.
+    /// </para>
+    /// <para>
+    /// Only questions. An answer closes the exchange it belongs to and a ghost exists because
+    /// one closed, so neither can require an open exchange; a notify names none at all. A
+    /// clarification is left alone deliberately: it is text from a peer inside an exchange the
+    /// recipient is already party to, and withholding it would drop what somebody said rather
+    /// than a request nobody can act on.
+    /// </para>
+    /// </remarks>
+    private const string PendingPredicate =
+        """
+        WHERE to_agent = @Agent AND delivered_utc IS NULL
+          AND (type <> 'question'
+               OR EXISTS (SELECT 1 FROM exchanges e
+                           WHERE e.id = messages.exchange_id AND e.state = 'OPEN'))
+        """;
+
     private const string SelectColumns =
         """
         SELECT id              AS Id,
@@ -224,6 +257,30 @@ public sealed class MessageRepository(SqliteConnection connection)
     }
 
     /// <summary>
+    /// How many messages are waiting for an agent.
+    /// </summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The number <see cref="GetPendingAsync"/> would hand over, unlimited.</returns>
+    /// <remarks>
+    /// Reads and changes nothing: unlike the drain, this does not mark anything delivered and
+    /// does not start a working window. It exists for the notice the broker pushes down a held
+    /// connection, which says how much is waiting and never what it is -- SPEC.md §13 has a
+    /// peer's words reach a model wrapped as data, and the envelope is applied by the drain.
+    /// </remarks>
+    public async Task<int> CountPendingAsync(
+        AgentName agent,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(
+                $"""
+                SELECT count(*) FROM messages
+                {PendingPredicate};
+                """,
+                new { Agent = agent.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>
     /// Loads the messages awaiting delivery to an agent, oldest first.
     /// </summary>
     /// <param name="agent">The recipient.</param>
@@ -289,21 +346,7 @@ public sealed class MessageRepository(SqliteConnection connection)
             new CommandDefinition(
                 $"""
                 {SelectColumns}
-                WHERE to_agent = @Agent AND delivered_utc IS NULL
-                  -- A question whose exchange is no longer open asks for a move that can no
-                  -- longer be made. Handing it over spends an agent's turn on something it will
-                  -- be refused for -- and after a ghost it does so while the asker is being told
-                  -- nobody answered, which is the two halves of one exchange disagreeing.
-                  --
-                  -- Only questions. An answer closes the exchange it belongs to and a ghost
-                  -- exists because one closed, so neither can require an open exchange; a notify
-                  -- names none at all. A clarification is left alone deliberately: it is text
-                  -- from a peer inside an exchange the recipient is already party to, and
-                  -- withholding it would drop what somebody said rather than a request nobody
-                  -- can act on.
-                  AND (type <> 'question'
-                       OR EXISTS (SELECT 1 FROM exchanges e
-                                   WHERE e.id = messages.exchange_id AND e.state = 'OPEN'))
+                {PendingPredicate}
                 ORDER BY CASE
                              WHEN EXISTS (SELECT 1 FROM exchanges e
                                            WHERE e.id = messages.exchange_id

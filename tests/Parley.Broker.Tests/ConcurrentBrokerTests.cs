@@ -23,8 +23,8 @@ namespace Parley.Broker.Tests;
 /// </remarks>
 public sealed class ConcurrentBrokerTests : IDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private const string Model = "claude-opus-5";
@@ -59,8 +59,7 @@ public sealed class ConcurrentBrokerTests : IDisposable
         foreach (var name in new[] { Orders, Billing })
         {
             await agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Offline),
+                new AgentRecord(name, "test", AgentTier.Full, null, null, null, false, AgentStatus.Active),
                 TestContext.Current.CancellationToken);
         }
 

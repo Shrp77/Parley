@@ -24,8 +24,8 @@ namespace Parley.Store.Tests;
 /// </remarks>
 public sealed class SizeRefusalTests : IDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private readonly SqliteConnection _connection;
@@ -41,8 +41,7 @@ public sealed class SizeRefusalTests : IDisposable
         foreach (var name in new[] { Orders, Billing })
         {
             agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Pull, null, null, null, null,
-                    AgentStatus.Offline),
+                new AgentRecord(name, "test", AgentTier.Pull, null, null, null, false, AgentStatus.Active),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
     }
@@ -172,7 +171,7 @@ public sealed class SizeRefusalTests : IDisposable
         await using var seed = _connection.CreateCommand();
         seed.CommandText =
             "INSERT INTO size_refusals (agent, type, refusals, worst, total, cap, last_utc) " +
-            "VALUES ('orders', 'answer', 60000, 40000, 2400000000, 4000, $when);";
+            "VALUES ('orders@test', 'answer', 60000, 40000, 2400000000, 4000, $when);";
         seed.Parameters.AddWithValue("$when", ExchangeRow.FormatTimestamp(T0));
         await seed.ExecuteNonQueryAsync(Ct);
 
@@ -210,7 +209,7 @@ public sealed class SizeRefusalTests : IDisposable
         await using var command = _connection.CreateCommand();
         command.CommandText =
             "INSERT INTO size_refusals (agent, type, refusals, worst, total, cap, last_utc) " +
-            "VALUES ('orders', 'answer', 1, 100, 100, 4000, '2026-01-01T00:00:00Z');";
+            "VALUES ('orders@test', 'answer', 1, 100, 100, 4000, '2026-01-01T00:00:00Z');";
 
         var failure = await Assert.ThrowsAsync<SqliteException>(
             () => command.ExecuteNonQueryAsync(Ct));
@@ -227,7 +226,7 @@ public sealed class SizeRefusalTests : IDisposable
         await Record(Orders, MessageType.Answer, 5000);
 
         await using var command = _connection.CreateCommand();
-        command.CommandText = "DELETE FROM agents WHERE name = 'orders';";
+        command.CommandText = "DELETE FROM agents WHERE name = 'orders@test';";
         await command.ExecuteNonQueryAsync(Ct);
 
         Assert.Empty(await _refusals.GetAllAsync(Ct));

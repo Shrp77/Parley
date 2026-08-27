@@ -88,8 +88,8 @@ of ``PostToolBatch``: while something stays uncollected the notice repeats on
 every batch and at the end of every turn. Collecting stops it, because the
 broker stamps ``delivered_utc`` as it hands the message over. What does not stop
 it is a repository where collecting is impossible -- a ``.mcp.json`` and a
-database are enough to make this file speak, and the Parley server failing to
-start is not something it can see. There the notice recurs for ever, which is
+reachable broker are enough to make this file speak, and the Parley server
+failing to start is not something it can see. There the notice recurs for ever, which is
 loud, and deliberately so: it is the same trade SPEC.md 11.1 records for the
 supervisor, where one wasted turn per new message is accepted because the
 alternative is losing the message silently. A deployment that cannot collect
@@ -127,7 +127,8 @@ from __future__ import annotations
 import json
 import os
 import re
-import sqlite3
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -152,7 +153,7 @@ def expand(value: str) -> str:
 
 
 def configuration(root: Path) -> tuple[str, str] | None:
-    """Read this repository's agent name and database from .mcp.json."""
+    """Read this repository's agent name and broker address from .mcp.json."""
     manifest = root / ".mcp.json"
 
     if not manifest.is_file():
@@ -162,31 +163,53 @@ def configuration(root: Path) -> tuple[str, str] | None:
     env = servers.get("parley", {}).get("env", {})
 
     agent = expand(env.get("PARLEY_AGENT", "")).strip()
-    database = expand(env.get("PARLEY_DB", "")).strip()
 
-    return (agent, database) if agent and database else None
+    # Absent is the ordinary case and means the local broker, so unlike the agent
+    # name this is not a reason to give up.
+    broker = expand(env.get("PARLEY_BROKER", "")).strip()
+
+    return (agent, broker) if agent else None
 
 
-def waiting(database: str, agent: str) -> tuple[int, int]:
-    """Count what is waiting: uncollected messages, and answers this agent owes."""
-    # Read-only, and immutable would be wrong: the servers are writing to this
-    # file continuously and a hook must never take a lock they are waiting on.
-    connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=2.0)
+def waiting(broker: str, agent: str) -> tuple[int, int]:
+    """Ask the broker what is waiting: uncollected messages, and polls owed a vote."""
+    # Asked rather than read, and that is the whole of the change here. This used
+    # to open the database read-only and count rows itself, which worked while the
+    # file was on this machine and every process opened it. One process owns it
+    # now (SPEC.md section 4), it may be on another machine entirely, and SQLite in
+    # WAL mode needs coherent shared memory between everything touching it -- so a
+    # hook reaching for the file is not slow, it is the corrupt case.
+    #
+    # `parley waiting` reports counts and takes nothing: it marks nothing
+    # delivered and starts no working window, which is what makes it safe to call
+    # from something that is not going to act on the result.
+    tool = shutil.which("parley")
 
-    try:
-        unread = connection.execute(
-            "SELECT count(*) FROM messages WHERE to_agent = ? AND delivered_utc IS NULL",
-            (agent,),
-        ).fetchone()[0]
+    if tool is None:
+        return 0, 0
 
-        owed = connection.execute(
-            "SELECT count(*) FROM exchanges WHERE owed_by = ? AND state = 'OPEN'",
-            (agent,),
-        ).fetchone()[0]
+    command = [tool]
 
-        return unread, owed
-    finally:
-        connection.close()
+    if broker:
+        command += ["--broker", broker]
+
+    command += ["waiting", agent]
+
+    # Bounded, because this runs in front of a person waiting for their turn to
+    # start. A broker that is slow to answer must cost a moment and then be
+    # dropped; the caller treats any failure as "nothing waiting", which is the
+    # safe direction -- a session that does not know it has mail is a great deal
+    # better than one that cannot be worked in.
+    finished = subprocess.run(
+        command, capture_output=True, text=True, timeout=5, check=False
+    )
+
+    if finished.returncode != 0:
+        return 0, 0
+
+    messages, _, polls = finished.stdout.strip().partition(" ")
+
+    return int(messages), int(polls)
 
 
 def tally(unread: int, owed: int) -> str:
@@ -203,8 +226,8 @@ def tally(unread: int, owed: int) -> str:
 
 
 # Every notice ends with this. The hook can see that mail is waiting but not
-# whether this session can collect it: the counts come out of the database, while
-# ``parley_inbox`` comes from an MCP server that may have failed to start, been
+# whether this session can collect it: the counts come from the operator's tool,
+# while ``parley_inbox`` comes from an MCP server that may have failed to start, been
 # removed from ``.mcp.json``, or never been added. A repository can therefore be
 # configured enough to make this file speak and not equipped to act on it.
 #
@@ -290,12 +313,14 @@ def main() -> int:
     if settings is None:
         return 0
 
-    agent, database = settings
+    agent, broker = settings
 
-    if not Path(database).is_file():
-        return 0
-
-    unread, owed = waiting(database, agent)
+    # No file to check for any more. Whether the broker is reachable is a question
+    # only asking it can answer, and `waiting` treats every failure as nothing
+    # waiting -- so an unreachable broker costs this hook a moment and says
+    # nothing, which is the right outcome for something that runs in front of a
+    # person waiting for their turn to start.
+    unread, owed = waiting(broker, agent)
 
     if unread or owed:
         print(render(sentence(unread, owed, event), event))

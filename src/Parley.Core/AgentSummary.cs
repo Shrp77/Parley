@@ -11,11 +11,15 @@ namespace Parley.Core;
 /// Its capability tier (§11.1). Worth knowing: a question to a Headless agent triggers an
 /// invocation and comes back in one shot, while one to a Pull-only agent waits until it drains.
 /// </param>
-/// <param name="Status">
-/// Its liveness. <see cref="AgentStatus.Unreachable"/> is visible deliberately — §14 says so —
-/// because a peer seeing it can stop asking rather than inferring it from silence.
+/// <param name="Presence">
+/// How reachable it is now (§14). Shown to peers deliberately, because an asker that can see
+/// <see cref="AgentPresence.Stranded"/> knows an answer will be slow for a reason that has
+/// nothing to do with the question — where inferring the same thing from silence takes a full
+/// delivery window and teaches it nothing.
+///
+/// It does not tell an asker whether to ask. Nothing here gates routing except retirement, and
+/// a retired agent is not listed at all.
 /// </param>
-/// <param name="LastSeenUtc">When the registry last observed it, or <see langword="null"/>.</param>
 /// <param name="Owns">
 /// One line saying what this agent owns, or <see langword="null"/> if its launch did not say.
 /// See <see cref="OwnershipStatement"/>: it is what turns a list of names into something an
@@ -48,6 +52,5 @@ public sealed record AgentSummary(
     AgentName Name,
     string Adapter,
     AgentTier Tier,
-    AgentStatus Status,
-    DateTimeOffset? LastSeenUtc,
+    AgentPresence Presence,
     string? Owns);

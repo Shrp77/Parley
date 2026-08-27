@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The wire contract, and nothing else. Generated from proto/parley.proto by Grpc.Tools; this
+    project contains no hand-written code at all.
+
+    Separate from the host so that a client can reference it without acquiring a web server.
+    Parley.Mcp speaks MCP over stdio and Parley.Cli is a console tool; neither has any business
+    carrying Kestrel, and the split is what stops them.
+
+    GrpcServices=Both emits the client stubs and the server base classes into one assembly. They
+    are two views of the same contract, and generating them separately would create the
+    possibility of a client and a server built from different revisions of it.
+  -->
+
+  <ItemGroup>
+    <Protobuf Include="..\..\proto\parley.proto" GrpcServices="Both" Link="parley.proto" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!--
+    Every rule the rest of the repository enforces is aimed at code somebody wrote. Nothing here
+    was written, so each of these would be enforcing a convention against protoc's output rather
+    than against a decision anyone made.
+
+    CS1591 is the one that matters. Documentation is enforced in Directory.Build.props on the
+    argument that the reasoning behind a choice cannot be recovered from the code — and protoc's
+    output embodies no choices. The choices are in the .proto, which is commented, and that file
+    is the one a reader should be sent to. Silencing the warning here does not weaken the rule
+    anywhere it applies.
+
+    Scoped to this project rather than added to the global NoWarn, so a hand-written file that
+    appears here later is the signal to reconsider it. There is currently no such file, and the
+    absence is deliberate: an assembly that is entirely generated can be regenerated.
+  -->
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);CS1591;CA1707;CA1819;CA2227;CA1062;IDE0005;IDE0058;CA1305;CA1310</NoWarn>
+  </PropertyGroup>
+
+</Project>

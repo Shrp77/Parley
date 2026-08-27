@@ -194,15 +194,10 @@ public sealed class OperatorConsole
     /// </remarks>
     public async Task<IReadOnlyList<AgentRecord>> DescribeRegistryAsync(
         CancellationToken cancellationToken = default) =>
-        [.. (await _agents.GetAllAsync(cancellationToken).ConfigureAwait(false))
-            .Select(a => a with
-            {
-                // Same reading the roster gives a peer, for the same reason: the column says
-                // whether this agent has ever attached, and the operator is asking whether it
-                // is there now. Those stopped being the same question when liveness stopped
-                // being written down.
-                Status = AgentLiveness.Derive(a.Status, a.LastSeenUtc, DateTimeOffset.UtcNow)
-            })];
+        // Presence arrives with the read rather than being applied over it. The operator sees
+        // exactly what a peer sees in the roster, from the same join, which is the property that
+        // stopped holding when one of them derived liveness and the other read a column.
+        await _agents.GetAllAsync(cancellationToken).ConfigureAwait(false);
 
     /// <summary>
     /// Reports what the size cap of rule 8.5 refused, per SPEC.md §10.2.

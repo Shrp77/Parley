@@ -55,16 +55,28 @@ public sealed class AgentFleet : IAsyncDisposable
     private readonly SqliteConnection _connection;
     private readonly TimeProvider _clock;
     private readonly TimeSpan _lease;
+    private readonly NodeCatalogue _catalogue;
     private readonly Dictionary<string, Resident> _running = new(StringComparer.Ordinal);
 
     /// <summary>Creates a fleet against an open database.</summary>
     /// <param name="connection">The open, migrated database.</param>
     /// <param name="clock">The clock turns are measured against.</param>
     /// <param name="lease">
-    /// How long an agent stays trusted as somebody else's after it was last heard from.
+    /// Retained for callers, and no longer consulted: whether somebody else is running an agent
+    /// is now read from its connection rather than guessed from how long ago it was heard from.
+    /// </param>
+    /// <param name="catalogue">
+    /// What this machine knows about the agents on it, or <see langword="null"/> for a machine
+    /// that has been told about none. An empty catalogue starts nothing, which is right rather
+    /// than an error: a supervisor on a machine with no local configuration still reaps, still
+    /// reports, and simply has nothing to launch.
     /// </param>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
-    public AgentFleet(SqliteConnection connection, TimeProvider clock, TimeSpan lease)
+    public AgentFleet(
+        SqliteConnection connection,
+        TimeProvider clock,
+        TimeSpan lease,
+        NodeCatalogue? catalogue = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(clock);
@@ -72,6 +84,7 @@ public sealed class AgentFleet : IAsyncDisposable
         _connection = connection;
         _clock = clock;
         _lease = lease;
+        _catalogue = catalogue ?? NodeCatalogue.Empty;
     }
 
     /// <summary>Gets the agents currently held open, by name.</summary>
@@ -107,14 +120,23 @@ public sealed class AgentFleet : IAsyncDisposable
                 break;
             }
 
+            // Asked of this machine rather than read from the registry. The store holds no
+            // executable command line (SPEC.md §4), so an agent registered here that this node
+            // has not been told about is one it declines to start -- which is the honest
+            // answer, and the same one it would give for an agent on another machine.
+            if (_catalogue.CommandFor(candidate.Agent) is not { } template)
+            {
+                actions.Add(Skip(candidate, "this machine has no launch command for it"));
+                continue;
+            }
+
             InvocationCommand command;
 
             try
             {
                 // Named from the registry, so a person opening these sessions later sees which
                 // agent each one is rather than nineteen listed by their first line.
-                command = InvocationCommand.Parse(
-                    candidate.InvokeCommand, candidate.Agent.Value);
+                command = InvocationCommand.Parse(template, candidate.Agent.Value);
             }
             catch (ArgumentException ex)
             {
@@ -146,11 +168,14 @@ public sealed class AgentFleet : IAsyncDisposable
 
             if (!_running.TryGetValue(candidate.Agent.Value, out var resident))
             {
-                // Somebody else's session. §14's lease is the only evidence available that a
-                // person has this repository open, and starting a second process behind one
-                // identity would have two agents draining one inbox -- which the exchange's turn
-                // check refuses, after both have spent tokens getting there.
-                if (candidate.LastSeenUtc is { } seen && now - seen < _lease)
+                // Somebody else's session. A connected adapter is direct evidence that a person
+                // has this repository open, and starting a second process behind one identity
+                // would have two agents draining one inbox -- which the exchange's turn check
+                // refuses, after both have spent tokens getting there.
+                //
+                // This was a lease on a timestamp, which had to guess how stale was too stale.
+                // A connection does not: see SPEC.md §4.0.
+                if (candidate.Connected)
                 {
                     actions.Add(Skip(candidate, "attended: a session is already running it"));
                     continue;
@@ -161,7 +186,7 @@ public sealed class AgentFleet : IAsyncDisposable
                     var agent = ResidentAgent.Start(
                         candidate.Agent, command, candidate.Workspace, _clock);
 
-                    resident = new Resident(agent, candidate.InvokeCommand);
+                    resident = new Resident(agent, template);
                     _running[candidate.Agent.Value] = resident;
                     started = true;
                 }
@@ -217,7 +242,7 @@ public sealed class AgentFleet : IAsyncDisposable
                     continue;
                 }
             }
-            else if (!string.Equals(resident.Command, candidate.InvokeCommand, StringComparison.Ordinal))
+            else if (!string.Equals(resident.Command, template, StringComparison.Ordinal))
             {
                 // The launch configuration changed under a running agent. Restarting is the
                 // honest reading: the operator changed how this agent should run, and an agent

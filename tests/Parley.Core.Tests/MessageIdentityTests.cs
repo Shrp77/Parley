@@ -4,9 +4,9 @@ namespace Parley.Core.Tests;
 
 public sealed class MessageIdentityTests
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
-    private static readonly AgentName Inventory = AgentName.Create("inventory");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
+    private static readonly AgentName Inventory = AgentName.Create("inventory@test");
 
     private const string Payload = """{"text":"is the invoice total gross or net?"}""";
 
@@ -119,8 +119,14 @@ public sealed class MessageIdentityTests
         // becomes unreachable. Deduplication would then stop matching history without any
         // test failing and without the column shape changing. It also fixes the value an
         // independent implementation must reproduce to share a database.
+        //
+        // It moved once, when names became role@machine (SPEC.md 4.1.1), and that is the
+        // failure this test is for working correctly rather than a reason to distrust it: the
+        // names are inside the hashed form, so every stored hash became unreachable. The store
+        // was rebuilt from empty in the same change, so nothing was stranded -- had it not
+        // been, this failing is what would have said so.
         Assert.Equal(
-            "0f2c4119625dd1f9c2b1096faa2b137d3fc35f04eed51c311691fd399fb329c6",
+            "275289c21594e81505578cf7544c876207c1e4acd38885532d92e5eb62294087",
             MessageIdentity.Compute(1, MessageType.Question, Orders, Billing, "{}"));
     }
 

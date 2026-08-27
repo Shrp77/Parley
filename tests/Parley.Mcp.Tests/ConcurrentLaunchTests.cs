@@ -1,30 +1,36 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Xunit;
 
 namespace Parley.Mcp.Tests;
 
 /// <summary>
-/// Several servers launched against one project at the same moment.
+/// Several servers attaching to one broker at the same moment.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The reboot the deployment of §1 implies: every agent has its own process, so a machine coming
-/// back starts all of them at once against a database only one of them can create. Two of them
-/// read an empty schema version, both decide to apply the first migration, SQLite serialises
-/// them, and the loser fails with "table agents already exists" and exits — so what somebody
-/// sees is one repository that opened and one that would not, differently each time.
+/// back starts all of them at once.
 /// </para>
 /// <para>
-/// <b>Real processes, and that is not incidental.</b> The same race written with threads and
-/// several connections inside one process does not reproduce it: four hundred attempts against
-/// the unfixed migrator all passed, while twelve pairs of real processes failed two of them.
-/// Whatever serialises connections within a process hides exactly the interleaving that matters,
-/// so an in-process version of this test would have been a check that passed while testing
-/// nothing — and would have been written first, because it is the easier one to write.
+/// <b>What this used to catch is now impossible, and the test is kept for what remains.</b> The
+/// race was over migration — each server opened the database itself, two would read an empty
+/// schema version, both would apply the first migration, and the loser exited with "table agents
+/// already exists". One repository opened and one would not, differently each time. Only one
+/// process opens the store now, so that interleaving has nowhere to occur.
 /// </para>
 /// <para>
-/// The server is spawned from the test's own output directory, which the project reference to
-/// Parley.Mcp populates, so this needs nothing installed and runs the same way on a CI agent.
+/// Six simultaneous attaches is still worth checking, and against a different hazard: they all
+/// register, all refresh an ownership statement, and all open a held stream, through one gate on
+/// one connection. A deadlock or a lost registration there would present exactly as this test's
+/// predecessor did — one repository that came up and one that did not.
+/// </para>
+/// <para>
+/// <b>Real processes, and that is not incidental.</b> The same race written with threads inside
+/// one process did not reproduce the original: four hundred attempts against the unfixed
+/// migrator all passed, while twelve pairs of real processes failed two of them. Whatever
+/// serialises work within a process hides exactly the interleaving that matters, so an
+/// in-process version would have been a check that passed while testing nothing — and would have
+/// been written first, because it is the easier one to write.
 /// </para>
 /// </remarks>
 public sealed class ConcurrentLaunchTests : IDisposable
@@ -41,6 +47,17 @@ public sealed class ConcurrentLaunchTests : IDisposable
         Path.Combine(Path.GetTempPath(), "parley-launch-" + Guid.NewGuid().ToString("N"));
 
     public ConcurrentLaunchTests() => Directory.CreateDirectory(_directory);
+
+    /// <summary>Starts a broker over a fresh store, as `parley serve` does.</summary>
+    /// <param name="databasePath">Where to put it.</param>
+    /// <returns>The running broker.</returns>
+    private static async Task<Parley.Server.ParleyServer> BrokerAsync(string databasePath)
+    {
+        var runtime = Parley.Server.BrokerRuntime.Open(
+            databasePath, Parley.Broker.BrokerOptions.Default, TimeProvider.System);
+
+        return await Parley.Server.ParleyServer.StartAsync(runtime, "http://127.0.0.1:0");
+    }
 
     public void Dispose()
     {
@@ -60,14 +77,29 @@ public sealed class ConcurrentLaunchTests : IDisposable
     /// </summary>
     /// <returns>The executable to launch and the argument to pass it, if any.</returns>
     /// <remarks>
+    /// <para>
     /// The native apphost when there is one, and <c>dotnet parley-mcp.dll</c> otherwise. The
     /// fallback is not hypothetical tidiness: the apphost is platform-specific and a build that
     /// suppresses it would turn this into a red test on one CI platform and green on the other
     /// two, which reads as a product defect and is not one.
+    /// </para>
+    /// <para>
+    /// <b>From the server's own output directory, not from beside the tests.</b> It used to be
+    /// the latter, which worked until this project began referencing Parley.Server — that brings
+    /// a framework reference to ASP.NET Core, whose shared framework supplies
+    /// Microsoft.Extensions.Hosting, so the package copy stops being written to the output. The
+    /// tests run fine on the shared framework; the MCP server is a plain console apphost and
+    /// cannot find it, and fails at startup with a missing-assembly error naming a package it
+    /// does reference.
+    /// </para>
+    /// <para>
+    /// Launching what is actually shipped is the better arrangement anyway. A copy of the server
+    /// assembled by a test project's dependency graph is not the thing users run.
+    /// </para>
     /// </remarks>
-    private static (string FileName, string? Argument) Server()
+    internal static (string FileName, string? Argument) ServerBinary()
     {
-        var directory = Path.GetDirectoryName(typeof(ConcurrentLaunchTests).Assembly.Location)!;
+        var directory = ServerOutput();
         var apphost = Path.Combine(
             directory, OperatingSystem.IsWindows() ? "parley-mcp.exe" : "parley-mcp");
 
@@ -83,8 +115,34 @@ public sealed class ConcurrentLaunchTests : IDisposable
         return ("dotnet", library);
     }
 
+    /// <summary>Finds the MCP server's own build output.</summary>
+    /// <returns>The directory it was built into.</returns>
+    private static string ServerOutput()
+    {
+        var here = new DirectoryInfo(
+            Path.GetDirectoryName(typeof(ConcurrentLaunchTests).Assembly.Location)!);
+
+        // Up to the repository, identified by the solution file rather than by counting
+        // directories: the depth differs between a plain build and a published one.
+        var root = here;
+
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "Parley.slnx")))
+        {
+            root = root.Parent;
+        }
+
+        Assert.NotNull(root);
+
+        // The same configuration and framework this test was built into, taken from its own
+        // path so a Release run does not go looking in a Debug folder.
+        var configuration = here.Parent!.Name;
+        var framework = here.Name;
+
+        return Path.Combine(root.FullName, "src", "Parley.Mcp", "bin", configuration, framework);
+    }
+
     private static Process Launch(
-        (string FileName, string? Argument) server, string databasePath, string agent)
+        (string FileName, string? Argument) server, string broker, string agent)
     {
         var start = new ProcessStartInfo(server.FileName)
         {
@@ -99,7 +157,7 @@ public sealed class ConcurrentLaunchTests : IDisposable
             start.ArgumentList.Add(argument);
         }
 
-        start.Environment[ServerOptions.DatabaseVariable] = databasePath;
+        start.Environment[ServerOptions.BrokerVariable] = broker;
         start.Environment[ServerOptions.AgentVariable] = agent;
 
         // Set so that the launch actually writes it. Registration is an insert that does nothing
@@ -113,20 +171,24 @@ public sealed class ConcurrentLaunchTests : IDisposable
     }
 
     [Fact]
-    public void Every_server_starting_at_once_against_a_new_project_comes_up()
+    public async Task Every_server_attaching_at_once_comes_up()
     {
-        var server = Server();
+        var server = ServerBinary();
 
         for (var round = 0; round < Rounds; round++)
         {
             var databasePath = Path.Combine(_directory, $"round-{round}", "parley.db");
+
+            await using var broker = await BrokerAsync(databasePath);
+
+            var endpoint = broker.Addresses[0];
             var processes = new List<(string Agent, Process Process)>();
 
             try
             {
                 for (var i = 0; i < Servers; i++)
                 {
-                    processes.Add(($"repo-{i}", Launch(server, databasePath, $"repo-{i}")));
+                    processes.Add(($"repo-{i}", Launch(server, endpoint, $"repo-{i}")));
                 }
 
                 // Stdin is closed rather than the process being waited on, because a server

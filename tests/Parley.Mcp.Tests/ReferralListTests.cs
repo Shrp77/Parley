@@ -1,5 +1,4 @@
-using Microsoft.Data.Sqlite;
-using Parley.Store;
+﻿using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace Parley.Mcp.Tests;
@@ -30,13 +29,13 @@ public sealed class ReferralListTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
-        await fixture.LaunchAsync("inventory", ct);
-        await fixture.LaunchAsync("pricing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
+        await fixture.LaunchAsync("inventory@test", ct);
+        await fixture.LaunchAsync("pricing@test", ct);
 
         var asked = await orders.AskAsync(
-            "billing",
+            "billing@test",
             "Whether the discount ladder and the stock hold are ours.",
             [new SubQuestion("q1", "Who owns the discount ladder and the reservation?")],
             "If billing owns them I stop modelling both here; if not I keep mine and record who does.",
@@ -49,16 +48,16 @@ public sealed class ReferralListTests
         var answered = await billing.AnswerAsync(
             exchange,
             [new Resolution("q1", "out_of_scope", "Neither is mine; they are split.",
-                RedirectTo: ["inventory", "pricing"])],
+                RedirectTo: ["inventory@test", "pricing@test"])],
             cancellationToken: ct);
 
         Assert.True(answered["ok"]!.GetValue<bool>(), answered.ToJsonString());
 
-        using var connection = ParleyDatabase.Open(fixture.DatabasePath);
+        var connection = fixture.Connection;
 
         // Both names recorded, against the sub-question that was referred.
         Assert.Equal(
-            ["inventory", "pricing"],
+            ["inventory@test", "pricing@test"],
             Read(connection,
                 "SELECT redirected_to FROM message_referrals ORDER BY redirected_to;"));
 
@@ -67,7 +66,7 @@ public sealed class ReferralListTests
         var payload = Read(connection,
             "SELECT payload_json FROM messages WHERE type = 'answer';").Single();
 
-        Assert.Contains("[\"inventory\",\"pricing\"]", payload, StringComparison.Ordinal);
+        Assert.Contains("[\"inventory@test\",\"pricing@test\"]", payload, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -79,12 +78,12 @@ public sealed class ReferralListTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
-        await fixture.LaunchAsync("inventory", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
+        await fixture.LaunchAsync("inventory@test", ct);
 
         var asked = await orders.AskAsync(
-            "billing",
+            "billing@test",
             "Whether the stock hold is ours.",
             [new SubQuestion("q1", "Who owns the reservation?")],
             "If billing owns it I stop modelling it here; if not I keep mine and record who does.",
@@ -94,16 +93,16 @@ public sealed class ReferralListTests
 
         await billing.AnswerAsync(
             asked["exchange_id"]!.GetValue<long>(),
-            [new Resolution("q1", "out_of_scope", "Not mine.", RedirectTo: ["inventory"])],
+            [new Resolution("q1", "out_of_scope", "Not mine.", RedirectTo: ["inventory@test"])],
             cancellationToken: ct);
 
-        using var connection = ParleyDatabase.Open(fixture.DatabasePath);
+        var connection = fixture.Connection;
 
         var payload = Read(connection,
             "SELECT payload_json FROM messages WHERE type = 'answer';").Single();
 
-        Assert.Contains("[\"inventory\"]", payload, StringComparison.Ordinal);
-        Assert.Equal(["inventory"], Read(connection, "SELECT redirected_to FROM message_referrals;"));
+        Assert.Contains("[\"inventory@test\"]", payload, StringComparison.Ordinal);
+        Assert.Equal(["inventory@test"], Read(connection, "SELECT redirected_to FROM message_referrals;"));
     }
 
     [Fact]
@@ -114,12 +113,12 @@ public sealed class ReferralListTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
-        await fixture.LaunchAsync("inventory", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
+        await fixture.LaunchAsync("inventory@test", ct);
 
         var asked = await orders.AskAsync(
-            "billing",
+            "billing@test",
             "Whether the stock hold is ours.",
             [new SubQuestion("q1", "Who owns the reservation?")],
             "If billing owns it I stop modelling it here; if not I keep mine and record who does.",
@@ -130,12 +129,12 @@ public sealed class ReferralListTests
         var refused = await billing.AnswerAsync(
             asked["exchange_id"]!.GetValue<long>(),
             [new Resolution("q1", "out_of_scope", "Split.",
-                RedirectTo: ["inventory", "Not An Agent"])],
+                RedirectTo: ["inventory@test", "Not An Agent"])],
             cancellationToken: ct);
 
         Assert.False(refused["ok"]!.GetValue<bool>(), refused.ToJsonString());
 
-        using var connection = ParleyDatabase.Open(fixture.DatabasePath);
+        var connection = fixture.Connection;
 
         Assert.Empty(Read(connection, "SELECT redirected_to FROM message_referrals;"));
     }

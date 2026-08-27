@@ -9,12 +9,15 @@
     <File Path="NOTICE" />
     <File Path="README.md" />
     <File Path="SPEC.md" />
+    <File Path="proto/parley.proto" />
     <File Path=".github/workflows/build.yml" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Parley.Core/Parley.Core.csproj" />
     <Project Path="src/Parley.Store/Parley.Store.csproj" />
     <Project Path="src/Parley.Broker/Parley.Broker.csproj" />
+    <Project Path="src/Parley.Transport/Parley.Transport.csproj" />
+    <Project Path="src/Parley.Server/Parley.Server.csproj" />
     <Project Path="src/Parley.Headless/Parley.Headless.csproj" />
     <Project Path="src/Parley.Mcp/Parley.Mcp.csproj" />
     <Project Path="src/Parley.Cli/Parley.Cli.csproj" />
@@ -26,6 +29,7 @@
     <Project Path="tests/Parley.Headless.Tests/Parley.Headless.Tests.csproj" />
     <Project Path="tests/Parley.Mcp.Tests/Parley.Mcp.Tests.csproj" />
     <Project Path="tests/Parley.Cli.Tests/Parley.Cli.Tests.csproj" />
+    <Project Path="tests/Parley.Server.Tests/Parley.Server.Tests.csproj" />
     <Project Path="tests/Parley.Spec.Tests/Parley.Spec.Tests.csproj" />
   </Folder>
 </Solution>

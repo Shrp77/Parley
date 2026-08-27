@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json.Nodes;
 using Xunit;
 
@@ -39,29 +39,28 @@ public sealed class ServerInstructionsTests : IDisposable
         }
     }
 
-    /// <summary>Locates the server built beside the tests.</summary>
-    /// <returns>The executable to run, and the argument that selects it under <c>dotnet</c>.</returns>
-    private static (string FileName, string? Argument) Server()
-    {
-        var directory = Path.GetDirectoryName(typeof(ServerInstructionsTests).Assembly.Location)!;
-        var apphost = Path.Combine(directory, OperatingSystem.IsWindows() ? "parley-mcp.exe" : "parley-mcp");
-
-        if (File.Exists(apphost))
-        {
-            return (apphost, null);
-        }
-
-        var library = Path.Combine(directory, "parley-mcp.dll");
-        Assert.True(File.Exists(library), $"expected the server beside the tests in {directory}");
-
-        return ("dotnet", library);
-    }
-
     /// <summary>Launches the server and performs the initialize handshake.</summary>
     /// <returns>The <c>result</c> object of the initialize response.</returns>
+    /// <remarks>
+    /// A broker has to be running, which it did not before: the server used to open a database
+    /// and would start against a path that did not exist yet. It is now a client, and a client
+    /// with nothing to connect to exits rather than serving — so a test about what the server
+    /// says at initialize has to give it something to attach to first.
+    /// </remarks>
     private JsonNode Initialize()
     {
-        var (fileName, argument) = Server();
+        var runtime = Parley.Server.BrokerRuntime.Open(
+            Path.Combine(_directory, "parley.db"),
+            Parley.Broker.BrokerOptions.Default,
+            TimeProvider.System);
+
+        using var broker = Parley.Server.ParleyServer
+            .StartAsync(runtime, "http://127.0.0.1:0").GetAwaiter().GetResult()
+            is var served
+                ? new Disposer(served)
+                : throw new InvalidOperationException("unreachable");
+
+        var (fileName, argument) = ConcurrentLaunchTests.ServerBinary();
 
         var start = new ProcessStartInfo(fileName)
         {
@@ -76,8 +75,8 @@ public sealed class ServerInstructionsTests : IDisposable
             start.ArgumentList.Add(argument);
         }
 
-        start.Environment["PARLEY_DB"] = Path.Combine(_directory, "parley.db");
-        start.Environment["PARLEY_AGENT"] = "orders";
+        start.Environment["PARLEY_BROKER"] = broker.Server.Addresses[0];
+        start.Environment["PARLEY_AGENT"] = "orders@test";
         start.Environment["PARLEY_RESPONDER"] = "some-model-9";
 
         using var process = Process.Start(start)!;
@@ -161,9 +160,25 @@ public sealed class ServerInstructionsTests : IDisposable
         // change. A roster baked into a string sent once at start-up would be stale by the first
         // registration, and a workspace path in it would hand every agent the location of every
         // repository — which the agent-facing listing deliberately withholds.
-        foreach (var forbidden in new[] { "billing", "inventory", "/src", "C:\\" })
+        foreach (var forbidden in new[] { "billing@test", "inventory@test", "/src", "C:\\" })
         {
             Assert.DoesNotContain(forbidden, ParleyInstructions.Text, StringComparison.OrdinalIgnoreCase);
         }
     }
+}
+
+/// <summary>Disposes an async resource from a synchronous scope.</summary>
+/// <param name="server">The server to stop.</param>
+/// <remarks>
+/// The handshake is driven synchronously — it writes a line and reads one — and a
+/// <c>using</c> there cannot await. This blocks on the stop instead, which costs milliseconds
+/// and keeps the test reading as the sequence it is.
+/// </remarks>
+internal sealed class Disposer(Parley.Server.ParleyServer server) : IDisposable
+{
+    /// <summary>The running server.</summary>
+    public Parley.Server.ParleyServer Server { get; } = server;
+
+    /// <inheritdoc />
+    public void Dispose() => Server.DisposeAsync().AsTask().GetAwaiter().GetResult();
 }

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Xunit;
 
 namespace Parley.Cli.Tests;
@@ -54,11 +54,16 @@ internal static class ToolProcess
         return ("dotnet", library);
     }
 
-    /// <summary>Runs the tool to completion.</summary>
+    /// <summary>Starts the tool without waiting for it.</summary>
     /// <param name="environment">Variables to set for this run, after the tool's own are cleared.</param>
     /// <param name="arguments">The command line.</param>
-    /// <returns>Its exit code and what it wrote to standard error.</returns>
-    public static (int ExitCode, string Error) Run(
+    /// <returns>The running process, whose output the caller reads.</returns>
+    /// <remarks>
+    /// For <c>serve</c> and <c>up</c>, which run until they are stopped. Every other command
+    /// returns promptly and goes through <see cref="Run(string[])"/>, which reads both streams
+    /// to the end — doing that to a process that never exits would block for ever.
+    /// </remarks>
+    public static Process Launch(
         (string Name, string Value)[] environment, params string[] arguments)
     {
         var (fileName, argument) = Locate();
@@ -90,7 +95,17 @@ internal static class ToolProcess
             start.Environment[name] = value;
         }
 
-        using var process = Process.Start(start)!;
+        return Process.Start(start)!;
+    }
+
+    /// <summary>Runs the tool to completion.</summary>
+    /// <param name="environment">Variables to set for this run, after the tool's own are cleared.</param>
+    /// <param name="arguments">The command line.</param>
+    /// <returns>Its exit code and what it wrote to standard error.</returns>
+    public static (int ExitCode, string Error) Run(
+        (string Name, string Value)[] environment, params string[] arguments)
+    {
+        using var process = Launch(environment, arguments);
         var error = process.StandardError.ReadToEnd();
         process.StandardOutput.ReadToEnd();
 

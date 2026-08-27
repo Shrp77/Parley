@@ -1,4 +1,4 @@
-using Xunit;
+﻿using Xunit;
 
 namespace Parley.Mcp.Tests;
 
@@ -48,7 +48,7 @@ public sealed class GhostedQuestionTests
     }
 
     /// <summary>Reads the whole database back as text, for a failure to carry with it.</summary>
-    /// <param name="path">The fixture's database.</param>
+    /// <param name="connection">The broker's connection, borrowed to read from.</param>
     /// <param name="ticks">What each sweep reported, in order.</param>
     /// <returns>A block of text describing every row that bears on ghosting.</returns>
     /// <remarks>
@@ -65,7 +65,8 @@ public sealed class GhostedQuestionTests
     /// the worst moment to introduce a second unknown.
     /// </para>
     /// </remarks>
-    private static string Snapshot(string path, IEnumerable<string> ticks)
+    private static string Snapshot(
+        Microsoft.Data.Sqlite.SqliteConnection connection, IEnumerable<string> ticks)
     {
         var text = new System.Text.StringBuilder()
             .AppendLine()
@@ -73,7 +74,6 @@ public sealed class GhostedQuestionTests
 
         try
         {
-            using var connection = Parley.Store.ParleyDatabase.Open(path);
             using var command = connection.CreateCommand();
 
             command.CommandText =
@@ -120,11 +120,11 @@ public sealed class GhostedQuestionTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (ordersSession, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (ordersSession, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            to: "billing",
+            to: "billing@test",
             intent: "Deciding whether to store a tax rate on the order or read it from you.",
             subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
             consequences: "If it does I read it from you; if not I snapshot my own copy.",
@@ -143,8 +143,7 @@ public sealed class GhostedQuestionTests
         {
             fixture.Clock.Advance(TimeSpan.FromHours(1));
 
-            var swept = await ordersSession.RunAsync(
-                (broker, now, c) => broker.TickAsync(now, c), ct);
+            var swept = await fixture.SweepAsync(ct);
 
             ticks.Add(
                 $"+{hour}h o={swept.Exchanges.Orphaned} g={swept.Exchanges.Ghosted} " +
@@ -154,7 +153,7 @@ public sealed class GhostedQuestionTests
 
         var notice = OnlyMessage(
             await orders.InboxAsync(cancellationToken: ct), "the ghost notice",
-            Snapshot(fixture.DatabasePath, ticks));
+            Snapshot(fixture.Connection, ticks));
 
         Assert.Equal("ghost", notice!["type"]!.GetValue<string>());
         Assert.Equal(exchangeId, notice["exchange_id"]!.GetValue<long>());
@@ -176,11 +175,11 @@ public sealed class GhostedQuestionTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (ordersSession, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (ordersSession, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            "billing", "Deciding where the tax rate lives.",
+            "billing@test", "Deciding where the tax rate lives.",
             [new SubQuestion("q1", "Is the rate stamped at time of sale?")],
             "If it does I read it from you; if not I snapshot my own copy.",
             cancellationToken: ct);
@@ -190,7 +189,7 @@ public sealed class GhostedQuestionTests
         for (var hour = 1; hour <= 12; hour++)
         {
             fixture.Clock.Advance(TimeSpan.FromHours(1));
-            await ordersSession.RunAsync((broker, now, c) => broker.TickAsync(now, c), ct);
+            await fixture.TickAsync(ct);
         }
 
         // The peer turning up late is refused rather than reopening a closed conversation.

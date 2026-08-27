@@ -39,75 +39,72 @@ public enum AgentTier
 }
 
 /// <summary>
-/// The registration and liveness state of an agent.
+/// What an operator has decided about a registration.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Two values, because there are only two judgements a person makes: the registration stands,
+/// or it is finished. Everything that used to live here — offline, live, not-responding,
+/// unreachable — described how reachable an agent was, and reachability is not a judgement
+/// anybody records. It is observed on a connection, and lives in <see cref="AgentPresence"/>.
+/// </para>
+/// <para>
+/// The separation is the point. A stored liveness has to be withdrawn by something, and the
+/// case where withdrawal matters most — a session killed, crashed, or on a machine that lost
+/// power — is exactly the case where nothing is left running to withdraw it.
+/// </para>
+/// </remarks>
 public enum AgentStatus
 {
-    /// <summary>Registered, and never activated: no session has ever attached.</summary>
+    /// <summary>The registration stands.</summary>
     /// <remarks>
-    /// The resting state of a repository somebody has configured and not yet opened. It is the
-    /// only status that survives being read from storage unchanged — every other one below is
-    /// derived from how long ago the agent was last heard from, because a stored liveness is a
-    /// claim that nothing refreshes when the thing it describes dies.
+    /// Zero because it is what a row starts as, and because a default-constructed value that
+    /// read as <see cref="Retired"/> would silently take an agent out of service.
     /// </remarks>
-    Offline = 0,
+    Active = 0,
 
-    /// <summary>Sweeping normally: heard from within the last few sweeps.</summary>
-    Live = 1,
-
-    /// <summary>
-    /// Has missed its recent sweeps but is not yet written off.
-    /// </summary>
+    /// <summary>An operator has said this agent is finished.</summary>
     /// <remarks>
-    /// The state that did not exist, and whose absence made <see cref="Live"/> a lie. A session
-    /// that is killed, crashes, or loses its machine never writes anything again — the old
-    /// design had nothing demote it, so its row read <c>live</c> for ever with a frozen
-    /// timestamp beside it that only the supervisor ever compared. This is the window in which
-    /// a peer can tell "answering slowly" from "gone", and it is short on purpose: the useful
-    /// question is whether to keep waiting, and that question expires.
+    /// The one statement about an agent that is a judgement rather than an observation, and the
+    /// only one durable enough to route on. Cleared only by an explicit reinstatement, never by
+    /// registering again — a control an agent could clear by restarting is not a control.
     /// </remarks>
-    NotResponding = 2,
-
-    /// <summary>
-    /// Silent long enough to stop routing to: five minutes without a sweep.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Deliberately not a worse <see cref="Offline"/>. Offline is a repository nobody has opened
-    /// yet and must stay routable — refusing traffic to it would refuse the very traffic meant
-    /// to wake it. This says something else: it was here, and it stopped.
-    /// </para>
-    /// <para>
-    /// Questions to such an agent are refused at admission, because accepting them costs a full
-    /// TTL each and tells the asker nothing. Resolving what is already outstanding is the
-    /// operator's decision: five minutes of silence is a laptop lid as often as a deleted
-    /// repository, and force-closing real questions to save a human a judgement is the wrong
-    /// trade.
-    /// </para>
-    /// </remarks>
-    Unreachable = 3,
-
-    /// <summary>
-    /// Gone for good: the workspace no longer exists, or a person said so.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Both halves are deliberate and the first is new. §14 used to reserve this for a person
-    /// alone, on the ground that a missing directory is frequently temporary — a re-clone, a
-    /// moved worktree, an unmounted drive — and that a broker tombstoning one would need a human
-    /// to undo it. That reasoning is recorded rather than deleted, because it is the cost of
-    /// this decision rather than an argument against having taken it: a repository that comes
-    /// back needs <c>parley reinstate</c>, and will not recover on its own.
-    /// </para>
-    /// <para>
-    /// What it buys is that a registry stops describing repositories that are not there.
-    /// <see cref="Unreachable"/> already covers silence; this covers absence, which is a
-    /// different observation and one the broker can make directly by looking.
-    /// </para>
-    /// <para>
-    /// It is the only status that is stored rather than derived, because it is a judgement about
-    /// the future rather than an observation of the past, and no timestamp implies it.
-    /// </para>
-    /// </remarks>
-    Retired = 4
+    Retired = 1
 }
+
+/// <summary>
+/// How reachable an agent is, right now, read from connections rather than stored.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Every value here is derived from two facts a process knows for certain: whether the node on
+/// that machine is connected to the broker, and whether the agent's own adapter is. Nothing is
+/// inferred from a timestamp, which is what the two previous designs did and what made a
+/// session killed on Tuesday read as healthy on Friday.
+/// </para>
+/// <para>
+/// None of these gate routing. See SPEC.md §14: a question to an agent that is not running is
+/// what causes it to be started, and a question to one on a switched-off machine orphans and is
+/// ghosted — which tells the asker something, where a refusal at the door would not.
+/// </para>
+/// </remarks>
+public enum AgentPresence
+{
+    /// <summary>The machine is unreachable, so nothing can start this agent.</summary>
+    /// <remarks>
+    /// Zero because it is the honest reading of knowing nothing. A default that claimed an
+    /// agent was running would be a claim made by a value nobody set.
+    /// </remarks>
+    Stranded = 0,
+
+    /// <summary>The node is connected; nobody is running the agent, and the node can start it.</summary>
+    /// <remarks>
+    /// The ordinary state of a repository nobody has open, and not a fault. Most agents are here
+    /// most of the time.
+    /// </remarks>
+    Startable = 1,
+
+    /// <summary>The agent's adapter is connected and can be routed to now.</summary>
+    Running = 2
+}
+

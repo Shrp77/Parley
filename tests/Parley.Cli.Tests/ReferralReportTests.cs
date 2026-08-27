@@ -1,6 +1,5 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Microsoft.Data.Sqlite;
-using Parley.Broker;
 using Parley.Store;
 using Xunit;
 
@@ -23,27 +22,32 @@ namespace Parley.Cli.Tests;
 /// implied both covered the same period.
 /// </para>
 /// </remarks>
-public sealed class ReferralReportTests : IDisposable
+public sealed class ReferralReportTests : IAsyncDisposable
 {
     private const string Stamp = "2026-01-01T00:00:00.0000000+00:00";
 
     private readonly SqliteConnection _connection;
     private readonly StringWriter _output = new();
+    private readonly LoopbackOperator _broker;
     private readonly OperatorCommands _commands;
     private int _rows;
 
     public ReferralReportTests()
     {
         _connection = ParleyDatabase.OpenInMemory();
-        _commands = new OperatorCommands(new OperatorConsole(_connection), _output);
+        _broker = LoopbackOperator.Start(_connection);
+        _commands = new OperatorCommands(_broker.Operators, _output);
 
-        Execute("INSERT INTO agents (name, adapter, tier, status) VALUES "
-              + "('orders','test','full','offline'),('billing','test','full','offline'),"
-              + "('inventory','test','full','offline'),('pricing','test','full','offline');");
+        Execute("INSERT INTO nodes (machine, connected, first_seen_utc) VALUES ('test', 1, '2026-01-01T00:00:00+00:00') ON CONFLICT DO NOTHING; INSERT INTO agents (name, adapter, tier, status) VALUES "
+              + "('orders@test','test','full','active'),('billing@test','test','full','active'),"
+              + "('inventory@test','test','full','active'),('pricing@test','test','full','active');");
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
+        // The broker first: it borrowed this connection and its shutdown writes to it.
+        await _broker.DisposeAsync();
+
         _connection.Dispose();
         _output.Dispose();
     }
@@ -107,17 +111,17 @@ public sealed class ReferralReportTests : IDisposable
         // The denominator is the point. One referral out of two is a boundary worth a
         // conversation; one out of fifty is noise, and a report that printed only the numerator
         // could not tell them apart.
-        Closed("orders", "billing", "answered");
-        Closed("orders", "billing", "answered");
-        Closed("orders", "billing", "answered");
-        var referred = Closed("orders", "billing", "out_of_scope");
+        Closed("orders@test", "billing@test", "answered");
+        Closed("orders@test", "billing@test", "answered");
+        Closed("orders@test", "billing@test", "answered");
+        var referred = Closed("orders@test", "billing@test", "out_of_scope");
 
-        Referral(referred, "billing", "orders", "inventory");
+        Referral(referred, "billing@test", "orders@test", "inventory@test");
 
         await _commands.ReferralsAsync(Ct);
 
-        Assert.Contains("orders", Printed, StringComparison.Ordinal);
-        Assert.Contains("billing", Printed, StringComparison.Ordinal);
+        Assert.Contains("orders@test", Printed, StringComparison.Ordinal);
+        Assert.Contains("billing@test", Printed, StringComparison.Ordinal);
         Assert.Contains("25.0%", Printed, StringComparison.Ordinal);
     }
 
@@ -126,8 +130,8 @@ public sealed class ReferralReportTests : IDisposable
     {
         // The report is a list of places to look. Every healthy pair in it is noise that makes
         // the unhealthy one harder to find.
-        Closed("orders", "billing", "answered");
-        Closed("orders", "billing", "answered");
+        Closed("orders@test", "billing@test", "answered");
+        Closed("orders@test", "billing@test", "answered");
 
         await _commands.ReferralsAsync(Ct);
 
@@ -139,15 +143,15 @@ public sealed class ReferralReportTests : IDisposable
     {
         // A rate says a boundary is wrong; the target says which boundary. Without the second
         // half an operator knows there is a problem and not where to take it.
-        var a = Closed("orders", "billing", "out_of_scope");
-        var b = Closed("orders", "billing", "out_of_scope");
+        var a = Closed("orders@test", "billing@test", "out_of_scope");
+        var b = Closed("orders@test", "billing@test", "out_of_scope");
 
-        Referral(a, "billing", "orders", "inventory");
-        Referral(b, "billing", "orders", "inventory");
+        Referral(a, "billing@test", "orders@test", "inventory@test");
+        Referral(b, "billing@test", "orders@test", "inventory@test");
 
         await _commands.ReferralsAsync(Ct);
 
-        Assert.Contains("inventory", Printed, StringComparison.Ordinal);
+        Assert.Contains("inventory@test", Printed, StringComparison.Ordinal);
         Assert.Contains("where they were sent instead", Printed, StringComparison.Ordinal);
     }
 
@@ -156,15 +160,15 @@ public sealed class ReferralReportTests : IDisposable
     {
         // The shape §5.3 admits and the tool can now send. If the report collapsed them, the
         // second boundary would be invisible in exactly the case where a question spans two.
-        var a = Closed("orders", "billing", "out_of_scope");
+        var a = Closed("orders@test", "billing@test", "out_of_scope");
 
-        Referral(a, "billing", "orders", "inventory");
-        Referral(a, "billing", "orders", "pricing");
+        Referral(a, "billing@test", "orders@test", "inventory@test");
+        Referral(a, "billing@test", "orders@test", "pricing@test");
 
         await _commands.ReferralsAsync(Ct);
 
-        Assert.Contains("inventory", Printed, StringComparison.Ordinal);
-        Assert.Contains("pricing", Printed, StringComparison.Ordinal);
+        Assert.Contains("inventory@test", Printed, StringComparison.Ordinal);
+        Assert.Contains("pricing@test", Printed, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -173,8 +177,8 @@ public sealed class ReferralReportTests : IDisposable
         // The reading, and it is load-bearing rather than decoration. An operator who takes this
         // as a fault in the answerer will go and change that repository, when the thing to change
         // is where ownership is written down and the asker's idea of who owns what.
-        var a = Closed("orders", "billing", "out_of_scope");
-        Referral(a, "billing", "orders", "inventory");
+        var a = Closed("orders@test", "billing@test", "out_of_scope");
+        Referral(a, "billing@test", "orders@test", "inventory@test");
 
         await _commands.ReferralsAsync(Ct);
 
@@ -187,8 +191,8 @@ public sealed class ReferralReportTests : IDisposable
         // The referral record keeps names, a sub-question identifier and a timestamp. What was
         // said is a message under §9.4, and an operator reading this is outside the §13 envelope
         // that marks a peer's words as somebody else's.
-        var a = Closed("orders", "billing", "out_of_scope");
-        Referral(a, "billing", "orders", "inventory");
+        var a = Closed("orders@test", "billing@test", "out_of_scope");
+        Referral(a, "billing@test", "orders@test", "inventory@test");
 
         await _commands.ReferralsAsync(Ct);
 

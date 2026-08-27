@@ -106,8 +106,8 @@ public sealed class ExchangePolicyTests
     [Fact]
     public void An_exchange_opened_without_a_policy_takes_the_default()
     {
-        var orders = AgentName.Create("orders");
-        var billing = AgentName.Create("billing");
+        var orders = AgentName.Create("orders@test");
+        var billing = AgentName.Create("billing@test");
         var t0 = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
         var exchange = Exchange.Open(1, orders, billing, t0);
@@ -122,8 +122,8 @@ public sealed class ExchangePolicyTests
     public void An_exchange_refuses_a_policy_storage_would_not_accept()
     {
         // Caught at the domain boundary rather than three layers down at the INSERT.
-        var orders = AgentName.Create("orders");
-        var billing = AgentName.Create("billing");
+        var orders = AgentName.Create("orders@test");
+        var billing = AgentName.Create("billing@test");
         var t0 = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => Exchange.Open(

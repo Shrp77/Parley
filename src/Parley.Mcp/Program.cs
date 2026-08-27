@@ -3,7 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Parley.Mcp;
 
-// A Parley MCP server. One process, one agent, one project's database.
+// A Parley MCP server. One process, one agent, one connection to the broker.
 //
 // Launched by an MCP client, which supplies the environment:
 //
@@ -11,10 +11,14 @@ using Parley.Mcp;
 //     "mcpServers": {
 //       "parley": {
 //         "command": "parley-mcp",
-//         "env": { "PARLEY_DB": "C:/proj/.parley/parley.db", "PARLEY_AGENT": "orders" }
+//         "env": { "PARLEY_AGENT": "orders" }
 //       }
 //     }
 //   }
+//
+// No database path. This process opens no store and could not if it were told to: SPEC.md §4
+// gives the file to one broker process, and everything else reaches it over the transport. The
+// broker is found at PARLEY_BROKER, or on loopback if that says nothing.
 //
 // The agent's identity comes from that environment and from nowhere else. No tool takes it as
 // a parameter, so no tool call can change who the caller is — see ServerOptions.
@@ -46,18 +50,16 @@ builder.Logging.AddConsole(console => console.LogToStandardErrorThreshold = LogL
 
 builder.Services.AddSingleton(options);
 
-// Started eagerly rather than lazily, so a database that cannot be opened or migrated stops the
-// launch instead of producing a server whose every tool fails the same way. The reboot sequence
-// of SPEC.md §14 runs here too, which is what every broker operation refuses until.
+// Started eagerly rather than lazily, so a broker that cannot be reached stops the launch
+// instead of producing a server whose every tool fails the same way. The attach sequence of
+// SPEC.md §14 runs here too, which is what every broker operation refuses until.
 builder.Services.AddSingleton(provider =>
-    BrokerSession.StartAsync(
-            provider.GetRequiredService<ServerOptions>(),
-            TimeProvider.System)
+    BrokerLink.StartAsync(provider.GetRequiredService<ServerOptions>())
         .GetAwaiter().GetResult());
 
-// Registered as a singleton the sweep depends on, rather than constructed inside it, so a test
-// can substitute one and so its own dependencies are resolved the same way everything else is.
-builder.Services.AddHostedService<SweepService>();
+// No sweep here any more. It ran in every adapter while every adapter opened the store, which
+// meant a deployment of twenty repositories ran twenty sweeps over one file, each with its own
+// idea of when the ghosting clock started. It belongs to the process that owns the store.
 
 builder.Services
     // Instructions travel with the protocol, which makes this the one way to tell a model what
@@ -69,13 +71,33 @@ builder.Services
 
 var host = builder.Build();
 
-BrokerSession session;
+BrokerLink link;
 
 try
 {
-    // Touches the session before serving, so a failure to open the database is reported here
-    // rather than on the first tool call.
-    session = host.Services.GetRequiredService<BrokerSession>();
+    // Touches the link before serving, so a broker that is not running is reported here rather
+    // than on the first tool call.
+    link = host.Services.GetRequiredService<BrokerLink>();
+}
+catch (Grpc.Core.RpcException ex)
+{
+    // The status detail, not the exception message. RpcException's own message wraps the
+    // sentence in Status(StatusCode="FailedPrecondition", Detail="...") -- machine-readable
+    // framing around the one part a person needs, printed to a console where the framing is
+    // noise. The broker's refusals are written for whoever is reading this line: a protocol
+    // mismatch, a retired agent, a name another repository holds.
+    await Console.Error.WriteLineAsync($"Parley could not start: {ex.Status.Detail}")
+        .ConfigureAwait(false);
+
+    return 78; // EX_CONFIG: something in the deployment needs changing, not retrying.
+}
+catch (BrokerUnreachableException ex)
+{
+    // The failure a new deployment meets first, and it gets its own arm because its remedy is
+    // its own: nothing is misconfigured and nothing is broken, there is simply no broker running
+    // yet. The message says how to start one.
+    await Console.Error.WriteLineAsync(ex.Message).ConfigureAwait(false);
+    return 69; // EX_UNAVAILABLE: the service this depends on is not up.
 }
 catch (AgentRetiredException ex)
 {
@@ -90,7 +112,7 @@ catch (AgentRetiredException ex)
 catch (Exception ex)
 #pragma warning restore CA1031
 {
-    // Broad on purpose. Whatever went wrong opening or migrating the database, the useful
+    // Broad on purpose. Whatever went wrong reaching or attaching to the broker, the useful
     // behaviour is the same: say so on stderr and exit, so the client shows the person a
     // process that failed rather than a server that answers every tool with the same error.
     await Console.Error.WriteLineAsync($"Parley could not start: {ex.Message}").ConfigureAwait(false);
@@ -103,10 +125,10 @@ try
 }
 finally
 {
-    // In a finally, so the agent is marked offline even when serving ends badly. The mark is
-    // cosmetic — nothing routes on it — but a registry that reports everybody live is a registry
-    // nobody consults, and this is the only moment the process knows it is stopping.
-    await session.DisposeAsync().ConfigureAwait(false);
+    // In a finally, so the connection is closed even when serving ends badly. Closing it is what
+    // says this agent has gone (§4.0) — and while an abrupt exit says the same thing by breaking
+    // the socket, a clean close says it immediately rather than whenever the broker notices.
+    await link.DisposeAsync().ConfigureAwait(false);
 }
 
 return 0;

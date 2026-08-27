@@ -18,9 +18,9 @@ namespace Parley.Broker.Tests;
 /// </remarks>
 public sealed class MixedWorkloadTests : IDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
-    private static readonly AgentName Inventory = AgentName.Create("inventory");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
+    private static readonly AgentName Inventory = AgentName.Create("inventory@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private const string Model = "claude-opus-5";
 
@@ -35,8 +35,7 @@ public sealed class MixedWorkloadTests : IDisposable
         foreach (var name in new[] { Orders, Billing, Inventory })
         {
             _agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Full, "/w", "s", "{}", null,
-                    AgentStatus.Offline),
+                new AgentRecord(name, "test", AgentTier.Full, "/w", "s", "{}", false, AgentStatus.Active),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
@@ -92,6 +91,6 @@ public sealed class MixedWorkloadTests : IDisposable
         // Owns is here on purpose and is the only field ever added to this list deliberately:
         // an operator writes it for peers to read. Anything else appearing means a column on
         // the stored record reached the projection without that decision being made.
-        Assert.Equal(["Name", "Adapter", "Tier", "Status", "LastSeenUtc", "Owns"], summaryFields);
+        Assert.Equal(["Name", "Adapter", "Tier", "Presence", "Owns"], summaryFields);
     }
 }

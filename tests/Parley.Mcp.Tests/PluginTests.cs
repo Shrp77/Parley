@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Parley.Core;
@@ -28,6 +28,7 @@ public sealed class PluginTests
     private const string Manifest = "plugins/parley/.claude-plugin/plugin.json";
     private const string Setup = "plugins/parley/commands/setup.md";
     private const string Peers = "plugins/parley/commands/peers.md";
+    private const string Status = "plugins/parley/commands/status.md";
     private const string Skill = "plugins/parley/skills/parley-operator/SKILL.md";
 
     /// <summary>The repository root, anchored on the marketplace manifest.</summary>
@@ -40,7 +41,7 @@ public sealed class PluginTests
     private static string Root() => RepositoryFile.RootHolding(Marketplace);
 
     /// <summary>The verbs the operator's tool accepts, taken from the help it prints.</summary>
-    /// <param name="text">Text in which each verb appears as <c>parley [--db &lt;path&gt;] verb</c>.</param>
+    /// <param name="text">Text in which each verb appears as <c>parley verb</c>.</param>
     /// <returns>The verbs, in no particular order.</returns>
     /// <remarks>
     /// Extracted from the help rather than from the switch that dispatches it, because the help
@@ -48,7 +49,7 @@ public sealed class PluginTests
     /// but never printed is a different defect, and one the operator's own tests already cover.
     /// </remarks>
     private static IReadOnlySet<string> Verbs(string text) =>
-        Regex.Matches(text, @"parley \[--db <path>\] ([a-z][a-z-]*)")
+        Regex.Matches(text, @"parley ([a-z][a-z-]*)")
             .Select(m => m.Groups[1].Value)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -87,7 +88,7 @@ public sealed class PluginTests
         // What Claude Code shows in the / menu, and — for the skill, which is model-invocable —
         // the only thing it reads when deciding whether the skill is relevant at all. A
         // component without one is installed, listed as a bare name, and never chosen.
-        foreach (var component in new[] { Setup, Peers, Skill })
+        foreach (var component in new[] { Setup, Peers, Status, Skill })
         {
             var text = RepositoryFile.Read(component);
 
@@ -143,20 +144,21 @@ public sealed class PluginTests
     }
 
     [Fact]
-    public void The_setup_command_writes_the_two_variables_a_server_requires()
+    public void The_setup_command_writes_the_variable_a_server_requires()
     {
-        // Everything else has a default; these two are refused at start-up when absent. A
-        // configuration missing either produces a server that exits before it serves, which the
+        // One, where there used to be two. The database is not the adapter's business any more
+        // and the broker has a default, so the only thing a launch configuration must still say
+        // is who this process speaks for -- which is the one thing that could never be
+        // defaulted, because guessing it would guess an identity.
+        //
+        // A configuration missing it produces a server that exits before it serves, which the
         // user meets as a plugin that installed and did nothing.
         var configuration = Regex.Match(
             RepositoryFile.Read(Setup), @"""mcpServers"".*?\n```", RegexOptions.Singleline);
 
         Assert.True(configuration.Success, "the setup command no longer shows a launch configuration");
 
-        foreach (var required in new[] { ServerOptions.DatabaseVariable, ServerOptions.AgentVariable })
-        {
-            Assert.Contains(required, configuration.Value, StringComparison.Ordinal);
-        }
+        Assert.Contains(ServerOptions.AgentVariable, configuration.Value, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -246,18 +248,29 @@ public sealed class PluginTests
     [Fact]
     public void The_agent_facing_command_reaches_for_no_operator_command()
     {
-        // /parley:peers runs in a session that has the agent tools bound, and its job — writing
-        // down who the peers are — is one an operator command would also answer. Reading the
-        // registry through `parley agents` there would hand an agent the workspace paths the
-        // agent-facing roster deliberately withholds, so it uses parley_agents and nothing else.
+        // /parley:peers and /parley:status both run in a session that has the agent tools bound,
+        // and both do a job an operator command would also answer — who the peers are, and
+        // whether this agent is registered. Reading the registry through `parley agents` there
+        // would hand an agent the workspace paths the agent-facing roster deliberately
+        // withholds, so they use parley_agents and nothing else.
+        //
+        // Every command that runs with the tools bound belongs in this list. It named one file
+        // for as long as there was one, which made adding a second a decision nobody was asked
+        // to make — and status is the command most tempted by the operator's roster, because the
+        // question it asks is the question `parley registry` answers in a single call.
         //
         // Setup is exempt and not checked here: it is run by a person, before any server exists.
-        var peers = RepositoryFile.Read(Peers);
+        var verbs = Verbs(RepositoryFile.Read("src/Parley.Cli/Program.cs"));
 
-        foreach (var operatorCommand in Verbs(RepositoryFile.Read("src/Parley.Cli/Program.cs")))
+        foreach (var command in new[] { Peers, Status })
         {
-            Assert.DoesNotContain($"parley {operatorCommand}", peers, StringComparison.Ordinal);
-            Assert.DoesNotContain($"<path> {operatorCommand}", peers, StringComparison.Ordinal);
+            var text = RepositoryFile.Read(command);
+
+            foreach (var operatorCommand in verbs)
+            {
+                Assert.DoesNotContain($"parley {operatorCommand}", text, StringComparison.Ordinal);
+                Assert.DoesNotContain($"<path> {operatorCommand}", text, StringComparison.Ordinal);
+            }
         }
     }
 }

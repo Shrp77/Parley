@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Xunit;
 
 namespace Parley.Mcp.Tests;
@@ -186,11 +186,29 @@ public sealed class WaitingHookTests
     }
 
     [Fact]
-    public void It_reads_the_store_without_taking_a_lock_the_servers_are_waiting_on()
+    public void It_does_not_open_the_store_at_all()
     {
-        // Every agent's server is writing to this file continuously. A hook that opened it for
-        // writing, or held a lock, would stall the deployment it was reporting on.
-        Assert.Contains("mode=ro", Code, StringComparison.Ordinal);
+        // This asserted `mode=ro`: the hook opened the database read-only, because every agent's
+        // server was writing to it continuously and a hook holding a lock would have stalled the
+        // deployment it was reporting on.
+        //
+        // The guarantee is stronger now and the check says so rather than being deleted. One
+        // process owns the store (SPEC.md §4), it may be on a machine this hook has never heard
+        // of, and SQLite in WAL mode needs coherent shared memory between everything touching
+        // the file — so reaching for it is not slow, it is the corrupt case. The hook asks the
+        // broker through the operator's tool instead.
+        Assert.DoesNotContain("sqlite3", Code, StringComparison.Ordinal);
+        Assert.Contains("waiting", Code, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void It_bounds_how_long_it_will_wait_for_an_answer()
+    {
+        // It runs in front of a person waiting for their turn to start. A broker that is slow to
+        // answer must cost a moment and then be dropped — and every failure is read as nothing
+        // waiting, which is the safe direction: a session that does not know it has mail is a
+        // great deal better than one that cannot be worked in.
+        Assert.Contains("timeout=", Code, StringComparison.Ordinal);
     }
 
     [Fact]

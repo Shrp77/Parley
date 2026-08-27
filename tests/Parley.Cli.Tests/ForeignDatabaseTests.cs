@@ -75,14 +75,18 @@ public sealed class ForeignDatabaseTests : IDisposable
     }
 
     [Fact]
-    public void Pointing_it_at_somebody_elses_database_changes_nothing()
+    public void Pointing_the_broker_at_somebody_elses_database_changes_nothing()
     {
+        // Through `serve` now, because that is the only command that opens a file. The check
+        // moved there with the migration it guards rather than being dropped with the class it
+        // used to live in: one process creates every store, so it is the only thing left that
+        // can create one in the wrong place.
         var path = MakeForeignDatabase();
 
-        var (exitCode, error) = ToolProcess.Run("--db", path, "registry");
+        var (exitCode, error) = ToolProcess.Run("serve", "--db", path);
 
-        Assert.Equal(78, exitCode);
-        Assert.Contains("not a Parley database", error, StringComparison.Ordinal);
+        Assert.Equal(74, exitCode);
+        Assert.Contains("Parley did not create", error, StringComparison.Ordinal);
 
         var (version, tables) = Inspect(path);
 
@@ -91,17 +95,21 @@ public sealed class ForeignDatabaseTests : IDisposable
     }
 
     [Fact]
-    public void A_path_that_does_not_exist_is_not_created()
+    public void An_operator_command_cannot_create_a_database_at_all()
     {
-        // An operator command against a project that has never run is a mistyped path far more
-        // often than a first use, and creating one would answer "no agents registered" to a
-        // question about the wrong directory.
+        // This used to assert that `parley --db <nowhere> registry` refused rather than creating
+        // the file, because an operator command against a project that has never run is a
+        // mistyped path far more often than a first use.
+        //
+        // The guarantee is stronger now and the test says so rather than being deleted: an
+        // operator command has no --db to mistype. It reaches the broker over the transport and
+        // opens nothing, so there is no path it could create a database at.
         var path = Path.Combine(_directory, "nowhere.db");
 
         var (exitCode, error) = ToolProcess.Run("--db", path, "registry");
 
-        Assert.Equal(78, exitCode);
-        Assert.Contains("created by the first agent server", error, StringComparison.Ordinal);
+        Assert.Equal(64, exitCode);
+        Assert.Contains("--db is only for `parley serve`", error, StringComparison.Ordinal);
         Assert.False(File.Exists(path));
     }
 
@@ -116,12 +124,12 @@ public sealed class ForeignDatabaseTests : IDisposable
         var path = MakeForeignDatabase();
 
         var (exitCode, error) = ToolProcess.Run(
-            [(Parley.Core.DeploymentEnvironment.DatabaseVariable, path)], "agents");
+            [(Parley.Core.DeploymentEnvironment.DatabaseVariable, path)], "serve");
 
         // Refused for being a foreign database, which is only reachable if it opened this path —
         // no --db was given, so the variable is the only way it could have found it.
-        Assert.Equal(78, exitCode);
-        Assert.Contains("not a Parley database", error, StringComparison.Ordinal);
+        Assert.Equal(74, exitCode);
+        Assert.Contains("Parley did not create", error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -134,16 +142,19 @@ public sealed class ForeignDatabaseTests : IDisposable
         var (exitCode, error) = ToolProcess.Run();
 
         Assert.Equal(64, exitCode);
-        Assert.Contains("parley [--db <path>] registry", error, StringComparison.Ordinal);
+        Assert.Contains("parley registry", error, StringComparison.Ordinal);
         Assert.DoesNotContain("No database.", error, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void A_verb_without_a_database_still_says_so()
+    public void Serving_without_a_database_says_so()
     {
         // The other side. Naming a command means you know what you want, and then the missing
         // database is the useful thing to be told.
-        var (exitCode, error) = ToolProcess.Run("agents");
+        //
+        // Only `serve` can be missing one. Every other command reaches the broker over the
+        // transport and has no opinion about where the store is, which is the point.
+        var (exitCode, error) = ToolProcess.Run("serve");
 
         Assert.Equal(78, exitCode);
         Assert.Contains("No database.", error, StringComparison.Ordinal);
@@ -177,14 +188,14 @@ public sealed class ForeignDatabaseTests : IDisposable
         var (exitCode, error) = ToolProcess.Run("--db");
 
         Assert.Equal(64, exitCode);
-        Assert.Contains("needs a path after it", error, StringComparison.Ordinal);
+        Assert.Contains("needs a value after it", error, StringComparison.Ordinal);
         Assert.DoesNotContain("is not an option", error, StringComparison.Ordinal);
     }
 
     [Fact]
     public void The_database_option_given_twice_says_so()
     {
-        var (exitCode, error) = ToolProcess.Run("--db", "one.db", "--db", "two.db", "agents");
+        var (exitCode, error) = ToolProcess.Run("--db", "one.db", "--db", "two.db", "serve");
 
         Assert.Equal(64, exitCode);
         Assert.Contains("was given more than once", error, StringComparison.Ordinal);

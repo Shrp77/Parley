@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json;
 using Parley.Core;
 using Parley.Store;
@@ -25,14 +25,14 @@ namespace Parley.Mcp.Tests;
 /// fail a suite about Parley — the source-level checks still run there.
 /// </para>
 /// </remarks>
-public sealed class WaitingHookRunTests : IDisposable
+public sealed class WaitingHookRunTests : IAsyncDisposable
 {
     private const string Script = "plugins/parley/hooks/parley_waiting.py";
 
     private static readonly DateTimeOffset T0 = new(2026, 4, 1, 9, 0, 0, TimeSpan.Zero);
 
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
 
     /// <summary>
     /// Text put in a peer's message, shaped like the attack the envelope exists to stop.
@@ -50,10 +50,58 @@ public sealed class WaitingHookRunTests : IDisposable
 
     private static readonly Lazy<string?> Interpreter = new(Discover);
 
+    /// <summary>The directory holding the operator's tool, which the hook shells out to.</summary>
+    /// <remarks>
+    /// Put on the hook's PATH rather than installed, so this needs nothing on the machine and
+    /// runs the same way on a CI agent. The hook finds `parley` on PATH and stays silent when it
+    /// cannot — which is correct behaviour and would make every assertion here pass vacuously,
+    /// so the directory is asserted to hold the binary before anything runs.
+    /// </remarks>
+    private static readonly Lazy<string> ToolDirectory = new(LocateTool);
+
+    private Microsoft.Data.Sqlite.SqliteConnection? _connection;
+    private Parley.Server.ParleyServer? _broker;
+
+    /// <summary>Finds the operator tool's own build output.</summary>
+    /// <returns>The directory it was built into.</returns>
+    private static string LocateTool()
+    {
+        var here = new DirectoryInfo(
+            Path.GetDirectoryName(typeof(WaitingHookRunTests).Assembly.Location)!);
+
+        var root = here;
+
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "Parley.slnx")))
+        {
+            root = root.Parent;
+        }
+
+        Assert.NotNull(root);
+
+        var directory = Path.Combine(
+            root.FullName, "src", "Parley.Cli", "bin", here.Parent!.Name, here.Name);
+
+        var binary = Path.Combine(
+            directory, OperatingSystem.IsWindows() ? "parley.exe" : "parley");
+
+        Assert.True(File.Exists(binary), $"expected the operator's tool at {binary}");
+
+        return directory;
+    }
+
     public WaitingHookRunTests() => Directory.CreateDirectory(_workspace);
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
+        // The broker before the connection it borrowed, and both before the directory: stopping
+        // it ends every stream, and the file cannot be deleted while anything holds it open.
+        if (_broker is not null)
+        {
+            await _broker.DisposeAsync();
+        }
+
+        _connection?.Dispose();
+
         try
         {
             Directory.Delete(_workspace, recursive: true);
@@ -115,7 +163,12 @@ public sealed class WaitingHookRunTests : IDisposable
                     env = new Dictionary<string, string>(StringComparer.Ordinal)
                     {
                         ["PARLEY_AGENT"] = agent,
-                        ["PARLEY_DB"] = DatabasePath,
+
+                        // The broker, not the store. The hook cannot open a database any more
+                        // and must not try: one process owns it, it may be on another machine,
+                        // and SQLite in WAL mode needs coherent shared memory between everything
+                        // touching the file.
+                        ["PARLEY_BROKER"] = _broker!.Addresses[0],
                     },
                 },
             },
@@ -124,19 +177,23 @@ public sealed class WaitingHookRunTests : IDisposable
         File.WriteAllText(Path.Combine(_workspace, ".mcp.json"), manifest);
     }
 
-    /// <summary>Builds a store holding one undelivered notify from a peer.</summary>
+    /// <summary>Builds a store holding one undelivered notify from a peer, and serves it.</summary>
     /// <param name="ct">Cancels the seeding.</param>
+    /// <remarks>
+    /// A broker is started over the seeded file, because the hook asks rather than reads. That is
+    /// heavier than opening a database in the test and it is the arrangement being checked: the
+    /// hook's whole job is to report a count it cannot compute itself.
+    /// </remarks>
     private async Task SeedAsync(CancellationToken ct)
     {
-        using var connection = ParleyDatabase.OpenAndMigrate(DatabasePath);
+        var connection = ParleyDatabase.OpenAndMigrate(DatabasePath);
 
         var agents = new AgentRepository(connection);
 
         foreach (var name in new[] { Orders, Billing })
         {
             await agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Pull, null, null, null, null,
-                    AgentStatus.Offline),
+                new AgentRecord(name, "test", AgentTier.Pull, null, null, null, false, AgentStatus.Active),
                 ct);
         }
 
@@ -145,6 +202,14 @@ public sealed class WaitingHookRunTests : IDisposable
             JsonSerializer.Serialize(new { text = PeerWords }), T0, cancellationToken: ct);
 
         Assert.True(appended.Stored, "the fixture failed to store its message");
+
+        _connection = connection;
+
+        _broker = await Parley.Server.ParleyServer.StartAsync(
+            Parley.Server.BrokerRuntime.Over(
+                connection, Parley.Broker.BrokerOptions.Default, TimeProvider.System),
+            "http://127.0.0.1:0",
+            ct);
     }
 
     /// <summary>Runs the hook with one payload and returns everything it printed.</summary>
@@ -176,13 +241,21 @@ public sealed class WaitingHookRunTests : IDisposable
 
         var script = Path.Combine(RepositoryFile.RootHolding(Script), Script);
 
-        using var process = Process.Start(new ProcessStartInfo(interpreter!, script)
+        var start = new ProcessStartInfo(interpreter!, script)
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
-        })!;
+        };
+
+        // The hook shells out to `parley waiting`, so the tool has to be findable. Prepended
+        // rather than replacing PATH, because the interpreter itself needs whatever is already
+        // there.
+        start.Environment["PATH"] =
+            ToolDirectory.Value + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH");
+
+        using var process = Process.Start(start)!;
 
         process.StandardInput.Write(JsonSerializer.Serialize(fields));
         process.StandardInput.Close();
@@ -232,7 +305,7 @@ public sealed class WaitingHookRunTests : IDisposable
         // whichever direction is silent — a notice the model never sees, or peer-adjacent text
         // on somebody's screen — and from here both look like a working hook.
         await SeedAsync(TestContext.Current.CancellationToken);
-        WriteManifest("orders");
+        WriteManifest("orders@test");
 
         var output = Run(hookEvent);
 
@@ -248,7 +321,7 @@ public sealed class WaitingHookRunTests : IDisposable
         // finish a turn is a far worse outcome than one that missed a message. One extra turn is
         // the whole budget.
         await SeedAsync(TestContext.Current.CancellationToken);
-        WriteManifest("orders");
+        WriteManifest("orders@test");
 
         Assert.NotEmpty(Run("Stop", new { stop_hook_active = false }));
         Assert.Empty(Run("Stop", new { stop_hook_active = true }));
@@ -265,7 +338,7 @@ public sealed class WaitingHookRunTests : IDisposable
         // permanently silent — unread mail turned into destroyed mail, which is worse than the
         // failure the hook exists to fix.
         await SeedAsync(TestContext.Current.CancellationToken);
-        WriteManifest("orders");
+        WriteManifest("orders@test");
 
         Assert.Empty(Run(hookEvent, new { agent_id = "sub-1" }));
     }
@@ -279,7 +352,7 @@ public sealed class WaitingHookRunTests : IDisposable
         // as literal braces rather than parsed. The two shapes are not interchangeable and the
         // wrong one is not an error, just noise.
         await SeedAsync(TestContext.Current.CancellationToken);
-        WriteManifest("orders");
+        WriteManifest("orders@test");
 
         var output = Run(hookEvent);
 
@@ -303,14 +376,14 @@ public sealed class WaitingHookRunTests : IDisposable
         // that it does not come back out. A future change that inlined the message to save the
         // agent a call would pass every grep in WaitingHookTests and fail here.
         await SeedAsync(TestContext.Current.CancellationToken);
-        WriteManifest("orders");
+        WriteManifest("orders@test");
 
         var output = Run(hookEvent);
 
         Assert.NotEmpty(output);
         Assert.DoesNotContain("ignore all previous", output, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("contracts directory", output, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("billing", output, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("billing@test", output, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -334,7 +407,7 @@ public sealed class WaitingHookRunTests : IDisposable
         // Deliberately narrow: a session that can collect gets no excuse from this, so the
         // loudness this file exists for is untouched.
         await SeedAsync(TestContext.Current.CancellationToken);
-        WriteManifest("orders");
+        WriteManifest("orders@test");
 
         var output = Run(hookEvent);
 
@@ -358,10 +431,10 @@ public sealed class WaitingHookRunTests : IDisposable
         // here is designed to fail by saying nothing.
         await SeedAsync(TestContext.Current.CancellationToken);
 
-        WriteManifest("orders");
+        WriteManifest("orders@test");
         Assert.NotEmpty(Run(hookEvent));
 
-        WriteManifest("inventory");
+        WriteManifest("inventory@test");
         Assert.Empty(Run(hookEvent));
     }
 
@@ -372,7 +445,7 @@ public sealed class WaitingHookRunTests : IDisposable
         // shape is unknown. Printing the wrong shape is worse than printing nothing: plain text
         // on a structured event is a parse failure rather than a notice.
         await SeedAsync(TestContext.Current.CancellationToken);
-        WriteManifest("orders");
+        WriteManifest("orders@test");
 
         Assert.Empty(Run("SubagentStop", new { stop_hook_active = false }));
         Assert.Empty(Run("TeammateIdle"));

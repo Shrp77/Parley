@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Parley.Core;
 using Xunit;
 
@@ -62,23 +62,41 @@ public sealed class DocumentedDefaultTests
     }
 
     [Fact]
-    public void The_readme_offers_the_default_as_its_example()
+    public void The_readme_states_the_default_it_applies()
     {
+        // The number, not the variable. It used to be shown as a launch-configuration line
+        // because every repository set its own; the broker holds it now, so what the README owes
+        // a reader is what the cap is when nobody has changed it.
+        var readme = RepositoryFile.Read("README.md");
+
         Assert.Contains(
-            $"\"PARLEY_CLARIFY_CAP\": \"{Cap}\"",
-            RepositoryFile.Read("README.md"),
+            Cap.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            readme,
             StringComparison.Ordinal);
+
+        Assert.Contains("clarif", readme, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void Setup_writes_the_default_it_documents()
+    public void Setup_does_not_offer_a_cap_it_cannot_set()
     {
-        // Two claims in one file: the value written into a fresh configuration, and the sentence
-        // telling the user what an absent variable would have done. Both are the same number and
-        // both are prose, so both rot the same way.
+        // This asserted that the setup command wrote the cap into every launch configuration,
+        // and that the sentence beside it named the same number. Both were right while each
+        // repository set its own.
+        //
+        // A launch configuration cannot set it now, so writing it would be worse than omitting
+        // it: the user would see a value in the file they were told to create, change it, and
+        // find that nothing happened. The check is therefore that it is absent, which is a real
+        // property and not the absence of a test.
         var setup = RepositoryFile.Read("plugins/parley/commands/setup.md");
 
-        Assert.Contains($"\"PARLEY_CLARIFY_CAP\": \"{Cap}\"", setup, StringComparison.Ordinal);
-        Assert.Contains($"{Cap} is also what the server uses", setup, StringComparison.Ordinal);
+        var configuration = System.Text.RegularExpressions.Regex.Match(
+            setup, @"""mcpServers"".*?\n```",
+            System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        Assert.True(configuration.Success, "the setup command no longer shows a configuration");
+
+        Assert.DoesNotContain(
+            "PARLEY_CLARIFY_CAP", configuration.Value, StringComparison.Ordinal);
     }
 }

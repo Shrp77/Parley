@@ -43,8 +43,8 @@ public sealed class MalformedInputTests
     private static async Task<(ParleyTools Orders, ParleyTools Billing)> PairAsync(
         ServerFixture fixture, CancellationToken ct)
     {
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         return (orders, billing);
     }
@@ -71,7 +71,7 @@ public sealed class MalformedInputTests
         var (orders, _) = await PairAsync(fixture, ct);
 
         AssertMalformed(
-            await Ask(orders, "billing", [new SubQuestion("q1", "gross or net?")], conversationId, ct),
+            await Ask(orders, "billing@test", [new SubQuestion("q1", "gross or net?")], conversationId, ct),
             "conversation id");
     }
 
@@ -82,7 +82,7 @@ public sealed class MalformedInputTests
         await using var fixture = new ServerFixture(T0);
         var (orders, _) = await PairAsync(fixture, ct);
 
-        var asked = await Ask(orders, "billing", [new SubQuestion("q1", "gross or net?")], "tax-rate", ct);
+        var asked = await Ask(orders, "billing@test", [new SubQuestion("q1", "gross or net?")], "tax-rate", ct);
 
         Assert.True(asked["ok"]!.GetValue<bool>(), asked.ToJsonString());
     }
@@ -113,7 +113,7 @@ public sealed class MalformedInputTests
         var (orders, _) = await PairAsync(fixture, ct);
 
         AssertMalformed(
-            await Ask(orders, "orders", [new SubQuestion("q1", "gross or net?")], null, ct),
+            await Ask(orders, "orders@test", [new SubQuestion("q1", "gross or net?")], null, ct),
             "yourself");
     }
 
@@ -132,7 +132,7 @@ public sealed class MalformedInputTests
 
         AssertMalformed(
             await orders.NotifyAsync(
-                "billing", "the invoice schema changed", responderModel: claimed, cancellationToken: ct),
+                "billing@test", "the invoice schema changed", responderModel: claimed, cancellationToken: ct),
             "reserved");
     }
 
@@ -150,7 +150,7 @@ public sealed class MalformedInputTests
 
         AssertMalformed(
             await orders.NotifyAsync(
-                "billing", "the invoice schema changed", responderModel: claimed, cancellationToken: ct),
+                "billing@test", "the invoice schema changed", responderModel: claimed, cancellationToken: ct),
             "responder identity");
     }
 
@@ -162,7 +162,7 @@ public sealed class MalformedInputTests
         var (orders, billing) = await PairAsync(fixture, ct);
 
         var sent = await orders.NotifyAsync(
-            "billing", "the invoice schema changed", responderModel: "script:contracts-lookup",
+            "billing@test", "the invoice schema changed", responderModel: "script:contracts-lookup",
             cancellationToken: ct);
 
         Assert.True(sent["ok"]!.GetValue<bool>(), sent.ToJsonString());
@@ -171,7 +171,7 @@ public sealed class MalformedInputTests
         // assertion that reads index zero fails with an index error when that assumption breaks,
         // which says nothing about what actually arrived.
         var delivered = (await billing.InboxAsync(cancellationToken: ct))["messages"]!.AsArray();
-        var note = Assert.Single(delivered, m => m!["from"]!.GetValue<string>() == "orders");
+        var note = Assert.Single(delivered, m => m!["from"]!.GetValue<string>() == "orders@test");
 
         Assert.Contains(
             "script:contracts-lookup", note!["message"]!.GetValue<string>(), StringComparison.Ordinal);
@@ -186,7 +186,7 @@ public sealed class MalformedInputTests
         await using var fixture = new ServerFixture(T0);
         var (orders, _) = await PairAsync(fixture, ct);
 
-        AssertMalformed(await Ask(orders, "billing", [], null, ct), "at least one");
+        AssertMalformed(await Ask(orders, "billing@test", [], null, ct), "at least one");
     }
 
     [Fact]
@@ -197,7 +197,7 @@ public sealed class MalformedInputTests
         var (orders, _) = await PairAsync(fixture, ct);
 
         AssertMalformed(
-            await Ask(orders, "billing",
+            await Ask(orders, "billing@test",
                 [new SubQuestion("q1", "gross or net?"), new SubQuestion("q1", "or something else?")],
                 null, ct),
             "q1");
@@ -211,7 +211,7 @@ public sealed class MalformedInputTests
         var (orders, _) = await PairAsync(fixture, ct);
 
         AssertMalformed(
-            await Ask(orders, "billing",
+            await Ask(orders, "billing@test",
                 [new SubQuestion("q1", "gross or net?", GateOn: "q7", GateEquals: "yes")], null, ct),
             "q7");
     }
@@ -226,7 +226,7 @@ public sealed class MalformedInputTests
         await using var fixture = new ServerFixture(T0);
         var (orders, billing) = await PairAsync(fixture, ct);
 
-        var asked = await Ask(orders, "billing", [new SubQuestion("q1", "gross or net?")], null, ct);
+        var asked = await Ask(orders, "billing@test", [new SubQuestion("q1", "gross or net?")], null, ct);
         var exchangeId = asked["exchange_id"]!.GetValue<long>();
         await billing.InboxAsync(cancellationToken: ct);
 
@@ -251,7 +251,7 @@ public sealed class MalformedInputTests
         await using var fixture = new ServerFixture(T0);
         var (orders, billing) = await PairAsync(fixture, ct);
 
-        var asked = await Ask(orders, "billing", [new SubQuestion("q1", "gross or net?")], null, ct);
+        var asked = await Ask(orders, "billing@test", [new SubQuestion("q1", "gross or net?")], null, ct);
         await billing.InboxAsync(cancellationToken: ct);
 
         AssertMalformed(
@@ -270,7 +270,7 @@ public sealed class MalformedInputTests
         await using var fixture = new ServerFixture(T0);
         var (orders, billing) = await PairAsync(fixture, ct);
 
-        var asked = await Ask(orders, "billing", [new SubQuestion("q1", "gross or net?")], null, ct);
+        var asked = await Ask(orders, "billing@test", [new SubQuestion("q1", "gross or net?")], null, ct);
         await billing.InboxAsync(cancellationToken: ct);
 
         AssertMalformed(

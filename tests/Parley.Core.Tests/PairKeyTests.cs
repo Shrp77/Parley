@@ -4,8 +4,8 @@ namespace Parley.Core.Tests;
 
 public sealed class PairKeyTests
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
 
     [Fact]
     public void Key_is_unordered()
@@ -16,7 +16,7 @@ public sealed class PairKeyTests
     [Fact]
     public void Distinct_pairs_produce_distinct_keys()
     {
-        var inventory = AgentName.Create("inventory");
+        var inventory = AgentName.Create("inventory@test");
 
         Assert.NotEqual(PairKey.For(Orders, Billing), PairKey.For(Orders, inventory));
     }
@@ -26,10 +26,10 @@ public sealed class PairKeyTests
     {
         // Without a separator, ("a","bc") and ("ab","c") would collide. The separator is
         // excluded from the AgentName grammar precisely so this cannot happen.
-        var a = AgentName.Create("a");
-        var bc = AgentName.Create("bc");
-        var ab = AgentName.Create("ab");
-        var c = AgentName.Create("c");
+        var a = AgentName.Create("a@m");
+        var bc = AgentName.Create("bc@m");
+        var ab = AgentName.Create("ab@m");
+        var c = AgentName.Create("c@m");
 
         Assert.NotEqual(PairKey.For(a, bc), PairKey.For(ab, c));
     }

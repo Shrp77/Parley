@@ -33,9 +33,9 @@ public sealed class NotifyVolumeTests : IDisposable
         _connection = ParleyDatabase.OpenInMemory();
         _volume = new NotifyVolumeRepository(_connection);
 
-        Execute("INSERT INTO agents (name, adapter, tier, status) VALUES "
-              + "('orders','test','full','offline'),('billing','test','full','offline'),"
-              + "('inventory','test','full','offline');");
+        Execute("INSERT INTO nodes (machine, connected, first_seen_utc) VALUES ('test', 1, '2026-01-01T00:00:00+00:00') ON CONFLICT DO NOTHING; INSERT INTO agents (name, adapter, tier, status) VALUES "
+              + "('orders@test','test','full','active'),('billing@test','test','full','active'),"
+              + "('inventory@test','test','full','active');");
     }
 
     public void Dispose() => _connection.Dispose();
@@ -75,9 +75,9 @@ public sealed class NotifyVolumeTests : IDisposable
     [Fact]
     public async Task Each_notification_is_counted_once_and_its_size_accumulated()
     {
-        Notify("orders", "billing", "one");
-        Notify("orders", "billing", "two");
-        Notify("orders", "billing", "three");
+        Notify("orders@test", "billing@test", "one");
+        Notify("orders@test", "billing@test", "two");
+        Notify("orders@test", "billing@test", "three");
 
         var report = await _volume.ReadAsync(Ct);
         var flow = Assert.Single(report.Flows);
@@ -98,8 +98,8 @@ public sealed class NotifyVolumeTests : IDisposable
         // Twenty short notices and one enormous one average out to something unremarkable and are
         // completely different problems. If largest were dropped the report could not tell them
         // apart, which is the distinction the decision turns on.
-        Notify("orders", "billing", "x");
-        Notify("orders", "billing", new string('y', 500));
+        Notify("orders@test", "billing@test", "x");
+        Notify("orders@test", "billing@test", new string('y', 500));
 
         var flow = Assert.Single((await _volume.ReadAsync(Ct)).Flows);
 
@@ -113,8 +113,8 @@ public sealed class NotifyVolumeTests : IDisposable
     {
         // Twenty notifications in an hour and twenty over a month are the same count and opposite
         // findings. last_utc alone cannot separate them.
-        Notify("orders", "billing", "first", Stamp);
-        Notify("orders", "billing", "last", Later);
+        Notify("orders@test", "billing@test", "first", Stamp);
+        Notify("orders@test", "billing@test", "last", Later);
 
         var flow = Assert.Single((await _volume.ReadAsync(Ct)).Flows);
 
@@ -127,15 +127,15 @@ public sealed class NotifyVolumeTests : IDisposable
     {
         // The same reason §7.1 counts slots directionally: a busy flow one way says nothing about
         // the other, and merging them would report one agent's noise against its peer's name.
-        Notify("orders", "billing", "out");
-        Notify("billing", "orders", "back");
-        Notify("billing", "orders", "again");
+        Notify("orders@test", "billing@test", "out");
+        Notify("billing@test", "orders@test", "back");
+        Notify("billing@test", "orders@test", "again");
 
         var report = await _volume.ReadAsync(Ct);
 
         Assert.Equal(2, report.Flows.Count);
-        Assert.Equal(2, report.Flows.Single(f => f.From == "billing").Sent);
-        Assert.Equal(1, report.Flows.Single(f => f.From == "orders").Sent);
+        Assert.Equal(2, report.Flows.Single(f => f.From == "billing@test").Sent);
+        Assert.Equal(1, report.Flows.Single(f => f.From == "orders@test").Sent);
     }
 
     [Fact]
@@ -143,18 +143,18 @@ public sealed class NotifyVolumeTests : IDisposable
     {
         // The trigger fires on messages, and every other type goes through the same table. A
         // question counted here would inflate the one number the decision rests on.
-        Notify("orders", "billing", "an event");
+        Notify("orders@test", "billing@test", "an event");
 
         Execute(
             "INSERT INTO exchanges (pair_key, asker, answerer, owed_by, state, clarify_depth, "
           + "clarify_depth_cap, open_pair_cap, delivery_window_ms, working_window_ms, "
           + "grace_period_ms, opened_utc, expires_utc, question_hash) VALUES "
-          + "('billing' || char(31) || 'orders','orders','billing','billing','OPEN',0,3,5,"
+          + "('billing@test' || char(31) || 'orders@test','orders@test','billing@test','billing@test','OPEN',0,3,5,"
           + "900000,14400000,86400000,'" + Stamp + "','" + Stamp + "','h');");
 
         Execute(
             "INSERT INTO messages (exchange_id, type, from_agent, to_agent, responder_model, "
-          + "payload_json, content_hash, created_utc) VALUES (1,'clarify','billing','orders',"
+          + "payload_json, content_hash, created_utc) VALUES (1,'clarify','billing@test','orders@test',"
           + "'some-model-9','{\"text\":\"which one?\"}','"
           + (++_hashes).ToString("D64", CultureInfo.InvariantCulture) + "','" + Stamp + "');");
 
@@ -169,8 +169,8 @@ public sealed class NotifyVolumeTests : IDisposable
         // The whole reason this is a table rather than a query over messages. §9.4 prunes by
         // DELETE FROM messages, and a measurement that could only see the retention window would
         // be useless for deciding a limit.
-        Notify("orders", "billing", "one");
-        Notify("orders", "billing", "two");
+        Notify("orders@test", "billing@test", "one");
+        Notify("orders@test", "billing@test", "two");
 
         Execute("DELETE FROM messages;");
 
@@ -187,15 +187,15 @@ public sealed class NotifyVolumeTests : IDisposable
         // The number a survey threshold reads. An agent judging whether notifications are worth
         // having is judging all of them, not one peer's share — so a total per recipient is the
         // figure, and per-flow counts would each look small while the inbox was full.
-        Notify("orders", "billing", "a");
-        Notify("orders", "billing", "b");
-        Notify("inventory", "billing", "c");
-        Notify("orders", "inventory", "d");
+        Notify("orders@test", "billing@test", "a");
+        Notify("orders@test", "billing@test", "b");
+        Notify("inventory@test", "billing@test", "c");
+        Notify("orders@test", "inventory@test", "d");
 
         var report = await _volume.ReadAsync(Ct);
 
-        Assert.Equal(3, report.Received.Single(r => r.Agent == "billing").Received);
-        Assert.Equal(1, report.Received.Single(r => r.Agent == "inventory").Received);
+        Assert.Equal(3, report.Received.Single(r => r.Agent == "billing@test").Received);
+        Assert.Equal(1, report.Received.Single(r => r.Agent == "inventory@test").Received);
     }
 
     [Fact]
@@ -206,10 +206,10 @@ public sealed class NotifyVolumeTests : IDisposable
         // was near.
         for (var i = 0; i < 10; i++)
         {
-            Notify("orders", "billing", "x");
+            Notify("orders@test", "billing@test", "x");
         }
 
-        Notify("inventory", "billing", new string('y', 1000));
+        Notify("inventory@test", "billing@test", new string('y', 1000));
 
         var report = await _volume.ReadAsync(Ct);
 

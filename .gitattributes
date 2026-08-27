@@ -1,0 +1,7 @@
+# Shell scripts are line-ending sensitive in a way nothing else here is: a CRLF `install.sh`
+# fails on Linux with `bad interpreter: /usr/bin/env bash^M`, and in Git Bash on Windows too.
+#
+# The committed blob is already LF, so this is not fixing anything today -- it is stopping a
+# machine with core.autocrlf=true from producing a working copy that cannot run the script it
+# just checked out. That is the default on Windows, which is where this repository is developed.
+*.sh text eol=lf

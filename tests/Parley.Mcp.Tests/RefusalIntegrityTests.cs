@@ -1,4 +1,4 @@
-using Dapper;
+﻿using Dapper;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -32,27 +32,27 @@ public sealed class RefusalIntegrityTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        await fixture.LaunchAsync("billing@test", ct);
 
         var one = new SubQuestion("q1", "Does an invoice carry the rate at time of sale?");
 
         await orders.AskAsync("Billing", "intent", [one], Consequences, cancellationToken: ct);
-        await orders.AskAsync("billing", "intent", [], Consequences, cancellationToken: ct);
-        await orders.AskAsync("billing", "intent",
+        await orders.AskAsync("billing@test", "intent", [], Consequences, cancellationToken: ct);
+        await orders.AskAsync("billing@test", "intent",
             [one, new SubQuestion("q1", "and again?")], Consequences, cancellationToken: ct);
-        await orders.AskAsync("billing", "intent",
+        await orders.AskAsync("billing@test", "intent",
             [new SubQuestion("q1", "a", GateOn: "q9", GateEquals: "yes")], Consequences,
             cancellationToken: ct);
-        await orders.AskAsync("billing", "intent", [one], Consequences, "../bad", cancellationToken: ct);
-        await orders.AskAsync("billing", "intent", [one], Consequences,
+        await orders.AskAsync("billing@test", "intent", [one], Consequences, "../bad", cancellationToken: ct);
+        await orders.AskAsync("billing@test", "intent", [one], Consequences,
             responderModel: "parley:broker", cancellationToken: ct);
-        await orders.AskAsync("billing", "intent",
+        await orders.AskAsync("billing@test", "intent",
             [new SubQuestion("q1", new string('x', MessageLimits.MaxPayloadCharacters + 1000))],
             Consequences, cancellationToken: ct);
-        await orders.NotifyAsync("orders", "talking to myself", cancellationToken: ct);
+        await orders.NotifyAsync("orders@test", "talking to myself", cancellationToken: ct);
 
-        using var connection = ParleyDatabase.OpenAndMigrate(fixture.DatabasePath);
+        var connection = fixture.Connection;
 
         Assert.Equal(0, connection.ExecuteScalar<long>("SELECT count(*) FROM exchanges;"));
         Assert.Equal(0, connection.ExecuteScalar<long>("SELECT count(*) FROM messages;"));
@@ -79,12 +79,12 @@ public sealed class RefusalIntegrityTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
-        await fixture.LaunchAsync("inventory", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
+        await fixture.LaunchAsync("inventory@test", ct);
 
         var asked = await orders.AskAsync(
-            to: "billing",
+            to: "billing@test",
             intent: "Deciding where the tax rate lives.",
             subQuestions:
             [
@@ -105,7 +105,7 @@ public sealed class RefusalIntegrityTests
             exchangeId,
             [
                 new Resolution("q1", "answered", "Yes. invoice_lines.tax_rate is stamped at issue."),
-                new Resolution("q2", "out_of_scope", "Refunds are not mine.", RedirectTo: ["inventory"])
+                new Resolution("q2", "out_of_scope", "Refunds are not mine.", RedirectTo: ["inventory@test"])
             ],
             responderModel: "human:on-call",
             cancellationToken: ct);
@@ -123,11 +123,11 @@ public sealed class RefusalIntegrityTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            "billing", "Deciding where the tax rate lives.",
+            "billing@test", "Deciding where the tax rate lives.",
             [new SubQuestion("q1", "Is the rate stamped at time of sale?")],
             Consequences, cancellationToken: ct);
 
@@ -135,7 +135,7 @@ public sealed class RefusalIntegrityTests
 
         var refused = await billing.AnswerAsync(
             asked["exchange_id"]!.GetValue<long>(),
-            [new Resolution("q1", "out_of_scope", "Not mine.", RedirectTo: ["billing"])],
+            [new Resolution("q1", "out_of_scope", "Not mine.", RedirectTo: ["billing@test"])],
             cancellationToken: ct);
 
         Assert.False(refused["ok"]!.GetValue<bool>(), refused.ToJsonString());
@@ -151,18 +151,18 @@ public sealed class RefusalIntegrityTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
-        await fixture.LaunchAsync("inventory", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
+        await fixture.LaunchAsync("inventory@test", ct);
 
-        using (var connection = ParleyDatabase.OpenAndMigrate(fixture.DatabasePath))
         {
+            var connection = fixture.Connection;
             await new AgentRepository(connection)
-                .RetireAsync(Parley.Core.AgentName.Create("inventory"), ct);
+                .RetireAsync(Parley.Core.AgentName.Create("inventory@test"), ct);
         }
 
         var asked = await orders.AskAsync(
-            "billing", "Deciding where the tax rate lives.",
+            "billing@test", "Deciding where the tax rate lives.",
             [new SubQuestion("q1", "Is the rate stamped at time of sale?")],
             Consequences, cancellationToken: ct);
 
@@ -170,7 +170,7 @@ public sealed class RefusalIntegrityTests
 
         var refused = await billing.AnswerAsync(
             asked["exchange_id"]!.GetValue<long>(),
-            [new Resolution("q1", "out_of_scope", "Refunds are not mine.", RedirectTo: ["inventory"])],
+            [new Resolution("q1", "out_of_scope", "Refunds are not mine.", RedirectTo: ["inventory@test"])],
             cancellationToken: ct);
 
         Assert.False(refused["ok"]!.GetValue<bool>(), refused.ToJsonString());
@@ -187,11 +187,11 @@ public sealed class RefusalIntegrityTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            "billing", "Deciding where the tax rate lives.",
+            "billing@test", "Deciding where the tax rate lives.",
             [new SubQuestion("q1", "Is the rate stamped at time of sale?")],
             Consequences, cancellationToken: ct);
 
@@ -199,7 +199,7 @@ public sealed class RefusalIntegrityTests
 
         var refused = await billing.AnswerAsync(
             asked["exchange_id"]!.GetValue<long>(),
-            [new Resolution("q1", "out_of_scope", "Not mine.", RedirectTo: ["inventory"])],
+            [new Resolution("q1", "out_of_scope", "Not mine.", RedirectTo: ["inventory@test"])],
             cancellationToken: ct);
 
         Assert.False(refused["ok"]!.GetValue<bool>(), refused.ToJsonString());

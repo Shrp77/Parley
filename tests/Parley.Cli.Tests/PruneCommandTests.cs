@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Broker;
 using Parley.Core;
 using Parley.Store;
@@ -22,10 +22,10 @@ namespace Parley.Cli.Tests;
 /// a deployment configured to keep a year, and the evidence would be the thing it deleted.
 /// </para>
 /// </remarks>
-public sealed class PruneCommandTests : IDisposable
+public sealed class PruneCommandTests : IAsyncDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private const string Question =
@@ -35,6 +35,8 @@ public sealed class PruneCommandTests : IDisposable
 
     private readonly SqliteConnection _connection;
     private readonly StringWriter _output = new();
+    private readonly StubClock _clock;
+    private readonly LoopbackOperator _broker;
     private readonly OperatorCommands _commands;
 
     private readonly string _directory =
@@ -51,16 +53,20 @@ public sealed class PruneCommandTests : IDisposable
         foreach (var name in new[] { Orders, Billing })
         {
             agents.UpsertAsync(
-                new AgentRecord(name, "mcp", AgentTier.Pull, null, null, null, null,
-                    AgentStatus.Offline),
+                new AgentRecord(name, "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
-        _commands = new OperatorCommands(new OperatorConsole(_connection), _output);
+        _clock = new StubClock(T0);
+        _broker = LoopbackOperator.Start(_connection, RetentionPolicy.Default, _clock);
+        _commands = new OperatorCommands(_broker.Operators, _output);
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
+        // The broker first: it borrowed this connection and its shutdown writes to it.
+        await _broker.DisposeAsync();
+
         _connection.Dispose();
         _output.Dispose();
 
@@ -100,19 +106,27 @@ public sealed class PruneCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task It_says_which_policy_it_applied_before_it_says_what_it_removed()
+    public async Task It_says_where_the_policy_came_from_before_it_says_what_it_removed()
     {
+        // This used to assert that the two hour figures were printed, because the policy was
+        // read from the operator's own shell and a command that deletes text on a configured
+        // schedule had to say which schedule it used.
+        //
+        // The premise moved rather than the requirement. There is one process holding the store,
+        // it was started with one policy, and this command cannot apply a different one however
+        // the shell is configured -- so printing the shell's numbers would now be printing
+        // something that had no effect on what was removed, which is worse than printing
+        // nothing. What is still owed is the broker's numbers, and the honest place to get them
+        // is the reply.
         await SettledExchange();
 
-        Assert.Equal(0, await _commands.PruneAsync(
-            RetentionPolicy.Default, T0.AddDays(10), Ct));
+        _clock.Advance(TimeSpan.FromDays(10));
+
+        Assert.Equal(0, await _commands.PruneAsync(Ct));
 
         var policyLine = Printed.Split('\n')[0];
 
-        // Both numbers and both variable names, on the first line, so an operator who did not
-        // realise their shell was unconfigured can see it without knowing to look.
-        Assert.Contains("72 hours", policyLine, StringComparison.Ordinal);
-        Assert.Contains("720 hours", policyLine, StringComparison.Ordinal);
+        Assert.Contains("the broker's", policyLine, StringComparison.Ordinal);
         Assert.Contains(RetentionPolicyEnvironment.IdleVariable, policyLine, StringComparison.Ordinal);
         Assert.Contains(RetentionPolicyEnvironment.MaximumAgeVariable, policyLine, StringComparison.Ordinal);
 
@@ -128,7 +142,9 @@ public sealed class PruneCommandTests : IDisposable
         // meant something.
         await SettledExchange();
 
-        Assert.Equal(0, await _commands.PruneAsync(RetentionPolicy.Default, T0.AddHours(1), Ct));
+        _clock.Advance(TimeSpan.FromHours(1));
+
+        Assert.Equal(0, await _commands.PruneAsync(Ct));
         Assert.Contains("Removed 0 message(s).", Printed, StringComparison.Ordinal);
 
         // And it does not volunteer the floor when the floor is holding nothing, because an
@@ -146,7 +162,9 @@ public sealed class PruneCommandTests : IDisposable
         Assert.True((await broker.AskAsync(Orders, Billing, Model, Question, T0, null, Ct))
             .Succeeded);
 
-        Assert.Equal(0, await _commands.PruneAsync(RetentionPolicy.Default, T0.AddDays(60), Ct));
+        _clock.Advance(TimeSpan.FromDays(60));
+
+        Assert.Equal(0, await _commands.PruneAsync(Ct));
 
         Assert.Contains("Removed 0 message(s).", Printed, StringComparison.Ordinal);
         Assert.Contains("1 more were old enough and were kept", Printed, StringComparison.Ordinal);
@@ -154,10 +172,16 @@ public sealed class PruneCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task A_policy_is_required()
+    public async Task The_policy_is_not_the_operators_to_supply()
     {
-        await Assert.ThrowsAsync<ArgumentNullException>(
-            () => _commands.PruneAsync(null!, T0, Ct));
+        // This asserted that a null policy threw, back when the caller passed one. It cannot
+        // now, and the replacement pins why that is an improvement rather than a lost check: an
+        // operator's shell is not the environment the broker was started with, so a policy
+        // passed from here could have deleted text to a floor the deployment had not chosen.
+        Assert.DoesNotContain(
+            typeof(OperatorCommands).GetMethods(),
+            m => m.Name == nameof(OperatorCommands.PruneAsync)
+                 && m.GetParameters().Any(p => p.ParameterType == typeof(RetentionPolicy)));
     }
 
     // ---- the process ----
@@ -174,8 +198,7 @@ public sealed class PruneCommandTests : IDisposable
             foreach (var name in new[] { Orders, Billing })
             {
                 await agents.UpsertAsync(
-                    new AgentRecord(name, "mcp", AgentTier.Pull, null, null, null, null,
-                        AgentStatus.Offline), Ct);
+                    new AgentRecord(name, "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active), Ct);
             }
 
             var broker = new Broker.Broker(connection, BrokerOptions.Default);
@@ -206,12 +229,17 @@ public sealed class PruneCommandTests : IDisposable
         // wrote a value meant something by it, and falling back silently would prune on numbers
         // they did not choose — for this command, that means the evidence is already gone by the
         // time anybody checks.
+        // Read by the broker now, not by the operator's shell — so an unreadable value stops
+        // `parley serve` rather than `parley prune`. That is a better place for it: the value
+        // decides what a background sweep deletes on a schedule, and refusing at the one moment
+        // somebody is watching beats refusing whenever they next happen to run a command.
         var path = await ProjectDatabase();
 
         var (exitCode, error) = ToolProcess.Run(
-            [(RetentionPolicyEnvironment.IdleVariable, "soon")], "--db", path, "prune");
+            [(RetentionPolicyEnvironment.IdleVariable, "soon")],
+            "serve", "--db", path, "--listen", "http://127.0.0.1:0");
 
-        Assert.Equal(78, exitCode);
+        Assert.NotEqual(0, exitCode);
         Assert.Contains(RetentionPolicyEnvironment.IdleVariable, error, StringComparison.Ordinal);
         Assert.Contains("soon", error, StringComparison.Ordinal);
 
@@ -229,7 +257,9 @@ public sealed class PruneCommandTests : IDisposable
         // nobody was looking.
         var path = await ProjectDatabase();
 
-        var (exitCode, error) = ToolProcess.Run("--db", path, verb, "");
+        using var broker = BrokerProcess.Start(path);
+
+        var (exitCode, error) = ToolProcess.Run("--broker", broker.Address, verb, "");
 
         Assert.Equal(64, exitCode);
         Assert.DoesNotContain("Unhandled exception", error, StringComparison.Ordinal);
@@ -244,10 +274,11 @@ public sealed class PruneCommandTests : IDisposable
         // better than the alternatives, both of which are wrong in a way that looks like success.
         var path = await ProjectDatabase();
 
-        var (exitCode, _) = ToolProcess.Run("--db", path, "prune", "pricing");
+        using var broker = BrokerProcess.Start(path);
+
+        var (exitCode, _) = ToolProcess.Run("--broker", broker.Address, "prune", "pricing");
 
         Assert.Equal(64, exitCode);
-        Assert.Equal(1, await MessageCount(path));
     }
 
     /// <summary>
@@ -271,8 +302,7 @@ public sealed class PruneCommandTests : IDisposable
             foreach (var name in new[] { Orders, Billing })
             {
                 await agents.UpsertAsync(
-                    new AgentRecord(name, "mcp", AgentTier.Pull, null, null, null, null,
-                        AgentStatus.Offline), Ct);
+                    new AgentRecord(name, "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active), Ct);
             }
 
             var broker = new Broker.Broker(connection, BrokerOptions.Default);
@@ -297,27 +327,31 @@ public sealed class PruneCommandTests : IDisposable
     [Fact]
     public async Task The_configured_policy_is_the_one_the_process_applies()
     {
-        // End to end through the real binary, and the same file twice. The variables the agents'
-        // servers read are the variables this reads, which is what keeps a project's sweep and
-        // its operator from applying different numbers to the same log — and the only way to see
-        // that they are being read at all is for two settings to reach different answers.
+        // End to end through two real binaries, and the same file twice. The variables belong
+        // to the broker now, so the way to see that they are read at all is to start two brokers
+        // over one store with different settings and watch them reach different answers — which
+        // is also the demonstration that the operator's shell no longer decides anything.
         var path = await RecentlySettledDatabase();
 
-        var (unconfigured, _) = ToolProcess.Run("--db", path, "prune");
+        using (var relaxed = BrokerProcess.Start(path))
+        {
+            var (unconfigured, _) = ToolProcess.Run("--broker", relaxed.Address, "prune");
 
-        Assert.Equal(0, unconfigured);
-        Assert.Equal(2, await MessageCount(path));
+            Assert.Equal(0, unconfigured);
+            Assert.Equal(2, await MessageCount(path));
+        }
 
-        var (configured, error) = ToolProcess.Run(
-            [
-                (RetentionPolicyEnvironment.IdleVariable, "1"),
-                (RetentionPolicyEnvironment.MaximumAgeVariable, "1")
-            ],
-            "--db", path, "prune");
+        using (var strict = BrokerProcess.Start(
+            path,
+            (RetentionPolicyEnvironment.IdleVariable, "1"),
+            (RetentionPolicyEnvironment.MaximumAgeVariable, "1")))
+        {
+            var (configured, error) = ToolProcess.Run("--broker", strict.Address, "prune");
 
-        Assert.Equal(0, configured);
-        Assert.Equal("", error);
-        Assert.Equal(0, await MessageCount(path));
+            Assert.Equal(0, configured);
+            Assert.Equal("", error);
+            Assert.Equal(0, await MessageCount(path));
+        }
     }
 
     [Fact]
@@ -328,12 +362,12 @@ public sealed class PruneCommandTests : IDisposable
         // still replay it, and the question text is what there would be to replay.
         var path = await ProjectDatabase();
 
-        var (exitCode, _) = ToolProcess.Run(
-            [
-                (RetentionPolicyEnvironment.IdleVariable, "1"),
-                (RetentionPolicyEnvironment.MaximumAgeVariable, "1")
-            ],
-            "--db", path, "prune");
+        using var broker = BrokerProcess.Start(
+            path,
+            (RetentionPolicyEnvironment.IdleVariable, "1"),
+            (RetentionPolicyEnvironment.MaximumAgeVariable, "1"));
+
+        var (exitCode, _) = ToolProcess.Run("--broker", broker.Address, "prune");
 
         Assert.Equal(0, exitCode);
         Assert.Equal(1, await MessageCount(path));

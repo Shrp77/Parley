@@ -26,8 +26,8 @@ public sealed class AdmissionGuardTests : IDisposable
     public AdmissionGuardTests()
     {
         _connection = ParleyDatabase.OpenInMemory();
-        Execute("INSERT INTO agents (name, adapter, tier, status) VALUES "
-              + "('orders','test','full','offline'),('billing','test','full','offline');");
+        Execute("INSERT INTO nodes (machine, connected, first_seen_utc) VALUES ('test', 1, '2026-01-01T00:00:00+00:00') ON CONFLICT DO NOTHING; INSERT INTO agents (name, adapter, tier, status) VALUES "
+              + "('orders@test','test','full','active'),('billing@test','test','full','active');");
     }
 
     public void Dispose() => _connection.Dispose();
@@ -43,7 +43,7 @@ public sealed class AdmissionGuardTests : IDisposable
         "INSERT INTO exchanges (pair_key, asker, answerer, owed_by, state, clarify_depth, "
       + "clarify_depth_cap, open_pair_cap, delivery_window_ms, working_window_ms, "
       + "grace_period_ms, opened_utc, expires_utc, question_hash) VALUES "
-      + "('billing' || char(31) || 'orders','orders','billing','billing','" + state + "',0,3,"
+      + "('billing@test' || char(31) || 'orders@test','orders@test','billing@test','billing@test','" + state + "',0,3,"
       + cap + ",900000,14400000,10800000,'" + Stamp + "','" + Stamp + "','" + question + "');");
 
     private void InsertMessage(string type, string from, string to, string payloadSql) => Execute(
@@ -56,7 +56,7 @@ public sealed class AdmissionGuardTests : IDisposable
         "INSERT INTO exchanges (pair_key, asker, answerer, owed_by, state, clarify_depth, "
       + "clarify_depth_cap, open_pair_cap, delivery_window_ms, working_window_ms, "
       + "grace_period_ms, opened_utc, expires_utc, question_hash, conversation_id) VALUES "
-      + "('billing' || char(31) || 'orders','orders','billing','billing','OPEN',0,3,5,"
+      + "('billing@test' || char(31) || 'orders@test','orders@test','billing@test','billing@test','OPEN',0,3,5,"
       + "900000,14400000,10800000,'" + Stamp + "','" + Stamp + "','" + question + "','"
       + conversation + "');");
 
@@ -87,11 +87,11 @@ public sealed class AdmissionGuardTests : IDisposable
               + "('pricing','CLOSED','" + Stamp + "','" + Stamp + "');");
         Execute("INSERT INTO conversation_participants "
               + "(conversation_id, agent, joined_utc, polled_utc) VALUES "
-              + "('pricing','billing','" + Stamp + "','" + Stamp + "');");
+              + "('pricing','billing@test','" + Stamp + "','" + Stamp + "');");
 
         var ex = Assert.Throws<SqliteException>(() => Execute(
             "UPDATE conversation_participants SET vote = 'not_done', voted_utc = '" + Stamp
-          + "' WHERE conversation_id = 'pricing' AND agent = 'billing';"));
+          + "' WHERE conversation_id = 'pricing' AND agent = 'billing@test';"));
 
         Assert.Contains("conversation is closed", ex.Message, StringComparison.Ordinal);
     }
@@ -106,10 +106,10 @@ public sealed class AdmissionGuardTests : IDisposable
               + "('pricing','CLOSING','" + Stamp + "');");
         Execute("INSERT INTO conversation_participants "
               + "(conversation_id, agent, joined_utc, polled_utc) VALUES "
-              + "('pricing','billing','" + Stamp + "','" + Stamp + "');");
+              + "('pricing','billing@test','" + Stamp + "','" + Stamp + "');");
 
         Execute("UPDATE conversation_participants SET vote = 'not_done', voted_utc = '" + Stamp
-              + "' WHERE conversation_id = 'pricing' AND agent = 'billing';");
+              + "' WHERE conversation_id = 'pricing' AND agent = 'billing@test';");
     }
 
     [Fact]
@@ -163,7 +163,7 @@ public sealed class AdmissionGuardTests : IDisposable
         // own answered exchanges as abandoned makes the infrastructure look broken, and by the
         // time anyone looks the messages proving otherwise may have been pruned.
         InsertExchange("answered-question");
-        InsertMessage("answer", "billing", "orders", "json_object('text','yes')");
+        InsertMessage("answer", "billing@test", "orders@test", "json_object('text','yes')");
         Execute("UPDATE exchanges SET state = 'ORPHANED' WHERE question_hash = 'answered-question';");
 
         var ex = Assert.Throws<SqliteException>(() => Execute(
@@ -191,7 +191,7 @@ public sealed class AdmissionGuardTests : IDisposable
         InsertExchange("q");
 
         var ex = Assert.Throws<SqliteException>(() => InsertMessage(
-            "answer", "billing", "orders",
+            "answer", "billing@test", "orders@test",
             "json_object('resolutions', json_array(json_object("
           + "'redirect_to', json_array('legacy-svc'))))"));
 
@@ -205,9 +205,9 @@ public sealed class AdmissionGuardTests : IDisposable
         InsertExchange("q");
 
         var ex = Assert.Throws<SqliteException>(() => InsertMessage(
-            "answer", "billing", "orders",
+            "answer", "billing@test", "orders@test",
             "json_object('resolutions', json_array(json_object("
-          + "'redirect_to', json_array('billing'))))"));
+          + "'redirect_to', json_array('billing@test'))))"));
 
         Assert.Contains("sender", ex.Message, StringComparison.Ordinal);
     }
@@ -218,9 +218,9 @@ public sealed class AdmissionGuardTests : IDisposable
         // Referring back to the asker is legitimate: that is your call, not mine.
         InsertExchange("q");
 
-        InsertMessage("answer", "billing", "orders",
+        InsertMessage("answer", "billing@test", "orders@test",
             "json_object('resolutions', json_array(json_object("
-          + "'redirect_to', json_array('orders'))))");
+          + "'redirect_to', json_array('orders@test'))))");
     }
 
     [Fact]
@@ -229,7 +229,7 @@ public sealed class AdmissionGuardTests : IDisposable
         InsertExchange("q");
 
         var ex = Assert.Throws<SqliteException>(() => InsertMessage(
-            "question", "orders", "billing", "json_object('intent','pricing')"));
+            "question", "orders@test", "billing@test", "json_object('intent','pricing')"));
 
         Assert.Contains("CHECK", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -242,7 +242,7 @@ public sealed class AdmissionGuardTests : IDisposable
         InsertExchange("q");
 
         var ex = Assert.Throws<SqliteException>(() => InsertMessage(
-            "question", "orders", "billing",
+            "question", "orders@test", "billing@test",
             "json_patch(" + Consequences + ", json_object('sub_questions', json_array("
           + "json_object('id','q1','gate',json_object('on','q2')), json_object('id','q2'))))"));
 
@@ -254,7 +254,7 @@ public sealed class AdmissionGuardTests : IDisposable
     {
         InsertExchange("q");
 
-        InsertMessage("question", "orders", "billing",
+        InsertMessage("question", "orders@test", "billing@test",
             "json_patch(" + Consequences + ", json_object('sub_questions', json_array("
           + "json_object('id','q1'), json_object('id','q2','gate',json_object('on','q1')))))");
     }

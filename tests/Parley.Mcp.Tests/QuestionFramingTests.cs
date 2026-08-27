@@ -46,12 +46,12 @@ public sealed class QuestionFramingTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        await fixture.LaunchAsync("billing@test", ct);
 
         AssertMalformed(
             await orders.AskAsync(
-                "billing", "Deciding where the tax rate lives.",
+                "billing@test", "Deciding where the tax rate lives.",
                 [new SubQuestion("q1", "Is the rate stamped at time of sale?")],
                 consequences, cancellationToken: ct),
             "what you will do");
@@ -63,12 +63,12 @@ public sealed class QuestionFramingTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        await fixture.LaunchAsync("billing@test", ct);
 
         AssertMalformed(
             await orders.AskAsync(
-                "billing", "  ",
+                "billing@test", "  ",
                 [new SubQuestion("q1", "Is the rate stamped at time of sale?")],
                 Consequences, cancellationToken: ct),
             "trying to decide");
@@ -83,11 +83,11 @@ public sealed class QuestionFramingTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            "billing", "Deciding where the tax rate lives.",
+            "billing@test", "Deciding where the tax rate lives.",
             [
                 new SubQuestion("q1", "Is the rate stamped at time of sale?"),
                 new SubQuestion("q2", "And on a refund?")
@@ -125,11 +125,11 @@ public sealed class QuestionFramingTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            "billing", "Deciding where the tax rate lives.",
+            "billing@test", "Deciding where the tax rate lives.",
             [new SubQuestion("q1", "Is the rate stamped at time of sale?")],
             Consequences, cancellationToken: ct);
 
@@ -160,12 +160,12 @@ public sealed class QuestionFramingTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
-        var (_, inventory) = await fixture.LaunchAsync("inventory", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
+        var (_, inventory) = await fixture.LaunchAsync("inventory@test", ct);
 
         var asked = await orders.AskAsync(
-            "billing", "Deciding where the rate lives.",
+            "billing@test", "Deciding where the rate lives.",
             [new SubQuestion("migrate-payments-elsewhere", "Is the rate stamped at sale?")],
             Consequences, cancellationToken: ct);
 
@@ -191,11 +191,11 @@ public sealed class QuestionFramingTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            "billing", "Deciding where the tax rate lives.",
+            "billing@test", "Deciding where the tax rate lives.",
             [new SubQuestion("q1", "Is the rate stamped at time of sale?")],
             Consequences, cancellationToken: ct);
 

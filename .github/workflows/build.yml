@@ -1,4 +1,4 @@
-name: build
+﻿name: build
 
 on:
   push:
@@ -35,14 +35,12 @@ jobs:
         #
         # Linux still covers the Unix side of everything that does exist -- path
         # handling, line endings, case sensitivity, and the SQLite build. What
-        # macOS would add is Darwin-specific behaviour, which becomes worth paying
-        # for when the transport lands and not before. Restore it by deleting the
-        # fromJSON below, and restore the sentence in CLAUDE.md with it.
-        os: >-
-          ${{ fromJSON(
-            (github.event_name == 'workflow_dispatch' && inputs.macos)
-              && '["windows-latest","ubuntu-latest","macos-latest"]'
-              || '["windows-latest","ubuntu-latest"]') }}
+        # macOS is back in the matrix. It was deferred on the grounds that what it
+        # would add is Darwin-specific behaviour, which becomes worth paying for
+        # when the transport lands -- and the transport has landed: three processes
+        # now hold sockets open to each other, and sockets, keep-alives and graceful
+        # shutdown are exactly where the platforms differ.
+        os: [windows-latest, ubuntu-latest, macos-latest]
 
     steps:
       - uses: actions/checkout@v4

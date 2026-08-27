@@ -122,6 +122,51 @@ public sealed class Broker
     /// </remarks>
     public DateTimeOffset? StartedUtc { get; private set; }
 
+    /// <summary>
+    /// Starts the ghosting clock for a broker that speaks for no agent.
+    /// </summary>
+    /// <param name="nowUtc">The instant the host began serving.</param>
+    /// <exception cref="InvalidOperationException">This broker has already started.</exception>
+    /// <remarks>
+    /// <para>
+    /// For the sweep, and for nothing else. SPEC.md §4 gives a deployment one broker process,
+    /// and the sweep is that process's own work rather than any agent's -- so it runs on a
+    /// broker the host owns, which never attaches and therefore has no
+    /// <see cref="Attached"/> name to speak under.
+    /// </para>
+    /// <para>
+    /// The result is that the ghosting grace of §6 is measured from the broker coming up, which
+    /// is what §14 always meant by it. It could only be approximated before: the sweep ran
+    /// inside each adapter, so the clock restarted per session, and an agent that reopened its
+    /// editor granted a fresh grace period to orphans belonging to conversations it had nothing
+    /// to do with. One process makes the real quantity available, and this is how it is set.
+    /// </para>
+    /// <para>
+    /// It does not mark anything live, does not orphan anything, and touches no row. Attaching
+    /// is <see cref="StartAsync"/> and is what an agent does; this is the host saying when it
+    /// came up.
+    /// </para>
+    /// <para>
+    /// Refuses a second call, unlike <see cref="StartAsync"/>. That one tolerates repetition
+    /// because a host may legitimately attach twice; this is called once from a constructor
+    /// path, so a second call is a defect rather than a case to accommodate, and moving the
+    /// ghosting clock forward by accident is exactly the silent failure the remarks on
+    /// <see cref="StartAsync"/> warn about.
+    /// </para>
+    /// </remarks>
+    public void ServeFrom(DateTimeOffset nowUtc)
+    {
+        if (StartedUtc is not null)
+        {
+            throw new InvalidOperationException(
+                "This broker has already started. ServeFrom sets the ghosting clock once, when " +
+                "the host comes up; calling it again would grant every orphan a fresh grace " +
+                "period with nothing to show that it had happened.");
+        }
+
+        StartedUtc = nowUtc;
+    }
+
 
 
     /// <summary>
@@ -145,13 +190,13 @@ public sealed class Broker
     /// The namespace SPEC.md §11.3 reserves for the broker's own attributions.
     /// </summary>
     /// <remarks>
-    /// Public because an adapter needs it. §11.3 makes refusing a claim on this namespace a
-    /// MUST, and an adapter that validates its own configuration — so that a server named this
-    /// way fails at launch rather than on every send — would otherwise carry a second copy of
-    /// the token. Two copies of a protocol constant is how the two come to disagree, and the
-    /// disagreement would be silent in the direction that matters.
+    /// An alias for <see cref="Responder.ReservedPrefix"/>, which is where the token lives now
+    /// that an adapter no longer references this assembly. Kept because the broker's own
+    /// refusals read better naming it here, and it is the same constant rather than a copy —
+    /// two copies of a protocol constant is how the two come to disagree, and the disagreement
+    /// would be silent in the direction that matters.
     /// </remarks>
-    public const string ReservedResponderPrefix = "parley:";
+    public const string ReservedResponderPrefix = Responder.ReservedPrefix;
 
     /// <summary>The longest responder identity storage will accept, per SPEC.md §11.3.</summary>
     private const int MaxResponderLength = 64;
@@ -304,6 +349,109 @@ public sealed class Broker
     }
 
     /// <summary>
+    /// The largest number of agents one role question may reach.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// SPEC.md §5.5: asking a role multiplies the cost by however many machines somebody
+    /// installed, rather than by any judgement about the question. Five is fine; fifty is a
+    /// context-flooding primitive one agent can aim at another's asker, and it needs no malice —
+    /// a fleet grows a machine at a time and nobody notices the day a routine question started
+    /// costing twenty answers.
+    /// </para>
+    /// <para>
+    /// The number is a guess and is recorded as one in §17 question 12, which asks for the size
+    /// of every group question to be measured before it is set from evidence. It is deliberately
+    /// generous: §5.2's clarify cap was set to 3 on taste, defended at length, and turned out to
+    /// be wrong by nearly two orders of magnitude, and the failure mode here — "Parley cannot ask
+    /// more than N machines anything" — is a worse reputation to acquire than a large bill.
+    /// </para>
+    /// </remarks>
+    public const int MaxGroupSize = 32;
+
+    /// <summary>
+    /// Asks every agent registered under a role, per SPEC.md §5.5.
+    /// </summary>
+    /// <param name="from">The asking agent.</param>
+    /// <param name="role">The role, without a machine.</param>
+    /// <param name="responderModel">What produced the question.</param>
+    /// <param name="payloadJson">The question.</param>
+    /// <param name="nowUtc">The current instant.</param>
+    /// <param name="conversationId">A discussion to attach every exchange to, or null.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>One outcome per agent asked, in name order.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>One ordinary exchange per agent.</b> Not a new kind of message and not a new state
+    /// machine: each is admitted, clarified, answered, orphaned and ghosted exactly as it would
+    /// have been on its own, and they share only <c>ask_group</c> so the asker can tell which
+    /// answers belong together. A one-to-many exchange would need its own admission rules, cap
+    /// arithmetic and definition of concluded, and everything in §6 and §7 would need a second
+    /// reading for the plural case.
+    /// </para>
+    /// <para>
+    /// <b>Refusals do not stop the others.</b> One member being at its pair cap, or holding the
+    /// same question already, is a fact about that pair and says nothing about the rest — so it
+    /// is reported in its own outcome and the fan-out continues. An all-or-nothing group would
+    /// let one busy agent silence a question to nineteen others.
+    /// </para>
+    /// <para>
+    /// <b>The asker is never in its own group.</b> A role the asker shares would otherwise have
+    /// it ask itself, which §7.1's pair identity refuses anyway — but refusing it here means the
+    /// asker gets a group of its peers rather than a group with one guaranteed refusal in it.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<AskOutcome>> AskRoleAsync(
+        AgentName from,
+        string role,
+        string responderModel,
+        string payloadJson,
+        DateTimeOffset nowUtc,
+        string? conversationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        RequireStarted("asking");
+        ArgumentException.ThrowIfNullOrEmpty(role);
+
+        var members = (await _agents.ListRoleAsync(role, cancellationToken).ConfigureAwait(false))
+            .Where(a => a != from)
+            .ToArray();
+
+        if (members.Length == 0)
+        {
+            // A refusal rather than an empty group. Asking a role nothing is registered under is
+            // almost always a misspelling, and "asked zero agents, all done" answers it in a way
+            // that looks like success.
+            // Reported as unreachable, which is what it is: nothing is coming from this role
+            // because nothing answers to it. §5.5 refuses rather than returning an empty group,
+            // since "asked zero agents, all done" reads as success.
+            return [AskOutcome.Refused(OpenOutcome.Unreachable())];
+        }
+
+        if (members.Length > MaxGroupSize)
+        {
+            // Saturated in the same sense §7.1 uses: the asker is at the limit of what it may
+            // have outstanding, counted across a role rather than against one peer.
+            return [AskOutcome.Refused(OpenOutcome.PairSaturated([]))];
+        }
+
+        // Opaque and generated here rather than supplied, so an asker cannot bind together
+        // exchanges that were never one question.
+        var group = Guid.NewGuid().ToString("n")[..16];
+
+        var outcomes = new List<AskOutcome>(members.Length);
+
+        foreach (var member in members)
+        {
+            outcomes.Add(await OpenExchangeAsync(
+                from, member, responderModel, payloadJson, nowUtc, conversationId,
+                askGroup: group, cancellationToken).ConfigureAwait(false));
+        }
+
+        return outcomes;
+    }
+
+    /// <summary>
     /// Opens an exchange and says the question in it, as one act.
     /// </summary>
     /// <param name="from">The agent asking.</param>
@@ -364,14 +512,46 @@ public sealed class Broker
     /// <c>notify</c>.
     /// </para>
     /// </remarks>
-    public async Task<AskOutcome> AskAsync(
+    public Task<AskOutcome> AskAsync(
         AgentName from,
         AgentName to,
         string responderModel,
         string payloadJson,
         DateTimeOffset nowUtc,
         string? conversationId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        OpenExchangeAsync(from, to, responderModel, payloadJson, nowUtc, conversationId,
+            askGroup: null, cancellationToken);
+
+    /// <summary>
+    /// Opens one exchange, optionally as part of a role question's group.
+    /// </summary>
+    /// <param name="from">The asking agent.</param>
+    /// <param name="to">The agent being asked.</param>
+    /// <param name="responderModel">What produced the question.</param>
+    /// <param name="payloadJson">The question.</param>
+    /// <param name="nowUtc">The current instant.</param>
+    /// <param name="conversationId">A discussion to attach it to, or null.</param>
+    /// <param name="askGroup">
+    /// The group this exchange belongs to when a question addressed to a role opened it (§5.5),
+    /// or null for an ordinary one-to-one question.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>What became of the question.</returns>
+    /// <remarks>
+    /// Private, and the group is not on the public surface, because an asker choosing its own
+    /// would be able to bind together exchanges that were never one question — and a group is
+    /// how an asker decides which answers are comparable.
+    /// </remarks>
+    private async Task<AskOutcome> OpenExchangeAsync(
+        AgentName from,
+        AgentName to,
+        string responderModel,
+        string payloadJson,
+        DateTimeOffset nowUtc,
+        string? conversationId,
+        string? askGroup,
+        CancellationToken cancellationToken)
     {
         RequireStarted("asking");
         RequireAdapterResponder(responderModel);
@@ -386,7 +566,8 @@ public sealed class Broker
             nowUtc,
             MessageIdentity.ComputeQuestion(from, to, payloadJson),
             _options.ExchangePolicy,
-            conversationId,
+            conversationId: conversationId,
+                askGroup: askGroup,
             scope.Transaction,
             cancellationToken).ConfigureAwait(false);
 
@@ -817,14 +998,11 @@ public sealed class Broker
         var listed = await _agents.ListRoutableAsync(cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
 
-        // Liveness is a reading of last_seen_utc rather than a stored value, so the roster
-        // computes it here rather than repeating whatever the column happens to hold. A peer
-        // deciding whether to ask now or wait is the whole audience for this field, and the
-        // stored value could not tell it apart from a session that died a fortnight ago.
-        return [.. listed.Select(a => a with
-        {
-            Status = AgentLiveness.Derive(a.Status, a.LastSeenUtc, now)
-        })];
+        // Presence comes from the read, which joins the agent's connection to its node's.
+        // It is not recomputed here and there is nothing left to recompute: a connection is an
+        // observation rather than a value needing interpretation, which is the whole of the
+        // change SPEC.md §4.0 describes.
+        return listed;
     }
 
     /// <summary>
@@ -1255,14 +1433,16 @@ public sealed class Broker
                 "an outage as soon as the process returned.");
         }
 
-        // The heartbeat that keeps this agent's lease current. Here rather than in a mechanism
-        // of its own because the sweep is already the one thing a host runs on a timer, and a
-        // second timer would be a second thing to forget. What it buys is that liveness answers
-        // "is a session running now" rather than "did one start once": a crashed process stops
-        // renewing and its lease lapses, and an agent with two sessions open stays live while
-        // either of them is still ticking, whatever the other one wrote on its way out.
-        await _agents.MarkLiveAsync(Attached!.Value, sessionRef: null, nowUtc, cancellationToken)
-            .ConfigureAwait(false);
+        // No heartbeat. The sweep used to renew this agent's lease here, because liveness was a
+        // timestamp and a timestamp has to be kept current by somebody -- which is what made it
+        // answer "is a session running now" rather than "did one start once".
+        //
+        // A held connection answers that without being renewed (SPEC.md §4.0), so there is
+        // nothing left to write. Removing it also removed a bug the count exposed the moment it
+        // arrived: renewing meant incrementing, so every tick made the agent look like one more
+        // open session, and after a few sweeps no detach could ever bring it back to zero.
+        // Nothing failed visibly -- the attach sequence simply stopped releasing abandoned work,
+        // for ever, because the agent always looked attended.
 
         var swept = await _reaper.SweepAsync(nowUtc, startedUtc, cancellationToken)
             .ConfigureAwait(false);

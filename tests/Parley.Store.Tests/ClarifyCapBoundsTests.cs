@@ -31,8 +31,8 @@ public sealed class ClarifyCapBoundsTests : IDisposable
     public ClarifyCapBoundsTests()
     {
         _connection = ParleyDatabase.OpenInMemory();
-        Execute("INSERT INTO agents (name, adapter, tier, status) VALUES "
-              + "('orders','test','full','offline'),('billing','test','full','offline');");
+        Execute("INSERT INTO nodes (machine, connected, first_seen_utc) VALUES ('test', 1, '2026-01-01T00:00:00+00:00') ON CONFLICT DO NOTHING; INSERT INTO agents (name, adapter, tier, status) VALUES "
+              + "('orders@test','test','full','active'),('billing@test','test','full','active');");
     }
 
     public void Dispose() => _connection.Dispose();
@@ -48,7 +48,7 @@ public sealed class ClarifyCapBoundsTests : IDisposable
         "INSERT INTO exchanges (pair_key, asker, answerer, owed_by, state, clarify_depth, "
       + "clarify_depth_cap, open_pair_cap, delivery_window_ms, working_window_ms, "
       + "grace_period_ms, opened_utc, expires_utc, question_hash) VALUES "
-      + "('billing' || char(31) || 'orders','orders','billing','billing','OPEN',0,"
+      + "('billing@test' || char(31) || 'orders@test','orders@test','billing@test','billing@test','OPEN',0,"
       + clarifyDepthCap.ToString(System.Globalization.CultureInfo.InvariantCulture)
       + ",5,900000,14400000,86400000,'" + Stamp + "','" + Stamp + "','" + question + "');");
 

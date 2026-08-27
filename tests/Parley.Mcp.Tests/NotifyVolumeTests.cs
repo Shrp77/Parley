@@ -32,13 +32,13 @@ public sealed class NotifyVolumeTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         const string Event = "The OrderLine contract gained a PriceSnapshot field.";
 
-        var first = await orders.NotifyAsync("billing", Event, cancellationToken: ct);
-        var second = await orders.NotifyAsync("billing", Event, cancellationToken: ct);
+        var first = await orders.NotifyAsync("billing@test", Event, cancellationToken: ct);
+        var second = await orders.NotifyAsync("billing@test", Event, cancellationToken: ct);
 
         Assert.True(first["ok"]!.GetValue<bool>(), first.ToJsonString());
         Assert.True(second["ok"]!.GetValue<bool>(), second.ToJsonString());
@@ -58,13 +58,13 @@ public sealed class NotifyVolumeTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         for (var i = 0; i < 30; i++)
         {
             var sent = await orders.NotifyAsync(
-                "billing",
+                "billing@test",
                 string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"The OrderLine contract gained a PriceSnapshot field. Revision {i}."),
                 cancellationToken: ct);
@@ -89,13 +89,13 @@ public sealed class NotifyVolumeTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         for (var i = 0; i < 20; i++)
         {
             await orders.NotifyAsync(
-                "billing",
+                "billing@test",
                 string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"Event {i}: the contract moved again."),
                 cancellationToken: ct);
@@ -115,13 +115,13 @@ public sealed class NotifyVolumeTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         for (var i = 0; i < 10; i++)
         {
             await orders.NotifyAsync(
-                "billing",
+                "billing@test",
                 string.Create(System.Globalization.CultureInfo.InvariantCulture,
                     $"Event {i}."),
                 cancellationToken: ct);

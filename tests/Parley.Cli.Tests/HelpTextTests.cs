@@ -1,4 +1,4 @@
-using Xunit;
+﻿using Xunit;
 
 namespace Parley.Cli.Tests;
 
@@ -46,7 +46,7 @@ public sealed class HelpTextTests
         // apart on severity without running either. retire withdraws; purge destroys.
         var line = Usage
             .Split('\n')
-            .Single(l => l.Contains("] purge <agent>", StringComparison.Ordinal));
+            .Single(l => l.Contains("purge <agent>", StringComparison.Ordinal));
 
         Assert.Contains("DESTROY", line, StringComparison.Ordinal);
     }
@@ -59,7 +59,7 @@ public sealed class HelpTextTests
         // distinguish.
         var line = Usage
             .Split('\n')
-            .Single(l => l.Contains("] retire <agent>", StringComparison.Ordinal));
+            .Single(l => l.Contains("retire <agent>", StringComparison.Ordinal));
 
         Assert.DoesNotContain("DESTROY", line, StringComparison.Ordinal);
     }

@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The broker process of SPEC.md §4: the only thing that opens the database, and the thing
+    everything else reaches over the transport.
+
+    A library rather than an executable, for the same reason Parley.Broker is one. §4.1 has a
+    single process hosting several brokers, one per project, so the entry point belongs to
+    whatever assembles that configuration; a Main here would have fixed the arrangement at one
+    broker per process.
+
+    It references Parley.Broker and Parley.Transport and joins them, which is the whole job.
+    Parley.Broker still knows nothing of transports and must not learn — the adaptation lives on
+    this side of the boundary, so that replacing gRPC replaces this assembly and nothing under
+    it.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parley.Broker\Parley.Broker.csproj" />
+    <ProjectReference Include="..\Parley.Transport\Parley.Transport.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -34,15 +34,22 @@ public sealed class FleetCommand
 {
     private readonly SqliteConnection _connection;
     private readonly TextWriter _output;
+    private readonly NodeCatalogue _catalogue;
 
     /// <summary>Creates the command over an open database.</summary>
     /// <param name="connection">The open, migrated database.</param>
     /// <param name="output">Where to write.</param>
+    /// <param name="catalogue">
+    /// What this machine can start, or <see langword="null"/> for a machine told about nothing.
+    /// </param>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public FleetCommand(SqliteConnection connection, TextWriter output)
+    public FleetCommand(
+        SqliteConnection connection, TextWriter output, NodeCatalogue? catalogue = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(output);
+
+        _catalogue = catalogue ?? NodeCatalogue.Empty;
 
         _connection = connection;
         _output = output;
@@ -67,7 +74,7 @@ public sealed class FleetCommand
             ? interval * 3
             : BrokerOptions.DefaultLivenessLease;
 
-        var fleet = new AgentFleet(_connection, TimeProvider.System, lease);
+        var fleet = new AgentFleet(_connection, TimeProvider.System, lease, _catalogue);
 
         // Disposal is the backstop, not the plan: the shutdown below runs with its own token so
         // agents are told to quit even when the fleet is ending because the operator cancelled.
@@ -75,7 +82,17 @@ public sealed class FleetCommand
 
         await WriteAsync(string.Create(
             CultureInfo.InvariantCulture,
-            $"Fleet up. Passing every {interval.TotalSeconds:0}s; agents idle for {lease.TotalMinutes:0}m are considered unattended.")).ConfigureAwait(false);
+            $"Fleet up on {NodeCatalogue.Machine}. Passing every {interval.TotalSeconds:0}s; an agent with no adapter connected is unattended.")).ConfigureAwait(false);
+
+        // Said at start-up because the alternative is finding out per agent, per pass, in a skip
+        // reason. A machine told about nothing still reaps and still reports; it simply launches
+        // nothing, and an operator who expected otherwise should learn it here.
+        await WriteAsync(_catalogue.Roles.Count == 0
+            ? $"This machine can start nothing: no {NodeCatalogue.DefaultFileName} names any agents."
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"Can start: {string.Join(", ", _catalogue.Roles.Order(StringComparer.Ordinal))}."))
+            .ConfigureAwait(false);
 
         await WriteAsync("Press Ctrl+C to stop the fleet and every agent it started.")
             .ConfigureAwait(false);

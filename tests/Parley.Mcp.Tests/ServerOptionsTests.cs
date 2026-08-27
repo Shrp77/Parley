@@ -19,21 +19,46 @@ public sealed class ServerOptionsTests
     }
 
     private static (string, string)[] Minimal =>
-        [(ServerOptions.DatabaseVariable, "p.db"), (ServerOptions.AgentVariable, "orders")];
+        [(ServerOptions.AgentVariable, "orders@test")];
 
     [Fact]
-    public void The_two_required_variables_are_enough()
+    public void One_required_variable_is_enough()
     {
+        // One, where there used to be two. The database is not the adapter's business any more
+        // and the broker has a default, so the only thing a launch configuration must still say
+        // is who this process speaks for -- which is the one thing that could never be defaulted,
+        // because guessing it would guess an identity.
         var options = ServerOptions.Read(Env(Minimal));
 
-        Assert.Equal("p.db", options.DatabasePath);
-        Assert.Equal("orders", options.Agent.Value);
-        Assert.Equal(ServerOptions.DefaultTickInterval, options.TickInterval);
+        Assert.Equal("orders@test", options.Agent.Value);
+        Assert.Equal(Parley.Core.BrokerEndpoint.Default, options.Broker);
         Assert.Null(options.Workspace);
     }
 
+    [Fact]
+    public void The_broker_can_be_named_and_needs_no_scheme()
+    {
+        // A bare host and port is what people type, and there is only one scheme available:
+        // SPEC.md §16 makes the transport plaintext, so https would be a promise nothing keeps.
+        var options = ServerOptions.Read(
+            Env([.. Minimal, (ServerOptions.BrokerVariable, "broker.example:51707")]));
+
+        Assert.Equal("http://broker.example:51707", options.Broker);
+    }
+
+    [Fact]
+    public void A_broker_address_that_is_not_one_is_refused_rather_than_defaulted()
+    {
+        // Silently using the local broker would put this agent in a different deployment from
+        // the one somebody configured -- where its peers are absent, its name may belong to
+        // somebody else, and nothing looks broken.
+        var ex = Assert.Throws<InvalidOperationException>(() => ServerOptions.Read(
+            Env([.. Minimal, (ServerOptions.BrokerVariable, "not an address")])));
+
+        Assert.Contains(ServerOptions.BrokerVariable, ex.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
-    [InlineData("PARLEY_DB")]
     [InlineData("PARLEY_AGENT")]
     public void A_missing_required_variable_names_itself(string missing)
     {
@@ -54,7 +79,7 @@ public sealed class ServerOptionsTests
         // get here, and treating it as present would produce an agent name that fails validation
         // with a message about the character set rather than about the variable being empty.
         var ex = Assert.Throws<InvalidOperationException>(() => ServerOptions.Read(
-            Env((ServerOptions.DatabaseVariable, "p.db"), (ServerOptions.AgentVariable, "   "))));
+            Env((ServerOptions.BrokerVariable, "p.db"), (ServerOptions.AgentVariable, "   "))));
 
         Assert.Contains(ServerOptions.AgentVariable, ex.Message, StringComparison.Ordinal);
     }
@@ -63,7 +88,7 @@ public sealed class ServerOptionsTests
     public void An_unusable_agent_name_is_refused_with_the_rule()
     {
         var ex = Assert.Throws<InvalidOperationException>(() => ServerOptions.Read(
-            Env((ServerOptions.DatabaseVariable, "p.db"), (ServerOptions.AgentVariable, "Orders"))));
+            Env((ServerOptions.BrokerVariable, "p.db"), (ServerOptions.AgentVariable, "Orders"))));
 
         Assert.Contains("Orders", ex.Message, StringComparison.Ordinal);
         Assert.Contains("lowercase", ex.Message, StringComparison.Ordinal);
@@ -107,37 +132,20 @@ public sealed class ServerOptionsTests
     }
 
     [Fact]
-    public void The_tick_interval_is_read_in_seconds()
+    public void The_sweep_interval_is_not_the_adapters_to_set()
     {
-        var options = ServerOptions.Read(Env([.. Minimal, (ServerOptions.TickVariable, "15")]));
-
-        Assert.Equal(TimeSpan.FromSeconds(15), options.TickInterval);
-    }
-
-    [Theory]
-    [InlineData("0")]
-    [InlineData("-30")]
-    [InlineData("a minute")]
-    [InlineData("1.5")]
-    public void An_unusable_tick_interval_is_refused_rather_than_defaulted(string configured)
-    {
-        // Refused rather than ignored, because an operator who set it meant something by it and
-        // a server quietly sweeping at a cadence they did not choose gives them no way to find
-        // out. Zero and a negative are refused for the further reason that PeriodicTimer throws
-        // on both, which would surface as a crash at start-up with no mention of the variable.
-        var ex = Assert.Throws<InvalidOperationException>(() => ServerOptions.Read(
-            Env([.. Minimal, (ServerOptions.TickVariable, configured)])));
-
-        Assert.Contains(ServerOptions.TickVariable, ex.Message, StringComparison.Ordinal);
-        Assert.Contains(configured, ex.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void A_blank_tick_interval_falls_back_rather_than_failing()
-    {
-        var options = ServerOptions.Read(Env([.. Minimal, (ServerOptions.TickVariable, "  ")]));
-
-        Assert.Equal(ServerOptions.DefaultTickInterval, options.TickInterval);
+        // Four tests used to live here: that the interval was read in seconds, that an unusable
+        // one was refused rather than defaulted, that a blank one fell back. Every one of them
+        // was about a variable this process no longer reads.
+        //
+        // The reasoning behind them was right and now applies somewhere else. The sweep enforces
+        // every deadline in SPEC.md §6, and a deployment that ran twenty of them -- one per
+        // adapter, each on its own cadence -- had twenty answers to "how often are deadlines
+        // checked" and no way to see any of them. There is one now, in the broker, and the
+        // variable is read there.
+        Assert.DoesNotContain(
+            typeof(ServerOptions).GetProperties(),
+            p => p.Name.Contains("Tick", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -155,15 +163,21 @@ public sealed class ServerOptionsTests
     }
 
     [Fact]
-    public void The_database_variable_is_named_in_one_place()
+    public void The_broker_variable_is_named_in_one_place()
     {
-        // It had two spellings: a constant here and a bare literal in the operator's command, in
-        // assemblies that deliberately do not reference each other. They agreed by coincidence,
-        // and nothing would have noticed them diverging — the operator would have administered a
-        // database the agents were not using, and both would have reported success.
+        // The database variable had two spellings once: a constant in the server and a bare
+        // literal in the operator's command, in assemblies that deliberately do not reference
+        // each other. They agreed by coincidence, and nothing would have noticed them diverging
+        // — the operator would have administered a database the agents were not using, and both
+        // would have reported success.
+        //
+        // The same hazard moved to the broker's address, and it is worse there: three processes
+        // read it now rather than two, and a server that connected to a different broker than
+        // the one everything else uses would produce a deployment where an agent is registered,
+        // healthy, and invisible to every peer.
         //
         // This fails if somebody replaces the reference with a literal again, which is the only
-        // way they can now come apart.
-        Assert.Equal(Parley.Core.DeploymentEnvironment.DatabaseVariable, ServerOptions.DatabaseVariable);
+        // way they can come apart.
+        Assert.Equal(Parley.Core.BrokerEndpoint.Variable, ServerOptions.BrokerVariable);
     }
 }

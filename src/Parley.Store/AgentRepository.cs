@@ -29,12 +29,20 @@ namespace Parley.Store;
 /// only the adapter interprets it. Credentials do not belong here; see
 /// <see cref="AgentRepository.SetCredentialAsync"/>.
 /// </param>
-/// <param name="LastSeenUtc">
+/// <param name="Connected">
 /// When the agent last communicated, or <see langword="null"/> if it never has. Used to
 /// bound the change summary injected on resume, so a returning agent is not reasoning about
 /// code that moved while it was away.
 /// </param>
 /// <param name="Status">The agent's current registration and liveness state.</param>
+/// <param name="Presence">
+/// How reachable it is, read at the same moment as the rest of the row and never stored.
+/// Defaulted rather than required because a record being written has no presence to state: the
+/// value is an observation the read makes, and a caller constructing one to save it is not in a
+/// position to observe anything. The default is
+/// <see cref="AgentPresence.Stranded"/> for the same reason it is the enum's zero — knowing
+/// nothing must not read as knowing the agent is up.
+/// </param>
 /// <param name="Owns">
 /// One line saying what this agent owns, or <see langword="null"/> if its launch did not say.
 /// Unlike the rest of this record it is written for peers to read: see
@@ -58,9 +66,23 @@ public sealed record AgentRecord(
     string? Workspace,
     string? SessionRef,
     string? AdapterConfig,
-    DateTimeOffset? LastSeenUtc,
+    bool Connected,
     AgentStatus Status,
-    string? Owns = null);
+    string? Owns = null,
+    AgentPresence Presence = AgentPresence.Stranded)
+{
+    /// <summary>What this agent is for, from its name.</summary>
+    public string Role => Name.Role;
+
+    /// <summary>The machine reporting it, from its name.</summary>
+    /// <remarks>
+    /// Derived rather than stored on the record, so the two cannot disagree. They are separate
+    /// columns in storage because a role query has to find every agent sharing a role without
+    /// matching on a substring — <c>infra</c> is a prefix of <c>infrastructure</c> — but that is
+    /// an indexing concern and not a second source of truth.
+    /// </remarks>
+    public string Machine => Name.Machine;
+}
 
 /// <summary>
 /// One credential an adapter needs, as a reference rather than a value.
@@ -122,17 +144,19 @@ public sealed class AgentRepository(SqliteConnection connection)
         var rows = await _connection.QueryAsync<AgentRow>(
             new CommandDefinition(
                 """
-                SELECT name           AS Name,
-                       adapter        AS Adapter,
-                       tier           AS Tier,
-                       workspace      AS Workspace,
-                       session_ref    AS SessionRef,
-                       adapter_config AS AdapterConfig,
-                       owns           AS Owns,
-                       last_seen_utc  AS LastSeenUtc,
-                       status         AS Status
-                FROM agents
-                ORDER BY name;
+                SELECT a.name           AS Name,
+                       a.adapter        AS Adapter,
+                       a.tier           AS Tier,
+                       a.workspace      AS Workspace,
+                       a.session_ref    AS SessionRef,
+                       a.adapter_config AS AdapterConfig,
+                       a.owns           AS Owns,
+                       a.connected      AS Connected,
+                       COALESCE(n.connected, 0) AS NodeConnected,
+                       a.status         AS Status
+                FROM agents AS a
+                LEFT JOIN nodes AS n ON n.machine = a.machine
+                ORDER BY a.name;
                 """,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
@@ -147,8 +171,8 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <returns>One if the agent was marked offline, zero if it is retired.</returns>
     /// <remarks>
     /// <para>
-    /// The counterpart to <see cref="MarkLiveAsync"/>, and the only thing that produces
-    /// <see cref="AgentStatus.Offline"/> now that the attach sequence of SPEC.md §14 is scoped
+    /// The counterpart to <see cref="MarkLiveAsync"/>, and the only thing that clears
+    /// <c>connected</c> now that the attach sequence of SPEC.md §14 is scoped
     /// to one agent. The broker-wide "mark everything offline" it replaced could not survive
     /// that scoping: no process speaks for every agent any more, so no process is entitled to
     /// say they have all stopped.
@@ -170,8 +194,70 @@ public sealed class AgentRepository(SqliteConnection connection)
         CancellationToken cancellationToken = default) =>
         await _connection.ExecuteAsync(
             new CommandDefinition(
-                "UPDATE agents SET status = 'offline' " +
+                // max() rather than a bare decrement: a detach with no matching attach is a
+                // bug somewhere else, and a negative count would turn it into an agent that can
+                // never read as connected again however many sessions open.
+                "UPDATE agents SET connected = max(0, connected - 1) " +
                 "WHERE name = @Name AND status <> 'retired';",
+                new { Name = name.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>
+    /// Every agent registered under a role, for a question addressed to one (SPEC.md §5.5).
+    /// </summary>
+    /// <param name="role">The role, without a machine.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The members, ordered by name.</returns>
+    /// <remarks>
+    /// <para>
+    /// Matched on the <c>role</c> column rather than on a prefix of the name, which is the whole
+    /// reason that column is stored at all: <c>infra</c> is a prefix of <c>infrastructure</c>,
+    /// so a <c>LIKE 'infra%'</c> would quietly ask a question of agents that answer to something
+    /// else entirely.
+    /// </para>
+    /// <para>
+    /// <b>Membership is every registered agent, not every reachable one.</b> A machine that is
+    /// switched off still has its agents here, so a role question opens an exchange with them
+    /// too — which orphans and is ghosted, and tells the asker. The alternative silently omits
+    /// the one agent whose answer mattered and looks exactly like success.
+    /// </para>
+    /// <para>
+    /// Retired agents are excluded, because retirement is the one judgement that gates routing
+    /// and an exchange opened with a retired agent could never be answered by anybody.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<AgentName>> ListRoleAsync(
+        string role,
+        CancellationToken cancellationToken = default)
+    {
+        var names = await _connection.QueryAsync<string>(
+            new CommandDefinition(
+                "SELECT name FROM agents WHERE role = @Role AND status <> 'retired' " +
+                "ORDER BY name;",
+                new { Role = role },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return [.. names.Select(AgentName.Create)];
+    }
+
+    /// <summary>
+    /// The workspace recorded for an agent, if it is registered and one was recorded.
+    /// </summary>
+    /// <param name="name">The agent.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Its workspace, or <see langword="null"/>.</returns>
+    /// <remarks>
+    /// Read at launch so a second repository claiming a name already held can be refused rather
+    /// than quietly sharing an identity with the first (SPEC.md §4.1.1). The workspace is the
+    /// only thing that distinguishes them: two checkouts on one machine agree about the role,
+    /// the machine, and therefore the whole name, and differ only in where they are.
+    /// </remarks>
+    public async Task<string?> WorkspaceOfAsync(
+        AgentName name,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteScalarAsync<string?>(
+            new CommandDefinition(
+                "SELECT workspace FROM agents WHERE name = @Name;",
                 new { Name = name.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
@@ -212,8 +298,10 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// </para>
     /// <para>
     /// Retired agents are omitted, per §14 — "not routed to, not offered in <c>agents()</c>".
-    /// Unreachable ones are listed, also per §14, because a peer that can see the mark stops
-    /// asking instead of inferring it from silence.
+    /// Everything else is listed whatever its presence, because presence does not gate routing:
+    /// a question to an agent nobody is running is what causes it to be started, and one to an
+    /// agent on a switched-off machine orphans and is ghosted, which tells the asker more than
+    /// a refusal at the door would.
     /// </para>
     /// </remarks>
     public async Task<IReadOnlyList<AgentSummary>> ListRoutableAsync(
@@ -222,11 +310,13 @@ public sealed class AgentRepository(SqliteConnection connection)
         var rows = await _connection.QueryAsync<SummaryRow>(
             new CommandDefinition(
                 """
-                SELECT name AS Name, adapter AS Adapter, tier AS Tier, status AS Status,
-                       last_seen_utc AS LastSeenUtc, owns AS Owns
-                  FROM agents
-                 WHERE status <> 'retired'
-                 ORDER BY name;
+                SELECT a.name AS Name, a.adapter AS Adapter, a.tier AS Tier,
+                       a.connected AS AgentConnected, COALESCE(n.connected, 0) AS NodeConnected,
+                       a.owns AS Owns
+                  FROM agents AS a
+                  LEFT JOIN nodes AS n ON n.machine = a.machine
+                 WHERE a.status <> 'retired'
+                 ORDER BY a.name;
                 """,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
@@ -234,8 +324,7 @@ public sealed class AgentRepository(SqliteConnection connection)
             AgentName.Create(r.Name),
             r.Adapter,
             AgentRow.ParseTier(r.Tier),
-            AgentRow.ParseStatus(r.Status),
-            r.LastSeenUtc is null ? null : ExchangeRow.ParseTimestamp(r.LastSeenUtc),
+            AgentLiveness.Read(r.NodeConnected != 0, r.AgentConnected != 0),
             r.Owns)).ToList();
     }
 
@@ -330,19 +419,28 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// is a lease rather than a flag for two reasons a flag cannot cover.
     /// </para>
     /// <para>
-    /// A flag cannot be cleared by a process that stopped existing, so a crashed session leaves
-    /// <c>live</c> set for ever — the registry lies, and every later attach declines to release
-    /// debts whose worker is demonstrably gone. And a flag cannot count: an agent may have two
-    /// sessions open, and the second one closing marks the agent offline while the first is
-    /// still mid-answer, so the next attach releases work somebody is doing. A lease expires on
-    /// its own and is renewed by whichever sessions are actually running, which answers both.
+    /// This was a lease on a timestamp, and the reasoning for it was sound while the registry
+    /// only knew what an agent had last written: a flag cannot be cleared by a process that
+    /// stopped existing, so a crashed session would leave <c>live</c> set for ever and every
+    /// later attach would decline to release debts whose worker was demonstrably gone.
     /// </para>
     /// <para>
-    /// Status is deliberately not consulted. <c>offline</c> written by one session's clean
-    /// shutdown says nothing about another session's, and it is precisely that disagreement the
-    /// timestamp resolves — <c>last_seen_utc</c> is renewed by every heartbeat, so the surviving
-    /// session keeps it current whatever its departing sibling wrote. Retirement is checked
-    /// where retirement matters, in <see cref="MarkLiveAsync"/> and at admission.
+    /// A connection has no such failure. It closes when the process ends, however impolitely,
+    /// and the broker is the one that notices — so <c>connected</c> is cleared by the party that
+    /// survives rather than by the party that died. See SPEC.md §4.0.
+    /// </para>
+    /// <para>
+    /// <b>One thing the lease covered and this does not, yet.</b> A flag cannot count, and an
+    /// agent may have two sessions open: the second closing clears <c>connected</c> while the
+    /// first is still mid-answer, and the next attach then releases work somebody is doing. The
+    /// lease answered that by being renewed by whichever sessions were actually running. The
+    /// answer here is for the broker to hold the connections and clear the column when the last
+    /// one goes — which it can, because it holds them — and until the transport lands, the
+    /// window is between one session detaching and another attaching.
+    /// </para>
+    /// <para>
+    /// Retirement is deliberately not consulted here. It is checked where retirement matters, in
+    /// <see cref="MarkLiveAsync"/> and at admission.
     /// </para>
     /// </remarks>
     public async Task<bool> WasSeenSinceAsync(
@@ -352,13 +450,8 @@ public sealed class AgentRepository(SqliteConnection connection)
         CancellationToken cancellationToken = default) =>
         await _connection.ExecuteScalarAsync<long>(
             new CommandDefinition(
-                """
-                SELECT count(*) FROM agents
-                 WHERE name = @Name
-                   AND last_seen_utc IS NOT NULL
-                   AND last_seen_utc >= @Since;
-                """,
-                new { Name = agent.Value, Since = ExchangeRow.FormatTimestamp(sinceUtc) },
+                "SELECT count(*) FROM agents WHERE name = @Name AND connected = 1;",
+                new { Name = agent.Value },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
 
@@ -367,8 +460,8 @@ public sealed class AgentRepository(SqliteConnection connection)
         public string Name { get; init; } = "";
         public string Adapter { get; init; } = "";
         public string Tier { get; init; } = "";
-        public string Status { get; init; } = "";
-        public string? LastSeenUtc { get; init; }
+        public long AgentConnected { get; init; }
+        public long NodeConnected { get; init; }
         public string? Owns { get; init; }
     }
 
@@ -392,10 +485,14 @@ public sealed class AgentRepository(SqliteConnection connection)
         return await _connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                INSERT INTO agents (name, adapter, tier, workspace, session_ref, adapter_config,
-                                    owns, last_seen_utc, status)
-                VALUES (@Name, @Adapter, @Tier, @Workspace, @SessionRef, @AdapterConfig,
-                        @Owns, @LastSeenUtc, @Status)
+                INSERT INTO nodes (machine, connected, first_seen_utc)
+                VALUES (@Machine, 0, @Now)
+                ON CONFLICT(machine) DO NOTHING;
+
+                INSERT INTO agents (name, adapter, tier, workspace, session_ref,
+                                    adapter_config, owns, connected, status)
+                VALUES (@Name, @Adapter, @Tier, @Workspace, @SessionRef,
+                        @AdapterConfig, @Owns, @Connected, @Status)
                 ON CONFLICT(name) DO UPDATE SET
                     adapter        = excluded.adapter,
                     tier           = excluded.tier,
@@ -406,13 +503,15 @@ public sealed class AgentRepository(SqliteConnection connection)
                 new
                 {
                     Name = agent.Name.Value,
+                    agent.Machine,
                     agent.Adapter,
                     Tier = FormatTier(agent.Tier),
                     agent.Workspace,
                     agent.SessionRef,
                     agent.AdapterConfig,
                     agent.Owns,
-                    LastSeenUtc = agent.LastSeenUtc is { } t ? ExchangeRow.FormatTimestamp(t) : null,
+                    Connected = agent.Connected ? 1 : 0,
+                    Now = ExchangeRow.FormatTimestamp(DateTimeOffset.UtcNow),
                     Status = FormatStatus(agent.Status)
                 },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -461,10 +560,14 @@ public sealed class AgentRepository(SqliteConnection connection)
         return await _connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                INSERT INTO agents (name, adapter, tier, workspace, session_ref, adapter_config,
-                                    owns, last_seen_utc, status)
-                VALUES (@Name, @Adapter, @Tier, @Workspace, @SessionRef, @AdapterConfig,
-                        @Owns, @LastSeenUtc, @Status)
+                INSERT INTO nodes (machine, connected, first_seen_utc)
+                VALUES (@Machine, 0, @Now)
+                ON CONFLICT(machine) DO NOTHING;
+
+                INSERT INTO agents (name, adapter, tier, workspace, session_ref,
+                                    adapter_config, owns, connected, status)
+                VALUES (@Name, @Adapter, @Tier, @Workspace, @SessionRef,
+                        @AdapterConfig, @Owns, @Connected, @Status)
                 ON CONFLICT(name) DO NOTHING;
                 """,
                 new
@@ -476,7 +579,9 @@ public sealed class AgentRepository(SqliteConnection connection)
                     agent.SessionRef,
                     agent.AdapterConfig,
                     agent.Owns,
-                    LastSeenUtc = agent.LastSeenUtc is { } t ? ExchangeRow.FormatTimestamp(t) : null,
+                    agent.Machine,
+                    Connected = agent.Connected ? 1 : 0,
+                    Now = ExchangeRow.FormatTimestamp(DateTimeOffset.UtcNow),
                     Status = FormatStatus(agent.Status)
                 },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -535,69 +640,40 @@ public sealed class AgentRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>
-    /// Records how this agent may be started, and whether a supervisor may do it unattended.
+    /// Marks every agent disconnected, for a broker that has just started.
     /// </summary>
-    /// <param name="name">The agent.</param>
-    /// <param name="invokeCommand">
-    /// How to start this agent, or <see langword="null"/> if it cannot be started at all.
-    /// </param>
-    /// <param name="invokeWhenIdle">
-    /// Whether a supervisor may start it with nobody watching. Ignored without a command, which
-    /// is what the schema's trigger refuses.
-    /// </param>
+    /// <param name="nowUtc">The instant.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>Rows updated.</returns>
+    /// <returns>How many rows were changed.</returns>
     /// <remarks>
     /// <para>
-    /// Refreshed on every launch and from the launch environment only, exactly as
-    /// <see cref="RefreshOwnershipAsync"/> is and for the same reason: it is a permission the
-    /// person who configured the repository grants, not a property an agent decides about itself.
-    /// No operation accepts it, so an agent cannot volunteer to be started any more than it can
-    /// choose its own name.
+    /// A connection is evidence (SPEC.md §4.0), and a broker that has just started holds none.
+    /// Every non-zero <c>connected</c> is therefore a session belonging to a process that is no
+    /// longer there, and believing it has a specific consequence rather than a cosmetic one: an
+    /// agent that looks attached is one whose abandoned work the attach sequence of §14 declines
+    /// to release, on the grounds that somebody else is holding it. Left uncleared, a broker
+    /// restart would strand every exchange that was in flight when it went down.
     /// </para>
     /// <para>
-    /// The consent and the command are one argument because they are one fact. A supervisor
-    /// reads this row to start an agent it does not host, so consent without a command is a
-    /// candidate that fails on every pass, and a command without consent is a permission nobody
-    /// granted. Storage refuses the first of those outright; passing them together is what makes
-    /// the second unrepresentable.
+    /// Run at startup rather than at shutdown, because the shutdown a broker most needs this
+    /// after is the one where it did not get to run anything.
     /// </para>
     /// <para>
-    /// Cleared when a launch stops supplying it, which is what makes withdrawal work: removing
-    /// the variable from a launch configuration and opening the repository once is enough, and
-    /// nobody has to remember a second step in a place they will not look.
-    /// </para>
-    /// <para>
-    /// Skips a retired agent, as ownership does. Retirement is a person saying the agent will not
-    /// come back; a launch quietly re-granting permission to start it would overrule that.
+    /// It does not touch <c>status</c>. Retirement is a person's judgement and a broker
+    /// restarting is not evidence about it.
     /// </para>
     /// </remarks>
-    public async Task<int> RefreshInvocationConsentAsync(
-        AgentName name,
-        string? invokeCommand,
-        bool invokeWhenIdle,
+    public async Task<int> DisconnectAllAsync(
+        DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default) =>
         await _connection.ExecuteAsync(
             new CommandDefinition(
                 """
                 UPDATE agents
-                   SET invoke_when_idle = @Invoke,
-                       invoke_command   = @Command
-                 WHERE name = @Name
-                   AND status <> 'retired';
+                   SET connected = 0, changed_utc = @Now
+                 WHERE connected <> 0;
                 """,
-                new
-                {
-                    Name = name.Value,
-                    // Not derived from the command. The schema keeps two columns because they
-                    // answer two questions -- how to start it, and whether a supervisor may with
-                    // nobody watching -- and deriving one from the other made the first
-                    // unavailable without the second. A repository can now record how to start
-                    // it, so an operator at a console can, while unattended residency stays an
-                    // explicit yes. Consent without a command is still refused, by trigger.
-                    Invoke = invokeWhenIdle && invokeCommand is not null ? 1 : 0,
-                    Command = invokeCommand
-                },
+                new { Now = ExchangeRow.FormatTimestamp(nowUtc) },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>
@@ -632,14 +708,26 @@ public sealed class AgentRepository(SqliteConnection connection)
         AgentName name,
         string? sessionRef,
         DateTimeOffset nowUtc,
-        CancellationToken cancellationToken = default) =>
-        await _connection.ExecuteAsync(
+        CancellationToken cancellationToken = default)
+    {
+        // This used to mark the agent's node connected as well, on the grounds that an adapter
+        // talking to us is evidence its machine is reachable. That was a stopgap for there being
+        // no node process, and it said so; the node process exists now and owns the column, so
+        // the stopgap is gone rather than left to fight it.
+        //
+        // It was also wrong in a way worth recording. `nodes.connected` answers "is there
+        // something on that machine that could start an agent", and an attached adapter is not
+        // that -- it is one agent, already started, which cannot launch its neighbours. A
+        // deployment with no supervisor anywhere read as fully startable, and the first question
+        // to an idle agent would sit unanswered until it was ghosted, with the registry having
+        // said all along that it could be started.
+        return await _connection.ExecuteAsync(
             new CommandDefinition(
                 """
                 UPDATE agents
-                   SET status        = 'live',
-                       session_ref   = COALESCE(@SessionRef, session_ref),
-                       last_seen_utc = @Now
+                   SET connected   = connected + 1,
+                       session_ref = COALESCE(@SessionRef, session_ref),
+                       changed_utc = @Now
                  WHERE name = @Name AND status <> 'retired';
                 """,
                 new
@@ -649,6 +737,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                     Now = ExchangeRow.FormatTimestamp(nowUtc)
                 },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
 
 
     /// <summary>
@@ -659,10 +748,10 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <returns>The number of rows changed: one if the agent existed, zero otherwise.</returns>
     /// <remarks>
     /// <para>
-    /// The operator operation from SPEC.md section 10.2, and the only status the broker never
-    /// sets on its own evidence. <see cref="AgentStatus.Unreachable"/> is the broker reporting
-    /// that it tried and failed, which a re-clone or a restored backup can invalidate at any
-    /// moment; this is a person saying it will not come back.
+    /// The operator operation from SPEC.md section 10.2, and the one thing about an agent the
+    /// broker never decides on its own evidence. Everything else it knows about reachability is
+    /// an observation that a re-clone, a restored backup or somebody switching a machine on can
+    /// invalidate at any moment; this is a person saying it will not come back.
     /// </para>
     /// <para>
     /// It marks rather than deletes, and section 10.2 previously said "remove". The schema does
@@ -706,16 +795,17 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// every restart after — an operator who retires an agent and finds it live again the
     /// following morning has been given a control that does not hold.
     ///
-    /// It returns the agent to <see cref="AgentStatus.Offline"/> rather than
-    /// <see cref="AgentStatus.Live"/>, because offline is the ordinary resting state of a
-    /// lazily spawned agent and nothing has yet demonstrated that this one can be reached.
+    /// It returns the agent to <see cref="AgentStatus.Active"/> and leaves <c>connected</c>
+    /// alone, because reinstatement is a statement about the registration and not a claim that
+    /// anybody has started the agent. Whether it is reachable is observed, and observing it is
+    /// not this method's job.
     /// </remarks>
     public async Task<int> ReinstateAsync(
         AgentName name,
         CancellationToken cancellationToken = default) =>
         await _connection.ExecuteAsync(
             new CommandDefinition(
-                "UPDATE agents SET status = 'offline' " +
+                "UPDATE agents SET status = 'active' " +
                 "WHERE name = @Name AND status = 'retired';",
                 new { Name = name.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -1049,18 +1139,8 @@ public sealed class AgentRepository(SqliteConnection connection)
 
     private static string FormatStatus(AgentStatus status) => status switch
     {
-        AgentStatus.Offline => "offline",
-        AgentStatus.Live => "live",
+        AgentStatus.Active => "active",
         AgentStatus.Retired => "retired",
-
-        // NotResponding and Unreachable are readings of last_seen_utc rather than values, so
-        // there is nothing to write for them and a caller trying is a caller that has confused
-        // a derivation for a fact. See AgentLiveness.
-        AgentStatus.NotResponding or AgentStatus.Unreachable =>
-            throw new ArgumentOutOfRangeException(
-                nameof(status),
-                status,
-                "Liveness is derived from last_seen_utc and cannot be stored."),
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
     };
 
@@ -1081,7 +1161,9 @@ public sealed class AgentRepository(SqliteConnection connection)
 
         public string? Owns { get; init; }
 
-        public string? LastSeenUtc { get; init; }
+        public long Connected { get; init; }
+
+        public long NodeConnected { get; init; }
 
         public string Status { get; init; } = "";
 
@@ -1114,15 +1196,14 @@ public sealed class AgentRepository(SqliteConnection connection)
         /// </exception>
         public static AgentStatus ParseStatus(string value) => value switch
         {
-            "offline" => AgentStatus.Offline,
-            "live" => AgentStatus.Live,
+            "active" => AgentStatus.Active,
             "retired" => AgentStatus.Retired,
 
-            // Accepted for the length of one upgrade. Migration 008 rewrites both to 'offline',
-            // so a row carrying either is one written by a build older than this reader against
-            // a database newer than it -- which happens while a fleet is being upgraded one
-            // repository at a time, and should not crash the reader that notices.
-            "registered" or "unreachable" => AgentStatus.Offline,
+            // No legacy tokens are accepted, and that is a decision rather than an omission.
+            // The store was rebuilt from empty when the broker stopped being a file every
+            // adapter opened (SPEC.md 4), so no database in existence carries the old spellings
+            // -- and quietly mapping 'live' or 'unreachable' onto something would be this
+            // reader inventing a meaning for a row it cannot actually interpret.
             _ => throw new InvalidOperationException($"Unrecognised status '{value}'.")
         };
 
@@ -1133,8 +1214,9 @@ public sealed class AgentRepository(SqliteConnection connection)
             Workspace,
             SessionRef,
             AdapterConfig,
-            LastSeenUtc is null ? null : ExchangeRow.ParseTimestamp(LastSeenUtc),
+            Connected != 0,
             ParseStatus(Status),
-            Owns);
+            Owns,
+            AgentLiveness.Read(NodeConnected != 0, Connected != 0));
     }
 }

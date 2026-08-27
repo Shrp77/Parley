@@ -14,7 +14,7 @@ namespace Parley.Store.Tests;
 /// </summary>
 public sealed class SchemaIntegrityTests : IDisposable
 {
-    private const string OrdersBilling = "billing\u001Forders";
+    private const string OrdersBilling = "billing@test\u001Forders@test";
     private const string Opened = "2026-01-01T00:00:00.0000000Z";
     private const string DedupHash =
         "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
@@ -26,7 +26,7 @@ public sealed class SchemaIntegrityTests : IDisposable
     public SchemaIntegrityTests()
     {
         _connection = ParleyDatabase.OpenInMemory();
-        Seed("orders", "billing", "inventory");
+        Seed("orders@test", "billing@test", "inventory@test");
     }
 
     public void Dispose() => _connection.Dispose();
@@ -38,7 +38,7 @@ public sealed class SchemaIntegrityTests : IDisposable
             Execute(
                 """
                 INSERT INTO agents (name, adapter, tier, status)
-                VALUES ($name, 'test', 'full', 'offline');
+                VALUES ($name, 'test', 'full', 'active');
                 """,
                 ("$name", name));
         }
@@ -155,7 +155,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         // The other side, so the constraint is not simply refusing everything. A dot is fine on
         // its own; it is a run of them that is path syntax.
         InsertConversation(name);
-        InsertExchange(OrdersBilling, "orders", "billing", conversationId: name);
+        InsertExchange(OrdersBilling, "orders@test", "billing@test", conversationId: name);
     }
 
     // ---- one open exchange per pair ----
@@ -166,10 +166,10 @@ public sealed class SchemaIntegrityTests : IDisposable
         // Replaces the one-open-exchange-per-pair rule. Serialising a pair bought nothing once
         // nothing waited on anything, and cost an agent every other channel to that peer for
         // as long as an answer took. What is refused now is repetition, not volume.
-        InsertExchange(OrdersBilling, "orders", "billing", questionHash: "same-question");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test", questionHash: "same-question");
 
         var ex = Assert.Throws<SqliteException>(
-            () => InsertExchange(OrdersBilling, "orders", "billing", questionHash: "same-question"));
+            () => InsertExchange(OrdersBilling, "orders@test", "billing@test", questionHash: "same-question"));
 
         Assert.Contains("UNIQUE", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -177,9 +177,9 @@ public sealed class SchemaIntegrityTests : IDisposable
     [Fact]
     public void A_pair_may_hold_several_different_questions()
     {
-        InsertExchange(OrdersBilling, "orders", "billing", questionHash: "where does price live");
-        InsertExchange(OrdersBilling, "orders", "billing", questionHash: "who owns the ladder");
-        InsertExchange(OrdersBilling, "orders", "billing", questionHash: "is tax applied twice");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test", questionHash: "where does price live");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test", questionHash: "who owns the ladder");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test", questionHash: "is tax applied twice");
     }
 
     [Fact]
@@ -187,8 +187,8 @@ public sealed class SchemaIntegrityTests : IDisposable
     {
         // The same text asked in each direction is two different questions: one asks what
         // billing does, the other what orders does.
-        InsertExchange(OrdersBilling, "orders", "billing", questionHash: "who owns this");
-        InsertExchange(OrdersBilling, "billing", "orders", questionHash: "who owns this");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test", questionHash: "who owns this");
+        InsertExchange(OrdersBilling, "billing@test", "orders@test", questionHash: "who owns this");
     }
 
     [Fact]
@@ -196,8 +196,8 @@ public sealed class SchemaIntegrityTests : IDisposable
     {
         // The index is partial on state = 'OPEN'. An asker told its question was abandoned may
         // ask it again, which is the point of telling it.
-        InsertExchange(OrdersBilling, "orders", "billing", "CLOSED", questionHash: "q");
-        InsertExchange(OrdersBilling, "orders", "billing", questionHash: "q");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test", "CLOSED", questionHash: "q");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test", questionHash: "q");
     }
 
     // ---- pair_key must be derived from its participants ----
@@ -208,7 +208,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         // Without this constraint, ux_open_pair would enforce uniqueness against the wrong
         // string, permitting two open exchanges for the same real pair.
         var ex = Assert.Throws<SqliteException>(
-            () => InsertExchange("orders\u001Fbilling", "orders", "billing"));
+            () => InsertExchange("orders@test\u001Fbilling@test", "orders@test", "billing@test"));
 
         Assert.Contains("CHECK", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -217,18 +217,18 @@ public sealed class SchemaIntegrityTests : IDisposable
     public void Pair_key_naming_an_unrelated_agent_is_rejected()
     {
         Assert.Throws<SqliteException>(
-            () => InsertExchange("billing\u001Finventory", "orders", "billing"));
+            () => InsertExchange("billing@test\u001Finventory@test", "orders@test", "billing@test"));
     }
 
     [Fact]
     public void A_crafted_key_cannot_smuggle_a_second_open_exchange_past_the_index()
     {
-        InsertExchange(OrdersBilling, "orders", "billing");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
         // The attack the derivation constraint closes: a hand-built key that would hash to a
         // different index entry for the same real pair.
         Assert.Throws<SqliteException>(
-            () => InsertExchange("orders\u001Fbilling", "billing", "orders"));
+            () => InsertExchange("orders@test\u001Fbilling@test", "billing@test", "orders@test"));
     }
 
     // ---- exchange field invariants ----
@@ -240,7 +240,7 @@ public sealed class SchemaIntegrityTests : IDisposable
             """
             INSERT INTO exchanges
                 (pair_key, asker, answerer, owed_by, state, delivery_window_ms, working_window_ms, grace_period_ms, question_hash, opened_utc, expires_utc)
-            VALUES ($pair, 'orders', 'billing', 'inventory', 'OPEN', 900000, $opened, $expires);
+            VALUES ($pair, 'orders@test', 'billing@test', 'inventory@test', 'OPEN', 900000, $opened, $expires);
             """,
             ("$pair", OrdersBilling), ("$opened", Opened), ("$expires", Expires)));
     }
@@ -252,7 +252,7 @@ public sealed class SchemaIntegrityTests : IDisposable
             """
             INSERT INTO exchanges
                 (pair_key, asker, answerer, owed_by, state, delivery_window_ms, working_window_ms, grace_period_ms, question_hash, opened_utc, expires_utc)
-            VALUES ($pair, 'orders', 'billing', 'billing', 'OPEN', 0, $opened, $expires);
+            VALUES ($pair, 'orders@test', 'billing@test', 'billing@test', 'OPEN', 0, $opened, $expires);
             """,
             ("$pair", OrdersBilling), ("$opened", Opened), ("$expires", Expires)));
     }
@@ -264,24 +264,24 @@ public sealed class SchemaIntegrityTests : IDisposable
             """
             INSERT INTO exchanges
                 (pair_key, asker, answerer, owed_by, state, delivery_window_ms, working_window_ms, grace_period_ms, question_hash, opened_utc, expires_utc)
-            VALUES ($pair, 'orders', 'orders', 'orders', 'OPEN', 900000, $opened, $expires);
+            VALUES ($pair, 'orders@test', 'orders@test', 'orders@test', 'OPEN', 900000, $opened, $expires);
             """,
-            ("$pair", "orders\u001Forders"), ("$opened", Opened), ("$expires", Expires)));
+            ("$pair", "orders@test\u001Forders@test"), ("$opened", Opened), ("$expires", Expires)));
     }
 
     // ---- agent names obey the grammar every other constraint rests on ----
 
     [Theory]
-    [InlineData("shipping")]
-    [InlineData("a")]
-    [InlineData("web-api-2")]
-    [InlineData("abcdefghijklmnopqrstuvwxyz012345")]   // 32 characters, the limit
+    [InlineData("shipping@test")]
+    [InlineData("a@m")]                                             // both halves at minimum
+    [InlineData("web-api-2@build-01.example.com")]                  // a dotted machine
+    [InlineData("abcdefghijklmnopqrstuvwxyz012345@test")]           // 32-character role, the limit
     public void Names_matching_the_grammar_are_accepted(string name)
     {
         Execute(
             """
             INSERT INTO agents (name, adapter, tier, status)
-            VALUES ($name, 'test', 'full', 'offline');
+            VALUES ($name, 'test', 'full', 'active');
             """,
             ("$name", name));
     }
@@ -299,7 +299,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         Assert.Throws<SqliteException>(() => Execute(
             """
             INSERT INTO agents (name, adapter, tier, status)
-            VALUES ($name, 'test', 'full', 'offline');
+            VALUES ($name, 'test', 'full', 'active');
             """,
             ("$name", name)));
     }
@@ -315,7 +315,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         Assert.Throws<SqliteException>(() => Execute(
             """
             INSERT INTO agents (name, adapter, tier, status)
-            VALUES ($name, 'test', 'full', 'offline');
+            VALUES ($name, 'test', 'full', 'active');
             """,
             ("$name", "b\u001Fc")));
     }
@@ -331,7 +331,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         Execute(
             """
             INSERT INTO agent_credentials (agent, name, reference)
-            VALUES ('billing', 'api_key', $ref);
+            VALUES ('billing@test', 'api_key', $ref);
             """,
             ("$ref", reference));
     }
@@ -348,7 +348,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         var ex = Assert.Throws<SqliteException>(() => Execute(
             """
             INSERT INTO agent_credentials (agent, name, reference)
-            VALUES ('billing', 'api_key', $ref);
+            VALUES ('billing@test', 'api_key', $ref);
             """,
             ("$ref", reference)));
 
@@ -363,8 +363,8 @@ public sealed class SchemaIntegrityTests : IDisposable
         Execute(
             """
             INSERT INTO agent_credentials (agent, name, reference) VALUES
-                ('billing', 'api_key',   'env:VENDOR_API_KEY'),
-                ('billing', 'org_token', 'keychain:parley/billing-org');
+                ('billing@test', 'api_key',   'env:VENDOR_API_KEY'),
+                ('billing@test', 'org_token', 'keychain:parley/billing-org');
             """);
     }
 
@@ -373,12 +373,12 @@ public sealed class SchemaIntegrityTests : IDisposable
     {
         Execute("""
             INSERT INTO agent_credentials (agent, name, reference)
-            VALUES ('billing', 'api_key', 'env:ONE');
+            VALUES ('billing@test', 'api_key', 'env:ONE');
             """);
 
         var ex = Assert.Throws<SqliteException>(() => Execute("""
             INSERT INTO agent_credentials (agent, name, reference)
-            VALUES ('billing', 'api_key', 'env:TWO');
+            VALUES ('billing@test', 'api_key', 'env:TWO');
             """));
 
         Assert.Contains("UNIQUE", ex.Message, StringComparison.OrdinalIgnoreCase);
@@ -389,7 +389,7 @@ public sealed class SchemaIntegrityTests : IDisposable
     {
         var ex = Assert.Throws<SqliteException>(() => Execute("""
             INSERT INTO agent_credentials (agent, name, reference)
-            VALUES ('shipping', 'api_key', 'env:VENDOR_API_KEY');
+            VALUES ('shipping@test', 'api_key', 'env:VENDOR_API_KEY');
             """));
 
         Assert.Contains("FOREIGN KEY", ex.Message, StringComparison.OrdinalIgnoreCase);
@@ -403,10 +403,10 @@ public sealed class SchemaIntegrityTests : IDisposable
         // lives in a store this schema never wrote to and does not delete from.
         Execute("""
             INSERT INTO agent_credentials (agent, name, reference)
-            VALUES ('billing', 'api_key', 'env:VENDOR_API_KEY');
+            VALUES ('billing@test', 'api_key', 'env:VENDOR_API_KEY');
             """);
 
-        Execute("DELETE FROM agents WHERE name = 'billing';");
+        Execute("DELETE FROM agents WHERE name = 'billing@test';");
 
         using var command = _connection.CreateCommand();
         command.CommandText = "SELECT count(*) FROM agent_credentials;";
@@ -425,7 +425,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         Execute(
             """
             INSERT INTO agents (name, adapter, tier, status, adapter_config)
-            VALUES ('shipping', 'test', 'headless', 'offline', $config);
+            VALUES ('shipping@test', 'test', 'headless', 'active', $config);
             """,
             ("$config", config));
     }
@@ -438,7 +438,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         Assert.Throws<SqliteException>(() => Execute(
             """
             INSERT INTO agents (name, adapter, tier, status, adapter_config)
-            VALUES ('shipping', 'test', 'headless', 'offline', 'model=claude-opus-5');
+            VALUES ('shipping@test', 'test', 'headless', 'active', 'model=claude-opus-5');
             """));
     }
 
@@ -450,7 +450,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         Assert.Throws<SqliteException>(() => Execute(
             """
             INSERT INTO agents (name, adapter, tier, status, adapter_config)
-            VALUES ('shipping', 'test', 'headless', 'offline', $config);
+            VALUES ('shipping@test', 'test', 'headless', 'active', $config);
             """,
             ("$config", $$"""{"note":"{{new string('x', 4000)}}"}""")));
     }
@@ -460,10 +460,10 @@ public sealed class SchemaIntegrityTests : IDisposable
     [Fact]
     public void Payload_is_capped_at_two_thousand_characters()
     {
-        InsertExchange(OrdersBilling, "orders", "billing");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
         var ex = Assert.Throws<SqliteException>(() => InsertMessage(
-            "question", "orders", "billing",
+            "question", "orders@test", "billing@test",
             payload: $$"""{"text":"{{new string('x', 2000)}}"}"""));
 
         // Valid JSON, only too long, so json_valid cannot be what refused it.
@@ -473,10 +473,10 @@ public sealed class SchemaIntegrityTests : IDisposable
     [Fact]
     public void Payload_must_be_valid_json()
     {
-        InsertExchange(OrdersBilling, "orders", "billing");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
         var ex = Assert.Throws<SqliteException>(() => InsertMessage(
-            "notify", "orders", "billing", exchangeId: DBNull.Value, payload: "not json at all"));
+            "notify", "orders@test", "billing@test", exchangeId: DBNull.Value, payload: "not json at all"));
 
         // Well under the cap, so length cannot be what refused it.
         Assert.Contains("CHECK", ex.Message, StringComparison.OrdinalIgnoreCase);
@@ -485,12 +485,12 @@ public sealed class SchemaIntegrityTests : IDisposable
     [Fact]
     public void Notify_must_not_reference_an_exchange()
     {
-        InsertExchange(OrdersBilling, "orders", "billing");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
         // Notify opens no exchange and claims no pair slot, so an exchange reference on one
         // would be a lie about which rules applied to it.
         var ex = Assert.Throws<SqliteException>(() => InsertMessage(
-            "notify", "orders", "billing", exchangeId: 1L));
+            "notify", "orders@test", "billing@test", exchangeId: 1L));
 
         Assert.Contains("CHECK", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -498,7 +498,7 @@ public sealed class SchemaIntegrityTests : IDisposable
     [Fact]
     public void Notify_without_an_exchange_is_accepted()
     {
-        InsertMessage("notify", "orders", "billing", exchangeId: DBNull.Value);
+        InsertMessage("notify", "orders@test", "billing@test", exchangeId: DBNull.Value);
     }
 
     [Theory]
@@ -508,7 +508,7 @@ public sealed class SchemaIntegrityTests : IDisposable
     [InlineData("notify")]
     public void Every_message_must_name_its_responder(string type)
     {
-        InsertExchange(OrdersBilling, "orders", "billing");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
         // SPEC 11.3 is a MUST and is not limited to answers. An unattributed 'unknown' from a
         // weak local model reads identically to a considered one from a frontier model, and
@@ -516,7 +516,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         // identity on every delivered message, so a nullable column would leave the envelope
         // a hole the schema itself permitted.
         Assert.Throws<SqliteException>(() => InsertMessage(
-            type, "orders", "billing",
+            type, "orders@test", "billing@test",
             exchangeId: type == "notify" ? DBNull.Value : 1L,
             responderModel: DBNull.Value));
     }
@@ -524,11 +524,11 @@ public sealed class SchemaIntegrityTests : IDisposable
     [Fact]
     public void An_empty_responder_is_not_attribution()
     {
-        InsertExchange(OrdersBilling, "orders", "billing");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
         // NOT NULL alone would let the empty string through and call it attributed.
         var ex = Assert.Throws<SqliteException>(() => InsertMessage(
-            "answer", "billing", "orders", responderModel: ""));
+            "answer", "billing@test", "orders@test", responderModel: ""));
 
         Assert.Contains("CHECK", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -540,11 +540,11 @@ public sealed class SchemaIntegrityTests : IDisposable
     [InlineData("human:arvind")]       // escalation to a person
     public void Recognised_responder_forms_are_accepted(string responder)
     {
-        InsertExchange(OrdersBilling, "orders", "billing");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
         // Unlike credential_ref, this is not restricted to known schemes: model identifiers
         // cannot be enumerated in advance. Presence is the enforceable part.
-        InsertMessage("answer", "billing", "orders", responderModel: responder);
+        InsertMessage("answer", "billing@test", "orders@test", responderModel: responder);
     }
 
     [Theory]
@@ -556,7 +556,7 @@ public sealed class SchemaIntegrityTests : IDisposable
     [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     public void A_responder_cannot_forge_envelope_structure(string responder)
     {
-        InsertExchange(OrdersBilling, "orders", "billing");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
         // responder_model is rendered into the envelope header, which sits outside the payload
         // delimiters and so outside what the delimiter token protects. Left unbounded it is a
@@ -564,7 +564,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         // framing in this field read as though the broker wrote them. The last case is 65
         // characters, since only the payload is otherwise length-capped.
         Assert.Throws<SqliteException>(() => InsertMessage(
-            "answer", "billing", "orders", responderModel: responder));
+            "answer", "billing@test", "orders@test", responderModel: responder));
     }
 
     [Theory]
@@ -574,13 +574,13 @@ public sealed class SchemaIntegrityTests : IDisposable
     [InlineData("zf86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08")]
     public void A_malformed_content_hash_is_rejected(string hash)
     {
-        InsertExchange(OrdersBilling, "orders", "billing");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
         // The schema cannot compute this hash, so it constrains the shape instead. A broker
         // writing an empty or truncated hash would collide unrelated messages, and
         // over-deduplication discards real traffic while the index still looks healthy.
         Assert.Throws<SqliteException>(() => InsertMessage(
-            "question", "orders", "billing", contentHash: hash));
+            "question", "orders@test", "billing@test", contentHash: hash));
     }
 
     [Theory]
@@ -589,14 +589,14 @@ public sealed class SchemaIntegrityTests : IDisposable
     [InlineData("01/01/2026")]
     public void A_timestamp_the_bucket_cannot_be_derived_from_is_rejected(string created)
     {
-        InsertExchange(OrdersBilling, "orders", "billing");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
         // Not a cosmetic format rule. unixepoch() yields NULL for text it cannot read, and
         // SQLite treats NULLs as distinct in a unique index, so one malformed timestamp does
         // not mis-bucket a row — it drops the row out of ux_message_dedup entirely. Two
         // byte-identical messages would then both store while the index reported no conflict.
         Assert.Throws<SqliteException>(() => InsertMessage(
-            "question", "orders", "billing", createdUtc: created));
+            "question", "orders@test", "billing@test", createdUtc: created));
     }
 
     // ---- deduplication backstop (SPEC 13.1) ----
@@ -604,13 +604,13 @@ public sealed class SchemaIntegrityTests : IDisposable
     [Fact]
     public void Identical_content_in_one_window_is_stored_once()
     {
-        InsertExchange(OrdersBilling, "orders", "billing");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
-        InsertMessage("question", "orders", "billing",
+        InsertMessage("question", "orders@test", "billing@test",
             contentHash: DedupHash, createdUtc: "2026-01-01T00:00:10.0000000Z");
 
         var ex = Assert.Throws<SqliteException>(() => InsertMessage(
-            "question", "orders", "billing",
+            "question", "orders@test", "billing@test",
             contentHash: DedupHash, createdUtc: "2026-01-01T00:00:50.0000000Z"));
 
         Assert.Contains("UNIQUE", ex.Message, StringComparison.OrdinalIgnoreCase);
@@ -619,23 +619,23 @@ public sealed class SchemaIntegrityTests : IDisposable
     [Fact]
     public void The_backstop_is_coarser_than_the_rule_it_backs()
     {
-        InsertExchange(OrdersBilling, "orders", "billing");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
         // Documented rather than hidden. These two are twenty seconds apart — well inside the
         // sixty-second rule — but they straddle a bucket boundary, so the index admits both.
         // The broker's exact-window check is what refuses them; the index only catches a
         // writer that skipped that check. Asserting the looseness keeps it a known limit
         // rather than something discovered later and mistaken for a bug.
-        InsertMessage("question", "orders", "billing",
+        InsertMessage("question", "orders@test", "billing@test",
             contentHash: DedupHash, createdUtc: "2026-01-01T00:00:50.0000000Z");
-        InsertMessage("question", "orders", "billing",
+        InsertMessage("question", "orders@test", "billing@test",
             contentHash: DedupHash, createdUtc: "2026-01-01T00:01:10.0000000Z");
     }
 
     [Fact]
     public void The_dedup_bucket_cannot_be_supplied_by_the_writer()
     {
-        InsertExchange(OrdersBilling, "orders", "billing");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
         // The bucket is derived from created_utc, so a broker cannot write one that disagrees
         // with it. An unverified bucket would disable deduplication for that row while leaving
@@ -646,7 +646,7 @@ public sealed class SchemaIntegrityTests : IDisposable
             INSERT INTO messages
                 (exchange_id, type, from_agent, to_agent, responder_model, payload_json,
                  content_hash, dedup_bucket, created_utc)
-            VALUES (1, 'question', 'orders', 'billing', 'claude-opus-5', '{}',
+            VALUES (1, 'question', 'orders@test', 'billing@test', 'claude-opus-5', '{}',
                     'abc123', 999, $created);
             """,
             ("$created", Opened)));
@@ -655,9 +655,9 @@ public sealed class SchemaIntegrityTests : IDisposable
     [Fact]
     public void The_bucket_is_derived_from_the_timestamp()
     {
-        InsertExchange(OrdersBilling, "orders", "billing");
+        InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
-        InsertMessage("question", "orders", "billing",
+        InsertMessage("question", "orders@test", "billing@test",
             contentHash: DedupHash, createdUtc: "2026-01-01T00:00:10.0000000Z");
 
         using var command = _connection.CreateCommand();
@@ -671,11 +671,11 @@ public sealed class SchemaIntegrityTests : IDisposable
     [Fact]
     public void Exchange_naming_an_unregistered_agent_is_rejected()
     {
-        // 'shipping' was never registered. Asserting on the message matters here: the same
+        // 'shipping@test' was never registered. Asserting on the message matters here: the same
         // row also has CHECK constraints to satisfy, so a bare Throws would still pass if
         // the insert failed for an unrelated reason and the foreign key were never reached.
         var ex = Assert.Throws<SqliteException>(
-            () => InsertExchange("billing\u001Fshipping", "shipping", "billing"));
+            () => InsertExchange("billing@test\u001Fshipping@test", "shipping@test", "billing@test"));
 
         Assert.Contains("FOREIGN KEY", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -767,7 +767,7 @@ public sealed class SchemaIntegrityTests : IDisposable
     [Fact]
     public void Rehydration_rejects_a_pair_key_that_is_not_derived()
     {
-        var row = MakeRow("billing\u001Finventory");
+        var row = MakeRow("billing@test\u001Finventory@test");
 
         var ex = Assert.Throws<InvalidOperationException>(() => row.ToDomain());
         Assert.Contains("pair key", ex.Message, StringComparison.OrdinalIgnoreCase);
@@ -779,7 +779,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         var exchange = MakeRow(OrdersBilling).ToDomain();
 
         Assert.Equal(
-            PairKey.For(AgentName.Create("orders"), AgentName.Create("billing")),
+            PairKey.For(AgentName.Create("orders@test"), AgentName.Create("billing@test")),
             exchange.PairKey);
     }
 
@@ -787,9 +787,9 @@ public sealed class SchemaIntegrityTests : IDisposable
     {
         Id = 7,
         PairKey = pairKey,
-        Asker = "orders",
-        Answerer = "billing",
-        OwedBy = "billing",
+        Asker = "orders@test",
+        Answerer = "billing@test",
+        OwedBy = "billing@test",
         State = "OPEN",
         DeliveryWindowMs = 900_000,
         WorkingWindowMs = 14_400_000,

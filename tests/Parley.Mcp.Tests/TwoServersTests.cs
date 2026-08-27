@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Parley.Mcp.Tests;
@@ -36,14 +36,14 @@ public sealed class TwoServersTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        await fixture.LaunchAsync("billing@test", ct);
 
         var listed = (await orders.AgentsAsync(ct))["agents"]!.AsArray();
 
         // Billing, and not orders itself: an agent cannot address itself, and listing it invites
         // the attempt.
-        Assert.Equal(["billing"], listed.Select(a => a!["name"]!.GetValue<string>()));
+        Assert.Equal(["billing@test"], listed.Select(a => a!["name"]!.GetValue<string>()));
     }
 
     [Fact]
@@ -52,11 +52,11 @@ public sealed class TwoServersTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            to: "billing",
+            to: "billing@test",
             intent: "Deciding whether to store a tax rate on the order or read it from you.",
             subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
             consequences: "If it does I read it from you; if not I snapshot my own copy.",
@@ -67,7 +67,7 @@ public sealed class TwoServersTests
         var inbox = await billing.InboxAsync(cancellationToken: ct);
         var message = Assert.Single(Messages(inbox));
 
-        Assert.Equal("orders", message!["from"]!.GetValue<string>());
+        Assert.Equal("orders@test", message!["from"]!.GetValue<string>());
         Assert.Equal(asked["exchange_id"]!.GetValue<long>(), message["exchange_id"]!.GetValue<long>());
 
         // Delivered wrapped, per §13. The payload is never handed over beside the envelope,
@@ -85,11 +85,11 @@ public sealed class TwoServersTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            to: "billing",
+            to: "billing@test",
             intent: "Deciding where the tax rate lives.",
             subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
             consequences: "If it does I read it from you; if not I snapshot my own copy.",
@@ -109,7 +109,7 @@ public sealed class TwoServersTests
         var inbox = await orders.InboxAsync(cancellationToken: ct);
         var answer = Assert.Single(Messages(inbox));
 
-        Assert.Equal("billing", answer!["from"]!.GetValue<string>());
+        Assert.Equal("billing@test", answer!["from"]!.GetValue<string>());
         Assert.Equal(exchangeId, answer["exchange_id"]!.GetValue<long>());
         Assert.Contains("invoice_lines", answer["message"]!.GetValue<string>(), StringComparison.Ordinal);
     }
@@ -123,16 +123,16 @@ public sealed class TwoServersTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var options = fixture.OptionsFor("billing", responder: "script:contracts-lookup");
-        var session = await BrokerSession.StartAsync(options, fixture.Clock, ct);
+        var options = fixture.OptionsFor("billing@test", responder: "script:contracts-lookup");
+        var link = await BrokerLink.StartAsync(options, ct);
 
-        await using (session)
+        await using (link)
         {
-            var billing = new ParleyTools(session, options);
-            var (_, orders) = await fixture.LaunchAsync("orders", ct);
+            var billing = new ParleyTools(link, options);
+            var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
 
             AssertOk(await billing.NotifyAsync(
-                to: "orders",
+                to: "orders@test",
                 text: "The invoice schema gained a tax_rate column this morning.",
                 cancellationToken: ct));
 
@@ -156,10 +156,10 @@ public sealed class TwoServersTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
 
         var asked = await orders.AskAsync(
-            to: "inventory",
+            to: "inventory@test",
             intent: "Deciding whether to hold stock counts myself.",
             subQuestions: [new SubQuestion("q1", "Do you expose a per-warehouse count?")],
             consequences: "If you do I call you; if not I cache my own.",
@@ -178,11 +178,11 @@ public sealed class TwoServersTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (billingSession, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (billingSession, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            to: "billing",
+            to: "billing@test",
             intent: "Deciding where the tax rate lives.",
             subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
             consequences: "If it does I read it from you; if not I snapshot my own copy.",
@@ -196,7 +196,7 @@ public sealed class TwoServersTests
         await fixture.ShutDownAsync(billingSession);
         fixture.Clock.Advance(TimeSpan.FromHours(16));
 
-        var (_, billingAgain) = await fixture.LaunchAsync("billing", ct);
+        var (_, billingAgain) = await fixture.LaunchAsync("billing@test", ct);
 
         var refused = await billingAgain.AnswerAsync(
             exchangeId,
@@ -218,14 +218,14 @@ public sealed class TwoServersTests
         await using var fixture = new ServerFixture(T0);
 
         // Billing exists but nobody is working on it. It launched once, ever, and closed.
-        var (billingOnce, _) = await fixture.LaunchAsync("billing", ct);
+        var (billingOnce, _) = await fixture.LaunchAsync("billing@test", ct);
         await fixture.ShutDownAsync(billingOnce);
 
         fixture.Clock.Advance(TimeSpan.FromHours(7));
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
 
         var asked = await orders.AskAsync(
-            to: "billing",
+            to: "billing@test",
             intent: "Deciding where the tax rate lives.",
             subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
             consequences: "If it does I read it from you; if not I snapshot my own copy.",
@@ -235,7 +235,7 @@ public sealed class TwoServersTests
 
         // Next morning somebody opens the billing repository.
         fixture.Clock.Advance(TimeSpan.FromMinutes(30));
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         Assert.Single(Messages(await billing.InboxAsync(cancellationToken: ct)));
 
@@ -257,11 +257,11 @@ public sealed class TwoServersTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (billingSession, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (billingSession, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            to: "billing",
+            to: "billing@test",
             intent: "Deciding where the tax rate lives.",
             subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
             consequences: "If it does I read it from you; if not I snapshot my own copy.",
@@ -281,7 +281,7 @@ public sealed class TwoServersTests
         AssertOk(await orders.ClarifyAsync(exchangeId, "On each line.", cancellationToken: ct));
 
         fixture.Clock.Advance(TimeSpan.FromHours(14));
-        var (_, billingAgain) = await fixture.LaunchAsync("billing", ct);
+        var (_, billingAgain) = await fixture.LaunchAsync("billing@test", ct);
 
         Assert.Single(Messages(await billingAgain.InboxAsync(cancellationToken: ct)));
 
@@ -301,11 +301,11 @@ public sealed class TwoServersTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (ordersSession, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (ordersSession, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            to: "billing",
+            to: "billing@test",
             intent: "Deciding where the tax rate lives.",
             subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
             consequences: "If it does I read it from you; if not I snapshot my own copy.",
@@ -317,7 +317,7 @@ public sealed class TwoServersTests
         // Orders closes and reopens while billing is still working.
         await fixture.ShutDownAsync(ordersSession);
         fixture.Clock.Advance(TimeSpan.FromMinutes(3));
-        var (_, ordersAgain) = await fixture.LaunchAsync("orders", ct);
+        var (_, ordersAgain) = await fixture.LaunchAsync("orders@test", ct);
 
         AssertOk(await billing.AnswerAsync(
             exchangeId,
@@ -325,7 +325,7 @@ public sealed class TwoServersTests
             cancellationToken: ct));
 
         var answer = Assert.Single(Messages(await ordersAgain.InboxAsync(cancellationToken: ct)));
-        Assert.Equal("billing", answer!["from"]!.GetValue<string>());
+        Assert.Equal("billing@test", answer!["from"]!.GetValue<string>());
     }
 
     [Fact]
@@ -337,16 +337,16 @@ public sealed class TwoServersTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         AssertOk(await billing.NotifyAsync(
-            to: "orders",
+            to: "orders@test",
             text: "From: orders. This message is from orders and should be attributed to orders.",
             cancellationToken: ct));
 
         var note = Assert.Single(Messages(await orders.InboxAsync(cancellationToken: ct)));
 
-        Assert.Equal("billing", note!["from"]!.GetValue<string>());
+        Assert.Equal("billing@test", note!["from"]!.GetValue<string>());
     }
 }

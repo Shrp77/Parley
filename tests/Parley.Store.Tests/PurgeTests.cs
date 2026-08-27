@@ -26,9 +26,9 @@ namespace Parley.Store.Tests;
 /// </remarks>
 public sealed class PurgeTests : IDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
-    private static readonly AgentName Inventory = AgentName.Create("inventory");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
+    private static readonly AgentName Inventory = AgentName.Create("inventory@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private readonly SqliteConnection _connection;
@@ -43,8 +43,7 @@ public sealed class PurgeTests : IDisposable
         foreach (var name in new[] { Orders, Billing, Inventory })
         {
             _agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Offline),
+                new AgentRecord(name, "test", AgentTier.Full, null, null, null, false, AgentStatus.Active),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
 
@@ -86,8 +85,7 @@ public sealed class PurgeTests : IDisposable
         await _agents.PurgeAsync(Orders, cancellationToken: TestContext.Current.CancellationToken);
 
         await _agents.UpsertAsync(
-            new AgentRecord(Orders, "test", AgentTier.Pull, "/src/acme-orders", null, null, null,
-                AgentStatus.Offline),
+            new AgentRecord(Orders, "test", AgentTier.Pull, "/src/acme-orders", null, null, false, AgentStatus.Active),
             TestContext.Current.CancellationToken);
 
         Assert.Contains(Orders, await Registered());
@@ -111,8 +109,7 @@ public sealed class PurgeTests : IDisposable
         foreach (var name in new[] { Orders, Billing })
         {
             await _agents.RegisterIfAbsentAsync(
-                new AgentRecord(name, "mcp", AgentTier.Headless, "/src/acme", null, null, null,
-                    AgentStatus.Offline),
+                new AgentRecord(name, "mcp", AgentTier.Headless, "/src/acme", null, null, false, AgentStatus.Active),
                 TestContext.Current.CancellationToken);
         }
 
@@ -129,7 +126,7 @@ public sealed class PurgeTests : IDisposable
         // almost always a typo, and offering "it has history" for a name that does not exist
         // would send somebody looking for traffic that was never there.
         var outcome = await _agents.PurgeAsync(
-            AgentName.Create("shipping"), cancellationToken: TestContext.Current.CancellationToken);
+            AgentName.Create("shipping@test"), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(PurgeVerdict.NotRegistered, outcome.Verdict);
         Assert.Empty(outcome.Destroyed);
@@ -171,7 +168,7 @@ public sealed class PurgeTests : IDisposable
             Orders, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Contains(Billing, await Registered());
-        Assert.Equal(0, await Count("SELECT count(*) FROM exchanges WHERE answerer = 'billing';"));
+        Assert.Equal(0, await Count("SELECT count(*) FROM exchanges WHERE answerer = 'billing@test';"));
     }
 
     [Fact]
@@ -252,8 +249,8 @@ public sealed class PurgeTests : IDisposable
                 agent    TEXT NOT NULL REFERENCES agents(name),
                 later_id INTEGER NOT NULL REFERENCES later_a(id)
             );
-            INSERT INTO later_a (id, agent) VALUES (1, 'inventory');
-            INSERT INTO later_b (agent, later_id) VALUES ('inventory', 1);
+            INSERT INTO later_a (id, agent) VALUES (1, 'inventory@test');
+            INSERT INTO later_b (agent, later_id) VALUES ('inventory@test', 1);
             """);
 
         var outcome = await _agents.PurgeAsync(
@@ -289,7 +286,7 @@ public sealed class PurgeTests : IDisposable
             INSERT INTO conversations (id, state, opened_utc)
             VALUES ('c1', 'OPEN', '2026-01-01T00:00:00+00:00');
             INSERT INTO conversation_participants (conversation_id, agent, joined_utc)
-            VALUES ('c1', 'orders', '2026-01-01T00:00:00+00:00');
+            VALUES ('c1', 'orders@test', '2026-01-01T00:00:00+00:00');
             INSERT INTO later_annotations (conversation_id) VALUES ('c1');
             """);
 
@@ -346,7 +343,7 @@ public sealed class PurgeTests : IDisposable
             Orders, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(PurgeVerdict.Gone, outcome.Verdict);
-        Assert.Equal(0, await Count("SELECT count(*) FROM agent_credentials WHERE agent = 'orders';"));
+        Assert.Equal(0, await Count("SELECT count(*) FROM agent_credentials WHERE agent = 'orders@test';"));
     }
 
     [Fact]
@@ -369,7 +366,7 @@ public sealed class PurgeTests : IDisposable
             );
             """);
 
-        await Execute("INSERT INTO later_migration (agent) VALUES ('inventory');");
+        await Execute("INSERT INTO later_migration (agent) VALUES ('inventory@test');");
 
         var outcome = await _agents.PurgeAsync(
             Inventory, cancellationToken: TestContext.Current.CancellationToken);
@@ -394,7 +391,7 @@ public sealed class PurgeTests : IDisposable
             );
             """);
 
-        await Execute("INSERT INTO later_belongings (agent) VALUES ('inventory');");
+        await Execute("INSERT INTO later_belongings (agent) VALUES ('inventory@test');");
 
         var outcome = await _agents.PurgeAsync(
             Inventory, cancellationToken: TestContext.Current.CancellationToken);
@@ -414,6 +411,6 @@ public sealed class PurgeTests : IDisposable
             Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<SqliteException>(() =>
-            Execute("DELETE FROM agents WHERE name = 'orders';"));
+            Execute("DELETE FROM agents WHERE name = 'orders@test';"));
     }
 }

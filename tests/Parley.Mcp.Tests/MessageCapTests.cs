@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using Dapper;
 using Parley.Core;
 using Parley.Store;
@@ -43,11 +43,11 @@ public sealed class MessageCapTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         AssertRefusedForLength(await orders.NotifyAsync(
-            "billing", Long(MessageLimits.MaxPayloadCharacters * 2), cancellationToken: ct));
+            "billing@test", Long(MessageLimits.MaxPayloadCharacters * 2), cancellationToken: ct));
 
         // And nothing was delivered, so the refusal is not a report on a message that got through.
         Assert.Empty((await billing.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
@@ -59,11 +59,11 @@ public sealed class MessageCapTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        await fixture.LaunchAsync("billing@test", ct);
 
         AssertRefusedForLength(await orders.AskAsync(
-            to: "billing",
+            to: "billing@test",
             intent: "Deciding where the tax rate lives.",
             subQuestions: [new SubQuestion("q1", Long(MessageLimits.MaxPayloadCharacters))],
             consequences: "If it does I read it from you; if not I snapshot my own copy.",
@@ -79,11 +79,11 @@ public sealed class MessageCapTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var asked = await orders.AskAsync(
-            to: "billing",
+            to: "billing@test",
             intent: "Deciding where the tax rate lives.",
             subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
             consequences: "If it does I read it from you; if not I snapshot my own copy.",
@@ -122,8 +122,8 @@ public sealed class MessageCapTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        await fixture.LaunchAsync("billing@test", ct);
 
         var admitted = 0;
         int low = 1, high = MessageLimits.MaxPayloadCharacters + 64;
@@ -132,7 +132,7 @@ public sealed class MessageCapTests
         {
             var middle = (low + high) / 2;
             var result = await orders.NotifyAsync(
-                "billing", new string('x', middle) + $" {middle}", cancellationToken: ct);
+                "billing@test", new string('x', middle) + $" {middle}", cancellationToken: ct);
 
             if (result["ok"]?.GetValue<bool>() ?? false)
             {
@@ -161,13 +161,13 @@ public sealed class MessageCapTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        await fixture.LaunchAsync("billing@test", ct);
 
         var emoji = string.Concat(Enumerable.Repeat("😀", 900));
         Assert.True(emoji.Length < MessageLimits.MaxPayloadCharacters);
 
-        AssertRefusedForLength(await orders.NotifyAsync("billing", emoji, cancellationToken: ct));
+        AssertRefusedForLength(await orders.NotifyAsync("billing@test", emoji, cancellationToken: ct));
     }
 
     [Fact]
@@ -179,11 +179,11 @@ public sealed class MessageCapTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var sent = await orders.NotifyAsync(
-            "billing", Long(MessageLimits.MaxPayloadCharacters - 100), cancellationToken: ct);
+            "billing@test", Long(MessageLimits.MaxPayloadCharacters - 100), cancellationToken: ct);
 
         Assert.True(sent["ok"]?.GetValue<bool>() ?? false, sent.ToJsonString());
         Assert.Single((await billing.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
@@ -200,21 +200,21 @@ public sealed class MessageCapTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        await fixture.LaunchAsync("billing@test", ct);
 
         var oversized = new string('x', MessageLimits.MaxPayloadCharacters + 500);
 
-        var refused = await orders.NotifyAsync("billing", oversized, cancellationToken: ct);
+        var refused = await orders.NotifyAsync("billing@test", oversized, cancellationToken: ct);
 
         Assert.False((bool)refused["ok"]!);
         Assert.Equal("toolong", (string?)refused["refused"]);
 
-        using var connection = ParleyDatabase.OpenAndMigrate(fixture.DatabasePath);
+        var connection = fixture.Connection;
         var recorded = new SizeRefusalRepository(connection);
         var only = Assert.Single(await recorded.GetAllAsync(ct));
 
-        Assert.Equal("orders", only.Agent.Value);
+        Assert.Equal("orders@test", only.Agent.Value);
         Assert.Equal(MessageType.Notify, only.Type);
         Assert.Equal(1, only.Refusals);
         Assert.True(only.Worst > MessageLimits.MaxPayloadCharacters);
@@ -235,16 +235,16 @@ public sealed class MessageCapTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        await fixture.LaunchAsync("billing@test", ct);
 
-        using (var meddle = ParleyDatabase.OpenAndMigrate(fixture.DatabasePath))
         {
-            meddle.Execute("PRAGMA foreign_keys = ON; DELETE FROM agents WHERE name = 'orders';");
+            var meddle = fixture.Connection;
+            meddle.Execute("PRAGMA foreign_keys = ON; DELETE FROM agents WHERE name = 'orders@test';");
         }
 
         var refused = await orders
-            .NotifyAsync("billing", new string('x', MessageLimits.MaxPayloadCharacters + 500),
+            .NotifyAsync("billing@test", new string('x', MessageLimits.MaxPayloadCharacters + 500),
                 cancellationToken: ct)
             .WaitAsync(TimeSpan.FromSeconds(15), ct);
 
@@ -254,7 +254,7 @@ public sealed class MessageCapTests
         // And the write really did fail, so this is not a check that passes while testing
         // nothing. ParleyDatabase turns foreign keys on per connection, so the row referencing
         // a registration that is gone cannot be written.
-        using var connection = ParleyDatabase.OpenAndMigrate(fixture.DatabasePath);
+        var connection = fixture.Connection;
 
         Assert.Equal(0, connection.ExecuteScalar<long>("SELECT count(*) FROM size_refusals;"));
     }
@@ -270,17 +270,17 @@ public sealed class MessageCapTests
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
-        var (_, orders) = await fixture.LaunchAsync("orders", ct);
-        await fixture.LaunchAsync("billing", ct);
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        await fixture.LaunchAsync("billing@test", ct);
 
         var oversized = new string('x', MessageLimits.MaxPayloadCharacters + 500);
         var one = new SubQuestion("q1", oversized);
 
-        await orders.AskAsync("billing", "intent", [one], "If it fits I keep going; if not I say less.", cancellationToken: ct)
+        await orders.AskAsync("billing@test", "intent", [one], "If it fits I keep going; if not I say less.", cancellationToken: ct)
             .WaitAsync(TimeSpan.FromSeconds(15), ct);
         await orders.ClarifyAsync(1, oversized, cancellationToken: ct)
             .WaitAsync(TimeSpan.FromSeconds(15), ct);
-        await orders.NotifyAsync("billing", oversized, cancellationToken: ct)
+        await orders.NotifyAsync("billing@test", oversized, cancellationToken: ct)
             .WaitAsync(TimeSpan.FromSeconds(15), ct);
 
         // And the session still works afterwards, which is what says the gate was released.

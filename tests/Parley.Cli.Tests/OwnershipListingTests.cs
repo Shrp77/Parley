@@ -1,5 +1,4 @@
-using Microsoft.Data.Sqlite;
-using Parley.Broker;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -16,25 +15,30 @@ namespace Parley.Cli.Tests;
 /// client keeps for a server that is misbehaving, which nobody reads while nothing is wrong, and
 /// it would fire on every launch of every deployment that left the variable unset on purpose.
 /// </remarks>
-public sealed class OwnershipListingTests : IDisposable
+public sealed class OwnershipListingTests : IAsyncDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
 
     private readonly SqliteConnection _connection;
     private readonly AgentRepository _agents;
     private readonly StringWriter _output = new();
+    private readonly LoopbackOperator _broker;
     private readonly OperatorCommands _commands;
 
     public OwnershipListingTests()
     {
         _connection = ParleyDatabase.OpenInMemory();
         _agents = new AgentRepository(_connection);
-        _commands = new OperatorCommands(new OperatorConsole(_connection), _output);
+        _broker = LoopbackOperator.Start(_connection);
+        _commands = new OperatorCommands(_broker.Operators, _output);
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
+        // The broker first: it borrowed this connection and its shutdown writes to it.
+        await _broker.DisposeAsync();
+
         _connection.Dispose();
         _output.Dispose();
     }
@@ -43,8 +47,7 @@ public sealed class OwnershipListingTests : IDisposable
 
     private Task<int> Register(AgentName name, string? owns) =>
         _agents.UpsertAsync(
-            new AgentRecord(name, "mcp", AgentTier.Pull, $"/src/acme-{name.Value}", null, null,
-                null, AgentStatus.Offline, owns),
+            new AgentRecord(name, "mcp", AgentTier.Pull, $"/src/acme-{name.Value}", null, null, false, AgentStatus.Active, owns),
             Ct);
 
     [Fact]

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <!--
@@ -20,7 +20,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Parley.Headless\Parley.Headless.csproj" />
     <ProjectReference Include="..\..\src\Parley.Mcp\Parley.Mcp.csproj" />
+    <ProjectReference Include="..\..\src\Parley.Server\Parley.Server.csproj" />
   </ItemGroup>
 
   <ItemGroup>

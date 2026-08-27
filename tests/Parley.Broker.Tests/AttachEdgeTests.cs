@@ -16,9 +16,9 @@ namespace Parley.Broker.Tests;
 /// </remarks>
 public sealed class AttachEdgeTests : IDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders");
-    private static readonly AgentName Billing = AgentName.Create("billing");
-    private static readonly AgentName Inventory = AgentName.Create("inventory");
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
+    private static readonly AgentName Inventory = AgentName.Create("inventory@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private const string Model = "claude-opus-5";
 
@@ -38,8 +38,7 @@ public sealed class AttachEdgeTests : IDisposable
         foreach (var name in new[] { Orders, Billing, Inventory })
         {
             _agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Full, null, null, null, null,
-                    AgentStatus.Offline),
+                new AgentRecord(name, "test", AgentTier.Full, null, null, null, false, AgentStatus.Active),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
     }
@@ -49,9 +48,18 @@ public sealed class AttachEdgeTests : IDisposable
     private async Task<ExchangeState> StateOf(long id) =>
         (await _exchanges.GetAsync(id, cancellationToken: TestContext.Current.CancellationToken))!.State;
 
-    private async Task<AgentStatus> StatusOf(AgentName name) =>
+    /// <summary>What the roster reports for an agent, or Stranded when it is not listed.</summary>
+    /// <param name="name">The agent.</param>
+    /// <returns>Its presence.</returns>
+    /// <remarks>
+    /// A retired agent is absent from the roster entirely (§14) rather than listed with a
+    /// status, so "not there" and "there but unreachable" both fall to Stranded here. The tests
+    /// using this care about the second; the ones that care about retirement check the listing
+    /// itself.
+    /// </remarks>
+    private async Task<AgentPresence> PresenceOf(AgentName name) =>
         (await _agents.ListRoutableAsync(TestContext.Current.CancellationToken))
-            .SingleOrDefault(a => a.Name == name)?.Status ?? AgentStatus.Retired;
+            .SingleOrDefault(a => a.Name == name)?.Presence ?? AgentPresence.Stranded;
 
     [Fact]
     public async Task A_clarify_moves_which_agents_attach_releases_the_exchange()
@@ -137,6 +145,15 @@ public sealed class AttachEdgeTests : IDisposable
         // Detaching says the session stopped, and nothing more. The debts stay open on purpose:
         // whoever picks the session up next may finish them, and the attach sequence releases
         // them on the way back in — which is the moment it is actually known that nobody did.
+        //
+        // The node is joined so that a detached agent reads as Startable rather than Stranded.
+        // That is the node's statement to make (SPEC.md §4) and nothing else makes it: an
+        // attached adapter is one agent already running, which cannot launch its neighbours.
+        await new NodeRepository(_connection).JoinAsync(
+            new NodeRecord("test", "test-os", null, null, null, Connected: true, T0),
+            T0,
+            TestContext.Current.CancellationToken);
+
         var broker = new Broker(_connection, BrokerOptions.Default);
         await broker.StartAsync(Billing, T0, TestContext.Current.CancellationToken);
 
@@ -146,7 +163,7 @@ public sealed class AttachEdgeTests : IDisposable
 
         Assert.True(await broker.DetachAsync(TestContext.Current.CancellationToken));
 
-        Assert.Equal(AgentStatus.Offline, await StatusOf(Billing));
+        Assert.Equal(AgentPresence.Startable, await PresenceOf(Billing));
         Assert.Equal(ExchangeState.Open, await StateOf(asked.Exchange!.Id));
 
         // And an offline agent is still routable, because offline is the resting state of a
@@ -167,7 +184,10 @@ public sealed class AttachEdgeTests : IDisposable
         await broker.StartAsync(Billing, T0, TestContext.Current.CancellationToken);
 
         Assert.False(await broker.DetachAsync(TestContext.Current.CancellationToken));
-        Assert.Equal(AgentStatus.Retired, await StatusOf(Billing));
+        // Retired agents are absent from the roster entirely rather than listed with a
+        // status, so PresenceOf falls back to Stranded. The retirement itself is checked
+        // against the stored record, which is where that judgement lives.
+        Assert.Equal(AgentPresence.Stranded, await PresenceOf(Billing));
     }
 
     [Fact]
@@ -190,7 +210,7 @@ public sealed class AttachEdgeTests : IDisposable
         // only retired, which is what an adapter reads to tell "withdrawn" from "working".
         var attaching = await Assert.ThrowsAsync<InvalidOperationException>(
             () => new Broker(_connection, BrokerOptions.Default).StartAsync(
-                AgentName.Create("ghost"), T0, TestContext.Current.CancellationToken));
+                AgentName.Create("ghost@test"), T0, TestContext.Current.CancellationToken));
 
         Assert.Contains("ghost", attaching.Message, StringComparison.Ordinal);
     }
