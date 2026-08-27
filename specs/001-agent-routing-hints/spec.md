@@ -22,11 +22,11 @@ and able to disagree with each other about the same boundary.
 
 ### Session 2026-08-23
 
-- **Q: does the Claude Code plugin's `/parley:peers` generate its block from the roster in this
-  feature?** No — a follow-up. The command needs its hand-authored path regardless, because no
-  installed server carries the field until somebody rebuilds, so doing it now means writing the
-  fallback twice. The files also belong to an open pull request. Nothing is lost by waiting
-  except that the feature ships one release ahead of its most visible consumer.
+- **Q: does the Claude Code plugin's `/parley:write-peers` generate its block from the roster
+  in this feature?** No — a follow-up. The command needs its hand-authored path regardless,
+  because no installed server carries the field until somebody rebuilds, so doing it now means
+  writing the fallback twice. The files also belong to an open pull request. Nothing is lost by
+  waiting except that the feature ships one release ahead of its most visible consumer.
 - **Q: should a server with no ownership statement say so at start-up?** No. It starts silently,
   exactly as it does for an unset workspace, and the operator's registry listing shows the gap
   explicitly instead. A note on standard error would reach whichever log the client keeps for a

@@ -69,9 +69,9 @@ and show the user any line you cannot place rather than deciding about it.
 
 This command runs again every time the roster changes, so the cost of getting that wrong is not
 paid once. Each run replaces what the last one wrote and has no memory of it, which means a
-curated line survives exactly as long as nobody runs `/parley:peers` - and the whole design of
-this command is that it is run often. A rule that dies on the third run, silently, in a file
-read on every turn, is worse than one that was never written down.
+curated line survives exactly as long as nobody runs `/parley:write-peers` - and the whole
+design of this command is that it is run often. A rule that dies on the third run, silently, in
+a file read on every turn, is worse than one that was never written down.
 
 **Keep the frame as it is written above.** Step 6 wrote those same two sentences, and replacing
 the section means writing them again rather than inheriting them - so a template here that

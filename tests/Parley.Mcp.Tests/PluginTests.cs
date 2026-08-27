@@ -27,7 +27,7 @@ public sealed class PluginTests
     private const string Marketplace = ".claude-plugin/marketplace.json";
     private const string Manifest = "plugins/parley/.claude-plugin/plugin.json";
     private const string Setup = "plugins/parley/commands/setup.md";
-    private const string Peers = "plugins/parley/commands/peers.md";
+    private const string WritePeers = "plugins/parley/commands/write-peers.md";
     private const string Status = "plugins/parley/commands/status.md";
     private const string Skill = "plugins/parley/skills/parley-operator/SKILL.md";
 
@@ -88,7 +88,7 @@ public sealed class PluginTests
         // What Claude Code shows in the / menu, and — for the skill, which is model-invocable —
         // the only thing it reads when deciding whether the skill is relevant at all. A
         // component without one is installed, listed as a bare name, and never chosen.
-        foreach (var component in new[] { Setup, Peers, Status, Skill })
+        foreach (var component in new[] { Setup, WritePeers, Status, Skill })
         {
             var text = RepositoryFile.Read(component);
 
@@ -190,7 +190,7 @@ public sealed class PluginTests
         // The roster carries each peer's own statement of what it owns, so a command that asked
         // the user for it would be asking a person to retype what the protocol just supplied -
         // and would reintroduce the per-repository copy the field exists to remove.
-        var peers = RepositoryFile.Read(Peers);
+        var peers = RepositoryFile.Read(WritePeers);
 
         Assert.Contains("owns", peers, StringComparison.Ordinal);
         Assert.Contains(DeploymentEnvironment.OwnsVariable, peers, StringComparison.Ordinal);
@@ -213,7 +213,7 @@ public sealed class PluginTests
         // So the template attributes every entry, and the command says to drop the half that
         // instructs. Checked on the template rather than the prose around it, because the
         // template is what gets copied.
-        var peers = RepositoryFile.Read(Peers);
+        var peers = RepositoryFile.Read(WritePeers);
 
         var template = Regex.Match(peers, @"```markdown\n## Peers.*?```", RegexOptions.Singleline);
 
@@ -248,8 +248,8 @@ public sealed class PluginTests
     [Fact]
     public void The_agent_facing_command_reaches_for_no_operator_command()
     {
-        // /parley:peers and /parley:status both run in a session that has the agent tools bound,
-        // and both do a job an operator command would also answer — who the peers are, and
+        // /parley:write-peers and /parley:status both run in a session that has the agent tools
+        // bound, and both do a job an operator command would also answer — who the peers are, and
         // whether this agent is registered. Reading the registry through `parley agents` there
         // would hand an agent the workspace paths the agent-facing roster deliberately
         // withholds, so they use parley_agents and nothing else.
@@ -262,7 +262,7 @@ public sealed class PluginTests
         // Setup is exempt and not checked here: it is run by a person, before any server exists.
         var verbs = Verbs(RepositoryFile.Read("src/Parley.Cli/Program.cs"));
 
-        foreach (var command in new[] { Peers, Status })
+        foreach (var command in new[] { WritePeers, Status })
         {
             var text = RepositoryFile.Read(command);
 

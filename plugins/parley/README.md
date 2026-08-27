@@ -10,8 +10,8 @@
 
 | Component | What it is for |
 |---|---|
-| `/parley:setup` | Configures this repository as a Parley agent: checks the server is installed, writes `.mcp.json`, creates the database directory, and sends you to restart - which is when the tools appear, and therefore before `/parley:peers` can read anything |
-| `/parley:peers` | Writes or refreshes the `## Peers` block in this repository's standing instructions, from the live roster |
+| `/parley:setup` | Configures this repository as a Parley agent: checks the server is installed, writes `.mcp.json`, creates the database directory, and sends you to restart - which is when the tools appear, and therefore before `/parley:write-peers` can read anything |
+| `/parley:write-peers` | Writes or refreshes the `## Peers` block in this repository's standing instructions, from the live roster |
 | `parley-operator` skill | The `parley` command-line tool - the operations that are deliberately not tools |
 | `parley_waiting` hook | Tells an attended session when mail is waiting, on session start and on every prompt |
 

@@ -65,7 +65,7 @@ are at the end.
 
 ## Not done here
 
-- Per the clarification in spec.md, the Claude Code plugin's `/parley:peers` still writes its
-  block by hand. It becomes roster-driven once a build carrying this field is installable.
+- Per the clarification in spec.md, the Claude Code plugin's `/parley:write-peers` still writes
+  its block by hand. It becomes roster-driven once a build carrying this field is installable.
 - `workspace` remains write-once and therefore stale after a repository moves (research.md R1).
   Separate problem, separate argument.

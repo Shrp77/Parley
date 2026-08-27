@@ -242,8 +242,8 @@ ends the session that would have reminded the user.
 
 The block has two halves and only one of them needs the roster. The frame - that peers exist,
 that they cannot be seen from here, that guessing is the mistake - is true of every deployment
-and can be written now. Which peers, and what each owns, cannot: that is what `/parley:peers`
-reads from the live roster once the tools are bound.
+and can be written now. Which peers, and what each owns, cannot: that is what
+`/parley:write-peers` reads from the live roster once the tools are bound.
 
 So write the frame, in this repository's standing instructions - `CLAUDE.md` at the repository
 root, or `AGENTS.md` if that is what the project uses. Replace an existing `## Peers` section
@@ -269,7 +269,7 @@ repository and this repository cannot see theirs: only the text of a question an
 crosses between them. `parley_inbox` is pull rather than push - call it when you start work,
 and again when you are waiting on a reply.
 
-- The roster has not been read yet. Run `/parley:peers` to fill this in.
+- The roster has not been read yet. Run `/parley:write-peers` to fill this in.
 
 **Do not guess at what these repositories do, and do not edit them. Ask.** A question must say
 what you will do with each possible answer.
@@ -284,7 +284,10 @@ An agent reading no block at all knows neither.
 
 MCP servers are launched when Claude Code starts, so the tools appear after a restart. Tell the
 user to restart, then check `/mcp` shows `parley` connected. `parley_agents` then lists the
-roster, and this agent's own registration will be in it.
+roster, which is who this agent can address and therefore does not include itself. Its own
+absence is the designed behaviour rather than a registration that failed - the roster is
+refused to a caller with no open stream, so a roster that came back at all is the proof that
+this agent attached, and an agent is registered at the moment it attaches.
 
 This step is seventh rather than last because everything below it needs the tools, and nothing
 above it did. Naming the peers used to come first here, which could not work: it calls
@@ -292,12 +295,12 @@ above it did. Naming the peers used to come first here, which could not work: it
 
 ## 8. Name the peers, in the session that comes back
 
-**This one is the user's to run, and it happens after the restart.** `/parley:peers` is marked
-`disable-model-invocation`, so this agent cannot invoke it - and the session reading these
-instructions will not survive the restart to relay it either. So say it before restarting, as
-part of handing over:
+**This one is the user's to run, and it happens after the restart.** `/parley:write-peers` is
+marked `disable-model-invocation`, so this agent cannot invoke it - and the session reading
+these instructions will not survive the restart to relay it either. So say it before
+restarting, as part of handing over:
 
-> Once you have restarted and `/mcp` shows `parley` connected, run `/parley:peers`.
+> Once you have restarted and `/mcp` shows `parley` connected, run `/parley:write-peers`.
 
 If no other repository is registered yet - the usual case when this is the first one being set
 up - there is nothing for it to write, and it should be run again once the other side is
