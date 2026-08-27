@@ -355,6 +355,7 @@ public sealed class BrokerSession : IAsyncDisposable
         await agents.RefreshInvocationConsentAsync(
             options.Agent,
             options.InvokeCommand,
+            options.InvokeWhenIdle,
             cancellationToken).ConfigureAwait(false);
     }
 

@@ -2096,9 +2096,23 @@ far worse trade than waiting: the turn is recorded as abandoned, the exchange is
 read as the answer to the next turn.
 
 Consent is per agent and comes from that agent's own launch environment, never from the
-supervisor's. An agent that has not offered `invoke_command` is never started, because
-starting a repository nobody offered spends its operator's tokens on its operator's
-machine.
+supervisor's. An agent that has not granted `invoke_when_idle` is never started by a
+supervisor, because starting a repository nobody offered spends its operator's tokens on
+its operator's machine.
+
+**Recording a command is not granting consent.** The two columns answer two questions —
+`invoke_command` is how to start a repository, `invoke_when_idle` is whether a supervisor
+may do it with nobody watching — and only the second is a permission. An operator who
+starts an agent from a console has not invoked it unattended; they have opened the session
+by hand, with a slower path to the same place, and requiring the unattended grant for that
+would be asking for permission that was never at stake.
+
+The distinction is worth stating because an implementation is likely to derive one from the
+other, and this one did. The cost lands at configuration time rather than at runtime, which
+is why it survives: recording how to start a repository becomes a question about spending
+its operator's tokens unwatched, the honest answer is usually no, and the deployment ends up
+unable to start anything at all — including from its own operator's hands. The schema has
+always permitted a command without consent. Nothing should read the first as the second.
 
 ### 11.2 The headless tier is the important one
 

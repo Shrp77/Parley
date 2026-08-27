@@ -349,7 +349,8 @@ public sealed class AgentFleetTests : IDisposable
         await fleet.TickAsync(Ct);
 
         var agents = new AgentRepository(_connection);
-        await agents.RefreshInvocationConsentAsync(AgentName.Create("billing"), null, Ct);
+        await agents.RefreshInvocationConsentAsync(
+            AgentName.Create("billing"), null, invokeWhenIdle: false, Ct);
 
         await fleet.TickAsync(Ct);
 

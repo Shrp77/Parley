@@ -535,11 +535,15 @@ public sealed class AgentRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>
-    /// Records whether this agent may be started when it owes an answer and nobody is running it.
+    /// Records how this agent may be started, and whether a supervisor may do it unattended.
     /// </summary>
     /// <param name="name">The agent.</param>
     /// <param name="invokeCommand">
-    /// How to start this agent, or <see langword="null"/> if it has not consented.
+    /// How to start this agent, or <see langword="null"/> if it cannot be started at all.
+    /// </param>
+    /// <param name="invokeWhenIdle">
+    /// Whether a supervisor may start it with nobody watching. Ignored without a command, which
+    /// is what the schema's trigger refuses.
     /// </param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>Rows updated.</returns>
@@ -571,6 +575,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     public async Task<int> RefreshInvocationConsentAsync(
         AgentName name,
         string? invokeCommand,
+        bool invokeWhenIdle,
         CancellationToken cancellationToken = default) =>
         await _connection.ExecuteAsync(
             new CommandDefinition(
@@ -584,7 +589,13 @@ public sealed class AgentRepository(SqliteConnection connection)
                 new
                 {
                     Name = name.Value,
-                    Invoke = invokeCommand is null ? 0 : 1,
+                    // Not derived from the command. The schema keeps two columns because they
+                    // answer two questions -- how to start it, and whether a supervisor may with
+                    // nobody watching -- and deriving one from the other made the first
+                    // unavailable without the second. A repository can now record how to start
+                    // it, so an operator at a console can, while unattended residency stays an
+                    // explicit yes. Consent without a command is still refused, by trigger.
+                    Invoke = invokeWhenIdle && invokeCommand is not null ? 1 : 0,
                     Command = invokeCommand
                 },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);

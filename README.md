@@ -163,7 +163,8 @@ One file per project. Every agent that should be able to reach every other gets 
         "PARLEY_WORKSPACE": "/src/acme-orders",       // optional, for the registry
         "PARLEY_TICK_SECONDS": "5",                   // optional, sweep cadence
         "PARLEY_CLARIFY_CAP": "200",                  // optional, 200 if unset; see Clarify cap
-        "PARLEY_INVOKE_COMMAND": "claude",            // optional, see Conversing unattended
+        "PARLEY_INVOKE_COMMAND": "claude",            // optional, how to start this repository
+        "PARLEY_INVOKE_WHEN_IDLE": "true",            // optional, see Conversing unattended
         "PARLEY_RETENTION_IDLE_HOURS": "72",          // optional, see Retention below
         "PARLEY_RETENTION_MAX_AGE_HOURS": "720"       // optional, see Retention below
       }
@@ -320,18 +321,36 @@ Everything above needs somebody to take a turn. An agent acts when its session d
 a session acts when a person sends it something — so an exchange between two repositories
 needs a human at both ends, which is not what the protocol is for.
 
-`PARLEY_INVOKE_COMMAND` is how a repository offers to be run without one:
+Two settings, because they answer two questions:
 
 ```json
-"PARLEY_INVOKE_COMMAND": "claude"
+"PARLEY_INVOKE_COMMAND": "claude",
+"PARLEY_INVOKE_WHEN_IDLE": "true"
 ```
 
-It is consent and command in one. Set it, and `parley up` may keep that agent resident —
-started once, given a turn whenever a peer needs one, and kept alive so it remembers the
-conversations it is in. Leave it out and nothing ever starts that repository. It lives in
-the agent's *own* launch configuration because that is the only place the permission can
-honestly come from: starting a repository nobody offered spends its owner's tokens on
-their machine.
+The command says *how* to start this repository. On its own it grants nothing: it means an
+operator at a console can start this agent and watch it work, which is the same thing as
+opening the session by hand.
+
+`PARLEY_INVOKE_WHEN_IDLE` is the permission. Set it too, and `parley up` may keep the agent
+resident — started once, given a turn whenever a peer needs one, kept alive so it remembers
+the conversations it is in. Leave it out and nothing starts that repository unless a person
+asks it to. Both live in the agent's *own* launch configuration, because that is the only
+place the permission can honestly come from: starting a repository nobody offered spends its
+owner's tokens on their machine.
+
+They were one setting until they were not. Recording how to start a repository had meant
+consenting to run it unwatched, so the honest answer at setup was usually "no" — and a
+deployment that had declined could not be started even by its owner, standing over it. The
+schema always kept the two apart; only this implementation ran them together.
+
+**Upgrading from before 0.6.0:** a repository whose launch configuration has only
+`PARLEY_INVOKE_COMMAND` used to be consenting, and now is not. Nothing breaks and nothing
+is at risk — the permission narrows rather than widens, and the agent stays startable from a
+console — but `parley up` will stop picking it up. Add `PARLEY_INVOKE_WHEN_IDLE` to every
+repository that should still answer unattended, and open each one once. There is no way for
+a deployment to detect the difference on your behalf: a launch configuration that says
+nothing about a permission has to be read as not granting it.
 
 ```
 parley up

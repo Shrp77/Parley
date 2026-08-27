@@ -22,10 +22,14 @@ namespace Parley.Mcp;
 /// <see langword="null"/> if the launch did not say. See <see cref="OwnershipStatement"/>.
 /// </param>
 /// <param name="InvokeCommand">
-/// The command that starts an agent when it owes an answer and nobody is running it, or
-/// <see langword="null"/> to take no part in that. Two things at once: setting it is how this
-/// repository consents to being started, and it is what the sweep runs for <em>other</em> idle
-/// agents. See SPEC.md §11.1's Headless tier.
+/// How to start this repository, or <see langword="null"/> if it cannot be started at all.
+/// Recording it is not by itself permission to run unattended -- see
+/// <paramref name="InvokeWhenIdle"/>. See SPEC.md §11.1's Headless tier.
+/// </param>
+/// <param name="InvokeWhenIdle">
+/// Whether a supervisor may start this repository when something is waiting on it and nobody is
+/// running it. Requires <paramref name="InvokeCommand"/>: consent with nothing to run is a
+/// candidate that fails silently on every pass, which the schema refuses by trigger.
 /// </param>
 /// <param name="ClarifyDepthCap">
 /// How many clarifications an exchange opened by this server admits before the broker forces an
@@ -58,7 +62,8 @@ public sealed record ServerOptions(
     string? Workspace,
     string? Owns = null,
     int ClarifyDepthCap = ServerOptions.DefaultClarifyDepthCap,
-    string? InvokeCommand = null)
+    string? InvokeCommand = null,
+    bool InvokeWhenIdle = false)
 {
     /// <summary>The environment variable naming the database file.</summary>
     /// <remarks>
@@ -126,6 +131,41 @@ public sealed record ServerOptions(
     /// </para>
     /// </remarks>
     public const string InvokeCommandVariable = "PARLEY_INVOKE_COMMAND";
+
+    /// <summary>The environment variable granting unattended invocation.</summary>
+    /// <remarks>
+    /// <para>
+    /// Separate from <see cref="InvokeCommandVariable"/>, and the separation is the point. The
+    /// schema has always had two columns -- <c>invoke_command</c> is "how to start it",
+    /// <c>invoke_when_idle</c> is "whether a supervisor may" -- and its trigger enforces only
+    /// that consent implies a command, never the reverse. A command without consent is legal by
+    /// design.
+    /// </para>
+    /// <para>
+    /// This server nonetheless derived one from the other, writing consent whenever a command
+    /// was present, so the two could not be held apart by anybody configuring a repository. The
+    /// cost was paid at setup: recording how to start a repository became a question about
+    /// spending the operator's tokens unwatched, most operators sensibly declined, and the
+    /// deployment ended up unable to start anything at all -- including from an operator's own
+    /// console, with a person watching, which was never the thing being consented to.
+    /// </para>
+    /// <para>
+    /// So: the command says a repository <em>can</em> be started. This says a supervisor may do
+    /// it with nobody there. An operator pressing a button is not that, and never needed this.
+    /// </para>
+    /// <para>
+    /// Truthy spellings are accepted because a launch configuration is written by hand and
+    /// <c>true</c>, <c>1</c> and <c>yes</c> are all things people write. Anything else is no:
+    /// the safe reading of an unrecognised value is that permission was not granted.
+    /// </para>
+    /// </remarks>
+    public const string InvokeWhenIdleVariable = "PARLEY_INVOKE_WHEN_IDLE";
+
+    /// <summary>Reads a granted permission from a launch configuration.</summary>
+    /// <param name="value">What the variable carried.</param>
+    /// <returns><see langword="true"/> only for a recognised yes.</returns>
+    internal static bool Granted(string? value) =>
+        value?.Trim().ToLowerInvariant() is "1" or "true" or "yes" or "on";
 
     /// <summary>The largest value <see cref="ClarifyCapVariable"/> may carry.</summary>
     /// <remarks>
@@ -278,7 +318,8 @@ public sealed record ServerOptions(
             string.IsNullOrWhiteSpace(workspace) ? null : workspace,
             owns,
             ReadClarifyDepthCap(read),
-            Blank(read(InvokeCommandVariable)));
+            Blank(read(InvokeCommandVariable)),
+            Granted(read(InvokeWhenIdleVariable)));
     }
 
     /// <summary>Reads the clarify cap, or falls back to the default.</summary>

@@ -104,7 +104,8 @@ the file.
         "PARLEY_AGENT": "<the agent name>",
         "PARLEY_OWNS": "<what this repository owns, and what it does not>",
         "PARLEY_WORKSPACE": "${PARLEY_WORKSPACE:-<absolute path to this repository>}",
-        "PARLEY_CLARIFY_CAP": "200"
+        "PARLEY_CLARIFY_CAP": "200",
+        "PARLEY_INVOKE_COMMAND": "claude"
       }
     }
   }
@@ -146,26 +147,37 @@ Everything so far needs a person to take a turn: this agent answers when its ses
 its session acts when the user sends it something. So an exchange with a peer needs a human at
 both ends unless this repository offers otherwise.
 
-`PARLEY_INVOKE_COMMAND` is that offer, and it is consent and command in one:
+Two settings, and they are not the same question.
+
+`PARLEY_INVOKE_COMMAND` is already in the block above, and **write it without asking**. It says
+how to start this repository, which is not a permission: what it buys is that an operator at a
+console can start this agent and watch it work — the same thing as opening the session by hand,
+by a shorter route. Write only the runner. The supervisor appends the flags that make it speak
+the turn protocol and the agent's own name from the registry, so `claude` on its own is the
+whole value; any flags the user does want — a permission mode, a model — go after it and are
+kept.
+
+`PARLEY_INVOKE_WHEN_IDLE` is the permission, and it is a separate line:
 
 ```json
-"PARLEY_INVOKE_COMMAND": "claude"
+"PARLEY_INVOKE_WHEN_IDLE": "true"
 ```
 
 Set it, and `parley up` may keep this agent resident — started once, given a turn whenever a
 peer needs one, kept alive so it remembers the conversations it is in. Leave it out and nothing
-ever starts this repository.
+starts this repository unless a person asks it to.
 
-**Ask the user, and take no for an answer.** This is the one setting that lets their machine run
-a model and spend their tokens with nobody watching, so it is theirs to grant rather than a
-default to apply. It is also per repository on purpose: it belongs in this repository's launch
+**Ask the user about this one, and take no for an answer.** It is the setting that lets their
+machine run a model and spend their tokens with nobody watching, so it is theirs to grant rather
+than a default to apply. It is per repository on purpose: it belongs in this repository's launch
 configuration because that is the only place the permission can honestly come from.
 
-Write only the runner. The supervisor appends the flags that make it speak the turn protocol,
-and the agent's own name from the registry, so `claude` on its own is the whole value. Any flags
-the user does want — a permission mode, a model — go after it and are kept.
+The two were one setting until recently, and the failure is worth knowing because it is easy to
+recreate: recording how to start a repository meant consenting to run it unwatched, so the
+honest answer here was usually no — and a deployment that had declined could not then be started
+by anybody, including its own operator standing over it.
 
-Withdrawing it later means removing the line and opening this repository once. That is enough;
+Withdrawing either means removing the line and opening this repository once. That is enough;
 there is no second step somewhere the user will not look.
 
 ## 5. Create the database's directory
