@@ -89,9 +89,12 @@ public sealed class SurfaceBoundaryTests
             nameof(OperatorConsole.ReinstateAsync),
 
             // On this side because it is a judgement about the registry that no agent may make
-            // about itself or any other, which is the same reason retire is here. It is the
-            // narrower of the two: retire is for an agent with a history, purge only for one
-            // that never traded, and §14 keeps them apart on that fact rather than on severity.
+            // about itself or any other, which is the same reason retire is here — and the case
+            // for keeping it here is now much stronger than when it was written. Purge once
+            // refused any agent that had traded, so smuggling it onto the agent surface would
+            // have leaked a way to delete an unused registration. It now destroys the agent and
+            // every conversation it was party to, so the same leak would hand one agent the
+            // power to erase another and every record of having dealt with it.
             nameof(OperatorConsole.PurgeAsync),
             nameof(OperatorConsole.DescribeRegistryAsync),
             nameof(OperatorConsole.ExportAsync),

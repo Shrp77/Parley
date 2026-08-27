@@ -395,8 +395,9 @@ parley registry                     every agent, what it owns, and the workspace
                                     never sees
 parley retire <agent>               withdraw a registration; its server then refuses to start
 parley reinstate <agent>            the only thing that clears a retirement
-parley purge <agent>                delete a registration that never traded, freeing its
-                                    name; refused once anything references it
+parley purge <agent>                delete an agent and every conversation it was party
+                                    to, freeing its name; takes its peers' side of those
+                                    conversations too, and cannot be undone
 parley export <conversation>        every message in a discussion, across agents
 parley force-conclude <conv>        close a discussion over its participants' votes
 parley prune                        apply the retention policy now

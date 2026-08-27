@@ -6,15 +6,19 @@ using Xunit;
 namespace Parley.Store.Tests;
 
 /// <summary>
-/// Deleting a registration that never traded, per SPEC.md §14.
+/// Deleting an agent and everything it was party to, per SPEC.md §14.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The interesting cases are all about the boundary rather than the delete. §14 argues that an
-/// agent's history must outlive the agent, and purge is only defensible while it cannot reach
-/// any of that history — so most of what is pinned here is what purge <em>refuses</em>, and the
-/// last test pins the fact that the refusal is derived from the schema rather than from a list
-/// somebody has to remember to update.
+/// Purge refuses nothing. It removes the agent, its traffic, and every conversation it took part
+/// in — including the halves belonging to peers who did nothing wrong, because a conversation
+/// with one party deleted out of it is not a smaller record but a misleading one. Retirement is
+/// the command for an agent whose history matters.
+/// </para>
+/// <para>
+/// So what is pinned here is the blast radius: that it reaches far enough to leave nothing
+/// dangling, that it stops at agents who were not involved, and that it stays derived from the
+/// schema rather than from a list somebody has to remember to update.
 /// </para>
 /// <para>
 /// Placeholder agents are <c>orders</c>, <c>billing</c> and <c>inventory</c>, per CLAUDE.md.
@@ -68,8 +72,10 @@ public sealed class PurgeTests : IDisposable
             Orders, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(PurgeVerdict.Gone, outcome.Verdict);
-        Assert.Empty(outcome.Holds);
         Assert.DoesNotContain(Orders, await Registered());
+
+        // Nothing but its own row, so no toll worth reporting.
+        Assert.Empty(outcome.Destroyed);
     }
 
     [Fact]
@@ -126,11 +132,11 @@ public sealed class PurgeTests : IDisposable
             AgentName.Create("shipping"), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(PurgeVerdict.NotRegistered, outcome.Verdict);
-        Assert.Empty(outcome.Holds);
+        Assert.Empty(outcome.Destroyed);
     }
 
     [Fact]
-    public async Task An_agent_that_has_asked_something_is_held()
+    public async Task An_agent_that_has_asked_something_is_deleted_with_its_question()
     {
         await _exchanges.TryOpenAsync(
             Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
@@ -138,51 +144,170 @@ public sealed class PurgeTests : IDisposable
         var outcome = await _agents.PurgeAsync(
             Orders, cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Equal(PurgeVerdict.Held, outcome.Verdict);
+        Assert.Equal(PurgeVerdict.Gone, outcome.Verdict);
+        Assert.DoesNotContain(Orders, await Registered());
+        Assert.Equal(0, await Count("SELECT count(*) FROM exchanges;"));
+        Assert.Contains(outcome.Destroyed, t => t.Table == "exchanges" && t.Rows == 1);
+
+        // The agent's own row is not tolled: the toll is an account of collateral, and that row
+        // is what was asked for.
+        Assert.DoesNotContain(outcome.Destroyed, t => t.Table == "agents");
+    }
+
+    [Fact]
+    public async Task The_counterparty_loses_its_side_too()
+    {
+        // The collateral, asserted rather than apologised for. Billing did nothing and keeps
+        // nothing: its record of having been asked lives inside the exchange being deleted, and
+        // an exchange whose asker no longer exists is a question from nobody.
+        //
+        // This is the cost that makes retirement the right instrument whenever the history
+        // matters, and it belongs in a test so nobody re-derives purge as "delete the row and
+        // leave the rest" and finds the suite still green.
+        await _exchanges.TryOpenAsync(
+            Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
+
+        await _agents.PurgeAsync(
+            Orders, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Contains(Billing, await Registered());
+        Assert.Equal(0, await Count("SELECT count(*) FROM exchanges WHERE answerer = 'billing';"));
+    }
+
+    [Fact]
+    public async Task An_agent_that_was_asked_something_takes_the_question_with_it()
+    {
+        await _exchanges.TryOpenAsync(
+            Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
+
+        var outcome = await _agents.PurgeAsync(
+            Billing, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(PurgeVerdict.Gone, outcome.Verdict);
+        Assert.Equal(0, await Count("SELECT count(*) FROM exchanges;"));
         Assert.Contains(Orders, await Registered());
-        Assert.Contains(
-            outcome.Holds,
-            hold => hold.Table == "exchanges" && hold.Column == "asker" && hold.Rows == 1);
     }
 
     [Fact]
-    public async Task An_agent_that_was_asked_something_is_held()
+    public async Task Nothing_is_left_pointing_at_an_agent_that_no_longer_exists()
     {
-        // The counterparty side matters on its own. An agent that never spoke still appears in
-        // somebody else's record of having tried, and deleting it would take that with it.
+        // The whole reason the keys are deferred to commit rather than the deletes ordered by
+        // hand: if any reference were missed the COMMIT fails, so this passing is the database
+        // itself confirming the sweep was complete rather than this test trusting a list.
         await _exchanges.TryOpenAsync(
             Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
 
-        var outcome = await _agents.PurgeAsync(
+        await _agents.PurgeAsync(
             Billing, cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Equal(PurgeVerdict.Held, outcome.Verdict);
-        Assert.Contains(
-            outcome.Holds,
-            hold => hold.Table == "exchanges" && hold.Column == "answerer");
+        Assert.Equal(0, await Count("SELECT count(*) FROM pragma_foreign_key_check;"));
     }
 
     [Fact]
-    public async Task A_hold_names_every_column_that_references_the_agent()
+    public async Task Two_purges_on_one_connection_do_not_collide()
     {
-        // Reported per column rather than per table, because an agent that both asked and was
-        // owed an answer is named twice by one table and the two facts are different.
+        // The temporary tables holding the doomed set live in the connection's temp schema, not
+        // in the transaction's, and one operator clearing a registry purges several agents in a
+        // row down the same connection. If the first purge's tables outlived it, the second would
+        // either fail to create them or -- far worse -- read the first agent's doomed set and
+        // delete an entirely unrelated conversation.
+        //
+        // Probed rather than reasoned about, because the reasoning is exactly the kind that
+        // sounds right: temporary tables are transactional, so a completed transaction must have
+        // dropped them. That argument does not cover the path where the drop is the thing that
+        // was forgotten.
         await _exchanges.TryOpenAsync(
             Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
 
-        var outcome = await _agents.PurgeAsync(
-            Billing, cancellationToken: TestContext.Current.CancellationToken);
+        await _agents.PurgeAsync(Orders, cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Equal(
-            new[] { "answerer", "owed_by" },
-            outcome.Holds.Where(h => h.Table == "exchanges").Select(h => h.Column).ToArray());
+        var second = await _agents.PurgeAsync(
+            Inventory, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(PurgeVerdict.Gone, second.Verdict);
+        Assert.Equal([Billing], await Registered());
+    }
+
+    [Fact]
+    public async Task The_sweep_does_not_have_to_delete_in_dependency_order()
+    {
+        // What the deferred foreign keys are actually for, and it was worth finding out: turning
+        // the pragma off broke no test at all, because today's tables happen to come out of the
+        // schema scan in an order that works. A backstop nothing exercises is a backstop that
+        // gets deleted by the next person tidying up.
+        //
+        // The scan returns tables alphabetically, which is a property of sqlite_master and not a
+        // dependency order. Two tables from some later migration are enough to separate them: a
+        // parent that sorts first and a child that sorts second, so the sweep deletes the parent
+        // while the child still points at it. Per-statement enforcement fails there; deferring to
+        // commit lets both go and still verifies the result.
+        await Execute(
+            """
+            CREATE TABLE later_a (
+                id    INTEGER PRIMARY KEY,
+                agent TEXT NOT NULL REFERENCES agents(name)
+            );
+            CREATE TABLE later_b (
+                id       INTEGER PRIMARY KEY,
+                agent    TEXT NOT NULL REFERENCES agents(name),
+                later_id INTEGER NOT NULL REFERENCES later_a(id)
+            );
+            INSERT INTO later_a (id, agent) VALUES (1, 'inventory');
+            INSERT INTO later_b (agent, later_id) VALUES ('inventory', 1);
+            """);
+
+        var outcome = await _agents.PurgeAsync(
+            Inventory, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(PurgeVerdict.Gone, outcome.Verdict);
+        Assert.Equal(0, await Count("SELECT count(*) FROM later_a;"));
+        Assert.Equal(0, await Count("SELECT count(*) FROM later_b;"));
+        Assert.Equal(0, await Count("SELECT count(*) FROM pragma_foreign_key_check;"));
+    }
+
+    [Fact]
+    public async Task A_purge_that_fails_leaves_the_store_exactly_as_it_was()
+    {
+        // Foreign keys are deferred to commit, which means a purge that missed something fails at
+        // the very end rather than partway through. That is the safe direction only if the whole
+        // transaction rolls back, so it is worth pinning that it does: a half-completed purge
+        // would leave messages pointing at an agent that no longer exists, which is the one
+        // outcome worse than either refusing or deleting.
+        //
+        // Forced with a table the sweep cannot reach: it references conversations rather than
+        // agents, so nothing discovers it, and its row survives to fail the commit.
+        await Execute(
+            """
+            CREATE TABLE later_annotations (
+                id              INTEGER PRIMARY KEY,
+                conversation_id TEXT NOT NULL REFERENCES conversations(id)
+            );
+            """);
+
+        await Execute(
+            """
+            INSERT INTO conversations (id, state, opened_utc)
+            VALUES ('c1', 'OPEN', '2026-01-01T00:00:00+00:00');
+            INSERT INTO conversation_participants (conversation_id, agent, joined_utc)
+            VALUES ('c1', 'orders', '2026-01-01T00:00:00+00:00');
+            INSERT INTO later_annotations (conversation_id) VALUES ('c1');
+            """);
+
+        var before = await Count("SELECT count(*) FROM conversations;");
+
+        await Assert.ThrowsAsync<SqliteException>(() =>
+            _agents.PurgeAsync(Orders, cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Contains(Orders, await Registered());
+        Assert.Equal(before, await Count("SELECT count(*) FROM conversations;"));
+        Assert.Equal(1, await Count("SELECT count(*) FROM later_annotations;"));
     }
 
     [Fact]
     public async Task An_uninvolved_agent_is_still_purgeable_while_others_trade()
     {
-        // The refusal is about this agent's own references, not about whether the deployment
-        // has been used. Otherwise the first exchange anywhere would freeze the registry.
+        // The blast radius is this agent's own involvement, not the deployment's activity.
+        // Otherwise purging anybody would take the whole registry with it.
         await _exchanges.TryOpenAsync(
             Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
 
@@ -195,9 +320,9 @@ public sealed class PurgeTests : IDisposable
     [Fact]
     public async Task Retirement_neither_permits_nor_prevents_a_purge()
     {
-        // Status is not the test. A retired agent that never traded is exactly the mistake
-        // this operation exists to undo — somebody retired a typo because retirement was the
-        // only thing available.
+        // Status is not the test. Retirement is the gentler decision, and purge is not gated on
+        // having made it first: an operator who wants an agent gone should not have to retire it
+        // as a ceremony on the way.
         await _agents.RetireAsync(Orders, TestContext.Current.CancellationToken);
 
         var outcome = await _agents.PurgeAsync(
@@ -227,10 +352,10 @@ public sealed class PurgeTests : IDisposable
     [Fact]
     public async Task A_reference_the_code_has_never_heard_of_still_holds_an_agent()
     {
-        // The load-bearing test. Purge decides what "never traded" means by asking the schema
-        // which columns reference agents(name), and the reason it asks rather than carrying a
-        // list is that a list goes stale at the next migration — silently, and in the direction
-        // that deletes history.
+        // The load-bearing test. Purge finds what to delete by asking the schema which columns
+        // reference agents(name), and the reason it asks rather than carrying a list is that a
+        // list goes stale at the next migration — at which point the purge fails on a foreign key
+        // and surfaces as an unhandled exception where an operator expected an answer.
         //
         // A table created here and nowhere else is the strongest available statement of that:
         // nothing in src has heard of it, so a scan that finds it cannot be finding it from a
@@ -249,10 +374,9 @@ public sealed class PurgeTests : IDisposable
         var outcome = await _agents.PurgeAsync(
             Inventory, cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.Equal(PurgeVerdict.Held, outcome.Verdict);
-        Assert.Contains(
-            outcome.Holds,
-            hold => hold.Table == "later_migration" && hold.Column == "agent");
+        Assert.Equal(PurgeVerdict.Gone, outcome.Verdict);
+        Assert.Equal(0, await Count("SELECT count(*) FROM later_migration;"));
+        Assert.Contains(outcome.Destroyed, t => t.Table == "later_migration" && t.Rows == 1);
     }
 
     [Fact]
@@ -260,8 +384,8 @@ public sealed class PurgeTests : IDisposable
     {
         // The other half of the same decision, and the reason the scan filters on ON DELETE
         // CASCADE rather than on every reference. A cascading declaration is the schema saying
-        // those rows belong to the agent; refusing to purge because of them would mean an agent
-        // that never traded could still be held by its own belongings.
+        // those rows belong to the agent, so they go when its row does and need no statement of
+        // their own — naming them again would double-count them in the toll.
         await Execute(
             """
             CREATE TABLE later_belongings (
@@ -282,10 +406,10 @@ public sealed class PurgeTests : IDisposable
     [Fact]
     public async Task The_foreign_keys_remain_the_backstop_under_the_check()
     {
-        // If the scan above were ever wrong, this is what stops a purge taking the traffic with
-        // it: the delete fails rather than succeeding quietly. Asserted directly because the
-        // pragma is a connection setting that defaults to off, so a connection opened without
-        // ParleyDatabase would disable it and nothing else here would notice.
+        // Purge defers the keys to commit time, which is safe only while the keys are on at all.
+        // Asserted directly because the pragma is a connection setting that defaults to off, so a
+        // connection opened without ParleyDatabase would silently drop the backstop and every
+        // other test here would still pass.
         await _exchanges.TryOpenAsync(
             Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
 

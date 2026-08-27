@@ -721,46 +721,44 @@ public sealed class AgentRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>
-    /// Deletes a registration that never traded, freeing its name.
+    /// Deletes an agent and everything it was party to.
     /// </summary>
     /// <param name="name">The agent to purge.</param>
     /// <param name="transaction">A transaction to join, or <see langword="null"/> to own one.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
-    /// <returns>
-    /// <see cref="PurgeOutcome.Gone"/>, <see cref="PurgeOutcome.NotRegistered"/>, or a held
-    /// outcome naming every reference that stopped it.
-    /// </returns>
+    /// <returns>What was destroyed, or <see cref="PurgeOutcome.NotRegistered"/>.</returns>
     /// <remarks>
     /// <para>
-    /// The operator operation from SPEC.md section 10.2, and the narrow complement to
-    /// <see cref="RetireAsync"/> rather than a replacement for it. Retirement pays a real price
-    /// — the name is never registrable again and the row outlives the repository — and section
-    /// 14 is right that the price buys something: the record of what the agent said, and every
-    /// counterparty history of dealing with it. An agent that never traded has no such record,
-    /// so for that agent alone the price buys nothing. This deletes exactly those, and nothing
-    /// else: a mistyped name, an experiment, a manifest reload that registered a repository
-    /// somebody was only looking at.
+    /// The operator operation from SPEC.md section 10.2, and the destructive one. It removes the
+    /// agent, every message it sent or received, every exchange it was party to, and every
+    /// conversation it took part in — including the halves of those conversations belonging to
+    /// peers who did nothing wrong. It cannot be undone and there is no confirmation here; the
+    /// surface that calls it is where a person is asked.
     /// </para>
     /// <para>
-    /// What counts as "never traded" is read from the schema rather than listed here, and that
-    /// is the load-bearing decision in this method. A hand-written list of tables is correct
-    /// only until the next migration adds a reference to <c>agents(name)</c> and nobody thinks
-    /// to update it — at which point a purge would delete rows the new table needed, or trip a
-    /// foreign key and surface as an unhandled <see cref="SqliteException"/> where an operator
-    /// expected an explanation. Asking the database which tables point at it cannot drift.
+    /// <b>The collateral is the feature, not a defect being tolerated.</b> A conversation is a
+    /// record of what two agents said to each other, and one with a party deleted out of it is
+    /// not a smaller truth — it is a misleading one, an exchange whose asker no longer exists
+    /// and whose answers now appear unprompted. If the record is worth keeping, the agent should
+    /// be retired instead; retirement exists precisely to keep it. Purge is for when the record
+    /// is the thing you want gone.
     /// </para>
     /// <para>
-    /// Cascading references are deliberately excluded from that scan. <c>agent_credentials</c>
-    /// and <c>size_refusals</c> are declared <c>ON DELETE CASCADE</c>, which is the schema
-    /// already saying they belong to the agent rather than to a counterparty, and they go with
-    /// it. A credential reference for an agent that no longer exists is not history anybody can
-    /// use.
+    /// This is a reversal. It used to refuse the moment anything referenced the agent, and the
+    /// reasoning was sound as far as it went: deleting an agent takes its counterparties' history
+    /// with it. What that reasoning missed is that refusing left no command which did the job, so
+    /// an operator who genuinely wanted an agent gone had retirement — which frees nothing and
+    /// keeps everything — or nothing at all. A guard whose only effect is that the operator does
+    /// the deletion by hand, with a SQL client and no ordering, is not protecting anybody.
     /// </para>
     /// <para>
-    /// The check and the delete share one <c>IMMEDIATE</c> transaction, so an exchange opened
-    /// between them cannot be orphaned by a purge that had already decided there was none. The
-    /// foreign keys stay as the backstop underneath that: if this scan were ever wrong, the
-    /// delete fails rather than silently taking the traffic with it.
+    /// Everything doomed is identified before anything is deleted, because each delete changes
+    /// the answer to the next question: remove the participant rows and the conversations are no
+    /// longer discoverable, remove the exchanges and their messages look unrelated. The order of
+    /// deletion then follows the foreign keys, deepest first, with the agent row last —
+    /// <c>agent_credentials</c> and <c>size_refusals</c> cascade and are not named. The keys stay
+    /// the backstop underneath: if this order were ever wrong, the delete fails inside the
+    /// transaction rather than half-completing.
     /// </para>
     /// </remarks>
     public async Task<PurgeOutcome> PurgeAsync(
@@ -783,43 +781,132 @@ public sealed class AgentRepository(SqliteConnection connection)
             return PurgeOutcome.NotRegistered;
         }
 
-        var holds = new List<PurgeHold>();
+        // Foreign keys deferred to commit time rather than enforced per statement. Two reasons,
+        // and the second is the load-bearing one.
+        //
+        // It frees the deletes below from having to run in dependency order, which would
+        // otherwise have to be hand-maintained against a schema that changes.
+        //
+        // And it keeps the keys as the backstop while allowing a generic sweep. If anything at
+        // all is missed -- a table added by a later migration, a reference nobody here
+        // anticipated -- the COMMIT fails and the whole purge rolls back, rather than a partial
+        // deletion succeeding and leaving rows pointing at an agent that no longer exists. The
+        // pragma is scoped to this transaction and resets itself when it ends.
+        await ExecuteAsync("PRAGMA defer_foreign_keys = ON;").ConfigureAwait(false);
 
+        // Everything doomed is worked out before anything is deleted, because each delete
+        // changes the answer to the next question. Remove the participant rows first and the
+        // conversations this agent was in are no longer discoverable; remove the exchanges and
+        // the messages hanging off them look unrelated. Held in temporary tables so every
+        // statement below reads the same set.
+        await ExecuteAsync(
+            """
+            CREATE TEMP TABLE doomed_conversations AS
+            SELECT conversation_id AS id FROM conversation_participants WHERE agent = @Name
+            UNION
+            SELECT conversation_id FROM exchanges
+             WHERE (asker = @Name OR answerer = @Name OR owed_by = @Name)
+               AND conversation_id IS NOT NULL
+            UNION
+            SELECT conversation_id FROM messages
+             WHERE (from_agent = @Name OR to_agent = @Name)
+               AND conversation_id IS NOT NULL;
+            """).ConfigureAwait(false);
+
+        await ExecuteAsync(
+            """
+            CREATE TEMP TABLE doomed_exchanges AS
+            SELECT id FROM exchanges
+             WHERE asker = @Name OR answerer = @Name OR owed_by = @Name
+                OR conversation_id IN (SELECT id FROM doomed_conversations);
+            """).ConfigureAwait(false);
+
+        var toll = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        // The conversation-shaped part, which no generic scan could work out: these rows do not
+        // name the agent at all. They are a peer's messages, and a peer's side of an exchange,
+        // in a conversation this agent was party to -- and they go because a conversation with
+        // one party deleted out of it is not a smaller record but a misleading one.
+        await RazeAsync("message_referrals",
+            "DELETE FROM message_referrals WHERE exchange_id IN (SELECT id FROM doomed_exchanges);")
+            .ConfigureAwait(false);
+
+        await RazeAsync("messages",
+            """
+            DELETE FROM messages
+             WHERE exchange_id IN (SELECT id FROM doomed_exchanges)
+                OR conversation_id IN (SELECT id FROM doomed_conversations);
+            """).ConfigureAwait(false);
+
+        await RazeAsync("exchanges",
+            "DELETE FROM exchanges WHERE id IN (SELECT id FROM doomed_exchanges);")
+            .ConfigureAwait(false);
+
+        await RazeAsync("conversation_participants",
+            "DELETE FROM conversation_participants WHERE conversation_id IN " +
+            "(SELECT id FROM doomed_conversations);").ConfigureAwait(false);
+
+        await RazeAsync("conversations",
+            "DELETE FROM conversations WHERE id IN (SELECT id FROM doomed_conversations);")
+            .ConfigureAwait(false);
+
+        // And then everything that names the agent directly, discovered from the schema rather
+        // than listed. A hand-written list is correct until the next migration adds a reference
+        // to agents(name) and nobody updates it -- at which point the purge fails on a foreign
+        // key and surfaces as an unhandled exception where an operator expected an answer. Asking
+        // the database which columns point at it cannot drift.
+        //
+        // Cascading references are excluded because the schema has already said those rows belong
+        // to the agent; they go when its row does, without being named here.
         foreach (var reference in await ReferencesToAgentsAsync(scope.Transaction, cancellationToken)
             .ConfigureAwait(false))
         {
-            var rows = await _connection.ExecuteScalarAsync<long>(
-                new CommandDefinition(
-                    // Interpolated because a table name cannot be a parameter. Both halves come
-                    // from this connection's own schema and never from a caller, so there is
-                    // nothing here for a name to inject into -- and an AgentName could not carry
-                    // it anyway, being validated on construction.
-                    $"""SELECT count(*) FROM "{reference.TableName}" WHERE "{reference.ColumnName}" = @Name;""",
-                    new { Name = name.Value },
-                    scope.Transaction,
-                    cancellationToken: cancellationToken)).ConfigureAwait(false);
-
-            if (rows > 0)
-            {
-                holds.Add(new PurgeHold(reference.TableName, reference.ColumnName, (int)rows));
-            }
+            await RazeAsync(
+                reference.TableName,
+                // Interpolated because a table name cannot be a parameter. Both halves come from
+                // this connection's own schema and never from a caller, and an AgentName could
+                // not carry an injection anyway, being validated on construction.
+                $"""DELETE FROM "{reference.TableName}" WHERE "{reference.ColumnName}" = @Name;""")
+                .ConfigureAwait(false);
         }
 
-        if (holds.Count > 0)
-        {
-            scope.Complete();
-            return PurgeOutcome.HeldBy(holds);
-        }
+        // Not tolled. The toll is an account of collateral -- what an operator did not ask for
+        // and cannot get back -- and the agent's own row is the thing they did ask for. Counting
+        // it would make an empty toll impossible and cost the report its clearest reading: that
+        // nothing else went with it.
+        await ExecuteAsync("DELETE FROM agents WHERE name = @Name;").ConfigureAwait(false);
 
-        await _connection.ExecuteAsync(
-            new CommandDefinition(
-                "DELETE FROM agents WHERE name = @Name;",
-                new { Name = name.Value },
-                scope.Transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        // Dropped inside the transaction that made them. A temporary table outlives a rolled-back
+        // statement on some paths, and a second purge on this connection finding the previous
+        // doomed set would delete entirely the wrong things.
+        await ExecuteAsync("DROP TABLE doomed_exchanges;").ConfigureAwait(false);
+        await ExecuteAsync("DROP TABLE doomed_conversations;").ConfigureAwait(false);
 
         scope.Complete();
-        return PurgeOutcome.Gone;
+
+        return PurgeOutcome.Razed(
+            [.. toll.Where(t => t.Value > 0)
+                    .OrderByDescending(t => t.Value)
+                    .ThenBy(t => t.Key, StringComparer.Ordinal)
+                    .Select(t => new PurgeToll(t.Key, t.Value))]);
+
+        Task<int> ExecuteAsync(string sql) =>
+            _connection.ExecuteAsync(
+                new CommandDefinition(
+                    sql,
+                    new { Name = name.Value },
+                    scope.Transaction,
+                    cancellationToken: cancellationToken));
+
+        // Accumulated per table rather than per statement, because one table is emptied from two
+        // directions -- what belonged to a doomed conversation, and what named the agent -- and
+        // an operator reading "messages 3" then "messages 2" would have to add them up.
+        async Task RazeAsync(string table, string sql)
+        {
+            var rows = await ExecuteAsync(sql).ConfigureAwait(false);
+
+            toll[table] = toll.GetValueOrDefault(table) + rows;
+        }
     }
 
     /// <summary>

@@ -1971,7 +1971,7 @@ any of these into an agent's tool set would breach §10.1 and, through it, §16.
 | `notifications()` | Report what Notify has carried: how many, how big, between whom, and what each recipient has received. §17 question 1 leaves Notify unbounded on purpose; this is the evidence for whether that holds. |
 | `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. |
 | `reinstate(agent)` | Withdraw a retirement. Registration does not, and must not, do this. |
-| `purge(agent)` | Delete a registration that never traded, freeing its name. Refused the moment anything references the agent. See §14. |
+| `purge(agent)` | Delete an agent and every conversation it was party to, freeing its name. Destroys its peers' side of those conversations too, and cannot be undone. See §14. |
 | `force_conclude(conversation)` | Close a conversation regardless of its participants' votes. |
 
 `force_conclude` is named apart from the agent operation `conclude` on purpose. §10.2 opens
@@ -2662,32 +2662,49 @@ The cost is that a retired agent's name is never reusable and the registry accum
 for repositories that no longer exist. That is the right trade: a registry row is small, and
 the alternative discards the record of what an agent said in exchange for tidiness.
 
-**Purging a registration that never traded.** The paragraph above is an argument about price
-and what it buys, and it is worth reading as one. Retirement costs a name that can never be
-registered again and a row that outlives the repository, and it buys the record of what the
-agent said together with every counterparty's history of dealing with it. For an agent that
-never traded, the price is the same and there is nothing to buy: no exchange names it, no
-message came from it, no pair statistic counts it. `purge(agent)` deletes exactly those.
+**Purging.** The paragraph above is an argument about price and what it buys, and it is worth
+reading as one. Retirement costs a name that can never be registered again and a row that
+outlives the repository, and it buys the record of what the agent said together with every
+counterparty's history of dealing with it. `purge(agent)` is the operation for when that record
+is the thing you want gone.
 
-It is the narrow complement to `retire`, not a stronger version of it, and the boundary is
-mechanical rather than a judgement: an agent is purgeable when nothing outside its own rows
-references it, and the moment anything does, purge is refused and says what referenced it.
-An operator who wants the row gone anyway has `retire`, which is the operation that was
-designed for an agent with a history.
+It deletes the agent, every message it sent or received, every exchange it was party to, and
+every conversation it took part in — **including the halves of those conversations belonging to
+peers who did nothing wrong.** It cannot be undone.
 
-The case this exists for is a registration that should never have happened — a mistyped
-`PARLEY_AGENT`, a repository somebody opened once to look at, an experiment. Under retirement
-alone the only remedy for a typo was a tombstone for an agent that never existed, and a
-permanently burnt name that the correctly-spelled agent might want. That is a real cost with
-no corresponding record to protect.
+That collateral is the definition rather than a defect being tolerated. A conversation is a
+record of what two agents said to each other; one with a party deleted out of it is not a
+smaller truth but a misleading one — an exchange whose asker no longer exists, answers that now
+appear unprompted, a pair statistic counting a correspondent nobody can name. Removing an agent
+and leaving its outline in everybody else's history would be the worst of the three available
+outcomes.
 
-What counts as "references it" is read from the schema rather than enumerated here, so it
-cannot fall behind the schema: any column declared `REFERENCES agents(name)` without
-`ON DELETE CASCADE` holds the agent. The cascading references — an agent's own credentials
-and its size refusals — are the schema already saying those rows belong to the agent rather
-than to a counterparty, and they go with it. Nothing else does: purge never deletes an
-exchange, a message or a statistic, because an operation that did would be the deletion §14
-argues against wearing a different name.
+So the two operations are not degrees of the same thing. **Retire when the record matters**: it
+keeps everything and frees nothing. **Purge when the record is what you are removing**: it frees
+the name and keeps nothing. An implementation that offers only the first has not been cautious;
+it has left an operator who genuinely wants an agent gone with a SQL client, no ordering, and
+no report — which is how history actually gets corrupted.
+
+This is a reversal, and the earlier reasoning is worth recording because it was not wrong so
+much as incomplete. Purge once refused the moment anything referenced the agent, on the ground
+that deleting it would take its counterparties' history along. That much is true and is stated
+above. What it missed is that a guard whose only effect is to move the deletion outside the
+system protects nobody, and that "a registration that never traded" is a case so narrow —
+a mistyped `PARLEY_AGENT`, a repository somebody opened once — that it left the general case
+unserved.
+
+What gets deleted is found from the schema rather than enumerated here, so it cannot fall behind:
+any column declared `REFERENCES agents(name)` without `ON DELETE CASCADE` names the agent and its
+rows go, alongside everything belonging to a conversation the agent took part in. The cascading
+references — an agent's own credentials and its size refusals — are the schema already saying
+those rows belong to the agent, and they go without being named. Foreign keys are deferred to
+commit rather than the deletions ordered by hand, so anything missed fails the whole purge
+instead of half-completing it.
+
+An operator is told what was destroyed, per table rather than as a total, because a total is the
+one number that carries no warning: "forty-one rows" could be a dead registration's leftovers or
+two months of a working conversation. It is reported after the fact, since by then it is the only
+account of those rows that will ever exist.
 
 By the time an operator retires an agent its outstanding exchanges have usually resolved
 themselves — they orphan and are ghosted on the ordinary schedule, and an answer that

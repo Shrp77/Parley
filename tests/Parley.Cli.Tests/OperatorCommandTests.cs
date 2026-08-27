@@ -160,12 +160,15 @@ public sealed class OperatorCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task Purging_an_agent_that_has_traded_names_what_held_it()
+    public async Task Purging_an_agent_that_has_traded_reports_what_it_destroyed()
     {
-        // The refusal has to be actionable. "It has history" leaves an operator with nowhere to
-        // go; naming the column tells them exactly what to export and read before deciding the
-        // record is worth nothing — and it is still their decision, which is why this points at
-        // retire rather than offering to delete the traffic.
+        // The toll has to be readable as alarm. A total tells an operator nothing — "forty-one
+        // rows" could be a dead registration's leftovers or two months of a working
+        // conversation — so it is broken out per table, and printed after the fact because
+        // nothing here is a confirmation prompt.
+        //
+        // It also has to say the part that only matters once it is too late: the peer was not
+        // asked, and its side of these conversations is gone as well.
         var broker = new Broker.Broker(_connection, BrokerOptions.Default);
         await broker.StartAsync(Orders, T0, Ct);
 
@@ -174,11 +177,17 @@ public sealed class OperatorCommandTests : IDisposable
             $$"""{"intent":"where does price live","sub_questions":[{"id":"q1","text":"gross or net?"}],"consequences":"{{Consequences}}"}""",
             T0.AddMinutes(1), cancellationToken: Ct);
 
-        Assert.Equal(1, await _commands.PurgeAsync(Billing, Ct));
+        Assert.Equal(0, await _commands.PurgeAsync(Billing, Ct));
 
-        Assert.Contains(Billing, (await _agents.GetAllAsync(Ct)).Select(a => a.Name));
-        Assert.Contains("exchanges.answerer", Printed, StringComparison.Ordinal);
-        Assert.Contains("Retire it instead", Printed, StringComparison.Ordinal);
+        Assert.DoesNotContain(Billing, (await _agents.GetAllAsync(Ct)).Select(a => a.Name));
+        Assert.Contains("exchanges", Printed, StringComparison.Ordinal);
+        Assert.Contains("messages", Printed, StringComparison.Ordinal);
+        Assert.Contains("cannot be undone", Printed, StringComparison.Ordinal);
+
+        // The asker did nothing and is still registered, but its question is gone with the agent
+        // that was asked. That is the collateral, and the command says so rather than hiding it.
+        Assert.Contains(Orders, (await _agents.GetAllAsync(Ct)).Select(a => a.Name));
+        Assert.Contains("lost that conversation", Printed, StringComparison.Ordinal);
     }
 
     [Fact]

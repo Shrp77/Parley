@@ -4,10 +4,9 @@ namespace Parley.Store;
 /// What became of a purge.
 /// </summary>
 /// <remarks>
-/// Three outcomes rather than a boolean, because "there was no such agent" and "there was, and
-/// it has a history worth keeping" call for opposite responses from an operator and are
-/// indistinguishable from a row count. The first is usually a typo; the second is the case
-/// SPEC.md §14 built retirement for.
+/// Two outcomes rather than a boolean, because "there was no such agent" is usually a typo and
+/// reads identically to success in a row count. There is no third outcome for a refusal: purge
+/// does not refuse. See <see cref="PurgeOutcome"/>.
 /// </remarks>
 public enum PurgeVerdict
 {
@@ -21,72 +20,74 @@ public enum PurgeVerdict
     /// </remarks>
     NotRegistered,
 
-    /// <summary>The registration was deleted, and its name is registrable again.</summary>
+    /// <summary>The agent and everything it was party to are gone.</summary>
     Gone,
-
-    /// <summary>
-    /// Something references the agent, so deleting it would take that with it. See
-    /// <see cref="PurgeOutcome.Holds"/> for what.
-    /// </summary>
-    Held,
 }
 
 /// <summary>
-/// One reference standing between an agent and deletion.
+/// One table's share of what a purge destroyed.
 /// </summary>
-/// <param name="Table">The table holding the reference.</param>
-/// <param name="Column">The column in it that names the agent.</param>
-/// <param name="Rows">How many rows of that table name it.</param>
+/// <param name="Table">The table.</param>
+/// <param name="Rows">How many of its rows were deleted.</param>
 /// <remarks>
-/// Named down to the column because two columns of the same table mean different things: an
-/// agent held by <c>exchanges.asker</c> has asked something, and one held by
-/// <c>exchanges.answerer</c> has been asked. An operator deciding whether the history is worth
-/// keeping is deciding about that difference, and a table name alone does not carry it.
+/// Reported per table rather than as a total, because the total is the one number that tells an
+/// operator nothing. "Forty-one rows" could be a dead registration's leftovers or two months of
+/// a working conversation; "eleven messages, three exchanges, two conversations" is the same
+/// fact in a form somebody can be alarmed by. Nothing here can be undone, so the report is the
+/// only account that will ever exist of what was in the database a moment ago.
 /// </remarks>
-public sealed record PurgeHold(string Table, string Column, int Rows);
+public sealed record PurgeToll(string Table, int Rows);
 
 /// <summary>
-/// What one purge did, or what stopped it.
+/// What one purge destroyed.
 /// </summary>
-/// <param name="Verdict">Which of the three outcomes occurred.</param>
-/// <param name="Holds">
-/// What referenced the agent, when <paramref name="Verdict"/> is <see cref="PurgeVerdict.Held"/>;
-/// empty otherwise.
+/// <param name="Verdict">Whether there was an agent to purge.</param>
+/// <param name="Destroyed">
+/// What was deleted, per table, worst first. Empty when <paramref name="Verdict"/> is
+/// <see cref="PurgeVerdict.NotRegistered"/>.
 /// </param>
 /// <remarks>
-/// There is deliberately no <c>Succeeded</c> property here, for the reason set out on
+/// <para>
+/// <b>Purge is the nuclear option and is not a polite command.</b> It deletes the agent, every
+/// message it sent or received, every exchange it was party to, and every conversation it took
+/// part in — including the halves of those conversations belonging to peers who did nothing
+/// wrong. That collateral is not a defect being tolerated; it is what deleting a party to a
+/// conversation means, since a conversation with one side removed is a record that misleads
+/// whoever reads it next.
+/// </para>
+/// <para>
+/// It used to refuse the moment anything referenced the agent, which made it useful only for a
+/// registration that had never traded — a typo's worth of cleanup — and left an operator who
+/// genuinely wanted an agent gone with no command that did it. Retirement is still the right
+/// instrument for an agent that has finished: it keeps the history and frees nothing. Purge is
+/// for when the history is the thing you want gone.
+/// </para>
+/// <para>
+/// There is deliberately no <c>Succeeded</c> property, for the reason set out on
 /// <see cref="ReapResult"/>: a derived summary is a second definition of the outcome that drifts
 /// from the first the moment a verdict is added. A caller that wants to know whether the agent
 /// is gone names <see cref="PurgeVerdict.Gone"/>.
+/// </para>
 /// </remarks>
-public sealed record PurgeOutcome(PurgeVerdict Verdict, IReadOnlyList<PurgeHold> Holds)
+public sealed record PurgeOutcome(PurgeVerdict Verdict, IReadOnlyList<PurgeToll> Destroyed)
 {
-    /// <summary>The registration was deleted.</summary>
-    public static PurgeOutcome Gone { get; } = new(PurgeVerdict.Gone, []);
-
     /// <summary>There was no such agent.</summary>
     public static PurgeOutcome NotRegistered { get; } = new(PurgeVerdict.NotRegistered, []);
 
     /// <summary>
-    /// Reports an agent that could not be purged, and what held it.
+    /// Reports an agent that was purged, and what went with it.
     /// </summary>
-    /// <param name="holds">Every reference found, ordered by table and column.</param>
-    /// <returns>A held outcome carrying <paramref name="holds"/>.</returns>
-    /// <exception cref="ArgumentException"><paramref name="holds"/> is empty.</exception>
+    /// <param name="destroyed">What was deleted, per table. Tables that lost nothing are omitted.</param>
+    /// <returns>A completed purge carrying <paramref name="destroyed"/>.</returns>
     /// <remarks>
-    /// An empty hold list is refused rather than accepted as a vacuous refusal: it would print
-    /// as "cannot be purged because of nothing", which tells an operator to go and look for a
-    /// reference that does not exist.
+    /// An empty toll is legitimate and is not refused: an agent that registered and never traded
+    /// leaves nothing behind but its own row, and that is the one case the old command could
+    /// already handle.
     /// </remarks>
-    public static PurgeOutcome HeldBy(IReadOnlyList<PurgeHold> holds)
+    public static PurgeOutcome Razed(IReadOnlyList<PurgeToll> destroyed)
     {
-        ArgumentNullException.ThrowIfNull(holds);
+        ArgumentNullException.ThrowIfNull(destroyed);
 
-        if (holds.Count == 0)
-        {
-            throw new ArgumentException("A held purge must say what held it.", nameof(holds));
-        }
-
-        return new PurgeOutcome(PurgeVerdict.Held, holds);
+        return new PurgeOutcome(PurgeVerdict.Gone, destroyed);
     }
 }

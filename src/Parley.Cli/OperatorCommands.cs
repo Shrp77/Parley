@@ -409,16 +409,16 @@ public sealed class OperatorCommands
         return 0;
     }
 
-    /// <summary>Deletes a registration that never traded.</summary>
+    /// <summary>Deletes an agent and everything it was party to.</summary>
     /// <param name="agent">The agent to purge.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
-    /// <returns>Zero if the agent was deleted, one if it was not.</returns>
+    /// <returns>Zero if the agent was deleted, one if there was no such agent.</returns>
     /// <remarks>
-    /// A refusal names every reference that held it, down to the column, because "it has
-    /// history" is not actionable and "it is named by three rows of exchanges.asker" is: an
-    /// operator can export those, decide they are worth nothing, and still be the one who
-    /// decides. The command does not offer to delete them — the whole distinction between this
-    /// and <see cref="RetireAsync"/> collapses if it does.
+    /// The toll is reported per table rather than as a total, because the total is the one
+    /// number that tells an operator nothing: "forty-one rows" could be a dead registration's
+    /// leftovers or two months of a working conversation. Printed after the deletion rather than
+    /// before, since nothing here is a confirmation prompt — by the time this runs the decision
+    /// has been made, and what an operator needs is an account of what is now missing.
     /// </remarks>
     public async Task<int> PurgeAsync(AgentName agent, CancellationToken cancellationToken)
     {
@@ -427,37 +427,41 @@ public sealed class OperatorCommands
         switch (outcome.Verdict)
         {
             case PurgeVerdict.Gone:
-                await _output.WriteLineAsync(
-                    $"'{agent.Value}' is purged. Nothing referenced it, so there was no record " +
-                    "to lose, and the name is free to register again.").ConfigureAwait(false);
-
-                return 0;
-
-            case PurgeVerdict.NotRegistered:
-                await _output.WriteLineAsync(
-                    $"'{agent.Value}' is not registered.").ConfigureAwait(false);
-
-                return 1;
-
-            default:
-                await _output.WriteLineAsync(
-                    $"'{agent.Value}' has traded and was not purged. It is named by:")
-                    .ConfigureAwait(false);
-
-                var width = outcome.Holds.Max(hold => hold.Table.Length + hold.Column.Length) + 1;
-
-                foreach (var hold in outcome.Holds)
+                if (outcome.Destroyed.Count == 0)
                 {
-                    await _output.WriteLineAsync(string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"  {$"{hold.Table}.{hold.Column}".PadRight(width)}  {hold.Rows}"))
-                        .ConfigureAwait(false);
+                    await _output.WriteLineAsync(
+                        $"'{agent.Value}' is purged. It had never traded, so nothing went with " +
+                        "it, and the name is free to register again.").ConfigureAwait(false);
+
+                    return 0;
                 }
 
                 await _output.WriteLineAsync(
-                    "Retire it instead. Deleting it would take that record with it, and every " +
-                    "counterparty's history of dealing with it — which is what retirement is for.")
+                    $"'{agent.Value}' is purged, and so is everything it was party to:")
                     .ConfigureAwait(false);
+
+                var width = outcome.Destroyed.Max(toll => toll.Table.Length) + 1;
+
+                foreach (var toll in outcome.Destroyed)
+                {
+                    await _output.WriteLineAsync(string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"  {toll.Table.PadRight(width)}  {toll.Rows}")).ConfigureAwait(false);
+                }
+
+                // Said afterwards rather than before, because it is the part an operator needs
+                // once it is too late to matter: the counterparties were not asked and their side
+                // of those conversations is gone too. Retirement is the command that keeps it.
+                await _output.WriteLineAsync(
+                    "This cannot be undone. Any peer that spoke with it has lost that " +
+                    "conversation as well — retire an agent instead when the record matters.")
+                    .ConfigureAwait(false);
+
+                return 0;
+
+            default:
+                await _output.WriteLineAsync(
+                    $"'{agent.Value}' is not registered.").ConfigureAwait(false);
 
                 return 1;
         }

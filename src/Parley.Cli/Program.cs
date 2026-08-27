@@ -31,7 +31,7 @@ const string Help = """
       parley [--db <path>] registry                    every registered agent, with its workspace
       parley [--db <path>] retire <agent>              withdraw a registration
       parley [--db <path>] reinstate <agent>           withdraw a retirement
-      parley [--db <path>] purge <agent>               delete a registration that never traded
+      parley [--db <path>] purge <agent>               DESTROY an agent and its conversations
       parley [--db <path>] export <conversation>       emit every message in a discussion
       parley [--db <path>] force-conclude <conv>       close a discussion over its votes
       parley [--db <path>] prune                       apply the retention policy now
