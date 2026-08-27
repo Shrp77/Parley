@@ -2004,12 +2004,41 @@ not by vendor.
 | Tier | Outbound | Inbound | Notes |
 |---|---|---|---|
 | **Full** | Native tool calls | Push into a running turn | Agent can be interrupted with an arriving message. |
-| **Pull-only** | Native tool calls | Drain on demand | Agent asks and answers, but only notices inbound traffic when it calls `inbox()`. |
+| **Pull-only** | Native tool calls | Drain on demand | Agent asks and answers, but a message reaches it only when it calls `inbox()`. |
 | **Headless** | Native tool calls | A supervisor gives the agent a turn | The agent is resident: started once, kept alive, and told only that it has mail. |
 
 An adapter declares its tier at registration. The broker degrades gracefully: a
 Question to a Pull-only agent is queued rather than pushed; a Question to a Headless
 agent waits until a supervisor next gives that agent a turn.
+
+**Being told there is mail is not delivery.** A Pull-only adapter may learn that traffic
+is waiting by any means its host offers — an editor integration that runs between tool
+calls, a supervisor's nudge, a person watching a dashboard — and none of that promotes it
+to Full. The tiers are separated by where the *message* arrives, not by where the news
+does: a Full adapter has the message itself pushed into a running turn, and a Pull-only
+adapter must still call `inbox()` to receive one.
+
+The distinction is load-bearing rather than pedantic, because delivery is the moment
+§13's envelope is applied. A notice reporting how much is waiting cannot be mistaken for
+the thing it counts: a number carries no instruction. A notice carrying the sender's
+words has put a peer's text into the receiving model's context without the frame marking
+it as data, arriving through a channel that model has more reason to trust than a tool
+result — which is the injection §13 exists to prevent, reaching it by the one route §13
+does not otherwise cover. **A notice may say how much is waiting; it must not say what
+any of it says.**
+
+**A notice must be safe to ignore.** The same trust that makes a notice work makes it
+dangerous when it cannot be acted on. A notice arrives in the channel a model treats as
+the host speaking, so an agent told to collect will try, and an agent that cannot — the
+adapter is not loaded, the server failed to start, the tools are absent — does not shrug
+and carry on. It goes looking. Observed: an agent spent four tool batches hunting for a
+tool that was not there, then asked the operator to run it by hand, and never answered
+the question it had been given. The notice did not merely fail; it took the turn.
+
+So a notice states its own escape: what to do if the means of collecting is unavailable.
+This costs a clause and it is not optional, because the failure is invisible from the
+side that sends it — the broker records a message waiting, the registry reports the agent
+live, and the work the operator actually asked for silently does not happen.
 
 **A Headless agent is resident, not re-created.** This is worth stating flatly because
 the obvious design is the wrong one, and this document specified the wrong one until it

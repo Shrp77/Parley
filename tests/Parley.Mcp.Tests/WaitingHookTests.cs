@@ -15,30 +15,65 @@ namespace Parley.Mcp.Tests;
 /// healthy, which is what this hook exists to prevent.
 /// </para>
 /// <para>
-/// Checked from here rather than by running it, because the runner is a Python interpreter that
-/// a CI image need not have and a missing one would fail this suite for a reason unrelated to
-/// Parley. What is pinned is the part that would rot silently: that the plugin still declares
-/// it, and that it still cannot carry a peer's words.
+/// These read the source and the manifest, which catches a rule being deleted. What the file
+/// actually does when run is <see cref="WaitingHookRunTests"/>, which is the stronger check and
+/// needs an interpreter; these still run where there is none.
 /// </para>
 /// </remarks>
 public sealed class WaitingHookTests
 {
     private const string Script = "plugins/parley/hooks/parley_waiting.py";
+    private const string Hooks = "plugins/parley/hooks/hooks.json";
 
     private static string Source => RepositoryFile.Read(Script);
+
+    /// <summary>The script with its module docstring removed.</summary>
+    /// <remarks>
+    /// The rules below are about what the file does, and the docstring is where it explains
+    /// what it deliberately does not do — so it names <c>subject</c> and <c>systemMessage</c> in
+    /// the course of ruling them out. Grepping the whole file would make the prose that argues
+    /// for a rule the thing that breaks it, and the obvious repair is to delete the explanation.
+    /// </remarks>
+    private static string Code
+    {
+        get
+        {
+            var source = Source;
+            var opened = source.IndexOf("\"\"\"", StringComparison.Ordinal);
+
+            // Anchored at the very first character rather than merely present. Every other
+            // docstring in the file opens and closes on one line, so a module docstring that
+            // had been deleted would leave this stripping one function's summary and calling
+            // it the prose — and the rules below would then be grepping almost the whole file
+            // again, passing for a reason that has nothing to do with what they assert.
+            Assert.Equal(0, opened);
+
+            var closed = source.IndexOf("\"\"\"", opened + 3, StringComparison.Ordinal);
+
+            Assert.True(closed > opened, "the module docstring is unterminated");
+
+            return source[(closed + 3)..];
+        }
+    }
+
+    private static JsonDocument Manifest() => JsonDocument.Parse(RepositoryFile.Read(Hooks));
 
     [Fact]
     public void The_plugin_declares_the_hook_on_the_events_that_mean_somebody_is_here()
     {
-        // SessionStart alone would check once and then let a long session drift back into
-        // deafness, which is the failure this replaces rather than a smaller version of it.
-        using var manifest = JsonDocument.Parse(
-            RepositoryFile.Read("plugins/parley/hooks/hooks.json"));
+        // Two pairs, because an agent can be deaf in two different ways. SessionStart and
+        // UserPromptSubmit catch the turn boundary a person drives, and were the whole of this
+        // once — they only fire when a human types, so an agent working through a long turn
+        // learned nothing until that turn was over. PostToolBatch fires between tool batches and
+        // is mid-turn delivery; Stop fires as the agent finishes and is the interlock.
+        using var manifest = Manifest();
 
         var hooks = manifest.RootElement.GetProperty("hooks");
 
-        Assert.True(hooks.TryGetProperty("SessionStart", out _));
-        Assert.True(hooks.TryGetProperty("UserPromptSubmit", out _));
+        foreach (var expected in new[] { "SessionStart", "UserPromptSubmit", "PostToolBatch", "Stop" })
+        {
+            Assert.True(hooks.TryGetProperty(expected, out _), $"{expected} is no longer declared");
+        }
 
         var declared = hooks.GetRawText();
 
@@ -58,6 +93,53 @@ public sealed class WaitingHookTests
     }
 
     [Fact]
+    public void Every_event_the_manifest_declares_is_one_the_script_answers()
+    {
+        // hooks.json names the events; the script decides the shape of the reply from
+        // hook_event_name and answers an unrecognised one with silence. That is the right
+        // default -- printing plain text at PostToolBatch is a parse failure rather than a
+        // notice -- but it makes the two files a matched pair that nothing was checking.
+        //
+        // Declare an event here without teaching the script about it and the hook runs, exits
+        // zero, prints nothing, and looks exactly like a repository with an empty inbox. That
+        // is the same silently-dead failure as choosing one interpreter name, arriving by the
+        // other door, and this file's whole design hides it: everything here fails by saying
+        // nothing.
+        using var manifest = Manifest();
+
+        // Matched against the script as a whole rather than against the frozensets alone:
+        // an event name the script never mentions cannot be one it answers, whichever
+        // construct a later rewrite uses to hold them.
+        foreach (var declared in manifest.RootElement.GetProperty("hooks").EnumerateObject())
+        {
+            Assert.True(
+                Code.Contains($"\"{declared.Name}\"", StringComparison.Ordinal),
+                $"hooks.json declares {declared.Name}, which parley_waiting.py answers with silence");
+        }
+    }
+
+    [Fact]
+    public void No_event_inside_a_subagent_is_declared()
+    {
+        // Deliberate, and the reasoning is not obvious enough to leave to the reader: collecting
+        // is destructive. The broker stamps delivered_utc as it hands a message over, so a
+        // subagent told it had mail would collect into a context that ends with the subagent,
+        // mark the message delivered, and leave the principal none the wiser with the notice
+        // permanently silent. That turns unread mail into destroyed mail.
+        //
+        // TeammateIdle is out for a second, independent reason: its payload carries no
+        // stop_hook_active, so a hook that held a teammate could not tell a first pass from a
+        // hundredth, and the only brake would be the runtime's own cap after eight blocked
+        // turns.
+        using var manifest = Manifest();
+
+        var hooks = manifest.RootElement.GetProperty("hooks");
+
+        Assert.False(hooks.TryGetProperty("SubagentStop", out _));
+        Assert.False(hooks.TryGetProperty("TeammateIdle", out _));
+    }
+
+    [Fact]
     public void The_notice_cannot_carry_a_peer_words()
     {
         // The security-relevant one, and the regression somebody will introduce with the best
@@ -68,8 +150,39 @@ public sealed class WaitingHookTests
         // by a hook arrives with no envelope at all, in a channel the model has every reason to
         // trust — which is exactly the injection route the envelope exists to close. A count
         // cannot carry an instruction; a payload can.
-        Assert.DoesNotContain("payload_json", Source, StringComparison.Ordinal);
-        Assert.DoesNotContain("from_agent", Source, StringComparison.Ordinal);
+        //
+        // Every column that holds a peer's words or names them, not only the two that existed
+        // when this was written. WaitingHookRunTests proves the same thing against real traffic.
+        foreach (var column in new[] { "payload_json", "from_agent", "subject", "responder_model" })
+        {
+            Assert.DoesNotContain(column, Code, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void The_model_facing_events_use_the_field_the_model_reads()
+    {
+        // systemMessage and additionalContext are not two spellings of the same thing:
+        // systemMessage is shown to the person, additionalContext is delivered to the model.
+        // Swapping them fails in whichever direction is silent — a notice the model never sees,
+        // or peer-adjacent text on somebody's screen — and both look like the hook working.
+        Assert.Contains("additionalContext", Code, StringComparison.Ordinal);
+        Assert.DoesNotContain("systemMessage", Code, StringComparison.Ordinal);
+
+        // Named back to the runtime, which rejects a result whose event does not match the one
+        // it asked about.
+        Assert.Contains("hookEventName", Code, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_interlock_can_hold_a_turn_only_once()
+    {
+        // The failure this design invites, and the worse one of the two it sits between. A Stop
+        // hook that spoke on every pass would hand the same notice to an agent that declined to
+        // collect, for ever; the runtime's own backstop is eight consecutive blocks, so arriving
+        // there costs eight model turns and a warning. stop_hook_active is true from the second
+        // pass onward, which bounds the whole thing at one extra turn.
+        Assert.Contains("stop_hook_active", Code, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -77,14 +190,16 @@ public sealed class WaitingHookTests
     {
         // Every agent's server is writing to this file continuously. A hook that opened it for
         // writing, or held a lock, would stall the deployment it was reporting on.
-        Assert.Contains("mode=ro", Source, StringComparison.Ordinal);
+        Assert.Contains("mode=ro", Code, StringComparison.Ordinal);
     }
 
     [Fact]
     public void It_says_nothing_when_nothing_is_waiting()
     {
         // A hook that speaks every turn is one people learn to ignore, and this has to be worth
-        // reading on the rare turn it appears.
-        Assert.Contains("if unread or owed:", Source, StringComparison.Ordinal);
+        // reading on the rare turn it appears. PostToolBatch makes it sharper: it fires after
+        // every batch of tool calls, so a needless line would be the loudest thing in the
+        // transcript.
+        Assert.Contains("if unread or owed:", Code, StringComparison.Ordinal);
     }
 }

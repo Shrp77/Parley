@@ -23,6 +23,28 @@
           }
         ]
       }
+    ],
+    "PostToolBatch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/parley_waiting.py\" || python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/parley_waiting.py\" || exit 0",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/parley_waiting.py\" || python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/parley_waiting.py\" || exit 0",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }
