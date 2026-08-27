@@ -18,6 +18,7 @@
     <Project Path="src/Parley.Headless/Parley.Headless.csproj" />
     <Project Path="src/Parley.Mcp/Parley.Mcp.csproj" />
     <Project Path="src/Parley.Cli/Parley.Cli.csproj" />
+    <Project Path="src/Parley.Bridge/Parley.Bridge.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Parley.Core.Tests/Parley.Core.Tests.csproj" />
@@ -26,6 +27,7 @@
     <Project Path="tests/Parley.Headless.Tests/Parley.Headless.Tests.csproj" />
     <Project Path="tests/Parley.Mcp.Tests/Parley.Mcp.Tests.csproj" />
     <Project Path="tests/Parley.Cli.Tests/Parley.Cli.Tests.csproj" />
+    <Project Path="tests/Parley.Bridge.Tests/Parley.Bridge.Tests.csproj" />
     <Project Path="tests/Parley.Spec.Tests/Parley.Spec.Tests.csproj" />
   </Folder>
 </Solution>

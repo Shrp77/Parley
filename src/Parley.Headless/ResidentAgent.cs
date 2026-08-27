@@ -94,6 +94,29 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// </remarks>
     public string? SessionId => _sessionId;
 
+    /// <summary>
+    /// Called for every protocol event this agent emits, in addition to the turn machinery.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A tee, not a second reader. The events channel has exactly one consumer -- the turn in
+    /// flight -- and handing a second party the reader would let an observer swallow the result
+    /// its turn was waiting for. So this is invoked on the pump as each event is parsed and the
+    /// event still goes to the channel untouched.
+    /// </para>
+    /// <para>
+    /// It exists so an operator can watch an agent work. A process's output can only be read by
+    /// whoever spawned it, so this is the only point at which an agent's stream is visible at
+    /// all; without it a supervisor's agents are as opaque as the ones a person starts by hand.
+    /// </para>
+    /// <para>
+    /// Failures in the observer are swallowed deliberately. A watcher that threw would kill the
+    /// pump, which would end the agent -- an agent must never die because somebody was looking
+    /// at it.
+    /// </para>
+    /// </remarks>
+    public Action<JsonNode>? Observer { get; set; }
+
     /// <summary>Gets whether the agent's process is still running.</summary>
     public bool IsAlive
     {
@@ -388,6 +411,20 @@ public sealed class ResidentAgent : IAsyncDisposable
 
                 if (node is not null)
                 {
+                    // The tee runs first and cannot break the pump: see Observer.
+                    if (Observer is { } observer)
+                    {
+                        try
+                        {
+                            observer(node);
+                        }
+#pragma warning disable CA1031 // an agent must not die because somebody was watching it
+                        catch (Exception)
+#pragma warning restore CA1031
+                        {
+                        }
+                    }
+
                     await _events.Writer.WriteAsync(node).ConfigureAwait(false);
                 }
             }

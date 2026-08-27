@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    The operator's window onto a running deployment, and a third binary rather than a flag on
+    either of the other two.
+
+    It exists because a fleet stopped fitting in a terminal. Twenty repositories, each with an
+    agent that may or may not be attending to its mail, cannot be watched by tailing twenty
+    windows - and the failure this whole project spent a week on was invisible precisely
+    because nobody was watching the one window where it showed.
+
+    Three things it is deliberately not:
+
+    It is not required. Parley runs exactly as it does today with this process absent; the
+    store is the shared state and this is one more reader of it. A bridge that had to be up
+    for agents to talk would have made the observability a dependency of the thing observed.
+
+    It is not an agent. It never sends a message, never answers a question, and takes no
+    `from` parameter, because identity in this protocol comes from PARLEY_AGENT in a launch
+    environment and nowhere else (SPEC.md 4.1). An operator who could speak as `docs` would
+    make every provenance claim in the system unfalsifiable. It observes and it operates; it
+    does not participate.
+
+    It is not a second operator surface. Every operation it offers is one OperatorConsole
+    already had, reached over HTTP instead of over argv. SeparationTests and
+    SurfaceBoundaryTests keep the operator/agent split honest, and routing through the same
+    type means this inherits that guard rather than quietly growing a fourteenth power.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>parley-bridge</AssemblyName>
+    <RootNamespace>Parley.Bridge</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>parley-bridge</ToolCommandName>
+    <PackageId>Parley.Bridge</PackageId>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <!--
+    Parley.Headless is referenced for the same reason Parley.Cli references it: keeping an
+    agent resident is an operator capability. The bridge hosts ResidentAgent instances for
+    agents it starts, which is what makes their stdio visible at all - a process's output can
+    only be read by the process that spawned it, so an agent launched by hand in a terminal is
+    observable through the store and no further.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Parley.Broker\Parley.Broker.csproj" />
+    <ProjectReference Include="..\Parley.Headless\Parley.Headless.csproj" />
+  </ItemGroup>
+
+</Project>
