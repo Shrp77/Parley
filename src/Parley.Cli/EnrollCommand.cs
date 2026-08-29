@@ -99,8 +99,9 @@ public static class EnrollCommand
     /// <param name="selectAll">
     /// True or false to mark every repository found, skipping the picker; null to show it.
     /// </param>
-    /// <param name="nodeConfigPath">
-    /// The node catalogue the entry point resolved, or null to fall back as before.
+    /// <param name="nodeConfig">
+    /// The node catalogue the entry point resolved, and which input decided it. The manifest's
+    /// own <c>node_config</c> still outranks it; this is what wins when the manifest names none.
     /// </param>
     /// <param name="output">Where to report what happened.</param>
     /// <param name="error">Where to report why it could not.</param>
@@ -110,12 +111,13 @@ public static class EnrollCommand
     public static async Task<int> RunAsync(
         IReadOnlyList<string> arguments,
         bool? selectAll,
-        string? nodeConfigPath,
+        Resolved nodeConfig,
         TextWriter output,
         TextWriter error,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
+        ArgumentNullException.ThrowIfNull(nodeConfig);
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(error);
 
@@ -125,9 +127,9 @@ public static class EnrollCommand
                 .ConfigureAwait(false),
             ["scan", var root, var into] => await ScanAsync(root, into, selectAll, output, error, cancellationToken)
                 .ConfigureAwait(false),
-            ["plan", var manifest] => await ApplyAsync(manifest, write: false, nodeConfigPath, output, error, cancellationToken)
+            ["plan", var manifest] => await ApplyAsync(manifest, write: false, nodeConfig, output, error, cancellationToken)
                 .ConfigureAwait(false),
-            ["apply", var manifest] => await ApplyAsync(manifest, write: true, nodeConfigPath, output, error, cancellationToken)
+            ["apply", var manifest] => await ApplyAsync(manifest, write: true, nodeConfig, output, error, cancellationToken)
                 .ConfigureAwait(false),
             _ => await UsageAsync(error).ConfigureAwait(false),
         };
@@ -677,12 +679,14 @@ public static class EnrollCommand
     private static async Task<int> ApplyAsync(
         string manifestPath,
         bool write,
-        string? nodeConfigPath,
+        Resolved nodeConfig,
         TextWriter output,
         TextWriter error,
         CancellationToken cancellationToken)
     {
-        EnrollmentManifest? manifest;
+        EnrollmentManifest? manifest = null;
+        string? unreadable = null;
+        var unreadableCode = 0;
 
         try
         {
@@ -691,15 +695,32 @@ public static class EnrollCommand
         }
         catch (FileNotFoundException)
         {
-            await error.WriteLineAsync(
-                $"{manifestPath} not found. Write one with: parley enroll scan <directory>").ConfigureAwait(false);
-
-            return Usage;
+            unreadable = $"{manifestPath} not found. Write one with: parley enroll scan <directory>";
+            unreadableCode = Usage;
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
-            await error.WriteLineAsync($"Could not read {manifestPath}: {ex.Message}").ConfigureAwait(false);
-            return Config;
+            unreadable = $"Could not read {manifestPath}: {ex.Message}";
+            unreadableCode = Config;
+        }
+
+        // Said before the manifest is judged, and said even when it could not be read at all.
+        //
+        // The catalogue is the file this command records consent to run unattended in, and naming
+        // it is what stops a run writing ten repositories where nothing reads them. It used to be
+        // printed by the entry point, which knew where the resolution *started* but not where the
+        // manifest would take it — so a manifest carrying `node_config` produced a run that named
+        // one file and wrote another, which is worse than naming none: a wrong report is believed.
+        //
+        // Here it is true in both directions, and the provenance travels with it, because "which
+        // of the four inputs won" is the question somebody reading this line is actually asking.
+        await output.WriteLineAsync(
+            $"node catalogue: {Naming(manifest?.NodeConfig, nodeConfig)}").ConfigureAwait(false);
+
+        if (unreadable is not null)
+        {
+            await error.WriteLineAsync(unreadable).ConfigureAwait(false);
+            return unreadableCode;
         }
 
         var rows = manifest?.Agents;
@@ -754,7 +775,7 @@ public static class EnrollCommand
             return Config;
         }
 
-        var nodePath = ResolveNodeConfig(manifest?.NodeConfig, nodeConfigPath);
+        var nodePath = ResolveNodeConfig(manifest?.NodeConfig, nodeConfig.Value);
         var node = ReadNode(nodePath);
 
         if (node is null)
@@ -909,10 +930,24 @@ public static class EnrollCommand
             }
         }
 
+        // Step 1 names the node as well as the broker, and only when this run recorded consent
+        // for one. A run that wrote `unattended` into the catalogue and then said "start a
+        // broker" has described half a deployment: the repositories it just recorded as
+        // startable are startable by a process it never mentioned, so they sit there reading as
+        // available and are ghosted when somebody asks them anything. The catalogue is named
+        // because a supervisor starts a process with no shell environment, and this is the one
+        // moment somebody has both facts in front of them.
+        var start = nodeChanged
+            ? "  1. A broker and this machine's node:\n" +
+              $"       parley serve --db <path to the store> --with-node --node-config {nodePath}\n" +
+              "     Or install both as one logon entry:\n" +
+              $"       parley autostart install --db <path to the store> --node-config {nodePath}\n"
+            : "  1. A broker running:  parley serve --db <path to the store>\n";
+
         await output.WriteLineAsync(
             $"\nEnrolled {entries.Length} repositories ({written} files written).\n\n" +
             "Next, in this order:\n" +
-            "  1. A broker running:  parley serve --db <path to the store>\n" +
+            start +
             "  2. Restart your editor in each repository, and check the parley server connected.\n" +
             "  3. Only then, /parley:write-peers in each one.\n\n" +
             "Step 3 is last on purpose. Every agent that registers makes every block already\n" +
@@ -924,13 +959,34 @@ public static class EnrollCommand
     }
 
     /// <summary>
+    /// Says which catalogue is about to be written, and which input decided that.
+    /// </summary>
+    /// <param name="fromManifest">The enrollment manifest's own <c>node_config</c>, if it has one.</param>
+    /// <param name="resolved">What the entry point resolved, with its provenance.</param>
+    /// <returns>The path and where it came from.</returns>
+    /// <remarks>
+    /// The provenance is the useful half. Somebody reading this line is deciding whether the file
+    /// about to be written is the file their node reads, and "which of the inputs won" is the
+    /// question that answers — a bare path leaves them comparing two strings by eye.
+    /// </remarks>
+    private static string Naming(string? fromManifest, Resolved resolved) =>
+        string.IsNullOrWhiteSpace(fromManifest)
+            ? resolved.ToString()
+
+            // Not routed through Resolved, which describes the four inputs the entry point knows
+            // about and has never heard of this one. A fifth case added there would be a value
+            // that source can produce and that resolver cannot.
+            : $"{fromManifest}   (enrollment manifest)";
+
+    /// <summary>
     /// Finds the node catalogue this machine actually reads.
     /// </summary>
     /// <remarks>
-    /// Deliberately the same resolution as <see cref="NodeCatalogue.ReadFromConfiguredPath"/>:
-    /// <see cref="NodeCatalogue.PathVariable"/>, then the working directory. Writing consent into
-    /// a file the node does not read would leave a repository listed, apparently startable, and
-    /// never started — with nothing to show why.
+    /// Writing consent into a file the node does not read would leave a repository listed,
+    /// apparently startable, and never started — with nothing to show why. That used to be a
+    /// warning about keeping two resolutions in step, one here and one the node performed on
+    /// itself; the node no longer performs one, and is handed the path this produced. Keeping
+    /// them in step is now structural rather than remembered.
     /// </remarks>
     private static string ResolveNodeConfig(string? fromManifest, string? resolved)
     {

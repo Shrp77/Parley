@@ -153,7 +153,17 @@ before running `apply`. Three behaviours are worth knowing so the output is not 
 
 `enroll apply` prints this, and it is the part that has to be done in order:
 
-1. A broker running: `parley serve --db <path to the store>`
+1. A broker running, and this machine's node with it:
+   `parley serve --db <path to the store> --with-node --node-config <path to node.json>`.
+   One process, because a node that is not running leaves every repository you just enrolled
+   reading as startable and never started. To have it survive a reboot, install the same pair as
+   one logon entry: `parley autostart install --db <path> --node-config <path to node.json>`.
+   Name the catalogue explicitly in both rather than relying on `PARLEY_NODE_CONFIG` or a bare
+   `node.json`: a logon entry has no working directory worth relying on, and whether it sees an
+   environment variable depends on which supervisor it is. `setx` in particular does not affect
+   the session it is typed in, so the `parley up` somebody runs straight afterwards to check is
+   the one process that cannot see what they just set - it reports "can start nothing" and names
+   the file it read instead.
 2. Restart Claude Code in every enrolled repository, and check `/mcp` shows `parley` connected.
 3. **Only then**, `/parley:write-peers` in each one.
 

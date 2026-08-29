@@ -43,6 +43,10 @@ public static class AutostartCommand
     /// <param name="action">install, remove or status.</param>
     /// <param name="databasePath">The store, for install.</param>
     /// <param name="listenOn">Where to listen, or null for the default.</param>
+    /// <param name="nodeConfig">
+    /// The node catalogue the installed entry should host this machine's agents from, or null to
+    /// install a broker alone.
+    /// </param>
     /// <param name="output">Where to report what happened.</param>
     /// <param name="error">Where to report why it could not.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
@@ -52,6 +56,7 @@ public static class AutostartCommand
         string action,
         string? databasePath,
         string? listenOn,
+        string? nodeConfig,
         TextWriter output,
         TextWriter error,
         CancellationToken cancellationToken = default)
@@ -72,7 +77,7 @@ public static class AutostartCommand
         return action switch
         {
             "install" => await InstallAsync(
-                databasePath, listenOn, output, error, cancellationToken).ConfigureAwait(false),
+                databasePath, listenOn, nodeConfig, output, error, cancellationToken).ConfigureAwait(false),
 
             "remove" => await RemoveAsync(output, error, cancellationToken).ConfigureAwait(false),
 
@@ -94,6 +99,7 @@ public static class AutostartCommand
     /// <summary>Installs the supervisor entry.</summary>
     /// <param name="databasePath">The store.</param>
     /// <param name="listenOn">Where to listen.</param>
+    /// <param name="nodeConfig">The node catalogue to host from, or null for a broker alone.</param>
     /// <param name="output">Where to report.</param>
     /// <param name="error">Where to report a failure.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
@@ -101,6 +107,7 @@ public static class AutostartCommand
     private static async Task<int> InstallAsync(
         string? databasePath,
         string? listenOn,
+        string? nodeConfig,
         TextWriter output,
         TextWriter error,
         CancellationToken cancellationToken)
@@ -118,7 +125,13 @@ public static class AutostartCommand
             return Config;
         }
 
-        var plan = AutostartPlan.Describe(databasePath, listenOn);
+        // Absolute once, here, and the same string is both installed and reported. Resolving it
+        // twice -- once into the entry and once into the line describing the entry -- is two
+        // answers to one question that agree only while nothing changes the working directory
+        // between them, and the report is the half nobody can check afterwards.
+        var catalogue = nodeConfig is { Length: > 0 } named ? Path.GetFullPath(named) : null;
+
+        var plan = AutostartPlan.Describe(databasePath, listenOn, executable: null, catalogue);
 
         // The directory, not the file. The broker creates the store on first run; what it cannot
         // do is create a directory that a supervisor will try to write a log into before it
@@ -156,6 +169,24 @@ public static class AutostartCommand
 
         await output.WriteLineAsync($"  runs:  {plan.CommandLine()}").ConfigureAwait(false);
         await output.WriteLineAsync($"  logs:  {plan.LogPath}").ConfigureAwait(false);
+
+        // Which half was installed, said plainly, because the two are one entry and therefore
+        // indistinguishable in a task list. A deployment whose node was left out looks identical
+        // to one whose node is running, until a question to a repository nobody has open waits
+        // out its window and is ghosted.
+        if (catalogue is not null)
+        {
+            await output.WriteLineAsync($"  hosts: this machine's agents, from {catalogue}")
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            await output.WriteLineAsync(
+                "  hosts: nothing. This entry starts the broker alone, so a question to a " +
+                "repository\n         nobody has open will wait and then be ghosted. Install " +
+                "with --node-config <path>\n         to have it start this machine's agents too.")
+                .ConfigureAwait(false);
+        }
 
         // Said every time rather than buried in documentation, because it is the one property of
         // this arrangement somebody can be surprised by -- and the surprise arrives days later,

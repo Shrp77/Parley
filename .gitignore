@@ -458,3 +458,10 @@ HANDOFF.md
 # than remembered -- and untracked, because it is the state of one person's review of one
 # checkout and not a fact about the protocol.
 REVIEW-LEDGER.md
+
+# This machine's node catalogue: which agents live where, and which of them consented to being
+# started unattended. `parley enroll apply` writes it beside the working directory unless the
+# manifest names a path, so a run from this checkout drops one here. It is a per-machine
+# deployment fact -- absolute paths and the names of the repositories on one disk -- and this
+# repository is public. The real one lives in %APPDATA%\Parley.
+node.json

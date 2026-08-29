@@ -81,7 +81,8 @@ only ever make the first.
 
 ```
 parley serve --db <path>              run the broker: the one process that opens the store
-parley autostart install              start the broker whenever you log in
+parley serve --with-node              and this machine's node in the same process
+parley autostart install              start both whenever you log in
 parley autostart remove               stop doing that
 parley autostart status               say whether it is set up
 parley up                             run this machine's node, so its agents can be started

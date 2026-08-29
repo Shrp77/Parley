@@ -227,4 +227,98 @@ public sealed class AutostartPlanTests
         Assert.Contains("--log", plan.Arguments, StringComparison.Ordinal);
         Assert.Contains(plan.LogPath, plan.Arguments, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void One_entry_starts_the_broker_and_this_machine_s_node()
+    {
+        // The whole point of naming the catalogue in the entry: a deployment is a broker and a
+        // node, and installing them as two supervisor entries is two things to install, remove,
+        // and find already removed. One process hosts both, so one entry starts both.
+        var plan = AutostartPlan.Describe(
+            Store, executable: "/usr/local/bin/parley", nodeConfig: "/tmp/parley/node.json");
+
+        Assert.Contains("serve --db", plan.Arguments, StringComparison.Ordinal);
+        Assert.Contains("--with-node", plan.Arguments, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_catalogue_is_written_into_the_entry_absolute()
+    {
+        // The same argument the store has already won, applied to the other file this needs. A
+        // logon task has no working directory worth relying on, so `node.json` installed today
+        // names a different file tomorrow -- and the failure is silent in the worst way, because
+        // an absent catalogue reads as a machine with no agents listed on it and joins happily
+        // to say so.
+        var plan = AutostartPlan.Describe(
+            Store, executable: "/usr/local/bin/parley", nodeConfig: "node.json");
+
+        Assert.Contains(
+            $"--node-config {Path.GetFullPath("node.json")}", plan.Arguments, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_catalogue_with_a_space_in_its_path_is_quoted_like_the_store()
+    {
+        // %APPDATA% on Windows is under "C:/Users/<name>/AppData", which has no space -- but
+        // "Program Files" and "My Documents" both do, and a catalogue path is chosen by whoever
+        // installs. Unquoted it becomes two arguments and --node-config takes the first half.
+        var plan = AutostartPlan.Describe(
+            Store,
+            executable: "/usr/local/bin/parley",
+            nodeConfig: "C:/Some Folder/node.json");
+
+        Assert.Contains(
+            $"\"{Path.GetFullPath("C:/Some Folder/node.json")}\"",
+            plan.Arguments,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_spaced_catalogue_survives_the_launchd_round_trip_as_one_argument()
+    {
+        // The plist takes an array, so the command line this class quoted is taken apart again --
+        // and a --node-config that came back as two entries would hand the node the first half of
+        // a path, which it would read as an absent catalogue and start nothing from.
+        var plan = AutostartPlan.Describe(
+            "/tmp/parley/parley.db",
+            executable: "/usr/local/bin/parley",
+            nodeConfig: "/tmp/Some Folder/node.json");
+
+        var parts = AutostartPlan.Split(plan.Arguments);
+        var at = parts.ToList().IndexOf("--node-config");
+
+        Assert.True(at >= 0, "the catalogue flag did not survive the split");
+        Assert.Equal(Path.GetFullPath("/tmp/Some Folder/node.json"), parts[at + 1]);
+    }
+
+    [Fact]
+    public void A_catalogue_path_cannot_break_out_of_the_task_definition()
+    {
+        // XML metacharacters are legal in a path on the platforms this installs a plist and a
+        // unit file on, and both of those are documents rather than command lines. An unescaped
+        // one does not fail loudly: it produces a task definition that is either rejected as
+        // malformed or, worse, parsed as something other than what was meant.
+        var plan = AutostartPlan.Describe(
+            "/tmp/parley/parley.db",
+            executable: "/usr/local/bin/parley",
+            nodeConfig: "/tmp/a&b<c>/node.json");
+
+        var xml = plan.ScheduledTaskXml(@"EXAMPLE\someone");
+
+        Assert.DoesNotContain("a&b<c>", xml, StringComparison.Ordinal);
+        Assert.Contains("a&amp;b&lt;c&gt;", xml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void No_catalogue_installs_a_broker_that_hosts_nothing()
+    {
+        // Not a default worth guessing at. Every resolution of the catalogue ends at `node.json`
+        // relative to somewhere, and writing that into a logon task records a machine as able to
+        // start agents it will never find. A broker alone is the honest install, and the command
+        // says so rather than leaving it to be discovered.
+        var plan = AutostartPlan.Describe(Store, executable: "/usr/local/bin/parley");
+
+        Assert.DoesNotContain("--with-node", plan.Arguments, StringComparison.Ordinal);
+        Assert.DoesNotContain("--node-config", plan.Arguments, StringComparison.Ordinal);
+    }
 }

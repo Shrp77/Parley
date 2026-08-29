@@ -56,9 +56,19 @@ public sealed record AutostartPlan(
 {
     /// <summary>What the installed thing is called, on every platform.</summary>
     /// <remarks>
+    /// <para>
     /// One name, so that finding it does not depend on knowing which platform installed it.
     /// Recognisable in a task list without being so generic that it collides with something
     /// else somebody installed.
+    /// </para>
+    /// <para>
+    /// <b>One entry, even though it now starts two things.</b> The process it launches hosts the
+    /// broker and this machine's node, so a deployment needs a single supervisor entry rather
+    /// than one per half — which is what a second entry would have been: a second thing to
+    /// install, remove, and find already removed. The name did not change with the scope, because
+    /// it is the handle by which <c>remove</c> finds what <c>install</c> left behind, and a
+    /// rename would strand every entry installed by an earlier build.
+    /// </para>
     /// </remarks>
     public const string Name = "parley-broker";
 
@@ -68,6 +78,10 @@ public sealed record AutostartPlan(
     /// <param name="databasePath">The store the broker will own.</param>
     /// <param name="listenOn">Where it should listen, or null for the default.</param>
     /// <param name="executable">The broker binary, or null to use the running one.</param>
+    /// <param name="nodeConfig">
+    /// The node catalogue to host this machine's agents from, or null to install a broker that
+    /// hosts no node.
+    /// </param>
     /// <returns>The plan.</returns>
     /// <exception cref="ArgumentException"><paramref name="databasePath"/> is blank.</exception>
     /// <remarks>
@@ -87,7 +101,8 @@ public sealed record AutostartPlan(
     public static AutostartPlan Describe(
         string databasePath,
         string? listenOn = null,
-        string? executable = null)
+        string? executable = null,
+        string? nodeConfig = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
 
@@ -108,6 +123,21 @@ public sealed record AutostartPlan(
                 $"serve --db {Quote(store)} --listen {Quote(endpoint)} --log {Quote(log)}")
             : string.Create(CultureInfo.InvariantCulture,
                 $"serve --db {Quote(store)} --log {Quote(log)}");
+
+        // The catalogue is written in absolute, for the same reason the store is: a logon task
+        // has no working directory worth relying on.
+        //
+        // It is written into the entry at all rather than left to PARLEY_NODE_CONFIG because
+        // whether a supervisor sees that variable depends on which supervisor it is -- a logon
+        // task inherits the user's environment, a systemd user unit has its own -- and because
+        // `setx` does not affect the session it is typed in, so the check somebody runs to
+        // confirm it worked is made in the one process that cannot see it. An argument is read
+        // the same way by all three, and is visible in `autostart status`.
+        if (nodeConfig is { Length: > 0 } catalogue)
+        {
+            arguments = string.Create(CultureInfo.InvariantCulture,
+                $"{arguments} --with-node --node-config {Quote(Path.GetFullPath(catalogue))}");
+        }
 
         var binary = executable ?? Environment.ProcessPath ?? "parley";
 

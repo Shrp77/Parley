@@ -51,6 +51,12 @@ public sealed class ShutdownTests
         // version of this demanded `UntilInterrupted(token => ServeCommand.RunAsync` and failed
         // the moment serve grew a second overload to choose between — correct wiring, refused for
         // its shape. A guard that breaks on a legitimate edit teaches people to edit the guard.
+        //
+        // The second version asked whether "UntilInterrupted" appeared in the 400 characters
+        // before the call, which is that same lesson learnt half way. It passed for the right
+        // reason until `serve` grew a hosted node between the two, and then failed by four
+        // characters — correct wiring, refused for its length. Distance was never the property
+        // worth asserting; being inside the call is, and that is decidable rather than estimated.
         var source = string.Join(' ', Program.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         var occurrences = 0;
 
@@ -59,14 +65,43 @@ public sealed class ShutdownTests
         {
             occurrences++;
 
-            var window = source[Math.Max(0, at - 400)..at];
-
             Assert.True(
-                window.Contains("UntilInterrupted", StringComparison.Ordinal),
+                IsInsideAnInterruptedCall(source, at),
                 $"{entryPoint} is called outside UntilInterrupted, so Ctrl+C would not reach it.");
         }
 
         Assert.True(occurrences > 0, $"{entryPoint} is not called at all.");
+    }
+
+    /// <summary>Whether one position in the source sits inside an <c>UntilInterrupted(...)</c> call.</summary>
+    /// <param name="source">The entry point, with its whitespace collapsed.</param>
+    /// <param name="at">Where the call being judged begins.</param>
+    /// <returns>True when the nearest such call has not closed by then.</returns>
+    /// <remarks>
+    /// Nearest preceding call, then parenthesis balance. Inside its argument list the balance is
+    /// positive; after it has closed the balance is zero, which is exactly the difference between
+    /// wired and not wired however many lines sit between. Balance is counted over source that
+    /// has no string literal in this stretch — if one is ever added with an unmatched bracket in
+    /// it, this reads it as unbalanced and the guard fails rather than quietly passing, which is
+    /// the direction a guard should fail in.
+    /// </remarks>
+    private static bool IsInsideAnInterruptedCall(string source, int at)
+    {
+        var opens = source.LastIndexOf("UntilInterrupted(", at, StringComparison.Ordinal);
+
+        if (opens < 0)
+        {
+            return false;
+        }
+
+        var depth = 0;
+
+        for (var i = opens + "UntilInterrupted".Length; i < at; i++)
+        {
+            depth += source[i] switch { '(' => 1, ')' => -1, _ => 0 };
+        }
+
+        return depth > 0;
     }
 
     [Fact]

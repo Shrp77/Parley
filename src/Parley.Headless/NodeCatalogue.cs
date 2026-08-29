@@ -63,20 +63,34 @@ public sealed class NodeCatalogue
     public static NodeCatalogue Empty { get; } = new([]);
 
     /// <summary>
-    /// Reads the catalogue from wherever this machine keeps it.
+    /// Reads the catalogue from one named file.
     /// </summary>
+    /// <param name="path">The file, already resolved by the caller.</param>
     /// <returns>The catalogue, or <see cref="Empty"/> if there is no file or it cannot be read.</returns>
+    /// <exception cref="ArgumentException"><paramref name="path"/> is blank.</exception>
     /// <remarks>
-    /// The node has no database path to look beside any more, because it does not know where the
-    /// store is and has no business knowing: SPEC.md §4 has the broker own the file, and a node
-    /// may be on a machine that cannot see it at all. So the file is named by
-    /// <see cref="PathVariable"/>, or found in the working directory.
+    /// <para>
+    /// The node has no database path to look beside, because it does not know where the store is
+    /// and has no business knowing: SPEC.md §4 has the broker own the file, and a node may be on
+    /// a machine that cannot see it at all. So somebody has to name the file — but not this
+    /// method.
+    /// </para>
+    /// <para>
+    /// <b>The path is a parameter rather than something this class works out, and that is the
+    /// fix rather than a tidying.</b> This replaced a reader that consulted
+    /// <see cref="PathVariable"/> itself, which made the catalogue a setting resolved in two
+    /// places: <c>--node-config</c> was taken centrally and honoured by <c>enroll</c>, while the
+    /// node ignored it and read the variable again. The two disagreed exactly when it mattered —
+    /// under a supervisor, which starts a process with no shell environment — and the failure was
+    /// silent in the worst way, because a missing file reads as a machine that can start nothing
+    /// and joins successfully to say so.
+    /// </para>
     /// </remarks>
-    public static NodeCatalogue ReadFromConfiguredPath()
+    public static NodeCatalogue ReadFrom(string path)
     {
-        var path = Environment.GetEnvironmentVariable(PathVariable);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
-        return ReadFile(string.IsNullOrWhiteSpace(path) ? DefaultFileName : path);
+        return ReadFile(path);
     }
 
     /// <summary>

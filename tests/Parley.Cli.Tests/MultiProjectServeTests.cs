@@ -153,7 +153,10 @@ public sealed class MultiProjectServeTests : IDisposable
 
         using var stopping = new CancellationTokenSource();
 
-        var serving = ServeCommand.RunAsync(projects, null, output, error, stopping.Token);
+        // The token by name, because the overload beside this one takes strings in these
+        // positions: passing it positionally binds to whichever signature happens to fit.
+        var serving = ServeCommand.RunAsync(
+            projects, null, output, error, cancellationToken: stopping.Token);
 
         try
         {
@@ -289,7 +292,7 @@ public sealed class MultiProjectServeTests : IDisposable
             null,
             output,
             error,
-            stopping.Token)
+            cancellationToken: stopping.Token)
             .ContinueWith(
                 t => t.IsCanceled || t.Exception?.InnerException is OperationCanceledException ? -1 : t.Result,
                 TestContext.Current.CancellationToken,

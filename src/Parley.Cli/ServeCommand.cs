@@ -39,15 +39,29 @@ public static class ServeCommand
     /// <param name="logPath">A file to copy output into, or <see langword="null"/> for none.</param>
     /// <param name="output">Where to report what it is doing.</param>
     /// <param name="error">Where to report why it could not.</param>
+    /// <param name="whenListening">
+    /// Something to run alongside the broker once it is listening, given the addresses it is
+    /// listening on and the writer the broker reports through, or <see langword="null"/> to run
+    /// nothing. Its exit code is folded into this one.
+    /// </param>
     /// <param name="cancellationToken">Stops the broker.</param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
+    /// <remarks>
+    /// <b>The hook is a callback rather than a reference to the node, and the indirection earns
+    /// its keep.</b> Hosting this machine's node in the broker's process is what lets one
+    /// supervisor entry cover a whole deployment — but a broker that knew how to be a client of
+    /// itself would be a circular dependency in the one component SPEC.md §4 keeps free of them.
+    /// What this class knows is that something may want to run once the port is open, which is
+    /// the only fact it is in a position to report.
+    /// </remarks>
     public static async Task<int> RunAsync(
         string? databasePath,
         string? listenOn,
         string? logPath,
         TextWriter output,
         TextWriter error,
+        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? whenListening = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(output);
@@ -63,6 +77,15 @@ public static class ServeCommand
         {
             output = TextWriter.Synchronized(new TeeWriter(output, log));
             error = TextWriter.Synchronized(new TeeWriter(error, log));
+        }
+        else if (whenListening is not null)
+        {
+            // One broker means one sweep, which is why there is no log-less synchronisation here
+            // ordinarily. A hosted node is a second writer on the same instance, running for as
+            // long as the sweep does and saying more than it -- every agent it starts and stops.
+            // A TextWriter is not thread-safe, and interleaved output is what an operator reads
+            // to find out why a machine starts nothing.
+            output = TextWriter.Synchronized(output);
         }
 
         if (string.IsNullOrWhiteSpace(databasePath))
@@ -127,10 +150,18 @@ public static class ServeCommand
                 "Agents connect with PARLEY_AGENT set; machines join with `parley up`. Ctrl+C stops it.")
                 .ConfigureAwait(false);
 
-            await SweepAsync(runtime, output, cancellationToken).ConfigureAwait(false);
-        }
+            // Started only now, and that ordering is the whole reason this is a callback rather
+            // than two tasks kicked off together. A node does not retry its join: it reports "no
+            // broker is listening" and exits, so a node racing the port it is about to connect to
+            // loses that race often enough to matter and leaves the process serving a machine
+            // that hosts nothing.
+            var hosted = HostAsync(whenListening, server.Addresses, output, cancellationToken);
 
-        return 0;
+            await Task.WhenAll(SweepAsync(runtime, output, cancellationToken), hosted)
+                .ConfigureAwait(false);
+
+            return await hosted.ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -140,9 +171,17 @@ public static class ServeCommand
     /// <param name="logPath">Where to copy output, or null.</param>
     /// <param name="output">Where to report what is running.</param>
     /// <param name="error">Where to report what is not.</param>
+    /// <param name="whenListening">
+    /// Something to run alongside the brokers once they are listening, given the addresses and
+    /// the writer they report through, or <see langword="null"/> to run nothing. Permitted only
+    /// when exactly one project is being served.
+    /// </param>
     /// <param name="cancellationToken">Stops every broker.</param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="whenListening"/> was given alongside more than one project.
+    /// </exception>
     /// <remarks>
     /// <para>
     /// SPEC.md §4.1: "One process may host many brokers." Isolation is unaffected because it lives
@@ -159,17 +198,35 @@ public static class ServeCommand
     /// catalogue read as empty, ten repositories written where nothing reads them — where a run
     /// reported success while doing less than it claimed.
     /// </para>
+    /// <para>
+    /// <b>A node may be hosted here only when there is one project to host it for.</b> A node
+    /// joins one broker, because §4.1.1 names an agent for the machine it is on and a machine has
+    /// one identity; a process serving three projects has no way to choose which of them this
+    /// machine belongs to, and guessing the first would record a machine as startable in a
+    /// deployment nobody asked it to join. The entry point refuses that combination before
+    /// reaching here, and this refuses it again — an invariant worth stating where it binds, not
+    /// only where it is currently enforced.
+    /// </para>
     /// </remarks>
     public static async Task<int> RunAsync(
         IReadOnlyList<ProjectSettings> projects,
         string? logPath,
         TextWriter output,
         TextWriter error,
+        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? whenListening = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(projects);
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(error);
+
+        if (whenListening is not null && projects.Count > 1)
+        {
+            throw new ArgumentException(
+                "A node joins one broker, so it cannot be hosted by a process serving several " +
+                "projects. Select one with --project.",
+                nameof(projects));
+        }
 
         using var log = Logging.Open(logPath, error);
 
@@ -275,9 +332,20 @@ public static class ServeCommand
                 "Agents connect with PARLEY_AGENT set; machines join with `parley up`. Ctrl+C stops them all.")
                 .ConfigureAwait(false);
 
+            // The one started project's addresses: a hook is only permitted alongside a single
+            // project, and a run where that project failed to start has already returned above.
+            var hosted = HostAsync(
+                whenListening, started[0].Server.Addresses, output, cancellationToken);
+
             // One sweep per broker, all cancelled by the one token the interrupt owns.
-            await Task.WhenAll(started.Select(s => SweepAsync(s.Runtime, output, cancellationToken)))
+            await Task.WhenAll(
+                [.. started.Select(s => SweepAsync(s.Runtime, output, cancellationToken)), hosted])
                 .ConfigureAwait(false);
+
+            if (await hosted.ConfigureAwait(false) != 0)
+            {
+                failed++;
+            }
         }
         finally
         {
@@ -291,6 +359,59 @@ public static class ServeCommand
         }
 
         return failed > 0 ? Unavailable : 0;
+    }
+
+    /// <summary>Runs whatever wanted the port to be open, and survives it failing.</summary>
+    /// <param name="whenListening">What to run, or null to run nothing.</param>
+    /// <param name="addresses">Where the broker is listening.</param>
+    /// <param name="output">Where to report a failure worth seeing.</param>
+    /// <param name="cancellationToken">Stops it.</param>
+    /// <returns>Its exit code, or zero when there was nothing to run.</returns>
+    /// <remarks>
+    /// <b>Contained, for the same reason §4.1 contains a failing project.</b> Hosting this
+    /// machine's node in the broker's process is a deployment convenience, and it must not become
+    /// a way for a node to take the broker down: a node fault would otherwise propagate out of
+    /// the sweep's <c>WhenAll</c> and end a process that every agent in the deployment is
+    /// connected to, converting one machine's supervision problem into everybody's outage.
+    /// <para>
+    /// The exit code still carries it. A run that hosted nothing must not report success — that
+    /// is the same lie as a run that started two of three brokers and exited zero.
+    /// </para>
+    /// </remarks>
+    private static async Task<int> HostAsync(
+        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? whenListening,
+        IReadOnlyList<string> addresses,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        if (whenListening is null)
+        {
+            return 0;
+        }
+
+        try
+        {
+            // The broker's writer, not the console. Under a supervisor there is no console at
+            // all, so a node reporting to one reports to nothing -- and what it reports is
+            // exactly what somebody debugging a machine that starts nothing needs: which
+            // catalogue it read, what it can start, and which registered agents are missing from
+            // it. Writing where the broker writes puts all of that in --log.
+            return await whenListening(addresses, output, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The interrupt, which is how this is meant to end.
+            return 0;
+        }
+        catch (Exception failure)
+        {
+            await output.WriteLineAsync(
+                $"This machine's node stopped: {failure.Message}. The broker is still serving; " +
+                "nothing on this machine will be started until `parley up` runs again.")
+                .ConfigureAwait(false);
+
+            return Unavailable;
+        }
     }
 
     /// <summary>Runs the sweep of SPEC.md §6 until the broker stops.</summary>

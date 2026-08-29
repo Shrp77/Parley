@@ -49,24 +49,33 @@ public static class NodeCommand
     /// </summary>
     /// <param name="channel">The connection to the broker.</param>
     /// <param name="endpoint">Where the broker is, for reporting.</param>
+    /// <param name="catalogueFile">The file naming what this machine can start.</param>
     /// <param name="output">Where to report what it is doing.</param>
     /// <param name="cancellationToken">Stops the node.</param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
+    /// <exception cref="ArgumentException"><paramref name="catalogueFile"/> is blank.</exception>
+    /// <remarks>
+    /// The catalogue is named by the caller rather than found here. Program.cs resolves it once,
+    /// through the same precedence every other setting uses, and a node that resolved it a second
+    /// time would ignore <c>--node-config</c> — which is what it used to do.
+    /// </remarks>
     public static async Task<int> RunAsync(
         GrpcChannel channel,
         string endpoint,
+        string catalogueFile,
         TextWriter output,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(channel);
+        ArgumentException.ThrowIfNullOrWhiteSpace(catalogueFile);
         ArgumentNullException.ThrowIfNull(output);
 
         NodeCatalogue catalogue;
 
         try
         {
-            catalogue = NodeCatalogue.ReadFromConfiguredPath();
+            catalogue = NodeCatalogue.ReadFrom(catalogueFile);
         }
         catch (InvalidOperationException exception)
         {
@@ -96,7 +105,8 @@ public static class NodeCommand
                 switch (command.CommandCase)
                 {
                     case Wire.NodeCommand.CommandOneofCase.Joined:
-                        await ReportJoinedAsync(command.Joined, catalogue, endpoint, output)
+                        await ReportJoinedAsync(
+                            command.Joined, catalogue, catalogueFile, endpoint, output)
                             .ConfigureAwait(false);
                         break;
 
@@ -146,21 +156,39 @@ public static class NodeCommand
     /// <summary>Reports what the broker knows about this machine.</summary>
     /// <param name="joined">The acknowledgement.</param>
     /// <param name="catalogue">What this machine can start.</param>
+    /// <param name="catalogueFile">The file it was read from, named when it turns out to be empty.</param>
     /// <param name="endpoint">Where the broker is.</param>
     /// <param name="output">Where to report.</param>
     /// <returns>A task that completes when it has been reported.</returns>
     /// <remarks>
+    /// <para>
     /// The reconciliation is the useful part: an agent registered to this machine that the
     /// catalogue cannot launch is a repository that moved, was renamed, or was never listed —
     /// and saying so at startup beats discovering it when a question to it goes unanswered for a
     /// window and is then ghosted.
+    /// </para>
+    /// <para>
+    /// <b>"nothing" names the file it read.</b> An absent catalogue and an empty one are both
+    /// legitimate and produce the same word, so without the path the one failure this cannot
+    /// otherwise distinguish — a supervisor started somewhere the file is not — reads exactly
+    /// like a machine nobody has listed any agents on yet. That is the shape of every silent
+    /// defect this area has produced.
+    /// </para>
     /// </remarks>
     private static async Task ReportJoinedAsync(
-        Wire.Joined joined, NodeCatalogue catalogue, string endpoint, TextWriter output)
+        Wire.Joined joined,
+        NodeCatalogue catalogue,
+        string catalogueFile,
+        string endpoint,
+        TextWriter output)
     {
+        var startable = catalogue.Roles.Count == 0
+            ? string.Create(CultureInfo.InvariantCulture, $"nothing (no agents in {catalogueFile})")
+            : string.Join(", ", catalogue.Roles.Order(StringComparer.Ordinal));
+
         await output.WriteLineAsync(string.Create(
             CultureInfo.InvariantCulture,
-            $"Node {joined.Machine} joined {endpoint}. Can start: {(catalogue.Roles.Count == 0 ? "nothing" : string.Join(", ", catalogue.Roles.Order(StringComparer.Ordinal)))}."))
+            $"Node {joined.Machine} joined {endpoint}. Can start: {startable}."))
             .ConfigureAwait(false);
 
         var unstartable = joined.Agents

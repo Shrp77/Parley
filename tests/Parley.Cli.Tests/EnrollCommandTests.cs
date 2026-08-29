@@ -78,10 +78,12 @@ public sealed class EnrollCommandTests : IDisposable
         var output = new StringWriter();
         var error = new StringWriter();
 
+        // Argument-sourced, because that is what a path arriving here means: the entry point has
+        // already applied the precedence chain, and this is what won.
         var code = await EnrollCommand.RunAsync(
             arguments,
             selectAll: true,
-            nodeConfigPath,
+            new Resolved(nodeConfigPath, ValueSource.Argument),
             output,
             error,
             TestContext.Current.CancellationToken);
