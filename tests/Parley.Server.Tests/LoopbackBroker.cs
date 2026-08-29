@@ -74,22 +74,8 @@ internal sealed class LoopbackBroker : IAsyncDisposable
     /// make and does not need to.
     /// </para>
     /// </remarks>
-    public async Task WaitUntilDetachedAsync(string agent, TimeSpan within)
-    {
-        var deadline = DateTime.UtcNow + within;
-
-        while (Runtime.Attached.Contains(agent))
-        {
-            if (DateTime.UtcNow > deadline)
-            {
-                throw new TimeoutException(
-                    $"'{agent}' was still attached {within} after its stream ended. The broker " +
-                    "did not notice the disconnect.");
-            }
-
-            await Task.Delay(20).ConfigureAwait(false);
-        }
-    }
+    public Task WaitUntilDetachedAsync(string agent, TimeSpan within) =>
+        WaitUntilGoneAsync(() => Runtime.Attached.Contains(agent), agent, "attached", within);
 
     /// <summary>Waits until the broker has noticed a node's stream ended.</summary>
     /// <param name="machine">The machine that was joined.</param>
@@ -103,16 +89,34 @@ internal sealed class LoopbackBroker : IAsyncDisposable
     /// another thread — it held on Windows and lost roughly one run in three on Linux, which is
     /// the worst version of the fault: reliably green on the machine most people develop on.
     /// </remarks>
-    public async Task WaitUntilNodeGoneAsync(string machine, TimeSpan within)
+    public Task WaitUntilNodeGoneAsync(string machine, TimeSpan within) =>
+        WaitUntilGoneAsync(() => Runtime.Nodes.Contains(machine), machine, "listed", within);
+
+    /// <summary>Polls until the broker has forgotten something, or gives up.</summary>
+    /// <param name="stillThere">Says whether the broker still holds it.</param>
+    /// <param name="what">What is being waited on, for the message.</param>
+    /// <param name="state">The word for still being there: "attached", "listed".</param>
+    /// <param name="within">How long to allow.</param>
+    /// <returns>A task that completes when it is gone.</returns>
+    /// <exception cref="TimeoutException">It was still there when the time ran out.</exception>
+    /// <remarks>
+    /// One loop, two names. The callers had a copy each and the copies were identical, which is
+    /// the state this repository has already been bitten by — two copies of its repository-file
+    /// helper existed within a day of each other and had begun to differ. A duplicated wait is
+    /// worse than most duplication, because the half that drifts does not fail: it waits
+    /// differently, passes anyway, and stops passing only on somebody else's machine.
+    /// </remarks>
+    private static async Task WaitUntilGoneAsync(
+        Func<bool> stillThere, string what, string state, TimeSpan within)
     {
         var deadline = DateTime.UtcNow + within;
 
-        while (Runtime.Nodes.Contains(machine))
+        while (stillThere())
         {
             if (DateTime.UtcNow > deadline)
             {
                 throw new TimeoutException(
-                    $"'{machine}' was still listed {within} after its stream ended. The broker " +
+                    $"'{what}' was still {state} {within} after its stream ended. The broker " +
                     "did not notice the disconnect.");
             }
 
