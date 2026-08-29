@@ -84,6 +84,45 @@ public sealed class SpecConsistencyTests
             $"§8 lists rules absent from its enforcement table: {string.Join(", ", missing)}");
     }
 
+    [Fact]
+    public void The_wire_contract_has_no_notion_of_a_project()
+    {
+        // SPEC.md §4.1: "The protocol has no concept of a project, and must not acquire one."
+        // Membership is which endpoint an agent connected to, and that is load-bearing rather than
+        // stylistic — it is why there is no group column, no scoped query, and no WHERE clause
+        // anyone can forget, and why agent names may collide across projects at all.
+        //
+        // Nothing enforced it. A machine-level manifest of named projects now exists, every
+        // command takes --project, and an adapter can be launched with PARLEY_PROJECT — so the
+        // obvious next step for somebody who has not read §4.1 is a project field on a request, at
+        // which point isolation stops being a property of the file and starts being a property of
+        // code remembering to filter. That is the trade §4.1 exists to refuse.
+        //
+        // Checked against the .proto because that is the contract another implementation reads.
+        var offending = Regex.Matches(SpecDocument.Proto, @"^\s*(?!//).*\bproject\b.*$",
+                RegexOptions.Multiline | RegexOptions.IgnoreCase)
+            .Select(m => m.Value.Trim())
+            .Where(line => line.Length > 0)
+            .ToList();
+
+        Assert.True(
+            offending.Count == 0,
+            "The wire contract mentions a project outside a comment, which SPEC.md §4.1 forbids:" +
+            Environment.NewLine + string.Join(Environment.NewLine, offending));
+    }
+
+    [Fact]
+    public void The_documented_schema_has_no_notion_of_a_project_either()
+    {
+        // The other half, and the one §9.3 cares about: invariants belong in storage because
+        // application code can route around them. A project column would be a scope the code has
+        // to remember to apply on every query, which is precisely what separate database files
+        // make impossible.
+        var schema = string.Join("\n", SpecDocument.SchemaFragments);
+
+        Assert.DoesNotContain("project", schema, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static IReadOnlyList<string> OperationNames(string section) =>
         Regex.Matches(SpecDocument.Section(section), @"^\| `([a-z_]+)\(", RegexOptions.Multiline)
             .Select(m => m.Groups[1].Value)

@@ -47,6 +47,37 @@ internal static class SpecDocument
             $"SPEC.md not found in any directory above {AppContext.BaseDirectory}.");
     }
 
+    /// <summary>The wire contract, as text.</summary>
+    /// <remarks>
+    /// Read as a document rather than through <c>Parley.Transport</c>, which keeps this project's
+    /// charter intact: it references neither Core nor Store precisely so a check here cannot drift
+    /// into asserting what the code does. The <c>.proto</c> is the contract another implementation
+    /// reads, so checking the file is checking the contract.
+    /// </remarks>
+    public static string Proto => ProtoContent.Value;
+
+    private static readonly Lazy<string> ProtoContent = new(() => LoadBeside("proto/parley.proto"));
+
+    private static string LoadBeside(string relative)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, relative);
+
+            if (File.Exists(candidate))
+            {
+                return File.ReadAllText(candidate).Replace("\r\n", "\n", StringComparison.Ordinal);
+            }
+
+            dir = dir.Parent;
+        }
+
+        throw new InvalidOperationException(
+            $"{relative} not found in any directory above {AppContext.BaseDirectory}.");
+    }
+
     /// <summary>Numbered headings, as the strings a section reference would use.</summary>
     public static IReadOnlySet<string> Headings { get; } =
         Regex.Matches(Text, @"^#{2,4} (\d+(?:\.\d+)?)[.\s]", RegexOptions.Multiline)

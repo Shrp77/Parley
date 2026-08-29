@@ -1,6 +1,9 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using Parley.Broker;
 using Parley.Configuration;
+using Parley.Server;
 using Xunit;
 
 namespace Parley.Cli.Tests;
@@ -242,6 +245,50 @@ public sealed class ProjectCommandTests : IDisposable
         Assert.Contains("Nothing was deleted", output, StringComparison.Ordinal);
         Assert.Contains(Store("orders"), output, StringComparison.Ordinal);
         Assert.Contains(Path.Combine(_directory, "node.json"), output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Removing_a_project_whose_broker_is_still_running_says_so()
+    {
+        // FR-029, which was implemented and never exercised — the branch existed, and nothing had
+        // ever taken it. Forgetting how to reach a broker does not stop the broker: the process
+        // keeps its port and its store, and the entry just deleted was the only record of where it
+        // was. Somebody who meant to shut a project down and ran this instead needs telling, and
+        // they need telling at the moment they do it.
+        //
+        // A real broker on a real port, because the check is a connection attempt and a listener
+        // that does not speak HTTP/2 would be reported unreachable — which is the answer that
+        // makes this test pass while proving nothing.
+        var port = Free();
+        var endpoint = $"http://127.0.0.1:{port.ToString(CultureInfo.InvariantCulture)}";
+
+        var runtime = BrokerRuntime.Open(
+            Path.Combine(_directory, "live.db"), BrokerOptions.Default, TimeProvider.System);
+
+        await using var server = await ParleyServer.StartAsync(
+            runtime, endpoint, TestContext.Current.CancellationToken);
+
+        await RunAsync(
+            ["add", "orders"],
+            new ProjectFields(Path.Combine(_directory, "live.db"), endpoint, null, null));
+
+        var (code, output, _) = await RunAsync(["remove", "orders"]);
+
+        Assert.Equal(0, code);
+        Assert.Contains("still appears to be running", output, StringComparison.Ordinal);
+        Assert.Contains(endpoint, output, StringComparison.Ordinal);
+    }
+
+    /// <summary>A port free at the moment of asking.</summary>
+    /// <returns>The port number.</returns>
+    private static int Free()
+    {
+        using var probe = new TcpListener(IPAddress.Loopback, 0);
+        probe.Start();
+        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
+        probe.Stop();
+
+        return port;
     }
 
     [Fact]

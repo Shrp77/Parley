@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Parley.Headless\Parley.Headless.csproj" />
+    <ProjectReference Include="..\..\src\Parley.Configuration\Parley.Configuration.csproj" />
     <ProjectReference Include="..\..\src\Parley.Mcp\Parley.Mcp.csproj" />
     <ProjectReference Include="..\..\src\Parley.Server\Parley.Server.csproj" />
   </ItemGroup>

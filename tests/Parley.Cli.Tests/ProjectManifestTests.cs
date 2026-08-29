@@ -315,6 +315,69 @@ public sealed class ProjectManifestTests : IDisposable
     }
 
     [Fact]
+    public void Keys_this_version_does_not_know_about_survive_a_write()
+    {
+        // This method's own summary promised to preserve them and did the opposite: it built a
+        // fresh document holding only `_readme` and `projects`, so a `schema_version` written by a
+        // newer Parley, or a field somebody added to one row by hand, was deleted by the next
+        // `project add` — a run that looked entirely successful and quietly discarded what it did
+        // not recognise.
+        //
+        // An older tool editing a newer tool's file is the one version pairing nobody can plan
+        // for, which is exactly why it must not eat anything.
+        Given(
+            "{ \"schema_version\": 7, \"written_by\": \"a newer parley\", \"projects\": [ " +
+            "{ \"name\": \"orders\", \"store\": \"/srv/o.db\", \"endpoint\": \"http://x:1\", " +
+            "\"retention_hours\": 720 } ] }");
+
+        Assert.True(ProjectManifest.TryRead(Path_, out var read, out _));
+
+        ProjectManifest.Write(
+            Path_, [.. read, Project("billing", "/srv/b.db", "http://x:2", null)]);
+
+        var after = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path_))!.AsObject();
+
+        Assert.Equal(7, (int)after["schema_version"]!);
+        Assert.Equal("a newer parley", (string)after["written_by"]!);
+
+        var orders = after["projects"]!.AsArray()
+            .First(p => (string)p!["name"]! == "orders")!.AsObject();
+
+        Assert.Equal(720, (int)orders["retention_hours"]!);
+    }
+
+    [Fact]
+    public void Clearing_a_projects_catalogue_actually_clears_it()
+    {
+        // The other half of preserving a row: the fields this build owns are authoritative, so an
+        // optional one that is now absent must go rather than linger. Preserving everything
+        // indiscriminately would make a node catalogue impossible to remove.
+        Given(
+            "{ \"projects\": [ { \"name\": \"orders\", \"store\": \"/srv/o.db\", " +
+            "\"endpoint\": \"http://x:1\", \"node_config\": \"/srv/node.json\" } ] }");
+
+        Assert.True(ProjectManifest.TryRead(Path_, out var read, out _));
+        Assert.Equal("/srv/node.json", read[0].NodeConfig);
+
+        ProjectManifest.Write(Path_, [read[0] with { NodeConfig = null }]);
+
+        Assert.True(ProjectManifest.TryRead(Path_, out var after, out _));
+        Assert.Null(after[0].NodeConfig);
+        Assert.DoesNotContain("node_config", File.ReadAllText(Path_), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Writing_over_a_file_that_cannot_be_parsed_is_refused()
+    {
+        // Belt to the braces reading already provides. Callers reach Write only after TryRead has
+        // succeeded, but a Write that started fresh over a file it could not understand would
+        // destroy the only copy of what a machine was configured for.
+        Given("{ \"projects\": [ ");
+
+        Assert.Throws<InvalidDataException>(() => ProjectManifest.Write(Path_, [Project()]));
+    }
+
+    [Fact]
     public void Writing_leaves_nothing_half_written_beside_the_manifest()
     {
         // The manifest is written to a sibling and moved over it, because it names every store on

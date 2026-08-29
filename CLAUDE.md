@@ -335,12 +335,9 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: [`specs/002-project-manifest/plan.md`](specs/002-project-manifest/plan.md) —
-  a per-machine manifest of named projects, so a command is told which deployment it is acting on
-  rather than inferring one from its working directory. Additive: a machine with no manifest
-  behaves exactly as today. No wire or schema change, and the protocol gains no notion of a
-  project. Carries one obligation — SPEC.md §4.1 illustrates this as `parley.yaml` and the plan
-  uses JSON, so §4.1 must be amended in the same change or the document describes a file the code
-  will not produce.
+- **Active plan**: none. Start one with `/speckit-specify`.
+- Previous: `specs/002-project-manifest/` — a per-machine manifest of named projects, merged.
+  Its obligation was discharged: SPEC.md §4.1 now illustrates `projects.json` rather than
+  `parley.yaml`. `tasks.md` carries the review record, including what five rounds turned up.
 - Previous: `specs/001-agent-routing-hints/`.
 <!-- SPECKIT END -->

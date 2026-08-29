@@ -435,11 +435,29 @@ public static class ProjectManifest
     /// <param name="path">Where to write.</param>
     /// <param name="projects">What to write.</param>
     /// <exception cref="ArgumentNullException">An argument is null.</exception>
-    /// <exception cref="InvalidDataException">The projects cannot coexist.</exception>
+    /// <exception cref="InvalidDataException">
+    /// The projects cannot coexist, or the file that is there could not be parsed.
+    /// </exception>
     /// <remarks>
+    /// <para>
     /// Validated whole before anything is written, and the existing file's byte-order mark and
     /// line endings are kept — editing one project should not produce a diff touching every line
     /// of a file somebody reads by hand.
+    /// </para>
+    /// <para>
+    /// <b>Keys this version does not know about are carried across, at the top level and on each
+    /// project.</b> This said so before it did it: it built a fresh document holding only
+    /// <c>_readme</c> and <c>projects</c>, so a <c>schema_version</c> written by a newer Parley, or
+    /// a field somebody added to one row by hand, was deleted by the next <c>project add</c> — a
+    /// successful-looking run that quietly discarded what it did not recognise. An older tool must
+    /// be able to edit a newer tool's file without eating it, because that is the only version
+    /// pairing nobody can plan for.
+    /// </para>
+    /// <para>
+    /// <c>_readme</c> is the exception and is rewritten every time. It is this tool's own
+    /// explanation of the file, so it should say what this build believes rather than what some
+    /// earlier one did.
+    /// </para>
     /// </remarks>
     public static void Write(string path, IReadOnlyList<ProjectSettings> projects)
     {
@@ -453,11 +471,31 @@ public static class ProjectManifest
             throw new InvalidDataException(string.Join("; ", collisions));
         }
 
-        var document = new JsonObject
+        // Refused rather than replaced, for the same reason reading refuses it. Callers reach here
+        // only after TryRead has succeeded, so this is the belt to that braces — but a Write that
+        // started fresh over a file it could not understand would destroy the only copy, which is
+        // the failure this whole type is arranged against.
+        var document = Existing(path)
+            ?? throw new InvalidDataException(
+                $"{path} exists but could not be parsed, so writing over it would discard it.");
+
+        // Indexed before `projects` is replaced, so each row can be rebuilt on top of the one it
+        // replaces rather than in place of it.
+        var previous = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+
+        if (document["projects"] is JsonArray existingRows)
         {
-            ["_readme"] = new JsonArray([.. Guidance.Select(line => JsonValue.Create(line))]),
-            ["projects"] = new JsonArray([.. projects.Select(Describe)]),
-        };
+            foreach (var row in existingRows)
+            {
+                if (row is JsonObject entry && Text(entry, "name") is { Length: > 0 } named)
+                {
+                    previous[named] = (JsonObject)entry.DeepClone();
+                }
+            }
+        }
+
+        document["_readme"] = new JsonArray([.. Guidance.Select(line => JsonValue.Create(line))]);
+        document["projects"] = new JsonArray([.. projects.Select(p => Describe(p, previous))]);
 
         var existed = File.Exists(path);
         var mark = existed && HasByteOrderMark(path);
@@ -509,26 +547,65 @@ public static class ProjectManifest
         }
     }
 
-    private static JsonObject Describe(ProjectSettings project)
+    /// <summary>Renders one project, keeping whatever its previous row carried.</summary>
+    /// <param name="project">The values this build knows about.</param>
+    /// <param name="previous">The rows being replaced, by name.</param>
+    /// <returns>The row to write.</returns>
+    /// <remarks>
+    /// Built on top of the row it replaces rather than beside it. Assigning to an existing key
+    /// leaves it where it was, so a hand-edited file keeps its own field order and a rewrite stays
+    /// a small diff; an unknown field survives because nothing here removes it. The two optional
+    /// fields <i>are</i> removed when absent, because for those the caller is authoritative —
+    /// otherwise clearing a project's node catalogue would leave the old one behind.
+    /// </remarks>
+    private static JsonObject Describe(
+        ProjectSettings project, IReadOnlyDictionary<string, JsonObject> previous)
     {
-        var entry = new JsonObject
-        {
-            ["name"] = project.Name.Value,
-            ["store"] = project.Store,
-            ["endpoint"] = project.Endpoint,
-        };
+        var entry = previous.TryGetValue(project.Name.Value, out var kept)
+            ? (JsonObject)kept.DeepClone()
+            : [];
 
-        if (project.NodeConfig is { Length: > 0 } node)
-        {
-            entry["node_config"] = node;
-        }
+        entry["name"] = project.Name.Value;
+        entry["store"] = project.Store;
+        entry["endpoint"] = project.Endpoint;
 
-        if (project.Description is { Length: > 0 } description)
-        {
-            entry["description"] = description;
-        }
+        Set(entry, "node_config", project.NodeConfig);
+        Set(entry, "description", project.Description);
 
         return entry;
+
+        static void Set(JsonObject entry, string key, string? value)
+        {
+            if (value is { Length: > 0 })
+            {
+                entry[key] = value;
+            }
+            else
+            {
+                entry.Remove(key);
+            }
+        }
+    }
+
+    /// <summary>Reads the document already at a path, for a write that must not lose it.</summary>
+    /// <param name="path">Where to look.</param>
+    /// <returns>The document, an empty one when the file is absent, or null when it cannot be parsed.</returns>
+    private static JsonObject? Existing(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonNode.Parse(File.ReadAllText(path)) as JsonObject;
+        }
+        catch (Exception exception) when (exception is IOException or JsonException
+                                              or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     private static string? Text(JsonObject entry, string key) =>
