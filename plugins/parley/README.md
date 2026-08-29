@@ -11,6 +11,7 @@
 | Component | What it is for |
 |---|---|
 | `/parley:setup` | Configures this repository as a Parley agent: checks the server is installed, writes `.mcp.json`, creates the database directory, and sends you to restart - which is when the tools appear, and therefore before `/parley:write-peers` can read anything |
+| `/parley:setup-many` | Configures several repositories in one pass, from a manifest you fill in. Does the nine tenths of setup that needs no tools; leaves the `owns` lines to you and the roster to `/parley:write-peers` |
 | `/parley:write-peers` | Writes or refreshes the `## Peers` block in this repository's standing instructions, from the live roster |
 | `parley-operator` skill | The `parley` command-line tool - the operations that are deliberately not tools |
 | `parley_waiting` hook | Tells an attended session when mail is waiting, on session start and on every prompt |
@@ -46,6 +47,47 @@ python ~/.claude/plugins/cache/parley/parley/*/hooks/parley_waiting.py <<< '{"cw
 
 Silence means nothing is waiting. An error means the hook would have been silent for the wrong
 reason.
+
+## Why there is a second setup command
+
+`/parley:setup` is right for one repository and stops being right somewhere around the fourth,
+for a reason that is not visible when you do one.
+
+`/parley:write-peers` builds its block from the live roster, so every agent that registers makes
+every block already written stale. Onboarding *n* repositories one at a time does not cost *n*
+roster passes - the first repository's block is rewritten *n* times, and each rewrite is a
+session, a restart and somebody's attention. Registering everything first and reading the roster
+once at the end costs *n*, and the blocks that come out are the only ones that were ever true.
+
+Nine tenths of setup does not need the tools at all: the launch configuration, the node entry and
+the placeholder frame are file writes against known values. Only the roster needs a bound server.
+So `/parley:setup-many` does that nine tenths for a list of repositories and refuses the rest -
+it never writes an `owns` line, never replaces an existing `## Peers` section, never replaces an
+`.mcp.json`, and writes nothing at all until a dry run has been read.
+
+The work is `parley enroll`, a verb on the command-line tool, rather than a script shipped beside
+this file. That is not a preference. .NET is the only runtime a deployment is guaranteed to have
+- nothing is an agent without `parley-mcp` on PATH, and that arrives through
+`dotnet tool install` - so a helper in any other language adds a second runtime to a machine that
+already has one. The `parley_waiting` hook is Python and is deliberately written to fail silently
+when its interpreter is missing; that is survivable for a mail check, and not for a program
+writing configuration into eleven repositories at once.
+
+The `owns` line is the interesting one. SPEC.md 17 question 10 originally forbade any tooling
+from writing it: the field is worth routing by *because a person meant it*, and "a field a model
+could write would be no more trustworthy than the prose it replaces, merely centralised."
+
+That question has since been **amended**, because a blank field turned out not to be neutral
+either - onboarding eleven repositories asks for eleven statements in one sitting, and a field
+left empty routes nothing at all. A suggestion is now permitted on three conditions: it travels
+with the evidence it was drawn from, quoted and attributed; approval is a recorded positive act,
+so `enroll` refuses a filled-in line that nobody has affirmed; and the exclusion half - what a
+repository does *not* own - is never invented, because a tree can show what it contains and not
+what somebody decided to leave out.
+
+What the registry promises is therefore narrower than it was: not that a person composed the
+line, but that a person read it and said yes. The residual risk is anchoring, and the amendment
+records it as accepted rather than solved.
 
 ## What it deliberately does not ship
 

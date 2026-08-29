@@ -10,6 +10,11 @@ receive an answer, without either seeing the other's files. Getting there takes 
 the server on PATH, a launch configuration naming this repository's agent, and a note telling
 this agent that a peer exists.
 
+**For one repository.** Several at once is `/parley:setup-many`, and the difference is not
+convenience: `/parley:write-peers` reads the live roster, so every agent that registers makes
+every block already written stale. Onboarding repositories one at a time rewrites the first
+one's block once per repository that follows it.
+
 Work through the steps below with the user. **Ask before running anything that installs
 software or writes a file.** This command deliberately grants no pre-approved tools: it
 installs a global .NET tool and edits configuration the user may already have, and both belong
@@ -106,6 +111,15 @@ none is listed with none, and askers fall back to its name.
 **The broker.** One process owns the store and everything else connects to it, so what this
 repository needs is an address rather than a path. `127.0.0.1:51707` is the default and needs no
 configuration; a broker on another machine goes in `PARLEY_BROKER`.
+
+If the user runs more than one Parley deployment on this machine, `parley project list` names
+them and gives each one's address. A launch configuration may carry `PARLEY_PROJECT` instead of
+`PARLEY_BROKER`, which is worth preferring when there is more than one: an address is a port
+number and ports move, so a committed `.mcp.json` naming a project survives a change that would
+otherwise have to be made in every repository at once. It names *where to connect* and nothing
+else - `PARLEY_AGENT` and `PARLEY_OWNS` are unaffected, and a project cannot supply either.
+Naming a project this machine does not describe stops the server at launch rather than falling
+back, because connecting an agent to the wrong deployment looks entirely normal from both ends.
 
 The user needs one running. If nothing is listening, nothing works - the server exits at launch
 saying so rather than starting and failing every tool. Starting one:

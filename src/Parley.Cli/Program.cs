@@ -1,8 +1,9 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Reflection;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Parley.Cli;
+using Parley.Configuration;
 using Parley.Core;
 using Wire = Parley.Transport;
 
@@ -36,9 +37,21 @@ const string Help = """
       parley autostart remove                          stop doing that
       parley autostart status                          say whether it is set up
 
+      parley project list                              what this machine is configured for
+      parley project add <name> --db <path>            name a deployment, so commands stop
+                        --listen <url>                 being told its paths one at a time
+                        [--node-config <path>]
+                        [--description <text>]
+      parley project remove <name>                     forget how to reach one; deletes nothing
+
       parley up                                        run this machine's node: report it to
                                                        the broker and start the agents on it
                                                        when a question arrives
+
+      parley enroll scan <dir> [<manifest>]            find repositories and tick the ones to
+                     [--all | --none]                  enroll; the flags skip the picker
+      parley enroll plan <manifest>                    say what enrolling them would change
+      parley enroll apply <manifest>                   configure the ticked ones as agents
 
       parley registry                                  every registered agent, with its workspace
       parley retire <agent>                            withdraw a registration
@@ -60,8 +73,21 @@ const string Help = """
     start the broker at logon and stop it at logout; a machine that must answer with nobody
     signed in wants a system service instead, and that does need privilege.
 
-    Every command except `serve` and `autostart` connects to a broker, at --broker or
-    PARLEY_BROKER, and
+    enroll configures several repositories at once: `scan` writes a manifest, you fill in what
+    each one owns, `plan` says what would change and `apply` changes it. It never composes an
+    owns line and never rewrites a `## Peers` section it did not write. Reading the roster is
+    still /parley:write-peers, run once per repository after the last one has registered --
+    every agent that registers makes every block already written stale.
+
+    project names deployments so that a machine running more than one stops being told its paths
+    a flag at a time. Each project carries a store, an endpoint and optionally a node catalogue;
+    --project picks one, and a machine with exactly one configured needs no flag. A machine with
+    no projects behaves exactly as it always has -- the manifest is optional and its absence is
+    never reported. Where it lives is `parley project list`; --config or PARLEY_CONFIG names a
+    different one. Explicit flags and environment variables still win over a project.
+
+    Every command except `serve`, `autostart`, `project` and `enroll` connects to a broker, at
+    --broker or PARLEY_BROKER, and
     defaults to the local one. Nothing works until a broker is running: start one with
     `parley serve`, as a service or a scheduled task if you want it there after a reboot.
 
@@ -121,10 +147,20 @@ if (arguments.Exists(a => a is "--version" or "-v"))
     return 0;
 }
 
+var selectAllRepositories = TakeFlag("--all");
+var selectNoRepositories = TakeFlag("--none");
 var databasePath = TakeOption("--db", "-d");
 var listenOn = TakeOption("--listen", "-l");
 var brokerAddress = TakeOption("--broker", "-b");
 var logPath = TakeOption("--log", null);
+
+// Taken here with the rest, and it has to be: everything left starting with a hyphen is refused
+// below as an option this does not have, so a flag consumed by the command it belongs to never
+// arrives — `--all` did not reach `enroll` until it was taken centrally.
+var projectName = TakeOption("--project", "-p");
+var configPath = TakeOption("--config", null);
+var nodeConfigPath = TakeOption("--node-config", null);
+var projectDescription = TakeOption("--description", null);
 
 if (Repeated() is { } repeated)
 {
@@ -162,27 +198,171 @@ if (arguments.Count == 0)
 var verb = arguments[0];
 var rest = arguments.Skip(1).ToArray();
 
-// `serve` first and separately, because it is the one command that is not a client. Everything
-// below it needs a broker to talk to; this is the broker.
-if (verb == "serve" && rest.Length == 0)
+// The manifest is read once, before any command runs, and a manifest that exists and cannot be
+// understood stops everything here. Treating it as "no projects configured" would be the third
+// appearance of one failure in this codebase — an unreadable node catalogue read as empty, a
+// wrong-typed one cast away — and the consequence is worse at this level: every path afterwards
+// silently falls back to a default, so a command acts on a deployment nobody named.
+string manifestPath;
+
+try
 {
-    return await ServeCommand.RunAsync(
-        databasePath ?? Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable),
-        listenOn,
-        logPath,
+    manifestPath = ProjectManifest.Locate(configPath, Environment.GetEnvironmentVariable);
+}
+catch (InvalidOperationException noHome)
+{
+    // A machine with no per-user configuration directory at all. Reported as a sentence rather
+    // than thrown, because it is a fact about the machine that the person running this can act
+    // on — and because the alternative to refusing is a manifest path resolved against the
+    // working directory, which is the ambiguity everything below exists to remove.
+    await Console.Error.WriteLineAsync(noHome.Message).ConfigureAwait(false);
+    return Config;
+}
+
+if (!ProjectManifest.TryRead(manifestPath, out var configuredProjects, out var manifestProblem))
+{
+    await Console.Error.WriteLineAsync(manifestProblem).ConfigureAwait(false);
+    return Config;
+}
+
+// Beside `serve` and the rest because managing configuration must not need a broker: the command
+// that fixes "nothing is configured" cannot require something configured.
+if (verb == "project")
+{
+    return await ProjectCommand.RunAsync(
+        rest,
+        manifestPath,
+        new ProjectFields(databasePath, listenOn, nodeConfigPath, projectDescription),
         Console.Out,
         Console.Error).ConfigureAwait(false);
 }
 
+// `serve` first and separately, because it is the one command that is not a client. Everything
+// below it needs a broker to talk to; this is the broker.
+//
+// It also selects differently from every other command, which is why it dispatches before the
+// selection below. Naming no project is not ambiguity here: SPEC.md §4.1 says one process may
+// host many brokers, so a broker told nothing serves everything configured. Every other command
+// acts on exactly one deployment and must refuse rather than pick.
+if (verb == "serve" && rest.Length == 0)
+{
+    var serving = new List<ProjectSettings>();
+
+    if (!string.IsNullOrWhiteSpace(projectName))
+    {
+        if (!ProjectResolution.TrySelect(projectName, configuredProjects, out var named, out var whyNot))
+        {
+            await Console.Error.WriteLineAsync(whyNot).ConfigureAwait(false);
+            return Config;
+        }
+
+        serving.Add(named!);
+    }
+    else
+    {
+        serving.AddRange(configuredProjects);
+    }
+
+    // Ctrl+C has to be wired here, and passing no token was a bug rather than a simplification:
+    // the broker ran until the process was killed. Starting a WebApplication installs the
+    // generic host's ConsoleLifetime, which hooks Console.CancelKeyPress and sets Cancel = true
+    // — so the signal was captured and neutralised, the host asked to stop, and the sweep loop
+    // waiting on CancellationToken.None never heard about it. Pressing Ctrl+C again could not
+    // help either, because the handler stayed registered and kept cancelling the signal.
+    //
+    // With several projects there are several such handlers, so the interrupt is owned once here,
+    // above all of them, and one press must stop every broker started.
+    return await UntilInterrupted(token => serving.Count > 0
+        ? ServeCommand.RunAsync(serving, logPath, Console.Out, Console.Error, token)
+        : ServeCommand.RunAsync(
+            databasePath ?? Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable),
+            listenOn,
+            logPath,
+            Console.Out,
+            Console.Error,
+            token)).ConfigureAwait(false);
+}
+
+// Selection is refused rather than guessed, for every command that acts on one deployment.
+// Several configured and none named, or a name the manifest does not describe, both end here —
+// choosing one silently acts on a deployment the operator did not ask for, and falling back
+// connects to a different one.
+if (!ProjectResolution.TrySelect(projectName, configuredProjects, out var project, out var selectionProblem))
+{
+    await Console.Error.WriteLineAsync(selectionProblem).ConfigureAwait(false);
+    return Config;
+}
+
+var resolvedStore = ProjectResolution.Store(databasePath, Environment.GetEnvironmentVariable, project);
+var resolvedEndpoint = ProjectResolution.Endpoint(brokerAddress, Environment.GetEnvironmentVariable, project);
+var resolvedNodeConfig = ProjectResolution.NodeConfig(nodeConfigPath, Environment.GetEnvironmentVariable, project);
+
 // Beside `serve`, because it installs `serve` and takes the same --db. It is not a client
 // either: registering a scheduled task or writing a unit file needs no broker, and needing one
 // would make the command that fixes "no broker is running" require a broker.
+//
+// Its address is resolved here rather than taken from `resolvedEndpoint`, and the difference is
+// the whole reason this line exists. `resolvedEndpoint` answers "where do I connect", so it
+// consults PARLEY_BROKER — which on a machine whose agents talk to a broker elsewhere holds
+// somebody else's host. Feeding that to autostart installs a supervisor that tells a local broker
+// to bind a remote address, and the failure surfaces at the next logon, inside a scheduled task,
+// where nobody is watching. Where a broker listens comes from --listen or from the project, and
+// from nothing else.
 if (verb == "autostart" && rest.Length == 1)
 {
+    var listenAddress = listenOn ?? project?.Endpoint;
+
     return await AutostartCommand.RunAsync(
         rest[0],
-        databasePath ?? Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable),
-        listenOn,
+        resolvedStore.Value,
+        listenAddress,
+        Console.Out,
+        Console.Error).ConfigureAwait(false);
+}
+
+// Beside `serve` and `autostart` because it is not a client either. It writes launch
+// configurations, node entries and the placeholder peers block — files on this machine, against
+// values from a manifest — and needs no broker to do any of it. Requiring one would make the
+// command that configures a deployment depend on the deployment being configured.
+if (verb == "enroll")
+{
+    if (selectAllRepositories && selectNoRepositories)
+    {
+        await Console.Error.WriteLineAsync("--all and --none say opposite things; pass one.")
+            .ConfigureAwait(false);
+
+        return Usage;
+    }
+
+    bool? selectAll = selectAllRepositories ? true : selectNoRepositories ? false : null;
+
+    // The catalogue is passed in resolved, and said out loud before anything is written. This one
+    // line is the whole feature: without it, enrolling ten repositories wrote consent into a file
+    // in the working directory while the catalogue the node reads sat elsewhere — ten agents
+    // recorded as consenting, none startable, and a run that reported success.
+    //
+    // Printed whether or not a project was selected, which it was not at first. Gating it on a
+    // project meant the machine that most needs the line never sees it: the run that produced the
+    // defect had no manifest at all, and fell all the way through to `node.json` in whatever
+    // directory the command was typed in. A report that appears once somebody has already adopted
+    // the fix is not a report.
+    //
+    // Not in tension with leaving an unconfigured machine alone, either. What must stay invisible
+    // is the *absence* of a manifest — a tool that names a missing optional file on every run has
+    // made it mandatory — and this names the file it is about to write, which it would name
+    // afterwards regardless.
+    // `plan` and `apply` only. `scan` writes an enrollment manifest and never opens the catalogue,
+    // so naming one there would announce a file the command is not going to touch — which is the
+    // same species of wrong as not naming the file it is.
+    if (rest is ["plan", ..] or ["apply", ..])
+    {
+        await Console.Out.WriteLineAsync($"node catalogue: {resolvedNodeConfig}").ConfigureAwait(false);
+    }
+
+    return await EnrollCommand.RunAsync(
+        rest,
+        selectAll,
+        resolvedNodeConfig.Value,
         Console.Out,
         Console.Error).ConfigureAwait(false);
 }
@@ -201,9 +381,11 @@ string endpoint;
 
 try
 {
-    endpoint = brokerAddress is { Length: > 0 }
-        ? BrokerEndpoint.Read(name => name == BrokerEndpoint.Variable ? brokerAddress : null)
-        : BrokerEndpoint.Read(Environment.GetEnvironmentVariable);
+    // Resolution has already applied precedence and may have taken this from a project, so the
+    // value is validated here rather than read out of the environment a second time — two reads
+    // of one setting eventually disagree, and the one that disagrees silently is this one.
+    endpoint = BrokerEndpoint.Read(
+        name => name == BrokerEndpoint.Variable ? resolvedEndpoint.Value : null);
 }
 catch (InvalidOperationException ex)
 {
@@ -317,14 +499,28 @@ catch (RpcException failure)
 // process and leave every agent it started orphaned -- resident, holding sessions, answering
 // nobody. Cancelling instead gives the node the chance to tell each of them to quit, which is
 // one of the three ways SPEC.md §11.1 says a resident agent ends.
-async Task<int> UpAsync()
+async Task<int> UpAsync() =>
+    await UntilInterrupted(token =>
+        NodeCommand.RunAsync(channel, endpoint, Console.Out, token)).ConfigureAwait(false);
+
+// Runs something that would otherwise never return, and gives the terminal back on Ctrl+C.
+//
+// Shared by `serve` and `up` because they are the two commands that run until stopped, and
+// because having only one of them wired is exactly the state this fixes: `up` documented
+// "Ctrl+C stops the node" and honoured it, while `serve` ignored the key entirely.
+//
+// A long-running command must own the signal rather than leave it to the default handler. Any
+// host started inside it registers its own CancelKeyPress and sets Cancel = true, so the
+// default kill never arrives — the signal is swallowed by a component that then waits for
+// somebody to observe a token nobody passed.
+async Task<int> UntilInterrupted(Func<CancellationToken, Task<int>> run)
 {
     using var stopping = new CancellationTokenSource();
 
     void Stop(object? sender, ConsoleCancelEventArgs e)
     {
-        // A second Ctrl+C is left to the default handling on purpose. If shutting the node down
-        // has itself wedged, an operator must still be able to get their terminal back.
+        // A second Ctrl+C is left to the default handling on purpose. If shutting down has
+        // itself wedged, an operator must still be able to get their terminal back.
         e.Cancel = true;
         Console.CancelKeyPress -= Stop;
 
@@ -335,8 +531,13 @@ async Task<int> UpAsync()
 
     try
     {
-        return await NodeCommand.RunAsync(channel, endpoint, Console.Out, stopping.Token)
-            .ConfigureAwait(false);
+        return await run(stopping.Token).ConfigureAwait(false);
+    }
+    catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+    {
+        // Asked for. A broker that reports failure because somebody stopped it teaches operators
+        // to ignore its exit code.
+        return 0;
     }
     finally
     {
@@ -384,6 +585,23 @@ async Task<int> WithAgent(string name, Func<AgentName, Task<int>> run)
 }
 
 // Consumes an option and its value from the argument list, or returns null.
+// Flags have to be taken here, beside the options, rather than read by the command they belong
+// to. Everything left starting with a hyphen is refused below on purpose, so a flag consumed
+// downstream never reaches its command — it is rejected as a mistyped option first.
+bool TakeFlag(string name)
+{
+    var at = arguments.IndexOf(name);
+
+    if (at < 0)
+    {
+        return false;
+    }
+
+    arguments.RemoveAt(at);
+
+    return true;
+}
+
 string? TakeOption(string longName, string? shortName)
 {
     for (var i = 0; i < arguments.Count - 1; i++)

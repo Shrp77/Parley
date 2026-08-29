@@ -184,6 +184,29 @@ macOS, and starts it. **None of them needs administrator rights** — they are u
 you, and start the broker again at logon. `parley autostart status` says whether it is set up
 and `parley autostart remove` undoes it, leaving a broker that is already running alone.
 
+**More than one deployment on one machine.** Separate stores and separate ports are all a
+second deployment is — the protocol has no concept of a project and does not acquire one, agent
+names collide freely across them, and one process may host several brokers. What that used to
+cost was carrying three paths on every command line. `parley project` records them instead:
+
+```
+parley project add acme --db /src/acme/.parley/parley.db --listen http://127.0.0.1:51707
+parley --project acme registry
+```
+
+The list lives in one file per machine, under your own configuration directory;
+`parley project list` says where and reports which brokers are answering. `--config`, or
+`PARLEY_CONFIG`, names a different file — for a test rig or a second account, not for one
+repository to have its own, which would be the disagreement this ends rather than a use of it. With one project
+configured nothing needs naming. With several and none named, every command **refuses and lists
+them** rather than choosing — acting on a deployment nobody asked for produces output that looks
+entirely normal. `parley serve` is the exception, and starts them all.
+
+**None of this is required.** A machine with no projects behaves exactly as it always has, its
+absence is never mentioned, and an explicit `--db`, `--broker` or environment variable still wins
+over anything a project says. `parley project remove` forgets an entry and deletes nothing — not
+the store, not the catalogue, not any repository's `.mcp.json` — and says so every time.
+
 The trade is that a user-level supervisor stops the broker at logout. For a machine somebody
 works at that is right — the agents are editor sessions, and there are none when nobody is
 signed in. A server that must answer with nobody signed in wants a real service, and that does
@@ -223,6 +246,7 @@ different `PARLEY_AGENT`:
         "PARLEY_AGENT": "orders",                     // the role; the machine is appended
         "PARLEY_OWNS": "Carts, orders, line totals. No tax, no stock.", // what peers route by
         "PARLEY_BROKER": "127.0.0.1:51707",           // optional, this is the default
+        "PARLEY_PROJECT": "acme",                     // optional, instead of PARLEY_BROKER
         "PARLEY_RESPONDER": "some-model-9",           // optional, which model answers
         "PARLEY_WORKSPACE": "/src/acme-orders",       // optional, for the registry
         "PARLEY_MACHINE": "server-b"                      // optional, detected if unset
@@ -234,6 +258,16 @@ different `PARLEY_AGENT`:
 
 The same committed file works on every machine: the role is configured and the machine half is
 detected, so `orders` becomes `orders@server-b` on one box and `orders@server-a` on another.
+`PARLEY_PROJECT` is an alternative to `PARLEY_BROKER` for a machine running more than one
+deployment: it names a project from `parley project list` and takes that project's address. Worth
+preferring there, because an address is a port number and ports move — a committed `.mcp.json`
+naming a project survives a change that would otherwise have to land in every repository at once,
+and the one that got missed would connect to whatever now answers. It says *where to connect* and
+nothing else; identity still comes from `PARLEY_AGENT` alone. If both are set the address wins and
+the server says so on the way up, and a project this machine does not describe stops the launch
+rather than falling back to the default — an agent in the wrong deployment looks entirely normal
+from both ends of a message.
+
 For an agent on another machine, set `PARLEY_BROKER` to the broker's host and port, and start
 the broker with `--listen` on an address that machine can reach — `127.0.0.1` is the default
 and nothing outside the box can reach it.
@@ -479,11 +513,12 @@ parley refusals                     what the message size cap refused, and how f
 parley waiting <agent>              how many messages and polls await an agent
 parley serve                        run the broker: the one process that opens the store
 parley up                           run this machine's node, so its agents can be started
+parley project list|add|remove      the deployments this machine is configured for
 parley --help                       the same list, on stdout, exiting zero
 ```
 
-Every one of these is a client: they connect to the broker at `--broker`, or `PARLEY_BROKER`,
-and default to the local one. None of them opens the store, so none can be pointed at the wrong
+Every one of these except `serve`, `up` and `project` is a client: they connect to the broker at
+`--broker`, or `PARLEY_BROKER`, and default to the local one. None of them opens the store, so none can be pointed at the wrong
 file — `--db` belongs to `parley serve` alone. `prune` applies the policy the broker was started
 with, which is the only policy in the deployment; your shell no longer has an opinion about it.
 

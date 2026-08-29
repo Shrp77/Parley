@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <!--
     The transport, and the only project that knows what MCP is. SPEC.md principle 2.3 makes the
@@ -48,6 +48,7 @@
     on this side is how the two come to disagree.
   -->
   <ItemGroup>
+    <ProjectReference Include="..\Parley.Configuration\Parley.Configuration.csproj" />
     <ProjectReference Include="..\Parley.Core\Parley.Core.csproj" />
     <ProjectReference Include="..\Parley.Transport\Parley.Transport.csproj" />
   </ItemGroup>

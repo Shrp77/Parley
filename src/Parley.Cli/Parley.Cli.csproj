@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <!--
     The operator's way in, and a second binary rather than a flag on the first.
@@ -35,6 +35,7 @@
   -->
   <ItemGroup>
     <ProjectReference Include="..\Parley.Broker\Parley.Broker.csproj" />
+    <ProjectReference Include="..\Parley.Configuration\Parley.Configuration.csproj" />
     <ProjectReference Include="..\Parley.Headless\Parley.Headless.csproj" />
     <ProjectReference Include="..\Parley.Server\Parley.Server.csproj" />
     <ProjectReference Include="..\Parley.Transport\Parley.Transport.csproj" />

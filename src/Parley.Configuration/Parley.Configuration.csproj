@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Parley's configuration files: where they live, what they hold, and what they refuse.
+
+    A project of its own because two programs read the manifest and they cannot reach a common
+    copy any other way. Parley.Cli references the broker and through it the store; Parley.Mcp
+    deliberately references neither, and the csproj next door says why — an adapter with no SQLite
+    on its graph cannot open a database on a network share, which is the deployment that silently
+    corrupts rather than failing. So the adapter cannot reference the CLI, and Parley.Core cannot
+    hold the reader either, because Core has no I/O by design.
+
+    The alternative was a second reader in the adapter, and the manifest exists precisely because
+    two things resolving the same paths separately is how they come to disagree. Writing that
+    failure into the fix would be a poor joke.
+
+    Read by both; written only by Parley.Cli, which is where `project add` and `project remove`
+    live. Nothing here knows what a broker is.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Parley.Configuration</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parley.Core\Parley.Core.csproj" />
+  </ItemGroup>
+
+</Project>

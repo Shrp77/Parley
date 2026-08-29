@@ -39,7 +39,12 @@ internal static class DeploymentVariables
                 // read a variable at all, and their absence made the "only variables a server
                 // reads" check refuse two names the plugin was right to mention.
                 typeof(MachineName),
-                typeof(Parley.Headless.NodeCatalogue)
+                typeof(Parley.Headless.NodeCatalogue),
+
+                // The manifest's, read by all three processes rather than by any one of them.
+                // See Machine() for why that makes it a fourth set instead of a fourth entry in
+                // one of the existing three.
+                typeof(Parley.Configuration.ProjectManifest)
             }
             .SelectMany(t => t.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly))
             .Where(f => f.IsLiteral && f.FieldType == typeof(string))
@@ -72,7 +77,8 @@ internal static class DeploymentVariables
     [
         .. All().Where(v =>
             !Broker().Contains(v, StringComparer.Ordinal)
-            && !Node().Contains(v, StringComparer.Ordinal))
+            && !Node().Contains(v, StringComparer.Ordinal)
+            && !Machine().Contains(v, StringComparer.Ordinal))
     ];
 
     /// <summary>
@@ -87,6 +93,23 @@ internal static class DeploymentVariables
     public static IReadOnlyList<string> Node() =>
     [
         Parley.Headless.NodeCatalogue.PathVariable
+    ];
+
+    /// <summary>
+    /// The variables that describe the machine rather than any process on it.
+    /// </summary>
+    /// <returns>The names every Parley process reads the same answer from.</returns>
+    /// <remarks>
+    /// A fourth set, and the first one that is not a process. Where the project manifest lives is
+    /// a fact about the machine: the broker, the node and every adapter on it must resolve the
+    /// same file or they are configured for different deployments while appearing to agree. So it
+    /// belongs in none of the other three, and specifically not in a launch configuration —
+    /// putting it in an agent's `.mcp.json` would invite one repository to point at a manifest of
+    /// its own, which is the disagreement the manifest was introduced to end.
+    /// </remarks>
+    public static IReadOnlyList<string> Machine() =>
+    [
+        Parley.Configuration.ProjectManifest.PathVariable
     ];
 
     /// <summary>

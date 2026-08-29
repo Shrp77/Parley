@@ -164,11 +164,20 @@ Independent projects do not share a broker. Each gets its own database file and 
 transport endpoint:
 
 ```
-parley --config parley.yaml
-├── broker "alpha"  → alpha.db   → endpoint A   (22 agents)
-├── broker "beta"   → beta.db    → endpoint B   (4 agents)
-└── broker "gamma"  → gamma.db   → endpoint C   (2 agents)
+projects.json
+├── project "alpha"  → alpha.db   → endpoint A   (22 agents)
+├── project "beta"   → beta.db    → endpoint B   (4 agents)
+└── project "gamma"  → gamma.db   → endpoint C   (2 agents)
 ```
+
+**Where that list lives is a property of the machine, not of the protocol.** It is one
+file per user, at the platform's conventional configuration location, naming each project
+with its store, its endpoint, and the catalogue of agents this machine may start for it.
+Nothing in it is ever read by a broker, sent over the transport, or stored: it exists so
+that a person, and the tools a person runs, can say *which deployment* they mean without
+repeating three paths and without inferring any of them from a working directory. A
+deployment that names no projects is configured entirely by explicit paths, exactly as
+before, and remains a supported way to run.
 
 **The protocol has no concept of a project, and must not acquire one.** Membership is
 which endpoint an agent connects to. There is no group column, no scoped query, and no
@@ -3408,6 +3417,43 @@ Cheap to collect, disproportionately useful:
     edit its charter than its identity (§13). It is refreshed on every launch, and cleared
     when a launch stops supplying it, because a statement that cannot be corrected is worse
     than none when every peer routes by it.
+
+    **Amended: a person may start from a draft, and must still affirm it.** The original
+    reading of the paragraph above was that setup tooling must offer evidence and never a
+    sentence — that a draft invites approval where evidence invites authorship. That is true
+    and it is not the whole picture: a blank field is not neutral either. Onboarding a
+    deployment of eleven repositories asks for eleven statements in one sitting, and the
+    field that gets left empty routes nothing at all, which is strictly worse for peers than
+    an imperfect line somebody corrected.
+
+    So a tool may put a suggested line in front of the person, provided all three hold:
+
+    1. **The suggestion is carried beside its evidence**, each piece quoted with where it came
+       from — the repository's own README, its manifest, its directories, an earlier
+       registration in its history. What is being approved is checkable against the material
+       it was drawn from, rather than against nothing.
+    2. **Approval is a recorded positive act, not a default.** A drafted line that nobody has
+       affirmed must not reach a launch configuration; tooling refuses it rather than shipping
+       it. This is what keeps *not self-declared* true — the value in the registry is one a
+       person assented to, and the assent is written down.
+    3. **The exclusion half is never invented.** A repository can show what it contains and
+       cannot show what it has decided not to own; absence of tax code does not mean tax is
+       somebody else's. A draft may leave that half unwritten and say so, and must not guess
+       at it.
+
+    The residual risk is accepted rather than solved, and is recorded here so a later change
+    knows it was weighed: **anchoring**. Somebody shown a plausible sentence agrees more
+    readily than somebody facing a blank, and the agreement is cheaper than the authorship it
+    replaces. Condition 1 is what makes that agreement checkable and condition 3 is what keeps
+    the anchoring away from the half that cannot be derived — but neither makes an approved
+    draft identical to a written line, and the difference is invisible from the far side of a
+    message. What is claimed after this amendment is narrower than before: not that the field
+    was composed by a person, but that a person read it and said yes.
+
+    Nothing in the protocol changes. The broker still receives one value from a launch
+    environment, still refuses it in the same schema, and still cannot tell how it was
+    composed — as it could not before. This paragraph binds the tools that write launch
+    configurations, which is where the guarantee always actually lived.
 
     It stays advisory. Nothing is routed by it, refused because of it, or compared against
     it; there is no uniqueness constraint and no arbitration, so two agents may claim the

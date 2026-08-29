@@ -39,6 +39,14 @@ catch (InvalidOperationException ex)
     return 78; // EX_CONFIG, which is what a supervisor reads to tell "wrong" from "broken".
 }
 
+// Said rather than silently applied. A launch configuration carrying both a project and an
+// address is somebody's half-finished edit, and the endpoint winning quietly is how an agent
+// ends up in the wrong deployment with nothing anywhere that looks wrong.
+if (options.BrokerNotice is { Length: > 0 } notice)
+{
+    await Console.Error.WriteLineAsync(notice).ConfigureAwait(false);
+}
+
 var builder = Host.CreateApplicationBuilder(args);
 
 // Logging goes to stderr, and this line is load-bearing rather than tidy. A stdio server speaks

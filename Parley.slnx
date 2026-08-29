@@ -14,6 +14,7 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Parley.Core/Parley.Core.csproj" />
+    <Project Path="src/Parley.Configuration/Parley.Configuration.csproj" />
     <Project Path="src/Parley.Store/Parley.Store.csproj" />
     <Project Path="src/Parley.Broker/Parley.Broker.csproj" />
     <Project Path="src/Parley.Transport/Parley.Transport.csproj" />

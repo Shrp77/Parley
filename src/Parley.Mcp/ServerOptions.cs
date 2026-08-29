@@ -1,3 +1,4 @@
+using Parley.Configuration;
 using Parley.Core;
 
 namespace Parley.Mcp;
@@ -17,6 +18,10 @@ namespace Parley.Mcp;
 /// <param name="Owns">
 /// One line saying what this agent owns, shown to every peer that lists the roster, or
 /// <see langword="null"/> if the launch did not say. See <see cref="OwnershipStatement"/>.
+/// </param>
+/// <param name="BrokerNotice">
+/// Something the launch configuration should be told about how <see cref="Broker"/> was chosen,
+/// or <see langword="null"/> when there is nothing to say.
 /// </param>
 /// <remarks>
 /// <para>
@@ -48,7 +53,8 @@ public sealed record ServerOptions(
     AgentName Agent,
     string ResponderModel,
     string? Workspace,
-    string? Owns = null)
+    string? Owns = null,
+    string? BrokerNotice = null)
 {
     /// <summary>The environment variable naming the broker to connect to.</summary>
     /// <remarks>
@@ -60,6 +66,24 @@ public sealed record ServerOptions(
 
     /// <summary>The environment variable naming the agent this server speaks for.</summary>
     public const string AgentVariable = "PARLEY_AGENT";
+
+    /// <summary>The environment variable naming the project whose broker to reach.</summary>
+    /// <remarks>
+    /// <para>
+    /// An alternative to <see cref="BrokerVariable"/>, never to <see cref="AgentVariable"/>. A
+    /// project says <i>where</i> to connect; it says nothing about who is connecting, and adding
+    /// it changes nothing about how identity is established — see SPEC.md §4.1, where membership
+    /// of a project is exactly which endpoint an agent reaches and the protocol has no notion of
+    /// a project at all.
+    /// </para>
+    /// <para>
+    /// Worth having because an endpoint is a port number and ports move. A committed
+    /// <c>.mcp.json</c> naming a project survives that; one naming <c>127.0.0.1:51707</c> has to
+    /// be edited in every repository at once, and the repository that is missed connects to
+    /// whatever now answers there.
+    /// </para>
+    /// </remarks>
+    public const string ProjectVariable = "PARLEY_PROJECT";
 
     /// <summary>The environment variable naming the default responder identity.</summary>
     public const string ResponderVariable = "PARLEY_RESPONDER";
@@ -138,7 +162,7 @@ public sealed record ServerOptions(
     {
         ArgumentNullException.ThrowIfNull(read);
 
-        var broker = BrokerEndpoint.Read(read);
+        var (broker, brokerNotice) = Where(read);
         var agentName = Require(read, AgentVariable);
 
         // A launch configuration names a role; the machine half is detected here and appended.
@@ -204,7 +228,85 @@ public sealed record ServerOptions(
             agent,
             responder,
             string.IsNullOrWhiteSpace(workspace) ? null : workspace,
-            owns);
+            owns,
+            brokerNotice);
+    }
+
+    /// <summary>
+    /// Works out which broker this launch means, from an endpoint or from a project.
+    /// </summary>
+    /// <param name="read">The source of variables.</param>
+    /// <returns>The address, and anything the launch configuration should be told about it.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// A project was named that this machine does not describe, or the manifest could not be read.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// <b>An explicit endpoint wins, and the override is said out loud.</b> That is the precedence
+    /// used everywhere else in the tool, and the reporting is the part that matters: a launch
+    /// configuration carrying both a project and an address that disagree is somebody's
+    /// half-finished edit, and the silent half of that is what sends an agent to the wrong
+    /// deployment without anybody seeing a wrong-looking line.
+    /// </para>
+    /// <para>
+    /// <b>An unknown project refuses, and never falls back.</b> Falling back to loopback would
+    /// connect the agent to whatever happens to be listening there — plausibly a working broker,
+    /// belonging to another project, with a roster the agent has no business in. The failure is
+    /// invisible from both ends of a message: the sender's peer answers, and the answer is from
+    /// the wrong deployment. A process that does not start is reported by the client and fixed in
+    /// a minute.
+    /// </para>
+    /// <para>
+    /// The manifest is only ever read here. This adapter has no way to write one, which is
+    /// deliberate: <c>project add</c> and <c>project remove</c> are operator operations and live
+    /// in a binary an MCP client does not launch.
+    /// </para>
+    /// </remarks>
+    private static (string Broker, string? Notice) Where(Func<string, string?> read)
+    {
+        var named = Blank(read(ProjectVariable));
+        var endpoint = Blank(read(BrokerVariable));
+
+        if (named is null)
+        {
+            // Exactly as before this existed, including the loopback default.
+            return (BrokerEndpoint.Read(read), null);
+        }
+
+        if (endpoint is not null)
+        {
+            return (
+                BrokerEndpoint.Read(read),
+                $"{BrokerVariable} and {ProjectVariable} are both set. Using {endpoint} and " +
+                $"ignoring project '{named}'.");
+        }
+
+        var manifest = ProjectManifest.Locate(null, read);
+
+        if (!ProjectManifest.TryRead(manifest, out var projects, out var problem))
+        {
+            throw new InvalidOperationException(
+                $"{ProjectVariable} is '{named}', and the manifest could not be read. {problem}");
+        }
+
+        var project = projects.FirstOrDefault(p =>
+            string.Equals(p.Name.Value, named, StringComparison.Ordinal));
+
+        if (project is null)
+        {
+            var configured = projects.Count == 0
+                ? "It describes no projects."
+                : "It describes: " +
+                  string.Join(", ", projects.Select(p => p.Name.Value).Order(StringComparer.Ordinal)) + ".";
+
+            throw new InvalidOperationException(
+                $"{ProjectVariable} is '{named}', which {manifest} does not describe. {configured} " +
+                $"Add it with `parley project add {named}`, or set {BrokerVariable} to the " +
+                "broker's address. This server will not guess: connecting to another project's " +
+                "broker would put this agent in a roster it does not belong to.");
+        }
+
+        return (project.Endpoint, null);
     }
 
     /// <summary>Normalises an optional variable, treating whitespace as absent.</summary>

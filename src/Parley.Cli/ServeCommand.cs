@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Parley.Broker;
 using Parley.Core;
 using Parley.Server;
@@ -29,6 +29,7 @@ public static class ServeCommand
 {
     private const int Config = 78;     // EX_CONFIG
     private const int IoError = 74;    // EX_IOERR
+    private const int Unavailable = 69; // EX_UNAVAILABLE
 
     /// <summary>
     /// Opens the store and serves it until the process is stopped.
@@ -130,6 +131,166 @@ public static class ServeCommand
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Runs one broker per configured project, in this process.
+    /// </summary>
+    /// <param name="projects">The projects to serve.</param>
+    /// <param name="logPath">Where to copy output, or null.</param>
+    /// <param name="output">Where to report what is running.</param>
+    /// <param name="error">Where to report what is not.</param>
+    /// <param name="cancellationToken">Stops every broker.</param>
+    /// <returns>The exit code.</returns>
+    /// <exception cref="ArgumentNullException">A required argument is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// SPEC.md §4.1: "One process may host many brokers." Isolation is unaffected because it lives
+    /// in the storage layer — separate files, separate connections — not in the process boundary.
+    /// What sharing a process changes is only what a process-fatal fault takes with it, which is
+    /// the risk any single service carries.
+    /// </para>
+    /// <para>
+    /// <b>A failure is contained and reported, and the exit code does not lie about it.</b> §4.1
+    /// requires a corrupt database or a failed migration to stop that broker while the others keep
+    /// running; what it does not settle is what the process tells its supervisor, and that is the
+    /// part an operator cannot see afterwards. A run that starts two of three brokers and exits
+    /// zero is the same shape as the defects this repository has already met twice — an unreadable
+    /// catalogue read as empty, ten repositories written where nothing reads them — where a run
+    /// reported success while doing less than it claimed.
+    /// </para>
+    /// </remarks>
+    public static async Task<int> RunAsync(
+        IReadOnlyList<ProjectSettings> projects,
+        string? logPath,
+        TextWriter output,
+        TextWriter error,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(projects);
+        ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(error);
+
+        using var log = Logging.Open(logPath, error);
+
+        if (log is not null)
+        {
+            output = new TeeWriter(output, log);
+            error = new TeeWriter(error, log);
+        }
+
+        // Synchronised whether or not there is a log, which the single-project overload does not
+        // need to be: there is one sweep there and N here, all writing the same failure line to
+        // the same writer. A TextWriter is not thread-safe, and the output that would be
+        // interleaved is the output an operator reads to find out which broker is unwell.
+        output = TextWriter.Synchronized(output);
+        error = TextWriter.Synchronized(error);
+
+        var started = new List<(ProjectSettings Project, BrokerRuntime Runtime, ParleyServer Server)>();
+        var failed = 0;
+
+        try
+        {
+            // Inside the try, and that is the whole of why this loop is not where it reads most
+            // naturally. Ctrl+C during start-up cancels the pending StartAsync, which throws
+            // OperationCanceledException — deliberately not caught, because an interrupt is not a
+            // project failing. Started outside the try, that exception left every broker already
+            // running still holding its port and its store handle: the interrupt arrives, the
+            // process exits, and nothing has been shut down. Which is FR-021 exactly, and the
+            // defect fixed one commit earlier, reappearing in the window where it is least
+            // visible — a machine that only ever starts one project never enters it.
+            foreach (var project in projects)
+            {
+                BrokerRuntime runtime;
+
+                try
+                {
+                    runtime = BrokerRuntime.Open(project.Store, BrokerOptions.Default, TimeProvider.System);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    await error.WriteLineAsync(
+                        $"{project.Name}: could not open '{project.Store}': {exception.Message}")
+                        .ConfigureAwait(false);
+
+                    failed++;
+                    continue;
+                }
+
+                try
+                {
+                    var server = await ParleyServer.StartAsync(runtime, project.Endpoint, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    started.Add((project, runtime, server));
+                }
+                catch (Exception exception)
+                {
+                    // Disposed on every path out, an interrupt included: this runtime is not in
+                    // `started` yet, so the finally below has never heard of it and the open
+                    // database handle would go with the process rather than be released.
+                    await runtime.DisposeAsync().ConfigureAwait(false);
+
+                    if (exception is OperationCanceledException)
+                    {
+                        throw;
+                    }
+
+                    await error.WriteLineAsync(
+                        $"{project.Name}: could not listen on {project.Endpoint}: {exception.Message}")
+                        .ConfigureAwait(false);
+
+                    failed++;
+                }
+            }
+
+            if (started.Count == 0)
+            {
+                await error.WriteLineAsync(
+                    "No broker started. Nothing is serving.").ConfigureAwait(false);
+
+                return Unavailable;
+            }
+
+            foreach (var (project, _, server) in started)
+            {
+                await output.WriteLineAsync(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{project.Name} on {string.Join(", ", server.Addresses)}, store at {project.Store}, schema {SchemaMigrator.LatestVersion}."))
+                    .ConfigureAwait(false);
+            }
+
+            if (failed > 0)
+            {
+                // Said again after the list, because the failures scrolled past while the
+                // successes were being printed, and this is the line that decides whether an
+                // operator investigates.
+                await output.WriteLineAsync(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{failed} of {projects.Count} projects did not start. This process is serving a subset."))
+                    .ConfigureAwait(false);
+            }
+
+            await output.WriteLineAsync(
+                "Agents connect with PARLEY_AGENT set; machines join with `parley up`. Ctrl+C stops them all.")
+                .ConfigureAwait(false);
+
+            // One sweep per broker, all cancelled by the one token the interrupt owns.
+            await Task.WhenAll(started.Select(s => SweepAsync(s.Runtime, output, cancellationToken)))
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            // Everything started is stopped, including when one sweep threw. A broker left holding
+            // a port after the process was told to stop is the failure Ctrl+C was just fixed for,
+            // reappearing one level up.
+            foreach (var (_, _, server) in started)
+            {
+                await server.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+
+        return failed > 0 ? Unavailable : 0;
     }
 
     /// <summary>Runs the sweep of SPEC.md §6 until the broker stops.</summary>

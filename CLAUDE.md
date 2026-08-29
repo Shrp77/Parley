@@ -26,6 +26,12 @@ src/Parley.Broker   Orchestration. Decides when the other two run. Broker holds 
                     Knows nothing of transports or adapters, and must not learn.
 src/Parley.Transport The wire contract, generated from proto/parley.proto. No
                     hand-written code at all, which is why its warnings are silenced.
+src/Parley.Configuration The project manifest of SPEC.md §4.1: where it lives, what it
+                    holds, what it refuses. A project of its own because two programs
+                    read it and cannot otherwise share one reader — Parley.Cli pulls in
+                    the broker and the store, Parley.Mcp deliberately pulls in neither,
+                    and Parley.Core has no I/O. Read by both; written only by Parley.Cli.
+                    Nothing here knows what a broker is.
 src/Parley.Server   The broker process of SPEC.md §4: the only thing that opens the
                     database. Joins Parley.Broker to Parley.Transport, and exists so
                     that Parley.Broker does not have to learn about either.
@@ -328,4 +334,13 @@ Design work for a protocol change runs through Spec Kit: `/speckit-specify` writ
 writes `tasks.md`. Read the plan for the feature being worked on before implementing it.
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
+
+- **Active plan**: [`specs/002-project-manifest/plan.md`](specs/002-project-manifest/plan.md) —
+  a per-machine manifest of named projects, so a command is told which deployment it is acting on
+  rather than inferring one from its working directory. Additive: a machine with no manifest
+  behaves exactly as today. No wire or schema change, and the protocol gains no notion of a
+  project. Carries one obligation — SPEC.md §4.1 illustrates this as `parley.yaml` and the plan
+  uses JSON, so §4.1 must be amended in the same change or the document describes a file the code
+  will not produce.
+- Previous: `specs/001-agent-routing-hints/`.
 <!-- SPECKIT END -->

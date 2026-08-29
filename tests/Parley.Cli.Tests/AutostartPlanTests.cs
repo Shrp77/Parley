@@ -157,7 +157,13 @@ public sealed class AutostartPlanTests
         var plist = plan.LaunchAgentPlist();
 
         Assert.Contains("&amp;", plist, StringComparison.Ordinal);
-        Assert.DoesNotContain("awkward/parley.db", plist, StringComparison.Ordinal);
+
+        // The unescaped ampersand, which is the thing launchd chokes on. This asserted the absence
+        // of "awkward/parley.db" instead — a substring that survives escaping intact and is
+        // *supposed* to, so the check only ever passed because Windows had rewritten the
+        // separator to a backslash by the time it ran. Vacuous on one platform and wrong on the
+        // other two, which is the worst of both: it was green everywhere anybody looked.
+        Assert.DoesNotContain("odd & awkward", plist, StringComparison.Ordinal);
     }
 
     [Fact]

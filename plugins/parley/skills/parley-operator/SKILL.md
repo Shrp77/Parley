@@ -50,6 +50,33 @@ great deal: `prune` read the retention variables from wherever it ran, so an ope
 delete text to a floor the deployment had not chosen. It cannot now. The broker holds the
 policy, applies it, and this command asks it to.
 
+## Projects, when there is more than one deployment
+
+A machine can host several Parley deployments at once - each with its own store, its own port
+and its own agents, and no visibility of each other. SPEC.md 4.1 calls that a *project*, and is
+careful that it is a deployment concept only: nothing about a project crosses the wire, and the
+same agent name may appear in two of them without either knowing.
+
+`parley project add` records one, so commands stop being told its paths a flag at a time:
+
+```
+parley project add orders --db C:/parley/orders.db --listen http://127.0.0.1:51707
+parley --project orders registry
+```
+
+With exactly one project configured, `--project` is unnecessary. With more than one and none
+named, **every command refuses and lists them rather than choosing** - picking silently would
+act on a deployment nobody asked for, and the output would look entirely normal.
+
+**A machine with no projects is an ordinary machine.** The manifest is optional, nothing reports
+its absence, and every flag and environment variable that worked before still works and still
+wins over a project's values.
+
+`parley project remove` takes out the entry and **deletes nothing** - not the store, not the node
+catalogue, not any repository's launch configuration. It says so each time, and names what is
+still there. Removing a project and then deleting its store are two decisions, and the tool will
+only ever make the first.
+
 ## The commands
 
 ```
@@ -58,6 +85,15 @@ parley autostart install              start the broker whenever you log in
 parley autostart remove               stop doing that
 parley autostart status               say whether it is set up
 parley up                             run this machine's node, so its agents can be started
+
+parley project list                   what this machine is configured for
+parley project add <name> --db <path> --listen <url>    name a deployment
+parley project remove <name>          forget how to reach one; deletes nothing
+
+parley enroll scan <dir> [<file>]     find repositories and tick the ones to enroll
+parley enroll scan <dir> --all        tick every one found, for scripts with no terminal
+parley enroll plan <manifest>         say what enrolling them would change
+parley enroll apply <manifest>        configure them all as agents
 
 parley registry                       every registered agent, with its workspace
 parley retire <agent>                 withdraw a registration
@@ -73,6 +109,18 @@ parley notifications                  how much Notify carries, and who can judge
 parley waiting <agent>                how many messages and polls await an agent
 parley --help                         the same list, on stdout, exiting zero
 ```
+
+`enroll` configures several repositories at once, and is a person's command rather than an
+agent's for the same reason the rest of this file is: it writes the launch configuration that
+decides what an agent *is*. Scanning writes a manifest, somebody fills in what each repository
+owns, `plan` says what would change and `apply` changes it.
+
+**It never composes an `owns` line and never rewrites a `## Peers` section it did not write.** The
+first because SPEC.md §17 question 10 makes that field worth reading only when a person meant it;
+the second because the block carries project rules no tool can tell apart from the roster around
+them. Reading the roster is still `/parley:write-peers`, and it comes last — every agent that
+registers makes every block already written stale, so onboarding *n* repositories one at a time
+rewrites the first one's block *n* times.
 
 `autostart` is what stops "nothing works until somebody runs `parley serve`" being a thing a
 person has to remember. It installs a scheduled task on Windows, a systemd user unit on Linux,
