@@ -366,6 +366,37 @@ public sealed class ProjectManifestTests : IDisposable
         Assert.DoesNotContain("node_config", File.ReadAllText(Path_), StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("a description\nwith a newline")]
+    [InlineData("x")] // padded to over the cap below
+    public void What_this_writes_it_can_read_back(string description)
+    {
+        // The property, rather than another case. Writing checked only the rules about pairs, so a
+        // description containing a newline went in as valid JSON and was refused by the very next
+        // read — a tool writing a file it cannot read back, which leaves the machine with an
+        // unreadable manifest that the rule protecting manifests then keeps unreadable until
+        // somebody edits it by hand.
+        var text = description.Length == 1
+            ? new string('x', ProjectSettings.MaxDescription + 1)
+            : description;
+
+        var project = Project() with { Description = text };
+
+        // Either it refuses to write, or what it wrote reads back. Never one without the other.
+        try
+        {
+            ProjectManifest.Write(Path_, [project]);
+        }
+        catch (InvalidDataException)
+        {
+            return;
+        }
+
+        Assert.True(
+            ProjectManifest.TryRead(Path_, out _, out var problem),
+            $"wrote a manifest it then refused to read: {problem}");
+    }
+
     [Fact]
     public void Writing_over_a_file_that_cannot_be_parsed_is_refused()
     {

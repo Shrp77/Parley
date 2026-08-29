@@ -154,6 +154,17 @@ public sealed class NodeTests
         Assert.Contains("alpha", broker.Runtime.Nodes);
 
         await node.DisposeAsync();
+
+        // Bounded wait rather than an immediate assertion. Disposing the client ends the stream;
+        // the broker forgets the machine when its own handler unwinds, which is a separate event
+        // on a separate thread. Asserting straight afterwards raced the two and lost about one run
+        // in three on Linux while passing every time on Windows.
+        //
+        // The property is kept, not weakened: SPEC.md §4.0 makes a stream ending the machine going
+        // away, and "within a moment" is what that means when the two sides are different
+        // processes. Asserting it happens synchronously is a promise the transport never made.
+        await broker.WaitUntilNodeGoneAsync("alpha", TimeSpan.FromSeconds(5));
+
         Assert.DoesNotContain("alpha", broker.Runtime.Nodes);
     }
 

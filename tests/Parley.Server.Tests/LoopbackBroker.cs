@@ -91,6 +91,35 @@ internal sealed class LoopbackBroker : IAsyncDisposable
         }
     }
 
+    /// <summary>Waits until the broker has noticed a node's stream ended.</summary>
+    /// <param name="machine">The machine that was joined.</param>
+    /// <param name="within">How long to allow.</param>
+    /// <returns>A task that completes once the node is gone.</returns>
+    /// <exception cref="TimeoutException">It was still listed when the time ran out.</exception>
+    /// <remarks>
+    /// The node half of <see cref="WaitUntilDetachedAsync"/>, and it is here because the lesson
+    /// that method records was learned twice. A node test asserted its machine was gone the
+    /// instant after disposing the client, which races the server-side handler unwinding on
+    /// another thread — it held on Windows and lost roughly one run in three on Linux, which is
+    /// the worst version of the fault: reliably green on the machine most people develop on.
+    /// </remarks>
+    public async Task WaitUntilNodeGoneAsync(string machine, TimeSpan within)
+    {
+        var deadline = DateTime.UtcNow + within;
+
+        while (Runtime.Nodes.Contains(machine))
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException(
+                    $"'{machine}' was still listed {within} after its stream ended. The broker " +
+                    "did not notice the disconnect.");
+            }
+
+            await Task.Delay(20).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>Opens a client channel to this broker.</summary>
     /// <returns>The client.</returns>
     public Wire.Agents.AgentsClient Connect() =>

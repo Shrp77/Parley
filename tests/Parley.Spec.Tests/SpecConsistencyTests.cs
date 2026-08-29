@@ -99,7 +99,15 @@ public sealed class SpecConsistencyTests
         // code remembering to filter. That is the trade §4.1 exists to refuse.
         //
         // Checked against the .proto because that is the contract another implementation reads.
-        var offending = Regex.Matches(SpecDocument.Proto, @"^\s*(?!//).*\bproject\b.*$",
+        //
+        // Comments are stripped first rather than excluded by a lookahead. The lookahead version of
+        // this — `^\s*(?!//).*` — does not work: the engine backtracks `\s*` by one space, the
+        // lookahead then sees " /" instead of "//", and the line matches after all. So a comment
+        // saying why there is deliberately no project field would have failed this check, which is
+        // how a guard earns a reputation for crying wolf and gets deleted.
+        var code = Regex.Replace(SpecDocument.Proto, @"//.*$", string.Empty, RegexOptions.Multiline);
+
+        var offending = Regex.Matches(code, @"^.*\bproject\b.*$",
                 RegexOptions.Multiline | RegexOptions.IgnoreCase)
             .Select(m => m.Value.Trim())
             .Where(line => line.Length > 0)

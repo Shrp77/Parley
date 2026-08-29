@@ -227,7 +227,12 @@ public static class ProjectCommand
         {
             ProjectManifest.Write(manifestPath, updated);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        // InvalidDataException included, and it is the backstop rather than the expected path:
+        // every fault Write refuses has already been reported above with all the others.
+        // If the two ever disagree the operator gets a sentence rather than a stack trace,
+        // which is the difference between a bug report and a mystery.
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                              or InvalidDataException)
         {
             await error.WriteLineAsync($"Could not write {manifestPath}: {exception.Message}")
                 .ConfigureAwait(false);
@@ -271,7 +276,12 @@ public static class ProjectCommand
         {
             ProjectManifest.Write(manifestPath, [.. projects.Where(p => p != going)]);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        // InvalidDataException included, and it is the backstop rather than the expected path:
+        // every fault Write refuses has already been reported above with all the others.
+        // If the two ever disagree the operator gets a sentence rather than a stack trace,
+        // which is the difference between a bug report and a mystery.
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                              or InvalidDataException)
         {
             await error.WriteLineAsync($"Could not write {manifestPath}: {exception.Message}")
                 .ConfigureAwait(false);

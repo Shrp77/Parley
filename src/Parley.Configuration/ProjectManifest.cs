@@ -50,7 +50,12 @@ public static class ProjectManifest
         "answer to which repositories may run with nobody watching.",
         "",
         "Managed with `parley project add|remove|list`. Editing by hand is fine; the same rules",
-        "are applied on read, so a mistake is refused rather than half-applied.",
+        "are applied on read, so a mistake is refused rather than half-applied - and whatever this",
+        "version does not recognise is carried across untouched, so an older Parley editing a newer",
+        "one's file does not eat it.",
+        "",
+        "This block is the exception: it is rewritten on every write, so notes of your own belong",
+        "anywhere else in the file rather than here.",
     ];
 
     /// <summary>
@@ -464,11 +469,19 @@ public static class ProjectManifest
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(projects);
 
-        var collisions = Collisions(projects);
+        // Every rule reading applies, not just the ones about pairs. This checked collisions only,
+        // so it would happily write a description containing a newline — valid JSON, refused by the
+        // very next TryRead. A tool that writes a file it cannot read back leaves the machine with
+        // an unreadable manifest, and the rule that protects a manifest the rest of the time is
+        // exactly the rule that then makes it unusable until somebody edits it by hand.
+        var faults = projects
+            .SelectMany(p => p.Problems().Concat(PathProblems(p)).Select(f => $"{p.Name}: {f}"))
+            .Concat(Collisions(projects))
+            .ToList();
 
-        if (collisions.Count > 0)
+        if (faults.Count > 0)
         {
-            throw new InvalidDataException(string.Join("; ", collisions));
+            throw new InvalidDataException(string.Join("; ", faults));
         }
 
         // Refused rather than replaced, for the same reason reading refuses it. Callers reach here
