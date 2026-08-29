@@ -3520,6 +3520,14 @@ Cheap to collect, disproportionately useful:
     mistake here would refuse legitimate fleet-wide questions, and would be discovered as
     "Parley cannot ask more than N machines anything", which is a hard reputation to lose.
 
+    So: instrument first. Record the size of every group question and how many of its answers
+    were `unknown`, which is the number that says whether the fan-out bought anything — a
+    question answered by one agent and shrugged at by nineteen is a question that should have
+    named its agent. Set the cap from that evidence, and record the evidence here.
+
+    Related to question 1, and for the same underlying reason. Both are paths where one agent
+    can put text into another's context without a debt bounding how much.
+
 13. Should `startable` be per agent rather than per machine? §14 reads an agent's presence from
     two connections: its own, and its machine's node. An agent that is not running on a machine
     whose node is connected therefore reads as `startable` — which is right about the machine and
@@ -3539,13 +3547,38 @@ Cheap to collect, disproportionately useful:
     machine can launch a durable fact in a shared store, and §4 has kept that firmly local until
     now. Decide it when somebody has been misled by the word, not before.
 
-    So: instrument first. Record the size of every group question and how many of its answers
-    were `unknown`, which is the number that says whether the fan-out bought anything — a
-    question answered by one agent and shrugged at by nineteen is a question that should have
-    named its agent. Set the cap from that evidence, and record the evidence here.
+14. Should the broker say which agent it recorded, on attach? The acknowledgement of §4.0's
+    stream carries counts and nothing else — how many exchanges were orphaned, whether the agent
+    was marked live — so an adapter learns that its attach succeeded and never learns what it
+    attached as. §12.3 makes the name safe to return: identity comes from the launch
+    configuration and §13 has the adapter fix it before the model gets a turn, so a name on the
+    acknowledgement discloses nothing the adapter did not itself supply.
 
-    Related to question 1, and for the same underlying reason. Both are paths where one agent
-    can put text into another's context without a debt bounding how much.
+    The half that is genuinely not in hand is the machine. §4.1.1 names an agent `role@machine`
+    and detects the machine rather than reading it from configuration, so a repository can
+    register as `billing@some-unexpected-host` and nothing in that agent's own view would show
+    it. The diagnostic that exists says exactly this and stops: the adapter's status report gives
+    registration as a yes rather than a name, on the ground that printing the configured name
+    back would report what was asked for rather than what the broker recorded. That reasoning is
+    right, and it is the argument for putting the name on the acknowledgement rather than in the
+    adapter — a name that arrives from the broker is the record, not the intent.
+
+    **Evidence, 2026-08-29.** During a nineteen-repository rollout an operator restarted the
+    session in the wrong repository, saw the server bound and the agent registered, and concluded
+    that the repository they meant had registered. Every check available from inside was true,
+    and none of them named the repository they were true about. The mistake was visible only from
+    another agent's roster — which is the deployment-wide view §10.1 withholds from an agent on
+    purpose — so the one party who could see it was the one party not looking. A single
+    `role@machine` on the acknowledgement would have made it self-evident where the confusion
+    was.
+
+    The cost of leaving it is that a misdirected launch is indistinguishable from a correct one
+    at the only point somebody is watching, and the view that settles it belongs to an operator.
+    The cost of fixing it is a field on a message the broker already sends first, saying what it
+    has just written about the caller and nothing about anybody else.
+
+    Related to question 13. Both are places where the registry holds something an agent is left
+    to infer, and both were found by somebody being misled rather than by reading this document.
 
 ---
 
