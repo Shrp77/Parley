@@ -56,6 +56,7 @@ what language they are written in.
 | **Agent** | A named participant that can answer questions about a bounded domain. Usually an AI coding agent scoped to one repository, but see §11. |
 | **Broker** | The single long-lived process that owns routing, state, locking, and lifecycle. |
 | **Adapter** | The vendor-specific glue that attaches an agent to the broker. |
+| **Responder** | Whatever produced the text of one message — a model, a script, or a person. An agent has a responder; a responder need not have an agent. See §11.2. |
 | **Exchange** | One question and its resolution, including any clarifications. |
 | **Pair** | An unordered set of exactly two agents. Identifies traffic between them; see §7.1. |
 
@@ -2389,6 +2390,18 @@ and return text. That admits:
 
 Anything that can answer a bounded question about a bounded domain can participate.
 
+**This admits responders; §11.1's residency rule governs agents.** The two are different things
+and this document uses both words deliberately. An agent is the named participant of §3 that holds
+a position across turns; a responder is whatever produced the text of one message. A resident
+Headless agent has a responder inside it, and a script answering from a contracts directory is a
+responder with no agent around it at all.
+
+So nothing here softens §11.1. A responder re-created per question can answer a bounded factual
+question, and it still cannot remember why it asked a clarification or negotiate a contested
+boundary — which is why §11.1 calls that shape the wrong mechanism for an agent rather than a
+degraded one. Admitting such a responder says what may sit behind an adapter. It is not licence to
+build an agent that way.
+
 ### 11.3 Asymmetric answer quality
 
 A capable frontier model and a small local model both return an `Answer`, and the
@@ -2445,7 +2458,7 @@ payload is otherwise capped, so an unbounded identity is an unbounded header.
 §8 lives in tool descriptions, which Full and Pull-only agents re-read on every call.
 Headless agents receive the rules as a prompt preamble instead — weaker, and prone to
 decay over long runs. This is an accepted limitation. Measure it through the
-`out_of_scope` rate and clarify-depth telemetry in §14.
+`out_of_scope` rate and clarify-depth telemetry in §15.
 
 ## 12. Registration and credentials
 
