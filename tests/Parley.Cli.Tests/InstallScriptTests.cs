@@ -145,6 +145,74 @@ public sealed class InstallScriptTests
         Assert.Contains(".mcp.json", text, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void Each_script_refuses_before_it_stops_anything_when_an_adapter_holds_the_tools(
+        string script)
+    {
+        // Observed: a running parley-mcp holds its own files in the tool store, so the uninstall
+        // fails with a denied path. The error was clear; the order was not. The broker had
+        // already been stopped, so a machine that had been serving a deployment was left with no
+        // broker, one tool replaced and one not, by a script that had reported only success.
+        //
+        // Checked as ordering rather than as presence, because a check that ran after the stop
+        // would read exactly the same in a diff and fix nothing.
+        var text = RepositoryFile.Read(script);
+
+        // The message the guard prints, not the name of the tool: `parley-mcp` appears in the
+        // table of tools near the top of both scripts, so anchoring on it would pass with the
+        // guard deleted -- a check that asserts the tool list comes before the install step.
+        var guard = text.IndexOf(
+            "hold the files this would replace", StringComparison.Ordinal);
+        var stop = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? text.IndexOf("Stopping any running broker", StringComparison.Ordinal)
+            // The shell script names its stop with a function, and the first mention of that
+            // is the definition. "Installing version" is the point of no return in both.
+            : text.IndexOf("Installing version", StringComparison.Ordinal);
+
+        Assert.True(guard >= 0, $"{script} does not look for a running adapter at all");
+        Assert.True(stop >= 0, $"{script} no longer stops the broker where this test expects");
+        Assert.True(
+            guard < stop,
+            $"{script} checks for a running adapter after stopping the broker, which is the "
+            + "order that left a machine with no broker and a half-finished install");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void Each_script_also_refuses_a_broker_somebody_started_by_hand(string script)
+    {
+        // Both scripts leave a hand-started broker alone on purpose -- ending a process a person
+        // launched themselves is not a script's business. But it holds the binary exactly as
+        // firmly as one an autostart entry started, so without this the uninstall fails on a
+        // denied path and leaves the tools half replaced. Checked after the stop, which is the
+        // only point where the two can be told apart.
+        var text = RepositoryFile.Read(script);
+
+        var post = text.IndexOf(
+            "still holding the tools after the broker was stopped", StringComparison.Ordinal);
+
+        var install = text.IndexOf("Installing version", StringComparison.Ordinal);
+
+        Assert.True(post >= 0, $"{script} does not look for a stray broker after stopping");
+        Assert.True(
+            post < install,
+            $"{script} checks for a stray broker after it has begun replacing files");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void Neither_script_hardcodes_a_tool_command_in_its_guards(string script)
+    {
+        // The guards match on process names, and a name that matches nothing looks exactly like a
+        // machine with nothing running -- so a rename would disable them silently. Both derive
+        // the names from the list each script already keeps, and this is what says they still do.
+        var text = RepositoryFile.Read(script);
+
+        Assert.DoesNotContain("pgrep -x parley-mcp", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Get-Process -Name 'parley-mcp'", text, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void The_readme_sends_a_new_user_to_the_scripts()
     {

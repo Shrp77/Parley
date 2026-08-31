@@ -65,6 +65,10 @@ fi
 # one this script may be in the middle of deleting.
 task="parley-broker"
 
+# The command the broker runs as, so the pre-flight below can leave it out of the adapters and
+# recognise it afterwards.
+broker="parley"
+
 step() { printf '%s==> %s%s\n' "$cyan" "$1" "$plain"; }
 note() { printf '%s    %s%s\n' "$grey" "$1" "$plain"; }
 
@@ -269,7 +273,73 @@ fi
 # below fail and the install after it a no-op that reports success.
 step "Stopping any running broker"
 
+# Before anything is stopped, because the failure this catches used to arrive afterwards.
+#
+# A running `parley-mcp` holds its own files in the tool store, so `dotnet tool uninstall` fails
+# on a denied path. That on its own would be a clear error and no great harm. The harm was the
+# order: the broker was stopped first, so a machine that had been serving a deployment was left
+# with no broker, one tool replaced and one not, by a script that had reported nothing but
+# success up to that point.
+#
+# The broker itself is not checked here. It is stopped a few lines below, deliberately and by
+# name, which is a different thing from a session somebody has open.
+step "Checking nothing holds the tools"
+
+# Derived from the command list above rather than named again here. A third tool, or a rename,
+# would otherwise leave this checking something that no longer exists -- quietly, because a guard
+# that matches nothing looks exactly like a machine with nothing running.
+#
+# The broker's own command is excluded: it is stopped a few lines below, deliberately and by name.
+# One started by hand is a different matter and is caught after that, where it can be told apart.
+holders=""
+
+for cmd in "${commands[@]}"; do
+    [ "$cmd" = "$broker" ] && continue
+
+    found="$(pgrep -x "$cmd" 2>/dev/null || true)"
+    [ -n "$found" ] && holders="$holders$found
+"
+done
+
+holders="$(printf '%s' "$holders" | sed '/^$/d')"
+
+if [ -n "$holders" ]; then
+    count="$(printf '%s\n' "$holders" | wc -l | tr -d ' ')"
+
+    echo "==> $count Parley adapter(s) are running and hold the files this would replace:" >&2
+    printf '      pid %s\n' $holders >&2
+    echo "    Each one belongs to an editor session with Parley configured. Close those" >&2
+    echo "    sessions and run this again. Nothing has been changed and the broker has not" >&2
+    echo "    been stopped." >&2
+
+    exit 1
+fi
+
+note "no adapter is holding the tool store"
+
 stop_broker
+
+# After the stop, because until now a running broker was expected. What is left is one somebody
+# started by hand, which stop_broker deliberately leaves alone -- and which holds the binary just
+# as firmly. Caught here rather than by the uninstall, which would fail and leave the tools half
+# replaced.
+strays=""
+
+for cmd in "${commands[@]}"; do
+    found="$(pgrep -x "$cmd" 2>/dev/null || true)"
+    [ -n "$found" ] && strays="$strays$cmd $found
+"
+done
+
+if [ -n "$(printf '%s' "$strays" | sed '/^$/d')" ]; then
+    echo "==> Something is still holding the tools after the broker was stopped:" >&2
+    printf '      %s
+' $strays >&2
+    echo "    A broker started by hand is not stopped by this script, on purpose. Stop it and" >&2
+    echo "    run this again. Nothing has been replaced." >&2
+
+    exit 1
+fi
 
 step "Installing version $built"
 

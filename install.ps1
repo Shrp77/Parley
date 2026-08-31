@@ -68,6 +68,10 @@ $tools = @(
 # may be in the middle of deleting.
 $task = 'parley-broker'
 
+# The command the broker runs as, so the pre-flight below can leave it out of the adapters and
+# recognise it afterwards.
+$broker = 'parley'
+
 <#
 .SYNOPSIS
     Which of this repository's tools are installed globally, lower-cased.
@@ -272,11 +276,64 @@ if (-not $built) { Write-Error 'Nothing was packed. The build produced no packag
 
 # ----------------------------------------------------------------- install ---
 
+# Before anything is stopped, because the failure this catches used to arrive afterwards.
+#
+# A running `parley-mcp` holds its own files in the tool store, so `dotnet tool uninstall` fails
+# with "Access to the path ...\.store\parley.mcp\<version>' is denied". That on its own would be
+# a clear error and no great harm. The harm was the order: the broker was stopped first, so a
+# machine that had been serving a deployment was left with no broker, one tool replaced and one
+# not, by a script that had reported nothing but success up to that point.
+#
+# The broker itself is not checked here. It is stopped a few lines below, deliberately and by
+# name, which is a different thing from a session somebody has open.
+Write-Step 'Checking nothing holds the tools'
+
+# Derived from the table above rather than named again here. A third tool, or a rename, would
+# otherwise leave this checking something that no longer exists -- quietly, because a guard that
+# matches nothing looks exactly like a machine with nothing running.
+#
+# The broker's own command is excluded: it is stopped a few lines below, deliberately and by name.
+# One started by hand is a different matter and is caught after that, where it can be told apart.
+$adapters = @($tools | Where-Object { $_.Command -ne $broker } | ForEach-Object { $_.Command })
+
+$holders = @(Get-Process -Name $adapters -ErrorAction SilentlyContinue)
+
+if ($holders.Count -gt 0) {
+    $listed = ($holders | ForEach-Object { "      pid $($_.Id), started $($_.StartTime.ToString('HH:mm'))" }) -join "`n"
+
+    Write-Error @"
+$($holders.Count) Parley adapter(s) are running and hold the files this would replace:
+$listed
+    Each one belongs to an editor session with Parley configured. Close those sessions and run
+    this again. Nothing has been changed and the broker has not been stopped.
+"@
+}
+
+Write-Note 'no adapter is holding the tool store'
+
 # Before anything replaces a file. A live broker holds the binary open, which makes the
 # uninstall below fail and the install after it a no-op that reports success.
 Write-Step 'Stopping any running broker'
 
 Stop-Broker
+
+# After the stop, because until now a running broker was expected. What is left is one somebody
+# started by hand, which Stop-Broker deliberately leaves alone -- and which holds parley.exe just
+# as firmly. Caught here rather than by the uninstall, which would report a denied path and leave
+# the tools half replaced.
+$strays = @(Get-Process -Name ($tools | ForEach-Object { $_.Command }) -ErrorAction SilentlyContinue)
+
+if ($strays.Count -gt 0) {
+    $listed = ($strays | ForEach-Object { "      $($_.ProcessName), pid $($_.Id)" }) -join "`n"
+
+    Write-Error @"
+Something is still holding the tools after the broker was stopped:
+$listed
+    A broker started by hand is not stopped by this script, on purpose. Stop it and run this
+    again. Nothing has been replaced; the autostart broker is stopped and will start again at
+    logon, or now with: Start-ScheduledTask -TaskName $task
+"@
+}
 
 Write-Step "Installing version $built"
 
