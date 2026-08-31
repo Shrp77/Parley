@@ -3593,6 +3593,59 @@ Cheap to collect, disproportionately useful:
     Related to question 13. Both are places where the registry holds something an agent is left
     to infer, and both were found by somebody being misled rather than by reading this document.
 
+15. **A start and a turn are different requests, and the broker only ever makes one of them.**
+    §14 has the broker instantiate an agent on the first inbound Question. A machine's node
+    implements both halves of that correctly: asked for an agent it already holds, it gives that
+    resident a turn; asked for one it does not, it starts a process and gives the new agent a turn.
+    Its own code says why — a process that launched and sat there would have attached, drained
+    nothing and answered nothing, because waking an adapter is not the model taking a turn.
+
+    The broker asks only when the agent is not attached. When a session is already attached it is
+    silent, and that silence is defensible on its face: asking for a *start* would duplicate a
+    process for an agent that already has one.
+
+    But the thing needed for the second Question was never a start. It was a turn — and there is no
+    request for one. So each half behaves sensibly alone and the seam between them drops the work:
+    a Question to an attached agent is written, reaches nobody, expires on §6's delivery window and
+    is ghosted. **One question per agent, then silence** — silent in exactly the way §11.1 warns of,
+    because the registry reports the agent live, the broker records messages waiting, and the
+    deployment looks like it is working.
+
+    **Evidence, 2026-08-31.** A nineteen-agent deployment on one machine, hosted by one node. One
+    agent asked five peers. Four were started, answered once, and went quiet; every later ask
+    ghosted, and one peer accumulated four uncollected messages behind a session reported as
+    running. Killing that session's process restored it: with nothing attached, the next Question
+    became a start again, and it answered. The remedy was killing a process to turn a turn into a
+    start, which is the shape of a defect rather than of a misconfiguration.
+
+    **The mechanism is settled and built.** The broker asks for a turn when the agent is attached
+    and a start when it is not; the node gives the turn only to a resident of its own, and does
+    nothing for an agent attached through somebody's editor window, because nothing can make a
+    person's window take a turn. It is a separate command rather than a flag on the start,
+    because only the node knows which sessions are its own — a broker that asked for a start
+    instead would produce exactly the duplicate process that suppression existed to prevent.
+
+    What remains open is the bound.
+
+    A turn is not free. It is a model taking a turn, charged to whoever hosts the agent rather than
+    to whoever asked, so anything that can cause a turn is a way for one agent to spend another
+    deployment's compute. What bounds it today is that only a Question, a Clarify and an Answer
+    ask for one — a Notify nudges and never asks — so the volume is held by §7.1's per-pair
+    question cap rather than by anything chosen for this purpose. That is a bound by accident,
+    and it is worth saying out loud that it is the *uncapped* message type which happens not to
+    reach this path. Wiring Notify to it later, for the obvious-looking reason that a notified
+    agent should read its mail, would make it unbounded and would be question 1's problem reached
+    by a second route.
+
+    §11.1 already carries a policy of the right shape for the resident tier: an agent whose most
+    recent turn left as much waiting as it found is not given another until the count rises.
+    Whatever is chosen here should be at least that strict. An agent mid-turn must also not be
+    given a second concurrently, which each node enforces for its own residents and no broker can
+    see.
+
+    So: the mechanism is a small change and the policy is not. Decide the policy first, and record
+    what a turn costs when somebody has measured one.
+
 ---
 
 ## 18. Version history

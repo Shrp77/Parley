@@ -95,6 +95,13 @@ public static class NodeCommand
 
         var residents = new ConcurrentDictionary<string, ResidentAgent>(StringComparer.Ordinal);
 
+        // Turns now run concurrently and each reports its own outcome, so more than one of them can
+        // be writing at once. A TextWriter is not thread-safe, and the callers here supply whatever
+        // they have — one passes Console.Out, which is synchronised, and one passes a writer that
+        // may not be. Wrapping once at the entry point makes that not a question the callers have
+        // to have got right.
+        output = TextWriter.Synchronized(output);
+
         try
         {
             using var stream = nodes.Join(request, cancellationToken: cancellationToken);
@@ -113,6 +120,11 @@ public static class NodeCommand
                     case Wire.NodeCommand.CommandOneofCase.Start:
                         await StartAsync(command.Start, catalogue, residents, output,
                             cancellationToken).ConfigureAwait(false);
+                        break;
+
+                    case Wire.NodeCommand.CommandOneofCase.Turn:
+                        await TurnAsync(command.Turn, residents, output, cancellationToken)
+                            .ConfigureAwait(false);
                         break;
 
                     case Wire.NodeCommand.CommandOneofCase.Stop:
@@ -241,7 +253,7 @@ public static class NodeCommand
             // Already here. The broker checks before asking, but the check and the command are
             // not one operation — so this is the race, and losing it must not produce a second
             // process for an agent that needed one.
-            await GiveTurnAsync(existing, output, cancellationToken).ConfigureAwait(false);
+            DispatchTurn(existing, output, cancellationToken);
             return;
         }
 
@@ -265,13 +277,139 @@ public static class NodeCommand
             await output.WriteLineAsync(
                 $"  {agent.Value}: started ({start.Because}).").ConfigureAwait(false);
 
-            await GiveTurnAsync(resident, output, cancellationToken).ConfigureAwait(false);
+            DispatchTurn(resident, output, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             await output.WriteLineAsync($"  {agent.Value}: could not start — {exception.Message}")
                 .ConfigureAwait(false);
         }
+    }
+
+    /// <summary>Gives a turn to an agent this node already holds.</summary>
+    /// <param name="turn">Which agent, and why.</param>
+    /// <param name="residents">The agents already running here.</param>
+    /// <param name="output">Where to report.</param>
+    /// <param name="cancellationToken">Stops the turn.</param>
+    /// <returns>A task that completes when the turn has been taken.</returns>
+    /// <remarks>
+    /// <para>
+    /// Silent when the agent is not one of this node's residents, and that silence is the point
+    /// rather than an omission. An agent can be attached through a session this machine did not
+    /// start — somebody's editor window — and there is nothing a node can do to make one take a
+    /// turn. Saying so on every question would print a line per message for an agent that is
+    /// working perfectly well, driven by the person sitting in front of it.
+    /// </para>
+    /// <para>
+    /// A resident of ours that has died is a different case and is not silent. It means the broker
+    /// believes a session is attached while the process behind it has gone, and dropping the
+    /// question there would reproduce, in a smaller window, the silence this command exists to
+    /// fix.
+    /// </para>
+    /// <para>
+    /// The turn itself is serialised per resident by <see cref="ResidentAgent"/>, so a burst of
+    /// questions queues rather than arriving at one agent at once.
+    /// </para>
+    /// </remarks>
+    internal static async Task TurnAsync(
+        Wire.GiveTurn turn,
+        ConcurrentDictionary<string, ResidentAgent> residents,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        if (!AgentName.TryCreate(turn.Agent, out var agent))
+        {
+            return;
+        }
+
+        if (!residents.TryGetValue(agent.Value, out var resident))
+        {
+            // Not one of ours. Silent, and common: an agent attached through somebody's editor
+            // window is working perfectly well, driven by the person in front of it.
+            return;
+        }
+
+        if (!resident.IsAlive)
+        {
+            // Ours, and dead. Rare, and not the same thing at all — the broker believes a session
+            // is attached and the process behind it has gone, which is the window between a
+            // resident dying and the broker noticing the stream close. Saying nothing would drop
+            // this question exactly the way the silence this command exists to fix dropped the
+            // last one, so the corpse is cleared and the anomaly is named. The broker's next
+            // question arrives as a start, because by then nothing is attached.
+            if (residents.TryRemove(agent.Value, out var corpse))
+            {
+                // Disposed rather than dropped. The process has gone but the object holding it
+                // has not: it owns a Process handle and the two pumps draining that process's
+                // output, and StopAsync is careful about exactly this. Letting the reference fall
+                // out of the dictionary would leak both, once per agent that ever dies.
+                await corpse.DisposeAsync().ConfigureAwait(false);
+            }
+
+            await output.WriteLineAsync(
+                $"  {agent.Value}: asked for a turn, but its process has gone. Cleared; the next "
+                + "question will start it.").ConfigureAwait(false);
+
+            return;
+        }
+
+        // Reported like any other turn once it is actually given. Only the "not mine" case is
+        // silent; a turn that fails is a turn the operator needs to hear about.
+        DispatchTurn(resident, output, cancellationToken);
+    }
+
+    /// <summary>Starts a turn without holding up the command stream.</summary>
+    /// <param name="resident">The agent to give a turn.</param>
+    /// <param name="output">Where to report.</param>
+    /// <param name="cancellationToken">Stops the turn.</param>
+    /// <remarks>
+    /// <para>
+    /// A turn is a model taking a turn and can run for minutes. Awaiting one inside the command
+    /// loop makes the whole machine single-file: while one agent thinks, a question for a
+    /// different agent waits behind it, and on a machine hosting nineteen agents that is the
+    /// ordinary case rather than the unlucky one. It mattered less when a turn followed only a
+    /// start; now that every question to a running agent asks for one, it would be the common path.
+    /// </para>
+    /// <para>
+    /// Starting a process deliberately stays inside the loop. Two starts racing for one agent
+    /// would produce the duplicate process the design refuses everywhere else, and serialising
+    /// them is what makes the check-then-add on the resident table safe. Launching is quick; it is
+    /// the turn afterwards that is slow, and only that is let go.
+    /// </para>
+    /// <para>
+    /// Left unobserved on purpose: <see cref="GiveTurnAsync"/> reports its own failures and lets
+    /// nothing escape but cancellation, which arrives when the node is stopping and has nowhere
+    /// useful to be reported to. Turns against one agent are still serialised, by that agent's own
+    /// lock rather than by this loop.
+    /// </para>
+    /// </remarks>
+    private static void DispatchTurn(
+        ResidentAgent resident, TextWriter output, CancellationToken cancellationToken)
+    {
+        _ = Observe(GiveTurnAsync(resident, output, cancellationToken));
+
+#pragma warning disable CA1031 // Do not catch general exception types
+        static async Task Observe(Task turn)
+        {
+            try
+            {
+                await turn.ConfigureAwait(false);
+            }
+            catch
+            {
+                // Total on purpose, because this is the boundary where nothing is awaiting.
+                //
+                // GiveTurnAsync handles its own faults and lets cancellation through, which alone
+                // would argue for catching only that. But the way it handles a fault is to write a
+                // line, and a write can fail too — a closed stream on the way down, an I/O error on
+                // a redirected one. An exception escaping here has nowhere to go: it surfaces later
+                // as an unobserved task exception, attributed to no agent and no command, on a path
+                // where the useful information was already reported by the line that failed.
+                //
+                // A node must not be taken off the air by the reporting of one agent's turn.
+            }
+        }
+#pragma warning restore CA1031
     }
 
     /// <summary>Gives a resident agent a turn.</summary>

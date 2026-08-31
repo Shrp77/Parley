@@ -520,7 +520,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
     {
         await _runtime.NudgeAsync(peer, context.CancellationToken).ConfigureAwait(false);
 
-        _ = _runtime.RequestStart(peer, $"{asker.Value} asked it a question");
+        _ = _runtime.RequestAttention(peer, $"{asker.Value} asked it a question");
     }
 
     /// <summary>Wakes whichever party a move handed the turn to.</summary>
@@ -543,7 +543,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
             // Started as well, for the same reason an ask does it: a clarification handed to an
             // agent that has since closed its session is a turn nobody is there to take, and the
             // exchange is still open and still counting down.
-            _ = _runtime.RequestStart(message.To, $"{message.From.Value} is waiting on it");
+            _ = _runtime.RequestAttention(message.To, $"{message.From.Value} is waiting on it");
         }
     }
 

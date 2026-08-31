@@ -240,6 +240,28 @@ public sealed class JoinedNode : IAsyncDisposable
         });
     }
 
+    /// <summary>Asks the node to give an agent it already holds a turn.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for the operator's benefit.</param>
+    /// <returns><see langword="true"/> if the command was queued.</returns>
+    /// <remarks>
+    /// Sent when an agent is attached, which is exactly when a start is not asked for. The node
+    /// gives the turn only if the session is one of its own residents, because an agent attached
+    /// through somebody's editor window is not something this machine can drive.
+    /// </remarks>
+    internal bool RequestTurn(AgentName agent, string because)
+    {
+        if (!Startable.Contains(agent.Role))
+        {
+            return false;
+        }
+
+        return _commands.Writer.TryWrite(new Wire.NodeCommand
+        {
+            Turn = new Wire.GiveTurn { Agent = agent.Value, Because = because }
+        });
+    }
+
     /// <summary>Ends the stream without touching the registry.</summary>
     internal void Close() => _ = _commands.Writer.TryComplete();
 

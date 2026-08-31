@@ -373,6 +373,7 @@ message NodeCommand {
 
     StartAgent start = 2;
     StopAgent stop = 3;
+    GiveTurn turn = 4;
   }
 }
 
@@ -386,6 +387,25 @@ message Joined {
 }
 
 message StartAgent {
+  string agent = 1;
+  string because = 2;            // for the operator's benefit, never the agent's
+}
+
+// A turn, for an agent this node already holds.
+//
+// Distinct from StartAgent on purpose, and the distinction is the whole of it. A start is not
+// asked for when an agent is already attached, because a second process for one agent is worse
+// than a late answer. But what a second question needs is not a start, it is a turn -- and
+// without this there is no way to ask for one, so the question is written, reaches nobody, and
+// is ghosted on the ordinary schedule while the registry reports the agent live.
+//
+// It is a separate command rather than a flag on StartAgent because only the node knows which
+// sessions are its own. An agent can be attached through a session this node did not start --
+// somebody's editor window -- and asking the node to start that one would produce exactly the
+// duplicate process the refusal exists to prevent. So the node gives a turn only to its own
+// resident, and does nothing at all otherwise: nothing can make a person's window take a turn,
+// and pretending otherwise would be worse than silence.
+message GiveTurn {
   string agent = 1;
   string because = 2;            // for the operator's benefit, never the agent's
 }

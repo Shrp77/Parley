@@ -454,11 +454,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
     }
 
     /// <summary>
-    /// Asks an agent's machine to start it, if it is not already running.
+    /// Asks an agent's machine to see to it: a start if it is not running, a turn if it is.
     /// </summary>
     /// <param name="agent">The agent a question is waiting for.</param>
     /// <param name="because">Why, for the operator's benefit.</param>
-    /// <returns><see langword="true"/> if a start was asked for.</returns>
+    /// <returns><see langword="true"/> if the machine was asked for either.</returns>
     /// <remarks>
     /// <para>
     /// This is what makes SPEC.md §5.5 more than a promise. A question may be addressed to an
@@ -467,21 +467,34 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// nothing here dials anything and no address in the registry is ever used as a route.
     /// </para>
     /// <para>
-    /// Silent and false when the agent is running, when its machine has no node, or when that
-    /// node did not list the role among what it can launch. None of those is an error: §5.5 asks
-    /// a machine that is switched off deliberately, so that its silence arrives as an orphan the
-    /// asker is told about rather than an answer nobody noticed was missing.
+    /// <b>Not named for the start, because the start is only half of it.</b> An agent that is
+    /// already attached needs a turn rather than a process, and this used to fall silent in that
+    /// case — which read as correct and meant every question after the first reached nobody. A
+    /// name that promised only a start is how that stayed invisible: the call did what it said,
+    /// and what it said was not what the traffic needed.
+    /// </para>
+    /// <para>
+    /// Silent and false when the machine has no node, or when that node did not list the role
+    /// among what it can launch. Neither is an error: §5.5 asks a machine that is switched off
+    /// deliberately, so that its silence arrives as an orphan the asker is told about rather than
+    /// an answer nobody noticed was missing.
     /// </para>
     /// </remarks>
-    public bool RequestStart(AgentName agent, string because)
+    public bool RequestAttention(AgentName agent, string because)
     {
-        if (_attached.TryGetValue(agent.Value, out var sessions) && !sessions.IsEmpty)
+        if (!_nodes.TryGetValue(agent.Machine, out var node))
         {
             return false;
         }
 
-        return _nodes.TryGetValue(agent.Machine, out var node)
-            && node.RequestStart(agent, because);
+        // Attached already, so a start would duplicate a process. What the traffic needs is not a
+        // start but a turn, and falling silent here is what left a second question reaching
+        // nobody: written, never collected, ghosted on the ordinary schedule while the registry
+        // reported the agent live. The node gives the turn only to a resident of its own, so an
+        // agent attached through somebody's editor window is left alone rather than duplicated.
+        return _attached.TryGetValue(agent.Value, out var sessions) && !sessions.IsEmpty
+            ? node.RequestTurn(agent, because)
+            : node.RequestStart(agent, because);
     }
 
     /// <summary>

@@ -60,7 +60,7 @@ public sealed class NodeTests
     }
 
     [Fact]
-    public async Task A_running_agent_is_not_started_again()
+    public async Task A_running_agent_is_given_a_turn_rather_than_started_again()
     {
         var token = TestContext.Current.CancellationToken;
 
@@ -90,8 +90,53 @@ public sealed class NodeTests
         // And not launched a second time. A start command for an agent already running produces
         // a second session for one that needed none, and the duplicate is invisible from the
         // asker's side -- the answer arrives either way.
-        await Assert.ThrowsAsync<TimeoutException>(
-            async () => await node.WaitForCommandAsync(TimeSpan.FromMilliseconds(300)));
+        //
+        // But the machine is still told, because what this question needs is a turn rather than a
+        // start. Saying nothing at all is what left a second question reaching nobody: written,
+        // never collected, ghosted on the ordinary schedule while the registry reported the agent
+        // live. The node gives the turn only to a resident of its own, so an agent attached through
+        // somebody's editor window is left alone rather than duplicated.
+        var command = await node.WaitForCommandAsync(Patience);
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, command.CommandCase);
+        Assert.Equal("infra@alpha", command.Turn.Agent);
+        Assert.Contains("docs@alpha", command.Turn.Because, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Every_further_question_to_a_running_agent_asks_for_another_turn()
+    {
+        // The defect this guards was not that the first question failed. It was that the second
+        // one did, silently, for as long as the session lived.
+        var token = TestContext.Current.CancellationToken;
+
+        await using var broker = await LoopbackBroker.StartAsync(token);
+
+        await using var docs = await AttachedClient.AttachAsync(
+            broker, "docs@alpha", "C:/repo-docs", token);
+
+        await using var infra = await AttachedClient.AttachAsync(
+            broker, "infra@alpha", "C:/repo-infra", token);
+
+        await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["infra"], token);
+
+        foreach (var subject in new[] { "the retry policy", "the realm", "the secrets" })
+        {
+            _ = await docs.Client.AskAsync(
+                new Wire.AskRequest
+                {
+                    From = docs.Name,
+                    To = infra.Name,
+                    ResponderModel = "some-model-9",
+                    PayloadJson = Question($"who owns {subject}")
+                },
+                cancellationToken: token);
+
+            var command = await node.WaitForCommandAsync(Patience);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, command.CommandCase);
+            Assert.Equal("infra@alpha", command.Turn.Agent);
+        }
     }
 
     [Fact]
