@@ -191,6 +191,24 @@ repository, and they now belong to `parley serve` - one process applies them, so
 answer. Setting them per agent used to mean a deployment could enforce different numbers on one
 file with nothing to show which was in force.
 
+### The file is per branch, and that is a trap
+
+`.mcp.json` is a tracked file in most repositories, so **which branch is checked out decides
+whether this agent exists**. Written on a feature branch, the entry is on disk while that branch
+is out and gone the moment somebody switches to one that predates it — and the agent is then
+simply absent. Nothing errors. The session starts, the tools are not there, and the peer that
+asked it a question waits out its window and is ghosted.
+
+It is worse than it first looks, because a session reads `.mcp.json` **once, at startup**. Fixing
+the file, or switching to the branch that has it, does nothing for a session already running:
+`claude mcp list` will report the server connected — that is a separate process reading the
+current file — while the session beside it still has no Parley tools at all. The two claims look
+identical and are not.
+
+So say this to the user when the entry is written on anything but their mainline: get the commit
+onto the branch everything else is cut from, and restart the session afterwards. Until then the
+registration is only as reliable as their next `git switch`.
+
 ## 4. Ask whether this repository may answer unattended
 
 Everything so far needs a person to take a turn: this agent answers when its session does, and

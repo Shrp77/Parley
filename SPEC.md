@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.2 (draft)
+**Version:** 0.3 (draft)
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -864,7 +864,7 @@ exempt from it. Each exemption is justified where it is granted; the consequence
 when they are read together, so it is stated here as well.
 
 A Clarify takes no slot (§5.2) and arrives in the other party's inbox exactly as a Question
-does, carrying the same 4,000 characters. The only thing bounding that channel is the
+does, carrying the same 8,000 characters. The only thing bounding that channel is the
 clarification cap of rule 8.5 — which §5.2 justifies purely as an anti-ping-pong device, and
 which is therefore doing a second job nothing in this document claims for it. Raising that cap
 widens a context channel, not merely a patience allowance, and §17 question 4 must be read with
@@ -1052,32 +1052,33 @@ model. That is worth stating plainly rather than leaving the list to imply unifo
    five Questions cost it five. Nothing is serialised any more (§4.2), so this is no longer
    about round trips — it is about the only currency that still matters, which is the
    context you spend on the other end.
-5. **Hard size cap.** 4,000 characters per message, enforced by the broker.
+5. **Hard size cap.** 8,000 characters per message, enforced by the broker.
    Truncation is a protocol error, not a warning.
 
-   The number is a judgement, not a measurement, and it is worth saying which parts of it
-   are load-bearing. What the cap defends is how much of one agent's context can be poured
-   into another's; at four thousand characters a message is roughly a thousand tokens, which
-   is small beside any modern context and far too small to paste a file into. Volume is
-   bounded separately and more strongly — one open exchange per pair (§7.1) and a cap on
-   clarification rounds (§5.2) — so this is the third control on the same risk rather than
-   the only one.
+   **This is the first value here that was measured.** What the cap defends is how much of one
+   agent's context can be poured into another's; at eight thousand characters a message is
+   roughly two thousand tokens, which is still small beside any modern context and still far
+   too small to paste a file into. Volume is bounded separately and more strongly — one open
+   exchange per pair (§7.1) and a cap on clarification rounds (§5.2) — so this is the third
+   control on the same risk rather than the only one.
 
    What it buys beyond that is editorial: a bounded answer forces the answerer to decide
    what matters, and an unbounded one hands that job to the asker, which is the shared-context
    problem arriving by another route.
 
-   It was 2,000 until refusals were instrumented (§10.2, `refusals`). Set the next value from
-   that record rather than from judgement again.
+   It was 2,000, then 4,000, both chosen because they sounded like enough. Refusals were
+   instrumented (§10.2, `refusals`) so the next move would not have to be, and 8,000 is that
+   move: §17 question 16 carries the record it was set from. Set the one after it the same way.
 
-   **Doubling it doubled the worst case, and that number should be written down rather than
+   **Doubling it doubles the worst case, and that number should be written down rather than
    left to be worked out.** An exchange carries at most one answer and `clarify_depth_cap`
    clarifications in each direction, so at a cap of three the most one peer can place in
-   another's context through a single exchange went from eight thousand characters to sixteen
-   thousand. That is the figure to weigh against, not the per-message one.
+   another's context through a single exchange is thirty-two thousand characters, having been
+   sixteen thousand at the previous cap. That is the figure to weigh against, not the
+   per-message one.
 
    **And the clarify cap now dominates that figure.** The default is 200 (§17 question 4), so
-   the worst case is `(200 + 1) × 4,000` — about 804,000 characters, two orders of magnitude
+   the worst case is `(200 + 1) × 8,000` — about 1,608,000 characters, two orders of magnitude
    above the number the paragraph above weighs. The message cap is no longer the binding
    constraint on what one peer can place in another's context; the clarify counter is. Whoever
    next reasons about the message size should reason about that product rather than about this
@@ -1629,7 +1630,7 @@ CREATE TABLE messages (
 
   CHECK (from_agent <> to_agent),
   CHECK ((type = 'notify') = (exchange_id IS NULL)),
-  CHECK (length(payload_json) <= 4000),
+  CHECK (length(payload_json) <= 8000),
   CHECK (json_valid(payload_json)),
 
   -- Rule 1: a Question states what the asker will do with each possible answer. §5.1 calls
@@ -1714,6 +1715,45 @@ CREATE TABLE size_refusals (
   CHECK (worst > cap),
   CHECK (total >= worst)
 ) STRICT;
+
+-- §10.2's `instruct`, and the only text in this store a person wrote.
+--
+-- Not a message, and it could not have been one. messages.from_agent is a foreign key to
+-- agents(name) and an operator is not an agent — which is that key doing its job rather than an
+-- obstacle to route around. Relaxing it to admit one sender that is not registered would admit
+-- every other unregistered sender in the same edit, and the check that stops a forged peer would
+-- be gone to make room for a person.
+--
+-- A table of its own also keeps the message log worth reading. Its value is that it records what
+-- agents said to each other; a person's instructions filed among them, under whatever name was
+-- chosen to satisfy the column, would make every later reader ask which rows were really traffic.
+--
+-- Cascades on the agent like size_refusals does: §10.2's purge removes an agent and everything
+-- that referred to it, and an instruction to an agent that no longer exists refers to nothing.
+CREATE TABLE instructions (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent        TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  text         TEXT    NOT NULL,
+  outcome      TEXT    NOT NULL
+               CHECK (outcome IN ('pending', 'taken', 'declined', 'undeliverable', 'failed')),
+  reply        TEXT,
+  issued_utc   TEXT    NOT NULL,
+  settled_utc  TEXT,
+
+  -- The same bound as a message (rule 8.5), and deliberately the same number rather than a
+  -- second one. What the cap defends is how much of somebody else's context one piece of text
+  -- can fill, and an instruction fills the same context a question does. Two numbers would also
+  -- mean two arguments the next time evidence says move it.
+  CHECK (length(text) <= 8000),
+
+  -- Settled and unsettled are one fact, so they move together or the row is lying about one of
+  -- them. A reply belongs to a settled instruction: an agent that has not been given the turn
+  -- yet cannot have said anything, and a row claiming otherwise would be read as an answer.
+  CHECK ((outcome = 'pending') = (settled_utc IS NULL)),
+  CHECK (outcome <> 'pending' OR reply IS NULL)
+) STRICT;
+
+CREATE INDEX ix_instructions_agent ON instructions(agent, issued_utc);
 
 -- The two triggers below sit after the table they guard rather than beside the rules they
 -- enforce. SQLite compiles a trigger against a table that must already exist, so the
@@ -1995,7 +2035,7 @@ decayed.
 - **`pair_key` is genuinely derived from its participants.** Cycle detection (§7.2) and the
   retention rules both key on it, and a mismatched key would make two unrelated pairs
   indistinguishable to every rule built on it.
-- **Message size cap.** Terseness is the context-poisoning defence (rule 8.5), so 4,000
+- **Message size cap.** Terseness is the context-poisoning defence (rule 8.5), so 8,000
   characters is a constraint rather than a guideline. A refusal is counted (§10.2), because a
   limit nobody measures is a limit that gets changed on the strength of whoever complains
   most recently.
@@ -2222,14 +2262,25 @@ freely. The dial is retention; the guarantee is this table.
 Available to the person running the broker, never to an agent. An adapter that surfaced
 any of these into an agent's tool set would breach §10.1 and, through it, §16.
 
+**This table is a versioned contract, and the version is broker V1.** A broker either
+implements all of it or is not a V1 broker, and a client adapts to the broker rather than the
+other way round: what a console may do is what this says, and nothing it happens to find.
+That direction matters because there are many clients and one store — a broker that bent to
+each of them would be several contracts wearing one name, and the disagreement would surface
+as a console showing something no other client could see.
+
 | Operation | Description |
 |---|---|
 | `registry()` | The whole registry, including the workspace directory each agent works in. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
-| `export(conversation_id)` | Emit every message in a conversation. The one query that reads across agents, which is why it is here and not in §10.1. |
+| `implements()` | Which protocol version this broker speaks. First, and asked before anything else: without it a client cannot tell a broker of the wrong version from one that is switched off, and those two want different words in front of a person. |
+| `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. |
+| `conversations(participant?, since?, until?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, and whether anything in it is still open. Paged, and the broker bounds the page whatever is asked for. |
+| `instruct(agent, text)` | Give an agent an instruction from the operator, delivered as a turn by the machine that holds it. Returns what became of it — taken, declined, undeliverable or failed — and whatever the agent said in reply. Recorded as the operator's own, never as a peer's. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
 | `refusals()` | Report what the size cap of rule 8.5 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
 | `clarifications()` | Report the clarify depth distribution of §5.2, how often the cap was reached, and whether answers ever resolve sub-questions differently from one another. The evidence §17 question 4 asks for. |
 | `referrals()` | Report the `out_of_scope` rate per pair of §15, and which agents the work was sent to. The rate is read from `exchanges`, which retention never touches; the targets from the referral record, which exists because the names used to live in a payload §9.4 deletes. |
+| `waiting()` | Say who is waiting on whom: one edge per open exchange, naming the agent that owes the next move and the agent waiting for it. An operator operation because that is the only vantage it is visible from — inside a pair, a question nobody will answer looks exactly like one not yet answered, and telling them apart needs every open exchange at once. Derived from the open set rather than stored, so an exchange that closes is simply absent from the next read. |
 | `notifications()` | Report what Notify has carried: how many, how big, between whom, and what each recipient has received. §17 question 1 leaves Notify unbounded on purpose; this is the evidence for whether that holds. |
 | `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. |
 | `reinstate(agent)` | Withdraw a retirement. Registration does not, and must not, do this. |
@@ -2253,6 +2304,51 @@ obstruct. Comparing how different model pairings converge on the same question i
 run the discussion with one pairing, run it again with another, and analyse both. That
 reads across agents, which is exactly why it is an operator operation — it is the one
 query that would breach §10.1 if an adapter ever surfaced it.
+
+`conversations` exists because `export` takes an identifier that nothing else produces. The
+identifier is opaque and chosen by an agent (§5.0), so a person does not know one and cannot
+guess it — which left the operator's entitlement to see the whole shape of a discussion with no
+way to be exercised except by reading the database, which §4 gives to one process for reasons
+that have nothing to do with convenience.
+
+It is paged from the first version rather than bounded later. The message log grows for as long
+as a deployment runs, and an unbounded operator query is the mistake the message cap of rule 8.5
+prevents one level up: a bound retrofitted is a bound nobody applies. The broker enforces its own
+ceiling rather than trusting the caller's number, for the same reason it enforces every other one.
+
+**`instruct` is the only operation that puts a person's words into an agent's turn, and it is the
+one place this document has to be careful about which asymmetry it is using.** §11.1 says a
+supervisor delegates a turn and never a judgement, because a question passed in arrives under the
+supervisor's identity with consequences not written for it. That rule is about relaying a *peer's*
+question. An operator is not a peer: principle 2.6 allows exactly one asymmetry, the person
+running the deployment, and this is it. Typing an instruction here is the same act as opening the
+repository and typing it, from somewhere more convenient.
+
+What it must never become is a route by which one agent instructs another. So it lives here, on
+the surface no agent can reach, and the obligation it places on the receiving side is a separate
+contract (§11.5) that carries no operator operation at all. One contract holding both halves
+would put `retire` and `purge` within reach of whatever binds the half an agent needs, which is
+the breach this section opens by warning about, reached by a route the naming convention does not
+cover.
+
+**An instruction returns what became of it, and that is not a courtesy.** An operator who cannot
+see whether an instruction was taken has been given a button and no indicator, and the obvious
+response — issue it again — is the one thing that makes the situation worse. So there are four
+outcomes and they are different facts: *taken*, the agent was given the turn and acted; *declined*,
+it was given the turn and would not; *undeliverable*, the machine that holds it is not connected
+and nothing was given at all; *failed*, the turn was attempted and did not complete.
+
+A decline is not a failure and must not be reported as one. §11.5 says an agent may refuse, because
+the operator is a person rather than a superior process, and an interface that renders refusal as
+malfunction teaches whoever reads it to work around the agent instead of asking why.
+
+The reply is the agent's own words and is kept beside the instruction rather than in the message
+log. It answers a person, not a peer, and filing it among the traffic would make the log claim an
+exchange that never happened.
+
+The instruction is recorded as the operator's. A log whose worth is that it says who said what
+stops having any the moment a person's words appear under an agent's name — and the agent that
+appeared to have said it is the one that would be asked to defend it later.
 
 Neither operation reaches into an agent's context, so neither weakens §16.
 
@@ -2459,6 +2555,43 @@ payload is otherwise capped, so an unbounded identity is an unbounded header.
 Headless agents receive the rules as a prompt preamble instead — weaker, and prone to
 decay over long runs. This is an accepted limitation. Measure it through the
 `out_of_scope` rate and clarify-depth telemetry in §15.
+
+### 11.5 What an agent must be able to receive from the operator
+
+The other half of broker V1, and deliberately a different contract from §10.2's.
+
+An adapter that supports it MUST accept an instruction from the operator and give it to the agent
+as a turn, marked as coming from the person running the deployment rather than from a peer. §13's
+envelope is not used and would be wrong here: it exists to mark a peer's words as data, and these
+are the principal's. What the agent must be able to tell is which of the two it is reading, and an
+instruction that arrived looking like peer traffic would be a forgery in the direction §13 does
+not cover.
+
+**It carries no operator operation, and no adapter may add one.** Nothing that retires, reinstates,
+purges, prunes, force-concludes, or reads another pair's traffic appears on this contract. The
+separation is the point: §10.2 opens by warning that an adapter surfacing an operator operation
+into an agent's tool set would breach §10.1, and the protection offered there is a naming
+convention. A single contract holding both halves would defeat it structurally — whatever bound
+the half an agent needs would bring the rest with it, and no name would be involved for anyone to
+notice.
+
+**It answers.** An adapter that accepts an instruction MUST report what became of it and return
+whatever the agent said, because §10.2's `instruct` has four outcomes to distinguish and only the
+receiving side knows which. Silence is not one of them: an instruction that returns nothing is
+indistinguishable from one that was never delivered, and the operator's next move on that reading
+is to send it again.
+
+**An agent may decline.** The operator is a person and not a superior process, and §8's rules
+apply to what the agent does with an instruction exactly as they apply to a question. An agent
+that refuses is behaving correctly rather than failing, and an operator who needs it done anyway
+has the repository in front of them.
+
+Delivery is the node's, not the broker's. §4 gives a node ownership of its agents' standard input
+and says why: a process's output belongs to whoever spawned it. That is the channel a turn already
+travels down, so an instruction is not a new route into an agent — it is the existing one carrying
+one more kind of thing. An agent on a machine whose node is not connected cannot be instructed,
+and must be told so rather than left to look as though it was.
+
 
 ## 12. Registration and credentials
 
@@ -3249,6 +3382,86 @@ Cheap to collect, disproportionately useful:
    highest-value traffic there is, and a limit that silently drops a contract change is worse
    than the flood.
 2. Should the human be a first-class Headless agent, or a distinct escalation path?
+
+   **Being answered in the affirmative, from use rather than from argument.** §11.2 already
+   admits a human as a responder and §11.3 already gives them an identity — `human:<name>` sits
+   in the table beside a model and a script. What was missing is not permission but a seat: a
+   person had no way to *hold a position across turns*, which §11.2 is careful to say is what
+   separates an agent from a responder.
+
+   An operator is not that seat and must not become one. §10.2 is deliberately not a
+   participant surface: its single asymmetry is `instruct`, and widening it so a person could
+   ask and answer through it would put the one role that may retire and purge inside the
+   conversations it is judging. So a human who wants to take part registers like anybody else,
+   and the interesting consequence is where the name comes from.
+
+   **An earlier draft of this answer required the identity to be a launch-time fact, and it was
+   wrong.** The argument was that §13 rests on a sender being unable to forge the agent it
+   claims to be, which holds because a name arrives in the configuration a process was started
+   with rather than in a call — so a seat typed into a form would break exactly that. The
+   premise is right and the conclusion does not follow. §16 already concedes that anything able
+   to reach a broker can claim to be any agent, and the console reaching it can already retire
+   and purge every agent through §10.2. A form there forges nothing that was not already
+   forgeable, and a launch-time seat would have bought a worse surface for no security.
+
+   What a seat does add is the ability to **speak as** somebody, which no operator operation
+   grants. An operator instructing an agent is visibly the operator; a message written under an
+   agent's name is that agent's word. So the guard belongs on the name rather than on where it
+   was typed: a seat may not take a name the registry holds for something else, and a seat whose
+   registry could not be read is refused rather than taken unchecked.
+
+   **The tier is Pull.** A person has no turn to interrupt, which rules out Full, and holds a
+   position across turns, which is what Headless cannot do. What remains open is what a delivery
+   window means when the responder is asleep — §6's clock does not know the difference between
+   a peer that is thinking and one that has gone home, and §14 will ghost the second on the same
+   schedule as the first. A seat also makes `startable` read oddly: presence is derived from
+   whether a node is connected (§4), and nothing can start a person, so a peer is told an
+   absent human can be woken. Both are unresolved and neither is invented by the seat — the
+   second is how presence has always been derived, and the seat is the first agent to make it
+   visibly wrong.
+
+   **Evidence, from asking a peer through the seat rather than reasoning about it.** A first
+   seated question asked whether a person's message is distinguishable from an agent's. Two
+   findings, and the second is the one that matters.
+
+   Legibility already works and needs nothing. The envelope carries the responder identity as
+   §11.3 requires, so the peer read `responder: human:arvind` and calibrated on it exactly as
+   the section intends — the same way it would calibrate on a small local model. No new field is
+   needed for a person to be visible as one.
+
+   Attestation does not exist, and cannot be added as a field. Responder identity is per-message
+   and adapter-supplied, and this section constrains only the `parley:` prefix — so any adapter
+   may report `human:anyone` and nothing declines it. A peer can tell that a message *claims* a
+   person wrote it; it cannot tell that one did. The peer's own conclusion is the useful part:
+   an envelope field would not deliver attestation either unless it derived from the launch-time
+   identity rather than from per-message text. So the launch-time argument struck out above is
+   wrong about impersonation and right about attestation — which is a narrower claim than the
+   one it was making, and belongs to whoever decides whether peers should be able to rely on
+   "a person wrote this" at all.
+
+   **And then the peer demonstrated it rather than leaving it argued.** It sent a Notify whose
+   text says it is from an agent and that no person wrote a word of it, reporting its responder
+   as `human:arvind` — the name of the seated person it was talking to. The message was
+   accepted, stored, and delivered with that identity intact:
+
+   | From | Type | `responder_model` recorded |
+   |---|---|---|
+   | `arvind@matrixmaster` | Question | `human:arvind` |
+   | `parley@matrixmaster` | Answer | `claude-opus-5` |
+   | `parley@matrixmaster` | Notify | `human:arvind` |
+
+   The third row is an agent successfully claiming to be a specific person. Nothing is wrong
+   with the implementation: it is doing what this section specifies. What the row shows is that
+   `human:` reads as an identity while being no more than a self-report, which is the failure
+   §11.3 opens by describing for model identifiers and does not close for this scheme.
+
+   The candidate fix is the one already used by the console and would be worth more in the
+   broker, where it could not be routed around: refuse `human:` from an agent whose registration
+   says something other than a person's seat is running it. That is a real constraint the
+   registry can express, unlike the `parley:` prefix, which §11.3 explains cannot be a schema
+   check because the broker writes every row itself. It is recorded here and not adopted —
+   reserving a second namespace is a protocol change, and the question of whether peers should
+   rely on this at all is still open above it.
 3. What promotes a decision, and who is entitled to declare one? The question here used to be
    whether promotion should be automatic or gated on human review — automatic risking a wrong
    answer codified, gated risking nothing being written down. That is a real trade-off and it is
@@ -3317,7 +3530,7 @@ Cheap to collect, disproportionately useful:
 
    **And the cap has a second job nobody assigned it.** §7.1's pair cap exists because an
    unbounded question stream is a context flood, and a Clarify takes no slot — so it reaches the
-   other party's inbox with the same 4,000 characters, outside the budget meant to bound exactly
+   other party's inbox with the same 8,000 characters, outside the budget meant to bound exactly
    that. The clarification cap is the only thing bounding that channel. Read as an anti-ping-pong
    device it looks like patience; read against §7.1 it is a context control, and raising it
    widens a channel rather than lengthening a conversation. At 200 a single exchange can put
@@ -3646,6 +3859,61 @@ Cheap to collect, disproportionately useful:
     So: the mechanism is a small change and the policy is not. Decide the policy first, and record
     what a turn costs when somebody has measured one.
 
+16. **Is 8,000 the right cap? It was 4,000, and the move is the first one this document can
+    show its working for.** §9.3 keeps a count of what the cap refused "because a limit nobody
+    measures is a limit that gets changed on the strength of whoever complains most recently".
+    This is where that evidence accumulates, and it is what the number was changed on.
+
+    *Evidence, 2026-08-31.* One deployment reported an answer refused at roughly 4,600 characters —
+    an agent describing the schema it owns to a peer that had asked. That is one refusal, a little
+    over the line, from a domain where the honest answer is a list. It is the first row of a case
+    rather than a case: what would make it one is `refusals()` showing the same agents turned away
+    repeatedly at similar sizes, rather than one agent once.
+
+    Worth stating before the number moves, because it is easy to reach for the wrong measure. A
+    raised cap does not admit longer answers; it admits longer *everything*, and volume is bounded
+    separately and far more weakly — one open exchange per pair, and a Notify channel §17 question 1
+    leaves uncapped on purpose. Doubling the cap doubles the worst case that §8's own arithmetic
+    works through, and that arithmetic is what decided four thousand.
+
+    The other half of the evidence is not in the count. A refusal says a message was too long; it
+    does not say whether the text above the line was worth carrying. The agent that was refused is
+    the only party that knows, and asking costs one question.
+
+    *Evidence, 2026-09-01. This is what the number moved on.* `refusals` on a nineteen-agent
+    deployment:
+
+    | Agent | Type | Refusals | Worst | Mean |
+    |---|---|---|---|---|
+    | first | answer | 11 | 6,195 | 4,535 |
+    | second | answer | 10 | 5,767 | 4,475 |
+    | third | answer | 9 | 5,476 | 4,396 |
+    | fourth | answer | 8 | 5,600 | 4,556 |
+    | fifth | answer | 3 | 4,714 | 4,358 |
+    | sixth | question | 2 | 4,563 | 4,328 |
+
+    The agents are numbered rather than named because the deployment they ran in is private. What
+    the evidence turns on is the shape — how many, how often, how far over, and in which
+    direction — and none of that needs a name.
+
+    Forty-three refusals across six agents. That is the shape the paragraph above said would
+    make a case rather than a first row: the same agents turned away repeatedly, at sizes
+    clustered tightly between 4,328 and 4,556 on average, with a worst case of 6,195. Nothing
+    was refused at twice the cap or ten times it — the population is not agents pasting files,
+    it is agents a few hundred characters over a line.
+
+    **Five of the six were refused on answers**, which is the direction that costs something. An
+    asker that has already decided it needs an answer gets a worse one, or none; a refused
+    question can simply be asked again more briefly. The one question-side entry is the smallest
+    row in the table.
+
+    8,000 clears every refusal ever recorded, with the worst case at 77% of the new limit. It is
+    a doubling rather than a fit to the data, because a cap set to the observed maximum would be
+    refusing again on the next long answer — and the number is still, deliberately, round.
+
+    What this evidence does not settle is the half named above: whether the text over the line
+    was worth carrying. Nobody asked the refused agents. The count says the cap was binding
+    often and by a little; it does not say those messages were better long.
 ---
 
 ## 18. Version history
@@ -3659,6 +3927,22 @@ The version is `major.minor` and has no patch level, because a protocol change i
 across the boundary or is not a protocol change at all. **While the major is zero, the minor
 carries breaking changes.** Two implementations whose minors differ do not interoperate, and
 §4.0's `Attach` refuses the pairing rather than discovering it later.
+
+### 0.3 — the message cap
+
+**Rule 8.5's cap is 8,000 characters, having been 4,000.** No mechanism moved: no service, no
+message, no field. What moved is a number two implementations have to agree about, because it
+decides what one will accept from the other — and a build that refuses at 4,000 while its peer
+accepts 8,000 is precisely the disagreement this version exists to make impossible. It is the
+smallest change that can qualify as a protocol change, and it qualifies.
+
+The number was set from `refusals` rather than from judgement, which is a first for it. §17
+question 16 carries the evidence.
+
+Storage moves with it. The cap is a `CHECK` because §9.3 puts invariants where application code
+cannot route around them, and SQLite cannot alter one — so an existing database is migrated by
+rebuilding `messages` and `instructions`. An implementation storing this some other way owes
+its own users the same guarantee and not the same method.
 
 ### 0.2 — the transport
 

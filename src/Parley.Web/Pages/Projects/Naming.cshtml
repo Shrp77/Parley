@@ -1,0 +1,58 @@
+@page
+@model Parley.Web.Pages.Projects.NamingModel
+@{
+    ViewData["Title"] = $"Naming {Model.Project}";
+}
+
+<h1>Naming @Model.Project</h1>
+
+<p>
+    A project name is a fact about this machine and nothing else. SPEC.md §4.1 gives the protocol
+    no concept of a project — membership is which endpoint an agent connected to — so renaming one
+    changes what your commands call a deployment and reaches nothing on the wire. No agent
+    notices, no history moves, nothing restarts.
+</p>
+
+<p>
+    The console will not do it. This machine's manifest is read by two programs and written by
+    exactly one, and that one is <code>parley</code>; a rename button here would make the console
+    a second writer of the file whose safety comes from having a single one.
+</p>
+
+@if (Model.Named)
+{
+    <h2>Rename it</h2>
+
+    <p>
+        There is no single rename command yet, so it is two: forget the old name, then add the new
+        one with the same paths. <code>remove</code> deletes nothing — not the store, not a
+        conversation, not an agent's registration — it only forgets how this machine reaches the
+        deployment.
+    </p>
+
+    <pre><code>parley project remove @Model.Project
+parley project add &lt;new name&gt; --db @Model.Store --listen @Model.Endpoint</code></pre>
+
+    <p>
+        Copy the two paths exactly as they appear above; they are what this machine currently has
+        recorded. Then come back to <a href="/">the project list</a> and the new name is there.
+    </p>
+}
+else
+{
+    <h2>Name it</h2>
+
+    <p>
+        This project is not in a manifest at all. Nothing on this machine has named a deployment,
+        so the console is offering the broker your other commands already talk to, under a stand-in
+        name. Give it a real one:
+    </p>
+
+    <pre><code>parley project add &lt;name&gt; --db &lt;path to the store&gt; --listen @Model.Endpoint</code></pre>
+
+    <p>
+        The store is the file the broker owns — <code>parley autostart status</code> prints the
+        path it was registered with. Once named, it appears on
+        <a href="/">the project list</a> in place of the stand-in.
+    </p>
+}

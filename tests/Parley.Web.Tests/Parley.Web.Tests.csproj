@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      xUnit v3 test projects are stand-alone executables, not libraries. Omitting this
+      produces a project that builds but discovers no tests.
+    -->
+    <OutputType>Exe</OutputType>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    References the console, and through it Transport and Configuration. It does not reference
+    Parley.Store, and must not: these tests check what the console renders and how it contains a
+    broker it cannot reach, and a route to the database here would let a check assert against the
+    store rather than against what came over the wire.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Parley.Web\Parley.Web.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <!-- See Directory.Packages.props: one banned symbol, and why. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)..\..\BannedSymbols.txt" />
+  </ItemGroup>
+
+</Project>

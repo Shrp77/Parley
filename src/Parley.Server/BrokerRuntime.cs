@@ -54,6 +54,18 @@ public sealed class BrokerRuntime : IAsyncDisposable
     private readonly ConcurrentDictionary<string, ImmutableArray<AttachedAgent>> _attached =
         new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Callers waiting on a node's report, keyed by instruction.
+    /// </summary>
+    /// <remarks>
+    /// The command stream to a node runs one way, so an instruction's outcome arrives as its own
+    /// call some time later. This is what joins the two: the operator's request parks here, the
+    /// node's report completes it. Keyed by instruction rather than by agent, because an operator
+    /// may reasonably instruct the same agent twice before the first has settled.
+    /// </remarks>
+    private readonly ConcurrentDictionary<long, TaskCompletionSource<InstructionResult>> _awaited =
+        new();
+
     private readonly ConcurrentDictionary<string, JoinedNode> _nodes =
         new(StringComparer.Ordinal);
 
@@ -452,6 +464,81 @@ public sealed class BrokerRuntime : IAsyncDisposable
             },
             cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>Delivers an operator's instruction, and waits for the agent to have its turn.</summary>
+    /// <param name="instructionId">The instruction being delivered.</param>
+    /// <param name="agent">Who it is for.</param>
+    /// <param name="text">What the operator said.</param>
+    /// <param name="patience">How long to wait for the node's report.</param>
+    /// <param name="cancellationToken">Cancels the wait.</param>
+    /// <returns>What became of it.</returns>
+    /// <remarks>
+    /// <para>
+    /// Undeliverable rather than failed when no node holds the agent's machine, and the
+    /// distinction is the point: §11.5 says an agent whose node is not connected cannot be
+    /// instructed and must be told so rather than left looking as though it was. The remedies
+    /// differ — one is a machine that is switched off, and re-sending will not change it.
+    /// </para>
+    /// <para>
+    /// A turn is a model thinking, so the wait is generous and bounded rather than indefinite. An
+    /// instruction that outlives its patience is reported as failed and the row settles: the
+    /// alternative is an operator holding a page open against a turn that may never end.
+    /// </para>
+    /// </remarks>
+    public async Task<InstructionResult> DeliverInstructionAsync(
+        long instructionId,
+        AgentName agent,
+        string text,
+        TimeSpan patience,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_nodes.TryGetValue(agent.Machine, out var node))
+        {
+            return new InstructionResult(InstructionOutcome.Undeliverable, null);
+        }
+
+        var waiting = new TaskCompletionSource<InstructionResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        if (!_awaited.TryAdd(instructionId, waiting))
+        {
+            return new InstructionResult(InstructionOutcome.Failed, null);
+        }
+
+        try
+        {
+            if (!node.RequestInstruction(instructionId, agent, text))
+            {
+                return new InstructionResult(InstructionOutcome.Undeliverable, null);
+            }
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(patience);
+
+            await using var registration = timeout.Token.Register(
+                () => waiting.TrySetResult(new InstructionResult(InstructionOutcome.Failed, null)))
+                .ConfigureAwait(false);
+
+            return await waiting.Task.ConfigureAwait(false);
+        }
+        finally
+        {
+            _ = _awaited.TryRemove(instructionId, out _);
+        }
+    }
+
+    /// <summary>Completes whoever is waiting on an instruction's outcome.</summary>
+    /// <param name="instructionId">The instruction.</param>
+    /// <param name="result">What became of it.</param>
+    /// <returns><see langword="true"/> if somebody was waiting.</returns>
+    /// <remarks>
+    /// False is ordinary rather than an error: the operator's request may have given up before
+    /// the node answered, and a node reporting into an empty slot has still done its job. The row
+    /// is settled by the reporting path regardless, so the record does not depend on anybody
+    /// still listening.
+    /// </remarks>
+    public bool CompleteInstruction(long instructionId, InstructionResult result) =>
+        _awaited.TryGetValue(instructionId, out var waiting) && waiting.TrySetResult(result);
 
     /// <summary>
     /// Asks an agent's machine to see to it: a start if it is not running, a turn if it is.

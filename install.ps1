@@ -34,6 +34,15 @@
     Asked for if it is not given, defaulting to a .parley folder in your home directory. It does
     not need to exist: the broker creates it on first run.
 
+.PARAMETER NodeConfig
+    The catalogue of agents this machine may start on demand, passed to the autostart entry as
+    --node-config.
+
+    Read back from the entry being replaced when it is not given, because an entry registered
+    without one starts the broker alone -- and a machine reinstalling over a working deployment
+    would lose the half that starts its agents, with the loss arriving days later as a question
+    that waits out its window and is ghosted.
+
 .PARAMETER Uninstall
     Removes both tools and the autostart entry, and stops. The store and any .mcp.json are left
     alone -- they are the deployment, and somebody reinstalling a tool has not asked to lose
@@ -52,6 +61,7 @@
 [CmdletBinding()]
 param(
     [string] $Store,
+    [string] $NodeConfig,
     [switch] $Uninstall
 )
 
@@ -67,6 +77,20 @@ $tools = @(
 # rather than asked for, because the one command that could report it is the one this script
 # may be in the middle of deleting.
 $task = 'parley-broker'
+
+# What the entry being replaced was registered with, read before anything touches it. The only
+# reason this is needed is the catalogue: `autostart install` is given the store on the command
+# line and would otherwise drop this machine's agents from the arrangement, which is a loss
+# nobody sees until a question goes unanswered days later.
+$existingArguments = ''
+
+try {
+    $existing = Get-ScheduledTask -TaskName $task -ErrorAction Stop
+    $existingArguments = ($existing.Actions | ForEach-Object { $_.Arguments }) -join ' '
+}
+catch {
+    # No entry yet. An ordinary first install, and nothing to carry over.
+}
 
 # The command the broker runs as, so the pre-flight below can leave it out of the adapters and
 # recognise it afterwards.
@@ -405,7 +429,27 @@ Write-Step 'Registering the broker to start at logon'
 # No elevation here, and that is not an accident: this goes through the Task Scheduler's COM
 # API, which registers a task for the current user without a consent prompt. `schtasks.exe`
 # refuses the same registration from the same shell.
-& $parley autostart install --db $store
+# Carried over rather than dropped. `autostart install` registers a broker-alone entry when it
+# is given no catalogue, and a machine reinstalling over a working deployment would silently
+# lose the half that starts its agents -- the loss arriving days later, on a machine nobody is
+# signed into, as a question that waits out its window and is ghosted. The command says so
+# loudly, but the operator ran this script and is reading its output, not that one.
+#
+# Read back from the entry being replaced when it was not given, because somebody reinstalling
+# has not asked to reconfigure anything.
+$catalogue = $NodeConfig
+
+if (-not $catalogue -and $existingArguments -match "--node-config\s+`"?([^`"]+?)`"?(\s|$)") {
+    $catalogue = $Matches[1]
+    Write-Host "  keeping this machine's agent catalogue: $catalogue"
+}
+
+if ($catalogue) {
+    & $parley autostart install --db $store --node-config $catalogue
+}
+else {
+    & $parley autostart install --db $store
+}
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Could not set the broker to start automatically. The tools are installed, so running 'parley serve --db $store' by hand will say why."

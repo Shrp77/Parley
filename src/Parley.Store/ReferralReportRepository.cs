@@ -1,58 +1,9 @@
 using Microsoft.Data.Sqlite;
+using Parley.Core;
 
 namespace Parley.Store;
 
-/// <summary>
-/// How often one agent asked another and was told it was somebody else's.
-/// </summary>
-/// <param name="Asker">The agent that asked.</param>
-/// <param name="Answerer">The agent it asked.</param>
-/// <param name="Closed">Exchanges between them that reached a resolution.</param>
-/// <param name="OutOfScope">How many of those resolved as not the answerer's.</param>
-public sealed record ReferralPair(string Asker, string Answerer, long Closed, long OutOfScope)
-{
-    /// <summary>Gets the share of closed exchanges the answerer declined as not its own.</summary>
-    public double Rate => Closed == 0 ? 0 : (double)OutOfScope / Closed;
-}
 
-/// <summary>
-/// Where an answerer sent an asker instead.
-/// </summary>
-/// <param name="Asker">The agent that asked.</param>
-/// <param name="Answerer">The agent that referred it onward.</param>
-/// <param name="RedirectedTo">The agent named as the owner.</param>
-/// <param name="Referrals">How many sub-questions went that way.</param>
-/// <param name="LastUtc">When the most recent one was sent.</param>
-public sealed record ReferralTarget(
-    string Asker, string Answerer, string RedirectedTo, long Referrals, string LastUtc);
-
-/// <summary>
-/// The <c>out_of_scope</c> rate per pair of SPEC.md §15, and who the work was sent to.
-/// </summary>
-/// <param name="Pairs">Pairs where at least one exchange resolved out of scope.</param>
-/// <param name="Targets">Who was named, per pair, most-referred first.</param>
-/// <remarks>
-/// <para>
-/// §15 calls this the signal that the ownership map is wrong somewhere, and the two halves come
-/// from different tables for a reason worth knowing when reading it. The rate is computed from
-/// <c>exchanges</c>, which retention never touches, so it is accurate over the whole life of the
-/// deployment. The targets come from <c>message_referrals</c>, which exists precisely because the
-/// names used to live in a message payload that §9.4 deletes.
-/// </para>
-/// <para>
-/// A high rate is not a fault in the answerer. It says two agents disagree about where a boundary
-/// runs, or that one of them has a stale idea of what the other owns — which is a question for
-/// the people who own those repositories, and exactly what an <c>owns</c> line is for.
-/// </para>
-/// </remarks>
-public sealed record ReferralReport(
-    IReadOnlyList<ReferralPair> Pairs,
-    IReadOnlyList<ReferralTarget> Targets)
-{
-    /// <summary>Gets whether anything has been referred at all.</summary>
-    public bool IsEmpty => (Pairs is null || Pairs.Count == 0)
-                           && (Targets is null || Targets.Count == 0);
-}
 
 /// <summary>
 /// Reads where the ownership map is being argued about, for the operator report of §10.2.

@@ -1,4 +1,4 @@
-﻿using Parley.Store;
+﻿using Parley.Core;
 
 namespace Parley.Broker;
 

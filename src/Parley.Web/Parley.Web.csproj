@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    The operator's console, and a third binary rather than a page bolted onto an existing one.
+
+    It is a client of the Operators service exactly as Parley.Cli is, and it deliberately does not
+    live inside Parley.Server. SPEC.md section 4 gives the store to one process; putting a web host
+    in that process would hand it a route to the database that the architecture spends section 4
+    denying it. Nor does it live in Parley.Cli: that is a short-lived console tool distributed as a
+    dotnet tool, and fusing the two would put Kestrel on the dependency graph of every operator who
+    only ever runs `parley agents`.
+
+    References Transport for the wire and Configuration for the project manifest, and nothing else.
+    There is no SQLite here and there must never be one; see specs/003-parley-web-console.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Parley.Web</RootNamespace>
+    <AssemblyName>Parley.Web</AssemblyName>
+    <IsPackable>false</IsPackable>
+
+    <!--
+      No static assets, so no manifest describing where they are. The console's one stylesheet
+      is inlined in the layout: 365 bytes that used to be a file, and a file has to survive
+      `dotnet pack` into the tool that starts this console; it did not, so the installed
+      console rendered unstyled while the build output was perfect.
+
+      Off rather than merely unused: the generated manifest records an absolute path to a
+      wwwroot folder, and a stale one points at a directory that no longer exists, which fails
+      every request at startup rather than degrading.
+    -->
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parley.Configuration\Parley.Configuration.csproj" />
+    <ProjectReference Include="..\Parley.Transport\Parley.Transport.csproj" />
+  </ItemGroup>
+
+  <!--
+    The brand, embedded in the assembly rather than sitting beside it.
+
+    Same reason the stylesheet is inlined in the layout, and the same lesson: a file next to the
+    binary has to survive `dotnet pack` into the tool that starts this console, and the last one
+    did not. A resource compiled into the DLL travels wherever the DLL does, so there is no
+    arrangement of packing, publishing or installing that can leave the page without its logo.
+
+    Served by a route rather than embedded in the markup as data, because these are the only two
+    things on the page a browser can cache; inlining them would put 19 KB into the HTML of every
+    request instead of one.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Brand\icon.png" />
+    <EmbeddedResource Include="Brand\wordmark.png" />
+  </ItemGroup>
+
+
+
+</Project>

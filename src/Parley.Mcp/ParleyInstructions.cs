@@ -52,7 +52,7 @@ public static class ParleyInstructions
         - Asking never blocks. If nobody ever answers you are told so, rather than left waiting.
         - A question must state what you will do with each possible answer. One that does not is
           refused: an answerer who knows what turns on the reply gives a better one.
-        - Messages are capped at 4000 characters. What you send lands in somebody else's working
+        - Messages are capped at 8000 characters. What you send lands in somebody else's working
           memory, so say less than you want to.
 
         You act as one fixed agent, decided by how this server was launched. No tool takes a

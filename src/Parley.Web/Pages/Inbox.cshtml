@@ -1,0 +1,185 @@
+@page
+@model Parley.Web.Pages.InboxModel
+@{
+    ViewData["Title"] = "Your messages";
+    var waiting = Model.Projects.Sum(p => p.Waiting);
+    var held = Model.Projects.Sum(p => p.Delivered.Count);
+}
+
+<h1>Your messages</h1>
+
+@if (Model.Outcome is { Length: > 0 } said)
+{
+    <p class="as-of" role="status">@said</p>
+}
+
+<p class="lede">
+    What peers have sent to <strong>@(Model.Me?.Name.Value)</strong>. Taking delivery is
+    something you do on purpose rather than something that happens by opening this page:
+    SPEC.md §6 starts the four-hour working window when a question is <em>delivered</em>, and an
+    inbox drain is what records that. Until you take them, nobody is waiting on you.
+</p>
+
+@foreach (var project in Model.Projects)
+{
+    <h2>@project.Project</h2>
+
+    @if (project.Problem is { Length: > 0 } problem)
+    {
+        <p class="unreachable" role="alert">@problem</p>
+    }
+    else if (project.Waiting == 0 && project.Polls == 0)
+    {
+        <p class="because">Nothing is waiting here.</p>
+    }
+    else
+    {
+        <form method="post" asp-page-handler="Take">
+            <input type="hidden" name="For" value="@project.Project" />
+            <p class="composer-note">
+                <strong>@project.Waiting</strong>
+                message@(project.Waiting == 1 ? "" : "s")
+                @if (project.Polls > 0)
+                {
+                    <text>and <strong>@project.Polls</strong> closure poll@(project.Polls == 1 ? "" : "s")</text>
+                }
+                waiting. Taking them marks them delivered and starts the clock on anything you
+                then owe an answer to. You cannot put them back.
+            </p>
+            <button type="submit">Take delivery</button>
+        </form>
+    }
+
+    @foreach (var item in project.Delivered)
+    {
+        var payload = Payload.Read(item.Message.PayloadJson);
+        var owed = item.Owes && Model.Asked.TryGetValue(item.Message.ExchangeId!.Value, out var ids)
+            ? ids
+            : [];
+
+        <article class="letter@(item.Owes ? " owed" : null)">
+            <p class="attribution">
+                <span class="who slot-@Palette.SlotFor(item.Message.From)" aria-hidden="true">@Palette.BadgeFor(item.Message.From)</span>
+                <strong>@item.Message.From.Value</strong>
+                <span class="tag">@item.Message.Type.ToString().ToLowerInvariant()</span>
+                @* The name above is the attested half and this is not: §11.3 constrains only
+                   the `parley:` prefix, so an agent may report any responder it likes — a peer
+                   demonstrated it by sending a message here claiming `human:` and having it
+                   stored. Shown because §11.3 exists so a reader can calibrate on what produced
+                   the words, and worded as a claim because that is all it is. *@
+                <span class="claims" title="What that agent says produced this. Not verified.">
+                    says @item.Message.ResponderModel
+                </span>
+                <span class="stamp">@item.Message.CreatedUtc.ToLocalTime().ToString("d MMM HH:mm")</span>
+                @if (item.Message.ConversationId is { Length: > 0 } conversation)
+                {
+                    <a href="/Conversations/Detail?project=@project.Project&amp;id=@conversation">in @conversation</a>
+                }
+            </p>
+
+            @if (payload.Said is { Length: > 0 })
+            {
+                <p class="said">@payload.Said</p>
+            }
+
+            @if (payload.Points.Count > 0)
+            {
+                <ol class="points">
+                    @foreach (var point in payload.Points)
+                    {
+                        <li>
+                            <span class="label">@point.Id</span>
+                            <span class="point-text">@point.Text</span>
+                            @if (point.Resolution is { Length: > 0 } verdict)
+                            {
+                                <span class="verdict">@verdict</span>
+                            }
+                        </li>
+                    }
+                </ol>
+            }
+
+            @if (payload.Consequences is { Length: > 0 } consequences)
+            {
+                <p class="because"><strong>What turns on it:</strong> @consequences</p>
+            }
+
+            @if (payload.Raw is { Length: > 0 } raw)
+            {
+                <pre><code>@raw</code></pre>
+            }
+
+            @if (item.Owes)
+            {
+                @if (owed.Count == 0)
+                {
+                    <p class="unreachable">
+                        This exchange is no longer yours to answer — it has been answered,
+                        orphaned or closed since it was handed to you.
+                    </p>
+                }
+                else
+                {
+                    @* One field per sub-question the exchange actually asked, read from the
+                       broker rather than parsed out of the payload above. §5.3 answers by
+                       identifier, and a form built from this process's reading of the document
+                       would be a second opinion about what was asked. *@
+                    <form method="post" asp-page-handler="Answer" class="reply">
+                        <input type="hidden" name="For" value="@project.Project" />
+                        <input type="hidden" name="Exchange" value="@item.Message.ExchangeId" />
+
+                        @foreach (var id in owed)
+                        {
+                            <input type="hidden" name="Ids" value="@id" />
+                            <label for="t-@item.Message.ExchangeId-@id">@id</label>
+                            <textarea id="t-@item.Message.ExchangeId-@id" name="Texts" rows="2"
+                                      required></textarea>
+                            <select name="Verdicts" aria-label="Outcome for @id">
+                                @foreach (var (value, says) in SeatVoice.Outcomes)
+                                {
+                                    <option value="@value">@says</option>
+                                }
+                            </select>
+                        }
+
+                        <p class="composer-note">
+                            The exchange records the least resolved of these, per §5.3 — one
+                            <em>unknown</em> makes the whole answer unknown, because an answer
+                            that left something undetermined has not settled the question.
+                        </p>
+
+                        <button type="submit">Answer and close</button>
+                    </form>
+                }
+            }
+        </article>
+    }
+}
+
+@if (held > 0 && Model.Projects.Any(p => p.Delivered.Any(one => !one.Owes)))
+{
+    <form method="post" asp-page-handler="Clear">
+        <input type="hidden" name="For" value="@Model.Projects[0].Project" />
+        <p class="composer-note">
+            Answers and notices are finished once you have read them, and nothing takes them off
+            this page but you. A question stays until it is answered — it is a debt, and a button
+            that made it disappear would only hide an exchange still running towards being
+            ghosted.
+        </p>
+        <button type="submit">Clear what I have read</button>
+    </form>
+}
+
+@if (Model.Projects.Count == 0)
+{
+    <p class="unreachable">
+        You are seated nowhere, so nothing can be waiting. <a href="/Join">Join</a> first.
+    </p>
+}
+else if (waiting == 0 && held == 0)
+{
+    <p class="because">
+        Nothing waiting and nothing outstanding. This page fills up when a peer asks you
+        something or tells you something.
+    </p>
+}

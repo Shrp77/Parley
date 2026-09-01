@@ -113,6 +113,21 @@ public sealed class SurfaceBoundaryTests
             nameof(OperatorConsole.PurgeAsync),
             nameof(OperatorConsole.DescribeRegistryAsync),
             nameof(OperatorConsole.ExportAsync),
+
+            // Declared here on purpose, and this is the decision the test exists to force. A
+            // listing reads across every pair in the deployment, which is precisely the
+            // disclosure §10.1 withholds from an agent: an agent may address a peer, and must
+            // not be able to enumerate what its peers have discussed with anybody else. It sits
+            // beside export for the same reason export does.
+            nameof(OperatorConsole.ListConversationsAsync),
+
+            // The operator's own words, recorded and then settled. Here rather than on the agent
+            // surface for the reason §11.5 gives: an agent that could write an instruction could
+            // put a person's words into another agent's turn, and the log's whole worth is that
+            // it says who said what. The receiving half of that contract is a different type
+            // entirely and carries no operator operation at all.
+            nameof(OperatorConsole.RecordInstructionAsync),
+            nameof(OperatorConsole.SettleInstructionAsync),
             nameof(OperatorConsole.PruneAsync),
             nameof(OperatorConsole.DescribeRefusalsAsync),
 
@@ -123,7 +138,14 @@ public sealed class SurfaceBoundaryTests
             // a tool called parley_clarify is exactly the near-miss that convention exists for.
             nameof(OperatorConsole.DescribeClarificationsAsync),
             nameof(OperatorConsole.DescribeReferralsAsync),
-            nameof(OperatorConsole.DescribeNotificationsAsync)
+            nameof(OperatorConsole.DescribeNotificationsAsync),
+
+            // Who is waiting on whom. An operator operation because the whole of its value is
+            // that it reads across pairs: from inside one, a question nobody will answer looks
+            // exactly like one not answered yet, and only somebody seeing every open exchange at
+            // once can tell them apart. Handing that to an agent would say who is talking to whom
+            // across the deployment, which is the disclosure §10.1 exists to prevent.
+            nameof(OperatorConsole.DescribeWaitingAsync)
         ];
 
         var unexpected = PublicMethodsOf(typeof(OperatorConsole)).Where(n => !declared.Contains(n));
@@ -178,7 +200,7 @@ public sealed class SurfaceBoundaryTests
         // operation whose job is to describe agents.
         var leaking = typeof(Broker)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-            .Where(m => Mentions(m.ReturnType, typeof(Parley.Store.AgentRecord)))
+            .Where(m => Mentions(m.ReturnType, typeof(Parley.Core.AgentRecord)))
             .Select(m => m.Name);
 
         Assert.Empty(leaking);

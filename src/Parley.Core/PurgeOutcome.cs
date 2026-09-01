@@ -1,4 +1,4 @@
-namespace Parley.Store;
+namespace Parley.Core;
 
 /// <summary>
 /// What became of a purge.

@@ -1,0 +1,196 @@
+@page
+@model Parley.Web.Pages.Projects.HealthModel
+@{
+    ViewData["Refresh"] = "60";
+    ViewData["Title"] = $"Health of {Model.Project}";
+    ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
+}
+
+<h1>Health of @Model.Project</h1>
+
+<nav aria-label="This project">
+    <a href="/Projects/Agents?project=@Model.Project">Agents</a>
+    <a href="/Conversations?project=@Model.Project">Conversations</a>
+</nav>
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="unreachable" role="alert">@problem</p>
+}
+else
+{
+    <section>
+        <h2>Who is waiting on whom</h2>
+        @* A question nobody is going to answer looks exactly like one that has not been
+           answered yet, from inside the pair. Only a read across pairs tells them apart, which
+           is why this is an operator's view and not an agent's. *@
+        @if (Model.Waiting.Count == 0)
+        {
+            <p>Nobody is waiting on an answer.</p>
+        }
+        else
+        {
+            <ul>
+            @foreach (var edge in Model.Waiting)
+            {
+                <li>
+                    @edge.Waiter.Value is waiting on @edge.WaitedOn.Value
+                    (exchange @edge.ExchangeId)
+                </li>
+            }
+            </ul>
+        }
+    </section>
+
+    <section>
+        <h2>What the size cap refused</h2>
+        @* The cap is 4,000 because somebody chose 4,000. This is the evidence the next choice
+           should be argued from, and one refusal is the first row of a case rather than a case:
+           what makes it one is the same agents refused repeatedly at similar sizes. *@
+        @if (Model.Refusals.Count == 0)
+        {
+            <p>Nothing has been refused for being too long.</p>
+        }
+        else
+        {
+            <table>
+                <caption>Refusals by agent and message type</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Agent</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Refused</th>
+                        <th scope="col">Largest attempt</th>
+                        <th scope="col">Cap in force</th>
+                        <th scope="col">Most recent</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var refusal in Model.Refusals)
+                {
+                    <tr>
+                        <td>@refusal.Agent.Value</td>
+                        <td>@refusal.Type</td>
+                        <td>@refusal.Refusals</td>
+                        <td>@refusal.Worst characters</td>
+                        <td>@refusal.Cap</td>
+                        <td>@refusal.LastUtc.ToString("u")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section>
+        <h2>What clarification cost</h2>
+        @if (Model.Clarifications is { Exchanges: > 0 } clarify)
+        {
+            <p>
+                @clarify.Exchanges exchanges asked for clarification, the deepest reaching
+                @clarify.DeepestReached rounds. @clarify.ExchangesAtCap ran out of rounds.
+            </p>
+            @* Answers that resolved a sub-question differently are the interesting number: they
+               say the clarification changed the answer rather than merely delaying it. *@
+            <p>
+                @clarify.Answers answers followed, of which
+                @clarify.AnswersResolvingSubQuestionsDifferently resolved a sub-question
+                differently from the first attempt.
+            </p>
+        }
+        else
+        {
+            <p>Nothing has been clarified.</p>
+        }
+    </section>
+
+    <section>
+        <h2>What Notify has carried</h2>
+        @* SPEC.md §17 question 1 leaves Notify uncapped on purpose and decides from evidence.
+           This is the half of that evidence a machine can count; whether any of it was worth
+           reading only the recipient knows. *@
+        @if (Model.Notifications is { IsEmpty: false } notify)
+        {
+            <table>
+                <caption>Notification volume by sender and recipient</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">From</th>
+                        <th scope="col">To</th>
+                        <th scope="col">Sent</th>
+                        <th scope="col">Mean size</th>
+                        <th scope="col">Largest</th>
+                        <th scope="col">Most recent</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var flow in notify.Flows)
+                {
+                    <tr>
+                        <td>@flow.From</td>
+                        <td>@flow.To</td>
+                        <td>@flow.Sent</td>
+                        <td>@flow.Mean characters</td>
+                        <td>@flow.Largest characters</td>
+                        <td>@flow.LastUtc</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p>No notifications have been sent.</p>
+        }
+    </section>
+
+    <section>
+        <h2>Where work went when it was out of scope</h2>
+        @if (Model.Referrals is { IsEmpty: false } referrals)
+        {
+            <table>
+                <caption>Exchanges the answerer declined as not its own</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Asker</th>
+                        <th scope="col">Answerer</th>
+                        <th scope="col">Closed</th>
+                        <th scope="col">Out of scope</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var pair in referrals.Pairs)
+                {
+                    <tr>
+                        <td>@pair.Asker</td>
+                        <td>@pair.Answerer</td>
+                        <td>@pair.Closed</td>
+                        @* Shown as a count beside the total rather than as a bare rate: three
+                           out of four reads differently from three thousand out of four
+                           thousand, and a percentage hides which one this is. *@
+                        <td>@pair.OutOfScope</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+
+            @if (referrals.Targets.Count > 0)
+            {
+                <h3>And where it was sent</h3>
+                <ul>
+                @foreach (var target in referrals.Targets)
+                {
+                    <li>
+                        @target.Answerer sent @target.Referrals of @target.Asker&#39;s
+                        sub-questions to @target.RedirectedTo
+                    </li>
+                }
+                </ul>
+            }
+        }
+        else
+        {
+            <p>Nothing has been referred elsewhere.</p>
+        }
+    </section>
+}

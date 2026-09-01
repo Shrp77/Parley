@@ -388,4 +388,31 @@ public sealed class InstallScriptTests
                 && (line.Contains("Remove-Item", StringComparison.Ordinal)
                     || line.Contains("rm ", StringComparison.Ordinal)));
     }
+    [Fact]
+    public void Reinstalling_on_Windows_keeps_the_agent_catalogue_it_is_replacing()
+    {
+        // `autostart install` registers a broker-alone entry when given no catalogue, so a script
+        // that always calls it that way turns a working deployment into one whose agents are
+        // never started -- and the loss arrives days later, on a machine nobody is signed into,
+        // as a question that waits out its window and is ghosted.
+        //
+        // The operator ran the script and is reading its output, not the command's, so the
+        // command's own warning does not reach them.
+        Assert.Contains("--node-config", Windows, StringComparison.Ordinal);
+        Assert.Contains("$existingArguments", Windows, StringComparison.Ordinal);
+        Assert.Contains(
+            "keeping this machine's agent catalogue", Windows, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Both_scripts_take_a_catalogue_and_say_what_happens_without_one()
+    {
+        // Read-back is Windows-only, because the POSIX script registers a systemd user unit or a
+        // launch agent and `autostart status` reports neither's arguments. So the Unix half says
+        // plainly that the entry will start the broker alone -- which is better than a read-back
+        // that works on one platform and silently does nothing on the other.
+        Assert.Contains("--node-config", Unix, StringComparison.Ordinal);
+        Assert.Contains("starts the broker alone", Unix, StringComparison.Ordinal);
+    }
+
 }

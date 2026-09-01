@@ -45,6 +45,8 @@ public sealed class OperatorConsole
     private readonly ConversationRepository _conversations;
     private readonly AgentRepository _agents;
     private readonly MessageRepository _messages;
+    private readonly ExchangeRepository _exchanges;
+    private readonly InstructionRepository _instructions;
     private readonly Pruner _pruner;
     private readonly SizeRefusalRepository _refusals;
     private readonly ClarifyReportRepository _clarify;
@@ -65,6 +67,8 @@ public sealed class OperatorConsole
         _conversations = new ConversationRepository(connection);
         _agents = new AgentRepository(connection);
         _messages = new MessageRepository(connection);
+        _exchanges = new ExchangeRepository(connection);
+        _instructions = new InstructionRepository(connection);
         _pruner = new Pruner(connection);
         _refusals = new SizeRefusalRepository(connection);
         _clarify = new ClarifyReportRepository(connection);
@@ -286,6 +290,45 @@ public sealed class OperatorConsole
         await _notifications.ReadAsync(cancellationToken).ConfigureAwait(false);
 
     /// <summary>
+    /// Says who is waiting on whom, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>One edge per open exchange, waiter first.</returns>
+    /// <remarks>
+    /// <para>
+    /// An operator operation because it reads across pairs. From inside a pair, a question nobody
+    /// is going to answer looks exactly like one that has not been answered yet — the difference
+    /// is only visible to somebody who can see every open exchange at once, which is precisely
+    /// what §10.1 withholds from an agent.
+    /// </para>
+    /// <para>
+    /// Edges rather than a <c>WaitForGraph</c>. That type exists to answer one question — would
+    /// this new question close a cycle — and answers it without ever being read back, which is
+    /// right for its purpose and useless for showing somebody what is stuck.
+    /// </para>
+    /// <para>
+    /// Derived from the open set rather than stored, so it cannot go stale: an exchange that
+    /// closed between two reads is simply not in the second one.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<WaitingEdge>> DescribeWaitingAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var open = await _exchanges.GetOpenAsync(cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        // The waiter is whoever is not owed the next move. Taking the asker would be wrong after
+        // a clarification: the answerer asked back, and it is the original asker who now owes.
+        return
+        [
+            .. open.Select(e => new WaitingEdge(
+                e.OwedBy == e.Answerer ? e.Asker : e.Answerer,
+                e.OwedBy,
+                e.Id))
+        ];
+    }
+
+    /// <summary>
     /// Emits every message in a conversation, per SPEC.md §10.2.
     /// </summary>
     /// <param name="conversationId">The discussion to read.</param>
@@ -306,10 +349,78 @@ public sealed class OperatorConsole
     /// different model pairings converge on the same question.
     /// </para>
     /// </remarks>
-    public async Task<IReadOnlyList<Message>> ExportAsync(
+    public async Task<ConversationExport> ExportAsync(
         string conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        var messages = await _messages
+            .GetConversationAsync(conversationId, cancellationToken).ConfigureAwait(false);
+
+        var exchanges = await _exchanges
+            .GetSnapshotsAsync(conversationId, cancellationToken).ConfigureAwait(false);
+
+        return new ConversationExport(messages, exchanges);
+    }
+
+    /// <summary>Records an instruction before anybody tries to deliver it.</summary>
+    /// <param name="agent">Who it is for.</param>
+    /// <param name="text">What the operator said.</param>
+    /// <param name="nowUtc">When they said it.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>The instruction's identifier.</returns>
+    public async Task<long> RecordInstructionAsync(
+        AgentName agent,
+        string text,
+        DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default) =>
-        await _messages.GetConversationAsync(conversationId, cancellationToken).ConfigureAwait(false);
+        await _instructions.RecordAsync(agent, text, nowUtc, cancellationToken)
+            .ConfigureAwait(false);
+
+    /// <summary>Records what became of an instruction.</summary>
+    /// <param name="id">Which instruction.</param>
+    /// <param name="outcome">What became of it.</param>
+    /// <param name="reply">What the agent said, if anything.</param>
+    /// <param name="nowUtc">When it settled.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether a pending instruction was settled.</returns>
+    public async Task<bool> SettleInstructionAsync(
+        long id,
+        InstructionOutcome outcome,
+        string? reply,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default) =>
+        await _instructions.SettleAsync(id, outcome, reply, nowUtc, cancellationToken)
+            .ConfigureAwait(false);
+
+    /// <summary>
+    /// Lists conversations for SPEC.md §10.2, most recent activity first.
+    /// </summary>
+    /// <param name="participant">Restrict to conversations this agent is party to, or null for all.</param>
+    /// <param name="sinceUtc">Only those last active at or after this instant, if given.</param>
+    /// <param name="untilUtc">Only those last active at or before this instant, if given.</param>
+    /// <param name="limit">How many to return.</param>
+    /// <param name="beforeLastActivityUtc">Resume point: only those last active strictly before it.</param>
+    /// <param name="beforeId">The identifier at that resume point, breaking ties on the instant.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>One page of summaries.</returns>
+    /// <remarks>
+    /// Exists because <see cref="ExportAsync"/> takes an identifier nothing else produces: it is
+    /// opaque and chosen by an agent (§5.0), so a person does not know one and cannot guess it.
+    /// Without this, the operator's entitlement to see the shape of a discussion could be
+    /// exercised only by reading the database, which §4 gives to one process.
+    /// </remarks>
+    public async Task<IReadOnlyList<ConversationSummary>> ListConversationsAsync(
+        AgentName? participant = null,
+        DateTimeOffset? sinceUtc = null,
+        DateTimeOffset? untilUtc = null,
+        int limit = 50,
+        DateTimeOffset? beforeLastActivityUtc = null,
+        string? beforeId = null,
+        CancellationToken cancellationToken = default) =>
+        await _conversations.ListAsync(
+            participant, sinceUtc, untilUtc, limit, beforeLastActivityUtc, beforeId,
+            cancellationToken)
+            .ConfigureAwait(false);
 
     /// <summary>
     /// Applies the retention policy of SPEC.md §9.4 now, per §10.2.

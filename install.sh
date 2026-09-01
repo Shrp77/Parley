@@ -24,6 +24,7 @@
 #
 #   ./install.sh                 build, install, and set the broker up
 #   ./install.sh --store <path>  the store the broker owns; asked for if not given
+#   ./install.sh --node-config <path>  the catalogue of agents this machine may start
 #   ./install.sh --uninstall     remove both tools and the autostart entry, and stop
 
 set -euo pipefail
@@ -32,6 +33,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 uninstall=0
 store=""
+node_config=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -39,12 +41,14 @@ while [ $# -gt 0 ]; do
         # --db as well as --store, because `parley serve --db` is the flag this ends up
         # passing and the two being different words is a trap laid for nobody's benefit.
         --store|--db) store="${2:-}"; shift 2 ;;
+        --node-config) node_config="${2:-}"; shift 2 ;;
+        --node-config=*) node_config="${1#--node-config=}"; shift ;;
         --store=*) store="${1#--store=}"; shift ;;
         --db=*) store="${1#--db=}"; shift ;;
         -h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \\?//'; exit 0 ;;
         *)
             echo "Unknown argument: $1" >&2
-            echo "Usage: ./install.sh [--store <path>] [--uninstall]" >&2
+            echo "Usage: ./install.sh [--store <path>] [--node-config <path>] [--uninstall]" >&2
             exit 64
             ;;
     esac
@@ -429,7 +433,27 @@ step "Registering the broker to start at logon"
 # No root here, and not by luck: this writes a systemd *user* unit or a per-user launch agent.
 # The broker binds a loopback port and writes under the invoking user's own home, so it needs no
 # privilege they do not already have, and asking for one would be asking for the tool's benefit.
-if ! "$parley_command" autostart install --db "$store"; then
+# `autostart install` registers a broker-alone entry when it is given no catalogue, so a machine
+# whose agents were being started for it loses that half -- and the loss arrives days later, on a
+# machine nobody is signed into, as a question that waits out its window and is ghosted.
+#
+# Said here rather than carried over. install.ps1 reads the catalogue back out of the scheduled
+# task it is replacing; there is no portable equivalent, because this registers a systemd user
+# unit on Linux and a launch agent on macOS and `autostart status` reports neither's arguments.
+# Announcing the gap is better than a read-back that works on one platform and silently does
+# nothing on the other.
+if [ -z "$node_config" ]; then
+    echo "  no agent catalogue given, so this entry starts the broker alone. Pass"
+    echo "  --node-config <path> to have it start this machine's agents too."
+fi
+
+autostart_arguments=(--db "$store")
+
+if [ -n "$node_config" ]; then
+    autostart_arguments+=(--node-config "$node_config")
+fi
+
+if ! "$parley_command" autostart install "${autostart_arguments[@]}"; then
     echo "Could not set the broker to start automatically. The tools are installed, so running" >&2
     echo "  parley serve --db $store" >&2
     echo "by hand will say why." >&2

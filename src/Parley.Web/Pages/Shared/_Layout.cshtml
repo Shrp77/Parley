@@ -1,0 +1,1214 @@
+@*
+    The console's frame.
+
+    Legibility is a correctness requirement here rather than a courtesy: the transcript's pair and
+    visibility annotations are what stop a reader concluding that every participant saw every
+    message, so they are carried as text and never by colour alone (FR-029, FR-030).
+*@
+@inject Parley.Web.Seating.SeatBook Seats
+@{
+    // Read here rather than passed in by every page, because the frame is the one thing every
+    // page has and a seat shown on some pages and not others is worse than one shown on none.
+    var here = SeatCookie.Read(Context.Request);
+
+    // A page render is evidence that the person is still at the console, which is the whole of
+    // what keeps their seat: SPEC.md §4.0 has no heartbeat, so somebody who has gone home has to
+    // stop being present some other way, and this is it. Doing it in the frame means every page
+    // counts, including the ones nobody thought to instrument.
+    if (here is not null)
+    {
+        Seats.Touch(here, DateTimeOffset.UtcNow);
+    }
+
+    // Asked, not remembered. This was a sum over counts pushed on the attach streams, and a
+    // notice is only ever sent when something arrives — so the number went up and never came
+    // back down, and the frame contradicted the inbox page standing right underneath it.
+    //
+    // A count nobody could confirm shows nothing at all rather than a zero, because "no messages"
+    // and "could not ask" are different things and only one of them means stop looking.
+    var waiting = here is null
+        ? (Waiting: 0, Certain: false)
+        : await Seats.WaitingAsync(here, Context.RequestAborted);
+
+    var joinLink = "/Join?Then="
+        + Uri.EscapeDataString(Context.Request.Path + Context.Request.QueryString);
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@ViewData["Title"] — Parley console</title>
+    <link rel="icon" href="/brand/icon.png" type="image/png" />
+    @* Inline rather than a file. A file has to survive `dotnet pack` into the tool that starts
+       this console — which it did not: the page rendered unstyled from the installed
+       `parley console` while working perfectly from the build output. Embedding it removes the
+       whole class of problem rather than the instance, and costs a round trip nobody wanted.
+
+       Every colour here reinforces something the text already says. Nothing is carried by hue
+       alone: an unreachable project says it is unreachable, and a message nobody else saw names
+       the agents who did not see it. See FR-030. *@
+    <style>
+        :root {
+            /* How much of the top of the viewport the sticky frame occupies. Read by everything
+               else that sticks, so there is one number to change rather than four. */
+            --frame: 3.6rem;
+            --ink: #16181d;
+            --ink-soft: #5b6270;
+            --ink-faint: #878e9c;
+            --page: #f7f8fa;
+            --card: #ffffff;
+            --rule: #e3e6ec;
+            --accent: #2b5cd9;
+            --alarm: #a5252b;
+            --alarm-wash: #fdf3f3;
+            --quiet-wash: #f2f4f8;
+            --radius: 10px;
+            --gap: 1.25rem;
+        }
+
+        @@media (prefers-color-scheme: dark) {
+            :root {
+                --ink: #e8eaf0;
+                --ink-soft: #a8b0c0;
+                --ink-faint: #7d8598;
+                --page: #14161b;
+                --card: #1c1f26;
+                --rule: #2c313b;
+                --accent: #7ba0f5;
+                --alarm: #f08b90;
+                --alarm-wash: #2a1c1e;
+                --quiet-wash: #22262e;
+            }
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+            font-size: 15px;
+            line-height: 1.6;
+            color: var(--ink);
+            background: var(--page);
+            margin: 0;
+            padding: 0 clamp(0.85rem, 2vw, 2rem) 4rem;
+        }
+
+        header, main, footer { margin: 0 auto; max-width: 100rem; }
+
+        /* Skipping is for somebody navigating by keyboard, so it has to become visible when it
+           is focused rather than merely exist. */
+        .skip {
+            position: absolute;
+            left: -100rem;
+        }
+
+        .skip:focus {
+            position: static;
+            display: inline-block;
+            margin: 0.5rem 0;
+            padding: 0.5rem 0.75rem;
+            background: var(--accent);
+            color: #fff;
+            border-radius: var(--radius);
+        }
+
+        /* The frame stays put. Everything in it is navigation or the seat you are holding, and
+           both are things you want to reach from halfway down a long transcript without
+           scrolling back to the top to find them.
+
+           --frame is what it occupies, and three other things are positioned against it: the
+           roster, the minimap, and where an anchor lands. A sticky header over sticky children
+           with no offset puts them underneath it, and a tick that scrolls its message under the
+           header is a link that appears not to work. */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.85rem 0 0.8rem;
+            background: var(--page);
+            border-bottom: 1px solid var(--rule);
+            margin-bottom: 1.5rem;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            font-weight: 650;
+            letter-spacing: -0.01em;
+            color: var(--ink);
+            text-decoration: none;
+        }
+
+        .brand span { color: var(--ink-faint); font-weight: 400; }
+
+        /* Drawn in black on transparency, so on a dark ground it is inverted rather than
+           swapped for a second file. One asset, and it cannot fall out of step with itself. */
+        .brand img {
+            width: 1.9rem;
+            height: 1.9rem;
+            display: block;
+        }
+
+        @@media (prefers-color-scheme: dark) {
+            .brand img, .wordmark { filter: invert(1); }
+        }
+
+        /* The front door: the mark beside the heading rather than above it, so the page still
+           opens with a sentence and not with a logo the reader has to scroll past. */
+        .doorway {
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+            margin: 0.5rem 0 0.25rem;
+        }
+
+        .doorway h1 { margin: 0; }
+
+        .wordmark {
+            width: auto;
+            height: 5.5rem;
+            flex: none;
+        }
+
+        @@media (max-width: 40rem) {
+            .wordmark { height: 4rem; }
+            .doorway { gap: 0.9rem; }
+        }
+
+        /* One delivered message, in the inbox. Bordered rather than bubbled: these arrive out of
+           whatever conversation they belong to, and dressing them as a transcript would suggest
+           an order and a context they do not have here. */
+        .letter {
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-radius: var(--radius);
+            padding: 0.9rem 1.1rem;
+            margin: 0.75rem 0;
+        }
+
+        /* A debt, not a decoration. The word "question" is in the tag beside the name and the
+           reply form is inside it, so the edge is the reminder rather than the statement. */
+        .letter.owed { border-left: 3px solid var(--alarm); }
+
+        .letter .attribution {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 0 0 0.5rem;
+        }
+
+        .reply label {
+            display: block;
+            margin: 0.6rem 0 0.2rem;
+            font-weight: 600;
+            color: var(--ink);
+        }
+
+        /* Set apart from the name beside it, because one of them is attested and the other is
+           only claimed. Quiet, italic and prefixed with "says" -- it is evidence about what a
+           peer reports, not a fact about who wrote the words. */
+        .claims {
+            font-size: 0.8rem;
+            font-style: italic;
+            color: var(--ink-faint);
+        }
+
+        .reply textarea { width: 100%; }
+        .reply select { font: inherit; margin-top: 0.4rem; }
+
+        nav { display: flex; flex-wrap: wrap; gap: 1rem; }
+
+        nav a {
+            color: var(--ink-soft);
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            padding-bottom: 1px;
+        }
+
+        nav a:hover, nav a:focus { color: var(--accent); border-bottom-color: var(--accent); }
+
+        /* The seat, in the frame. It is on every page because being present is a fact about the
+           deployment rather than about whatever page happens to be open, and a person who cannot
+           see that they are still joined has no way to know the roster is showing them. */
+        nav { margin-left: auto; align-items: center; }
+
+        .seat-who {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-weight: 600;
+            color: var(--ink);
+        }
+
+        /* The dot repeats what the name already says -- it is beside your own name, not beside a
+           list of others -- so nothing here is carried by colour alone. */
+        .seat-dot {
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 50%;
+            background: #1c7c48;
+            box-shadow: 0 0 0 2px color-mix(in srgb, #1c7c48 25%, transparent);
+        }
+
+        .seat-waiting {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #fff;
+            background: var(--accent);
+            border-radius: 999px;
+            padding: 0.05rem 0.4rem;
+        }
+
+        /* A form in the nav, so the base card styling has to be undone rather than inherited. */
+        .seat-leave {
+            display: inline;
+            background: none;
+            border: 0;
+            padding: 0;
+            margin: 0;
+        }
+
+        .seat-leave button {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--ink-soft);
+            background: none;
+            border: 1px solid var(--rule);
+            padding: 0.15rem 0.55rem;
+        }
+
+        .seat-leave button:hover { color: var(--ink); filter: none; border-color: var(--ink-faint); }
+
+        h1 {
+            font-size: 1.6rem;
+            line-height: 1.25;
+            letter-spacing: -0.02em;
+            margin: 0 0 0.35rem;
+        }
+
+        h2 {
+            font-size: 1.05rem;
+            letter-spacing: 0.01em;
+            margin: 2rem 0 0.75rem;
+            color: var(--ink);
+        }
+
+        h3 { font-size: 0.95rem; margin: 1.5rem 0 0.5rem; color: var(--ink-soft); }
+
+        a { color: var(--accent); }
+
+        p { margin: 0.5rem 0; }
+
+        /* Said on every list view, so it has to be readable and unobtrusive at once: a reader
+           needs to be able to find it when they wonder how old the page is, and never to trip
+           over it when they do not. */
+        .as-of {
+            color: var(--ink-faint);
+            font-size: 0.85rem;
+            margin: 0 0 1.25rem;
+        }
+
+        section { margin-bottom: 2rem; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-radius: var(--radius);
+            overflow: hidden;
+            margin: 0.5rem 0 1rem;
+        }
+
+        caption {
+            text-align: left;
+            color: var(--ink-faint);
+            font-size: 0.85rem;
+            padding: 0 0 0.5rem;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 0.6rem 0.85rem;
+            border-bottom: 1px solid var(--rule);
+            vertical-align: top;
+        }
+
+        th {
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--ink-faint);
+            font-weight: 600;
+            background: var(--quiet-wash);
+        }
+
+        tbody tr:last-child td { border-bottom: none; }
+
+        /* The project and agent lists. A card each, so a row is a thing rather than a line of
+           text, and the link is the whole name rather than a word inside a sentence. */
+        main > ul, section > ul {
+            list-style: none;
+            padding: 0;
+            margin: 0.5rem 0 1rem;
+            display: grid;
+            gap: 0.6rem;
+        }
+
+        main > ul > li, section > ul > li {
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-radius: var(--radius);
+            padding: 0.85rem 1rem;
+        }
+
+        main > ul > li > a, section > ul > li > a { font-weight: 600; }
+
+        /* A project or a broker that did not answer. Bordered and washed, and the sentence
+           inside says what happened -- the colour is the third way of noticing, never the
+           first. */
+        .unreachable {
+            border-left: 3px solid var(--alarm);
+            background: var(--alarm-wash);
+            color: var(--ink);
+            padding: 0.7rem 0.9rem;
+            border-radius: 0 var(--radius) var(--radius) 0;
+            margin: 0.75rem 0;
+        }
+
+        form {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.6rem;
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-radius: var(--radius);
+            padding: 0.85rem 1rem;
+            margin: 0.75rem 0 1.25rem;
+        }
+
+        label { color: var(--ink-soft); font-size: 0.9rem; }
+
+        input, textarea {
+            font: inherit;
+            color: var(--ink);
+            background: var(--page);
+            border: 1px solid var(--rule);
+            border-radius: 6px;
+            padding: 0.4rem 0.6rem;
+        }
+
+        textarea { width: 100%; min-height: 8rem; }
+
+        button {
+            font: inherit;
+            font-weight: 600;
+            color: #fff;
+            background: var(--accent);
+            border: 1px solid transparent;
+            border-radius: 6px;
+            padding: 0.45rem 0.9rem;
+            cursor: pointer;
+        }
+
+        button:hover { filter: brightness(1.08); }
+
+        :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+        /* The transcript, as a conversation. The chat shape is a presentation choice and a
+           deliberate one: it is the easiest way to watch agents talk. What it must never do is
+           imply a room -- these are pairwise exchanges (SPEC.md 5.0), so every bubble names its
+           recipient and the notes between them say who was not there. */
+        ol.transcript {
+            list-style: none;
+            padding: 0;
+            margin: 1.25rem 0 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+        }
+
+        li.turn {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.65rem;
+            max-width: min(56rem, 100%);
+        }
+
+        /* Initials rather than a picture, and hidden from a screen reader: it repeats the name
+           written directly beside it, so announcing it twice is noise. */
+        .who {
+            flex: 0 0 auto;
+            width: 2.1rem;
+            height: 2.1rem;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            color: #fff;
+            background: var(--agent);
+            margin-top: 0.2rem;
+        }
+
+        .bubble {
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-left: 3px solid var(--agent);
+            border-radius: 4px 12px 12px 12px;
+            padding: 0.7rem 0.95rem;
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+
+        .attribution {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 0.4rem;
+            margin: 0 0 0.4rem;
+            font-size: 0.88rem;
+            color: var(--ink);
+        }
+
+        .attribution strong { font-weight: 650; letter-spacing: -0.01em; }
+        .attribution .arrow { color: var(--ink-faint); font-weight: 400; }
+        .attribution .stamp { margin-left: auto; color: var(--ink-faint); font-size: 0.78rem; }
+
+        /* What the agent said, at reading size. The rest of the document is context around it. */
+        .said { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+        .because, .field {
+            margin: 0.45rem 0 0;
+            font-size: 0.86rem;
+            color: var(--ink-soft);
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .because span, .field span {
+            display: inline-block;
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            font-weight: 700;
+            color: var(--ink-faint);
+            margin-right: 0.35rem;
+        }
+
+        /* Rule 8.1 numbers its sub-questions, and an answer resolves them one for one. Shown
+           as the numbered thing it is, so a reader can match q2 to its resolution without
+           counting paragraphs. */
+        ol.points {
+            list-style: none;
+            margin: 0.55rem 0 0;
+            padding: 0;
+            display: grid;
+            gap: 0.4rem;
+        }
+
+        ol.points > li {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 0.45rem;
+            font-size: 0.9rem;
+            padding-left: 0.7rem;
+            border-left: 2px solid var(--rule);
+        }
+
+        ol.points .label {
+            flex: 0 0 auto;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--agent);
+        }
+
+        ol.points .point-text {
+            flex: 1 1 12rem;
+            min-width: 0;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        /* The answerer's own word for the outcome. "Out of scope" and "answered" are different
+           results and only one of them is finished. */
+        ol.points .verdict {
+            flex: 0 0 auto;
+            font-size: 0.68rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--ink-faint);
+            border: 1px solid var(--rule);
+            border-radius: 999px;
+            padding: 0.05rem 0.5rem;
+        }
+
+        /* Payloads are JSON written by a peer, and the setup pages carry commands with long
+           paths in them. Both wrap rather than scroll: a horizontal scrollbar inside a block is
+           a place text hides, and on a phone it is the page itself that runs off the side.
+
+           This rule was lost once in an edit and nothing failed — the pages still rendered, and
+           only measuring the layout at 360px found it. */
+        pre {
+            background: var(--quiet-wash);
+            border: 1px solid var(--rule);
+            border-radius: 8px;
+            padding: 0.7rem 0.85rem;
+            margin: 0.5rem 0;
+            font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .meta {
+            margin: 0.55rem 0 0;
+            font-size: 0.75rem;
+            color: var(--ink-faint);
+        }
+
+        /* The line that stops this being a group chat. Centred and quiet, the way a messenger
+           marks something about the conversation rather than something said in it -- and it is
+           a sentence naming the agents, so the styling is the last thing carrying it, never the
+           only one. */
+        li.not-seen {
+            align-self: center;
+            max-width: 40rem;
+            margin: 0.15rem 0;
+            padding: 0.4rem 0.85rem;
+            background: var(--quiet-wash);
+            border: 1px dashed var(--rule);
+            border-radius: 999px;
+            font-size: 0.78rem;
+            line-height: 1.45;
+            color: var(--ink-soft);
+            text-align: center;
+        }
+
+        li.not-seen strong { font-weight: 500; color: var(--ink-soft); }
+
+        /* Eight slots, assigned from a hash of the agent's name so it never moves. Decoration:
+           every fact these tint is also written in words beside them. */
+        .slot-0 { --agent: #2b5cd9; }
+        .slot-1 { --agent: #0f8a6a; }
+        .slot-2 { --agent: #b0561c; }
+        .slot-3 { --agent: #7a3fbf; }
+        .slot-4 { --agent: #0d7d94; }
+        .slot-5 { --agent: #a5254f; }
+        .slot-6 { --agent: #5c6b1f; }
+        .slot-7 { --agent: #34527a; }
+
+        @@media (prefers-color-scheme: dark) {
+            .slot-0 { --agent: #6d95f2; }
+            .slot-1 { --agent: #46b596; }
+            .slot-2 { --agent: #d98b52; }
+            .slot-3 { --agent: #a97ce0; }
+            .slot-4 { --agent: #4fadc2; }
+            .slot-5 { --agent: #e0698d; }
+            .slot-6 { --agent: #9aab4f; }
+            .slot-7 { --agent: #7f9ac4; }
+        }
+
+        /* Roster beside the transcript, the way a messenger keeps its people to one side.
+           Collapses above the conversation on a narrow screen rather than squeezing it. */
+        .conversation {
+            display: grid;
+            grid-template-columns: clamp(13rem, 15vw, 18rem) minmax(0, 1fr) 4rem;
+            gap: 1.5rem;
+            align-items: start;
+        }
+
+        .roster {
+            position: sticky;
+            top: calc(var(--frame) + 1rem);
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-radius: var(--radius);
+            padding: 0.9rem 1rem;
+        }
+
+        .roster h2 {
+            margin: 0 0 0.6rem;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--ink-faint);
+        }
+
+        .roster ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.65rem; }
+
+        .roster li {
+            display: grid;
+            grid-template-columns: 1.7rem minmax(0, 1fr);
+            grid-template-rows: auto auto;
+            column-gap: 0.5rem;
+            align-items: center;
+        }
+
+        .roster .who {
+            grid-row: 1 / span 2;
+            width: 1.7rem;
+            height: 1.7rem;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            font-size: 0.6rem;
+            font-weight: 700;
+            color: #fff;
+            background: var(--agent);
+        }
+
+        .roster .name {
+            font-size: 0.82rem;
+            font-weight: 600;
+            overflow-wrap: anywhere;
+        }
+
+        .roster .state { font-size: 0.72rem; color: var(--ink-faint); }
+
+        /* A day marker. Centred and quiet, like the visibility note, because both are the
+           console speaking about the conversation rather than anybody speaking in it. */
+        li.day {
+            align-self: center;
+            margin: 0.9rem 0 0.25rem;
+            padding: 0.2rem 0.8rem;
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--ink-faint);
+            background: var(--quiet-wash);
+            border-radius: 999px;
+        }
+
+        /* An exchange nobody came back to. Tinted and outlined, and the bubble also carries the
+           word "abandoned" -- the colour is how you find it while scrolling, never how you know
+           what it means. */
+        li.turn.ghosted .bubble {
+            border-color: var(--alarm);
+            background: var(--alarm-wash);
+        }
+
+        .tag {
+            display: inline-block;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            color: var(--alarm);
+            border: 1px solid var(--alarm);
+            border-radius: 999px;
+            padding: 0 0.45rem;
+            margin-right: 0.35rem;
+        }
+
+        /* The project: who is here on the left, what they have been saying on the right. One
+           page because that is one question, and answering it across two made a reader hold the
+           roster in their head while looking at the conversations. */
+        .project {
+            display: grid;
+            grid-template-columns: clamp(13rem, 17vw, 19rem) minmax(0, 1fr);
+            gap: 1.5rem;
+            align-items: start;
+        }
+
+        .project > section { margin: 0; }
+        .project .roster h2, .project > section > h2 { margin-top: 0; }
+
+        ul.threads {
+            list-style: none;
+            padding: 0;
+            margin: 0.5rem 0 1rem;
+            display: grid;
+            gap: 0.6rem;
+        }
+
+        ul.threads > li {
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-radius: var(--radius);
+            padding: 0.8rem 1rem;
+        }
+
+        ul.threads .name { font-weight: 650; overflow-wrap: anywhere; }
+        ul.threads .between { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--ink-soft); }
+        ul.threads .meta { margin: 0.35rem 0 0; font-size: 0.78rem; color: var(--ink-faint); }
+
+        /* A conversation somebody still owes an answer to. Said in words beside the tint. */
+        .tag.open {
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+
+        h1 .who {
+            display: inline-grid;
+            vertical-align: middle;
+            margin-right: 0.5rem;
+        }
+
+        .lede { font-size: 1rem; color: var(--ink-soft); margin: 0 0 1.25rem; max-width: 44rem; }
+
+        table th[scope="row"] {
+            width: 10rem;
+            background: transparent;
+            text-transform: none;
+            letter-spacing: 0;
+            font-size: 0.85rem;
+            color: var(--ink-faint);
+        }
+
+        /* Anchored jumps land with a little air above them rather than flush to the edge. */
+        li.turn { scroll-margin-top: calc(var(--frame) + 1rem); }
+
+        @@media (prefers-reduced-motion: no-preference) {
+            html { scroll-behavior: smooth; }
+        }
+
+        /* Text for a screen reader where the page uses shape or colour to aim the eye. */
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip-path: inset(50%);
+            white-space: nowrap;
+        }
+
+        /* The minimap. One tick per message in the order the broker recorded them, tinted by
+           who spoke -- so a long conversation shows its shape: who dominated it, where it
+           changed hands, and where something was abandoned. */
+        .timeline {
+            position: sticky;
+            top: calc(var(--frame) + 1rem);
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 2px;
+            padding: 0.5rem 0.4rem;
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-radius: var(--radius);
+        }
+
+        .timeline .tick {
+            display: block;
+            height: 0.5rem;
+            border-radius: 2px;
+            background: var(--agent);
+            opacity: 0.65;
+        }
+
+        .timeline .tick:hover, .timeline .tick:focus-visible { opacity: 1; }
+
+        /* An abandoned exchange, marked by shape as well as tint: it is taller and outlined, so
+           it is findable on a screen where the colours are not. */
+        .timeline .tick.ghosted {
+            height: 0.85rem;
+            background: var(--alarm-wash);
+            border: 2px solid var(--alarm);
+            opacity: 1;
+        }
+
+        .timeline .rail-day {
+            font-size: 0.6rem;
+            letter-spacing: 0.03em;
+            color: var(--ink-faint);
+            text-align: center;
+            margin-top: 0.4rem;
+        }
+
+        .timeline .rail-day:first-child { margin-top: 0; }
+
+        /* Selecting a message marks the rest from that agent. Every signal here is one that
+           survives colour blindness: what does not match is dimmed, what does is outlined and
+           made taller, and a sentence beside the rail says how many and whose. The tint stays,
+           but nothing depends on it. */
+        .timeline.focused .tick:not(.kin) { opacity: 0.15; }
+
+        .timeline .tick.kin {
+            opacity: 1;
+            outline: 2px solid var(--ink);
+            outline-offset: 1px;
+        }
+
+        li.turn.kin .bubble { border-left-width: 7px; }
+
+        /* The message actually chosen, told apart from its kin. */
+        li.turn:target .bubble {
+            border-color: var(--ink-soft);
+            box-shadow: 0 0 0 3px var(--quiet-wash);
+        }
+
+        .kin-note {
+            margin: 0 0 0.4rem;
+            font-size: 0.7rem;
+            line-height: 1.35;
+            color: var(--ink-soft);
+            text-align: center;
+        }
+
+        .kin-note:empty { display: none; }
+
+        footer {
+            margin-top: 3rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--rule);
+            color: var(--ink-faint);
+            font-size: 0.85rem;
+        }
+
+        /* Find within a conversation. */
+        .find {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.6rem;
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-radius: var(--radius);
+            padding: 0.7rem 1rem;
+            margin: 1rem 0 0;
+        }
+
+        .find label { flex: 0 0 auto; }
+        .find input { flex: 1 1 14rem; min-width: 0; }
+
+        .found {
+            flex: 1 1 100%;
+            margin: 0;
+            font-size: 0.78rem;
+            color: var(--ink-soft);
+        }
+
+        .found:empty { display: none; }
+
+        /* A message that matched, and the words in it. Outlined rather than only tinted, for
+           the same reason the rest of this page is: a mark nobody can see is not a mark. */
+        li.turn.hit .bubble {
+            border-color: var(--ink-soft);
+            box-shadow: 0 0 0 2px var(--quiet-wash);
+        }
+
+        mark[data-found] {
+            background: var(--agent);
+            color: #fff;
+            border-radius: 3px;
+            padding: 0 0.15em;
+        }
+
+        .timeline.searching .tick:not(.hit) { opacity: 0.12; }
+
+        .timeline .tick.hit {
+            opacity: 1;
+            outline: 2px solid var(--ink);
+            outline-offset: 1px;
+        }
+
+        /* The composer, pinned so it is reachable from anywhere in a long transcript. It is a
+           form rather than a chat box, and it says so: what it sends is an instruction to the
+           agents, not a message into the conversation. */
+        .composer {
+            position: sticky;
+            bottom: 0;
+            z-index: 2;
+            display: block;
+            margin: 1.5rem 0 0;
+            padding: 0.85rem 1rem;
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-bottom: none;
+            border-radius: var(--radius) var(--radius) 0 0;
+            box-shadow: 0 -6px 18px -12px rgba(0, 0, 0, 0.45);
+        }
+
+        .composer-note {
+            margin: 0 0 0.6rem;
+            font-size: 0.78rem;
+            line-height: 1.45;
+            color: var(--ink-soft);
+        }
+
+        fieldset.targets {
+            border: none;
+            margin: 0 0 0.6rem;
+            padding: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            align-items: center;
+        }
+
+        fieldset.targets legend {
+            float: left;
+            width: 100%;
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--ink-faint);
+            padding: 0 0 0.35rem;
+        }
+
+        label.target {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.8rem;
+            border: 1px solid var(--rule);
+            border-radius: 999px;
+            padding: 0.2rem 0.65rem 0.2rem 0.4rem;
+            cursor: pointer;
+        }
+
+        /* Checked reads as checked without the tint: the box itself stays visible, and the
+           whole chip takes the agent's edge. */
+        label.target:has(input:checked) {
+            border-color: var(--agent);
+            border-width: 2px;
+            padding: calc(0.2rem - 1px) calc(0.65rem - 1px) calc(0.2rem - 1px) calc(0.4rem - 1px);
+        }
+
+        label.target .who { width: 1.4rem; height: 1.4rem; font-size: 0.55rem; }
+
+        .composer textarea { width: 100%; min-height: 4.5rem; }
+
+        .composer-send {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.6rem;
+            margin-top: 0.6rem;
+            font-size: 0.85rem;
+            color: var(--ink-soft);
+        }
+
+        .composer .wants {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-top: 0.6rem;
+            font-size: 0.85rem;
+        }
+
+        /* Joined, the panel is a chat box; not joined, it is an instruction form. The edge says
+           which, and the sentence at the top of the panel says it in words -- the colour is the
+           reminder, never the statement. */
+        .composer.as-agent { border-left: 3px solid #1c7c48; }
+
+        /* Rule 8.1's framing, revealed by asking for a reply. Hidden rather than absent so the
+           fields keep whatever was typed into them when a post comes back with a problem. */
+        .composer .framing { display: none; margin-top: 0.6rem; }
+
+        .composer:has(.wants input:checked) .framing { display: block; }
+
+        .composer .framing label {
+            display: block;
+            margin: 0.5rem 0 0.2rem;
+            font-size: 0.85rem;
+        }
+
+        .composer .framing input { width: 100%; }
+
+        ul.sent {
+            list-style: none;
+            margin: 0 0 0.6rem;
+            padding: 0;
+            display: grid;
+            gap: 0.3rem;
+            font-size: 0.82rem;
+        }
+
+        ul.sent > li {
+            padding: 0.4rem 0.6rem;
+            background: var(--quiet-wash);
+            border-radius: 6px;
+        }
+
+        /* ---- Sizes -------------------------------------------------------------
+
+           One set of breakpoints, replacing four scattered ones that had grown a
+           rule at a time and disagreed about where a column should fold.
+
+           The shell grows to 100rem and the reading measure does not: a bubble is
+           capped, so a wide window buys room for the roster and the rail rather
+           than longer lines. Below 60rem the three columns stop fitting and the
+           page becomes one; below 40rem it is a phone. */
+
+        @@media (min-width: 90rem) {
+            .conversation, .project { gap: 2rem; }
+
+            /* A little more room for a bubble once the shell has stopped growing, so the
+               transcript does not end a couple of hundred pixels short of the rail. Still a
+               measure, not a line across the monitor: a bubble is mostly short lines. */
+            li.turn { max-width: min(64rem, 100%); }
+        }
+
+        @@media (max-width: 60rem) {
+            .conversation, .project { grid-template-columns: minmax(0, 1fr); }
+
+            .roster { position: static; }
+            .roster ul { grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); }
+
+            /* Horizontal above the conversation, where a vertical rail beside it
+               would have nowhere to be. */
+            .timeline {
+                position: static;
+                flex-direction: row;
+                flex-wrap: wrap;
+                align-items: center;
+                order: -1;
+            }
+
+            .timeline .tick { width: 0.5rem; height: 1.1rem; }
+            .timeline .tick.ghosted { width: 0.85rem; }
+            .timeline .rail-day { margin: 0 0.2rem; }
+
+            /* The health page carries six columns and there is no longer width for
+               them. Scrolled inside its own box rather than squeezed, because a
+               figure shrunk to fit is a figure nobody reads.
+
+               Here rather than at phone width, which is where it was: the columns
+               stopped fitting at 768px, in the gap between the two breakpoints, and
+               the page ran off the side. */
+            table { display: block; overflow-x: auto; }
+        }
+
+        @@media (max-width: 40rem) {
+            body { font-size: 14px; }
+
+            /* Kept as one row here, where it used to stack. A sticky frame that stacks costs
+               five rem of a phone screen on every page, and the frame is worth having only for
+               as long as it costs less than what it is covering. The word "console" goes
+               instead: the mark and the page say it. */
+            :root { --frame: 3.1rem; }
+            header { gap: 0.6rem; padding: 0.6rem 0 0.55rem; }
+            .brand span { display: none; }
+
+            h1 { font-size: 1.35rem; }
+            th, td { padding: 0.5rem 0.6rem; }
+
+            li.turn { gap: 0.5rem; }
+            .bubble { padding: 0.6rem 0.75rem; }
+            li.turn > .who { width: 1.8rem; height: 1.8rem; font-size: 0.62rem; }
+            form { padding: 0.7rem 0.8rem; }
+            input { flex: 1 1 8rem; min-width: 0; }
+        }
+
+        /* Nothing may run off the side at 320px, which is the narrowest thing
+           anybody will hold this on. */
+        @@media (max-width: 26rem) {
+            /* The mark alone. At this width the frame is competing with the page for the only
+               thing in short supply, and the word "Parley" is in the title bar anyway. */
+            .brand { font-size: 0; gap: 0; }
+            .brand img { width: 1.7rem; height: 1.7rem; }
+
+            .attribution .stamp { margin-left: 0; }
+            .roster ul { grid-template-columns: minmax(0, 1fr); }
+            nav { gap: 0.6rem; }
+            ol.points > li { padding-left: 0.5rem; }
+        }
+
+    </style>
+    @* List views refresh themselves; a transcript never does. A page that changed under a reader
+       mid-sentence would be worse than one that is briefly out of date, and the transcript says
+       so itself when it has fallen behind. *@
+    @if (ViewData["Refresh"] is string seconds)
+    {
+        <meta http-equiv="refresh" content="@seconds" />
+    }
+</head>
+<body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header>
+        <a class="brand" href="/">
+            @* Decorative: the word beside it says the same thing, so a reader who cannot see
+               the image loses nothing and a screen reader is not told it twice. *@
+            <img src="/brand/icon.png" alt="" width="128" height="125" />
+            Parley <span>console</span>
+        </a>
+        <nav aria-label="Console">
+            <a href="/">Projects</a>
+            @if (here is null)
+            {
+                <a class="seat-join" href="@joinLink">Join</a>
+            }
+            else
+            {
+                @* The count goes to the inbox and not to the seat. It said how much was waiting
+                   and led to a page about where you were sitting, which is the most direct way
+                   to promise something and not deliver it. *@
+                <a class="seat-who" href="/Inbox" title="Your messages">
+                    <span class="seat-dot" aria-hidden="true"></span>@here.Person
+                    @if (waiting is { Certain: true, Waiting: > 0 })
+                    {
+                        <span class="seat-waiting">@waiting.Waiting<span class="visually-hidden">
+                            messages waiting for you</span></span>
+                    }
+                </a>
+                @* A form rather than a link. Leaving drops the attachment, and SPEC.md §4.0
+                   makes dropping one a departure — something a page-crawler must not be able
+                   to do to a person by following what looks like navigation. *@
+                <form class="seat-leave" method="post" action="/Leave">
+                    @Html.AntiForgeryToken()
+                    <button type="submit">Leave</button>
+                </form>
+            }
+        </nav>
+    </header>
+    <main id="main">
+        @if (ViewData["AsOf"] is string asOf)
+        {
+            <p class="as-of" role="status">Showing what the broker reported at @asOf.</p>
+        }
+        @RenderBody()
+    </main>
+    <footer>
+        @* Reading is free; the four operations that are not are each described before they
+           happen and none of them is reachable by following a link. Saying "read-only" here
+           would be the more comforting sentence and the false one. *@
+        <p>Operator view. Everything is a read except retire, reinstate, instruct, purge and
+           force-conclude, and each of those says what it will do before it does it.</p>
+    </footer>
+    <script>
+        // --frame is what the sticky frame occupies, and three other things are positioned
+        // against it: the roster, the minimap, and where an anchor lands. A constant is a guess,
+        // and it is wrong the moment the frame wraps to two lines -- which it does on a narrow
+        // screen, and would again the next time anything is added to the nav. Nothing would
+        // report it: the roster would simply sit under the header, and a tick would scroll its
+        // message out of sight behind it.
+        //
+        // Measured, so the number cannot drift from the thing it describes. The value in the
+        // stylesheet stands until this runs and is what a reader without scripts keeps, which is
+        // why it is a reasonable figure rather than a placeholder.
+        (function () {
+            var frame = document.querySelector('header');
+
+            if (!frame || !window.ResizeObserver) {
+                return;
+            }
+
+            var apply = function () {
+                document.documentElement.style.setProperty(
+                    '--frame', frame.getBoundingClientRect().height + 'px');
+            };
+
+            new ResizeObserver(apply).observe(frame);
+            apply();
+        })();
+    </script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

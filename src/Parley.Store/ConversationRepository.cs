@@ -665,6 +665,154 @@ public sealed class ConversationRepository(SqliteConnection connection)
         public string PolledUtc { get; init; } = "";
     }
 
+    /// <summary>
+    /// Lists conversations for the operator listing of SPEC.md §10.2, most recent activity first.
+    /// </summary>
+    /// <param name="participant">Restrict to conversations this agent is party to, or null for all.</param>
+    /// <param name="sinceUtc">Only those last active at or after this instant, if given.</param>
+    /// <param name="untilUtc">Only those last active at or before this instant, if given.</param>
+    /// <param name="limit">How many to return. The caller is expected to have bounded this.</param>
+    /// <param name="beforeLastActivityUtc">Resume point: only those last active strictly before it.</param>
+    /// <param name="beforeId">
+    /// The identifier at that resume point, breaking ties the instant alone cannot.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>One page of summaries.</returns>
+    /// <remarks>
+    /// <para>
+    /// Activity is read from the messages rather than from the conversation's own timestamps,
+    /// because <c>opened_utc</c> says when an agent first named it and nothing says when anybody
+    /// last used it. An operator scanning for "what happened this afternoon" is asking the second
+    /// question.
+    /// </para>
+    /// <para>
+    /// Participants come from <c>conversation_participants</c>, which §5.0 fills from the
+    /// exchanges. They are derived and are not evidence of agreement: an identifier is a claim by
+    /// its sender, so an agent may name a discussion it was not part of and thereby join it.
+    /// </para>
+    /// <para>
+    /// Paged by last activity rather than by offset. An offset re-reads rows that may have moved
+    /// between pages, which for a log that only grows means the same conversation appearing twice
+    /// and another never appearing at all.
+    /// </para>
+    /// <para>
+    /// The resume carries the identifier as well as the instant, because the order breaks ties on
+    /// the identifier and a resume that did not would skip every remaining member of a group
+    /// sharing one instant. That is not a contrived case: the Windows system clock ticks about
+    /// every 15.6ms, so two agents answering at the same moment are written with the same
+    /// timestamp — and the conversation that vanishes is simply absent, with nothing saying so.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<ConversationSummary>> ListAsync(
+        AgentName? participant = null,
+        DateTimeOffset? sinceUtc = null,
+        DateTimeOffset? untilUtc = null,
+        int limit = 50,
+        DateTimeOffset? beforeLastActivityUtc = null,
+        string? beforeId = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        var rows = await _connection.QueryAsync<ConversationSummaryRow>(
+            new CommandDefinition(
+                """
+                WITH activity AS (
+                    SELECT conversation_id      AS id,
+                           count(*)             AS messages,
+                           min(created_utc)     AS first_utc,
+                           max(created_utc)     AS last_utc
+                      FROM messages
+                     WHERE conversation_id IS NOT NULL
+                     GROUP BY conversation_id
+                )
+                SELECT c.id                                       AS Id,
+                       a.messages                                 AS Messages,
+                       a.first_utc                                AS FirstActivityUtc,
+                       a.last_utc                                 AS LastActivityUtc,
+                       EXISTS (SELECT 1 FROM exchanges e
+                                WHERE e.conversation_id = c.id
+                                  AND e.state = 'OPEN')           AS HasOpenExchange
+                  FROM conversations c
+                  JOIN activity a ON a.id = c.id
+                 WHERE (@Participant IS NULL
+                        OR EXISTS (SELECT 1 FROM conversation_participants p
+                                    WHERE p.conversation_id = c.id
+                                      AND p.agent = @Participant))
+                   AND (@Since IS NULL OR a.last_utc >= @Since)
+                   AND (@Until IS NULL OR a.last_utc <= @Until)
+                   AND (@Before IS NULL
+                        OR a.last_utc < @Before
+                        OR (a.last_utc = @Before AND c.id < @BeforeId))
+                 ORDER BY a.last_utc DESC, c.id DESC
+                 LIMIT @Limit;
+                """,
+                new
+                {
+                    Participant = participant?.Value,
+                    Since = Format(sinceUtc),
+                    Until = Format(untilUtc),
+                    Before = Format(beforeLastActivityUtc),
+                    BeforeId = beforeId ?? string.Empty,
+                    Limit = limit
+                },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        var summaries = new List<ConversationSummary>();
+
+        foreach (var row in rows)
+        {
+            var participants = await _connection.QueryAsync<string>(
+                new CommandDefinition(
+                    """
+                    SELECT agent
+                      FROM conversation_participants
+                     WHERE conversation_id = @Id
+                     ORDER BY agent;
+                    """,
+                    new { row.Id },
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+            summaries.Add(new ConversationSummary(
+                row.Id,
+                [.. participants.Select(AgentName.Create)],
+                row.Messages,
+                ExchangeRow.ParseTimestamp(row.FirstActivityUtc),
+                ExchangeRow.ParseTimestamp(row.LastActivityUtc),
+                row.HasOpenExchange));
+        }
+
+        return summaries;
+    }
+
+    /// <summary>Renders an instant the way the store holds one, or null.</summary>
+    /// <param name="instant">The instant.</param>
+    /// <returns>The stored form, or <see langword="null"/>.</returns>
+    /// <remarks>
+    /// <see cref="ExchangeRow.FormatTimestamp(DateTimeOffset)"/>'s rendering, and it has to be exactly that
+    /// one because these values are compared as text in SQL. A <see cref="DateTime"/> formatted
+    /// with "O" ends in <c>Z</c>; a <see cref="DateTimeOffset"/> ends in <c>+00:00</c>. They
+    /// describe the same instant and do not sort the same way — <c>Z</c> orders after <c>+</c> —
+    /// so a bound rendered the first way admits rows it was meant to exclude. Found by a paging
+    /// test returning a conversation it had already returned.
+    /// </remarks>
+    private static string? Format(DateTimeOffset? instant) =>
+        instant is null ? null : ExchangeRow.FormatTimestamp(instant.Value);
+
+    /// <summary>One row of the operator listing, before its participants are read.</summary>
+    private sealed class ConversationSummaryRow
+    {
+        public string Id { get; init; } = string.Empty;
+
+        public int Messages { get; init; }
+
+        public string FirstActivityUtc { get; init; } = string.Empty;
+
+        public string LastActivityUtc { get; init; } = string.Empty;
+
+        public bool HasOpenExchange { get; init; }
+    }
+
     private sealed class ConversationRow
     {
         public string Id { get; init; } = "";

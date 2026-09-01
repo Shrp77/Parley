@@ -35,6 +35,12 @@ const string Help = """
                                                        else connects to. --with-node also runs
                                                        this machine's node in it
 
+      parley console [<url>]                           the operator's console in a browser:
+                                                       every project, the agents in each, and
+                                                       conversations as a transcript that says
+                                                       who did not see what. Loopback unless
+                                                       you say otherwise
+
       parley autostart install [--db <path>]           start the broker when you log in, and
                                [--node-config <path>]  this machine's node with it
       parley autostart remove                          stop doing that
@@ -265,6 +271,59 @@ if (verb == "project")
         new ProjectFields(databasePath, listenOn, nodeConfigPath, projectDescription),
         Console.Out,
         Console.Error).ConfigureAwait(false);
+}
+
+// Beside `project` and above the selection below, because the console is not scoped to one
+// project — it is the page you choose one from, and it reads the manifest itself. Naming a
+// project here would be naming one for a view whose first screen is the list of them.
+//
+// It is a client like every other command and opens no database. That it is served rather than
+// printed changes nothing about which side of §4 it sits on: it holds a connection to each
+// project's broker and asks, exactly as `parley registry` does.
+if (verb == "console")
+{
+    var listenTo = rest.Length > 0 ? rest[0] : listenOn;
+
+    // Said rather than ignored. Every other command here acts on one deployment, so naming one
+    // is the habit; the console's first page is the list of them, and silently dropping the name
+    // would answer a narrower question than was asked without saying so.
+    if (!string.IsNullOrWhiteSpace(projectName))
+    {
+        await Console.Error.WriteLineAsync(
+            $"The console is not scoped to one project, so --project {projectName} was not "
+            + "used. Every project this machine knows is listed on its first page.")
+            .ConfigureAwait(false);
+    }
+
+    // Checked here rather than left to Kestrel, which refuses a malformed address several frames
+    // deep in a stack trace that says nothing about what was typed.
+    if (listenTo is not null
+        && !Uri.TryCreate(listenTo, UriKind.Absolute, out _))
+    {
+        await Console.Error.WriteLineAsync(
+            $"'{listenTo}' is not an address the console can bind. Give it one like "
+            + $"{Parley.Web.ConsoleHost.LoopbackAddress}.").ConfigureAwait(false);
+
+        return Usage;
+    }
+
+    // The broker every other command here would have connected to, offered when this machine has
+    // named no projects. Running by explicit paths is supported (§4.1), and on such a machine a
+    // console that listed nothing would be the only client unable to reach a broker the rest of
+    // the tool talks to happily — while saying "no projects", which is true and reads as
+    // "nothing to see".
+    var fallbackBroker = ProjectResolution
+        .Endpoint(brokerAddress, Environment.GetEnvironmentVariable, null).Value;
+
+    await Console.Out.WriteLineAsync(
+        $"Parley console on {listenTo ?? Parley.Web.ConsoleHost.LoopbackAddress}. Ctrl+C stops it.")
+        .ConfigureAwait(false);
+
+    await Parley.Web.ConsoleHost
+        .RunAsync([], listenTo, Console.Error, fallbackBroker)
+        .ConfigureAwait(false);
+
+    return 0;
 }
 
 // `serve` first and separately, because it is the one command that is not a client. Everything

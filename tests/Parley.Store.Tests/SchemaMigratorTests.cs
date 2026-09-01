@@ -19,6 +19,52 @@ public sealed class SchemaMigratorTests
     }
 
     [Fact]
+    public void A_store_written_by_a_newer_parley_is_refused()
+    {
+        // Found by pointing the previously installed build at a database this one had migrated.
+        // It opened it, announced the schema version it expected rather than the one present,
+        // and served it. Harmless between those two versions — the only change was a widened
+        // CHECK — but a migration that dropped or renamed anything would be met by code that
+        // believed none of it had happened.
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+
+        SchemaMigrator.Migrate(connection);
+
+        using (var ahead = connection.CreateCommand())
+        {
+            ahead.CommandText =
+                $"PRAGMA user_version = {SchemaMigrator.LatestVersion + 1};";
+            ahead.ExecuteNonQuery();
+        }
+
+        var refused = Assert.Throws<InvalidOperationException>(
+            () => SchemaMigrator.Migrate(connection));
+
+        // Naming both numbers, because the person reading it has to decide which of the two
+        // things in front of them is out of date.
+        Assert.Contains(
+            (SchemaMigrator.LatestVersion + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            refused.Message,
+            StringComparison.Ordinal);
+
+        Assert.Contains("newer version", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_store_at_the_version_this_build_knows_is_opened()
+    {
+        // The other side of it. A guard that refused its own version would refuse every start
+        // after the first, which is the failure mode a version check most easily introduces.
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+
+        SchemaMigrator.Migrate(connection);
+
+        Assert.Equal(0, SchemaMigrator.Migrate(connection));
+    }
+
+    [Fact]
     public void Migrate_is_idempotent()
     {
         using var connection = new SqliteConnection("Data Source=:memory:");

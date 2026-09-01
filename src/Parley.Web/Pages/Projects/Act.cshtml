@@ -1,0 +1,32 @@
+@page
+@model Parley.Web.Pages.Projects.ActModel
+@{
+    ViewData["Title"] = $"{Model.Action} {Model.Subject}";
+}
+
+<h1>@Model.Action @Model.Subject</h1>
+
+@if (Model.Outcome is { Length: > 0 } outcome)
+{
+    <p role="status"><strong>@outcome</strong></p>
+    <p><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></p>
+}
+else
+{
+    <p class="@(Model.Destroys ? "unreachable" : null)">@Model.Warning</p>
+
+    <form method="post">
+        @if (string.Equals(Model.Action, "instruct", StringComparison.OrdinalIgnoreCase))
+        {
+            <p>
+                <label for="text">What should it do?</label><br />
+                <textarea id="text" name="text" rows="6" cols="70" required></textarea>
+            </p>
+        }
+
+        <button type="submit">
+            @(Model.Destroys ? "Yes, destroy it" : "Confirm")
+        </button>
+        <a href="/Projects/Agents?project=@Model.Project">Cancel</a>
+    </form>
+}

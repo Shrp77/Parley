@@ -10,7 +10,7 @@
 /// Open exchanges returned to the orphaned state, releasing their wait-for edges.
 /// </param>
 /// <remarks>
-/// Reported rather than logged, for the same reason <see cref="Store.ReapResult"/> is: a caller
+/// Reported rather than logged, for the same reason <see cref="Core.ReapResult"/> is: a caller
 /// decides what is worth saying. An attach that orphans nothing is an ordinary quiet start; one
 /// that orphans several says this agent's previous session was interrupted mid-conversation,
 /// which is worth knowing before wondering why it is suddenly being re-asked things.

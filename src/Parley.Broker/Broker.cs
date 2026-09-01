@@ -462,7 +462,7 @@ public sealed class Broker
     /// </param>
     /// <param name="payloadJson">
     /// The question document. Rule 1 requires it to state what the asker will do with each
-    /// possible answer, and rule 8.5 caps it at 4,000 characters; both are enforced in storage,
+    /// possible answer, and rule 8.5 caps it at 8,000 characters; both are enforced in storage,
     /// so a payload breaking either arrives here as a <see cref="SqliteException"/> and nothing
     /// is written.
     /// </param>

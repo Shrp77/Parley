@@ -1,0 +1,96 @@
+@page
+@model Parley.Web.Pages.Projects.AgentModel
+@using Parley.Core
+@{
+    ViewData["Refresh"] = "30";
+    ViewData["Title"] = Model.Agent;
+    ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
+}
+
+<nav aria-label="This project">
+    <a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a>
+</nav>
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="unreachable" role="alert">@problem</p>
+}
+else if (Model.Record is not { } agent)
+{
+    <h1>@Model.Agent</h1>
+    @* Not an error. A name can leave the registry while a link to it is still on somebody's
+       screen -- purged, or never registered at all -- and saying so is the answer. *@
+    <p>This project's registry holds no agent by that name. It may have been purged, or never
+       registered.</p>
+}
+else
+{
+    <h1 class="slot-@Palette.SlotFor(agent.Name)">
+        <span class="who" aria-hidden="true">@Palette.BadgeFor(agent.Name)</span>
+        @agent.Name.Value
+    </h1>
+
+    <p class="lede">
+        @if (agent.Owns is { Length: > 0 } owns)
+        {
+            @owns
+        }
+        else
+        {
+            @* Never invent one. An absent statement is a fact about the deployment. *@
+            <em>Has not stated what it owns.</em>
+        }
+    </p>
+
+    <table>
+        <caption>What the registry holds</caption>
+        <tbody>
+            <tr>
+                <th scope="row">State</th>
+                <td>@Roster.State(agent)</td>
+            </tr>
+            <tr>
+                <th scope="row">Tier</th>
+                <td>@agent.Tier</td>
+            </tr>
+            <tr>
+                <th scope="row">Adapter</th>
+                <td>@agent.Adapter</td>
+            </tr>
+            <tr>
+                <th scope="row">Workspace</th>
+                @* The operator's view, and only the operator's: §10.1's agents() withholds this
+                   from a peer on purpose. *@
+                <td>@(agent.Workspace is { Length: > 0 } where ? where : "not recorded")</td>
+            </tr>
+            <tr>
+                <th scope="row">Connected</th>
+                <td>@(agent.Connected ? "yes" : "no")</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Do something</h2>
+
+    <p>
+        Each of these says what it will do before it does it, and none of them happens by
+        following a link.
+    </p>
+
+    <nav aria-label="Actions">
+        <a href="/Projects/Act?project=@Model.Project&amp;action=instruct&amp;subject=@agent.Name.Value">Instruct</a>
+        @if (agent.Status == AgentStatus.Retired)
+        {
+            <a href="/Projects/Act?project=@Model.Project&amp;action=reinstate&amp;subject=@agent.Name.Value">Reinstate</a>
+        }
+        else
+        {
+            <a href="/Projects/Act?project=@Model.Project&amp;action=retire&amp;subject=@agent.Name.Value">Retire</a>
+        }
+        <a href="/Projects/Act?project=@Model.Project&amp;action=purge&amp;subject=@agent.Name.Value">Purge</a>
+    </nav>
+
+    <p>
+        <a href="/Projects/Agents?project=@Model.Project&amp;participant=@agent.Name.Value">Conversations this agent is party to</a>
+    </p>
+}

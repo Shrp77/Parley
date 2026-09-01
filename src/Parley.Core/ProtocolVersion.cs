@@ -18,6 +18,13 @@
 /// about its state.
 /// </para>
 /// <para>
+/// <b>0.3 raised the message cap to 8,000.</b> A number rather than a mechanism, and it still
+/// moves this: what a peer will accept is exactly the kind of thing a second implementation has
+/// to agree about, and two builds both calling themselves 0.2 while disagreeing about it is what
+/// this number exists to make impossible. It is the smallest change that can qualify, which is
+/// why it is worth being explicit that it does.
+/// </para>
+/// <para>
 /// <b>0.2 introduced the transport.</b> 0.1 was MCP over stdio against a shared file: there was
 /// no wire, so there was nothing for a second implementation to speak and the number moved for
 /// nothing. There is one now — <c>proto/parley.proto</c>, three services, and a held connection
@@ -33,5 +40,5 @@
 public static class ProtocolVersion
 {
     /// <summary>The protocol version, as SPEC.md declares it.</summary>
-    public const string Current = "0.2";
+    public const string Current = "0.3";
 }

@@ -666,4 +666,61 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         exchange.MarkSaved(nextVersion);
         return true;
     }
+
+    /// <summary>
+    /// The state of every exchange in one conversation, for the export of SPEC.md §10.2.
+    /// </summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>One snapshot per exchange, oldest first.</returns>
+    /// <remarks>
+    /// Read rather than inferred, and that is the whole reason it exists. Deducing state from the
+    /// messages present cannot tell an orphaned exchange from an open one and cannot see a ghost at
+    /// all — and an operator opens a conversation precisely because something went wrong, which
+    /// makes rendering an abandoned question identically to an answered one the most misleading
+    /// thing a console could do.
+    /// </remarks>
+    public async Task<IReadOnlyList<ExchangeSnapshot>> GetSnapshotsAsync(
+        string conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        var rows = await _connection.QueryAsync<SnapshotRow>(
+            new CommandDefinition(
+                """
+                SELECT id AS Id, state AS State, opened_utc AS OpenedUtc, closed_utc AS ClosedUtc
+                  FROM exchanges
+                 WHERE conversation_id = @Conversation
+                 ORDER BY id;
+                """,
+                new { Conversation = conversationId },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return [.. rows.Select(r => new ExchangeSnapshot(
+            r.Id,
+            r.State switch
+            {
+                "OPEN" => ExchangeState.Open,
+                "CLOSED" => ExchangeState.Closed,
+                "ORPHANED" => ExchangeState.Orphaned,
+                _ => throw new InvalidOperationException(
+                    $"The store holds an exchange state this build does not know: {r.State}.")
+            },
+            ExchangeRow.ParseTimestamp(r.OpenedUtc),
+            r.ClosedUtc is null ? null : ExchangeRow.ParseTimestamp(r.ClosedUtc)))];
+    }
+
+    /// <summary>One exchange, reduced to what a reader of the conversation needs.</summary>
+    private sealed class SnapshotRow
+    {
+        public long Id { get; init; }
+
+        public string State { get; init; } = string.Empty;
+
+        public string OpenedUtc { get; init; } = string.Empty;
+
+        public string? ClosedUtc { get; init; }
+    }
+
 }

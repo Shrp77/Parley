@@ -1,0 +1,67 @@
+@page
+@model Parley.Web.Pages.Projects.RegisterModel
+@{
+    ViewData["Title"] = $"Register an agent in {Model.Project}";
+}
+
+<h1>Register an agent in @Model.Project</h1>
+
+<p>
+    An agent's name comes from the configuration its server is launched with, and from nowhere
+    else. No call can supply it, which is what makes "a sender cannot forge the agent it claims to
+    be" a property of the design rather than good behaviour. So this page tells you what to write;
+    it cannot register anything on your behalf.
+</p>
+
+<h2>1. Name the agent in the repository</h2>
+
+<p>Put this in <code>.mcp.json</code> at the root of the repository that will act as the agent:</p>
+
+<pre><code>{
+  "mcpServers": {
+    "parley": {
+      "command": "parley-mcp",
+      "env": {
+        "PARLEY_AGENT": "&lt;a short name, lower case&gt;",
+        "PARLEY_OWNS": "&lt;one sentence: what this repository owns, and what it does not&gt;",
+        "PARLEY_BROKER": "@Model.Endpoint"
+      }
+    }
+  }
+}</code></pre>
+
+<p>
+    The <code>owns</code> line is read by every other agent when it decides who to ask, so it is
+    worth writing as a boundary rather than as a description. Say what the repository does not own
+    as well as what it does.
+</p>
+
+<p>
+    No credential belongs in that file. Where one is needed it is a reference —
+    <code>env:</code>, <code>keychain:</code> or <code>file:</code> — which the broker resolves at
+    invocation and never stores. That is what makes the configuration safe to commit.
+</p>
+
+<p>
+    That file is usually tracked, so <strong>which branch is checked out decides whether the
+    agent exists</strong>. Written on a feature branch, it is there while that branch is out and
+    gone on any branch that predates it — and nothing reports it: the session starts, the tools
+    are absent, and a peer's question waits out its window and is ghosted. Put the entry on the
+    branch everything else is cut from.
+</p>
+
+<h2>2. Open the repository</h2>
+
+<p>
+    Start a session in that repository. The server attaches when it launches, and attaching is
+    what registers the agent — there is no separate step, and no command to run afterwards.
+</p>
+
+<h2>3. Confirm it worked</h2>
+
+<p>
+    Come back to <a href="/Projects/Agents?project=@Model.Project">this project's agents</a>. The
+    new name appears there once its session has attached. If it does not, the server did not
+    start: the session's own output says why, and the usual cause is that the repository was
+    already open when the file was written.
+</p>

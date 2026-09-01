@@ -45,6 +45,32 @@ public sealed class NodesService : Wire.Nodes.NodesBase
     }
 
     /// <inheritdoc/>
+    /// <inheritdoc/>
+    public override async Task<Wire.Empty> ReportInstruction(
+        Wire.InstructionReport request,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var result = new InstructionResult(
+            Conversions.In(request.Outcome),
+            string.IsNullOrEmpty(request.Reply) ? null : request.Reply);
+
+        // Settled from here as well as from the operator's call, because the two race and either
+        // may arrive first. The row must not be left saying pending because whoever asked gave up
+        // waiting before the agent finished thinking.
+        _ = await _runtime.UseConnectionAsync(
+            (connection, now, ct) => new Parley.Store.InstructionRepository(connection)
+                .SettleAsync(request.InstructionId, result.Outcome, result.Reply, now, ct),
+            context.CancellationToken).ConfigureAwait(false);
+
+        _ = _runtime.CompleteInstruction(request.InstructionId, result);
+
+        return new Wire.Empty();
+    }
+
+    /// <inheritdoc/>
     public override async Task Join(
         Wire.JoinRequest request,
         IServerStreamWriter<Wire.NodeCommand> responseStream,
@@ -237,6 +263,34 @@ public sealed class JoinedNode : IAsyncDisposable
         return _commands.Writer.TryWrite(new Wire.NodeCommand
         {
             Start = new Wire.StartAgent { Agent = agent.Value, Because = because }
+        });
+    }
+
+    /// <summary>Asks the node to deliver an operator's instruction to an agent it holds.</summary>
+    /// <param name="instructionId">The instruction, so its report can be matched to this asking.</param>
+    /// <param name="agent">Who it is for.</param>
+    /// <param name="text">What the operator said.</param>
+    /// <returns><see langword="true"/> if the command was queued.</returns>
+    /// <remarks>
+    /// Queuing is not delivering. The node answers with <c>ReportInstruction</c> when the agent
+    /// has had its turn, which is why the instruction carries an identifier: the command stream
+    /// runs one way, so nothing about this call can carry the outcome back.
+    /// </remarks>
+    internal bool RequestInstruction(long instructionId, AgentName agent, string text)
+    {
+        if (!Startable.Contains(agent.Role))
+        {
+            return false;
+        }
+
+        return _commands.Writer.TryWrite(new Wire.NodeCommand
+        {
+            Instruct = new Wire.DeliverInstruction
+            {
+                InstructionId = instructionId,
+                Agent = agent.Value,
+                Text = text
+            }
         });
     }
 

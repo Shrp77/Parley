@@ -1,4 +1,4 @@
-namespace Parley.Store;
+namespace Parley.Core;
 
 /// <summary>
 /// What one application of the retention policy did.

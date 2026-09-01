@@ -127,6 +127,12 @@ public static class NodeCommand
                             .ConfigureAwait(false);
                         break;
 
+                    case Wire.NodeCommand.CommandOneofCase.Instruct:
+                        await InstructAsync(
+                            command.Instruct, nodes, request.Machine, residents, output, cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
+
                     case Wire.NodeCommand.CommandOneofCase.Stop:
                         await StopAsync(command.Stop.Agent, residents, output).ConfigureAwait(false);
                         break;
@@ -356,6 +362,97 @@ public static class NodeCommand
         // Reported like any other turn once it is actually given. Only the "not mine" case is
         // silent; a turn that fails is a turn the operator needs to hear about.
         DispatchTurn(resident, output, cancellationToken);
+    }
+
+    /// <summary>Gives an agent the operator's words, and reports what became of them.</summary>
+    /// <param name="instruct">Which agent, and what was said.</param>
+    /// <param name="nodes">The broker, for the report.</param>
+    /// <param name="machine">This machine's name.</param>
+    /// <param name="residents">The agents running here.</param>
+    /// <param name="output">Where to report locally.</param>
+    /// <param name="cancellationToken">Stops the turn.</param>
+    /// <returns>A task that completes when the outcome has been reported.</returns>
+    /// <remarks>
+    /// <para>
+    /// Not dispatched like an ordinary turn, and that is the difference between the two. A turn
+    /// says only that there is mail and nobody is waiting on the answer; an instruction has a
+    /// person holding a page open, so this runs to its end and reports.
+    /// </para>
+    /// <para>
+    /// The operator's text is the prompt. §4 gives a node ownership of its agents' standard
+    /// input, which is the channel a turn already travels down — so an instruction is not a new
+    /// route into an agent, it is the existing one carrying one more kind of thing.
+    /// </para>
+    /// <para>
+    /// An agent this node does not hold is reported undeliverable rather than started. Starting
+    /// one to deliver a person's words would put the operator's instruction into a session
+    /// nobody asked for, and §11.5 says an agent whose node cannot reach it must be told so.
+    /// </para>
+    /// </remarks>
+    private static async Task InstructAsync(
+        Wire.DeliverInstruction instruct,
+        Wire.Nodes.NodesClient nodes,
+        string machine,
+        ConcurrentDictionary<string, ResidentAgent> residents,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        var outcome = Wire.InstructionOutcome.Undeliverable;
+        var reply = string.Empty;
+
+        if (AgentName.TryCreate(instruct.Agent, out var agent)
+            && residents.TryGetValue(agent.Value, out var resident)
+            && resident.IsAlive)
+        {
+            try
+            {
+                // Marked, never bare. §11.5 requires an instruction to reach the agent as the
+                // operator's rather than as a peer's, because what the agent must be able to tell
+                // is which of the two it is reading — and it is only able to decline knowingly if
+                // it knows it was instructed at all.
+                var turn = await resident
+                    .TakeTurnAsync(
+                        OperatorInstruction.Mark(instruct.Text), TurnTimeout, cancellationToken)
+                    .ConfigureAwait(false);
+
+                outcome = turn.Succeeded
+                    ? Wire.InstructionOutcome.Taken
+                    : Wire.InstructionOutcome.Failed;
+
+                reply = turn.ToString();
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                outcome = Wire.InstructionOutcome.Failed;
+                reply = exception.Message;
+
+                await output.WriteLineAsync(
+                    $"  {agent.Value}: instruction failed — {exception.Message}")
+                    .ConfigureAwait(false);
+            }
+        }
+
+        try
+        {
+            _ = await nodes.ReportInstructionAsync(
+                new Wire.InstructionReport
+                {
+                    Machine = machine,
+                    InstructionId = instruct.InstructionId,
+                    Outcome = outcome,
+                    Reply = reply
+                },
+                cancellationToken: cancellationToken);
+        }
+        catch (RpcException failure)
+        {
+            // The agent may well have done the work. Losing the report loses the operator's
+            // answer, not the effect, and saying so is better than a page that waits out its
+            // patience with no explanation.
+            await output.WriteLineAsync(
+                $"  {instruct.Agent}: took the instruction, but the outcome could not be "
+                + $"reported — {failure.Status.Detail}").ConfigureAwait(false);
+        }
     }
 
     /// <summary>Starts a turn without holding up the command stream.</summary>

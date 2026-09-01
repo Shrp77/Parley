@@ -285,6 +285,15 @@ broker's.
 For Claude Code that file is `.mcp.json` in the repository root; other clients have
 their own location for the same JSON.
 
+It is usually a tracked file, so **which branch is checked out decides whether an agent
+exists**. Add the entry on a feature branch and the agent is registered while that branch is
+out and absent on every branch that predates it — silently, because nothing errors: the
+session starts, the tools are not there, and a peer's question waits out its window and is
+ghosted. A session also reads the file once, at startup, so fixing it or switching branches
+does nothing for a session already open. `claude mcp list` will say the server is connected
+while that session still has no Parley tools, because the two are different processes reading
+at different times. Get the entry onto the branch everything else is cut from, then restart.
+
 Agents that are not open have no process, which is the point: closing the last window on a
 repository leaves nothing running for it. What does run is the broker — one process per
 project, holding the store and the port every agent connects to. It is the single thing that
@@ -381,7 +390,7 @@ Seven tools, and no way to say who it is:
 
 A question must carry its **consequences** — what the asker will do with each possible
 answer. The broker refuses one that does not, because an answerer who knows what turns
-on the reply gives a different and better answer. Messages are capped at 4,000
+on the reply gives a different and better answer. Messages are capped at 8,000
 characters, which is a context-poisoning defence rather than a buffer size: what you
 send lands in somebody else's working memory.
 
@@ -511,6 +520,10 @@ parley force-conclude <conv>        close a discussion over its participants' vo
 parley prune                        apply the retention policy now
 parley refusals                     what the message size cap refused, and how far over
 parley waiting <agent>              how many messages and polls await an agent
+parley console [<url>]              a console in a browser: every project, the agents in
+                                    each, and conversations as a transcript that says who
+                                    did not see what. Join it with a name to take part as
+                                    yourself. Binds loopback unless you give it an address
 parley serve                        run the broker: the one process that opens the store
 parley up                           run this machine's node, so its agents can be started
 parley project list|add|remove      the deployments this machine is configured for
@@ -518,9 +531,32 @@ parley --help                       the same list, on stdout, exiting zero
 ```
 
 Every one of these except `serve`, `up` and `project` is a client: they connect to the broker at
-`--broker`, or `PARLEY_BROKER`, and default to the local one. None of them opens the store, so none can be pointed at the wrong
+`--broker`, or `PARLEY_BROKER`, and default to the local one. `console` reads this machine's named
+projects instead, and falls back to that same broker when none are named — so it works on a
+machine configured entirely by explicit paths, which is a supported way to run. None of them opens the store, so none can be pointed at the wrong
 file — `--db` belongs to `parley serve` alone. `prune` applies the policy the broker was started
 with, which is the only policy in the deployment; your shell no longer has an opinion about it.
+
+### Taking part yourself
+
+The console has a Join button. Type a name and you are an agent like any other: a registration,
+a place in every roster, and an identity recorded against everything you say. Then the box at the
+bottom of a conversation stops being a way to instruct agents and becomes a way to talk to them —
+your message lands in the transcript under your own name, and a peer answers you rather than
+being told something by an operator. Leave gives the seat back.
+
+Two things about that are worth knowing before you use it.
+
+Your seat is an open connection, which is the only thing that makes anybody present here. There
+is no heartbeat and nothing to expire, so holding the connection is being here and dropping it is
+being gone — which means a console nobody has used for twenty minutes gives your seat back on its
+own. A tab left open is not a person at a desk, and a roster that claimed otherwise would be
+lying to the agents reading it.
+
+And a name another agent already holds is refused rather than taken over. Joining as `orders`
+would let you write messages recorded as the orders agent's own words, and that is the one thing
+a console has never been able to do: it has always been able to retire or purge an agent, and has
+never been able to speak as one.
 
 A separate program on purpose. An adapter that surfaced an operator command into an
 agent's tool set would hand an agent the power to end a discussion over its peers'

@@ -9,11 +9,12 @@ namespace Parley.Store.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The cap of rule 8.5 is a number nobody has ever had evidence for — it was two thousand
-/// because that sounded like enough, and it is four thousand for a reason of the same quality.
-/// This is what makes the next change to it measured, so the checks here are about whether the
-/// record can actually answer the question: how often, how far over at worst, and how far over
-/// on average.
+/// The cap of rule 8.5 was a number nobody had evidence for — two thousand because that sounded
+/// like enough, then four thousand for a reason of the same quality. This record is what made the
+/// next change measured, and it did: eight thousand was set from forty-three refusals across six
+/// agents (SPEC.md §17 question 16). So the checks here are about whether the record can answer
+/// the question it is kept for — how often, how far over at worst, and how far over on average —
+/// because that is what the next move will be argued from too.
 /// </para>
 /// <para>
 /// The other half is what must never be kept. Storing the payload that was refused for being too
@@ -54,18 +55,29 @@ public sealed class SizeRefusalTests : IDisposable
         _refusals.RecordAsync(
             agent, type, characters, MessageLimits.MaxPayloadCharacters, T0.AddMinutes(at), Ct);
 
+    /// <summary>A message size that is over the cap by a given amount.</summary>
+    /// <param name="by">How far over.</param>
+    /// <returns>The size.</returns>
+    /// <remarks>
+    /// The schema refuses a refusal that is not over the cap — <c>CHECK (worst &gt; cap)</c> —
+    /// so these sizes are relative rather than literal. They were literals tuned to a cap of
+    /// four thousand, and every one of them failed the day rule 8.5's number moved. That is the
+    /// right failure arriving for the wrong reason: nothing was wrong with the store.
+    /// </remarks>
+    private static int Over(int by) => MessageLimits.MaxPayloadCharacters + by;
+
     [Fact]
     public async Task One_refusal_is_recorded_whole()
     {
-        await Record(Orders, MessageType.Answer, 4500);
+        await Record(Orders, MessageType.Answer, Over(500));
 
         var only = Assert.Single(await _refusals.GetAllAsync(Ct));
 
         Assert.Equal(Orders, only.Agent);
         Assert.Equal(MessageType.Answer, only.Type);
         Assert.Equal(1, only.Refusals);
-        Assert.Equal(4500, only.Worst);
-        Assert.Equal(4500, only.Total);
+        Assert.Equal(Over(500), only.Worst);
+        Assert.Equal(Over(500), only.Total);
         Assert.Equal(MessageLimits.MaxPayloadCharacters, only.Cap);
         Assert.Equal(T0, only.LastUtc);
     }
@@ -76,15 +88,15 @@ public sealed class SizeRefusalTests : IDisposable
         // The property that makes this safe to leave on: the table is bounded by the registry,
         // not by how badly an agent behaves. An agent looping on an oversized answer updates a
         // row rather than filling a disk, which is why there is no per-event log here.
-        await Record(Orders, MessageType.Answer, 4100, at: 0);
-        await Record(Orders, MessageType.Answer, 9000, at: 5);
-        await Record(Orders, MessageType.Answer, 4200, at: 9);
+        await Record(Orders, MessageType.Answer, Over(100), at: 0);
+        await Record(Orders, MessageType.Answer, Over(5000), at: 5);
+        await Record(Orders, MessageType.Answer, Over(200), at: 9);
 
         var only = Assert.Single(await _refusals.GetAllAsync(Ct));
 
         Assert.Equal(3, only.Refusals);
-        Assert.Equal(9000, only.Worst);
-        Assert.Equal(17300, only.Total);
+        Assert.Equal(Over(5000), only.Worst);
+        Assert.Equal(Over(100) + Over(5000) + Over(200), only.Total);
         Assert.Equal(T0.AddMinutes(9), only.LastUtc);
     }
 
@@ -94,16 +106,16 @@ public sealed class SizeRefusalTests : IDisposable
         // The distinction the whole record exists to make. Forty refusals just over the cap is
         // an argument for raising it; one refusal at ten times the cap is an argument for
         // nothing at all, and the worst case alone cannot tell them apart.
-        await Record(Orders, MessageType.Answer, 4050, at: 0);
-        await Record(Orders, MessageType.Answer, 4100, at: 1);
-        await Record(Billing, MessageType.Answer, 40000, at: 2);
+        await Record(Orders, MessageType.Answer, Over(50), at: 0);
+        await Record(Orders, MessageType.Answer, Over(100), at: 1);
+        await Record(Billing, MessageType.Answer, MessageLimits.MaxPayloadCharacters * 10, at: 2);
 
         var all = await _refusals.GetAllAsync(Ct);
         var tight = all.Single(r => r.Agent == Orders);
         var enormous = all.Single(r => r.Agent == Billing);
 
-        Assert.Equal(4075, tight.Total / tight.Refusals);
-        Assert.Equal(40000, enormous.Total / enormous.Refusals);
+        Assert.Equal(Over(75), tight.Total / tight.Refusals);
+        Assert.Equal(MessageLimits.MaxPayloadCharacters * 10, enormous.Total / enormous.Refusals);
 
         // Worst first, so the outlier is the first thing an operator sees.
         Assert.Equal(Billing, all[0].Agent);
@@ -114,8 +126,8 @@ public sealed class SizeRefusalTests : IDisposable
     {
         // An answer that will not fit and a question that will not fit are different problems:
         // one is an answerer with too much to say, the other an asker writing an essay.
-        await Record(Orders, MessageType.Answer, 4100);
-        await Record(Orders, MessageType.Question, 4200);
+        await Record(Orders, MessageType.Answer, Over(100));
+        await Record(Orders, MessageType.Question, Over(200));
 
         var all = await _refusals.GetAllAsync(Ct);
 
@@ -134,7 +146,7 @@ public sealed class SizeRefusalTests : IDisposable
 
         foreach (var type in sendable)
         {
-            await Record(Orders, type, 5000);
+            await Record(Orders, type, Over(1000));
         }
 
         var all = await _refusals.GetAllAsync(Ct);
@@ -155,7 +167,7 @@ public sealed class SizeRefusalTests : IDisposable
         // cap suits the agents. Refusing it here keeps that out of the record rather than
         // leaving a token the schema would reject on the way in.
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => Record(Orders, MessageType.Ghost, 5000));
+            () => Record(Orders, MessageType.Ghost, Over(1000)));
 
         Assert.Empty(await _refusals.GetAllAsync(Ct));
     }
@@ -223,7 +235,7 @@ public sealed class SizeRefusalTests : IDisposable
         // The row cascades with the registration, like a credential does. Keeping counts for an
         // agent nobody can address would leave the evidence describing a deployment that no
         // longer exists.
-        await Record(Orders, MessageType.Answer, 5000);
+        await Record(Orders, MessageType.Answer, Over(1000));
 
         await using var command = _connection.CreateCommand();
         command.CommandText = "DELETE FROM agents WHERE name = 'orders@test';";

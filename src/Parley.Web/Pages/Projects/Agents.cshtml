@@ -1,0 +1,81 @@
+@page
+@model Parley.Web.Pages.Projects.AgentsModel
+@using Parley.Core
+@{
+    ViewData["Refresh"] = "30";
+    ViewData["Title"] = Model.Project;
+    ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
+}
+
+<h1>@Model.Project</h1>
+
+<nav aria-label="This project">
+    <a href="/Projects/Health?project=@Model.Project">Health</a>
+    <a href="/Projects/Register?project=@Model.Project">Register an agent</a>
+    <a href="/Projects/Naming?project=@Model.Project">Rename this project</a>
+</nav>
+
+<div class="project">
+    @* The roster. Compact on purpose: a name, what it is doing, and a way in. Everything else
+       about an agent is on its own page, because a column wide enough to hold the owns line is a
+       column that pushes the conversations off the screen. *@
+    <partial name="_Roster" model="@(new RosterView(
+        Model.Project,
+        "Agents",
+        [.. Model.Agents.Select(a => new RosterEntry(a.Name, Roster.State(a)))],
+        Model.Problem))" />
+
+    <section aria-label="Conversations in this project">
+        <h2>Conversations</h2>
+
+        <form method="get">
+            <input type="hidden" name="project" value="@Model.Project" />
+            <label for="participant">Party to</label>
+            <input id="participant" name="participant" value="@Model.Participant" />
+            <button type="submit">Search this project</button>
+        </form>
+
+        @if (Model.FilterProblem is { Length: > 0 } filter)
+        {
+            <p class="unreachable" role="alert">@filter</p>
+        }
+
+        @if (Model.ConversationProblem is { Length: > 0 } unread)
+        {
+            <p class="unreachable" role="alert">@unread</p>
+        }
+        else if (Model.Conversations.Count == 0)
+        {
+            <p>No conversations match in @Model.Project.</p>
+        }
+        else
+        {
+            <ul class="threads">
+                @foreach (var conversation in Model.Conversations)
+                {
+                    <li>
+                        <a class="name" href="/Conversations/Detail?project=@Model.Project&amp;id=@conversation.Id">@conversation.Id</a>
+                        <p class="between">@string.Join(", ", conversation.Participants.Select(p => p.Value))</p>
+                        <p class="meta">
+                            @conversation.Messages messages ·
+                            last active @conversation.LastActivityUtc.ToString("d MMM yyyy, HH:mm")
+                            @if (conversation.HasOpenExchange)
+                            {
+                                @* A question somebody still owes an answer to. Said in words;
+                                   the tint is only how you find it. *@
+                                <span class="tag open">still open</span>
+                            }
+                        </p>
+                    </li>
+                }
+            </ul>
+
+            @if (Model.NextPageToken is { Length: > 0 } next)
+            {
+                <p>
+                    <a href="/Projects/Agents?project=@Model.Project&amp;participant=@Model.Participant&amp;pageToken=@Uri.EscapeDataString(next)">Older conversations</a>
+                </p>
+            }
+        }
+    </section>
+</div>

@@ -340,6 +340,10 @@ service Nodes {
   // whether or not its machines are awake, and this is what makes that more than a promise.
   rpc Join(JoinRequest) returns (stream NodeCommand);
 
+  // How a node answers a DeliverInstruction. The command stream runs one way, so the outcome
+  // comes back as its own call rather than as a reply nobody could have sent.
+  rpc ReportInstruction(InstructionReport) returns (Empty);
+
   // What the node observed about itself. Detected, never configured: SPEC.md section 4.1.1
   // makes the machine name the node's to determine, on the grounds that a machine that can be
   // told what it is called can be told the wrong thing, and two boxes answering to server-b is a
@@ -374,6 +378,12 @@ message NodeCommand {
     StartAgent start = 2;
     StopAgent stop = 3;
     GiveTurn turn = 4;
+
+    // The operator's words, for an agent this node holds. Separate from GiveTurn because a turn
+    // says only that there is mail; this carries text a person wrote and must be given to the
+    // agent as what it is. Section 11.5: an instruction arriving dressed as peer traffic would be
+    // a forgery in the direction section 13 does not cover.
+    DeliverInstruction instruct = 5;
   }
 }
 
@@ -405,6 +415,21 @@ message StartAgent {
 // duplicate process the refusal exists to prevent. So the node gives a turn only to its own
 // resident, and does nothing at all otherwise: nothing can make a person's window take a turn,
 // and pretending otherwise would be worse than silence.
+message DeliverInstruction {
+  int64 instruction_id = 1;           // so the report can be matched to the asking
+  string agent = 2;
+  string text = 3;
+}
+
+// A node saying what became of an instruction it was asked to deliver. A separate call rather
+// than a reply on the command stream, which runs one way: the broker speaks and the node listens.
+message InstructionReport {
+  string machine = 1;
+  int64 instruction_id = 2;
+  InstructionOutcome outcome = 3;
+  string reply = 4;                   // empty when the agent never got the turn
+}
+
 message GiveTurn {
   string agent = 1;
   string because = 2;            // for the operator's benefit, never the agent's
@@ -449,6 +474,14 @@ service Operators {
   // able to prune to a different floor than the sweep uses, from a machine that does not hold
   // the store and cannot see what the setting there is.
   rpc Prune(Empty) returns (PruneReply);
+
+  // Broker V1, added together. SPEC.md section 10.2 is a versioned contract: a broker implements
+  // all of it or is not a V1 broker, and Implements is asked first because a contract whose
+  // version cannot be discovered is one nobody can rely on.
+  rpc Implements(Empty) returns (ImplementsReply);
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsReply);
+  rpc DescribeWaiting(Empty) returns (WaitingReply);
+  rpc Instruct(InstructRequest) returns (InstructReply);
 }
 
 message Empty {}
@@ -562,6 +595,71 @@ message ExportRequest {
 
 message ExportReply {
   repeated Message messages = 1;
+
+  // Added beside the messages rather than fetched separately. A reader wants both at one
+  // instant, and two calls can disagree -- the messages from one moment and the states from the
+  // next, with nothing to say which was which. Field 2 rather than a replacement, so a client
+  // that knows nothing of it keeps working.
+  repeated ExchangeSnapshot exchanges = 2;
+}
+
+message ExchangeSnapshot {
+  int64 exchange_id = 1;
+  ExchangeState state = 2;
+  string opened_utc = 3;
+  string closed_utc = 4;              // empty while it is open
+}
+
+message ImplementsReply {
+  string protocol_version = 1;
+}
+
+// Deliberately carries no project. SPEC.md section 4.1 says the protocol has no concept of one
+// and must not acquire one: membership is which endpoint the caller connected to, so a field
+// here would give a broker several projects to tell apart and a WHERE clause somebody can forget.
+message ListConversationsRequest {
+  string participant = 1;             // empty for every conversation
+  string since_utc = 2;               // empty for no lower bound
+  string until_utc = 3;               // empty for no upper bound
+  int32 page_size = 4;                // the broker bounds this whatever is asked for
+  string page_token = 5;              // empty for the first page
+}
+
+message ListConversationsReply {
+  repeated ConversationSummary conversations = 1;
+  string next_page_token = 2;         // empty at the end
+}
+
+// Participants are derived from the exchanges rather than declared. Section 5.0 makes an
+// identifier a claim by its sender, so this says who is party to what and asserts nothing about
+// anybody having agreed to be there.
+message ConversationSummary {
+  string conversation_id = 1;
+  repeated string participants = 2;
+  int32 messages = 3;
+  string first_activity_utc = 4;
+  string last_activity_utc = 5;
+  bool has_open_exchange = 6;
+}
+
+message WaitingReply {
+  repeated WaitingEdge edges = 1;
+}
+
+message WaitingEdge {
+  string waiter = 1;
+  string waited_on = 2;
+  int64 exchange_id = 3;
+}
+
+message InstructRequest {
+  string agent = 1;
+  string text = 2;
+}
+
+message InstructReply {
+  InstructionOutcome outcome = 1;
+  string reply = 2;                   // empty when the agent never got the turn
 }
 
 message PruneReply {
@@ -648,6 +746,19 @@ enum MessageType {
   MESSAGE_TYPE_ANSWER = 3;
   MESSAGE_TYPE_NOTIFY = 4;
   MESSAGE_TYPE_GHOST = 5;
+}
+
+// What became of an instruction the operator gave an agent. Four outcomes because they are four
+// different facts: the distinction that matters most is DECLINED against FAILED, because section
+// 11.5 says an agent may refuse and a console rendering refusal as malfunction teaches whoever
+// reads it to work around the agent rather than ask why.
+enum InstructionOutcome {
+  INSTRUCTION_OUTCOME_UNSPECIFIED = 0;
+  INSTRUCTION_OUTCOME_PENDING = 1;
+  INSTRUCTION_OUTCOME_TAKEN = 2;
+  INSTRUCTION_OUTCOME_DECLINED = 3;
+  INSTRUCTION_OUTCOME_UNDELIVERABLE = 4;
+  INSTRUCTION_OUTCOME_FAILED = 5;
 }
 
 enum ExchangeState {

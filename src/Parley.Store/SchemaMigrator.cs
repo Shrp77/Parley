@@ -38,7 +38,9 @@ public static class SchemaMigrator
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="connection"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
-    /// An embedded migration is misnamed or unreadable.
+    /// An embedded migration is misnamed or unreadable, or the store is at a schema version
+    /// newer than this build knows — which is refused rather than opened, because this code
+    /// cannot know what changed in a migration it does not carry.
     /// </exception>
     /// <exception cref="SqliteException">A migration script failed to execute.</exception>
     /// <remarks>
@@ -66,6 +68,29 @@ public static class SchemaMigrator
         Configure(connection);
 
         var current = GetUserVersion(connection);
+
+        // A database written by a newer Parley than this one. Refused rather than served, and
+        // this is a correction: the old broker opened a store one migration ahead of it, printed
+        // "schema 2" over a file at 3, and ran. Nothing was harmed by that particular pair —
+        // the only difference between them was a widened CHECK — but the shape is the thing.
+        // The next migration to drop a column, rename a table or tighten a constraint would be
+        // met by code that believes none of it happened, and the first sign would be a write
+        // that fails or, worse, one that succeeds against the wrong meaning.
+        //
+        // It is reachable in the ordinary course of upgrading: the broker runs from a scheduled
+        // task, so a machine that installs a new Parley and then restarts the old task before
+        // logging out has exactly this. LatestVersion already existed for the mirror image of
+        // this — an operator's tool reading a database older than itself — and the direction
+        // that can write was the one left open.
+        if (current > LatestVersion)
+        {
+            throw new InvalidOperationException(
+                $"This store is at schema {current} and this Parley only knows {LatestVersion}. " +
+                "It was written by a newer version and will not be opened, because this build " +
+                "cannot know what changed. Upgrade Parley, or restore the backup taken before " +
+                "the upgrade.");
+        }
+
         var applied = 0;
 
         foreach (var (version, sql) in LoadMigrations())

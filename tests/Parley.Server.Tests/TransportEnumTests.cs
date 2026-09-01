@@ -50,7 +50,8 @@ public sealed class TransportEnumTests
             { typeof(Core.Resolution), typeof(Wire.Resolution) },
             { typeof(Core.Vote), typeof(Wire.Vote) },
             { typeof(Store.OpenRejection), typeof(Wire.OpenRejection) },
-            { typeof(Store.PurgeVerdict), typeof(Wire.PurgeVerdict) },
+            { typeof(Core.PurgeVerdict), typeof(Wire.PurgeVerdict) },
+            { typeof(Core.InstructionOutcome), typeof(Wire.InstructionOutcome) },
             { typeof(Core.TransitionError), typeof(Wire.TransitionError) },
             { typeof(Broker.NotifyRejection), typeof(Wire.NotifyRejection) },
             { typeof(Broker.ClosureError), typeof(Wire.ClosureError) }

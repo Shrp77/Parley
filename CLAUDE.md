@@ -11,13 +11,25 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 ## Layout
 
 ```
-src/Parley.Core     Domain. No I/O, no dependencies. AgentName, PairKey, Exchange,
-                    WaitForGraph, BrokerEndpoint, MachineName, Responder,
-                    ProtocolVersion, WorkspacePath, and the enums. WorkspacePath is
+src/Parley.Core     Domain. No I/O, no dependencies. The vocabulary — AgentName, PairKey,
+                    Exchange, WaitForGraph, BrokerEndpoint, MachineName, Responder,
+                    ProtocolVersion, WorkspacePath, the enums — plus the two contracts of
+                    broker V1 and the shapes its operations return. WorkspacePath is
                     string comparison rather than path handling on purpose: the broker
                     compares workspaces from machines it is not on, so touching a
                     filesystem here would both break the no-I/O rule and answer the
                     wrong question.
+
+                    The contracts are IParleyBrokerClient (SPEC.md §10.2, what a broker
+                    owes an operator's console) and IAcceptsOperatorInstructions (§11.5,
+                    what an agent must be able to receive from that operator). They are
+                    two interfaces rather than one because a single one would hand
+                    whoever bound the agent's half every operator operation beside it —
+                    the structural version of the naming convention §10.2 opens by
+                    admitting is thin. Here rather than beside either implementation
+                    because a client and a server both see this project and it drags in
+                    nothing: an implementation over gRPC and one over anything else are
+                    both implementations of the same declaration.
 src/Parley.Store    Persistence. SQLite via Dapper. ParleyDatabase (connection
                     factory), SchemaMigrator, WriteScope, and the repositories:
                     Exchange, Message, Agent, Conversation.
@@ -32,6 +44,63 @@ src/Parley.Configuration The project manifest of SPEC.md §4.1: where it lives, 
                     the broker and the store, Parley.Mcp deliberately pulls in neither,
                     and Parley.Core has no I/O. Read by both; written only by Parley.Cli.
                     Nothing here knows what a broker is.
+src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of the broker
+                    rather than part of it. References Transport and Configuration and
+                    nothing else: there is no SQLite on its graph and there must never be,
+                    because §4 gives the store to one process. Not inside Parley.Server for
+                    the same reason.
+
+                    `parley console` starts it, so Parley.Cli references this and the tool
+                    carries Kestrel. That was decided deliberately and against the argument
+                    recorded here before it: a second tool would have kept ASP.NET Core off
+                    the machines that only run an agent, and one command is worth more than
+                    that saving. The project stays separate anyway — it is what keeps the
+                    store off the console's dependency graph, which is the constraint that
+                    actually matters, and `ConsoleHost` is the single place the host is
+                    built so `parley console` and `dotnet run` cannot drift apart.
+
+                    Razor Pages are found by walking the entry assembly, which is `parley`
+                    when the subcommand starts it, so `ConsoleHost` names its own assembly
+                    as an application part. Without that every route 404s while the
+                    stylesheet still serves, because a file beside the binary is found by a
+                    different mechanism than a compiled page.
+
+                    **The console has a second identity, and the rule above was amended
+                    rather than broken.** It binds `Operators` as the operator, and binds
+                    `Agents` for the seat a person holds — so somebody can take part in a
+                    conversation instead of only instructing the agents in it. SPEC.md §17
+                    question 2 carries the argument; `Seating` holds the code.
+
+                    A person joins by typing a name and leaves by pressing Leave. **An
+                    earlier draft of this file required the name to come from the command
+                    line and forbade a form. That was wrong, and the reasoning it rested on
+                    is worth keeping because it is nearly right.** §13 does rest on a sender
+                    being unable to forge the agent it claims to be — but §16 already
+                    concedes that anything able to reach a broker can claim to be any agent,
+                    and whoever can reach this console can already retire and purge every
+                    agent in the deployment through §10.2. A login form is a lock on a door
+                    standing in open ground, and pretending otherwise would have bought
+                    nothing but a worse console.
+
+                    What the seat genuinely adds is the ability to *speak as* somebody, which
+                    no operator operation has ever granted, and a transcript recording words
+                    an agent never said is a different kind of wrong from an operator visibly
+                    instructing it. **So that is the one thing guarded: `SeatBook` refuses a
+                    name the registry holds for anything whose adapter is not
+                    `parley-console`, and refuses outright when the registry could not be
+                    read** — a guard that skipped the check on an unreachable broker would
+                    pass hardest exactly when the deployment is least well known.
+
+                    The seat is an ordinary attachment, which is the part worth not losing.
+                    §4.0 makes an open connection the evidence an agent is reachable, so
+                    joining and leaving are the same events every other agent's arrival and
+                    departure are — not a session flag the console keeps to itself. It
+                    follows that a seat must not outlive the person: a tab left open is not
+                    somebody at a desk, so `SeatBook.IdleAfter` releases one that nothing has
+                    touched, and the frame touches it on every page render.
+
+                    Without a seat the console has no agent identity at all and the composer
+                    sends instructions, which is what it did before any of this.
 src/Parley.Server   The broker process of SPEC.md §4: the only thing that opens the
                     database. Joins Parley.Broker to Parley.Transport, and exists so
                     that Parley.Broker does not have to learn about either.
@@ -42,6 +111,9 @@ tests/Parley.Broker.Tests Lifecycle, the agent operations, and the surface bound
                           below.
 tests/Parley.Server.Tests Whole exchanges over a real loopback socket, and the adversarial
                           probes. Nothing in it touches a Broker or a SqliteConnection.
+tests/Parley.Web.Tests    The console: the visibility derivation, what it refuses to render
+                          raw, and that its project file references nothing that could open
+                          a store.
 tests/Parley.Spec.Tests   Checks SPEC.md: references resolve, tables are well formed, and
                           the schema it documents executes. References neither Core nor
                           Store, so a check cannot drift into asserting what the code does.
@@ -318,10 +390,12 @@ implementation detail, and needs to be argued rather than assumed.
   cross-session messaging, Parley should run over it rather than compete with it. Keep the
   transport behind an interface.
 - **Terseness is a security control.** The message cap is a context-poisoning defence, not a
-  style preference. It lives in the schema so no code path can route around it. The number is
-  currently 4,000 and is deliberately provisional: `parley refusals` records what it turned
-  away so the next change to it can cite evidence rather than taste. Move it on that evidence,
-  not because a message did not fit.
+  style preference. It lives in the schema so no code path can route around it, which is why
+  moving it is a table rebuild rather than a constant — see `003_message_cap.sql`, and note the
+  ordering hazards written down in it. The number is 8,000, and is the first value here set
+  from `parley refusals` rather than from judgement: SPEC.md §17 question 16 carries the
+  evidence. It stays provisional on the same terms. Move it on that record, not because a
+  message did not fit.
 - **No agent has authority over another.** There is no orchestrator and no lead. Any design
   that introduces one contradicts the premise.
 - **Credentials are references, never values.** `env:`, `keychain:`, `file:`. The broker
@@ -335,7 +409,11 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: none. Start one with `/speckit-specify`.
+- **Active plan**: `specs/003-parley-web-console/` — a read-only operator web console:
+  projects, the agents registered in each, and conversations as an annotated chat
+  transcript. `plan.md` gates the work behind a `SPEC.md` §10.2 change: nothing lists
+  conversations and an export carries no exchange state, so two operator reads must be
+  specified before they are built. `contracts/operators-additions.md` is the argument.
 - Previous: `specs/002-project-manifest/` — a per-machine manifest of named projects, merged.
   Its obligation was discharged: SPEC.md §4.1 now illustrates `projects.json` rather than
   `parley.yaml`. `tasks.md` carries the review record, including what five rounds turned up.

@@ -1,0 +1,513 @@
+@page
+@model Parley.Web.Pages.Conversations.DetailModel
+@using Parley.Core
+@{
+    ViewData["Title"] = $"Conversation {Model.Id}";
+    ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
+}
+
+<h1>@Model.Id</h1>
+
+<p>
+    In @Model.Project, between @string.Join(", ", Model.Participants.Select(p => p.Value)).
+</p>
+
+@* Said once, plainly. Ordering is the broker's record and not a wall clock: the agents run on
+   different machines, and a timeline sorted on their clocks would misorder itself. *@
+<p class="as-of">
+    In the order the broker recorded them. Times are shown for information; they come from the
+    machines the agents run on and are not what the order follows.
+</p>
+
+<p>
+    <a href="/Conversations/Detail?project=@Model.Project&amp;id=@Model.Id&amp;handler=Transcript">
+        Take this away as text
+    </a>
+    <span> · </span>
+    <a href="/Conversations/Detail?project=@Model.Project&amp;id=@Model.Id&amp;handler=Raw">
+        or as the messages the broker returned
+    </a>
+</p>
+
+@* Says it has fallen behind rather than growing under the reader. A transcript that appended
+   while somebody was partway down it would move the thing they were reading. *@
+<p id="behind" role="status" hidden>
+    This conversation has gained messages since you opened it.
+    <a href="/Conversations/Detail?project=@Model.Project&amp;id=@Model.Id">Reload</a>
+</p>
+
+@* And the other half: the check itself can fail. A page that only ever said "you are behind"
+   would say nothing at all when the broker stopped answering, which reads as "still current". *@
+<p id="uncertain" role="alert" hidden>
+    This page can no longer reach the broker, so it cannot tell whether the conversation has
+    moved on. What is shown below is what was true at the time above.
+</p>
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="unreachable" role="alert">@problem</p>
+}
+else if (Model.Messages.Count == 0)
+{
+    <p>Nothing was recorded under this identifier.</p>
+}
+else
+{
+    @* Searching happens here rather than at the broker: the whole conversation is already on
+       the page, so a round trip would be slower and would page results that are all in front of
+       the reader anyway. Enhancement only — with no script the transcript is simply a
+       transcript, and the browser's own find still works on it. *@
+    <div class="find" role="search">
+        <label for="find">Find in this conversation</label>
+        <input id="find" type="search" autocomplete="off" spellcheck="false"
+               placeholder="a word, an agent, a phrase" />
+        <p id="found" class="found" role="status"></p>
+    </div>
+
+    <div class="conversation">
+    @* The same roster the project shows, so a reader who has learned it in one place has
+       learned it in the other. A participant is derived from the traffic (§5.0), so one may have
+       been retired or purged since it spoke -- the registry's word is asked for, and its absence
+       is reported rather than filled in. *@
+    <partial name="_Roster" model="@(new RosterView(
+        Model.Project,
+        "In this conversation",
+        [.. Model.Participants.Select(who => new RosterEntry(
+            who,
+            Model.Roll.TryGetValue(who.Value, out var known)
+                ? Roster.State(known)
+                : "not in the registry"))],
+        null))" />
+
+    <ol class="transcript">
+        @{ var day = default(DateOnly?); }
+        @foreach (var message in Model.Messages)
+        {
+            var said = Payload.Read(message.PayloadJson);
+            var on = DateOnly.FromDateTime(message.CreatedUtc.UtcDateTime);
+            var ghost = said.Ghosted
+                || (message.ExchangeId is { } gid
+                    && Model.Exchanges.TryGetValue(gid, out var snap)
+                    && snap.State == ExchangeState.Orphaned);
+
+            @* A date only where the date changes, the way a messenger marks a new day. The
+               times come from the machines the agents run on, so this follows the record rather
+               than a wall clock -- if two clocks disagree the divider says so by appearing
+               twice, which is more honest than smoothing it. *@
+            if (day != on)
+            {
+                day = on;
+                <li class="day">@message.CreatedUtc.ToString("dddd, d MMMM yyyy")</li>
+            }
+
+            <li id="@($"m{message.Id}")" data-agent="@message.From.Value"
+                class="turn slot-@Palette.SlotFor(message.From)@(ghost ? " ghosted" : null)">
+                <div class="who" aria-hidden="true">@Palette.BadgeFor(message.From)</div>
+
+                <div class="bubble">
+                    <p class="attribution">
+                        <strong>@message.From.Value</strong>
+                        <span class="arrow">to</span>
+                        <strong>@message.To.Value</strong>
+                        <span class="stamp">@message.CreatedUtc.ToString("HH:mm")</span>
+                    </p>
+
+                    @* Razor encodes every one of these. An agent wrote them, and they are content
+                       rather than markup: nothing here may alter the page or imitate a label the
+                       console speaks. *@
+                    @if (said.Raw is { Length: > 0 } raw)
+                    {
+                        <pre>@raw</pre>
+                    }
+                    else
+                    {
+                        @if (said.Said is { Length: > 0 } body)
+                        {
+                            <p class="said">@body</p>
+                        }
+
+                        @if (said.Points.Count > 0)
+                        {
+                            <ol class="points">
+                                @foreach (var point in said.Points)
+                                {
+                                    <li>
+                                        @if (point.Id is { Length: > 0 } label)
+                                        {
+                                            <span class="label">@label</span>
+                                        }
+                                        <span class="point-text">@point.Text</span>
+                                        @if (point.Resolution is { Length: > 0 } verdict)
+                                        {
+                                            @* The word the answerer chose, shown rather than
+                                               summarised: "out of scope" and "answered" are
+                                               different outcomes and only one of them is done. *@
+                                            <span class="verdict">@verdict</span>
+                                        }
+                                    </li>
+                                }
+                            </ol>
+                        }
+
+                        @if (said.Consequences is { Length: > 0 } because)
+                        {
+                            @* Rule 8.1's other half: what turns on the answer. Kept distinct
+                               because it is the part a reader skims and the part that says
+                               whether the question was worth asking. *@
+                            <p class="because"><span>Consequences</span> @because</p>
+                        }
+                    }
+
+                    <p class="meta">
+                        @if (ghost)
+                        {
+                            <span class="tag">abandoned</span>
+                        }
+                        @message.Type
+                        @if (Model.StateOf(message) is { Length: > 0 } state)
+                        {
+                            <span> · exchange @message.ExchangeId, @state</span>
+                        }
+                        <span> · answered by @message.ResponderModel</span>
+                    </p>
+                </div>
+            </li>
+
+            @if (Model.NotSeenBy(message) is { Length: > 0 } absent)
+            {
+                @* Between the messages rather than inside one, the way a chat marks something the
+                   room should know. In words and never by colour alone: a reader who cannot see
+                   the tint would otherwise lose exactly the fact that stops this transcript
+                   reading as a group chat everybody was in. *@
+                <li class="not-seen"><strong>@absent</strong></li>
+            }
+        }
+    </ol>
+
+    @* A minimap of the conversation. Ticks in the order the broker recorded them rather than
+       spaced by clock: the times come from different machines, and proportional spacing would
+       pile a burst into one pixel and stretch a quiet hour across the screen. Each carries its
+       own text, so the colour is how you aim and never how you know. *@
+    <p id="kin" class="kin-note" role="status"></p>
+
+    <nav class="timeline" aria-label="Jump to a message">
+        @{ var railDay = default(DateOnly?); }
+        @foreach (var message in Model.Messages)
+        {
+            var on = DateOnly.FromDateTime(message.CreatedUtc.UtcDateTime);
+            var abandoned = Payload.Read(message.PayloadJson).Ghosted
+                || (message.ExchangeId is { } rid
+                    && Model.Exchanges.TryGetValue(rid, out var rsnap)
+                    && rsnap.State == ExchangeState.Orphaned);
+
+            if (railDay != on)
+            {
+                railDay = on;
+                <span class="rail-day">@message.CreatedUtc.ToString("d MMM")</span>
+            }
+
+            <a data-agent="@message.From.Value"
+               class="tick slot-@Palette.SlotFor(message.From)@(abandoned ? " ghosted" : null)"
+               href="@($"#m{message.Id}")"
+               title="@message.CreatedUtc.ToString("d MMM HH:mm") — @message.From.Value to @message.To.Value@(abandoned ? " — abandoned" : null)">
+                <span class="visually-hidden">
+                    @message.CreatedUtc.ToString("d MMM HH:mm"),
+                    @message.From.Value to @message.To.Value@(abandoned ? ", abandoned" : null)
+                </span>
+            </a>
+        }
+    </nav>
+    </div>
+}
+
+@* Pinned to the bottom, so it is reachable from anywhere in a long transcript.
+
+   It has two voices and says which one it is using, because the difference is the whole of what
+   the panel means. Joined, you are an agent: what you send is a message in this conversation,
+   under your own name, subject to every rule 7 refusal any other participant faces. Not joined,
+   there is no name to send as -- SPEC.md 5.0 derives participants from being party to an
+   exchange -- so what leaves here is an instruction marked as the operator's (11.5), and it
+   never appears above.
+
+   A box at the bottom of a chat that quietly is not a chat box would be the most misleading
+   thing on the page, so which one it is is the first sentence in it. *@
+<form method="post" class="composer@(Model.Seat is null ? " as-operator" : " as-agent")"
+      aria-label="Send to agents in this conversation">
+    @if (Model.Seat is { } seat)
+    {
+        <p class="composer-note">
+            You are in this conversation as <strong>@seat.Name.Value</strong>. What you send is a
+            message like any other: it appears in the transcript above, it is attributed to
+            <code>@seat.Seat.Responder</code>, and the peer answers you rather than being told
+            something by an operator.
+        </p>
+    }
+    else
+    {
+        <p class="composer-note">
+            This reaches each agent as an instruction from you and is recorded as yours. It does
+            <strong>not</strong> appear in the transcript above — if an agent then says something
+            to a peer, that message is theirs and shows up here as theirs.
+            <a href="/Join?Then=@Uri.EscapeDataString($"/Conversations/Detail?project={Model.Project}&id={Model.Id}")">Join
+            as yourself</a> to take part instead of instructing.
+        </p>
+    }
+
+    @if (Model.SendProblem is { Length: > 0 } trouble)
+    {
+        <p class="unreachable" role="alert">@trouble</p>
+    }
+
+    @if (Model.Sent.Count > 0)
+    {
+        <ul class="sent" role="status">
+            @foreach (var (agent, outcome) in Model.Sent)
+            {
+                <li><strong>@agent</strong> @outcome</li>
+            }
+        </ul>
+    }
+
+    <fieldset class="targets">
+        <legend>To</legend>
+        @foreach (var who in Model.Participants)
+        {
+            <label class="target slot-@Palette.SlotFor(who)">
+                <input type="checkbox" name="Targets" value="@who.Value" />
+                <span class="who" aria-hidden="true">@Palette.BadgeFor(who)</span>
+                <span>@who.Value</span>
+            </label>
+        }
+    </fieldset>
+
+    <textarea name="Says" rows="3" required
+              placeholder="@(Model.Seat is null
+                  ? "What do you want them to do, or to know?"
+                  : "What do you want to say, or to ask?")">@Model.Says</textarea>
+
+    <label class="wants">
+        <input type="checkbox" name="WantsAnswer" value="true"
+               @(Model.WantsAnswer ? "checked" : null) />
+        I would like a reply
+    </label>
+
+    @if (Model.Seat is not null)
+    {
+        @* Revealed by the reply box rather than always shown, because these two fields are
+           meaningless for a notice and rule 8.1 is mandatory for a question. The schema enforces
+           the second: a question with no consequences comes back as a CHECK constraint naming
+           json_extract, which is the worst possible answer to a mistake about thinking. Asking
+           here costs a sentence and turns that into a form field. *@
+        <div class="framing">
+            <p class="composer-note">
+                A question carries its framing, and SPEC.md §8 rule 1 makes that a rule rather
+                than advice — the peer uses it to judge how much precision is worth its time, and
+                so do you when the answer arrives and you no longer remember asking.
+            </p>
+
+            <label for="intent">What are you trying to decide?</label>
+            <input id="intent" name="Intent" value="@Model.Intent"
+                   placeholder="One sentence." />
+
+            <label for="consequences">
+                What will you do with each possible answer?
+                (at least @SeatVoice.MinimumConsequences characters)
+            </label>
+            <textarea id="consequences" name="Consequences" rows="2"
+                      placeholder="If yes I will…; if no I will…">@Model.Consequences</textarea>
+        </div>
+    }
+
+    <div class="composer-send">
+        <button type="submit">Send</button>
+    </div>
+</form>
+
+@section Scripts {
+    <script>
+        // Progressive enhancement: without it the page is simply static, which is the honest
+        // fallback for a transcript. Nothing here changes what is rendered -- it only says that
+        // the page is no longer current.
+        (function () {
+            var since = @Model.Newest;
+            var url = "/Conversations/Detail?project=@Model.Project&id=@Model.Id&handler=Since&since=" + since;
+
+            setInterval(function () {
+                fetch(url)
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        // A failed check is not an up-to-date page. Reported as its own
+                        // sentence, because "nothing has arrived" and "nobody could say" are
+                        // the same silence otherwise -- and the second is the one where the
+                        // reader most needs to stop trusting what is on screen.
+                        if (d.checkFailed) {
+                            document.getElementById("uncertain").hidden = false;
+                        } else if (d.arrived > 0) {
+                            document.getElementById("behind").hidden = false;
+                        }
+                    })
+                    .catch(function () { /* offline or the broker went away; the page stands */ });
+            }, 20000);
+        })();
+
+        // Selecting a message marks every other message from the same agent, in the rail and in
+        // the transcript. The rail groups by colour, which is no grouping at all for a reader who
+        // cannot separate the hues -- so selection dims what does not match, outlines what does,
+        // and says in a sentence how many there are and whose they were.
+        //
+        // Selection is the URL fragment rather than state of its own, so it works however the
+        // reader got here: a click on a tick, a pasted link, the back button.
+        (function () {
+            var rail = document.querySelector(".timeline");
+            var note = document.getElementById("kin");
+
+            if (!rail || !note) { return; }
+
+            function clear() {
+                rail.classList.remove("focused");
+                note.textContent = "";
+
+                document.querySelectorAll(".kin").forEach(function (el) {
+                    el.classList.remove("kin");
+                });
+            }
+
+            function mark() {
+                clear();
+
+                var id = window.location.hash.slice(1);
+
+                if (!id) { return; }
+
+                var chosen = document.getElementById(id);
+
+                if (!chosen) { return; }
+
+                var agent = chosen.getAttribute("data-agent");
+
+                if (!agent) { return; }
+
+                // Attribute selector rather than a class: the agent's own name is what matches,
+                // so this cannot drift from whatever palette slot it happens to have been given.
+                var kin = document.querySelectorAll('[data-agent="' + agent + '"]');
+
+                kin.forEach(function (el) { el.classList.add("kin"); });
+                rail.classList.add("focused");
+
+                var count = Math.round(kin.length / 2);
+
+                note.textContent = count === 1
+                    ? "1 message from " + agent + " in this conversation."
+                    : count + " messages from " + agent + ", marked in the timeline.";
+            }
+
+            window.addEventListener("hashchange", mark);
+            document.addEventListener("keydown", function (e) {
+                if (e.key === "Escape") { clear(); }
+            });
+
+            mark();
+        })();
+
+        // Find within the conversation. It marks whole messages and their ticks, and marks the
+        // words themselves inside the bubbles.
+        //
+        // The words are wrapped by moving existing text nodes into <mark> elements, never by
+        // building HTML from them. A peer wrote that text; the page has kept it as content
+        // everywhere else, and a search box would be a poor place to stop.
+        (function () {
+            var box = document.getElementById("find");
+            var note = document.getElementById("found");
+            var rail = document.querySelector(".timeline");
+            var turns = [].slice.call(document.querySelectorAll("li.turn"));
+
+            if (!box || !note || !rail) { return; }
+
+            function strip(root) {
+                root.querySelectorAll("mark[data-found]").forEach(function (m) {
+                    var parent = m.parentNode;
+                    m.replaceWith(document.createTextNode(m.textContent));
+                    parent.normalize();
+                });
+            }
+
+            function paint(el, needle) {
+                var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+                var texts = [];
+
+                while (walker.nextNode()) { texts.push(walker.currentNode); }
+
+                var found = false;
+
+                texts.forEach(function (node) {
+                    var at = node.textContent.toLowerCase().indexOf(needle);
+
+                    if (at < 0) { return; }
+
+                    found = true;
+
+                    var tail = node.splitText(at);
+                    tail.splitText(needle.length);
+
+                    var wrap = document.createElement("mark");
+                    wrap.setAttribute("data-found", "");
+                    tail.replaceWith(wrap);
+                    wrap.appendChild(tail);
+                });
+
+                return found;
+            }
+
+            function run() {
+                var needle = box.value.trim().toLowerCase();
+
+                strip(document);
+                turns.forEach(function (t) { t.classList.remove("hit"); });
+                document.querySelectorAll(".tick.hit").forEach(function (t) {
+                    t.classList.remove("hit");
+                });
+                rail.classList.remove("searching");
+
+                if (needle.length < 2) {
+                    note.textContent = "";
+                    return;
+                }
+
+                var hits = 0;
+
+                turns.forEach(function (turn) {
+                    // Each message is searched whole: what was said, the numbered points, the
+                    // consequences, and the two agents in the attribution line -- because "who
+                    // said this" is as much a thing to look for as "what did they say".
+                    if (!paint(turn, needle)) { return; }
+
+                    hits++;
+                    turn.classList.add("hit");
+
+                    var tick = rail.querySelector('a[href="#' + turn.id + '"]');
+
+                    if (tick) { tick.classList.add("hit"); }
+                });
+
+                rail.classList.add("searching");
+
+                note.textContent = hits === 0
+                    ? "No messages contain that."
+                    : hits === 1
+                        ? "1 message contains that, marked in the timeline."
+                        : hits + " messages contain that, marked in the timeline.";
+            }
+
+            var pending;
+
+            box.addEventListener("input", function () {
+                window.clearTimeout(pending);
+                pending = window.setTimeout(run, 150);
+            });
+
+            box.addEventListener("keydown", function (e) {
+                if (e.key === "Escape") { box.value = ""; run(); }
+            });
+        })();
+    </script>
+}

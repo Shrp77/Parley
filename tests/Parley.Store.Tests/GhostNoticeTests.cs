@@ -210,9 +210,13 @@ public sealed class GhostNoticeTests : IDisposable
         // cannot be carried back whole. A notice that will not store is a notice nobody
         // receives, so it is trimmed — and what survives is the field §14 says makes this
         // actionable.
+        // Sized from the cap rather than to it. The padding was 3,450 characters, chosen to land
+        // just under a cap of four thousand, and it silently stopped testing anything the day
+        // rule 8.5's number moved — the assertion below caught it, which is the only reason this
+        // is a comment rather than a defect.
         var payload = Question(
             new string('i', 120),
-            Consequences + " " + new string('c', 3450),
+            Consequences + " " + new string('c', MessageLimits.MaxPayloadCharacters - 550),
             subQuestions: 3);
 
         // Close to the cap but under it, which is where the question has to be for the notice to

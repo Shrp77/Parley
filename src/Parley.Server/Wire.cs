@@ -231,6 +231,47 @@ internal static class Conversions
             nameof(verdict), verdict, "Not a defined verdict.")
     };
 
+    /// <summary>Reads an instruction's outcome from the wire.</summary>
+    /// <param name="outcome">The wire value.</param>
+    /// <returns>The domain value.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The value is unspecified or unknown.</exception>
+    /// <remarks>
+    /// Unspecified is refused rather than mapped. A node reporting a value this build has never
+    /// heard of is a node from a different version, and quietly reading that as `failed` would
+    /// tell an operator their agent broke when what broke was the deployment.
+    /// </remarks>
+    public static InstructionOutcome In(Wire.InstructionOutcome outcome) => outcome switch
+    {
+        Wire.InstructionOutcome.Pending => InstructionOutcome.Pending,
+        Wire.InstructionOutcome.Taken => InstructionOutcome.Taken,
+        Wire.InstructionOutcome.Declined => InstructionOutcome.Declined,
+        Wire.InstructionOutcome.Undeliverable => InstructionOutcome.Undeliverable,
+        Wire.InstructionOutcome.Failed => InstructionOutcome.Failed,
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(outcome), outcome, "Not a defined outcome.")
+    };
+
+    /// <summary>Converts an instruction's outcome for the wire.</summary>
+    /// <param name="outcome">The outcome.</param>
+    /// <returns>The wire value.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The outcome is not a defined member.</exception>
+    /// <remarks>
+    /// Every member is listed rather than cast, like every other conversion here. The four
+    /// outcomes of SPEC.md §10.2 are four different facts and a cast would make them one
+    /// arithmetic accident away from each other — with `declined` arriving as `failed` being the
+    /// one that matters, because §11.5 says a refusal is an agent behaving correctly.
+    /// </remarks>
+    public static Wire.InstructionOutcome Out(InstructionOutcome outcome) => outcome switch
+    {
+        InstructionOutcome.Pending => Wire.InstructionOutcome.Pending,
+        InstructionOutcome.Taken => Wire.InstructionOutcome.Taken,
+        InstructionOutcome.Declined => Wire.InstructionOutcome.Declined,
+        InstructionOutcome.Undeliverable => Wire.InstructionOutcome.Undeliverable,
+        InstructionOutcome.Failed => Wire.InstructionOutcome.Failed,
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(outcome), outcome, "Not a defined outcome.")
+    };
+
     /// <summary>Converts a refused move for the wire.</summary>
     /// <param name="error">The refusal, or <see langword="null"/> when the move succeeded.</param>
     /// <returns>The wire value.</returns>
