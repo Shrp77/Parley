@@ -3859,6 +3859,40 @@ Cheap to collect, disproportionately useful:
     So: the mechanism is a small change and the policy is not. Decide the policy first, and record
     what a turn costs when somebody has measured one.
 
+    **Evidence, 2026-09-01, and it is the editor-window case rather than the seam above.** An
+    agent asked a peer, went idle, and never learned that the answer had arrived. The wake path
+    worked: the broker asked for attention on delivery and the log records other agents being
+    started for exactly that reason. This one was not started, because it was already attached —
+    through a window a person had opened. The node gives a turn only to a resident of its own, so
+    it correctly did nothing, and the notice reached the adapter and stopped there. The agent was
+    reported live, held no uncollected mail the operator could see, and was waiting on nothing.
+
+    Nothing was broken. Every part behaved as designed, which is what makes it worth recording
+    separately from the seam: the seam was a defect and this is the documented cost of a correct
+    decision. What it costs is that an agent in a person's window is reachable by a question —
+    which starts nothing and needs nothing started — and unreachable by an answer to its own
+    question, until a person happens to give it a turn.
+
+    **And there is no way to tell the two apart.** This is the part that turns the cost into an
+    operational blind spot. An agent attached through a window and one started by a node register
+    identically: the same `adapter`, and `session_ref` empty for both. §12 defines that field as
+    what an adapter needs to reach an agent again, and an adapter the agent launched itself has
+    nothing to hand back — so it is empty by design rather than by omission. The node knows which
+    sessions are its own, because it holds them; that knowledge reaches no broker and therefore no
+    §10.2 read. So an operator cannot list which of their agents are in the class that cannot be
+    given a turn, and neither can the broker deciding whether to ask for one.
+
+    Outside the protocol the two are trivially distinguishable — one process was launched with a
+    headless flag and the other was not — which is worth stating only to make the point that the
+    distinction exists everywhere except where it is needed.
+
+    A node-started agent could report its own session in `session_ref` on attach, which would make
+    the class visible in the registry and to the broker. That is a small change and it is not a
+    guarantee: a window could set the field too, and this document has just recorded what happens
+    when an unattested claim is read as an identity (question 2). It would be a hint good enough
+    for a report and not good enough for a decision, and whoever builds it should say which of
+    those they are building.
+
 16. **Is 8,000 the right cap? It was 4,000, and the move is the first one this document can
     show its working for.** §9.3 keeps a count of what the cap refused "because a limit nobody
     measures is a limit that gets changed on the strength of whoever complains most recently".

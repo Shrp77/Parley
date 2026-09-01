@@ -43,6 +43,10 @@ public static class AutostartCommand
     /// <param name="action">install, remove or status.</param>
     /// <param name="databasePath">The store, for install.</param>
     /// <param name="listenOn">Where to listen, or null for the default.</param>
+    /// <param name="consoleOn">
+    /// Where the installed entry should host the operator's console, or null to install one that
+    /// hosts none.
+    /// </param>
     /// <param name="nodeConfig">
     /// The node catalogue the installed entry should host this machine's agents from, or null to
     /// install a broker alone.
@@ -57,6 +61,7 @@ public static class AutostartCommand
         string? databasePath,
         string? listenOn,
         string? nodeConfig,
+        string? consoleOn,
         TextWriter output,
         TextWriter error,
         CancellationToken cancellationToken = default)
@@ -77,7 +82,8 @@ public static class AutostartCommand
         return action switch
         {
             "install" => await InstallAsync(
-                databasePath, listenOn, nodeConfig, output, error, cancellationToken).ConfigureAwait(false),
+                databasePath, listenOn, nodeConfig, consoleOn, output, error, cancellationToken)
+                .ConfigureAwait(false),
 
             "remove" => await RemoveAsync(output, error, cancellationToken).ConfigureAwait(false),
 
@@ -100,6 +106,7 @@ public static class AutostartCommand
     /// <param name="databasePath">The store.</param>
     /// <param name="listenOn">Where to listen.</param>
     /// <param name="nodeConfig">The node catalogue to host from, or null for a broker alone.</param>
+    /// <param name="consoleOn">Where the console should listen, or null to host none.</param>
     /// <param name="output">Where to report.</param>
     /// <param name="error">Where to report a failure.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
@@ -108,6 +115,7 @@ public static class AutostartCommand
         string? databasePath,
         string? listenOn,
         string? nodeConfig,
+        string? consoleOn,
         TextWriter output,
         TextWriter error,
         CancellationToken cancellationToken)
@@ -131,7 +139,8 @@ public static class AutostartCommand
         // between them, and the report is the half nobody can check afterwards.
         var catalogue = nodeConfig is { Length: > 0 } named ? Path.GetFullPath(named) : null;
 
-        var plan = AutostartPlan.Describe(databasePath, listenOn, executable: null, catalogue);
+        var plan = AutostartPlan.Describe(
+            databasePath, listenOn, executable: null, catalogue, consoleOn);
 
         // The directory, not the file. The broker creates the store on first run; what it cannot
         // do is create a directory that a supervisor will try to write a log into before it

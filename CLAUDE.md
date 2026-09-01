@@ -54,7 +54,21 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
                     carries Kestrel. That was decided deliberately and against the argument
                     recorded here before it: a second tool would have kept ASP.NET Core off
                     the machines that only run an agent, and one command is worth more than
-                    that saving. The project stays separate anyway — it is what keeps the
+                    that saving.
+
+                    **`serve --with-console` hosts it inside the broker's process, and
+                    `autostart install` turns that on by default.** The project boundary is
+                    unchanged — Parley.Web still references no store — but the runtime one
+                    is: Kestrel now shares a process with the thing that owns the database.
+                    That is the trade `--with-node` already made, and it is paid for by
+                    containment: a console that cannot bind reports it and the broker keeps
+                    serving, because a web page must never cost a deployment. On by default
+                    because of SPEC.md §17 question 15 — an agent attached through somebody's
+                    editor window is the one thing nothing can hand a turn to, so a console
+                    remembered separately is the half of a deployment that works for agents
+                    and not for people.
+
+                    The project stays separate anyway — it is what keeps the
                     store off the console's dependency graph, which is the constraint that
                     actually matters, and `ConsoleHost` is the single place the host is
                     built so `parley console` and `dotnet run` cannot drift apart.

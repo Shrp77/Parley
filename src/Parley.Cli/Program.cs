@@ -30,10 +30,10 @@ const string Help = """
     parley — the broker, this machine's node, and the operator operations of SPEC.md 10.2.
 
       parley serve [--db <path>] [--listen <url>]      run the broker: the one process that
-                   [--log <path>] [--with-node]
-                                                       opens the store, and what everything
-                                                       else connects to. --with-node also runs
-                                                       this machine's node in it
+                   [--log <path>] [--with-node]         opens the store, and what everything
+                   [--with-console [--console <url>]]   else connects to. --with-node also runs
+                                                       this machine's node in it, and
+                                                       --with-console the operator's console
 
       parley console [<url>]                           the operator's console in a browser:
                                                        every project, the agents in each, and
@@ -41,8 +41,10 @@ const string Help = """
                                                        who did not see what. Loopback unless
                                                        you say otherwise
 
-      parley autostart install [--db <path>]           start the broker when you log in, and
-                               [--node-config <path>]  this machine's node with it
+      parley autostart install [--db <path>]           start the broker when you log in, with
+                               [--node-config <path>]  this machine's node and the console.
+                               [--console <url>]       --no-console leaves the console out
+                               [--no-console]
       parley autostart remove                          stop doing that
       parley autostart status                          say whether it is set up
 
@@ -112,6 +114,12 @@ const string Help = """
     project, or node.json in the working directory, in that order — the broker never holds a
     command line for a machine it is not on. Ctrl+C stops the node and every agent it started.
 
+    The console is installed by default, because that is how a person takes part rather than only
+    watches: an agent attached through somebody's own editor window is the one thing nothing can
+    hand a turn to, so a console remembered separately is the half of a deployment that works for
+    agents and not for people. It listens on 127.0.0.1:5280 unless --console says otherwise, and
+    if that address is taken the broker says so and keeps serving.
+
     A broker and a node are two processes and one deployment, so `serve --with-node` runs both in
     one, and that is what `autostart install` installs: one entry that brings a machine all the
     way up. Give it --node-config, because a supervisor starts a process with no shell
@@ -165,10 +173,19 @@ if (arguments.Exists(a => a is "--version" or "-v"))
 var selectAllRepositories = TakeFlag("--all");
 var selectNoRepositories = TakeFlag("--none");
 var hostNode = TakeFlag("--with-node");
+var hostConsole = TakeFlag("--with-console");
+var noConsole = TakeFlag("--no-console");
 var databasePath = TakeOption("--db", "-d");
 var listenOn = TakeOption("--listen", "-l");
 var brokerAddress = TakeOption("--broker", "-b");
 var logPath = TakeOption("--log", null);
+var consoleOn = TakeOption("--console", null);
+
+// Resolved once. `serve --with-console` and `autostart install` both need the address, and
+// a default written in two places is two answers to one question that agree only until
+// somebody changes one of them -- here, by installing an entry pointing somewhere the
+// running console is not.
+var consoleAt = consoleOn ?? Parley.Web.ConsoleHost.LoopbackAddress;
 
 // Taken here with the rest, and it has to be: everything left starting with a hyphen is refused
 // below as an option this does not have, so a flag consumed by the command it belongs to never
@@ -224,6 +241,31 @@ var rest = arguments.Skip(1).ToArray();
 // --with-node` is a plausible thing to type -- the flag is about hosting a node, and `up` is the
 // command that runs one -- and what it does is exactly what typing nothing does, successfully and
 // without comment. Refused where it has no meaning rather than left to be discovered.
+// Refused everywhere but `serve`, including on `autostart`, where it would be a flag that reads
+// as switching something on and changes nothing: the console is installed by default there, so
+// the only meaningful choices are the address and the way out. A flag accepted and ignored is
+// worse than one refused, because the person who typed it believes it did something.
+if (hostConsole && verb != "serve")
+{
+    await Console.Error.WriteLineAsync(
+        "--with-console is only for `parley serve`, which is the process that would host the "
+        + $"console. `parley {verb}` accepts it no more than any other command it does not "
+        + "have — and `autostart install` needs no flag to install one, only --console to move "
+        + "it or --no-console to leave it out.").ConfigureAwait(false);
+
+    return Usage;
+}
+
+if ((consoleOn is not null || noConsole) && verb != "serve" && verb != "autostart")
+{
+    await Console.Error.WriteLineAsync(
+        $"--console and --no-console are for `parley serve` and `parley autostart install`, "
+        + $"which are the commands that host a console or install one. `parley {verb}` does "
+        + "neither.").ConfigureAwait(false);
+
+    return Usage;
+}
+
 if (hostNode && verb != "serve")
 {
     await Console.Error.WriteLineAsync(
@@ -400,7 +442,7 @@ if (verb == "serve" && rest.Length == 0)
     // to nothing.
     return await UntilInterrupted(token =>
     {
-        async Task<int> Hosting(
+        async Task<int> HostingNode(
             IReadOnlyList<string> addresses, TextWriter reporting, CancellationToken stopping)
         {
             await reporting.WriteLineAsync($"Hosting this machine's node, from {hostedCatalogue}.")
@@ -412,16 +454,63 @@ if (verb == "serve" && rest.Length == 0)
                 channel, addresses[0], hostedFrom, reporting, stopping).ConfigureAwait(false);
         }
 
+        // Contained here rather than left to the broker's own containment, which reports whatever
+        // it catches as the node stopping. The console's likeliest failure is not a fault at all
+        // but a port already in use — a second console, or anything else on 5280 — and a broker
+        // that refused to start because a web page could not bind would take a whole deployment
+        // down for the one part of it no agent uses.
+        async Task<int> HostingConsole(
+            IReadOnlyList<string> addresses, TextWriter reporting, CancellationToken stopping)
+        {
+            try
+            {
+                await reporting.WriteLineAsync($"Hosting the console on {consoleAt}.")
+                    .ConfigureAwait(false);
+
+                // The address the broker actually bound, not the one it was asked for: --listen
+                // may name port 0, and a console pointed at port 0 reaches nothing.
+                await Parley.Web.ConsoleHost
+                    .RunAsync([], consoleAt, reporting, addresses[0], stopping)
+                    .ConfigureAwait(false);
+
+                return 0;
+            }
+            catch (OperationCanceledException)
+            {
+                return 0;
+            }
+            catch (Exception failure)
+            {
+                await reporting.WriteLineAsync(
+                    $"The console did not start on {consoleAt}: {failure.Message}. The broker is "
+                    + "still serving and every agent is unaffected; `parley console` starts one by "
+                    + "hand on another address.").ConfigureAwait(false);
+
+                return Unavailable;
+            }
+        }
+
+        // Passed apart, because they are not the same kind of thing. A node joins one broker and
+        // the serve refuses to host one across several projects; a console reads this machine's
+        // manifest and is at its best across all of them. Handing both through the one hook is
+        // what made `serve --with-console` over two projects throw rather than start.
         return serving.Count > 0
             ? ServeCommand.RunAsync(
-                serving, logPath, Console.Out, Console.Error, hostNode ? Hosting : null, token)
+                serving,
+                logPath,
+                Console.Out,
+                Console.Error,
+                hostNode ? HostingNode : null,
+                hostConsole ? HostingConsole : null,
+                token)
             : ServeCommand.RunAsync(
                 databasePath ?? fromEnvironment,
                 listenOn,
                 logPath,
                 Console.Out,
                 Console.Error,
-                hostNode ? Hosting : null,
+                hostNode ? HostingNode : null,
+                hostConsole ? HostingConsole : null,
                 token);
     }).ConfigureAwait(false);
 }
@@ -465,11 +554,20 @@ if (verb == "autostart" && rest.Length == 1)
         ? File.Exists(resolvedNodeConfig.Value) ? resolvedNodeConfig.Value : null
         : resolvedNodeConfig.Value;
 
+    // On by default, which is the whole point of it being here. A person taking part in a
+    // deployment does it through the console: SPEC.md §17 question 15 records that an agent
+    // attached through somebody's window is the one thing nothing can give a turn to, so a
+    // console that has to be remembered separately is the half of the deployment that works
+    // for agents and not for people. `--no-console` is the way out, and it is a flag rather
+    // than an absence so that choosing it is visible in the entry `autostart status` prints.
+    var consoleFor = noConsole ? null : consoleAt;
+
     return await AutostartCommand.RunAsync(
         rest[0],
         resolvedStore.Value,
         listenAddress,
         hostFrom,
+        consoleFor,
         Console.Out,
         Console.Error).ConfigureAwait(false);
 }

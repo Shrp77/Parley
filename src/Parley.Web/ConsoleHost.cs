@@ -185,14 +185,38 @@ public static class ConsoleHost
     /// <param name="fallbackBroker">
     /// The broker to offer when this machine's manifest names no projects. Null to offer none.
     /// </param>
+    /// <param name="cancellationToken">Stops the console.</param>
     /// <returns>A task completing when the console stops.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="args"/> is null.</exception>
-    public static Task RunAsync(
+    public static async Task RunAsync(
         string[] args,
         string? address = null,
         TextWriter? warn = null,
-        string? fallbackBroker = null) =>
-        Build(args, address, warn, fallbackBroker).RunAsync();
+        string? fallbackBroker = null,
+        CancellationToken cancellationToken = default)
+    {
+        var app = Build(args, address, warn, fallbackBroker);
+
+        // Started and waited on separately rather than through RunAsync, which takes no token.
+        // The console is hosted inside the broker's process now, so its shutdown has to be the
+        // broker's: a console that ignored the interrupt would hold the process open after
+        // everything an agent depends on had stopped.
+        await app.StartAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            await app.WaitForShutdownAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Stopped explicitly rather than left to the wait, which stops the host on some paths
+            // out and not on others. Hosted in the broker's process the difference is invisible —
+            // the process is ending anyway — and that is exactly why it is worth being explicit:
+            // the day something hosts this and keeps running, a console nobody stopped would go on
+            // serving a deployment that had shut down.
+            await app.StopAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+    }
 
     /// <summary>Whether an address reaches only this machine.</summary>
     /// <param name="address">The address a host was asked to bind.</param>

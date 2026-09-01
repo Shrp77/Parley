@@ -44,6 +44,12 @@ public static class ServeCommand
     /// listening on and the writer the broker reports through, or <see langword="null"/> to run
     /// nothing. Its exit code is folded into this one.
     /// </param>
+    /// <param name="alongside">
+    /// Something to run alongside the broker that is <em>not</em> bound to any one of them: the
+    /// operator's console, which reads this machine's manifest rather than a single endpoint.
+    /// Separate from <paramref name="whenListening"/> because that one joins exactly one broker
+    /// and is refused across several projects, and a console is not.
+    /// </param>
     /// <param name="cancellationToken">Stops the broker.</param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
@@ -62,6 +68,7 @@ public static class ServeCommand
         TextWriter output,
         TextWriter error,
         Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? whenListening = null,
+        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(output);
@@ -155,7 +162,8 @@ public static class ServeCommand
             // broker is listening" and exits, so a node racing the port it is about to connect to
             // loses that race often enough to matter and leaves the process serving a machine
             // that hosts nothing.
-            var hosted = HostAsync(whenListening, server.Addresses, output, cancellationToken);
+            var hosted = HostAsync(
+                whenListening, alongside, server.Addresses, output, cancellationToken);
 
             await Task.WhenAll(SweepAsync(runtime, output, cancellationToken), hosted)
                 .ConfigureAwait(false);
@@ -175,6 +183,12 @@ public static class ServeCommand
     /// Something to run alongside the brokers once they are listening, given the addresses and
     /// the writer they report through, or <see langword="null"/> to run nothing. Permitted only
     /// when exactly one project is being served.
+    /// </param>
+    /// <param name="alongside">
+    /// Something to run alongside the brokers that is <em>not</em> bound to any one of them: the
+    /// operator's console, which reads this machine's manifest rather than a single endpoint.
+    /// Separate from <paramref name="whenListening"/> because that one joins exactly one broker
+    /// and is refused across several projects, and a console is not.
     /// </param>
     /// <param name="cancellationToken">Stops every broker.</param>
     /// <returns>The exit code.</returns>
@@ -214,12 +228,19 @@ public static class ServeCommand
         TextWriter output,
         TextWriter error,
         Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? whenListening = null,
+        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(projects);
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(error);
 
+        // The node only, and the distinction is what this parameter was missing. A console is
+        // hosted through `alongside` precisely because it is not bound to one broker: it reads
+        // this machine's manifest and shows every project in it, so a process serving several is
+        // the case it is best at rather than one it cannot handle. Guarding both through one
+        // parameter is what made `serve --with-console` across two projects throw this at a
+        // person instead of starting.
         if (whenListening is not null && projects.Count > 1)
         {
             throw new ArgumentException(
@@ -335,7 +356,8 @@ public static class ServeCommand
             // The one started project's addresses: a hook is only permitted alongside a single
             // project, and a run where that project failed to start has already returned above.
             var hosted = HostAsync(
-                whenListening, started[0].Server.Addresses, output, cancellationToken);
+                whenListening, alongside, started[0].Server.Addresses, output,
+                cancellationToken);
 
             // One sweep per broker, all cancelled by the one token the interrupt owns.
             await Task.WhenAll(
@@ -363,6 +385,7 @@ public static class ServeCommand
 
     /// <summary>Runs whatever wanted the port to be open, and survives it failing.</summary>
     /// <param name="whenListening">What to run, or null to run nothing.</param>
+    /// <param name="alongside">What to run that is not bound to one broker, or null.</param>
     /// <param name="addresses">Where the broker is listening.</param>
     /// <param name="output">Where to report a failure worth seeing.</param>
     /// <param name="cancellationToken">Stops it.</param>
@@ -380,10 +403,26 @@ public static class ServeCommand
     /// </remarks>
     private static async Task<int> HostAsync(
         Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? whenListening,
+        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside,
         IReadOnlyList<string> addresses,
         TextWriter output,
         CancellationToken cancellationToken)
     {
+        if (alongside is not null)
+        {
+            // Both, running together rather than one waiting out the other: each is meant to last
+            // as long as the broker does. Recursed with a null `alongside` so the containment
+            // below applies to the node exactly as it did before this parameter existed.
+            var beside = alongside(addresses, output, cancellationToken);
+
+            var codes = await Task.WhenAll(
+                beside,
+                HostAsync(whenListening, null, addresses, output, cancellationToken))
+                .ConfigureAwait(false);
+
+            return Array.Find(codes, code => code != 0);
+        }
+
         if (whenListening is null)
         {
             return 0;

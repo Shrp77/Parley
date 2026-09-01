@@ -62,12 +62,13 @@ public sealed record AutostartPlan(
     /// else somebody installed.
     /// </para>
     /// <para>
-    /// <b>One entry, even though it now starts two things.</b> The process it launches hosts the
-    /// broker and this machine's node, so a deployment needs a single supervisor entry rather
-    /// than one per half — which is what a second entry would have been: a second thing to
-    /// install, remove, and find already removed. The name did not change with the scope, because
-    /// it is the handle by which <c>remove</c> finds what <c>install</c> left behind, and a
-    /// rename would strand every entry installed by an earlier build.
+    /// <b>One entry, even though it now starts three things.</b> The process it launches hosts
+    /// the broker, this machine's node, and the operator's console, so a deployment needs a
+    /// single supervisor entry rather than one per part — which is what further entries would
+    /// have been: more things to install, remove, and find already removed. The name did not
+    /// change with the scope, because it is the handle by which <c>remove</c> finds what
+    /// <c>install</c> left behind, and a rename would strand every entry installed by an earlier
+    /// build.
     /// </para>
     /// </remarks>
     public const string Name = "parley-broker";
@@ -81,6 +82,9 @@ public sealed record AutostartPlan(
     /// <param name="nodeConfig">
     /// The node catalogue to host this machine's agents from, or null to install a broker that
     /// hosts no node.
+    /// </param>
+    /// <param name="consoleOn">
+    /// Where the operator's console should listen, or null to install a broker that hosts none.
     /// </param>
     /// <returns>The plan.</returns>
     /// <exception cref="ArgumentException"><paramref name="databasePath"/> is blank.</exception>
@@ -102,7 +106,8 @@ public sealed record AutostartPlan(
         string databasePath,
         string? listenOn = null,
         string? executable = null,
-        string? nodeConfig = null)
+        string? nodeConfig = null,
+        string? consoleOn = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
 
@@ -137,6 +142,21 @@ public sealed record AutostartPlan(
         {
             arguments = string.Create(CultureInfo.InvariantCulture,
                 $"{arguments} --with-node --node-config {Quote(Path.GetFullPath(catalogue))}");
+        }
+
+        // The console, for the same reason as the node and with the same shape. A person's own
+        // window is the one attachment nothing can give a turn to (SPEC.md §17 question 15), so
+        // the console is not a convenience beside the deployment — it is how a person takes part
+        // in one without falling into that hole. An entry that started the broker and left the
+        // console to be remembered would be an entry that works for agents and not for people.
+        //
+        // The address is written in whenever there is one, including the default. `autostart
+        // status` prints these arguments, and "where is my console" answered by an absence is the
+        // question this exists to stop being asked.
+        if (consoleOn is { Length: > 0 } front)
+        {
+            arguments = string.Create(CultureInfo.InvariantCulture,
+                $"{arguments} --with-console --console {Quote(front)}");
         }
 
         var binary = executable ?? Environment.ProcessPath ?? "parley";

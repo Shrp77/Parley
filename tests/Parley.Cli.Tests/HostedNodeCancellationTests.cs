@@ -78,7 +78,7 @@ public sealed class HostedNodeCancellationTests : IDisposable
             output,
             error,
             Hosting,
-            stopping.Token);
+            cancellationToken: stopping.Token);
 
         // The hook runs only once the port is open, which is the ordering the whole callback
         // exists for: a node that raced the broker would report "no broker is listening".
@@ -129,7 +129,7 @@ public sealed class HostedNodeCancellationTests : IDisposable
             output,
             error,
             Hosting,
-            stopping.Token);
+            cancellationToken: stopping.Token);
 
         await failed.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
 

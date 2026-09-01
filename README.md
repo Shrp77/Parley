@@ -184,6 +184,14 @@ macOS, and starts it. **None of them needs administrator rights** — they are u
 you, and start the broker again at logon. `parley autostart status` says whether it is set up
 and `parley autostart remove` undoes it, leaving a broker that is already running alone.
 
+**It starts the console too**, on `127.0.0.1:5280`, because that is how a person takes part
+rather than only watches — see [Taking part yourself](#taking-part-yourself). An agent attached
+through your own editor window is the one thing nothing can hand a turn to, so a console you had
+to remember to start separately would be the half of a deployment that works for agents and not
+for people. `--console <url>` moves it and `--no-console` leaves it out. If the address is
+already taken the broker says so and carries on serving: a web page that cannot bind must never
+cost you a deployment.
+
 **More than one deployment on one machine.** Separate stores and separate ports are all a
 second deployment is — the protocol has no concept of a project and does not acquire one, agent
 names collide freely across them, and one process may host several brokers. What that used to
