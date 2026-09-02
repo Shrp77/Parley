@@ -211,6 +211,14 @@ public sealed class SeatHold : IDisposable
             if (!_cancellation.IsCancellationRequested)
             {
                 Interlocked.Exchange(ref _lost, 1);
+
+                // **And let go of the call, rather than waiting to be collected.** Marking the
+                // loss and keeping the stream open was the first version of this, and a probe
+                // counting attachments against disposals caught it: the book disposes a lost hold
+                // when a sweep next reaches it, which is up to a minute of a finished gRPC call
+                // held open per abandoned seat. Nothing is reading it and nothing will; the pump
+                // is the stream's owner and this is the pump ending.
+                Release();
             }
         }
     }
@@ -307,7 +315,26 @@ public sealed class SeatHold : IDisposable
     }
 
     /// <summary>Ends the attachment, which is what tells the deployment the person has gone.</summary>
-    public void Dispose()
+    public void Dispose() => Release();
+
+    /// <summary>Ends the attachment once, whoever gets here first.</summary>
+    /// <remarks>
+    /// <para>
+    /// Two callers now reach this and only one of them is a person leaving: <see cref="Dispose"/>,
+    /// and the pump itself when the seat is over. Sharing the interlock is what makes the second
+    /// one safe — a <c>Dispose</c> racing the pump's own release would otherwise run the gRPC
+    /// call's disposal twice.
+    /// </para>
+    /// <para>
+    /// The source is deliberately not disposed. The pump can still be inside a <c>Task.Delay</c>
+    /// or an <c>await foreach</c> holding its token, and disposing it under them raises
+    /// <see cref="ObjectDisposedException"/> rather than the <see cref="OperationCanceledException"/>
+    /// every catch here is written for — so the loop would escape through a path nothing handles,
+    /// on a task nobody observes. Cancelling is what ends the attachment; the source itself holds
+    /// nothing that needs reclaiming, since no wait handle is ever taken from it.
+    /// </para>
+    /// </remarks>
+    private void Release()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 1)
         {
@@ -316,12 +343,5 @@ public sealed class SeatHold : IDisposable
 
         _cancellation.Cancel();
         _stream.Dispose();
-
-        // The source is deliberately not disposed. The pump is still inside a `Task.Delay` or an
-        // `await foreach` holding its token, and disposing it under them raises
-        // ObjectDisposedException rather than the OperationCanceledException every catch here is
-        // written for — so the loop would escape through a path nothing handles, on a task
-        // nobody observes. Cancelling is what ends the attachment; the source itself holds
-        // nothing that needs reclaiming, since no wait handle is ever taken from it.
     }
 }

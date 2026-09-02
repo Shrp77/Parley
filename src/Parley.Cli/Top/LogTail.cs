@@ -127,9 +127,19 @@ internal static class LogTail
     /// <param name="cancellationToken">Stops following.</param>
     /// <returns>When following stops.</returns>
     /// <remarks>
+    /// <para>
     /// Starts at the end rather than replaying the file. Somebody opening this wants to know what
     /// the broker is doing now; a log that has been running for a week would otherwise scroll past
     /// for a minute before reaching the present.
+    /// </para>
+    /// <para>
+    /// <b>And reopens when the file it is holding stops being the file at that path.</b> The share
+    /// flags below always allowed the broker to truncate or rotate underneath this — what they did
+    /// not do is make the reader notice. Parked past the end of a file that has just been emptied,
+    /// every read returns nothing for ever, and the screen goes on saying <i>Following …</i> while
+    /// showing nothing: **exactly what a quiet broker looks like**, which is the one thing a log
+    /// view must never be confusable with. Found by truncating the file under a running follow.
+    /// </para>
     /// </remarks>
     internal static async Task FollowAsync(
         IAnsiConsole console,
@@ -139,40 +149,19 @@ internal static class LogTail
     {
         try
         {
-            // ReadWrite | Delete. Anything less makes this reader a lock on the broker's own log:
-            // it could not append, and could not rotate the file out from under us either.
-            using var file = new FileStream(
-                path,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete);
-
-            using var reader = new StreamReader(file);
-
-            file.Seek(0, SeekOrigin.End);
+            // The first open is the only one that skips what is already there. A reopen is a new
+            // file, and everything in it is news.
+            var fromEnd = true;
 
             while (!cancellationToken.IsCancellationRequested)
             {
-                var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-
-                if (line is null)
+                if (!await ReadAsync(console, path, filter, fromEnd, cancellationToken)
+                    .ConfigureAwait(false))
                 {
-                    await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken)
-                        .ConfigureAwait(false);
-
-                    continue;
+                    return;
                 }
 
-                if (filter.Length > 0
-                    && !line.Contains(filter, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                // Escaped, because a log line is not this program's text. It carries whatever an
-                // agent's payload put in it, and a bracket read as markup would let a message
-                // choose how the operator's own log is drawn.
-                console.MarkupLine($"[dim]{Safe.Text(line)}[/]");
+                fromEnd = false;
             }
         }
         catch (OperationCanceledException)
@@ -183,5 +172,94 @@ internal static class LogTail
         {
             console.MarkupLine($"[red]The log could not be followed: {Safe.Text(failure.Message)}[/]");
         }
+    }
+
+    /// <summary>Reads one opening of the file, until it is replaced or watching stops.</summary>
+    /// <param name="console">Where to draw.</param>
+    /// <param name="path">The file to follow.</param>
+    /// <param name="filter">Only lines containing this, or everything when blank.</param>
+    /// <param name="fromEnd">Whether to skip what the file already holds.</param>
+    /// <param name="cancellationToken">Stops following.</param>
+    /// <returns><see langword="true"/> when the file should be opened again.</returns>
+    private static async Task<bool> ReadAsync(
+        IAnsiConsole console,
+        string path,
+        string filter,
+        bool fromEnd,
+        CancellationToken cancellationToken)
+    {
+        // ReadWrite | Delete. Anything less makes this reader a lock on the broker's own log:
+        // it could not append, and could not rotate the file out from under us either.
+        using var file = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+
+        using var reader = new StreamReader(file);
+
+        if (fromEnd)
+        {
+            file.Seek(0, SeekOrigin.End);
+        }
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+
+            if (line is null)
+            {
+                if (Replaced(path, file.Position))
+                {
+                    return true;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken)
+                    .ConfigureAwait(false);
+
+                continue;
+            }
+
+            if (filter.Length > 0
+                && !line.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            // Escaped, because a log line is not this program's text. It carries whatever an
+            // agent's payload put in it, and a bracket read as markup would let a message
+            // choose how the operator's own log is drawn.
+            console.MarkupLine($"[dim]{Safe.Text(line)}[/]");
+        }
+
+        return false;
+    }
+
+    /// <summary>Whether the file at this path is no longer the one being read.</summary>
+    /// <param name="path">Where the log is.</param>
+    /// <param name="position">How far into the open file the reader has got.</param>
+    /// <returns><see langword="true"/> when it should be opened again from the start.</returns>
+    /// <remarks>
+    /// <para>
+    /// Shorter than the reader has already read is the signal, which catches both ways a log stops
+    /// being itself: emptied in place, and deleted and written again. Asked only when a read came
+    /// back with nothing, so a busy log pays nothing for it.
+    /// </para>
+    /// <para>
+    /// It is a heuristic and the limit is worth stating: a rotation that renames the file away and
+    /// grows its replacement past this position inside one 200ms tick is not caught. Comparing
+    /// creation times would not fix that either — Windows preserves the creation time of a file
+    /// recreated at the same path within a few seconds, so the more precise-looking test is the
+    /// one that quietly fails on the platform this is most used on.
+    /// </para>
+    /// </remarks>
+    private static bool Replaced(string path, long position)
+    {
+        var now = new FileInfo(path);
+
+        // Gone rather than replaced. Nothing to reopen yet, so the open handle stays -- a broker
+        // mid-rotation has not stopped writing, and reopening a path with no file at it would
+        // turn a momentary gap into an error on screen.
+        return now.Exists && now.Length < position;
     }
 }

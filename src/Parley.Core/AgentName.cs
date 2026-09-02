@@ -188,9 +188,15 @@ public readonly partial struct AgentName : IEquatable<AgentName>, IComparable<Ag
     public static AgentName Create(string candidate) =>
         TryCreate(candidate, out var name)
             ? name
+            // The message names the grammar TryCreate actually enforces, which it did not: it
+            // described a bare lowercase slug of up to 97 characters, and a bare slug is exactly
+            // what this type refuses. A name is role@machine (§4.1), so somebody following the
+            // old message to the letter produced another value that failed for the same reason
+            // and was told the same thing again.
             : throw new ArgumentException(
-                $"'{candidate}' is not a valid agent name. Expected lowercase slug matching " +
-                $"^[a-z][a-z0-9-]{{0,{MaxLength - 1}}}$.",
+                $"'{candidate}' is not a valid agent name. Expected role@machine, matching " +
+                $"^[a-z][a-z0-9-]{{0,{MaxRoleLength - 1}}}@[a-z0-9][a-z0-9.-]"
+                + $"{{0,{MaxMachineLength - 1}}}$.",
                 nameof(candidate));
 
     /// <summary>
