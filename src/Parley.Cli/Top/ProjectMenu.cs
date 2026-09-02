@@ -16,20 +16,22 @@ namespace Parley.Cli.Top;
 internal static class ProjectMenu
 {
     /// <summary>Shows the menu until the person goes back to the project list.</summary>
+    /// <param name="console">Where to draw.</param>
     /// <param name="directory">The clients.</param>
     /// <param name="project">The project everything below is scoped to.</param>
     /// <param name="cancellationToken">Stops the reads.</param>
     /// <returns>When the person has gone back.</returns>
     internal static async Task ShowAsync(
+        IAnsiConsole console,
         BrokerDirectory directory,
         ProjectSettings project,
         CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            AnsiConsole.WriteLine();
+            console.WriteLine();
 
-            var choice = AnsiConsole.Prompt(
+            var choice = console.Prompt(
                 new SelectionPrompt<string>()
                     .Title($"[bold]{ProjectList.Escape(project.Name.Value)}[/]")
                     .AddChoices(Agents, Conversations, Back));
@@ -37,12 +39,12 @@ internal static class ProjectMenu
             switch (choice)
             {
                 case Agents:
-                    await AgentsView.ShowAsync(directory, project, cancellationToken)
+                    await AgentsView.ShowAsync(console, directory, project, cancellationToken)
                         .ConfigureAwait(false);
                     break;
 
                 case Conversations:
-                    await ConversationList.ShowAsync(directory, project, cancellationToken)
+                    await ConversationList.ShowAsync(console, directory, project, cancellationToken)
                         .ConfigureAwait(false);
                     break;
 

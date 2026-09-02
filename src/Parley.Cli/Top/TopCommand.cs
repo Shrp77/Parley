@@ -43,7 +43,36 @@ public static class TopCommand
             manifestPath,
             string.IsNullOrWhiteSpace(fallbackEndpoint) ? null : new FallbackBroker(fallbackEndpoint));
 
-        AnsiConsole.Write(Banner());
+        return await DriveAsync(AnsiConsole.Console, directory, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>The navigation itself, over whatever console it is given.</summary>
+    /// <param name="console">Where to draw, and where the keys come from.</param>
+    /// <param name="directory">The projects, and the clients that reach them.</param>
+    /// <param name="cancellationToken">Stops the surface.</param>
+    /// <returns>The process exit code.</returns>
+    /// <remarks>
+    /// <para>
+    /// Split from <see cref="RunAsync"/> so the journey can be driven by a test, and the console
+    /// is <b>passed</b> rather than set on <see cref="AnsiConsole.Console"/>. That static is
+    /// process-global, xUnit runs test classes in parallel, and a test that redirected it would
+    /// be redirecting it for every other test running at that moment — which is the shape of the
+    /// bug <c>BannedApiAnalyzers</c> exists in this repository to prevent, arrived at from a
+    /// different direction.
+    /// </para>
+    /// <para>
+    /// The parameter is worth having on its own merits. Every view below now says where it draws
+    /// instead of reaching for an ambient one, which is the difference between a surface that can
+    /// be checked and a surface somebody has to look at.
+    /// </para>
+    /// </remarks>
+    internal static async Task<int> DriveAsync(
+        IAnsiConsole console,
+        BrokerDirectory directory,
+        CancellationToken cancellationToken = default)
+    {
+        console.Write(Banner());
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -52,7 +81,7 @@ public static class TopCommand
             // restarting -- and holding a snapshot in a field is exactly the defect the console
             // shipped, where a project renamed on one page went on showing its old name on
             // another until the process was restarted.
-            var chosen = await ProjectList.ChooseAsync(directory, cancellationToken)
+            var chosen = await ProjectList.ChooseAsync(console, directory, cancellationToken)
                 .ConfigureAwait(false);
 
             if (chosen is null)
@@ -60,7 +89,8 @@ public static class TopCommand
                 return 0;
             }
 
-            await ProjectMenu.ShowAsync(directory, chosen, cancellationToken).ConfigureAwait(false);
+            await ProjectMenu.ShowAsync(console, directory, chosen, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         return 0;

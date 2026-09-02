@@ -1,4 +1,4 @@
-﻿<Project>
+<Project>
 
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
@@ -130,6 +130,7 @@
   -->
   <ItemGroup Label="Testing">
     <PackageVersion Include="xunit.v3" Version="4.0.0" />
+    <PackageVersion Include="Spectre.Console.Testing" Version="0.57.2" />
     <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="4.14.0" />
   </ItemGroup>
 

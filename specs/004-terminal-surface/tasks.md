@@ -200,7 +200,7 @@ conversation.
 - [X] T026 [US1] Contain an unreachable project to itself (FR-017, SC-004) in
       `src/Parley.Cli/Top/ProjectList.cs`, using the moved `ProjectHealth` and reporting within
       five seconds.
-- [ ] T027 [P] [US1] `tests/Parley.Cli.Tests/Top/NavigationTests.cs` — every step reachable by
+- [X] T027 [P] [US1] `tests/Parley.Cli.Tests/Top/NavigationTests.cs` — every step reachable by
       selection, no identifier typed (SC-001).
 - [X] T028 [P] [US1] `tests/Parley.Cli.Tests/Top/ColourTests.cs` — **probe SC-007/FR-005**: strip
       all styling from rendered output and assert every fact still reads. Do not inspect the code
@@ -216,14 +216,23 @@ conversation.
 **Checkpoint — reached.** 1669 tests pass, 0 warnings. `parley top` lists the projects with each
 broker's health, shows a project's agents, lists its conversations and opens one as a transcript.
 
-**T027 is the one task not done, and it is not done rather than quietly dropped.** It asked for a
-test that every step is reachable by selection with no identifier typed. The navigation is built
-that way — `SelectionPrompt` throughout, and the only text a person enters is nothing at all —
-but asserting it needs a driver for Spectre's prompts, and the honest options were a test that
-drives the real terminal or a test that inspects the source for prompt types. The first is not
-available without more machinery than the claim is worth; the second checks that somebody wrote
-`SelectionPrompt`, not that a person can navigate. **Left open, and named here rather than
-marked done.**
+**T027 was left open and is now done, and the reason it was open turned out to be wrong.** It
+asked for a test that every step is reachable by selection with no identifier typed. That was
+deferred on the grounds that no driver existed for Spectre's prompts. There is one:
+`Spectre.Console.Testing` ships a `TestConsole` whose input takes pushed keys, it is a leaf
+package at the version already pinned, and a spike drove a `SelectionPrompt` first time.
+
+What was genuinely in the way was different, and worth having found: **the views drew to the
+static `AnsiConsole`.** Redirecting that for a test means mutating process-global state while
+xUnit runs classes in parallel — the exact shape of the bug `BannedApiAnalyzers` exists in this
+repository to prevent. So the console is now a parameter, `TopCommand.DriveAsync` takes it, and
+every view says where it draws instead of reaching for an ambient one.
+
+**The test proves SC-001 by construction rather than asserting it.** Nothing but arrow keys and
+Enter is ever pushed — no text at all — so if any step wanted an identifier typed, its prompt
+would find nothing to read and the journey would not finish. Reaching the transcript *is* the
+proof that nothing asked. Verified non-vacuous by removing one key: the journey then reaches
+Agents instead and the transcript assertion fails.
 
 **T017's flagged risk cleared.** Spectre.Console 0.57.2 has *no* transitive package dependencies
 on .NET 10 — checked with `dotnet nuget why`, not assumed — so nothing new is on the graph but the

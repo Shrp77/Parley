@@ -24,10 +24,12 @@ namespace Parley.Cli.Top;
 internal static class ProjectList
 {
     /// <summary>Draws the list and returns what the person chose.</summary>
+    /// <param name="console">Where to draw.</param>
     /// <param name="directory">The projects, and the clients that reach them.</param>
     /// <param name="cancellationToken">Stops the reads.</param>
     /// <returns>The chosen project, or <see langword="null"/> when the person left.</returns>
     internal static async Task<ProjectSettings?> ChooseAsync(
+        IAnsiConsole console,
         BrokerDirectory directory,
         CancellationToken cancellationToken)
     {
@@ -38,16 +40,16 @@ internal static class ProjectList
             // Said rather than swallowed, and the list is empty rather than stale. Somebody who
             // has just broken their manifest needs to be told; a surface that went on showing the
             // last good list would hide the edit that caused it.
-            AnsiConsole.MarkupLine($"[red]The manifest could not be read.[/] {Escape(broken)}");
+            console.MarkupLine($"[red]The manifest could not be read.[/] {Escape(broken)}");
 
             return null;
         }
 
         if (projects.Count == 0)
         {
-            AnsiConsole.MarkupLine(
+            console.MarkupLine(
                 "[yellow]This machine names no projects, and no broker was offered.[/]");
-            AnsiConsole.MarkupLine(
+            console.MarkupLine(
                 "Name one with [bold]parley project add <name> --db <path> --listen <url>[/].");
 
             return null;
@@ -55,9 +57,9 @@ internal static class ProjectList
 
         var health = await HealthAsync(directory, projects, cancellationToken).ConfigureAwait(false);
 
-        AnsiConsole.Write(Table(projects, health));
+        console.Write(Table(projects, health));
 
-        var choice = AnsiConsole.Prompt(
+        var choice = console.Prompt(
             new SelectionPrompt<string>()
                 .Title("Which project?")
                 .AddChoices([.. projects.Select(p => p.Name.Value), Leave]));

@@ -26,12 +26,14 @@ namespace Parley.Cli.Top;
 internal static class TranscriptView
 {
     /// <summary>Reads one conversation and draws it.</summary>
+    /// <param name="console">Where to draw.</param>
     /// <param name="directory">The clients.</param>
     /// <param name="project">The project it is in.</param>
     /// <param name="conversationId">Which conversation.</param>
     /// <param name="cancellationToken">Stops the read.</param>
     /// <returns>When the person has finished reading.</returns>
     internal static async Task ShowAsync(
+        IAnsiConsole console,
         BrokerDirectory directory,
         ProjectSettings project,
         string conversationId,
@@ -44,7 +46,7 @@ internal static class TranscriptView
 
         if (!read.Reachable)
         {
-            AnsiConsole.MarkupLine($"[red]{ProjectList.Escape(read.Problem!)}[/]");
+            console.MarkupLine($"[red]{ProjectList.Escape(read.Problem!)}[/]");
 
             return;
         }
@@ -53,20 +55,24 @@ internal static class TranscriptView
 
         if (export is null || export.Messages.Count == 0)
         {
-            AnsiConsole.MarkupLine("[yellow]That conversation has no messages.[/]");
+            console.MarkupLine("[yellow]That conversation has no messages.[/]");
 
             return;
         }
 
-        Draw(conversationId, project, export);
+        Draw(console, conversationId, project, export);
     }
 
     /// <summary>Writes the messages out, one panel each.</summary>
+    /// <param name="console">Where to draw.</param>
     /// <param name="conversationId">Which conversation.</param>
     /// <param name="project">The project it came from.</param>
     /// <param name="export">The messages and the state of their exchanges.</param>
     private static void Draw(
-        string conversationId, ProjectSettings project, ConversationExport export)
+        IAnsiConsole console,
+        string conversationId,
+        ProjectSettings project,
+        ConversationExport export)
     {
         var participants = Visibility.Participants(export.Messages);
 
@@ -81,21 +87,21 @@ internal static class TranscriptView
             states[exchange.ExchangeId] = exchange;
         }
 
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine(
+        console.WriteLine();
+        console.MarkupLine(
             $"[bold]{ProjectList.Escape(conversationId)}[/] "
             + $"[dim]in {ProjectList.Escape(project.Name.Value)} — "
             + $"{participants.Count} participants, {export.Messages.Count} messages[/]");
-        AnsiConsole.MarkupLine(
+        console.MarkupLine(
             "[dim]Pairwise throughout: a message was seen by its sender and its recipient, and by "
             + "nobody else. Where a participant was not party to one, it says so.[/]");
 
         foreach (var message in export.Messages)
         {
-            AnsiConsole.Write(Panel(message, participants, states));
+            console.Write(Panel(message, participants, states));
         }
 
-        AnsiConsole.WriteLine();
+        console.WriteLine();
     }
 
     /// <summary>One message, with its attribution and who missed it.</summary>

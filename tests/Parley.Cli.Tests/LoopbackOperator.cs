@@ -38,6 +38,14 @@ internal sealed class LoopbackOperator : IAsyncDisposable
         Agents = new Wire.Agents.AgentsClient(channel);
     }
 
+    /// <summary>Where this broker is listening.</summary>
+    /// <remarks>
+    /// Exposed for the tests that build their own client rather than borrowing the one above --
+    /// a surface under test opens its own channels, and handing it a ready-made one would test a
+    /// connection this class made instead of the connection the surface makes.
+    /// </remarks>
+    public string Address => _server.Addresses[0];
+
     /// <summary>The operator surface of SPEC.md §10.2, over the wire.</summary>
     public Wire.Operators.OperatorsClient Operators { get; }
 

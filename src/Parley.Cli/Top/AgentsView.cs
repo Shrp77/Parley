@@ -25,11 +25,13 @@ namespace Parley.Cli.Top;
 internal static class AgentsView
 {
     /// <summary>Reads the registry and draws it.</summary>
+    /// <param name="console">Where to draw.</param>
     /// <param name="directory">The clients.</param>
     /// <param name="project">The project to read.</param>
     /// <param name="cancellationToken">Stops the read.</param>
     /// <returns>When it has been drawn.</returns>
     internal static async Task ShowAsync(
+        IAnsiConsole console,
         BrokerDirectory directory,
         ProjectSettings project,
         CancellationToken cancellationToken)
@@ -41,7 +43,7 @@ internal static class AgentsView
 
         if (!read.Reachable)
         {
-            AnsiConsole.MarkupLine($"[red]{ProjectList.Escape(read.Problem!)}[/]");
+            console.MarkupLine($"[red]{ProjectList.Escape(read.Problem!)}[/]");
 
             return;
         }
@@ -50,14 +52,14 @@ internal static class AgentsView
 
         if (agents.Count == 0)
         {
-            AnsiConsole.MarkupLine(
+            console.MarkupLine(
                 "[yellow]No agent is registered in this project.[/] A repository registers "
                 + "itself the first time its adapter attaches.");
 
             return;
         }
 
-        AnsiConsole.Write(Table(agents));
+        console.Write(Table(agents));
     }
 
     /// <summary>The registry as a table.</summary>
