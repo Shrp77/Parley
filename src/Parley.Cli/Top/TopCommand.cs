@@ -1,4 +1,5 @@
 using Parley.Client;
+using Parley.Client.Seating;
 using Spectre.Console;
 
 namespace Parley.Cli.Top;
@@ -43,13 +44,49 @@ public static class TopCommand
             manifestPath,
             string.IsNullOrWhiteSpace(fallbackEndpoint) ? null : new FallbackBroker(fallbackEndpoint));
 
-        return await DriveAsync(AnsiConsole.Console, directory, cancellationToken)
-            .ConfigureAwait(false);
+        // The seats outlive every screen and are released when this is disposed, which is what
+        // makes FR-011 hold on the paths nobody plans for. Disposing a SeatBook ends the attach
+        // streams, and an attach stream ending is what tells the broker somebody left (§4.0).
+        using var seats = new SeatBook(directory.AgentsFor);
+
+        // Ctrl+C is the ordinary way out of a full-screen program, so it must be an ordinary way
+        // to leave a seat rather than the one path that strands one. A person who has gone home
+        // must stop being present, and a seat that outlived them is exactly the failure this
+        // repository already shipped once in the console.
+        using var interrupted = new CancellationTokenSource();
+        using var both = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, interrupted.Token);
+
+        ConsoleCancelEventHandler leave = (_, stopping) =>
+        {
+            // Handled rather than fatal, so the disposal below actually runs. A default Ctrl+C
+            // ends the process where it stands, and every seat with it -- as an abandoned
+            // connection the broker notices later rather than a departure it is told about.
+            stopping.Cancel = true;
+            interrupted.Cancel();
+        };
+
+        Console.CancelKeyPress += leave;
+
+        try
+        {
+            return await DriveAsync(AnsiConsole.Console, directory, seats, both.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return 0;
+        }
+        finally
+        {
+            Console.CancelKeyPress -= leave;
+        }
     }
 
     /// <summary>The navigation itself, over whatever console it is given.</summary>
     /// <param name="console">Where to draw, and where the keys come from.</param>
     /// <param name="directory">The projects, and the clients that reach them.</param>
+    /// <param name="seats">Where a person's seat is held, for as long as they hold one.</param>
     /// <param name="cancellationToken">Stops the surface.</param>
     /// <returns>The process exit code.</returns>
     /// <remarks>
@@ -70,6 +107,7 @@ public static class TopCommand
     internal static async Task<int> DriveAsync(
         IAnsiConsole console,
         BrokerDirectory directory,
+        SeatBook seats,
         CancellationToken cancellationToken = default)
     {
         console.Write(Banner());
@@ -89,7 +127,7 @@ public static class TopCommand
                 return 0;
             }
 
-            await ProjectMenu.ShowAsync(console, directory, chosen, cancellationToken)
+            await ProjectMenu.ShowAsync(console, directory, seats, chosen, cancellationToken)
                 .ConfigureAwait(false);
         }
 

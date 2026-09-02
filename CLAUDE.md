@@ -44,6 +44,31 @@ src/Parley.Configuration The project manifest of SPEC.md §4.1: where it lives, 
                     the broker and the store, Parley.Mcp deliberately pulls in neither,
                     and Parley.Core has no I/O. Read by both; written only by Parley.Cli.
                     Nothing here knows what a broker is.
+src/Parley.Client    What a client of a broker needs in order to show a deployment to a person
+                    and to seat one. References Transport and Configuration and nothing else.
+
+                    A project of its own for the reason Parley.Configuration is one, and in nearly
+                    the same words: two programs read it and cannot otherwise share one reader.
+                    The console reads it to render a page and `parley top` reads it to draw a
+                    terminal, and leaving it in an assembly called Web would mean a terminal
+                    depending on ASP.NET Core to find out who is in a conversation.
+
+                    The split was measured, not guessed. Of the fifteen types the console held
+                    outside its Razor pages, exactly one touches HTTP -- checked by type name
+                    rather than by `using` directive, because Microsoft.NET.Sdk.Web supplies
+                    implicit global usings and an absent using proves nothing. SeatCookie stayed;
+                    the other fourteen moved.
+
+                    **There is no SQLite here and there must never be.** GraphTests walks the
+                    project graph transitively from both this and Parley.Web, because the
+                    console's own one-hop check stopped being sufficient the moment it referenced
+                    this one.
+
+                    The drive belongs here too. SeatVoice.TakeDeliveryAsync drains and records in
+                    one act, and its AnswerAsync overload settles the seat when the broker says
+                    the exchange closed. Two surfaces each writing that themselves is how they
+                    come to disagree about what a person has seen.
+
 src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of the broker
                     rather than part of it. References Transport and Configuration and
                     nothing else: there is no SQLite on its graph and there must never be,
@@ -51,7 +76,13 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
                     the same reason.
 
                     `parley console` starts it, so Parley.Cli references this and the tool
-                    carries Kestrel. That was decided deliberately and against the argument
+                    carries Kestrel. `parley top` shows the same deployment in a terminal, built
+                    on Parley.Client and Spectre.Console, and needs no browser -- the machine
+                    running a broker is frequently not the one somebody has one open on. It binds
+                    no destructive operator operation, and SurfaceTests fails if one appears:
+                    a purge behind a keystroke is a different risk from one behind a page that
+                    describes it first.
+ That was decided deliberately and against the argument
                     recorded here before it: a second tool would have kept ASP.NET Core off
                     the machines that only run an agent, and one command is worth more than
                     that saving.
@@ -125,6 +156,11 @@ tests/Parley.Broker.Tests Lifecycle, the agent operations, and the surface bound
                           below.
 tests/Parley.Server.Tests Whole exchanges over a real loopback socket, and the adversarial
                           probes. Nothing in it touches a Broker or a SqliteConnection.
+tests/Parley.Client.Tests What both surfaces share: seating's guards, the transcript and
+                          visibility derivations, and a graph walk asserting no route to a store
+                          from either this or the console. Deliberately does NOT reference
+                          Microsoft.AspNetCore.Mvc.Testing — a web host reachable from here is how
+                          a test of client behaviour quietly becomes a test of the console again.
 tests/Parley.Web.Tests    The console: the visibility derivation, what it refuses to render
                           raw, and that its project file references nothing that could open
                           a store.
@@ -427,14 +463,14 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   takes part from, because SPEC.md §17 question 15's editor-window agent is the one thing
   nothing can hand a turn to. `plan.md` settles the question the spec raised and did not
   assume: **the transport-facing half of `Parley.Web` moves to a new `src/Parley.Client`, and
-  both surfaces read it.** That is a move rather than a rewrite — of the twelve types outside
+  both surfaces read it.** That is a move rather than a rewrite — of the fifteen types outside
   the Razor pages, exactly one (`SeatCookie`) touches HTTP — and it costs no graph, because
   `Parley.Client` takes the same two references `Parley.Web` has today. Two surfaces that
   implemented seating and transcripts separately would disagree about who was in a conversation,
   which SC-003 forbids and which this repository shipped twice in one week. `research.md` R2
   records why both surfaces keep one `Seat.Adapter`, and what that makes ordinary: a person
   seated in a browser and a terminal at once is two attachments for one name, which is the case
-  `connected = 1` got wrong until #72.
+  `connected = 1` got wrong until #77.
 - Previous: `specs/003-parley-web-console/` — a read-only operator web console, merged. Its
   gate was discharged: `ListConversations` and `Export` were specified before being built, and
   004 is their second reader rather than a reason to add a third.

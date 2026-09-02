@@ -136,13 +136,23 @@ public sealed class SeatHold : IDisposable
     /// <summary>Drops what has been read and owes nothing back.</summary>
     /// <returns>How many were dropped.</returns>
     /// <remarks>
+    /// <para>
     /// A debt cannot be dismissed, which is the whole of the rule. An answer or a notice is
     /// finished the moment it has been read, and leaving it there buries the one thing on the
     /// page that still needs doing; a question is settled by answering it, and a button that
     /// made it disappear instead would let somebody clear a list while the exchange behind it
     /// ran on to be ghosted by §14.
+    /// </para>
+    /// <para>
+    /// Public, unlike the two members either side of it, and the difference is the rule above.
+    /// <see cref="Record"/> and <see cref="Settled"/> must follow a call to the broker or the
+    /// seat's idea of what a person holds parts company with the broker's, so they are internal
+    /// and reached only through the drive in <c>SeatVoice</c>. This one goes near no broker and
+    /// can drop nothing that is owed, so the worst a caller can do with it is tidy their own
+    /// list — which is what a surface offering it is for.
+    /// </para>
     /// </remarks>
-    internal int DismissRead()
+    public int DismissRead()
     {
         lock (_delivered)
         {

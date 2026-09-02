@@ -94,6 +94,16 @@ public sealed class BrokerDirectory : IDisposable
         _snapshot = ReadManifest(manifestPath, fallback, StampOf(manifestPath));
     }
 
+    /// <summary>The manifest this directory follows, when it follows one.</summary>
+    /// <remarks>
+    /// Null for a directory built from an explicit list, which is the shape tests use and the
+    /// shape a caller who owns the projects gets. Exposed because a surface that offers to name a
+    /// new project has to write into the same file this one is reading, and deriving the path a
+    /// second time is how two readers come to disagree about which file they mean -- the defect
+    /// the manifest itself exists to prevent.
+    /// </remarks>
+    public string? ManifestPath => _manifestPath;
+
     /// <summary>The projects named in this machine's manifest, as it stands now.</summary>
     public IReadOnlyList<ProjectSettings> Projects => Current.Projects;
 

@@ -107,9 +107,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
         }
 
         var (messages, polls) = await voice
-            .DrainAsync(HttpContext.RequestAborted).ConfigureAwait(false);
-
-        hold.Record(messages);
+            .TakeDeliveryAsync(hold, HttpContext.RequestAborted).ConfigureAwait(false);
 
         Outcome = messages.Count == 0 && polls == 0
             ? "Nothing was waiting."
@@ -169,15 +167,10 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
             .ToList();
 
         var answered = await voice
-            .AnswerAsync(Exchange, resolutions, HttpContext.RequestAborted)
+            .AnswerAsync(hold, Exchange, resolutions, HttpContext.RequestAborted)
             .ConfigureAwait(false);
 
         Outcome = answered.Says;
-
-        if (answered.Closed)
-        {
-            hold.Settled(Exchange);
-        }
 
         Me = seat;
 

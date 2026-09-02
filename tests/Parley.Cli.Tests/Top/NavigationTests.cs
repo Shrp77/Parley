@@ -2,6 +2,7 @@ using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Top;
 using Parley.Client;
+using Parley.Client.Seating;
 using Parley.Core;
 using Parley.Store;
 using Spectre.Console.Testing;
@@ -71,27 +72,19 @@ public sealed class NavigationTests : IAsyncDisposable
 
         using var console = Interactive();
 
-        // Project list: Enter takes the first project.
-        Enter(console);
+        // Every step chosen by name rather than by a counted number of keys, so a menu gaining
+        // an entry moves the highlight rather than silently sending this somewhere else.
+        Pick(console, Projects(), "alpha");
+        Pick(console, Menu(), ProjectMenu.Conversations);
+        Enter(console);                                   // the first conversation
+        Pick(console, Menu(), ProjectMenu.Back);
+        Pick(console, Projects(), ProjectList.Leave);
 
-        // Project menu: down to Conversations, then Enter.
-        Down(console);
-        Enter(console);
-
-        // Conversation list: Enter takes the first conversation, which opens the transcript.
-        Enter(console);
-
-        // Project menu again: down twice to Back, then Enter.
-        Down(console);
-        Down(console);
-        Enter(console);
-
-        // Project list again: down to Leave, then Enter, which ends the surface.
-        Down(console);
-        Enter(console);
+        using var directory = Directory();
+        using var seats = new SeatBook(directory.AgentsFor);
 
         var exit = await TopCommand.DriveAsync(
-            console, Directory(), TestContext.Current.CancellationToken);
+            console, directory, seats, TestContext.Current.CancellationToken);
 
         Assert.Equal(0, exit);
 
@@ -111,18 +104,16 @@ public sealed class NavigationTests : IAsyncDisposable
 
         using var console = Interactive();
 
-        Enter(console);   // first project
-        Enter(console);   // Agents, the first entry on the menu
+        Pick(console, Projects(), "alpha");
+        Pick(console, Menu(), ProjectMenu.Agents);
+        Pick(console, Menu(), ProjectMenu.Back);
+        Pick(console, Projects(), ProjectList.Leave);
 
-        Down(console);    // back to the menu: down twice to Back
-        Down(console);
-        Enter(console);
-
-        Down(console);    // project list: Leave
-        Enter(console);
+        using var directory = Directory();
+        using var seats = new SeatBook(directory.AgentsFor);
 
         var exit = await TopCommand.DriveAsync(
-            console, Directory(), TestContext.Current.CancellationToken);
+            console, directory, seats, TestContext.Current.CancellationToken);
 
         Assert.Equal(0, exit);
 
@@ -139,11 +130,13 @@ public sealed class NavigationTests : IAsyncDisposable
         // broker is exactly what they came to find out about.
         using var console = Interactive();
 
-        Down(console);
-        Enter(console);
+        Pick(console, Projects(), ProjectList.Leave);
+
+        using var directory = Directory();
+        using var seats = new SeatBook(directory.AgentsFor);
 
         var exit = await TopCommand.DriveAsync(
-            console, Directory(), TestContext.Current.CancellationToken);
+            console, directory, seats, TestContext.Current.CancellationToken);
 
         Assert.Equal(0, exit);
     }
@@ -190,10 +183,40 @@ public sealed class NavigationTests : IAsyncDisposable
         return console;
     }
 
-    /// <summary>Moves the highlight down one entry.</summary>
-    /// <param name="console">The console to push the key onto.</param>
-    private static void Down(TestConsole console) =>
-        console.Input.PushKey(ConsoleKey.DownArrow);
+    /// <summary>Chooses one entry by name, whatever position it is in.</summary>
+    /// <param name="console">The console to push the keys onto.</param>
+    /// <param name="choices">The entries the screen is about to offer.</param>
+    /// <param name="wanted">The one to take.</param>
+    /// <remarks>
+    /// The lists come from the screens themselves, so this cannot drift from what is drawn. A
+    /// test that hard-coded the number of arrow presses would still pass after a menu grew — it
+    /// would simply be selecting a different entry, and the assertion it then failed would point
+    /// anywhere but here.
+    /// </remarks>
+    private static void Pick(
+        TestConsole console, IReadOnlyList<string> choices, string wanted)
+    {
+        var at = choices.ToList().IndexOf(wanted);
+
+        Assert.True(at >= 0, $"'{wanted}' is not on the screen it was expected on");
+
+        for (var step = 0; step < at; step++)
+        {
+            console.Input.PushKey(ConsoleKey.DownArrow);
+        }
+
+        Enter(console);
+    }
+
+    /// <summary>What the first screen offers for this test's one project.</summary>
+    /// <returns>The entries.</returns>
+    private IReadOnlyList<string> Projects() =>
+        ProjectList.Choices(
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, Address, null, null)]);
+
+    /// <summary>What the project menu offers while nobody is seated.</summary>
+    /// <returns>The entries.</returns>
+    private static IReadOnlyList<string> Menu() => ProjectMenu.Choices(seated: false);
 
     /// <summary>Takes whatever is highlighted.</summary>
     /// <param name="console">The console to push the key onto.</param>

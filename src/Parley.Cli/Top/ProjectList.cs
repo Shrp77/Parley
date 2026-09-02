@@ -62,7 +62,33 @@ internal static class ProjectList
         var choice = console.Prompt(
             new SelectionPrompt<string>()
                 .Title("Which project?")
-                .AddChoices([.. projects.Select(p => p.Name.Value), Leave]));
+                .AddChoices(Choices(projects)));
+
+        if (choice == Name)
+        {
+            if (directory.ManifestPath is not { } manifest)
+            {
+                // Nothing to write into. A directory built from an explicit list is somebody
+                // else's list, and inventing a path to add to would put a project somewhere they
+                // were not looking.
+                console.MarkupLine("[yellow]This surface was given its projects, so there is no "
+                    + "manifest here to add one to.[/]");
+
+                return await ChooseAsync(console, directory, cancellationToken).ConfigureAwait(false);
+            }
+
+            await Naming.AddAsync(console, manifest, cancellationToken)
+                .ConfigureAwait(false);
+
+            return await ChooseAsync(console, directory, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (choice == Onboard)
+        {
+            await Onboarding.RunAsync(console, cancellationToken).ConfigureAwait(false);
+
+            return await ChooseAsync(console, directory, cancellationToken).ConfigureAwait(false);
+        }
 
         return choice == Leave ? null : directory.Find(choice);
     }
@@ -167,6 +193,23 @@ internal static class ProjectList
     /// </remarks>
     internal static string Escape(string text) => Markup.Escape(text ?? string.Empty);
 
+    /// <summary>What the first screen offers, in the order it offers it.</summary>
+    /// <param name="projects">The projects this machine names.</param>
+    /// <returns>The entries.</returns>
+    /// <remarks>
+    /// Built here and used both to draw the list and to drive it from a test, for the reason
+    /// <c>ProjectMenu.Choices</c> gives: a test counting keystrokes against a list it cannot see
+    /// is a test that quietly navigates somewhere else the next time an entry is added.
+    /// </remarks>
+    internal static IReadOnlyList<string> Choices(IReadOnlyList<ProjectSettings> projects) =>
+        [.. projects.Select(p => p.Name.Value), Name, Onboard, Leave];
+
+    /// <summary>Naming a new project, which is FR-015 and not a navigation.</summary>
+    private const string Name = "Name a new project";
+
+    /// <summary>Enrolling repositories as agents.</summary>
+    private const string Onboard = "Onboard repositories as agents";
+
     /// <summary>The choice that ends the surface.</summary>
-    private const string Leave = "Leave";
+    internal const string Leave = "Leave";
 }

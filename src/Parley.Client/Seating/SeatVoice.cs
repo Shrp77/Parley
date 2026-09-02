@@ -255,6 +255,71 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         return (taken, reply.ClosurePolls.Count);
     }
 
+    /// <summary>Drains the inbox and records what came back against the seat, as one act.</summary>
+    /// <param name="hold">The seat to record against.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>What was taken, and how many closure polls came with it.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="hold"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>Here rather than in each surface, and that is the whole point of it existing.</b> The
+    /// console drained and then recorded in two statements of its own, which worked while there
+    /// was one surface. A second surface doing the same would be a second copy of the rule that
+    /// a drain is followed by a record — and the day one of them grew a step the other did not,
+    /// the two would disagree about what a person had taken delivery of, which is the class of
+    /// failure SC-003 names and which this repository has shipped twice.
+    /// </para>
+    /// <para>
+    /// It also closes something the extraction opened. <see cref="SeatHold.Record"/> is internal
+    /// because only the code driving a seat should call it; when the seat moved to this assembly
+    /// the console kept reaching it through a grant, and a second surface would have needed the
+    /// same grant. With the drive beside the state it changes, neither does.
+    /// </para>
+    /// </remarks>
+    public async Task<(IReadOnlyList<Delivered> Messages, int ClosurePolls)> TakeDeliveryAsync(
+        SeatHold hold, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(hold);
+
+        var (messages, polls) = await DrainAsync(cancellationToken).ConfigureAwait(false);
+
+        hold.Record(messages);
+
+        return (messages, polls);
+    }
+
+    /// <summary>Answers an exchange and settles it against the seat when it closed.</summary>
+    /// <param name="hold">The seat holding the delivered question.</param>
+    /// <param name="exchangeId">The exchange being answered.</param>
+    /// <param name="resolutions">What is said about each sub-question.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>What happened, and whether the exchange closed.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="hold"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Settled only when the broker says the exchange closed. A surface that struck the question
+    /// off its own list on sending would show a person nothing owed while the broker still
+    /// believed otherwise — and the broker is the one whose opinion the working window of §6 is
+    /// measured against.
+    /// </remarks>
+    public async Task<Answered> AnswerAsync(
+        SeatHold hold,
+        long exchangeId,
+        IReadOnlyList<(string Id, string Text, string Outcome)> resolutions,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(hold);
+
+        var answered = await AnswerAsync(exchangeId, resolutions, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (answered.Closed)
+        {
+            hold.Settled(exchangeId);
+        }
+
+        return answered;
+    }
+
     /// <summary>The sub-questions an exchange asked, which an answer must resolve one for one.</summary>
     /// <param name="exchangeId">The exchange.</param>
     /// <param name="cancellationToken">Cancels the call.</param>

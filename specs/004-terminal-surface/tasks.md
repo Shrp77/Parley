@@ -258,46 +258,46 @@ confirm it arrives, that answering closes the exchange, and that the peer receiv
 
 **Depends on**: US1 for navigation.
 
-- [ ] T032 [US2] `src/Parley.Cli/Top/Seating.cs` — hold a seat through the moved `SeatBook`,
+- [X] T032 [US2] `src/Parley.Cli/Top/Seating.cs` — hold a seat through the moved `SeatBook`,
       reached via `AgentsFor` (FR-006). Present `Seat.Adapter` = `parley-console`, unchanged:
       research R2 settles that a second marker would invent a restriction SPEC.md §14 does not
       have. **Never reach `ClientFor` from here** — contracts/operations.md makes the separation
       the guarantee and the naming explicitly not.
-- [ ] T033 [US2] Release the seat on exit **including on interrupt** (FR-011, SC-006) in
+- [X] T033 [US2] Release the seat on exit **including on interrupt** (FR-011, SC-006) in
       `src/Parley.Cli/Top/Seating.cs` — a `PosixSignalRegistration`/`CancelKeyPress` path that
       ends the `Attach` stream. A seat outliving the person is the failure #75 already shipped
       once.
-- [ ] T034 [US2] Show seated-ness in `src/Parley.Cli/Top/Seating.cs` from the held stream only,
+- [X] T034 [US2] Show seated-ness in `src/Parley.Cli/Top/Seating.cs` from the held stream only,
       never from a remembered flag (FR-012). The console's bug was a cookie outliving its seat; a
       bool would be the same bug in a new colour.
-- [ ] T035 [P] [US2] `src/Parley.Cli/Top/Waiting.cs` — `Waiting`, `DrainInbox`,
+- [X] T035 [P] [US2] `src/Parley.Cli/Top/Waiting.cs` — `Waiting`, `DrainInbox`,
       `GetSubQuestionIds`, `ResumeOwedBy` (FR-008), debts first per §7.3. **Say that draining is
       a state change** before doing it: quickstart.md §5 requires the person be told rather than
       discover it.
-- [ ] T036 [US2] `src/Parley.Cli/Top/Answering.cs` — `Answer`, one resolution per sub-question
+- [X] T036 [US2] `src/Parley.Cli/Top/Answering.cs` — `Answer`, one resolution per sub-question
       (§5.3), answerable without leaving the transcript.
-- [ ] T037 [US2] `src/Parley.Cli/Top/Composer.cs` — `Ask`/`AskRole` with intent, sub-questions and
+- [X] T037 [US2] `src/Parley.Cli/Top/Composer.cs` — `Ask`/`AskRole` with intent, sub-questions and
       consequences collected before anything is sent (FR-009), and `Clarify`/`Notify` into an
       open conversation (FR-008).
-- [ ] T038 [US2] Refuse before the wire in `src/Parley.Cli/Top/Composer.cs` (FR-010): rule 8.5's
+- [X] T038 [US2] Refuse before the wire in `src/Parley.Cli/Top/Composer.cs` (FR-010): rule 8.5's
       cap **stated as a limit**, rule 8.1's consequences minimum, and an empty sub-question set. When the broker refuses anyway,
       show its own words including the remedy — the shape #71 settled, where a refusal stripped of
       its detail told an agent not to do the very thing the broker had asked for.
-- [ ] T039 [P] [US2] `tests/Parley.Cli.Tests/Top/SeatGuardTests.cs` — **probe FR-006/FR-007**:
+- [X] T039 [P] [US2] `tests/Parley.Cli.Tests/Top/SeatGuardTests.cs` — **probe FR-006/FR-007**:
       try to seat under a name the registry holds for a real agent (must refuse), and seat while
       the registry is unreadable (must refuse **outright**). A guard that passes hardest when the
       deployment is least known is worth nothing.
-- [ ] T040 [P] [US2] `tests/Parley.Cli.Tests/Top/ReleaseTests.cs` — quitting and interrupting both
+- [X] T040 [P] [US2] `tests/Parley.Cli.Tests/Top/ReleaseTests.cs` — quitting and interrupting both
       release the seat within a minute (SC-006, FR-011).
-- [ ] T041 [P] [US2] `tests/Parley.Cli.Tests/Top/RestartTests.cs` — the broker restarts underneath
+- [X] T041 [P] [US2] `tests/Parley.Cli.Tests/Top/RestartTests.cs` — the broker restarts underneath
       a running session; the surface must report the person as **no longer seated** rather than
       keep showing them present.
-- [ ] T042 [P] [US2] `tests/Parley.Cli.Tests/Top/RefusalTests.cs` — an oversize message is refused
+- [X] T042 [P] [US2] `tests/Parley.Cli.Tests/Top/RefusalTests.cs` — an oversize message is refused
       here with the limit stated and never reaches the store; a broker refusal reaches the person
       with its remedy intact.
-- [ ] T043 [P] [US2] `tests/Parley.Cli.Tests/Top/ConcludedTests.cs` — sending into a conversation
+- [X] T043 [P] [US2] `tests/Parley.Cli.Tests/Top/ConcludedTests.cs` — sending into a conversation
       concluded while it was open on screen is refused **with the reason**, not generically.
-- [ ] T044 [US2] `tests/Parley.Cli.Tests/Top/RoundTripTests.cs` — the story's own test: a peer
+- [X] T044 [US2] `tests/Parley.Cli.Tests/Top/RoundTripTests.cs` — the story's own test: a peer
       asks, the person answers from the terminal, the peer receives it (SC-002).
 
 **Checkpoint**: the feature's stated purpose is met — a person takes part without an editor.
@@ -311,21 +311,21 @@ confirm it arrives, that answering closes the exchange, and that the peer receiv
 **Independent test**: with a broker writing its log, new lines appear without restarting the view,
 and the launch action opens the console's address.
 
-- [ ] T045 [US3] `src/Parley.Cli/Top/LogTail.cs` — open the log with
+- [X] T045 [US3] `src/Parley.Cli/Top/LogTail.cs` — open the log with
       `FileShare.ReadWrite | FileShare.Delete` and **never the default** (FR-013). Research R4
       measured this in this repository: a reader holding a file the default way does not risk a
       stale read, it **stops the writer** — 287 of 300 renames denied. A continuously-open tail is
       the worst case of that.
-- [ ] T046 [US3] A visible filter over the tail in `src/Parley.Cli/Top/LogTail.cs` (FR-013) — the
+- [X] T046 [US3] A visible filter over the tail in `src/Parley.Cli/Top/LogTail.cs` (FR-013) — the
       log carries framework noise beside Parley's own lines, and the filter must be on screen, not
       remembered.
-- [ ] T047 [US3] `src/Parley.Cli/Top/Launch.cs` — open the console address in the default browser
+- [X] T047 [US3] `src/Parley.Cli/Top/Launch.cs` — open the console address in the default browser
       and keep running (FR-014). Cross-platform: `explorer`/`open`/`xdg-open`, on the three
       platforms CI runs.
-- [ ] T048 [P] [US3] `tests/Parley.Cli.Tests/Top/LogTailTests.cs` — **probe R4's finding
+- [X] T048 [P] [US3] `tests/Parley.Cli.Tests/Top/LogTailTests.cs` — **probe R4's finding
       directly**: hold the tail open and rename the log underneath it. The rename must succeed.
       Then assert appended lines appear without reopening the view.
-- [ ] T049 [P] [US3] `tests/Parley.Cli.Tests/Top/LaunchTests.cs` — the launch action resolves the
+- [X] T049 [P] [US3] `tests/Parley.Cli.Tests/Top/LaunchTests.cs` — the launch action resolves the
       console address and does not terminate the application.
 
 ---
@@ -337,15 +337,15 @@ and the launch action opens the console's address.
 **Independent test**: name a project here, and confirm `parley project list` reports it
 identically to one added from the command line.
 
-- [ ] T050 [US4] `src/Parley.Cli/Top/Naming.cs` — call `ProjectManifest.TryUpdate` (the
+- [X] T050 [US4] `src/Parley.Cli/Top/Naming.cs` — call `ProjectManifest.TryUpdate` (the
       lock-holding path #78 added), **not** a re-implementation. The manifest has one writer and
       this is that same program; a second code path writing it would reintroduce exactly the lost
       update that was just fixed.
-- [ ] T051 [US4] `src/Parley.Cli/Top/Onboarding.cs` — run the enrolment code in-process, and tell
+- [X] T051 [US4] `src/Parley.Cli/Top/Onboarding.cs` — run the enrolment code in-process, and tell
       the person what remains to be done outside the application.
-- [ ] T052 [P] [US4] `tests/Parley.Cli.Tests/Top/NamingTests.cs` — a project named here and one
+- [X] T052 [P] [US4] `tests/Parley.Cli.Tests/Top/NamingTests.cs` — a project named here and one
       named by the command are indistinguishable in the manifest; a refusal names the rule broken.
-- [ ] T053 [P] [US4] `tests/Parley.Cli.Tests/Top/ConcurrentNamingTests.cs` — naming from the
+- [X] T053 [P] [US4] `tests/Parley.Cli.Tests/Top/ConcurrentNamingTests.cs` — naming from the
       surface while a `parley project add` runs must lose nothing. The lock is the mechanism;
       this proves the surface actually took it.
 
@@ -353,23 +353,23 @@ identically to one added from the command line.
 
 ## Phase 7: Polish
 
-- [ ] T054 [P] Reflow on resize in `src/Parley.Cli/Top/TranscriptView.cs`, never truncating
+- [X] T054 [P] Reflow on resize in `src/Parley.Cli/Top/TranscriptView.cs`, never truncating
       anything that carries meaning (Edge Cases), with a check in
       `tests/Parley.Cli.Tests/Top/ReflowTests.cs`.
-- [ ] T055 [P] Empty states across `src/Parley.Cli/Top/ProjectList.cs`,
+- [X] T055 [P] Empty states across `src/Parley.Cli/Top/ProjectList.cs`,
       `src/Parley.Cli/Top/AgentsView.cs` and `src/Parley.Cli/Top/ConversationList.cs` — no
       projects, no agents, no conversations, each saying what to do next.
-- [ ] T056 Confirm the terminal binds **no** destructive operator operation. `Retire`,
+- [X] T056 Confirm the terminal binds **no** destructive operator operation. `Retire`,
       `Reinstate`, `Purge`, `ForceConclude`, `Instruct` and `Prune` are excluded by
       contracts/operations.md on the argument that a destructive action behind a keystroke is a
       different risk from one behind a page that describes it first. Add a surface test that
       fails if one appears, so the exclusion is enforced rather than remembered.
-- [ ] T057 Update `CLAUDE.md`: a `src/Parley.Client` entry in Layout saying why it exists, an
+- [X] T057 Update `CLAUDE.md`: a `src/Parley.Client` entry in Layout saying why it exists, an
       amendment to the `Parley.Web` entry (it no longer holds the client half), and `parley top`
       in the surface list.
-- [ ] T058 Update `SPEC.md` §17 question 15 with what this closes — the question records the gap,
+- [X] T058 Update `SPEC.md` §17 question 15 with what this closes — the question records the gap,
       so it is where the answer belongs.
-- [ ] T059 Run the hygiene grep for the originating project's names across **tracked and
+- [X] T059 Run the hygiene grep for the originating project's names across **tracked and
       untracked** files. `git grep` sees tracked files only, and a brand-new file leaks the name
       while the check still reports clean — that has happened here.
 - [ ] T060 Run the three review lenses **to convergence**, not to a fixed count: correctness and
