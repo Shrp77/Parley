@@ -67,7 +67,7 @@ internal static class LogTail
         {
             console.MarkupLine(
                 $"[yellow]No log where this project's broker usually writes one[/] "
-                + $"[dim]({ProjectList.Escape(path ?? "nowhere derivable")}).[/] A broker started "
+                + $"[dim]({Safe.Text(path ?? "nowhere derivable")}).[/] A broker started "
                 + "with --log elsewhere writes elsewhere, and the manifest does not record where.");
 
             return;
@@ -78,21 +78,33 @@ internal static class LogTail
                 .AllowEmpty());
 
         console.MarkupLine(
-            $"[dim]Following {ProjectList.Escape(path)}"
-            + (filter.Length > 0 ? $", showing lines containing '{ProjectList.Escape(filter)}'" : string.Empty)
+            $"[dim]Following {Safe.Text(path)}"
+            + (filter.Length > 0 ? $", showing lines containing '{Safe.Text(filter)}'" : string.Empty)
             + ". Press Enter to stop.[/]");
 
         using var stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         var watching = FollowAsync(console, path, filter, stopping.Token);
 
-        // Read a key on a worker so the follow loop keeps drawing. Console.ReadLine blocks, and
-        // blocking the loop is what turns "press Enter to stop" into "the log stopped updating".
-        await Task.Run(Console.ReadLine, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Read a key on a worker so the follow loop keeps drawing. Console.ReadLine blocks,
+            // and blocking the loop is what turns "press Enter to stop" into "the log stopped
+            // updating".
+            await Task.Run(Console.ReadLine, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            // In a finally, and that is not defensive habit. The await above throws when the
+            // surface is cancelled out from under it -- Ctrl+C, which is the ordinary way to
+            // leave. Without this, the follow task is abandoned still holding the log open while
+            // `stopping` is disposed underneath its token, so the loop then faults on a disposed
+            // source with nobody observing it. An unobserved exception on a background task is
+            // how two probes in this repository hung for ten minutes instead of failing.
+            await stopping.CancelAsync().ConfigureAwait(false);
 
-        await stopping.CancelAsync().ConfigureAwait(false);
-
-        await watching.ConfigureAwait(false);
+            await watching.ConfigureAwait(false);
+        }
     }
 
     /// <summary>Prints new lines as they are written.</summary>
@@ -147,7 +159,7 @@ internal static class LogTail
                 // Escaped, because a log line is not this program's text. It carries whatever an
                 // agent's payload put in it, and a bracket read as markup would let a message
                 // choose how the operator's own log is drawn.
-                console.MarkupLine($"[dim]{ProjectList.Escape(line)}[/]");
+                console.MarkupLine($"[dim]{Safe.Text(line)}[/]");
             }
         }
         catch (OperationCanceledException)
@@ -156,7 +168,7 @@ internal static class LogTail
         }
         catch (IOException failure)
         {
-            console.MarkupLine($"[red]The log could not be followed: {ProjectList.Escape(failure.Message)}[/]");
+            console.MarkupLine($"[red]The log could not be followed: {Safe.Text(failure.Message)}[/]");
         }
     }
 }

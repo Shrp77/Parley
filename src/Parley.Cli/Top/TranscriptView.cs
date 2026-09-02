@@ -46,7 +46,7 @@ internal static class TranscriptView
 
         if (!read.Reachable)
         {
-            console.MarkupLine($"[red]{ProjectList.Escape(read.Problem!)}[/]");
+            console.MarkupLine($"[red]{Safe.Text(read.Problem!)}[/]");
 
             return;
         }
@@ -89,8 +89,8 @@ internal static class TranscriptView
 
         console.WriteLine();
         console.MarkupLine(
-            $"[bold]{ProjectList.Escape(conversationId)}[/] "
-            + $"[dim]in {ProjectList.Escape(project.Name.Value)} — "
+            $"[bold]{Safe.Text(conversationId)}[/] "
+            + $"[dim]in {Safe.Text(project.Name.Value)} — "
             + $"{participants.Count} participants, {export.Messages.Count} messages[/]");
         console.MarkupLine(
             "[dim]Pairwise throughout: a message was seen by its sender and its recipient, and by "
@@ -126,26 +126,26 @@ internal static class TranscriptView
         // Whole and as stored when it is not a shape the reader knows. Guessing at a structure the
         // document does not have would be the one way to make a transcript say something the agent
         // did not -- which is the whole thing a transcript is for.
-        body.Append(ProjectList.Escape(
+        body.Append(Safe.Text(
             payload.Raw is { Length: > 0 } raw ? raw : payload.Said));
 
         foreach (var point in payload.Points)
         {
             body.Append("\n  [dim]·[/] ")
-                .Append(ProjectList.Escape(point.Id))
+                .Append(Safe.Text(point.Id))
                 .Append(": ")
-                .Append(ProjectList.Escape(point.Text));
+                .Append(Safe.Text(point.Text));
 
             if (point.Resolution is { Length: > 0 } resolution)
             {
-                body.Append(" [dim](").Append(ProjectList.Escape(resolution)).Append(")[/]");
+                body.Append(" [dim](").Append(Safe.Text(resolution)).Append(")[/]");
             }
         }
 
         if (payload.Consequences is { Length: > 0 } consequences)
         {
             body.Append("\n\n[dim]Consequences: ")
-                .Append(ProjectList.Escape(consequences))
+                .Append(Safe.Text(consequences))
                 .Append("[/]");
         }
 
@@ -156,19 +156,19 @@ internal static class TranscriptView
 
         if (unseen.Length > 0)
         {
-            body.Append("\n\n[yellow]").Append(ProjectList.Escape(unseen)).Append("[/]");
+            body.Append("\n\n[yellow]").Append(Safe.Text(unseen)).Append("[/]");
         }
 
         var exchange = message.ExchangeId is { } id && states.TryGetValue(id, out var snapshot)
-            ? $"[dim] · exchange {id} {ProjectList.Escape(snapshot.State.ToString().ToLowerInvariant())}[/]"
+            ? $"[dim] · exchange {id} {Safe.Text(snapshot.State.ToString().ToLowerInvariant())}[/]"
             : string.Empty;
 
         return new Panel(body.ToString())
         {
             Header = new PanelHeader(
-                $" {ProjectList.Escape(message.From.Value)} "
-                + $"[dim]to[/] {ProjectList.Escape(message.To.Value)} "
-                + $"[dim]· {ProjectList.Escape(message.Type.ToString().ToLowerInvariant())}[/]"
+                $" {Safe.Text(message.From.Value)} "
+                + $"[dim]to[/] {Safe.Text(message.To.Value)} "
+                + $"[dim]· {Safe.Text(message.Type.ToString().ToLowerInvariant())}[/]"
                 + exchange + " "),
             Border = BoxBorder.Rounded,
             Expand = true,

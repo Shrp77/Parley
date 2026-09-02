@@ -34,9 +34,18 @@ internal static class Launch
     /// </remarks>
     internal static bool Open(IAnsiConsole console, string address)
     {
-        if (!Uri.TryCreate(address, UriKind.Absolute, out _))
+        // Web schemes only, and that is narrower than "is it a URI" on purpose. On Windows this
+        // hands the string to the shell, which launches whatever handler the scheme is registered
+        // to -- so `file:` would open a file and a custom scheme would run whatever claimed it.
+        // The only caller today passes a constant, which makes this a guard against the second
+        // caller rather than the first: the moment somebody opens an address that came from a
+        // manifest or a broker, the difference between "is a URI" and "is a web page" is the
+        // whole of the protection.
+        if (!Uri.TryCreate(address, UriKind.Absolute, out var parsed)
+            || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
         {
-            console.MarkupLine($"[red]'{ProjectList.Escape(address)}' is not an address.[/]");
+            console.MarkupLine(
+                $"[red]'{Safe.Text(address)}' is not an http or https address.[/]");
 
             return false;
         }
@@ -51,7 +60,7 @@ internal static class Launch
 
             using var process = Process.Start(started);
 
-            console.MarkupLine($"[green]Opened[/] [dim]{ProjectList.Escape(address)}[/]");
+            console.MarkupLine($"[green]Opened[/] [dim]{Safe.Text(address)}[/]");
 
             return true;
         }
@@ -63,8 +72,8 @@ internal static class Launch
             // machine can copy it to a browser that is not on this one.
             console.MarkupLine(
                 $"[yellow]No browser could be started here.[/] Open "
-                + $"[bold]{ProjectList.Escape(address)}[/] yourself. "
-                + $"[dim]({ProjectList.Escape(failure.Message)})[/]");
+                + $"[bold]{Safe.Text(address)}[/] yourself. "
+                + $"[dim]({Safe.Text(failure.Message)})[/]");
 
             return false;
         }

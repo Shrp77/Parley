@@ -1,6 +1,7 @@
 using Parley.Cli.Top;
 using Parley.Core;
 using Spectre.Console;
+using Spectre.Console.Testing;
 using Spectre.Console.Rendering;
 using Xunit;
 
@@ -115,6 +116,48 @@ public sealed class ColourTests
         // for. If it had been interpreted, this text would be absent from the output entirely.
         Assert.Contains("[red]", plain, StringComparison.Ordinal);
         Assert.Contains("not really red", plain, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_project_named_with_markup_cannot_style_the_chooser()
+    {
+        // The finding this exists for, and it was found by probing rather than by reading.
+        // SelectionPrompt renders its choices AS MARKUP -- that is how anyone puts a colour in
+        // one -- so a name carrying a tag reaches the chooser as styling rather than as
+        // characters. Panels were escaped from the start and choosers were not, which is the
+        // difference between defending a mechanism and defending the one place it was noticed.
+        var hostile = ProjectList.Choices(
+        [
+            new ProjectSettings(
+                ProjectName.Create("orders"), string.Empty, "http://127.0.0.1:1", null, null),
+        ]);
+
+        // The label a project contributes is escaped before it is offered, so a bracket survives
+        // as a bracket. Asserted on the label rather than on rendered output, because what is
+        // being fixed is what gets handed to the prompt.
+        Assert.All(hostile, choice => Assert.DoesNotContain("", choice, StringComparison.Ordinal));
+        Assert.Contains(hostile, choice => choice.Contains("orders", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void The_chooser_really_does_interpret_markup_in_a_choice()
+    {
+        // The premise the escaping rests on, pinned so it cannot quietly stop being true. If a
+        // future Spectre stopped interpreting choices, every escape above would become a visible
+        // backslash in somebody's menu and nothing would say why -- and if it kept interpreting
+        // them while somebody removed an escape, this says what the cost is.
+        using var driven = new TestConsole();
+
+        driven.Interactive();
+        driven.Profile.Width = 200;
+        driven.Input.PushKey(ConsoleKey.Enter);
+
+        driven.Prompt(
+            new SelectionPrompt<string>().Title("pick").AddChoices("[red]hostile[/]", "other"));
+
+        // Consumed as styling: the tag is gone and the word it wrapped remains.
+        Assert.DoesNotContain("[red]", driven.Output, StringComparison.Ordinal);
+        Assert.Contains("hostile", driven.Output, StringComparison.Ordinal);
     }
 
     /// <summary>Renders something the way a terminal with no colour at all would.</summary>

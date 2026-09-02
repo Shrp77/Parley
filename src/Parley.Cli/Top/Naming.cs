@@ -74,12 +74,12 @@ internal static class Naming
     {
         foreach (var line in said.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
-            console.MarkupLine($"[dim]{ProjectList.Escape(line.TrimEnd())}[/]");
+            console.MarkupLine($"[dim]{Safe.Text(line.TrimEnd())}[/]");
         }
 
         foreach (var line in complained.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
-            console.MarkupLine($"[red]{ProjectList.Escape(line.TrimEnd())}[/]");
+            console.MarkupLine($"[red]{Safe.Text(line.TrimEnd())}[/]");
         }
 
         console.MarkupLine(

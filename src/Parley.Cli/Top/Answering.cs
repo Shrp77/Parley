@@ -78,7 +78,7 @@ internal static class Answering
         foreach (var id in ids)
         {
             console.WriteLine();
-            console.MarkupLine($"[bold]{ProjectList.Escape(id)}[/]");
+            console.MarkupLine($"[bold]{Safe.Text(id)}[/]");
 
             var outcome = console.Prompt(
                 new SelectionPrompt<string>()
@@ -106,8 +106,8 @@ internal static class Answering
 
         console.MarkupLine(
             answered.Closed
-                ? $"[green]{ProjectList.Escape(answered.Says)}[/]"
-                : $"[yellow]{ProjectList.Escape(answered.Says)}[/]");
+                ? $"[green]{Safe.Text(answered.Says)}[/]"
+                : $"[yellow]{Safe.Text(answered.Says)}[/]");
     }
 
     /// <summary>Shows the question as it was asked.</summary>
@@ -122,27 +122,27 @@ internal static class Answering
         var payload = Payload.Read(owed.Message.PayloadJson);
         var body = new System.Text.StringBuilder();
 
-        body.Append(ProjectList.Escape(
+        body.Append(Safe.Text(
             payload.Raw is { Length: > 0 } raw ? raw : payload.Said));
 
         foreach (var point in payload.Points)
         {
             body.Append("\n  [dim]·[/] ")
-                .Append(ProjectList.Escape(point.Id))
+                .Append(Safe.Text(point.Id))
                 .Append(": ")
-                .Append(ProjectList.Escape(point.Text));
+                .Append(Safe.Text(point.Text));
         }
 
         if (payload.Consequences is { Length: > 0 } consequences)
         {
             body.Append("\n\n[dim]Consequences: ")
-                .Append(ProjectList.Escape(consequences))
+                .Append(Safe.Text(consequences))
                 .Append("[/]");
         }
 
         console.Write(new Panel(body.ToString())
         {
-            Header = new PanelHeader($" from {ProjectList.Escape(owed.Message.From.Value)} "),
+            Header = new PanelHeader($" from {Safe.Text(owed.Message.From.Value)} "),
             Border = BoxBorder.Rounded,
             Expand = true,
         });
@@ -158,7 +158,8 @@ internal static class Answering
             .ReplaceLineEndings(" ")
             .Trim();
 
-        return $"{owed.Message.From.Value}: {(said.Length <= 60 ? said : said[..57] + "...")}";
+        return Safe.Text(
+            $"{owed.Message.From.Value}: {(said.Length <= 60 ? said : said[..57] + "...")}");
     }
 
     private const string Back = "Back";

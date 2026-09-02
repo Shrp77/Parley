@@ -43,7 +43,7 @@ internal static class AgentsView
 
         if (!read.Reachable)
         {
-            console.MarkupLine($"[red]{ProjectList.Escape(read.Problem!)}[/]");
+            console.MarkupLine($"[red]{Safe.Text(read.Problem!)}[/]");
 
             return;
         }
@@ -78,11 +78,11 @@ internal static class AgentsView
         foreach (var agent in agents.OrderBy(a => a.Name.Value, StringComparer.Ordinal))
         {
             table.AddRow(
-                ProjectList.Escape(agent.Name.Value),
+                Safe.Text(agent.Name.Value),
                 State(agent),
-                ProjectList.Escape(agent.Tier.ToString().ToLowerInvariant()),
+                Safe.Text(agent.Tier.ToString().ToLowerInvariant()),
                 Owns(agent),
-                $"[dim]{ProjectList.Escape(agent.Workspace ?? "—")}[/]");
+                $"[dim]{Safe.Text(agent.Workspace ?? "—")}[/]");
         }
 
         return table;
@@ -108,7 +108,7 @@ internal static class AgentsView
             _ => "red",
         };
 
-        return $"[{colour}]{ProjectList.Escape(state)}[/]";
+        return $"[{colour}]{Safe.Text(state)}[/]";
     }
 
     /// <summary>What the agent says it is for.</summary>
@@ -122,6 +122,6 @@ internal static class AgentsView
     /// </remarks>
     internal static string Owns(AgentRecord agent) =>
         Roster.HasStatedWhatItOwns(agent)
-            ? ProjectList.Escape(agent.Owns!)
+            ? Safe.Text(agent.Owns!)
             : "[dim]not stated[/]";
 }

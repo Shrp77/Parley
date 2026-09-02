@@ -43,13 +43,28 @@ internal static class ProjectMenu
 
         while (!cancellationToken.IsCancellationRequested)
         {
+            // A seat nothing has touched is released, exactly as the console releases one behind
+            // a tab left open. Nothing else in this process sweeps, so without this a terminal
+            // left open overnight would hold a person present in the registry until somebody
+            // closed the window -- which is the failure SeatBook.IdleAfter exists to prevent,
+            // reached by a different kind of window.
+            seats.Sweep(DateTimeOffset.UtcNow);
+
             // Asked, not remembered. `me` is only the name last typed; whether it still holds a
-            // seat is the book's answer and nobody else's.
+            // seat is the book's answer and nobody else's -- including after the sweep above has
+            // just taken it away.
             var hold = me is null ? null : seats.Held(project.Name.Value, me);
 
             if (hold is null)
             {
                 me = null;
+            }
+            else
+            {
+                // Drawing this menu is a person being here. Without it the sweep above would
+                // release the seat of somebody sitting in front of it, since nothing else on
+                // this surface reports that they are still there.
+                seats.Touch(hold.Seat, DateTimeOffset.UtcNow);
             }
 
             console.WriteLine();
@@ -57,9 +72,9 @@ internal static class ProjectMenu
             var choices = Choices(seated: hold is not null);
 
             var title = hold is null
-                ? $"[bold]{ProjectList.Escape(project.Name.Value)}[/] [dim](not seated)[/]"
-                : $"[bold]{ProjectList.Escape(project.Name.Value)}[/] "
-                  + $"[dim](seated as {ProjectList.Escape(hold.Name.Value)})[/]";
+                ? $"[bold]{Safe.Text(project.Name.Value)}[/] [dim](not seated)[/]"
+                : $"[bold]{Safe.Text(project.Name.Value)}[/] "
+                  + $"[dim](seated as {Safe.Text(hold.Name.Value)})[/]";
 
             var choice = console.Prompt(
                 new SelectionPrompt<string>().Title(title).AddChoices(choices));

@@ -40,7 +40,7 @@ internal static class ProjectList
             // Said rather than swallowed, and the list is empty rather than stale. Somebody who
             // has just broken their manifest needs to be told; a surface that went on showing the
             // last good list would hide the edit that caused it.
-            console.MarkupLine($"[red]The manifest could not be read.[/] {Escape(broken)}");
+            console.MarkupLine($"[red]The manifest could not be read.[/] {Safe.Text(broken)}");
 
             return null;
         }
@@ -158,9 +158,9 @@ internal static class ProjectList
                 : new ProjectHealth(null, "not asked");
 
             table.AddRow(
-                Escape(project.Name.Value),
+                Safe.Text(project.Name.Value),
                 Describe(said),
-                $"[dim]{Escape(project.Endpoint)}[/]");
+                $"[dim]{Safe.Text(project.Endpoint)}[/]");
         }
 
         return table;
@@ -179,19 +179,10 @@ internal static class ProjectList
     {
         { Reachable: false } => "[red]not answering[/]",
         { Agrees: true } => "[green]answering[/]",
-        _ => $"[yellow]answering, speaks {Escape(health.Speaks ?? "nothing")}, "
-             + $"this build speaks {Escape(Parley.Core.ProtocolVersion.Current)}[/]",
+        _ => $"[yellow]answering, speaks {Safe.Text(health.Speaks ?? "nothing")}, "
+             + $"this build speaks {Safe.Text(Parley.Core.ProtocolVersion.Current)}[/]",
     };
 
-    /// <summary>Keeps a name that contains markup characters from being read as markup.</summary>
-    /// <param name="text">Whatever came from a manifest or a broker.</param>
-    /// <returns>The same text, inert.</returns>
-    /// <remarks>
-    /// Project names and endpoints are operator-supplied and agent-supplied text. A square
-    /// bracket in one would otherwise be parsed as a style tag, which is the terminal's version
-    /// of the injection the console refuses by never emitting raw output.
-    /// </remarks>
-    internal static string Escape(string text) => Markup.Escape(text ?? string.Empty);
 
     /// <summary>What the first screen offers, in the order it offers it.</summary>
     /// <param name="projects">The projects this machine names.</param>
@@ -202,7 +193,7 @@ internal static class ProjectList
     /// is a test that quietly navigates somewhere else the next time an entry is added.
     /// </remarks>
     internal static IReadOnlyList<string> Choices(IReadOnlyList<ProjectSettings> projects) =>
-        [.. projects.Select(p => p.Name.Value), Name, Onboard, Leave];
+        [.. projects.Select(p => Safe.Text(p.Name.Value)), Name, Onboard, Leave];
 
     /// <summary>Naming a new project, which is FR-015 and not a navigation.</summary>
     private const string Name = "Name a new project";

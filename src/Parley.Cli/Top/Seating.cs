@@ -55,7 +55,7 @@ internal static class Seating
             new TextPrompt<string>("Join as:")
                 .Validate(typed => Seat.TryRead(typed, out _, out var why)
                     ? ValidationResult.Success()
-                    : ValidationResult.Error($"[red]{ProjectList.Escape(why ?? "not a name")}[/]")));
+                    : ValidationResult.Error($"[red]{Safe.Text(why ?? "not a name")}[/]")));
 
         if (!Seat.TryRead(person, out var seat, out _))
         {
@@ -73,13 +73,13 @@ internal static class Seating
 
         if (!outcome.Seated)
         {
-            console.MarkupLine($"[red]{ProjectList.Escape(outcome.Problem ?? "Not seated.")}[/]");
+            console.MarkupLine($"[red]{Safe.Text(outcome.Problem ?? "Not seated.")}[/]");
 
             return null;
         }
 
         console.MarkupLine(
-            $"[green]Seated as {ProjectList.Escape(seat.Name.Value)}.[/] "
+            $"[green]Seated as {Safe.Text(seat.Name.Value)}.[/] "
             + "[dim]You are present in this project until you leave.[/]");
 
         return outcome.Hold;

@@ -153,10 +153,10 @@ internal static class Waiting
             var payload = Payload.Read(one.Message.PayloadJson);
 
             table.AddRow(
-                ProjectList.Escape(one.Message.From.Value),
-                ProjectList.Escape(one.Message.Type.ToString().ToLowerInvariant()),
+                Safe.Text(one.Message.From.Value),
+                Safe.Text(one.Message.Type.ToString().ToLowerInvariant()),
                 one.Owes ? "[yellow]you owe an answer[/]" : "[dim]nothing owed[/]",
-                ProjectList.Escape(Shorten(payload.Raw is { Length: > 0 } raw ? raw : payload.Said)));
+                Safe.Text(Shorten(payload.Raw is { Length: > 0 } raw ? raw : payload.Said)));
         }
 
         console.Write(table);

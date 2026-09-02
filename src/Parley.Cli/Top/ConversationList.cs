@@ -33,7 +33,7 @@ internal static class ConversationList
 
         if (!read.Reachable)
         {
-            console.MarkupLine($"[red]{ProjectList.Escape(read.Problem!)}[/]");
+            console.MarkupLine($"[red]{Safe.Text(read.Problem!)}[/]");
 
             return;
         }
@@ -83,8 +83,8 @@ internal static class ConversationList
         foreach (var conversation in conversations)
         {
             table.AddRow(
-                ProjectList.Escape(conversation.Id),
-                ProjectList.Escape(string.Join(", ", conversation.Participants.Select(p => p.Value))),
+                Safe.Text(conversation.Id),
+                Safe.Text(string.Join(", ", conversation.Participants.Select(p => p.Value))),
                 conversation.Messages.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 conversation.HasOpenExchange ? "[yellow]open[/]" : "[dim]settled[/]",
                 $"[dim]{conversation.LastActivityUtc.ToLocalTime():yyyy-MM-dd HH:mm}[/]");
@@ -102,7 +102,9 @@ internal static class ConversationList
     /// actually remembers a conversation by.
     /// </remarks>
     private static string Label(ConversationSummary conversation) =>
-        $"{conversation.Id}  ({string.Join(", ", conversation.Participants.Select(p => p.Value))})";
+        Safe.Text(
+            $"{conversation.Id}  "
+            + $"({string.Join(", ", conversation.Participants.Select(p => p.Value))})");
 
     private const string Back = "Back";
 }

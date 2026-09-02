@@ -372,10 +372,42 @@ identically to one added from the command line.
 - [X] T059 Run the hygiene grep for the originating project's names across **tracked and
       untracked** files. `git grep` sees tracked files only, and a brand-new file leaks the name
       while the check still reports clean — that has happened here.
-- [ ] T060 Run the three review lenses **to convergence**, not to a fixed count: correctness and
+- [X] T060 Run the three review lenses **to convergence**, not to a fixed count: correctness and
       concurrency, security and data integrity, API surface and maintainability. Re-run a lens
       after fixing what it found. Stop when a full rotation finds nothing above low severity, and
       state how many rounds it took.
+
+      **Two rounds.** Round one found four things, three of them real:
+
+      1. *Correctness.* `LogTail.ShowAsync` awaited the stop-key read outside a `finally`. That
+         await throws when the surface is cancelled — Ctrl+C, the ordinary way to leave — so the
+         follow task was abandoned still holding the log open while its token source was disposed
+         underneath it. An unobserved fault on a background task is how two probes in this
+         repository hung for ten minutes instead of failing.
+      2. *Correctness.* Nothing in the terminal ever called `SeatBook.Sweep`. `IdleAfter` exists
+         because a tab left open is not somebody at a desk; a terminal left open overnight is the
+         same claim, and this surface was making it indefinitely. It now sweeps each menu loop and
+         touches the seat of whoever is looking at it.
+      3. **Security, and the one worth the whole exercise.** `SelectionPrompt` renders its choices
+         **as markup** — that is how anybody puts a colour in one. Conversation identifiers, agent
+         names and message excerpts went into `AddChoices` unescaped, so an agent naming a
+         conversation with a tag chose how the operator's menu was drawn. Panels were escaped from
+         the first draft and choosers were not, and that was not a judgement: the panel was simply
+         where the hazard had been noticed. **Found by probing the prompt rather than reading it**,
+         and the probe is kept as a test that pins the premise the escaping rests on.
+      4. *Maintainability.* The escape helper was `ProjectList.Escape`, called from eleven files
+         with nothing to do with listing projects — which is how a security property comes to look
+         like a formatting convenience. It is `Safe.Text` now, in a type whose remarks say what it
+         is for.
+
+      Round one also turned up one thing on re-running lens two: `Launch.Open` accepted any
+      absolute URI and hands it to the Windows shell, which launches whatever handler the scheme
+      is registered to. Narrowed to http and https. The only caller passes a constant, so it is a
+      guard against the second caller — which is the one that opens an address from a manifest.
+
+      **Round two found nothing above low severity.** The sweep for unescaped dynamic text came
+      back empty, the seat sweep does not fire while a person is on a screen that is not the menu,
+      and the `Safe` extraction changed no behaviour. Stopped there.
 
 ---
 

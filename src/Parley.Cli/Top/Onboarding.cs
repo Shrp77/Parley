@@ -72,12 +72,12 @@ internal static class Onboarding
 
         foreach (var line in said.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
-            console.MarkupLine($"[dim]{ProjectList.Escape(line.TrimEnd())}[/]");
+            console.MarkupLine($"[dim]{Safe.Text(line.TrimEnd())}[/]");
         }
 
         foreach (var line in complained.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
-            console.MarkupLine($"[red]{ProjectList.Escape(line.TrimEnd())}[/]");
+            console.MarkupLine($"[red]{Safe.Text(line.TrimEnd())}[/]");
         }
 
         if (code == 0 && step == Apply)
@@ -110,7 +110,7 @@ internal static class Onboarding
     private static bool Confirmed(IAnsiConsole console, string manifest)
     {
         console.MarkupLine(
-            $"[yellow]Applying {ProjectList.Escape(manifest)} writes configuration into every "
+            $"[yellow]Applying {Safe.Text(manifest)} writes configuration into every "
             + "ticked repository.[/] Run the plan first if you have not.");
 
         return console.Confirm("Apply it?", defaultValue: false);

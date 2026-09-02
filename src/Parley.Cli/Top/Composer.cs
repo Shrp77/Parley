@@ -65,7 +65,7 @@ internal static class Composer
             .AskAsync(peer, intent, question, consequences, conversation, cancellationToken)
             .ConfigureAwait(false);
 
-        console.MarkupLine($"[yellow]{ProjectList.Escape(said)}[/]");
+        console.MarkupLine($"[yellow]{Safe.Text(said)}[/]");
     }
 
     /// <summary>Tells a peer something, expecting no answer.</summary>
@@ -100,7 +100,7 @@ internal static class Composer
             .NotifyAsync(peer, text, conversation, cancellationToken)
             .ConfigureAwait(false);
 
-        console.MarkupLine($"[yellow]{ProjectList.Escape(said)}[/]");
+        console.MarkupLine($"[yellow]{Safe.Text(said)}[/]");
     }
 
     /// <summary>Chooses a peer from the project's registry.</summary>
@@ -128,7 +128,7 @@ internal static class Composer
 
         if (!read.Reachable)
         {
-            console.MarkupLine($"[red]{ProjectList.Escape(read.Problem!)}[/]");
+            console.MarkupLine($"[red]{Safe.Text(read.Problem!)}[/]");
 
             return null;
         }
@@ -149,7 +149,8 @@ internal static class Composer
 
         foreach (var peer in peers)
         {
-            labels[$"{peer.Name.Value}  ({Parley.Client.Rendering.Roster.State(peer)})"] = peer.Name;
+            labels[Safe.Text(
+                $"{peer.Name.Value}  ({Parley.Client.Rendering.Roster.State(peer)})")] = peer.Name;
         }
 
         var picked = console.Prompt(
