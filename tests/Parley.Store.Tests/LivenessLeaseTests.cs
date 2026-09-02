@@ -15,8 +15,22 @@ namespace Parley.Store.Tests;
 /// the two writers agree about which column says so and that retirement still outranks both.
 /// </para>
 /// <para>
-/// The narrowing is the point rather than a loss of coverage. Every one of those old tests was
+/// The narrowing was the point rather than a loss of coverage: every one of those old tests was
 /// pinning a way the estimate could go wrong, and an estimate that is not made cannot.
+/// </para>
+/// <para>
+/// <b>It took one case with it that was not about the estimate at all.</b> Nothing left here
+/// attached twice — every test opened one session and closed it — so nothing exercised the fact
+/// that <c>connected</c> counts. The reader tested <c>connected = 1</c>, written when the column
+/// was a flag, and two windows on one repository therefore read as nobody attached: the third
+/// window's attach sequence released work the first was mid-answer on, and neither side was
+/// told. It reached CI as an intermittent failure in another assembly, because a race decided
+/// whether a departing session's decrement had landed yet.
+/// </para>
+/// <para>
+/// So the cases below now count up and down as well as on and off. The lesson is narrower than
+/// "narrowing is bad": a suite that drops a case must drop it for the reason it was written, and
+/// these were dropped for being about a timestamp when one of them was about arithmetic.
 /// </para>
 /// </remarks>
 public sealed class LivenessLeaseTests : IDisposable
@@ -40,7 +54,57 @@ public sealed class LivenessLeaseTests : IDisposable
     public void Dispose() => _connection.Dispose();
 
     private Task<bool> Attached() =>
-        _agents.WasSeenSinceAsync(Orders, T0, cancellationToken: TestContext.Current.CancellationToken);
+        _agents.IsAttachedAsync(Orders, cancellationToken: TestContext.Current.CancellationToken);
+
+    [Fact]
+    public async Task Two_sessions_are_still_an_attachment()
+    {
+        // The case this suite did not have, and the whole of the bug. `connected` counts, and
+        // the predicate read `connected = 1` -- written when the column was a flag -- so two
+        // windows on one repository read as nobody at all, and the attach sequence then released
+        // work the first was mid-answer on.
+        //
+        // Its own remarks named counting as the fix for exactly this and did not notice it had
+        // already landed on the writing side.
+        await _agents.MarkLiveAsync(Orders, null, T0, TestContext.Current.CancellationToken);
+        await _agents.MarkLiveAsync(Orders, null, T0, TestContext.Current.CancellationToken);
+
+        Assert.True(await Attached());
+    }
+
+    [Fact]
+    public async Task An_attachment_survives_every_session_but_the_last_going()
+    {
+        // Counting down as well as up, and the property the attach sequence actually depends on:
+        // the answer stays true until the last connection closes, and turns false exactly then.
+        for (var session = 0; session < 3; session++)
+        {
+            await _agents.MarkLiveAsync(Orders, null, T0, TestContext.Current.CancellationToken);
+        }
+
+        await _agents.MarkOfflineAsync(Orders, TestContext.Current.CancellationToken);
+        Assert.True(await Attached());
+
+        await _agents.MarkOfflineAsync(Orders, TestContext.Current.CancellationToken);
+        Assert.True(await Attached());
+
+        await _agents.MarkOfflineAsync(Orders, TestContext.Current.CancellationToken);
+        Assert.False(await Attached());
+    }
+
+    [Fact]
+    public async Task A_detach_with_no_attach_cannot_drive_the_count_below_nothing()
+    {
+        // The floor MarkOfflineAsync writes, checked rather than trusted. A negative count would
+        // make an agent that can never read as attached again however many sessions open -- and
+        // the failure would be the opposite of this suite's headline bug and just as silent.
+        await _agents.MarkOfflineAsync(Orders, TestContext.Current.CancellationToken);
+        await _agents.MarkOfflineAsync(Orders, TestContext.Current.CancellationToken);
+
+        await _agents.MarkLiveAsync(Orders, null, T0, TestContext.Current.CancellationToken);
+
+        Assert.True(await Attached());
+    }
 
     [Fact]
     public async Task A_registration_on_its_own_is_not_an_attachment()

@@ -326,18 +326,16 @@ public sealed class AgentRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
 
     /// <summary>
-    /// Says whether an agent has been heard from since a given instant.
+    /// Says whether any session is attached for an agent right now.
     /// </summary>
     /// <param name="agent">The agent to test.</param>
-    /// <param name="sinceUtc">The oldest contact that still counts.</param>
     /// <param name="transaction">The transaction to read within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the operation.</param>
-    /// <returns><see langword="true"/> if a session is believed to be attached right now.</returns>
+    /// <returns><see langword="true"/> if at least one session is attached.</returns>
     /// <remarks>
     /// <para>
     /// Read by the attach sequence, which releases a debt on the grounds that its worker
-    /// vanished. This is the only evidence the registry holds that one has <em>not</em>, and it
-    /// is a lease rather than a flag for two reasons a flag cannot cover.
+    /// vanished. This is the only evidence the registry holds that one has <em>not</em>.
     /// </para>
     /// <para>
     /// This was a lease on a timestamp, and the reasoning for it was sound while the registry
@@ -347,31 +345,45 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// </para>
     /// <para>
     /// A connection has no such failure. It closes when the process ends, however impolitely,
-    /// and the broker is the one that notices — so <c>connected</c> is cleared by the party that
-    /// survives rather than by the party that died. See SPEC.md §4.0.
+    /// and the broker is the one that notices - so <c>connected</c> is cleared by the party that
+    /// survives rather than by the party that died. See SPEC.md &#167;4.0.
     /// </para>
     /// <para>
-    /// <b>One thing the lease covered and this does not, yet.</b> A flag cannot count, and an
-    /// agent may have two sessions open: the second closing clears <c>connected</c> while the
-    /// first is still mid-answer, and the next attach then releases work somebody is doing. The
-    /// lease answered that by being renewed by whichever sessions were actually running. The
-    /// answer here is for the broker to hold the connections and clear the column when the last
-    /// one goes — which it can, because it holds them — and until the transport lands, the
-    /// window is between one session detaching and another attaching.
+    /// <b>It counts, and the predicate here did not.</b> The paragraph this replaces described
+    /// counting as the outstanding answer to two windows on one repository - "the answer here is
+    /// for the broker to hold the connections and clear the column when the last one goes". That
+    /// landed: <see cref="MarkLiveAsync"/> increments and <see cref="MarkOfflineAsync"/>
+    /// decrements to a floor of zero. The reader was left behind, testing
+    /// <c>connected = 1</c> - written when the column was a flag - so <em>two</em> sessions read
+    /// as none, and the next attach released work the first was mid-answer on.
+    /// </para>
+    /// <para>
+    /// Which is the same loss the old paragraph warned about, arrived at from the opposite
+    /// direction and worse: not a window between one session detaching and another attaching,
+    /// but any third window at all, deterministically. Probed rather than reasoned - three
+    /// windows on one agent, three runs out of three, the first window's answer refused as
+    /// not-open while the second found nothing in its inbox. Neither side told, which is exactly
+    /// what the attach sequence's own comment says must not happen.
+    /// </para>
+    /// <para>
+    /// <b>No instant, because there is no lease.</b> This took a <c>sinceUtc</c> that the SQL
+    /// never mentioned, so <c>BrokerOptions.LivenessLease</c> was computed by the caller and
+    /// discarded. A parameter that does nothing is how somebody comes to fix a lease bug that
+    /// cannot exist, and the old name promised an arithmetic this has not done since the column
+    /// became a connection.
     /// </para>
     /// <para>
     /// Retirement is deliberately not consulted here. It is checked where retirement matters, in
     /// <see cref="MarkLiveAsync"/> and at admission.
     /// </para>
     /// </remarks>
-    public async Task<bool> WasSeenSinceAsync(
+    public async Task<bool> IsAttachedAsync(
         AgentName agent,
-        DateTimeOffset sinceUtc,
         SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default) =>
         await _connection.ExecuteScalarAsync<long>(
             new CommandDefinition(
-                "SELECT count(*) FROM agents WHERE name = @Name AND connected = 1;",
+                "SELECT count(*) FROM agents WHERE name = @Name AND connected > 0;",
                 new { Name = agent.Value },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;

@@ -53,6 +53,49 @@ public sealed class SecondSessionTests
     }
 
     [Fact]
+    public async Task A_third_window_does_not_release_the_first_ones_work()
+    {
+        // The same defect again, and the form that needs no race at all. `connected` counts
+        // sessions, and the registry's attach test read `connected = 1` -- so with two windows
+        // open the answer was "nobody is attached", and the third window's attach sequence
+        // released work the first was mid-answer on. Three runs out of three before the fix.
+        //
+        // It is also what made the test below look flaky rather than broken: there the count
+        // reached two only when a departing session's detach had not landed yet, which a loaded
+        // machine arranges and a fast one does not. Same bug, seen through a race instead of
+        // through arithmetic.
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billingA) = await fixture.LaunchAsync("billing@test", ct);
+
+        var asked = await orders.AskAsync(
+            to: "billing@test",
+            intent: "Deciding where the tax rate lives.",
+            subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
+            consequences: "If it does I read it from you; if not I snapshot my own copy.",
+            cancellationToken: ct);
+
+        var exchangeId = asked["exchange_id"]!.GetValue<long>();
+
+        Assert.Single((await billingA.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
+
+        // Two more windows on the same repository, neither of which closes.
+        await fixture.LaunchAsync("billing@test", ct);
+        await fixture.LaunchAsync("billing@test", ct);
+
+        var answered = await billingA.AnswerAsync(
+            exchangeId,
+            [new Resolution("q1", "answered", "Yes. invoice_lines.tax_rate is stamped at issue.")],
+            cancellationToken: ct);
+
+        Assert.True(
+            answered["ok"]?.GetValue<bool>() ?? false,
+            $"the first window's answer should still land, got {answered.ToJsonString()}");
+    }
+
+    [Fact]
     public async Task Closing_one_of_two_windows_does_not_release_the_others_work()
     {
         // The same defect reached through the other door. A clean shutdown marks the agent

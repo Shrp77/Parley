@@ -1251,8 +1251,20 @@ public sealed class Broker
         // exchange it is mid-answer on — which is exactly what a second editor window on one
         // repository does. Neither side would be told: the first session's answer is refused as
         // not-open, and the second finds nothing in its inbox.
+        // No lease in the question. This passed `nowUtc - _options.LivenessLease` to a query that
+        // never mentioned an instant, so the option was computed here and discarded there --
+        // which also means BrokerOptions.LivenessLease now has no consumer at all, and wants
+        // either a use or removing.
+        //
+        // Still a read before a write, and left that way deliberately. Two *first* attaches can
+        // both read nothing-attached and both orphan the same debts, which costs an extra pass
+        // over a set that is already empty the second time. Making it exact means folding the
+        // read into the increment -- UPDATE ... RETURNING the count before it moved -- and that
+        // is worth doing when something needs it rather than on the way past. What made the old
+        // predicate dangerous was not the gap; it was answering "is anybody attached" with "is
+        // exactly one".
         var alreadyAttached = await _agents
-            .WasSeenSinceAsync(agent, nowUtc - _options.LivenessLease, cancellationToken: cancellationToken)
+            .IsAttachedAsync(agent, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         // No session reference: SPEC.md §12 has that carry whatever an adapter needs to reach
