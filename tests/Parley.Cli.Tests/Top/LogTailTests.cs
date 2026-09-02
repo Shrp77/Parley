@@ -111,6 +111,34 @@ public sealed class LogTailTests : IDisposable
     }
 
     [Fact]
+    public void A_store_path_that_is_not_a_path_reports_no_log_rather_than_throwing()
+    {
+        // A manifest is a file somebody edits. A store path that cannot be resolved must make the
+        // log view say there is no log, not take the surface down over its one convenience view.
+        //
+        // A null character, built from its code rather than typed. It is invalid in a path on
+        // every platform this runs on, which a Windows-only invalid character such as a pipe is
+        // not -- that would pass here and fail on two of the three runners. And a control byte
+        // typed into a source file is invisible in most editors, which this repository has now
+        // had happen three times in one branch.
+        var unusable = "a" + ((char)0) + "b";
+
+        var project = new ProjectSettings(
+            ProjectName.Create("alpha"), unusable, "http://127.0.0.1:5301", null, null);
+
+        Assert.Null(LogTail.For(project));
+    }
+
+    [Fact]
+    public void A_blank_store_path_reports_no_log()
+    {
+        var project = new ProjectSettings(
+            ProjectName.Create("alpha"), "   ", "http://127.0.0.1:5301", null, null);
+
+        Assert.Null(LogTail.For(project));
+    }
+
+    [Fact]
     public void A_project_with_no_store_has_no_log_to_guess_at()
     {
         var project = new ProjectSettings(

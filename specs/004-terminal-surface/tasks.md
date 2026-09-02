@@ -409,6 +409,81 @@ identically to one added from the command line.
       back empty, the seat sweep does not fire while a person is on a screen that is not the menu,
       and the `Safe` extraction changed no behaviour. Stopped there.
 
+      **That was wrong, and the way it was wrong is the point of the rule it broke.** Round two
+      cleared the seat sweep by reasoning about it — *"the seat sweep does not fire while a person
+      is on a screen that is not the menu"* — rather than by writing the case and watching it run.
+      It does fire, and the person it unseats is the one who spent the longest reading a question.
+      Three further rounds followed, and every one of them found something.
+
+      **Round three.** Four, all real:
+
+      1. *Correctness.* The sweep ran **before** the touch, so a person who spent longer than
+         `IdleAfter` in the inbox — reading a question and writing an answer, the slowest and most
+         valuable thing this surface does — came back to a menu offering them a join. `Refresh`
+         now touches first and sweeps second, and the order is the whole of it.
+      2. *Correctness.* The seat was a local inside one visit to `ProjectMenu`, so going back to
+         the project list and returning to the same project lost it — while the book still held
+         the attachment and the registry still had the person present. It belongs to the session,
+         so `TopCommand` holds it and passes it in.
+      3. *Correctness.* The `Ctrl+C` handler could not work and made the banner a lie. Every screen
+         blocks inside a synchronous Spectre prompt, which observes no cancellation token, so the
+         handler suppressed the exit and nothing else happened; pressing it again did nothing
+         either. Removed. Letting the process die is the correct behaviour and not the lesser one —
+         §4.0 makes the open connection the evidence, and the process ending closes every attach
+         stream, which is exactly how the broker learns somebody left.
+      4. *Correctness.* `LogTail.For` called `Path.GetFullPath` on a value out of a hand-edited
+         manifest. A store path that is not a path took the whole surface down over its one
+         convenience view.
+
+      **Round three also turned up the one finding in this branch that the lenses did not make,
+      and it is recorded that way deliberately: the user noticed it.** `LaunchTests` proved its
+      guard non-vacuous by calling `Launch.Open` on a loopback URL and asserting no refusal was
+      printed, reasoning that whether a browser starts is the platform's business and there is
+      none on a CI runner. True on a runner; false on every machine this is developed on, where it
+      opened a real browser tab on **every run of the suite** — which is many runs an hour during a
+      review. The guard is now a predicate, `Launch.IsWebAddress`, asserted directly; the refusal
+      cases still go through `Open`, because the refusal path is the one path that hands nothing to
+      the platform. *A test whose side effect is invisible to CI is invisible to the person reading
+      CI.*
+
+      **Round four found four more, and two of them were introduced by round three's own fixes** —
+      which is why the rule says re-run the lens rather than run the next one:
+
+      1. **Security-adjacent, and the largest of the branch.** A seat outlived its evidence.
+         `SeatHold` retries a broker that has gone away, on purpose; but when the reattach is
+         *refused* — the name retired, or taken since by something that is not a seat — the retry
+         loop stopped and the hold stayed in the book forever with no stream behind it. Both
+         surfaces then drew somebody as present in a deployment that had never heard of them. This
+         is the cookie-outliving-a-seat failure with the cookie removed, and it was in
+         `Parley.Client`, so it was the console's too. `SeatHold.Lost` records it; `SeatBook` acts
+         on it in all four places it had to — `Held`, `Seats`, `Sweep`, and **`TakeAsync`, which
+         was the door inspection missed**: rejoining after a lost seat was handed back the dead
+         hold and told it was already seated.
+      2. *Correctness.* Marking the loss at the one exit that was known about left the exit nobody
+         thought of. An unexpected exception in the pump faults a task nothing observes, and the
+         seat it abandoned would sit in the book until the process restarted. It is a `finally`
+         now: however the read ends, only cancellation is a person leaving.
+      3. *Correctness, introduced by round three's fix #2.* The menu wrote the hold back over the
+         session's identity — `me = hold?.Seat` — so walking into a project you are **not** seated
+         in forgot who you were, and coming back out and into the one you *are* seated in showed a
+         join. The same disagreement as #2, through the door of a second project. Watched fail
+         before being trusted: reinstating the line fails the new test.
+      4. *Correctness, same shape.* A **refused** join cleared `me` as well, so somebody seated in
+         one project lost that seat's name to a failed attempt to take a second one.
+
+      Round four also over-corrected once and it was caught in the same round: the containment for
+      an `RpcException` reaching the menu released the seat, on the reasoning that a broker which
+      cannot answer has no seat to answer about. That fights `SeatHold`'s deliberate retry and
+      would turn a two-second restart into a departure the person has to undo. It reports and does
+      not act; the book decides.
+
+      **Round five found nothing above low severity.** What it did find is written down rather than
+      fixed: the fake `Agents` clients are near-duplicated across two test assemblies and cannot be
+      shared without a test project that does not exist, and a 20-second polling budget is declared
+      in two files.
+
+      **Five rounds.** 1,711 tests, 0 warnings.
+
 ---
 
 ## Baseline

@@ -102,9 +102,21 @@ public sealed class SeatBook : IDisposable
 
         if (_held.TryGetValue(key, out var already))
         {
-            already.Touch(DateTimeOffset.UtcNow);
+            if (!already.Lost)
+            {
+                already.Touch(DateTimeOffset.UtcNow);
 
-            return new SeatOutcome(already, null);
+                return new SeatOutcome(already, null);
+            }
+
+            // Cleared out of the way rather than handed back. A lost hold is a dead attachment,
+            // and returning it here would tell somebody rejoining that they were already seated
+            // -- which is the seat-outliving-its-evidence failure reached through the one door
+            // that is meant to fix it.
+            if (_held.TryRemove(key, out var dead))
+            {
+                dead.Dispose();
+            }
         }
 
         if (registry is null)
@@ -175,8 +187,9 @@ public sealed class SeatBook : IDisposable
 
                 // Read back rather than indexed: the winner can have been released between the
                 // add failing and the read, and an indexer would throw on a web request for what
-                // is an ordinary outcome.
-                return _held.TryGetValue(key, out var theirs)
+                // is an ordinary outcome. Lost counts as released — a hold with no attachment
+                // behind it is not a seat to hand somebody, whichever door they arrived at.
+                return _held.TryGetValue(key, out var theirs) && !theirs.Lost
                     ? new SeatOutcome(theirs, null)
                     : new SeatOutcome(null, "The seat was taken and released again. Try once more.");
             }
@@ -226,11 +239,19 @@ public sealed class SeatBook : IDisposable
     /// <param name="seat">Who to look for.</param>
     /// <returns>The seat, or <see langword="null"/>.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// A hold whose attachment has ended for good is not a seat. Reported as absent the moment it
+    /// is asked for rather than waiting for the next sweep, because the question a surface is
+    /// asking here is whether to draw somebody as present — and a minute of drawing them as
+    /// present is a minute of the console being the only thing that believes it.
+    /// </remarks>
     public SeatHold? Held(string project, Seat seat)
     {
         ArgumentNullException.ThrowIfNull(seat);
 
-        return _held.GetValueOrDefault(Key(project, seat));
+        var held = _held.GetValueOrDefault(Key(project, seat));
+
+        return held is null || held.Lost ? null : held;
     }
 
     /// <summary>Every seat this person is holding, in whatever project.</summary>
@@ -242,7 +263,8 @@ public sealed class SeatBook : IDisposable
         ArgumentNullException.ThrowIfNull(seat);
 
         return [.. _held.Values
-            .Where(held => string.Equals(held.Seat.Person, seat.Person, StringComparison.Ordinal))
+            .Where(held => !held.Lost
+                && string.Equals(held.Seat.Person, seat.Person, StringComparison.Ordinal))
             .OrderBy(held => held.Project, StringComparer.Ordinal)];
     }
 
@@ -346,7 +368,11 @@ public sealed class SeatBook : IDisposable
 
         foreach (var (key, held) in _held)
         {
-            if (now - held.TouchedUtc < IdleAfter)
+            // A hold that has given up goes whatever its age. Waiting out the idle window would
+            // keep a dead attachment in the book for twenty minutes, and the surfaces already
+            // stopped reporting it the moment it was lost -- so the only thing that wait buys is
+            // a dictionary entry nothing can reach.
+            if (!held.Lost && now - held.TouchedUtc < IdleAfter)
             {
                 continue;
             }

@@ -46,9 +46,22 @@ internal static class LogTail
             return null;
         }
 
-        var directory = Path.GetDirectoryName(Path.GetFullPath(project.Store));
+        try
+        {
+            var directory = Path.GetDirectoryName(Path.GetFullPath(project.Store));
 
-        return directory is null ? null : Path.Combine(directory, FileName);
+            return directory is null ? null : Path.Combine(directory, FileName);
+        }
+        catch (Exception failure) when (failure is ArgumentException
+                                                or NotSupportedException
+                                                or PathTooLongException)
+        {
+            // A manifest is a file somebody edits, so a store path that is not a path is a state
+            // this can be in. Returning "no log here" makes the log view say so and leaves every
+            // other screen working; throwing would take the surface down over its one convenience
+            // view, which is the opposite of how the rest of this contains a broken project.
+            return null;
+        }
     }
 
     /// <summary>Follows the log until the person stops watching.</summary>

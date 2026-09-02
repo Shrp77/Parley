@@ -1,3 +1,4 @@
+using Grpc.Core;
 using Parley.Client;
 using Parley.Client.Seating;
 using Parley.Core;
@@ -30,42 +31,35 @@ internal static class ProjectMenu
     /// <param name="directory">The clients.</param>
     /// <param name="seats">Where a seat is held, if one is.</param>
     /// <param name="project">The project everything below is scoped to.</param>
+    /// <param name="me">Who is seated in this session, if anybody is.</param>
     /// <param name="cancellationToken">Stops the reads.</param>
-    /// <returns>When the person has gone back.</returns>
-    internal static async Task ShowAsync(
+    /// <returns>Who is seated when the person goes back, so the session keeps it.</returns>
+    /// <remarks>
+    /// <b>The seat is passed in and handed back, because it belongs to the session and not to one
+    /// visit to this menu.</b> An earlier version held it in a local, so somebody who took a seat,
+    /// went back to the project list and came into the same project again was told they were not
+    /// seated -- while the registry still had them present and the book still held their
+    /// attachment. The screen and the deployment disagreed about a person, which is the failure
+    /// this menu's own remarks are about, arrived at from the one direction they did not cover.
+    /// </remarks>
+    internal static async Task<Seat?> ShowAsync(
         IAnsiConsole console,
         BrokerDirectory directory,
         SeatBook seats,
         ProjectSettings project,
+        Seat? me,
         CancellationToken cancellationToken)
     {
-        Seat? me = null;
-
         while (!cancellationToken.IsCancellationRequested)
         {
-            // A seat nothing has touched is released, exactly as the console releases one behind
-            // a tab left open. Nothing else in this process sweeps, so without this a terminal
-            // left open overnight would hold a person present in the registry until somebody
-            // closed the window -- which is the failure SeatBook.IdleAfter exists to prevent,
-            // reached by a different kind of window.
-            seats.Sweep(DateTimeOffset.UtcNow);
-
-            // Asked, not remembered. `me` is only the name last typed; whether it still holds a
-            // seat is the book's answer and nobody else's -- including after the sweep above has
-            // just taken it away.
-            var hold = me is null ? null : seats.Held(project.Name.Value, me);
-
-            if (hold is null)
-            {
-                me = null;
-            }
-            else
-            {
-                // Drawing this menu is a person being here. Without it the sweep above would
-                // release the seat of somebody sitting in front of it, since nothing else on
-                // this surface reports that they are still there.
-                seats.Touch(hold.Seat, DateTimeOffset.UtcNow);
-            }
+            // Who they are, and whether they are seated *here*, are two different questions and
+            // the second one is the broker's. `me` is deliberately not overwritten from the hold:
+            // it was, and walking into a project you happen not to be seated in forgot who you
+            // were -- so coming back out and into the one you *are* seated in showed a join,
+            // while the book still held the seat and the registry still had you present. The same
+            // screen-and-deployment disagreement this menu was already fixed for, reached through
+            // the door of a second project. Only Leave clears a person.
+            var hold = Refresh(seats, me, project, DateTimeOffset.UtcNow);
 
             console.WriteLine();
 
@@ -79,68 +73,142 @@ internal static class ProjectMenu
             var choice = console.Prompt(
                 new SelectionPrompt<string>().Title(title).AddChoices(choices));
 
-            switch (choice)
+            try
             {
-                case Agents:
-                    await AgentsView.ShowAsync(console, directory, project, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
+                switch (choice)
+                {
+                    case Agents:
+                        await AgentsView.ShowAsync(console, directory, project, cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
 
-                case Conversations:
-                    await ConversationList.ShowAsync(console, directory, project, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
+                    case Conversations:
+                        await ConversationList.ShowAsync(console, directory, project, cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
 
-                case Logs:
-                    await LogTail.ShowAsync(console, project, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
+                    case Logs:
+                        await LogTail.ShowAsync(console, project, cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
 
-                case WebConsole:
-                    // The console's own address, not this project's broker. They are different
-                    // processes on different ports, and opening the broker's would show a browser
-                    // a gRPC endpoint that answers nothing it can render.
-                    Launch.Open(console, Parley.Web.ConsoleHost.LoopbackAddress);
-                    break;
+                    case WebConsole:
+                        // The console's own address, not this project's broker. They are different
+                        // processes on different ports, and opening the broker's would show a browser
+                        // a gRPC endpoint that answers nothing it can render.
+                        Launch.Open(console, Parley.Web.ConsoleHost.LoopbackAddress);
+                        break;
 
-                case Join:
-                    var taken = await Seating
-                        .JoinAsync(console, directory, seats, project, cancellationToken)
-                        .ConfigureAwait(false);
-                    me = taken?.Seat;
-                    break;
+                    case Join:
+                        var taken = await Seating
+                            .JoinAsync(console, directory, seats, project, cancellationToken)
+                            .ConfigureAwait(false);
 
-                case Inbox:
-                    await Waiting
-                        .ShowAsync(console, Voice(directory, project, hold!), hold!, cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
+                        // Kept on a refusal rather than cleared. A join that the broker turned
+                        // down -- an unreadable registry, a name the registry holds for a real
+                        // agent -- has not unseated anybody, and somebody already seated in
+                        // another project would have lost that seat's name to a failed attempt
+                        // to take a second one.
+                        me = taken?.Seat ?? me;
+                        break;
 
-                case Ask:
-                    await Composer
-                        .AskAsync(
-                            console, directory, Voice(directory, project, hold!), project,
-                            cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
+                    case Inbox:
+                        await Waiting
+                            .ShowAsync(console, Voice(directory, project, hold!), hold!, cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
 
-                case Tell:
-                    await Composer
-                        .NotifyAsync(
-                            console, directory, Voice(directory, project, hold!), project, null,
-                            cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
+                    case Ask:
+                        await Composer
+                            .AskAsync(
+                                console, directory, Voice(directory, project, hold!), project,
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
 
-                case Leave:
-                    Seating.Leave(console, seats, hold!.Seat);
-                    me = null;
-                    break;
+                    case Tell:
+                        await Composer
+                            .NotifyAsync(
+                                console, directory, Voice(directory, project, hold!), project, null,
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
 
-                default:
-                    return;
+                    case Leave:
+                        Seating.Leave(console, seats, hold!.Seat);
+                        me = null;
+                        break;
+
+                    default:
+                        return me;
+                }
+            }
+            catch (RpcException failure)
+            {
+                // **The broker going away underneath a seated person, which the spec names as an
+                // edge case and which nothing else here contained.** Every operator read on this
+                // surface goes through BrokerDirectory.ReadAsync, which turns an unreachable
+                // broker into a sentence. The agent operations behind a seat do not: they throw,
+                // and in a terminal that is the process ending -- taking every other project's
+                // view with it -- rather than a page returning 500.
+                //
+                // Said and not acted on, which is the part that took a second look. An earlier
+                // version released the seat here, reasoning that a broker that cannot answer has
+                // no seat to answer about. But SeatHold retries a broker that is merely down, on
+                // purpose and for good reasons written there, and it is the book -- not this
+                // screen's last exception -- that knows whether a seat survived. Dropping it here
+                // would turn a two-second restart into a departure the person has to undo, and
+                // would race the reattach already putting it right. When the seat really is over,
+                // the hold says so and Refresh reports it on the next loop.
+                console.MarkupLine(
+                    $"[red]This project's broker did not answer.[/] "
+                    + $"[dim]{Safe.Text(failure.Status.Detail)}[/]");
             }
         }
+
+        return me;
+    }
+
+    /// <summary>Keeps the seat of whoever is here, and releases the seats of whoever is not.</summary>
+    /// <param name="seats">The book.</param>
+    /// <param name="me">The name last seated, if any.</param>
+    /// <param name="project">The project this menu is for.</param>
+    /// <param name="now">The current instant.</param>
+    /// <returns>The seat still held, or <see langword="null"/> when there is none.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Touch first, then sweep, and the order is the whole of it.</b> Swept first, a person who
+    /// spent longer than <see cref="SeatBook.IdleAfter"/> on a screen that is not this one comes
+    /// back to find their seat gone — and the screen they were on is the inbox, reading a question
+    /// and writing an answer, which is the slowest and most valuable thing this surface is for.
+    /// Being unseated for thinking about the question is the exact opposite of what an idle
+    /// timeout is for.
+    /// </para>
+    /// <para>
+    /// Sweeping at all is what stops a terminal left open overnight holding somebody present in
+    /// the registry, which is the failure <c>IdleAfter</c> exists to prevent — reached by a
+    /// different kind of window than the tab it was written for. Both halves are needed and only
+    /// in this order.
+    /// </para>
+    /// <para>
+    /// The seat is then <i>asked for</i> rather than assumed: whether the name still holds one is
+    /// the book's answer, including after the sweep has just taken it.
+    /// </para>
+    /// </remarks>
+    internal static SeatHold? Refresh(
+        SeatBook seats, Seat? me, ProjectSettings project, DateTimeOffset now)
+    {
+        if (me is not null)
+        {
+            // Being at this menu is being here. Nothing else on this surface reports that a
+            // person is still present, so without this the sweep below releases the seat of
+            // somebody sitting in front of it.
+            seats.Touch(me, now);
+        }
+
+        seats.Sweep(now);
+
+        return me is null ? null : seats.Held(project.Name.Value, me);
     }
 
     /// <summary>What the menu offers, in the order it offers it.</summary>

@@ -34,15 +34,7 @@ internal static class Launch
     /// </remarks>
     internal static bool Open(IAnsiConsole console, string address)
     {
-        // Web schemes only, and that is narrower than "is it a URI" on purpose. On Windows this
-        // hands the string to the shell, which launches whatever handler the scheme is registered
-        // to -- so `file:` would open a file and a custom scheme would run whatever claimed it.
-        // The only caller today passes a constant, which makes this a guard against the second
-        // caller rather than the first: the moment somebody opens an address that came from a
-        // manifest or a broker, the difference between "is a URI" and "is a web page" is the
-        // whole of the protection.
-        if (!Uri.TryCreate(address, UriKind.Absolute, out var parsed)
-            || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
+        if (!IsWebAddress(address))
         {
             console.MarkupLine(
                 $"[red]'{Safe.Text(address)}' is not an http or https address.[/]");
@@ -78,4 +70,30 @@ internal static class Launch
             return false;
         }
     }
+
+    /// <summary>Whether an address is one this is willing to hand to the platform.</summary>
+    /// <param name="address">The address.</param>
+    /// <returns><see langword="true"/> when it is an absolute http or https URL.</returns>
+    /// <remarks>
+    /// <para>
+    /// Web schemes only, and that is narrower than "is it a URI" on purpose. On Windows
+    /// <see cref="Open"/> hands the string to the shell, which launches whatever handler the
+    /// scheme is registered to — so <c>file:</c> would open a file and a custom scheme would run
+    /// whatever claimed it. The only caller today passes a constant, which makes this a guard
+    /// against the second caller rather than the first: the moment somebody opens an address that
+    /// came from a manifest or a broker, the difference between "is a URI" and "is a web page" is
+    /// the whole of the protection.
+    /// </para>
+    /// <para>
+    /// <b>Separate from <see cref="Open"/> so that proving the guard lets something through does
+    /// not start a browser.</b> The test for that used to call <c>Open</c> with a loopback URL and
+    /// assert no refusal was printed, on the reasoning that whether a browser starts is the
+    /// platform's business and there is none on a CI runner. That is true on a CI runner and false
+    /// on the machine of whoever is working on this: it opened a tab on every run of the suite.
+    /// The predicate is the part worth asserting, and it launches nothing.
+    /// </para>
+    /// </remarks>
+    internal static bool IsWebAddress(string address) =>
+        Uri.TryCreate(address, UriKind.Absolute, out var parsed)
+        && (parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps);
 }

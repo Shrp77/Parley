@@ -29,6 +29,7 @@ public sealed class SeatHold : IDisposable
     private readonly Wire.AttachRequest _request;
     private AsyncServerStreamingCall<Wire.Event> _stream;
     private int _disposed;
+    private int _lost;
 
     /// <summary>How long to wait before trying a broker that has gone away again.</summary>
     private static readonly TimeSpan RetryAfter = TimeSpan.FromSeconds(2);
@@ -71,6 +72,27 @@ public sealed class SeatHold : IDisposable
 
     /// <summary>When the seat was taken.</summary>
     public DateTimeOffset Since { get; }
+
+    /// <summary>Whether the attachment behind this seat has ended for good.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The seat that outlives its evidence, which is the failure a cookie outliving a seat
+    /// already caused once here.</b> A broker that is merely down is retried indefinitely and this
+    /// stays <see langword="false"/> — that is deliberate, because a restart should give the
+    /// person their seat back and nobody is going to notice they quietly stopped being present.
+    /// But a broker that <i>refuses</i> the reattach (the name retired, or taken since by
+    /// something that is not a seat) is never coming back, and the retry loop stops. Without this
+    /// the hold would sit in the book from then on with no stream behind it, and every surface
+    /// reading the book would go on saying somebody was present in a deployment that had never
+    /// heard of them.
+    /// </para>
+    /// <para>
+    /// Read by <see cref="SeatBook"/>, which is what actually drops it. This only records the
+    /// fact: a hold cannot remove itself from a book it holds no reference to, and giving it one
+    /// would make the two able to dispose each other from opposite directions.
+    /// </para>
+    /// </remarks>
+    public bool Lost => Volatile.Read(ref _lost) == 1;
 
     /// <summary>When this person was last seen doing anything in the console.</summary>
     /// <remarks>
@@ -169,9 +191,33 @@ public sealed class SeatHold : IDisposable
     /// </remarks>
     internal void Touch(DateTimeOffset now) => TouchedUtc = now;
 
-    /// <summary>Reads the stream, reconnecting for as long as the seat is held.</summary>
+    /// <summary>Runs the read, and records that the seat ended however it ended.</summary>
     /// <returns>A task completing when the seat is released or refused for good.</returns>
     private async Task PumpAsync()
+    {
+        try
+        {
+            await ReadAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            // **However this ends.** Refused, faulted, or fallen out of the loop: what they have
+            // in common is that nothing is reading a stream any more, and a seat is an open
+            // stream (§4.0). Only cancellation is a person leaving. Written as a finally rather
+            // than at the one exit that was known about, because the exit that matters is the one
+            // nobody thought of — an unexpected exception here faults a task nobody observes, and
+            // the seat it abandoned would have stayed in the book until the console was
+            // restarted, being drawn as somebody present the whole time.
+            if (!_cancellation.IsCancellationRequested)
+            {
+                Interlocked.Exchange(ref _lost, 1);
+            }
+        }
+    }
+
+    /// <summary>Reads the stream, reconnecting until the seat ends one way or the other.</summary>
+    /// <returns>A task completing when there is nothing left to read.</returns>
+    private async Task ReadAsync()
     {
         while (!_cancellation.IsCancellationRequested)
         {

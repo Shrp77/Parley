@@ -49,38 +49,22 @@ public static class TopCommand
         // streams, and an attach stream ending is what tells the broker somebody left (§4.0).
         using var seats = new SeatBook(directory.AgentsFor);
 
-        // Ctrl+C is the ordinary way out of a full-screen program, so it must be an ordinary way
-        // to leave a seat rather than the one path that strands one. A person who has gone home
-        // must stop being present, and a seat that outlived them is exactly the failure this
-        // repository already shipped once in the console.
-        using var interrupted = new CancellationTokenSource();
-        using var both = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, interrupted.Token);
-
-        ConsoleCancelEventHandler leave = (_, stopping) =>
-        {
-            // Handled rather than fatal, so the disposal below actually runs. A default Ctrl+C
-            // ends the process where it stands, and every seat with it -- as an abandoned
-            // connection the broker notices later rather than a departure it is told about.
-            stopping.Cancel = true;
-            interrupted.Cancel();
-        };
-
-        Console.CancelKeyPress += leave;
-
-        try
-        {
-            return await DriveAsync(AnsiConsole.Console, directory, seats, both.Token)
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            return 0;
-        }
-        finally
-        {
-            Console.CancelKeyPress -= leave;
-        }
+        // **Ctrl+C is deliberately not intercepted, and the first draft of this got it wrong.**
+        //
+        // That draft handled CancelKeyPress, set Cancel = true and signalled a token, on the
+        // reasoning that a seat should be released politely rather than abandoned. It did not
+        // work, and could not: every screen here is blocked inside a synchronous prompt waiting
+        // for a key, and a prompt does not observe a cancellation token. So Ctrl+C suppressed the
+        // exit, nothing else happened, and the surface sat there -- with a banner promising that
+        // Ctrl+C leaves. Pressing it again did nothing either.
+        //
+        // Letting it terminate is not the lesser option, it is the correct one. SPEC.md §4.0
+        // makes an open connection the evidence an agent is reachable, and the process dying
+        // closes every attach stream this book holds -- which is precisely how the broker learns
+        // somebody left. There is no politer signal available; there is only the same signal sent
+        // sooner. The `using` above still runs on every ordinary exit.
+        return await DriveAsync(AnsiConsole.Console, directory, seats, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>The navigation itself, over whatever console it is given.</summary>
@@ -112,6 +96,10 @@ public static class TopCommand
     {
         console.Write(Banner());
 
+        // The seat lives here rather than inside a menu visit: a person is one person for the
+        // session, and walking back out to the project list is not leaving their seat.
+        Seat? me = null;
+
         while (!cancellationToken.IsCancellationRequested)
         {
             // Re-read every time round rather than once at startup. BrokerDirectory re-stamps the
@@ -127,7 +115,8 @@ public static class TopCommand
                 return 0;
             }
 
-            await ProjectMenu.ShowAsync(console, directory, seats, chosen, cancellationToken)
+            me = await ProjectMenu
+                .ShowAsync(console, directory, seats, chosen, me, cancellationToken)
                 .ConfigureAwait(false);
         }
 
