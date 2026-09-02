@@ -70,6 +70,73 @@ public sealed class GraphTests
             $"{project} has acquired a route to a store: {string.Join(", ", breaches)}");
     }
 
+    /// <summary>What a client must never carry a web framework in through.</summary>
+    /// <remarks>
+    /// Three doors, because a dependency on ASP.NET Core arrives through any of them and the two
+    /// that are not <c>PackageReference</c> leave no reference element to find.
+    /// </remarks>
+    private static readonly string[] WebSdks = ["Microsoft.NET.Sdk.Web", "Microsoft.NET.Sdk.Razor"];
+
+    [Theory]
+    [InlineData("src/Parley.Client/Parley.Client.csproj")]
+    [InlineData("src/Parley.Cli/Parley.Cli.csproj")]
+    public void A_terminal_does_not_take_on_a_web_framework_to_find_out_who_is_in_a_conversation(
+        string project)
+    {
+        // **The constraint that is the whole reason `Parley.Client` exists, and which nothing
+        // enforced.** CLAUDE.md puts it plainly: leaving this code in an assembly called Web would
+        // mean a terminal depending on ASP.NET Core to find out who is in a conversation. Every
+        // guard beside this one is about reaching a *store*, so the graph could have acquired the
+        // whole of ASP.NET and stayed green -- in a repository whose stated rule is that a rule
+        // the compiler cannot enforce is a rule that decays.
+        //
+        // `Parley.Cli` is included because it is the assembly that would actually pay: it already
+        // references Parley.Web for `parley console`, so what is asserted for it is narrower and
+        // is checked separately below. Here it is the *client's* half of its graph that must stay
+        // clean, which is what makes `parley top` runnable on a machine that hosts nothing.
+        var reached = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        Walk(RepositoryPath(project), project, reached, skip: name =>
+            string.Equals(name, "Parley.Web", StringComparison.Ordinal));
+
+        var breaches = reached
+            .Where(r => r.Key.StartsWith("Microsoft.AspNetCore", StringComparison.OrdinalIgnoreCase)
+                        || r.Key.Contains("Mvc", StringComparison.OrdinalIgnoreCase))
+            .Select(r => $"{r.Key} (via {r.Value})")
+            .ToList();
+
+        Assert.True(
+            breaches.Count == 0,
+            $"{project} has acquired a web framework: {string.Join(", ", breaches)}");
+    }
+
+    [Theory]
+    [InlineData("src/Parley.Client/Parley.Client.csproj")]
+    [InlineData("src/Parley.Configuration/Parley.Configuration.csproj")]
+    [InlineData("src/Parley.Core/Parley.Core.csproj")]
+    public void The_doors_a_reference_element_does_not_cover_are_shut_too(string project)
+    {
+        // A `PackageReference` is not the only way in, and the other two leave nothing for the
+        // walk above to find: an SDK attribute of `Microsoft.NET.Sdk.Web` hands a project the
+        // whole framework, and a bare `FrameworkReference` to `Microsoft.AspNetCore.App` does the
+        // same with one line and no version. Either would make every existing guard here pass
+        // while the terminal quietly started carrying Kestrel.
+        var document = XDocument.Load(RepositoryPath(project));
+
+        var sdk = document.Root?.Attribute("Sdk")?.Value ?? string.Empty;
+
+        Assert.DoesNotContain(sdk, WebSdks, StringComparer.OrdinalIgnoreCase);
+
+        var frameworks = document.Descendants()
+            .Where(e => e.Name.LocalName == "FrameworkReference")
+            .Select(e => e.Attribute("Include")?.Value ?? string.Empty)
+            .ToList();
+
+        Assert.DoesNotContain(
+            frameworks,
+            f => f.StartsWith("Microsoft.AspNetCore", StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>Follows project references from one project file, depth first.</summary>
     /// <param name="path">The project file to read.</param>
     /// <param name="via">How this project was reached, for the failure message.</param>
@@ -79,11 +146,24 @@ public sealed class GraphTests
     /// this repository, and the thing being guarded against — Microsoft.Data.Sqlite — is a direct
     /// reference wherever it appears here.
     /// </remarks>
-    private static void Walk(string path, string via, Dictionary<string, string> reached)
+    /// <param name="skip">
+    /// A branch not to follow, or <see langword="null"/> to follow everything. Used to ask what a
+    /// project's graph looks like *without* one deliberate reference, which is the only way to say
+    /// anything about `Parley.Cli`: it references the console on purpose, for `parley console`,
+    /// and the question worth asking is whether the rest of its graph stays free of a web
+    /// framework — because that is what makes `parley top` runnable where nothing is hosted.
+    /// </param>
+    private static void Walk(
+        string path, string via, Dictionary<string, string> reached, Func<string, bool>? skip = null)
     {
         foreach (var reference in DirectReferences(path))
         {
             var name = NameOf(reference);
+
+            if (skip is not null && skip(name))
+            {
+                continue;
+            }
 
             if (!reached.TryAdd(name, via))
             {
@@ -102,7 +182,7 @@ public sealed class GraphTests
 
             if (File.Exists(next))
             {
-                Walk(next, name, reached);
+                Walk(next, name, reached, skip);
             }
         }
     }
