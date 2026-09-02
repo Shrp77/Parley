@@ -33,7 +33,7 @@ namespace Parley.Store.Tests;
 /// these were dropped for being about a timestamp when one of them was about arithmetic.
 /// </para>
 /// </remarks>
-public sealed class LivenessLeaseTests : IDisposable
+public sealed class AttachmentTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
@@ -41,7 +41,7 @@ public sealed class LivenessLeaseTests : IDisposable
     private readonly SqliteConnection _connection = ParleyDatabase.OpenInMemory();
     private readonly AgentRepository _agents;
 
-    public LivenessLeaseTests()
+    public AttachmentTests()
     {
         _agents = new AgentRepository(_connection);
 

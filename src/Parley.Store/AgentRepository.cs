@@ -367,10 +367,16 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// </para>
     /// <para>
     /// <b>No instant, because there is no lease.</b> This took a <c>sinceUtc</c> that the SQL
-    /// never mentioned, so <c>BrokerOptions.LivenessLease</c> was computed by the caller and
-    /// discarded. A parameter that does nothing is how somebody comes to fix a lease bug that
-    /// cannot exist, and the old name promised an arithmetic this has not done since the column
-    /// became a connection.
+    /// never mentioned, so the broker's liveness lease was computed by the caller and discarded.
+    /// A parameter that does nothing is how somebody comes to fix a lease bug that cannot exist,
+    /// and the old name promised an arithmetic this has not done since the column became a
+    /// connection.
+    /// </para>
+    /// <para>
+    /// That option no longer exists. Removing this parameter left it with no consumer, and
+    /// following the chain found it dead the whole way: the broker's option, its five-minute
+    /// default, the fleet constructor argument derived from it, and the field that argument was
+    /// assigned to — which nothing had read since the fleet started asking a connection instead.
     /// </para>
     /// <para>
     /// Retirement is deliberately not consulted here. It is checked where retirement matters, in

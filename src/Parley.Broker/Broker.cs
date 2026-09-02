@@ -1246,15 +1246,17 @@ public sealed class Broker
         // StartResult.AgentMarkedLive unambiguous: a zero now means retired, and only retired.
         await RequireRegisteredAsync(agent, cancellationToken).ConfigureAwait(false);
 
-        // Read before the mark is written, because writing it destroys the answer. A live lease
-        // means a worker that has not vanished, and orphaning its debts would release the
+        // Read before the mark is written, because writing it destroys the answer. An attached
+        // agent is a worker that has not vanished, and orphaning its debts would release the
         // exchange it is mid-answer on — which is exactly what a second editor window on one
         // repository does. Neither side would be told: the first session's answer is refused as
         // not-open, and the second finds nothing in its inbox.
-        // No lease in the question. This passed `nowUtc - _options.LivenessLease` to a query that
-        // never mentioned an instant, so the option was computed here and discarded there --
-        // which also means BrokerOptions.LivenessLease now has no consumer at all, and wants
-        // either a use or removing.
+        //
+        // No instant in the question, and no lease anywhere any more. This passed
+        // `nowUtc - _options.LivenessLease` to a query that never mentioned an instant, so the
+        // option was computed here and discarded there; the option, its default, and the fleet
+        // field it was eventually handed to were all removed once that was the last consumer.
+        // Liveness is a held connection (SPEC.md §4.0), and nothing derives a duration from it.
         //
         // Still a read before a write, and left that way deliberately. Two *first* attaches can
         // both read nothing-attached and both orphan the same debts, which costs an extra pass

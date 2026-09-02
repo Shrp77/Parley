@@ -1,6 +1,5 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Microsoft.Data.Sqlite;
-using Parley.Broker;
 using Parley.Headless;
 
 namespace Parley.Cli;
@@ -68,13 +67,13 @@ public sealed class FleetCommand
     /// </remarks>
     public async Task<int> UpAsync(TimeSpan interval, CancellationToken cancellationToken)
     {
-        // The same lease the servers derive, because the two must agree. A supervisor using a
-        // shorter one would start agents their own sessions still count as attached.
-        var lease = interval * 3 > BrokerOptions.DefaultLivenessLease
-            ? interval * 3
-            : BrokerOptions.DefaultLivenessLease;
-
-        var fleet = new AgentFleet(_connection, TimeProvider.System, lease, _catalogue);
+        // No lease derived here any more, and the comment this replaces is worth recording
+        // because it was true when written and false for a long time after: "the same lease the
+        // servers derive, because the two must agree". Neither derives one. The fleet reads
+        // whether somebody else is running an agent from that agent's connection (SPEC.md §4.0),
+        // and the broker's attach sequence reads the same thing -- so there is nothing left for
+        // the two to agree about.
+        var fleet = new AgentFleet(_connection, TimeProvider.System, _catalogue);
 
         // Disposal is the backstop, not the plan: the shutdown below runs with its own token so
         // agents are told to quit even when the fleet is ending because the operator cancelled.

@@ -8,9 +8,6 @@ namespace Parley.Broker;
 /// <param name="ExchangePolicy">The terms new exchanges are admitted under.</param>
 /// <param name="ResumePolicy">What a restart does to the exchanges it interrupted.</param>
 /// <param name="ResumeGate">Consulted before each replay under <see cref="Core.ResumePolicy.Always"/>.</param>
-/// <param name="LivenessLease">
-/// How long an agent counts as attached after it was last heard from.
-/// </param>
 /// <param name="Retention">How long the message log keeps what it carried. See SPEC.md §9.4.</param>
 /// <param name="RetentionInterval">How often <see cref="Broker.TickAsync"/> applies it.</param>
 /// <remarks>
@@ -39,36 +36,9 @@ public sealed record BrokerOptions(
     ExchangePolicy ExchangePolicy,
     ResumePolicy ResumePolicy,
     IResumeGate ResumeGate,
-    TimeSpan LivenessLease,
     RetentionPolicy Retention,
     TimeSpan RetentionInterval)
 {
-    /// <summary>
-    /// How long an agent counts as attached when a deployment specifies nothing.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Liveness is a lease rather than a flag because a flag cannot be cleared by the process
-    /// that stops existing. A crashed session leaves <c>live</c> set for ever, which makes the
-    /// registry lie and makes the attach sequence of SPEC.md §14 decline to release debts whose
-    /// worker is provably gone. A lease expires on its own.
-    /// </para>
-    /// <para>
-    /// It also fixes what a flag cannot express: an agent may have two sessions open, and the
-    /// second one closing marks the agent offline while the first is still working. Under a
-    /// lease the first session's own heartbeat keeps it current, so nothing concludes it has
-    /// gone.
-    /// </para>
-    /// <para>
-    /// Five minutes is chosen against the sweep, not against human patience: the lease must
-    /// comfortably exceed how often a host ticks, or a live agent's lease lapses between
-    /// heartbeats and the next attach releases work somebody is doing. A host that ticks less
-    /// often than this must widen it — see <see cref="Validate"/>, which cannot check that from
-    /// here, and the adapter, which derives one from the other so the two cannot disagree.
-    /// </para>
-    /// </remarks>
-    public static TimeSpan DefaultLivenessLease { get; } = TimeSpan.FromMinutes(5);
-
     /// <summary>
     /// How often the sweep applies the retention policy, when a deployment specifies nothing.
     /// </summary>
@@ -109,7 +79,6 @@ public sealed record BrokerOptions(
         Core.ExchangePolicy.Default,
         Core.ResumePolicy.Never,
         AlwaysResume.Instance,
-        DefaultLivenessLease,
         RetentionPolicy.Default,
         DefaultRetentionInterval);
 
@@ -158,14 +127,6 @@ public sealed record BrokerOptions(
                 nameof(ResumePolicy), ResumePolicy, "Not a defined resume policy.");
         }
 
-        // Zero would make every agent permanently expired, so every attach would release every
-        // debt of every session including its own — which is the failure this whole mechanism
-        // exists to prevent, reached by setting one number to nothing.
-        if (LivenessLease <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(LivenessLease), LivenessLease, "The liveness lease must be positive.");
-        }
 
         // Zero would restore the every-tick sweep this interval exists to replace, and would do
         // it silently -- the deployment would work, and pay a full pass over the message log for

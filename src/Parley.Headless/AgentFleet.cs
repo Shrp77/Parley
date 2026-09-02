@@ -54,17 +54,12 @@ public sealed class AgentFleet : IAsyncDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly TimeProvider _clock;
-    private readonly TimeSpan _lease;
     private readonly NodeCatalogue _catalogue;
     private readonly Dictionary<string, Resident> _running = new(StringComparer.Ordinal);
 
     /// <summary>Creates a fleet against an open database.</summary>
     /// <param name="connection">The open, migrated database.</param>
     /// <param name="clock">The clock turns are measured against.</param>
-    /// <param name="lease">
-    /// Retained for callers, and no longer consulted: whether somebody else is running an agent
-    /// is now read from its connection rather than guessed from how long ago it was heard from.
-    /// </param>
     /// <param name="catalogue">
     /// What this machine knows about the agents on it, or <see langword="null"/> for a machine
     /// that has been told about none. An empty catalogue starts nothing, which is right rather
@@ -75,7 +70,6 @@ public sealed class AgentFleet : IAsyncDisposable
     public AgentFleet(
         SqliteConnection connection,
         TimeProvider clock,
-        TimeSpan lease,
         NodeCatalogue? catalogue = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
@@ -83,7 +77,6 @@ public sealed class AgentFleet : IAsyncDisposable
 
         _connection = connection;
         _clock = clock;
-        _lease = lease;
         _catalogue = catalogue ?? NodeCatalogue.Empty;
     }
 

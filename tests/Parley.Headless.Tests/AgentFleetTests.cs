@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -19,7 +19,6 @@ public sealed class AgentFleetTests : IDisposable
     /// <summary>The unit separator the schema joins a pair key with.</summary>
     private const string Separator = "\u001F";
 
-    private static readonly TimeSpan Lease = TimeSpan.FromMinutes(5);
 
     private readonly string _root =
         Path.Combine(Path.GetTempPath(), "parley-fleet-" + Guid.NewGuid().ToString("N"));
@@ -214,7 +213,7 @@ public sealed class AgentFleetTests : IDisposable
 
     /// <summary>The fleet under test, consulting this machine's catalogue.</summary>
     /// <returns>A fleet that can start whatever Register was given a command for.</returns>
-    private AgentFleet Fleet() => new(_connection, TimeProvider.System, Lease, Catalogue());
+    private AgentFleet Fleet() => new(_connection, TimeProvider.System, Catalogue());
 
     [Fact]
     public async Task An_agent_that_owes_an_answer_is_started_and_given_a_turn()
