@@ -153,6 +153,14 @@ public static class ServeCommand
                 $"Parley broker on {string.Join(", ", server.Addresses)}, store at {databasePath}, schema {SchemaMigrator.LatestVersion}."))
                 .ConfigureAwait(false);
 
+            // Said because somebody browsed to it. The broker's address is the first URL on the
+            // screen and looks like the one to open, and what a browser gets there is "an HTTP/1.x
+            // request was sent to an HTTP/2 only endpoint" -- an error about the wrong thing,
+            // which reads as the deployment being broken rather than as the wrong address.
+            await output.WriteLineAsync(
+                "  That address is for agents and speaks gRPC. It is not a web page.")
+                .ConfigureAwait(false);
+
             await output.WriteLineAsync(
                 "Agents connect with PARLEY_AGENT set; machines join with `parley up`. Ctrl+C stops it.")
                 .ConfigureAwait(false);
@@ -348,6 +356,12 @@ public static class ServeCommand
                     $"{failed} of {projects.Count} projects did not start. This process is serving a subset."))
                     .ConfigureAwait(false);
             }
+
+            // Said here too. Several addresses rather than one makes the confusion likelier, not
+            // less: whichever a person clicks, none of them is a web page.
+            await output.WriteLineAsync(
+                "  Those addresses are for agents and speak gRPC. None of them is a web page.")
+                .ConfigureAwait(false);
 
             await output.WriteLineAsync(
                 "Agents connect with PARLEY_AGENT set; machines join with `parley up`. Ctrl+C stops them all.")

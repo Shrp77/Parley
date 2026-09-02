@@ -464,8 +464,22 @@ if (verb == "serve" && rest.Length == 0)
         {
             try
             {
-                await reporting.WriteLineAsync($"Hosting the console on {consoleAt}.")
-                    .ConfigureAwait(false);
+                // Set apart, because this is the one address on the screen a person is meant to
+                // type into a browser and it used to be the third line of five, in the same
+                // weight as everything else. Ruled rather than coloured: this writer is tee'd
+                // into --log, so escape codes would be written into a file somebody greps.
+                //
+                // ASCII only, for the same reason a supervisor's log is: the section sign in this
+                // process's own warnings already comes out mangled on a console whose code page
+                // nobody chose, and a banner that renders as question marks is worse than a plain
+                // one.
+                var rule = new string('-', consoleAt.Length + 12);
+
+                await reporting.WriteLineAsync(
+                    $"{Environment.NewLine}  {rule}{Environment.NewLine}"
+                    + $"   Console:  {consoleAt}{Environment.NewLine}"
+                    + $"   Open that one in a browser.{Environment.NewLine}"
+                    + $"  {rule}{Environment.NewLine}").ConfigureAwait(false);
 
                 // The address the broker actually bound, not the one it was asked for: --listen
                 // may name port 0, and a console pointed at port 0 reaches nothing.
@@ -479,7 +493,11 @@ if (verb == "serve" && rest.Length == 0)
             {
                 return 0;
             }
-            catch (Exception failure)
+            // Not OutOfMemoryException, matching the one other catch-all in this tool. The
+            // containment below is for a console that could not bind a port; a process out of
+            // memory is not contained by carrying on without a web page, and swallowing it here
+            // would leave the broker running in a state nothing else in it expects to survive.
+            catch (Exception failure) when (failure is not OutOfMemoryException)
             {
                 await reporting.WriteLineAsync(
                     $"The console did not start on {consoleAt}: {failure.Message}. The broker is "
