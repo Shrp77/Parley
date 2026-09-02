@@ -5,7 +5,7 @@ using Parley.Configuration;
 using Parley.Core;
 using Wire = Parley.Transport;
 
-namespace Parley.Web;
+namespace Parley.Client;
 
 /// <summary>
 /// The projects this machine is configured for, and one operator client per project.

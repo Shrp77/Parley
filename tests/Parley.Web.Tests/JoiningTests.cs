@@ -9,7 +9,8 @@ namespace Parley.Web.Tests;
 /// Joining and leaving as they are reached through the console rather than through the book.
 /// </summary>
 /// <remarks>
-/// <see cref="SeatTests"/> probes the rules; these probe the surface, which is where two of them
+/// <c>SeatTests</c>, now in <c>Parley.Client.Tests</c> with the book it probes, covers the
+/// rules; these probe the surface, which is where two of them
 /// can be got round. A departure reachable by following a link is a departure a page-crawler can
 /// cause, and a composer that does not say which voice it is speaking in is the most misleading
 /// thing that could sit at the bottom of a chat.

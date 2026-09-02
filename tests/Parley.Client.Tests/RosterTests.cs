@@ -1,9 +1,9 @@
 using Grpc.Net.Client;
 using Parley.Core;
-using Parley.Web.Rendering;
+using Parley.Client.Rendering;
 using Xunit;
 
-namespace Parley.Web.Tests;
+namespace Parley.Client.Tests;
 
 /// <summary>
 /// What the agents page claims about an agent, and that two projects never become one.

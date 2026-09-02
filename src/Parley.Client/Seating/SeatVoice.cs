@@ -4,7 +4,7 @@ using Grpc.Core;
 using Parley.Core;
 using Wire = Parley.Transport;
 
-namespace Parley.Web.Seating;
+namespace Parley.Client.Seating;
 
 /// <summary>What became of an answer.</summary>
 /// <param name="Closed">Whether the exchange is now settled.</param>

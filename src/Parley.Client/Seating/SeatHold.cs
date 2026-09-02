@@ -2,7 +2,7 @@ using Grpc.Core;
 using Parley.Core;
 using Wire = Parley.Transport;
 
-namespace Parley.Web.Seating;
+namespace Parley.Client.Seating;
 
 /// <summary>
 /// One person, seated in one project, for as long as the stream stays open.

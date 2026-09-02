@@ -1,6 +1,6 @@
 using Parley.Core;
 
-namespace Parley.Web.Rendering;
+namespace Parley.Client.Rendering;
 
 /// <summary>
 /// A stable colour and a short badge for each agent in a transcript.

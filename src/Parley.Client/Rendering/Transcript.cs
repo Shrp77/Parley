@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using Parley.Core;
 
-namespace Parley.Web.Rendering;
+namespace Parley.Client.Rendering;
 
 /// <summary>
 /// A conversation written out as text, with the visibility annotations intact.

@@ -3,7 +3,7 @@ using Grpc.Net.Client;
 using Parley.Core;
 using Xunit;
 
-namespace Parley.Web.Tests;
+namespace Parley.Client.Tests;
 
 /// <summary>
 /// The console's multi-project handling: one project's failure is that project's failure.

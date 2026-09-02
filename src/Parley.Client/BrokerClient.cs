@@ -2,7 +2,7 @@ using System.Globalization;
 using Parley.Core;
 using Wire = Parley.Transport;
 
-namespace Parley.Web;
+namespace Parley.Client;
 
 /// <summary>
 /// Broker V1 over gRPC: one project's broker, as <see cref="IParleyBrokerClient"/> describes it.

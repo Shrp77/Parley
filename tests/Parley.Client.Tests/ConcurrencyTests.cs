@@ -2,7 +2,7 @@ using Grpc.Net.Client;
 using Parley.Core;
 using Xunit;
 
-namespace Parley.Web.Tests;
+namespace Parley.Client.Tests;
 
 /// <summary>
 /// That the one object every page shares survives being shared.

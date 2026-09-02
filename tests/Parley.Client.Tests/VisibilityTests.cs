@@ -1,8 +1,8 @@
 using Parley.Core;
-using Parley.Web.Rendering;
+using Parley.Client.Rendering;
 using Xunit;
 
-namespace Parley.Web.Tests;
+namespace Parley.Client.Tests;
 
 /// <summary>
 /// The arithmetic that stops a chat transcript lying about who read what.

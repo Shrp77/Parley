@@ -1,6 +1,6 @@
 using Parley.Core;
 
-namespace Parley.Web;
+namespace Parley.Client;
 
 /// <summary>What one project's broker said when the console asked what it speaks.</summary>
 /// <param name="Speaks">The protocol version it reported, or null when it did not answer.</param>

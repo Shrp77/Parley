@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Parley.Core;
+using Parley.Client.Seating;
+using Parley.Client;
 using Parley.Web.Seating;
 
 namespace Parley.Web.Pages;

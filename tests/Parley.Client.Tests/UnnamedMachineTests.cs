@@ -1,7 +1,7 @@
 using Parley.Core;
 using Xunit;
 
-namespace Parley.Web.Tests;
+namespace Parley.Client.Tests;
 
 /// <summary>
 /// That a machine which never named its deployments still has a console.

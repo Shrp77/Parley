@@ -1,6 +1,7 @@
-﻿using Parley.Configuration;
+using Parley.Configuration;
 using Parley.Core;
 using Xunit;
+using Parley.Client;
 
 namespace Parley.Web.Tests;
 
@@ -39,7 +40,8 @@ public sealed class ManifestCurrencyTests : IDisposable
     /// <param name="names">The projects to put in it.</param>
     /// <remarks>
     /// Through the real writer rather than by hand, for the reason
-    /// <see cref="UnnamedMachineTests"/> already gives: a hand-rolled file the reader rejects
+    /// <c>UnnamedMachineTests</c> already gives — it moved to <c>Parley.Client.Tests</c> with
+    /// the directory it checks: a hand-rolled file the reader rejects
     /// makes a test pass because nothing was listed, which looks identical to the case it meant
     /// to check.
     /// </remarks>

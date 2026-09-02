@@ -1,6 +1,6 @@
 using Parley.Core;
 
-namespace Parley.Web.Rendering;
+namespace Parley.Client.Rendering;
 
 /// <summary>
 /// What the agents page says about one agent's state and about what it claims to own.

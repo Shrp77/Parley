@@ -1,10 +1,10 @@
 using Grpc.Core;
 using Parley.Core;
-using Parley.Web.Seating;
+using Parley.Client.Seating;
 using Xunit;
 using Wire = Parley.Transport;
 
-namespace Parley.Web.Tests;
+namespace Parley.Client.Tests;
 
 /// <summary>
 /// The guards around a person taking a seat.

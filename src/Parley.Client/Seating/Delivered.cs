@@ -1,6 +1,6 @@
 using Parley.Core;
 
-namespace Parley.Web.Seating;
+namespace Parley.Client.Seating;
 
 /// <summary>
 /// One message that has been handed to a person.

@@ -4,7 +4,7 @@ using Grpc.Core;
 using Parley.Core;
 using Wire = Parley.Transport;
 
-namespace Parley.Web.Seating;
+namespace Parley.Client.Seating;
 
 /// <summary>What became of an attempt to take a seat.</summary>
 /// <param name="Hold">The seat, when one was taken.</param>

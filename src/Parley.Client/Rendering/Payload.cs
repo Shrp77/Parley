@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Parley.Web.Rendering;
+namespace Parley.Client.Rendering;
 
 /// <summary>One numbered point in a message: a sub-question, or its resolution.</summary>
 /// <param name="Id">The label the asker gave it, such as <c>q1</c>.</param>

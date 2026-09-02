@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    What a client of a broker needs in order to show a deployment to a person, and to seat one.
+
+    A project of its own for the reason Parley.Configuration is one, and in almost the same
+    words: two programs read this and cannot otherwise share one reader. The operator's console
+    reads it to render a page; `parley top` reads it to draw a terminal. Leaving it inside
+    Parley.Web would mean a terminal application taking a dependency on an ASP.NET Core assembly
+    in order to find out who is in a conversation, which is a boundary nobody would defend if it
+    were proposed fresh.
+
+    The split is not arbitrary, and it was measured rather than guessed: of the fifteen types the
+    console held outside its Razor pages, exactly one touches HTTP. SeatCookie stays behind; the
+    other fourteen are here. Checked by type name rather than by using directive, because
+    Microsoft.NET.Sdk.Web supplies implicit global usings and an absent `using` line would have
+    proved nothing.
+
+    References Transport for the wire and Configuration for the project manifest, and nothing
+    else — which is exactly what Parley.Web referenced before the move, so nothing landed on
+    anybody's graph that was not already there. There is no SQLite here and there must never be
+    one: SPEC.md section 4 gives the store to one process, and a client that could open it would
+    be a second answer to questions the broker already answers. GraphTests enforces that rather
+    than trusting this comment.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Parley.Client</RootNamespace>
+    <AssemblyName>Parley.Client</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parley.Configuration\Parley.Configuration.csproj" />
+    <ProjectReference Include="..\Parley.Transport\Parley.Transport.csproj" />
+  </ItemGroup>
+
+</Project>

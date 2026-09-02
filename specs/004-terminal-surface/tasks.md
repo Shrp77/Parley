@@ -22,7 +22,7 @@ The plan asserted the move was safe. Rather than trust that, the file set was ch
 |---|---|---|
 | Only `SeatCookie` touches HTTP | grep all 15 candidates for `HttpRequest`/`HttpResponse`/`HttpContext`/`CookieOptions` | **Confirmed** — 14 clean, `SeatCookie` alone matches |
 | An implicit `global using` might hide a dependency | `Microsoft.NET.Sdk.Web` supplies them, so explicit `using` lines prove nothing — grepped type names, not usings | **Confirmed** — no hidden ASP.NET use |
-| `Parley.Web.Tests` splits cleanly | classify each of 23 files by `WebApplicationFactory`/`HttpClient`/`ConsoleHost` use | **9 pure, 14 host-bound** |
+| `Parley.Web.Tests` splits cleanly | classify each of 23 files by `WebApplicationFactory`/`HttpClient`/`ConsoleHost` use | **8 pure, 15 host-bound** — the first pass said 9/14 and was wrong; see below |
 | No graph grows | `Parley.Web.csproj` references exactly Configuration + Transport | **Confirmed** |
 | FR-018 needs new code | `ConsolePicker.Available` is already `!IsInputRedirected && !IsOutputRedirected` | **Reuse, do not reinvent** |
 
@@ -31,26 +31,38 @@ its Razor pages, exactly one touches HTTP."* There are **fifteen**, not twelve. 
 it is complete and correct, and the conclusion is unaffected — but the count is wrong and tasks
 below name all fifteen.
 
+**And one correction to the classification above, made by the move rather than by re-reading it.**
+The test split was screened for `WebApplicationFactory`, `HttpClient` and `ConsoleHost`, and
+`VersionTests.cs` uses none of them — so it screened as pure. It imports `Parley.Web.Pages` and
+asserts on `IndexModel.ConsoleSpeaks` and on `Index.cshtml`'s markup, which the screen never
+looked for. T011's stop rule caught it: *if a file needs more than namespaces and usings to
+compile, it was misclassified*. It did, so it went back. The real split is **8 pure, 15
+host-bound**.
+
+The screen was too narrow, and the lesson generalises: a filter looking for host *plumbing* will
+pass a test that depends on a *page*. What made this safe was not the filter but the rule that
+stopped when the filter turned out to be wrong.
+
 ---
 
 ## Phase 1: Setup
 
 **Purpose**: the new library exists, is wired into the build, and is empty. No behaviour moves yet.
 
-- [ ] T001 Create `src/Parley.Client/Parley.Client.csproj` — `Microsoft.NET.Sdk` (not `.Web`),
+- [X] T001 Create `src/Parley.Client/Parley.Client.csproj` — `Microsoft.NET.Sdk` (not `.Web`),
       `RootNamespace`/`AssemblyName` `Parley.Client`, `IsPackable` false, project references to
       `..\Parley.Configuration\Parley.Configuration.csproj` and
       `..\Parley.Transport\Parley.Transport.csproj` **and nothing else**. Carry a header comment
       in the style of `Parley.Web.csproj`: it exists because two programs read it, and it holds
       the same two references the console already had so no graph grows.
-- [ ] T002 Create `tests/Parley.Client.Tests/Parley.Client.Tests.csproj` — copy the shape of
+- [X] T002 Create `tests/Parley.Client.Tests/Parley.Client.Tests.csproj` — copy the shape of
       `tests/Parley.Web.Tests/Parley.Web.Tests.csproj`: `<OutputType>Exe</OutputType>`,
       `IsTestProject`, `NoWarn CS1591`, the linked `..\ManifestIsolation.cs`, `xunit.v3`, and the
       `BannedApiAnalyzers` block with `..\..\BannedSymbols.txt`. **Omit
       `Microsoft.AspNetCore.Mvc.Testing`** — its presence would be a route back to a web host.
-- [ ] T003 Register both projects in `Parley.slnx` under the existing `/src/` and `/tests/`
+- [X] T003 Register both projects in `Parley.slnx` under the existing `/src/` and `/tests/`
       folders (note the recorded trap: a solution folder needs a real name, never `/`).
-- [ ] T004 Verify `dotnet build` succeeds with 0 warnings before anything moves, so a later
+- [X] T004 Verify `dotnet build` succeeds with 0 warnings before anything moves, so a later
       failure is attributable to the move rather than to the scaffolding.
 
 ---
@@ -64,54 +76,86 @@ early: plan.md is explicit that *the web console's tests pass unchanged against 
 the move is wrong*, and "unchanged" is the load-bearing word. A test edited to accommodate the
 move has stopped testing the move.
 
-- [ ] T005 Record the pre-move baseline: run each `tests/Parley.*.Tests/bin/*/net10.0/*.exe`
+- [X] T005 Record the pre-move baseline: run each `tests/Parley.*.Tests/bin/*/net10.0/*.exe`
       directly and write the per-assembly totals into this file under **Baseline** below.
       Do not use `dotnet test` for the count — CLAUDE.md records it reporting `Zero tests ran`
       on this machine, and a suite that discovers nothing looks exactly like a suite that passes.
-- [ ] T006 Move the three top-level types to `src/Parley.Client/`: `BrokerDirectory.cs`,
+- [X] T006 Move the three top-level types to `src/Parley.Client/`: `BrokerDirectory.cs`,
       `BrokerClient.cs`, `ProjectHealth.cs`. Use `git mv` so history follows.
-- [ ] T007 Move `src/Parley.Web/Rendering/` entire — `Transcript.cs`, `Visibility.cs`,
+- [X] T007 Move `src/Parley.Web/Rendering/` entire — `Transcript.cs`, `Visibility.cs`,
       `Roster.cs`, `RosterView.cs`, `Payload.cs`, `Palette.cs` — to
       `src/Parley.Client/Rendering/`.
-- [ ] T008 Move `src/Parley.Web/Seating/` **less `SeatCookie.cs`** — `Seat.cs`, `SeatBook.cs`,
+- [X] T008 Move `src/Parley.Web/Seating/` **less `SeatCookie.cs`** — `Seat.cs`, `SeatBook.cs`,
       `SeatHold.cs`, `SeatVoice.cs`, `Delivered.cs` — to `src/Parley.Client/Seating/`.
       `SeatCookie.cs` stays: it is the one type that knows what HTTP is, and it is the reason the
       seam is where it is.
-- [ ] T009 Change the moved files' namespaces `Parley.Web[.X]` → `Parley.Client[.X]`, and add the
+- [X] T009 Change the moved files' namespaces `Parley.Web[.X]` → `Parley.Client[.X]`, and add the
       `using Parley.Client...;` lines the Razor pages, `ConsoleHost.cs`, `Program.cs` and
       `SeatCookie.cs` now need. **Use Edit/Write, not a script** — memory records regex surgery
       mangling C# in this repository repeatedly; scripted edits are for markdown only.
-- [ ] T010 Add `<ProjectReference Include="..\Parley.Client\Parley.Client.csproj" />` to
+- [X] T010 Add `<ProjectReference Include="..\Parley.Client\Parley.Client.csproj" />` to
       `src/Parley.Web/Parley.Web.csproj`, and update its header comment: it no longer holds the
       client half, and the comment currently claims it does.
-- [ ] T011 `git mv` the nine pure test files to `tests/Parley.Client.Tests/` —
+- [X] T011 `git mv` the pure test files to `tests/Parley.Client.Tests/` —
       `BrokerDirectoryTests.cs`, `ConcurrencyTests.cs`, `RegistrationGuidanceTests.cs`,
       `RosterConsistencyTests.cs`, `RosterTests.cs`, `SeatTests.cs`, `UnnamedMachineTests.cs`,
       `VersionTests.cs`, `VisibilityTests.cs` — changing **namespaces and usings only**. If a
       file needs more than that to compile, stop: it was misclassified and the seam is wrong.
-- [ ] T012 Confirm the fourteen host-bound files stay in `tests/Parley.Web.Tests/` and still
+- [X] T012 Confirm the fourteen host-bound files stay in `tests/Parley.Web.Tests/` and still
       build: `ActingTests`, `CurrencyTests`, `DeadBrokerConsole`, `ExportTests`, `ForgeryTests`,
       `FrameTests`, `InboxTests`, `JoiningTests`, `LaunchTests`, `ManifestCurrencyTests`,
       `NamingAPageAwayTests`, `RenderingTests`, `ScopeTests`, `StaleSeatTests`.
-- [ ] T013 **The move's acceptance test.** Re-run every host executable and diff the per-assembly
+- [X] T013 **The move's acceptance test.** Re-run every host executable and diff the per-assembly
       totals against T005's baseline. `Web + Client` must equal the old `Web` count exactly, and
       every other assembly must be untouched. A drop of even one test is a test that stopped
       running, which is the failure mode this whole phase is arranged to catch.
-- [ ] T014 [P] Add `tests/Parley.Client.Tests/GraphTests.cs`: assert `Parley.Client.csproj`
+- [X] T014 [P] Add `tests/Parley.Client.Tests/GraphTests.cs`: assert `Parley.Client.csproj`
       references exactly Configuration and Transport, and that no assembly reachable from
       `Parley.Client` is `Microsoft.Data.Sqlite`. Mirror the existing check in
       `Parley.Web.Tests` that the console cannot open a store — the constraint moved, so its
       guard must move with it and hold on both.
-- [ ] T015 [P] Add `tests/Parley.Client.Tests/DoubleSeatTests.cs` for research R2's named
+- [X] T015 [P] Add `tests/Parley.Client.Tests/DoubleSeatTests.cs` for research R2's named
       consequence: one person seated **twice** under one name is two attachments, which is
       exactly the case `connected = 1` got wrong until #77. Probe it — seat twice, release one,
       and assert the person is still present and no in-progress work was released.
-- [ ] T016 Bump `VersionPrefix` in `Directory.Build.props` **in this commit**. The move changes
+- [X] T016 Bump `VersionPrefix` in `Directory.Build.props` **in this commit**. The move changes
       shipped assemblies, and CLAUDE.md is explicit that a change landing without a bump cannot be
       delivered by the documented upgrade path — `dotnet tool update` silently installs nothing.
 
-**Checkpoint**: the console behaves identically, its tests are unedited, and a second reader is
-now possible.
+**Checkpoint — reached.** 1650 tests pass, 0 warnings. The count invariant held exactly:
+`Web 105 + Client 64 = 169`, which is the old 168 plus the isolation check the new assembly took
+with the guard. Every other assembly is unchanged. The 7 above 1643 are the new guards (3 graph,
+4 double-seat).
+
+**Four things the move turned up that reading it had not.**
+
+1. **`VersionTests` was misclassified**, and T011's stop rule caught it rather than a build
+   failure. See the correction at the top of this file.
+
+2. **The internals moved out from under their callers.** `SeatHold.Record`, `Settled` and
+   `DismissRead` are `internal`, and the console could call them only because it shared an
+   assembly with them. Four call sites. Granted with `InternalsVisibleTo("Parley.Web")`, following
+   the grant `Parley.Core` already makes to `Parley.Store` — the alternative was making them
+   public, which lets anything desynchronise a person's delivered set from what the broker
+   believes it sent. **This is a signal, not a solution**: that two surfaces drive a seat's
+   bookkeeping from their own code is how they come to disagree about what a person has seen, and
+   the fix is for the drive to live beside the state. That is US2's problem, not a move's.
+
+3. **The move silently weakened the console's store guard, and the guard kept passing.** It read
+   `Parley.Web.csproj`'s *direct* references, which was a complete check only while the console
+   referenced nothing but Configuration and Transport. It now references `Parley.Client`, so a
+   store acquired there would arrive transitively and never appear in the file being read. Both
+   guards now walk the graph. **Proved rather than argued**: adding `Parley.Store` to
+   `Parley.Client` fails four checks, and the console's own reports `Microsoft.Data.Sqlite` — two
+   hops out, where the old one-hop version saw nothing. Reverted.
+
+4. **Five `InboxTests` failures**, all one cause: the tests read *source files by path*, and two
+   of those files moved. Repointed. The assertions are untouched and the source they read is
+   byte-identical apart from its namespace line, so this is a path change and not a test edited to
+   accommodate the move.
+
+Item 3 is the one worth keeping. A guard that goes on passing while the thing it guards becomes
+reachable is worse than no guard, because it is also an assurance.
 
 ---
 
@@ -308,18 +352,27 @@ identically to one added from the command line.
 
 *Filled by T005 before anything moves, and compared by T013 after.*
 
-| Assembly | Tests | After move |
+| Assembly | Before move | After move |
 |---|---|---|
-| Parley.Broker.Tests | | |
-| Parley.Cli.Tests | | |
-| Parley.Core.Tests | | |
-| Parley.Headless.Tests | | |
-| Parley.Mcp.Tests | | |
-| Parley.Server.Tests | | |
-| Parley.Spec.Tests | | |
-| Parley.Store.Tests | | |
-| Parley.Web.Tests | | |
-| Parley.Client.Tests | — | |
+| Parley.Broker.Tests | 218 | 218 |
+| Parley.Cli.Tests | 322 | 322 |
+| Parley.Core.Tests | 189 | 189 |
+| Parley.Headless.Tests | 49 (1 skipped) | 49 (1 skipped) |
+| Parley.Mcp.Tests | 171 | 171 |
+| Parley.Server.Tests | 85 | 85 |
+| Parley.Spec.Tests | 19 | 19 |
+| Parley.Store.Tests | 421 | 421 |
+| Parley.Web.Tests | 168 | 105 |
+| Parley.Client.Tests | 1 | 64 |
+| **Total** | **1643** | **1643 — all passing** |
+
+`Parley.Client.Tests` already reports 1 before a single test moves. That is not noise: the linked
+`ManifestIsolation.cs` carries its own check, deliberately — *"linked beside it so every assembly
+that takes the guard also takes its check"*. The new assembly took the guard, so it took the test.
+
+**The invariant T013 checks**: `Web_after + Client_after == 169`, and every other assembly
+unchanged at the numbers above. The skip in Headless is `LiveRunnerTests` opting out because its
+environment variable names no real agent runner — pre-existing and unrelated.
 
 ---
 

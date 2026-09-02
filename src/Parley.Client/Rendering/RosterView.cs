@@ -1,6 +1,6 @@
 using Parley.Core;
 
-namespace Parley.Web.Rendering;
+namespace Parley.Client.Rendering;
 
 /// <summary>One agent in a roster: who it is, and what the registry says it is doing.</summary>
 /// <param name="Name">The agent.</param>

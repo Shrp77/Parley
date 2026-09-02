@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      xUnit v3 test projects are stand-alone executables, not libraries. Omitting this
+      produces a project that builds but discovers no tests.
+    -->
+    <OutputType>Exe</OutputType>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    References the client, and through it Transport and Configuration. It does not reference
+    Parley.Store and must not, for the reason the console's own test project does not: these
+    check what came over the wire, and a route to the database here would let a check assert
+    against the store instead.
+
+    Nor does it reference Microsoft.AspNetCore.Mvc.Testing. That absence is deliberate and is
+    half the point of the project existing: a web host reachable from here would be a way for a
+    test of client behaviour to quietly become a test of the console again.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Parley.Client\Parley.Client.csproj" />
+  </ItemGroup>
+
+  <!--
+    Shared, not copied. It points this assembly's manifest resolution at an absent path; see the
+    file's own remarks for what it found and why an empty variable does the opposite. It matters
+    here because BrokerDirectory reads the manifest, and a suite that read the developer's own
+    would be asserting against whatever deployment happened to be installed.
+  -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)..\ManifestIsolation.cs" Link="ManifestIsolation.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <!-- See Directory.Packages.props: one banned symbol, and why. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)..\..\BannedSymbols.txt" />
+  </ItemGroup>
+
+</Project>

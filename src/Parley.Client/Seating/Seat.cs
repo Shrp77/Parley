@@ -2,7 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using Parley.Core;
 
-namespace Parley.Web.Seating;
+namespace Parley.Client.Seating;
 
 /// <summary>
 /// A person who has joined this deployment, and the agent identity they speak through.

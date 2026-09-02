@@ -1,6 +1,6 @@
 using Parley.Core;
 
-namespace Parley.Web.Rendering;
+namespace Parley.Client.Rendering;
 
 /// <summary>
 /// Who could see each message in a conversation, and who could not.
