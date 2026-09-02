@@ -59,6 +59,60 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
     /// </remarks>
     private static readonly Lazy<string> ToolDirectory = new(LocateTool);
 
+    /// <summary>Pays the tool's first-launch cost once, outside anybody's budget.</summary>
+    /// <remarks>
+    /// <para>
+    /// The hook shells out to <c>parley waiting</c> under <c>timeout=5</c>, and treats any
+    /// failure as "nothing waiting" — so a timeout is indistinguishable from silence and the
+    /// test sees an empty string. That budget is a deliberate product decision: the hook runs in
+    /// front of a person waiting for their turn to start, and a broker that is slow must cost a
+    /// moment and then be dropped. Nothing here changes it.
+    /// </para>
+    /// <para>
+    /// What was being measured inside it was the wrong thing. The first launch of the tool on a
+    /// cold runner pays for the apphost, the assembly load and the JIT of the whole startup path,
+    /// and on a two-core CI box that is most of five seconds — so the hook timed out, the notice
+    /// never appeared, and the case failed. Different cases each run, because whichever ran first
+    /// paid the bill: on one run <c>PostToolBatch</c> and <c>Stop</c>, on the next
+    /// <c>UserPromptSubmit</c>, all at six seconds and change against a five-second budget.
+    /// </para>
+    /// <para>
+    /// So the cost is paid once, before anything is timed, and the budget then applies to a warm
+    /// process — which is the state a person's machine is in and the state the number was chosen
+    /// for. Failures are ignored: this is a warm-up, and anything genuinely wrong with the tool
+    /// fails the assertions below with a better message than a warm-up could give.
+    /// </para>
+    /// </remarks>
+    private static readonly Lazy<bool> Warm = new(WarmTheTool);
+
+    /// <summary>Runs the tool once so its first launch is not inside a timed one.</summary>
+    /// <returns>Always true; the value is not the point, the side effect is.</returns>
+    private static bool WarmTheTool()
+    {
+        try
+        {
+            var binary = Path.Combine(
+                ToolDirectory.Value, OperatingSystem.IsWindows() ? "parley.exe" : "parley");
+
+            // --help, because it is the one verb proven to exit cleanly with no database, no
+            // broker and no manifest -- see ForeignDatabaseTests.
+            using var probe = Process.Start(new ProcessStartInfo(binary, "--help")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            });
+
+            probe?.WaitForExit(milliseconds: 60_000);
+        }
+        catch (SystemException)
+        {
+            // A warm-up that cannot run leaves the tests exactly where they were.
+        }
+
+        return true;
+    }
+
     private Microsoft.Data.Sqlite.SqliteConnection? _connection;
     private Parley.Server.ParleyServer? _broker;
 
@@ -224,6 +278,9 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         {
             Assert.Skip("no python interpreter on this machine; the source-level checks still ran.");
         }
+
+        // Before the hook, never inside it. See Warm.
+        _ = Warm.Value;
 
         var fields = new Dictionary<string, object>(StringComparer.Ordinal)
         {

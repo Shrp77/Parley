@@ -804,22 +804,58 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// matter. An agent told only "failed" may reasonably conclude its message was malformed and
     /// spend a turn rewriting it.
     /// </para>
+    /// <para>
+    /// <b>Only <see cref="StatusCode.Unavailable"/> means unreachable, and everything else is the
+    /// broker answering.</b> This used to label every <see cref="RpcException"/>
+    /// <c>brokerunreachable</c> and append "Tell your principal rather than retrying" to whatever
+    /// the broker had said — so a broker that refused with <c>'orders@test' is not attached. Open
+    /// an Attach stream before calling anything else</c> produced a refusal that named the remedy
+    /// and then instructed the agent not to apply it. SPEC.md §7.3 asks the opposite of that: a
+    /// refusal returns work, never a retry instruction, and the work here was the agent's to do.
+    /// </para>
+    /// <para>
+    /// Found by probing rather than reading. A broker torn down while a call is draining releases
+    /// the attachment before the call finishes, so the call is answered — with a rule, not a
+    /// socket error. Fifteen runs out of fifteen, once the call was started before the shutdown
+    /// rather than after it; nought out of fifteen the other way round, which is why a fast
+    /// machine never sees it and a loaded CI runner does.
+    /// </para>
+    /// <para>
+    /// So the broker's own words carry the remedy and nothing is appended to contradict them.
+    /// <c>brokerrefused</c> rather than a status-specific code because the detail already
+    /// distinguishes the cases, and an agent that needs to branch has it in the text; a code per
+    /// gRPC status would be surface for its own sake.
+    /// </para>
+    /// <para>
+    /// <b>Which is why an empty detail counts as unreachable.</b> The first version of this
+    /// change keyed only on the status and produced <c>"Nothing was sent."</c> and nothing else,
+    /// because a call cut off mid-shutdown arrives as a non-<see cref="StatusCode.Unavailable"/>
+    /// status carrying no message at all. That is a refusal with nothing to act on — the same
+    /// §7.3 failure this method exists to prevent, reintroduced while fixing it. A status with no
+    /// detail is not the broker stating a rule; it is the broker going away, so it is reported as
+    /// what it is.
+    /// </para>
     /// </remarks>
-    private static JsonNode Unreachable(RpcException failure) => new JsonObject
-    {
-        ["ok"] = false,
-        ["refused"] = "brokerunreachable",
-        ["why"] =
-            failure.StatusCode == StatusCode.Unavailable
-                ? "Parley's broker is not answering, so nothing was sent and nothing was " +
-                  "collected. This is not something you did and not something you can fix by " +
-                  "rephrasing: the process that carries messages between repositories is down. " +
-                  "Tell your principal it needs starting, and carry on with what you can do " +
-                  "alone."
-                : "Parley refused that at the transport, so nothing was sent. This is a " +
-                  $"deployment fault rather than a mistake in your message: {failure.Status.Detail} " +
-                  "Tell your principal rather than retrying."
-    };
+    private static JsonNode Unreachable(RpcException failure) =>
+        failure.StatusCode == StatusCode.Unavailable
+            || string.IsNullOrWhiteSpace(failure.Status.Detail)
+            ? new JsonObject
+            {
+                ["ok"] = false,
+                ["refused"] = "brokerunreachable",
+                ["why"] =
+                    "Parley's broker is not answering, so nothing was sent and nothing was " +
+                    "collected. This is not something you did and not something you can fix by " +
+                    "rephrasing: the process that carries messages between repositories is down. " +
+                    "Tell your principal it needs starting, and carry on with what you can do " +
+                    "alone."
+            }
+            : new JsonObject
+            {
+                ["ok"] = false,
+                ["refused"] = "brokerrefused",
+                ["why"] = $"Nothing was sent. {failure.Status.Detail}"
+            };
 
     /// <summary>
     /// Refuses a malformed request, or returns nothing if it is usable.

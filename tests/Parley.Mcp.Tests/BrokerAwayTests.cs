@@ -52,16 +52,87 @@ public sealed class BrokerAwayTests
             var reply = await call();
 
             Assert.False(reply["ok"]!.GetValue<bool>(), name);
-            Assert.Equal("brokerunreachable", reply["refused"]!.GetValue<string>());
 
+            var refused = reply["refused"]!.GetValue<string>();
             var why = reply["why"]!.GetValue<string>();
 
-            // Three things a model needs and one it must not conclude: that nothing was sent,
-            // that this is not its fault, that somebody should be told, and — by omission — no
-            // suggestion that rephrasing would help.
-            Assert.Contains("nothing was sent", why, StringComparison.Ordinal);
+            // Both codes are correct here, and which one arrives is a race this test must not
+            // pretend to control. A broker torn down while a call is draining releases the
+            // attachment before the call finishes, so the call is *answered* -- with a rule
+            // rather than a socket error. That is `brokerrefused`. A broker already gone refuses
+            // at the socket, and that is `brokerunreachable`.
+            //
+            // Asserting the reachable-case wording here is what made this fail on loaded runners
+            // and pass on every developer's machine. What both owe the agent is the same, so
+            // that is what is asserted.
+            Assert.Contains(refused, (string[])["brokerunreachable", "brokerrefused"], StringComparer.Ordinal);
+
+            // The one thing a model must be able to conclude: the work did not happen.
+            Assert.Contains("othing was sent", why, StringComparison.Ordinal);
+
+            if (refused == "brokerunreachable")
+            {
+                // Nothing to act on but the deployment, so say so plainly and send them to the
+                // person who can start it.
+                Assert.Contains("not something you did", why, StringComparison.Ordinal);
+                Assert.Contains("principal", why, StringComparison.Ordinal);
+            }
+        }
+
+        await link.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task A_rule_the_broker_states_is_passed_on_rather_than_overruled()
+    {
+        // The defect this file was failing over, made deterministic. Start the call, then take
+        // the broker down under it: the attach stream dies first, so the call is answered with
+        // "not attached. Open an Attach stream before calling anything else". Fifteen runs out of
+        // fifteen, where the same sequence with the shutdown first gave nought out of fifteen --
+        // which is why a fast machine never sees this and CI does.
+        //
+        // That answer is a rule, and the remedy in it is the agent's to apply. It used to be
+        // relabelled `brokerunreachable` and have "Tell your principal rather than retrying"
+        // appended -- a refusal that named the fix and then forbade it. SPEC.md §7.3: a refusal
+        // returns work, never a retry instruction.
+        var ct = TestContext.Current.CancellationToken;
+
+        await using var fixture = new ServerFixture(T0);
+
+        var (link, tools) = await fixture.LaunchAsync("orders@test", ct);
+
+        var call = tools.AgentsAsync(ct);
+
+        await fixture.StopBrokerAsync();
+
+        var reply = await call;
+
+        Assert.False(reply["ok"]!.GetValue<bool>());
+
+        var why = reply["why"]!.GetValue<string>();
+
+        Assert.Contains("othing was sent", why, StringComparison.Ordinal);
+
+        // Never contentless, whichever way the race fell. The first attempt at this fix keyed
+        // only on the status and handed back "Nothing was sent." and nothing else, because a call
+        // cut off mid-shutdown carries no detail -- a refusal with nothing in it to act on, which
+        // is the §7.3 failure the whole method exists to prevent.
+        Assert.True(
+            why.Length > "Nothing was sent. ".Length + 20,
+            $"the refusal carries nothing to act on: '{why}'");
+
+        if (reply["refused"]!.GetValue<string>() == "brokerrefused")
+        {
+            // A rule the broker stated. It survives intact, and nothing is appended that argues
+            // with it -- the old text named the remedy and then said not to retry.
+            Assert.Contains("Open an Attach stream", why, StringComparison.Ordinal);
+            Assert.DoesNotContain("rather than retrying", why, StringComparison.Ordinal);
+        }
+        else
+        {
+            // The broker went away under the call. Nothing to act on but the deployment.
+            Assert.Equal("brokerunreachable", reply["refused"]!.GetValue<string>());
             Assert.Contains("not something you did", why, StringComparison.Ordinal);
-            Assert.Contains("principal", why, StringComparison.Ordinal);
         }
 
         await link.DisposeAsync();
