@@ -9,7 +9,24 @@
 @{
     // Read here rather than passed in by every page, because the frame is the one thing every
     // page has and a seat shown on some pages and not others is worse than one shown on none.
-    var here = SeatCookie.Read(Context.Request);
+    var named = SeatCookie.Read(Context.Request);
+
+    // And then asked of the seat book, because the cookie is not the seat. A seat is an open
+    // attachment held in this process (SPEC.md §4.0); the cookie is a note in somebody's browser
+    // saying which name they were using. The two part company whenever the broker restarts —
+    // an upgrade, a reboot, `autostart` doing its job — and they part company again twenty
+    // minutes after somebody walks away, when SeatBook.IdleAfter releases a seat a tab left open
+    // cannot keep.
+    //
+    // Believing the cookie put a person's name in the frame with a live mark beside it while the
+    // inbox one click away said "You are seated nowhere, so nothing can be waiting". The comment
+    // below already records this lesson being learned about the *count* on the same afternoon;
+    // it was not applied to the seat the count was being counted for.
+    //
+    // Nothing is re-seated automatically. Joining opens an attachment and puts a name in the
+    // registry, and doing that because a browser still had a cookie would be the console
+    // deciding somebody is present when all it knows is that they once were.
+    var here = named is not null && Seats.Seats(named).Count > 0 ? named : null;
 
     // A page render is evidence that the person is still at the console, which is the whole of
     // what keeps their seat: SPEC.md §4.0 has no heartbeat, so somebody who has gone home has to
