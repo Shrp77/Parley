@@ -100,7 +100,8 @@ public sealed class SeatBookConcurrencyTests
 
         Assert.True(first.Seated);
 
-        await UntilAsync(() => first.Hold!.Lost, token);
+        await Eventually.UntilAsync(
+            () => first.Hold!.Lost, "the seat never gave up on a broker refusing it", token);
 
         Assert.Equal(0, agents.Live);
 
@@ -152,21 +153,6 @@ public sealed class SeatBookConcurrencyTests
         Assert.Equal(0, agents.Live);
     }
 
-    /// <summary>Waits for something a background pump is going to do, or fails saying it did not.</summary>
-    /// <param name="done">What is being waited for.</param>
-    /// <param name="cancellationToken">Stops the wait.</param>
-    /// <returns>When it has happened.</returns>
-    private static async Task UntilAsync(Func<bool> done, CancellationToken cancellationToken)
-    {
-        var giveUp = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(20);
-
-        while (!done())
-        {
-            Assert.True(DateTimeOffset.UtcNow < giveUp, "the reattach never resolved");
-
-            await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken);
-        }
-    }
 
     /// <summary>One of the crowd, by index.</summary>
     /// <param name="index">Which one.</param>

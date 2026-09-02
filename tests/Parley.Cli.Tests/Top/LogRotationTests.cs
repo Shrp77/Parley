@@ -15,30 +15,9 @@ namespace Parley.Cli.Tests.Top;
 /// </remarks>
 public sealed class LogRotationTests : IDisposable
 {
-    private readonly string _directory =
-        Path.Combine(Path.GetTempPath(), $"parley-rotate-{Guid.NewGuid():N}");
+    private readonly LogFile _log = new("rotate");
 
-    private readonly string _path;
-
-    public LogRotationTests()
-    {
-        Directory.CreateDirectory(_directory);
-        _path = Path.Combine(_directory, "broker.log");
-        File.WriteAllText(_path, "already here\n");
-    }
-
-    public void Dispose()
-    {
-        try
-        {
-            Directory.Delete(_directory, recursive: true);
-        }
-        catch (IOException)
-        {
-            // A follower on a worker can still hold the handle when the test ends. The temp
-            // directory is the operating system's problem at that point, not this test's.
-        }
-    }
+    public void Dispose() => _log.Dispose();
 
     [Fact]
     public async Task Lines_appended_after_the_log_is_truncated_are_still_followed()
@@ -46,21 +25,28 @@ public sealed class LogRotationTests : IDisposable
         // A broker that rotates by truncating leaves the reader parked past the new end of file,
         // where every read returns null forever. The screen keeps saying "Following ..." and
         // shows nothing again, which is indistinguishable from a quiet broker.
+        var token = TestContext.Current.CancellationToken;
         using var console = new TestConsole();
         using var stopping = new CancellationTokenSource();
 
-        var following = LogTail.FollowAsync(console, _path, string.Empty, stopping.Token);
-
-        await AppendAsync("before rotation");
-        await UntilAsync(() => console.Output.Contains("before rotation", StringComparison.Ordinal));
-
-        Truncate();
-
-        await AppendAsync("after rotation");
+        var following = LogTail.FollowAsync(console, _log.At, string.Empty, stopping.Token);
 
         try
         {
-            await UntilAsync(() => console.Output.Contains("after rotation", StringComparison.Ordinal));
+            await _log.AppendAsync("before rotation");
+            await Eventually.UntilAsync(
+                () => console.Output.Contains("before rotation", StringComparison.Ordinal),
+                "the follower never showed a line written before the rotation",
+                token);
+
+            _log.Truncate();
+
+            await _log.AppendAsync("after rotation");
+
+            await Eventually.UntilAsync(
+                () => console.Output.Contains("after rotation", StringComparison.Ordinal),
+                "the follower stopped following once the log was truncated",
+                token);
         }
         finally
         {
@@ -74,13 +60,17 @@ public sealed class LogRotationTests : IDisposable
     {
         // The shape that made two probes in this repository hang for ten minutes. Cancelling has
         // to end the task rather than fault it on a background thread nobody is awaiting.
+        var token = TestContext.Current.CancellationToken;
         using var console = new TestConsole();
         using var stopping = new CancellationTokenSource();
 
-        var following = LogTail.FollowAsync(console, _path, string.Empty, stopping.Token);
+        var following = LogTail.FollowAsync(console, _log.At, string.Empty, stopping.Token);
 
-        await AppendAsync("something");
-        await UntilAsync(() => console.Output.Contains("something", StringComparison.Ordinal));
+        await _log.AppendAsync("something");
+        await Eventually.UntilAsync(
+            () => console.Output.Contains("something", StringComparison.Ordinal),
+            "the follower never showed the appended line",
+            token);
 
         await stopping.CancelAsync();
 
@@ -88,40 +78,5 @@ public sealed class LogRotationTests : IDisposable
         await following;
 
         Assert.True(following.IsCompletedSuccessfully);
-    }
-
-    /// <summary>Appends one line, the way a broker writing its log would.</summary>
-    /// <param name="line">What to write.</param>
-    /// <returns>When it is on disk.</returns>
-    private async Task AppendAsync(string line)
-    {
-        await using var writer = new FileStream(
-            _path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
-
-        await using var text = new StreamWriter(writer);
-
-        await text.WriteLineAsync(line);
-    }
-
-    /// <summary>Empties the file in place, the way a rotating writer would.</summary>
-    private void Truncate()
-    {
-        using var file = new FileStream(
-            _path, FileMode.Truncate, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
-    }
-
-    /// <summary>Waits for the follower to catch up, or fails saying it did not.</summary>
-    /// <param name="done">What is being waited for.</param>
-    /// <returns>When it has happened.</returns>
-    private static async Task UntilAsync(Func<bool> done)
-    {
-        var giveUp = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(10);
-
-        while (!done())
-        {
-            Assert.True(DateTimeOffset.UtcNow < giveUp, "the follower never showed it");
-
-            await Task.Delay(TimeSpan.FromMilliseconds(25), TestContext.Current.CancellationToken);
-        }
     }
 }

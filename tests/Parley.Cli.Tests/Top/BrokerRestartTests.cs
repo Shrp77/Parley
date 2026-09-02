@@ -41,9 +41,6 @@ public sealed class BrokerRestartTests
     private static readonly ProjectSettings Alpha =
         new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5601", null, null);
 
-    /// <summary>How long to allow for a reattach that waits <c>SeatHold.RetryAfter</c> first.</summary>
-    private static readonly TimeSpan Eventually = TimeSpan.FromSeconds(20);
-
     [Fact]
     public async Task A_seat_that_is_over_is_drawn_as_no_seat()
     {
@@ -63,7 +60,8 @@ public sealed class BrokerRestartTests
 
         Assert.True(taken.Seated);
 
-        await UntilAsync(() => taken.Hold!.Lost, ct);
+        await Eventually.UntilAsync(
+            () => taken.Hold!.Lost, "the seat never gave up on a broker refusing it", ct);
 
         using var console = Interactive();
 
@@ -104,26 +102,6 @@ public sealed class BrokerRestartTests
         Assert.Single(seats.Seats(me));
     }
 
-    /// <summary>Waits for something a background pump is going to do, or fails saying it did not.</summary>
-    /// <param name="done">What is being waited for.</param>
-    /// <param name="cancellationToken">Stops the wait.</param>
-    /// <returns>When it has happened.</returns>
-    /// <remarks>
-    /// Polled rather than slept for a fixed span. <c>SeatHold.RetryAfter</c> is two seconds and
-    /// this waits on the far side of it, so a sleep long enough to be reliable on a loaded CI
-    /// runner would be several seconds spent on every green run.
-    /// </remarks>
-    private static async Task UntilAsync(Func<bool> done, CancellationToken cancellationToken)
-    {
-        var giveUp = DateTimeOffset.UtcNow + Eventually;
-
-        while (!done())
-        {
-            Assert.True(DateTimeOffset.UtcNow < giveUp, "the reattach never resolved");
-
-            await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken);
-        }
-    }
 
     /// <summary>A console that answers prompts from pushed keys.</summary>
     /// <returns>The console.</returns>

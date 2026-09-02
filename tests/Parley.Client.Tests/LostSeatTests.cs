@@ -36,9 +36,6 @@ public sealed class LostSeatTests
     private static readonly ProjectSettings Alpha =
         new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5402", null, null);
 
-    /// <summary>How long to allow for a reattach that waits <c>SeatHold.RetryAfter</c> first.</summary>
-    private static readonly TimeSpan Eventually = TimeSpan.FromSeconds(20);
-
     [Fact]
     public async Task A_refused_reattachment_ends_the_seat()
     {
@@ -50,7 +47,8 @@ public sealed class LostSeatTests
 
         Assert.True(taken.Seated);
 
-        await UntilAsync(() => taken.Hold!.Lost, token);
+        await Eventually.UntilAsync(
+            () => taken.Hold!.Lost, "the seat never gave up on a broker refusing it", token);
 
         Assert.Null(book.Held(Alpha.Name.Value, seat));
         Assert.Empty(book.Seats(seat));
@@ -71,7 +69,8 @@ public sealed class LostSeatTests
 
         Assert.True(taken.Seated);
 
-        await UntilAsync(() => flaky.Refusals > 0, token);
+        await Eventually.UntilAsync(
+            () => flaky.Refusals > 0, "the reattach was never attempted", token);
 
         Assert.False(taken.Hold!.Lost);
         Assert.NotNull(book.Held(Alpha.Name.Value, seat));
@@ -94,7 +93,8 @@ public sealed class LostSeatTests
 
         Assert.True(first.Seated);
 
-        await UntilAsync(() => first.Hold!.Lost, token);
+        await Eventually.UntilAsync(
+            () => first.Hold!.Lost, "the seat never gave up on a broker refusing it", token);
 
         // The broker comes back. Nothing is racing for this: a hold that has given up has
         // stopped retrying, which is what made it lost in the first place.
@@ -120,26 +120,12 @@ public sealed class LostSeatTests
 
         Assert.True(taken.Seated);
 
-        await UntilAsync(() => taken.Hold!.Lost, token);
+        await Eventually.UntilAsync(
+            () => taken.Hold!.Lost, "the seat never gave up on a broker refusing it", token);
 
         Assert.Equal(1, book.Sweep(taken.Hold!.Since));
     }
 
-    /// <summary>Waits for something a background pump is going to do, or fails saying it did not.</summary>
-    /// <param name="done">What is being waited for.</param>
-    /// <param name="cancellationToken">Stops the wait.</param>
-    /// <returns>When it has happened.</returns>
-    private static async Task UntilAsync(Func<bool> done, CancellationToken cancellationToken)
-    {
-        var giveUp = DateTimeOffset.UtcNow + Eventually;
-
-        while (!done())
-        {
-            Assert.True(DateTimeOffset.UtcNow < giveUp, "the reattach never resolved");
-
-            await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken);
-        }
-    }
 
     /// <summary>A person's seat, by the name they typed.</summary>
     /// <param name="person">What they typed.</param>
