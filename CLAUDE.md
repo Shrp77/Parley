@@ -423,11 +423,21 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/003-parley-web-console/` — a read-only operator web console:
-  projects, the agents registered in each, and conversations as an annotated chat
-  transcript. `plan.md` gates the work behind a `SPEC.md` §10.2 change: nothing lists
-  conversations and an export carries no exchange state, so two operator reads must be
-  specified before they are built. `contracts/operators-additions.md` is the argument.
+- **Active plan**: `specs/004-terminal-surface/` — `parley top`, a terminal application a person
+  takes part from, because SPEC.md §17 question 15's editor-window agent is the one thing
+  nothing can hand a turn to. `plan.md` settles the question the spec raised and did not
+  assume: **the transport-facing half of `Parley.Web` moves to a new `src/Parley.Client`, and
+  both surfaces read it.** That is a move rather than a rewrite — of the twelve types outside
+  the Razor pages, exactly one (`SeatCookie`) touches HTTP — and it costs no graph, because
+  `Parley.Client` takes the same two references `Parley.Web` has today. Two surfaces that
+  implemented seating and transcripts separately would disagree about who was in a conversation,
+  which SC-003 forbids and which this repository shipped twice in one week. `research.md` R2
+  records why both surfaces keep one `Seat.Adapter`, and what that makes ordinary: a person
+  seated in a browser and a terminal at once is two attachments for one name, which is the case
+  `connected = 1` got wrong until #72.
+- Previous: `specs/003-parley-web-console/` — a read-only operator web console, merged. Its
+  gate was discharged: `ListConversations` and `Export` were specified before being built, and
+  004 is their second reader rather than a reason to add a third.
 - Previous: `specs/002-project-manifest/` — a per-machine manifest of named projects, merged.
   Its obligation was discharged: SPEC.md §4.1 now illustrates `projects.json` rather than
   `parley.yaml`. `tasks.md` carries the review record, including what five rounds turned up.
