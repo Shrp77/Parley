@@ -87,6 +87,7 @@ parley autostart remove               stop doing that
 parley autostart status               say whether it is set up
 parley up                             run this machine's node, so its agents can be started
 parley console [<url>]                the operator's console in a browser; loopback by default
+parley top                            the same deployment in this terminal; needs a real one
 
 parley project list                   what this machine is configured for
 parley project add <name> --db <path> --listen <url>    name a deployment

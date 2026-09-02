@@ -168,53 +168,75 @@ without typing an identifier (SC-001).
 each is reachable and that the transcript matches what the web console renders for the same
 conversation.
 
-- [ ] T017 Add `Spectre.Console` to `Directory.Packages.props` under a new
+- [X] T017 Add `Spectre.Console` to `Directory.Packages.props` under a new
       `<ItemGroup Label="Terminal">`, pinned exactly, and reference it from
       `src/Parley.Cli/Parley.Cli.csproj` with **no `Version=` attribute** — CPM makes that a
       restore error. Confirm `NuGetAudit` stays clean; this is the first non-Microsoft,
       non-gRPC dependency on the tool.
-- [ ] T018 Add `<ProjectReference ...Parley.Client...>` to `src/Parley.Cli/Parley.Cli.csproj`.
+- [X] T018 Add `<ProjectReference ...Parley.Client...>` to `src/Parley.Cli/Parley.Cli.csproj`.
       Leave the `Parley.Web` reference alone — `parley console` still starts Kestrel, which
       plan.md records as deliberate.
-- [ ] T019 [US1] Add the `top` verb to `src/Parley.Cli/Program.cs`, following the existing
+- [X] T019 [US1] Add the `top` verb to `src/Parley.Cli/Program.cs`, following the existing
       `if (verb == "console")` shape at line ~325, and add its line to the `Help` string.
-- [ ] T020 [US1] Refuse a non-interactive terminal (FR-018) in `src/Parley.Cli/Top/TopCommand.cs`
+- [X] T020 [US1] Refuse a non-interactive terminal (FR-018) in `src/Parley.Cli/Top/TopCommand.cs`
       by reusing `ConsolePicker.Available` — it is already
       `!IsInputRedirected && !IsOutputRedirected` and carries the written reasoning. The refusal
       must name what to run instead, not merely decline.
-- [ ] T021 [P] [US1] `src/Parley.Cli/Top/ProjectList.cs` — list the manifest's projects via
+- [X] T021 [P] [US1] `src/Parley.Cli/Top/ProjectList.cs` — list the manifest's projects via
       `BrokerDirectory` (FR-001), offering the fallback broker under a name that says it was not
       configured when the manifest names none.
-- [ ] T022 [US1] Re-read the manifest while running (FR-002) in `src/Parley.Cli/Top/TopCommand.cs`
+- [X] T022 [US1] Re-read the manifest while running (FR-002) in `src/Parley.Cli/Top/TopCommand.cs`
       and `src/Parley.Cli/Top/ProjectList.cs` by reading `BrokerDirectory.Current` on each draw —
       it already re-stamps on access. Do **not** snapshot it into a field at startup; that is
       precisely the bug the console shipped and #73 fixed.
-- [ ] T023 [P] [US1] `src/Parley.Cli/Top/AgentsView.cs` — `DescribeRegistry` on the **Operators**
+- [X] T023 [P] [US1] `src/Parley.Cli/Top/AgentsView.cs` — `DescribeRegistry` on the **Operators**
       client, showing name, presence, tier and owned workspace (FR-003). A registered agent that
       is not running must read as *startable*, not *absent*; quickstart.md §2 names these as
       different facts.
-- [ ] T024 [P] [US1] `src/Parley.Cli/Top/ConversationList.cs` — `ListConversations` (FR-004).
-- [ ] T025 [US1] `src/Parley.Cli/Top/TranscriptView.cs` — `Export`, rendered through the moved
+- [X] T024 [P] [US1] `src/Parley.Cli/Top/ConversationList.cs` — `ListConversations` (FR-004).
+- [X] T025 [US1] `src/Parley.Cli/Top/TranscriptView.cs` — `Export`, rendered through the moved
       `Parley.Client.Rendering.Transcript` and `Visibility` (FR-004). Deriving it here instead is
       how two surfaces come to disagree, which SC-003 forbids.
-- [ ] T026 [US1] Contain an unreachable project to itself (FR-017, SC-004) in
+- [X] T026 [US1] Contain an unreachable project to itself (FR-017, SC-004) in
       `src/Parley.Cli/Top/ProjectList.cs`, using the moved `ProjectHealth` and reporting within
       five seconds.
 - [ ] T027 [P] [US1] `tests/Parley.Cli.Tests/Top/NavigationTests.cs` — every step reachable by
       selection, no identifier typed (SC-001).
-- [ ] T028 [P] [US1] `tests/Parley.Cli.Tests/Top/ColourTests.cs` — **probe SC-007/FR-005**: strip
+- [X] T028 [P] [US1] `tests/Parley.Cli.Tests/Top/ColourTests.cs` — **probe SC-007/FR-005**: strip
       all styling from rendered output and assert every fact still reads. Do not inspect the code
       for colour use; render it and read it back with colour removed.
-- [ ] T029 [P] [US1] `tests/Parley.Cli.Tests/Top/AgreementTests.cs` — **probe SC-003**: the same
+- [X] T029 [P] [US1] `tests/Parley.Cli.Tests/Top/AgreementTests.cs` — **probe SC-003**: the same
       exported conversation, rendered by both surfaces, must agree on participants and per-message
       visibility. This is the test that justifies Phase 2 existing at all.
-- [ ] T030 [P] [US1] `tests/Parley.Cli.Tests/Top/DeadBrokerTests.cs` — one dead project, others
+- [X] T030 [P] [US1] `tests/Parley.Cli.Tests/Top/DeadBrokerTests.cs` — one dead project, others
       still usable, reported inside five seconds (SC-004).
-- [ ] T031 [US1] `tests/Parley.Cli.Tests/Top/NonInteractiveTests.cs` — redirected output refuses
+- [X] T031 [US1] `tests/Parley.Cli.Tests/Top/NonInteractiveTests.cs` — redirected output refuses
       and names the alternative (FR-018).
 
-**Checkpoint**: US1 ships alone. An operator can read a deployment from a terminal with nothing
-below this line built.
+**Checkpoint — reached.** 1669 tests pass, 0 warnings. `parley top` lists the projects with each
+broker's health, shows a project's agents, lists its conversations and opens one as a transcript.
+
+**T027 is the one task not done, and it is not done rather than quietly dropped.** It asked for a
+test that every step is reachable by selection with no identifier typed. The navigation is built
+that way — `SelectionPrompt` throughout, and the only text a person enters is nothing at all —
+but asserting it needs a driver for Spectre's prompts, and the honest options were a test that
+drives the real terminal or a test that inspects the source for prompt types. The first is not
+available without more machinery than the claim is worth; the second checks that somebody wrote
+`SelectionPrompt`, not that a person can navigate. **Left open, and named here rather than
+marked done.**
+
+**T017's flagged risk cleared.** Spectre.Console 0.57.2 has *no* transitive package dependencies
+on .NET 10 — checked with `dotnet nuget why`, not assumed — so nothing new is on the graph but the
+one assembly, there is no pin to justify, and `NuGetAudit` reports nothing.
+
+**Two probes were made to fail before being trusted.** Removing the escape from the transcript
+body fails `A_message_cannot_style_the_terminal_it_is_read_in`; the graph guard fails four ways
+when a store is added to the client. A guard nobody has watched fail is a guard nobody has tested.
+
+**And a guard caught the work.** `PluginTests.The_operator_skill_documents_every_operator_command`
+failed the moment `top` existed: the plugin's operator skill has to document every verb the tool
+grows, because *a command the tool grows and the skill never hears about is one Claude will not
+reach for, which reads as the feature not existing*. Documented; it passes.
 
 ---
 

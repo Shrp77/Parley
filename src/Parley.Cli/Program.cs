@@ -35,6 +35,11 @@ const string Help = """
                                                        this machine's node in it, and
                                                        --with-console the operator's console
 
+      parley top                                       a deployment from this terminal: the
+                                                       projects, who is in each, and their
+                                                       conversations as transcripts. Needs a
+                                                       terminal, not a browser
+
       parley console [<url>]                           the operator's console in a browser:
                                                        every project, the agents in each, and
                                                        conversations as a transcript that says
@@ -366,6 +371,35 @@ if (verb == "console")
         .ConfigureAwait(false);
 
     return 0;
+}
+
+// Beside `console` and for the same reason: `top` is not scoped to one project either — its
+// first screen is the list of them, and it re-reads the manifest while it runs so a project named
+// elsewhere appears without restarting it.
+//
+// The difference from `console` is where it draws. A console needs a browser, which is a thing a
+// machine may not have and a person may not be at; this needs a terminal, which is where the
+// operator already is. SPEC.md §17 question 15 is why either exists: an agent attached through
+// somebody's editor window was started by nobody, so nothing can hand it a turn, and a person
+// needs somewhere to take part that is not an editor.
+if (verb == "top")
+{
+    if (!string.IsNullOrWhiteSpace(projectName))
+    {
+        await Console.Error.WriteLineAsync(
+            $"parley top is not scoped to one project, so --project {projectName} was not used. "
+            + "Every project this machine knows is on its first screen.").ConfigureAwait(false);
+    }
+
+    // The same fallback the console offers, so the two surfaces list the same deployments on a
+    // machine that has named none. A person who can reach a broker from `parley registry` and not
+    // from here would reasonably conclude this surface was broken.
+    var topFallback = ProjectResolution
+        .Endpoint(brokerAddress, Environment.GetEnvironmentVariable, null).Value;
+
+    return await Parley.Cli.Top.TopCommand
+        .RunAsync(manifestPath, topFallback)
+        .ConfigureAwait(false);
 }
 
 // `serve` first and separately, because it is the one command that is not a client. Everything
