@@ -182,53 +182,68 @@ public static class ProjectCommand
             return Usage;
         }
 
-        if (!ProjectManifest.TryRead(manifestPath, out var projects, out var problem))
-        {
-            // Never start a fresh manifest over one that could not be read. Overwriting an
-            // unreadable configuration is how a deployment silently loses everything it described.
-            await error.WriteLineAsync(problem).ConfigureAwait(false);
-            return Config;
-        }
-
         var node = fields.NodeConfig;
         var description = fields.Description;
 
         var settings = new ProjectSettings(name, store, endpoint, node, description);
-
-        // The same three checks the manifest applies on read, in the same order and from the same
-        // methods. Written out separately here once, with its own wording, which is how a rule
-        // comes to be enforced in one direction only.
-        //
-        // The cost is that a fault names the manifest field rather than the flag that wrote it --
-        // "store" where the operator typed --db. Taken deliberately: the value is about to live in
-        // the file under that name, the mapping is one line below, and one rule with one message
-        // is worth more than two messages that agree today.
-        var faults = settings.Problems()
-            .Concat(ProjectManifest.PathProblems(settings))
-            .ToList();
-
-        var updated = projects.Append(settings).ToArray();
-        faults.AddRange(ProjectManifest.Collisions(updated));
-
-        if (faults.Count > 0)
-        {
-            await error.WriteLineAsync(
-                $"Cannot add '{name}':{Environment.NewLine}  - " +
-                string.Join($"{Environment.NewLine}  - ", faults) +
-                $"{Environment.NewLine}{Environment.NewLine}" +
-                "store comes from --db, endpoint from --listen, node_config from --node-config." +
-                $"{Environment.NewLine}{manifestPath} is unchanged.")
-                .ConfigureAwait(false);
-
-            return Config;
-        }
+        var faults = new List<string>();
 
         try
         {
-            ProjectManifest.Write(manifestPath, updated);
+            // Read, validated and written as one act, under a lock. Every part of this was here
+            // before; what was missing was that they belonged together. Two `project add`
+            // commands each read the manifest, each appended to what it had read, and each wrote
+            // -- so the second discarded the first, with two successes reported and one project
+            // written. The collision checks made it worse rather than better: they were computed
+            // against a manifest that no longer existed, so the losing writer could also write a
+            // duplicate endpoint the rules exist to refuse.
+            var written = ProjectManifest.TryUpdate(manifestPath, projects =>
+            {
+                // The same three checks the manifest applies on read, in the same order and from
+                // the same methods. Written out separately here once, with its own wording, which
+                // is how a rule comes to be enforced in one direction only.
+                //
+                // The cost is that a fault names the manifest field rather than the flag that
+                // wrote it -- "store" where the operator typed --db. Taken deliberately: the value
+                // is about to live in the file under that name, the mapping is one line below, and
+                // one rule with one message is worth more than two messages that agree today.
+                faults.AddRange(settings.Problems());
+                faults.AddRange(ProjectManifest.PathProblems(settings));
+
+                var updated = projects.Append(settings).ToArray();
+
+                faults.AddRange(ProjectManifest.Collisions(updated));
+
+                // Declining rather than throwing, because these are the operator's faults to be
+                // told about and the message below says them all at once.
+                return faults.Count > 0 ? null : updated;
+            },
+            out var problem);
+
+            if (problem is not null)
+            {
+                // Never start a fresh manifest over one that could not be read, and never write
+                // one this could not lock. Overwriting an unreadable configuration is how a
+                // deployment silently loses everything it described.
+                await error.WriteLineAsync(problem).ConfigureAwait(false);
+                return Config;
+            }
+
+            if (!written)
+            {
+                await error.WriteLineAsync(
+                    $"Cannot add '{name}':{Environment.NewLine}  - " +
+                    string.Join($"{Environment.NewLine}  - ", faults) +
+                    $"{Environment.NewLine}{Environment.NewLine}" +
+                    "store comes from --db, endpoint from --listen, node_config from --node-config." +
+                    $"{Environment.NewLine}{manifestPath} is unchanged.")
+                    .ConfigureAwait(false);
+
+                return Config;
+            }
         }
         // InvalidDataException included, and it is the backstop rather than the expected path:
-        // every fault Write refuses has already been reported above with all the others.
+        // every fault the write refuses has already been reported above with all the others.
         // If the two ever disagree the operator gets a sentence rather than a stack trace,
         // which is the difference between a bug report and a mystery.
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
@@ -252,29 +267,48 @@ public static class ProjectCommand
         TextWriter error,
         CancellationToken cancellationToken)
     {
-        if (!ProjectManifest.TryRead(manifestPath, out var projects, out var problem))
-        {
-            await error.WriteLineAsync(problem).ConfigureAwait(false);
-            return Config;
-        }
+        string? missing = null;
 
-        var going = projects.FirstOrDefault(p =>
-            string.Equals(p.Name.Value, requested, StringComparison.Ordinal));
-
-        if (going is null)
-        {
-            await error.WriteLineAsync(projects.Count == 0
-                ? $"No project named '{requested}': this machine has none configured."
-                : $"No project named '{requested}'. Configured: " +
-                  $"{string.Join(", ", projects.Select(p => p.Name.Value).Order(StringComparer.Ordinal))}.")
-                .ConfigureAwait(false);
-
-            return Config;
-        }
+        // Captured out of the change below, because what is reported afterwards is the project
+        // that was actually removed rather than the one that was asked for -- and it is only
+        // known inside the lock, where the manifest was read.
+        ProjectSettings? going = null;
 
         try
         {
-            ProjectManifest.Write(manifestPath, [.. projects.Where(p => p != going)]);
+            // Under the same lock as adding, and for the same reason: the project this removes is
+            // chosen from what was read, so a concurrent add would otherwise be written over by a
+            // remove that never saw it.
+            var written = ProjectManifest.TryUpdate(manifestPath, projects =>
+            {
+                going = projects.FirstOrDefault(p =>
+                    string.Equals(p.Name.Value, requested, StringComparison.Ordinal));
+
+                if (going is null)
+                {
+                    missing = projects.Count == 0
+                        ? $"No project named '{requested}': this machine has none configured."
+                        : $"No project named '{requested}'. Configured: " +
+                          $"{string.Join(", ", projects.Select(p => p.Name.Value).Order(StringComparer.Ordinal))}.";
+
+                    return null;
+                }
+
+                return [.. projects.Where(p => p != going)];
+            },
+            out var problem);
+
+            if (problem is not null)
+            {
+                await error.WriteLineAsync(problem).ConfigureAwait(false);
+                return Config;
+            }
+
+            if (!written)
+            {
+                await error.WriteLineAsync(missing).ConfigureAwait(false);
+                return Config;
+            }
         }
         // InvalidDataException included, and it is the backstop rather than the expected path:
         // every fault Write refuses has already been reported above with all the others.
@@ -295,7 +329,7 @@ public static class ProjectCommand
         // its data too, and the only safe way to offer that is to say what still exists and let
         // them do it deliberately.
         await output.WriteLineAsync(
-            $"Nothing was deleted. The store remains at {going.Store}" +
+            $"Nothing was deleted. The store remains at {going!.Store}" +
             (going.NodeConfig is { Length: > 0 } node ? $", the node catalogue at {node}" : string.Empty) +
             ", and every repository's launch configuration is untouched.").ConfigureAwait(false);
 

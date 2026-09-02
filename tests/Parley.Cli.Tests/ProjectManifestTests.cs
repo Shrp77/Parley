@@ -662,6 +662,78 @@ public sealed class ProjectManifestTests : IDisposable
     }
 
     [Fact]
+    public async Task Concurrent_changes_do_not_discard_one_another()
+    {
+        // Adding a project is a read and then a write, and it was neither locked nor atomic. Two
+        // commands each read the manifest, each appended to what *it* had read, and each wrote --
+        // so the second silently discarded the first. Nothing failed and nothing said so: two
+        // successes reported, one project written. On a machine that enrols repositories from a
+        // script that is the shape of the loss, arriving when the machine is busiest and being
+        // discovered when something later cannot find a deployment nobody remembers removing.
+        //
+        // Threads rather than the thread pool, for the reason ManifestCurrencyTests records: a
+        // writer that must run is a thread, not a work item, and a pool saturated by the rest of
+        // the suite would let this pass by never starting.
+        ProjectManifest.Write(Path_, []);
+
+        const int writers = 8;
+
+        var barrier = new Barrier(writers);
+        var failures = new System.Collections.Concurrent.ConcurrentBag<string>();
+
+        var threads = Enumerable.Range(0, writers).Select(index =>
+        {
+            var thread = new Thread(() =>
+            {
+                // Released together, so the read-modify-write windows genuinely overlap rather
+                // than queueing behind thread creation.
+                barrier.SignalAndWait();
+
+                var added = Project(name: $"p{index}", store: $"/srv/p{index}.db",
+                    endpoint: $"http://127.0.0.1:{5400 + index}", node: $"/srv/p{index}.json");
+
+                // Caught, because an unhandled exception on a background thread does not fail
+                // this test -- it hangs it, and a ten-minute stall says nothing about what went
+                // wrong. Learned twice now: the same shape stalled a broker-shutdown probe on
+                // 2026-09-01, and stalled this one when it was first run without the lock.
+                try
+                {
+                    if (!ProjectManifest.TryUpdate(
+                            Path_, current => current.Append(added).ToArray(), out var problem))
+                    {
+                        failures.Add(problem ?? "declined");
+                    }
+                }
+                catch (Exception collision)
+                {
+                    failures.Add($"{collision.GetType().Name}: {collision.Message}");
+                }
+            })
+            { IsBackground = true };
+
+            thread.Start();
+
+            return thread;
+        }).ToArray();
+
+        foreach (var thread in threads)
+        {
+            thread.Join();
+        }
+
+        await Task.CompletedTask;
+
+        Assert.Empty(failures);
+
+        // Every one of them, which is the whole claim. Before the lock this settled on one or two.
+        Assert.True(ProjectManifest.TryRead(Path_, out var projects, out var unreadable), unreadable);
+
+        Assert.Equal(
+            Enumerable.Range(0, writers).Select(i => $"p{i}").Order(StringComparer.Ordinal),
+            projects.Select(p => p.Name.Value).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
     public void The_suite_never_reads_the_manifest_of_the_machine_it_runs_on()
     {
         // The fourth time this repository has met "resolved from somewhere other than where the

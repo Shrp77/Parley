@@ -108,13 +108,20 @@ public sealed class ProjectCommandTests : IDisposable
         // process stopped between the truncate and the write leaves a file every reader then
         // refuses — correctly, and permanently. What is asserted here is the visible half of that,
         // the part that would rot if the temporary file were ever orphaned.
+        //
+        // The lock is named as well, rather than the assertion loosened to ignore extra files.
+        // It is a real sibling now — adding a project takes it, and it stays behind on purpose,
+        // because a lock somebody has to delete is a lock that eventually is not taken. Listing
+        // it keeps this strict: a stray `.writing`, or a backup some future rewrite leaves, still
+        // fails here rather than passing through a wildcard.
         await AddAsync("orders");
         await AddAsync("billing");
 
         var directory = Path.GetDirectoryName(ManifestPath)!;
+        var manifest = Path.GetFileName(ManifestPath);
 
         Assert.Equal(
-            [Path.GetFileName(ManifestPath)],
+            [manifest, manifest + ".lock"],
             Directory.GetFiles(directory).Select(Path.GetFileName).Order(StringComparer.Ordinal));
     }
 

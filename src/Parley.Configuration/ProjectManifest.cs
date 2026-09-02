@@ -434,6 +434,161 @@ public static class ProjectManifest
     public static StringComparer PathComparer { get; } =
         OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
 
+    /// <summary>The name of the lock held while a manifest is being changed.</summary>
+    /// <param name="path">The manifest being changed.</param>
+    /// <returns>The path of its lock file.</returns>
+    /// <remarks>
+    /// A sibling rather than something under the temporary directory, so two writers agree about
+    /// it for the same reason they agree about the manifest: it is the same path, with the same
+    /// permissions, on the same volume. A per-user temporary directory would exclude two commands
+    /// run by one person and let two people editing one <c>--config</c> straight through.
+    /// </remarks>
+    private static string LockFor(string path) => path + ".lock";
+
+    /// <summary>
+    /// Changes the manifest under a lock, so a read and the write that depends on it are one act.
+    /// </summary>
+    /// <param name="path">The manifest to change.</param>
+    /// <param name="change">
+    /// Given what the manifest holds, returns what it should hold — or <see langword="null"/> to
+    /// leave it alone, having reported why itself.
+    /// </param>
+    /// <param name="problem">Why nothing could be attempted, when this returns false.</param>
+    /// <returns>
+    /// <see langword="true"/> when the manifest was written; <see langword="false"/> when it was
+    /// not, with <paramref name="problem"/> set unless <paramref name="change"/> declined.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="change"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>Adding a project is a read and then a write, and it was neither locked nor atomic.</b>
+    /// Two <c>project add</c> commands at once each read the manifest, each appended its own
+    /// project to what it had read, and each wrote the result — so the second silently discarded
+    /// the first. Nothing failed and nothing said so; the operator saw two successes and had one
+    /// project. On a machine that enrols repositories from a script, that is the shape of the
+    /// loss: it happens when the machine is busiest and is discovered when something later cannot
+    /// find a deployment nobody remembers removing.
+    /// </para>
+    /// <para>
+    /// The window is not narrow. It spans validation — collisions are checked against what was
+    /// read — so the second writer also validates against a manifest that no longer exists, and
+    /// can write a duplicate endpoint the rules exist to refuse.
+    /// </para>
+    /// <para>
+    /// A lock file rather than a mutex, because .NET's named mutexes are not a cross-process
+    /// primitive on every platform this runs on, and this has to hold on all three. Opened with
+    /// <see cref="FileShare.None"/>, which is the exclusion; the file itself is empty and stays
+    /// behind, because a lock somebody has to delete is a lock that eventually is not taken.
+    /// </para>
+    /// <para>
+    /// The wait is bounded. A writer that cannot take the lock within it says so rather than
+    /// blocking a person's terminal for ever — a held lock means another command is mid-write,
+    /// which takes milliseconds, so exceeding this means something is wrong rather than busy.
+    /// </para>
+    /// </remarks>
+    public static bool TryUpdate(
+        string path,
+        Func<IReadOnlyList<ProjectSettings>, IReadOnlyList<ProjectSettings>?> change,
+        out string? problem)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+
+        problem = null;
+
+        FileStream? held;
+        string? refused;
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
+            held = Hold(LockFor(path), out refused);
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        {
+            problem = $"Could not lock {path} to change it: {failure.Message}";
+            return false;
+        }
+
+        if (held is null)
+        {
+            // Both causes named, because waiting cannot tell them apart and guessing at the
+            // operator's expense is worse than saying so. A held lock means another command is
+            // mid-write and will be done in milliseconds; anything else means the lock file
+            // itself cannot be opened, and the last refusal says which.
+            problem =
+                $"Could not lock {path} within {LockWait.TotalSeconds:0} seconds, so nothing has "
+                + $"been changed. Either another command is still changing it, or its lock file "
+                + $"cannot be opened: {refused}";
+
+            return false;
+        }
+
+        using (held)
+        {
+            // Inside the lock, because the write below is computed from it. This is the whole
+            // point: read and write were already each safe on their own.
+            if (!TryRead(path, out var projects, out var unreadable))
+            {
+                problem = unreadable;
+                return false;
+            }
+
+            var updated = change(projects);
+
+            if (updated is null)
+            {
+                return false;
+            }
+
+            Write(path, updated);
+
+            return true;
+        }
+    }
+
+    /// <summary>How long to wait for another command to finish changing the manifest.</summary>
+    private static readonly TimeSpan LockWait = TimeSpan.FromSeconds(10);
+
+    /// <summary>Takes the lock, or gives up.</summary>
+    /// <param name="lockPath">The lock file.</param>
+    /// <param name="refused">Why the last attempt failed, when the wait ran out.</param>
+    /// <returns>The held stream, or <see langword="null"/> if the wait ran out.</returns>
+    /// <remarks>
+    /// Returns rather than throws on the deadline. An earlier version let the exception escape
+    /// once the wait was over, which made the timeout unreachable and reported a sharing
+    /// violation as though the file could not be opened at all — the two failures that most need
+    /// telling apart, told apart wrongly.
+    /// </remarks>
+    private static FileStream? Hold(string lockPath, out string? refused)
+    {
+        var deadline = DateTimeOffset.UtcNow + LockWait;
+
+        refused = null;
+
+        while (true)
+        {
+            try
+            {
+                return new FileStream(
+                    lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException failure)
+            {
+                // Somebody else holds it, which is the ordinary case rather than a fault. Only
+                // this is waited on: a denied path or a missing directory will not become
+                // available by asking again, and those propagate to the caller.
+                refused = failure.Message;
+
+                if (DateTimeOffset.UtcNow >= deadline)
+                {
+                    return null;
+                }
+
+                Thread.Sleep(25);
+            }
+        }
+    }
+
     /// <summary>
     /// Writes the manifest, preserving anything a newer tool may have added.
     /// </summary>
