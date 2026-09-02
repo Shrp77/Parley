@@ -23,6 +23,15 @@
     <ProjectReference Include="..\..\src\Parley.Web\Parley.Web.csproj" />
   </ItemGroup>
 
+  <!--
+    Shared, not copied. It points this assembly's manifest resolution at an absent path; see the
+    file's own remarks for what it found and why an empty variable does the opposite. It matters
+    most here: the default host builds the real console, which reads the manifest itself.
+  -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)..\ManifestIsolation.cs" Link="ManifestIsolation.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="xunit.v3" />

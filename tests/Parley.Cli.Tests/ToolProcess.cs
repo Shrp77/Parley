@@ -45,6 +45,39 @@ internal static class ToolProcess
         Parley.Configuration.ProjectManifest.PathVariable
     ];
 
+    /// <summary>Why this still sets a variable the clearing loop above already touched.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not redundant with <see cref="Parley.Tests.ManifestIsolation"/>, which sets the same
+    /// path in this process.</b> The child's environment is seeded from the parent's and then the
+    /// loop above empties every configuration variable — including this one — so without the line
+    /// in <see cref="Launch"/> the child would inherit an empty value and fall straight back to
+    /// the default. The two are one value and one intent, which is why the path comes from there
+    /// rather than being a second constant here.
+    /// </para>
+    /// <para>
+    /// <b>Clearing <c>PARLEY_CONFIG</c> does the opposite of what the comment above believed.</b>
+    /// <c>ProjectManifest.Locate</c> treats an empty variable as unset and falls back to the
+    /// per-user default — so emptying it does not remove the manifest, it *guarantees* the tool
+    /// reads the developer's real one at <c>%APPDATA%\Parley\projects.json</c>. The isolation was
+    /// exactly inverted, and the whole suite passed anyway because no machine that ran it had
+    /// named a project yet.
+    /// </para>
+    /// <para>
+    /// It surfaced the day one did: eight tests failed at once, none of them about manifests.
+    /// <c>parley serve</c> with no <c>--db</c> found a store through the project and got as far as
+    /// binding a port the real broker already held, so a test expecting "no database" was handed
+    /// an unavailable endpoint instead.
+    /// </para>
+    /// <para>
+    /// Named rather than emptied, because a path is the only value that means "no manifest" to
+    /// something that falls back when unset. The directory is deliberately never created: nothing
+    /// here writes a manifest, and if something ever does, failing to find the folder is the
+    /// loud version of a test quietly editing the developer's configuration.
+    /// </para>
+    /// </remarks>
+    private static string NoManifest => Parley.Tests.ManifestIsolation.NoManifest;
+
     /// <summary>Locates the tool built beside the tests.</summary>
     /// <returns>The executable to run, and the argument that selects it under <c>dotnet</c>.</returns>
     private static (string FileName, string? Argument) Locate()
@@ -99,6 +132,11 @@ internal static class ToolProcess
             start.Environment[name] = "";
         }
 
+        // After the clearing loop, because for this one variable an empty value means "use the
+        // default" and the default is the machine's own manifest. See NoManifest.
+        start.Environment[Parley.Configuration.ProjectManifest.PathVariable] = NoManifest;
+
+        // Last, so a test that wants a manifest of its own still gets one.
         foreach (var (name, value) in environment)
         {
             start.Environment[name] = value;

@@ -525,4 +525,163 @@ public sealed class ProjectManifestTests : IDisposable
         Assert.False(ProjectManifest.TryRead(Path_, out _, out var problem));
         Assert.Contains("description is", problem, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task A_write_is_not_refused_because_somebody_is_reading()
+    {
+        // The commit above promises that a reader arriving mid-write sees the old file or the new
+        // one. It did not keep that promise on Windows -- it stopped the write happening at all.
+        // MoveFileEx with MOVEFILE_REPLACE_EXISTING refuses a destination anybody has open,
+        // whatever share mode they used, so `parley project add` failed with an access error
+        // naming a file nothing else was writing.
+        //
+        // Latent while the only reader was an MCP server resolving a project at startup. Reachable
+        // every day once the console started re-reading the manifest per page it renders -- which
+        // makes the command the console tells you to run the one this breaks.
+        //
+        // Measured before it was fixed: eight readers against 300 writes denied 287 of them.
+        ProjectManifest.Write(Path_, [Project()]);
+
+        using var stopping = new CancellationTokenSource();
+
+        var readers = Enumerable.Range(0, 8).Select(reader => Task.Run(() =>
+        {
+            while (!stopping.IsCancellationRequested)
+            {
+                ProjectManifest.TryRead(Path_, out _, out _);
+            }
+        }, TestContext.Current.CancellationToken)).ToArray();
+
+        try
+        {
+            // Enough writes that the old behaviour cannot pass by luck: it failed 95% of them.
+            for (var round = 0; round < 60; round++)
+            {
+                ProjectManifest.Write(
+                    Path_, [Project(round % 2 == 0 ? "orders" : "billing")]);
+            }
+        }
+        finally
+        {
+            await stopping.CancelAsync();
+            await Task.WhenAll(readers);
+        }
+
+        // And the file is intact rather than merely written: a commit that half-succeeded would
+        // leave something no reader accepts, which is the failure the temporary file exists for.
+        Assert.True(ProjectManifest.TryRead(Path_, out var projects, out var problem), problem);
+        Assert.Single(projects);
+
+        // Exactly one file, which is stronger than checking for the pending one by name. Replace
+        // takes a backup path and is being passed null; a build that started writing one would
+        // leave a second file beside the manifest that reads as configuration, and nothing else
+        // here would notice.
+        Assert.Equal([Path_], Directory.GetFiles(_root));
+    }
+
+    [Fact]
+    public void Two_writers_at_once_cannot_leave_a_manifest_that_no_longer_parses()
+    {
+        // The pending file used to be `projects.json.writing` -- one name, shared by every
+        // writer. So two of them did not merely race for the manifest: writer A truncated the
+        // pending file and began writing, and writer B renamed that same path over the manifest,
+        // committing A's fragment. Probed with four writers over fifty rounds each, before the
+        // name was made unique:
+        //
+        //   5 reads returned a manifest that no longer parsed, and 11 subsequent writes then
+        //   refused with "it exists but could not be parsed, so writing over it would discard
+        //   it" -- which is correct, and permanent.
+        //
+        // That is the file naming every store on this machine, bricked by two commands running
+        // at once, by the one route the temporary-file dance did not cover.
+        //
+        // Asserted on parseability rather than on the writes succeeding. Concurrent writers still
+        // collide and still fail loudly -- a sharing violation, or a target briefly absent while
+        // it is being replaced -- and those are transient and recoverable. Unparseable is not.
+        // A test that demanded no failures at all would be asserting a lock this does not have.
+        ProjectManifest.Write(Path_, [Project()]);
+
+        var unparseable = new System.Collections.Concurrent.ConcurrentBag<string>();
+
+        var writers = Enumerable.Range(0, 4).Select(writer =>
+        {
+            var thread = new Thread(() =>
+            {
+                for (var round = 0; round < 50; round++)
+                {
+                    try
+                    {
+                        ProjectManifest.Write(
+                            Path_, [Project(writer % 2 == 0 ? "orders" : "billing")]);
+                    }
+                    catch (Exception collision) when (collision is IOException
+                                                          or UnauthorizedAccessException)
+                    {
+                        // Two commands at once. Loud, transient, and not what this is about.
+                    }
+                    catch (InvalidDataException refused)
+                    {
+                        // This one is. Write refuses when it cannot parse what is already there,
+                        // so reaching here means a writer believed the manifest was damaged.
+                        unparseable.Add(refused.Message);
+                    }
+
+                    if (!ProjectManifest.TryRead(Path_, out _, out var problem)
+                        && problem?.Contains("could not be parsed", StringComparison.Ordinal) == true)
+                    {
+                        unparseable.Add(problem);
+                    }
+                }
+            })
+            { IsBackground = true };
+
+            thread.Start();
+
+            return thread;
+        }).ToArray();
+
+        foreach (var writer in writers)
+        {
+            writer.Join();
+        }
+
+        Assert.Empty(unparseable);
+
+        // And it is readable when the dust settles, rather than merely never observed broken.
+        Assert.True(ProjectManifest.TryRead(Path_, out var projects, out var settled), settled);
+        Assert.Single(projects);
+
+        // No pending file survives a collision. The cleanup used to be unreachable from the
+        // fallback rename, which orphaned one per failure -- invisible while every writer used
+        // the same name and the next write reused it, a growing pile of files that look like
+        // configuration once the name became unique.
+        //
+        // Only this pattern: ReplaceFile leaves its own ~RF*.TMP working files behind when it
+        // fails midway, and those are Windows' to clean up rather than this code's.
+        Assert.Empty(Directory.GetFiles(_root, "*.writing"));
+    }
+
+    [Fact]
+    public void The_suite_never_reads_the_manifest_of_the_machine_it_runs_on()
+    {
+        // The fourth time this repository has met "resolved from somewhere other than where the
+        // real one sits", and the first time it was the tests doing it. ToolProcess cleared
+        // PARLEY_CONFIG believing that removed the manifest; an empty value means "unset", and
+        // unset means the per-user default -- so clearing it guaranteed the tool read the
+        // developer's own projects.json. Eight tests, none of them about manifests, failed the
+        // day a machine running this suite finally named a project.
+        //
+        // Asserted on the path the tool prints rather than on the variable, because the variable
+        // being set proves nothing about what was resolved from it -- which is the entire lesson
+        // of the three failures in this class's own remarks.
+        var (exitCode, output, _) = ToolProcess.RunFully([], "project", "list");
+
+        Assert.Equal(0, exitCode);
+
+        // Non-vacuous on every machine, including the ones with no manifest at all: the tool
+        // always names the file it would have used, so there is always a path to compare.
+        Assert.Contains("No projects configured", output, StringComparison.Ordinal);
+
+        Assert.DoesNotContain(ProjectManifest.DefaultPath, output, StringComparison.Ordinal);
+    }
 }

@@ -26,6 +26,14 @@
     <ProjectReference Include="..\..\src\Parley.Server\Parley.Server.csproj" />
   </ItemGroup>
 
+  <!--
+    Shared, not copied. It points this assembly's manifest resolution at an absent path; see the
+    file's own remarks for what it found and why an empty variable does the opposite.
+  -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)..\ManifestIsolation.cs" Link="ManifestIsolation.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
   </ItemGroup>

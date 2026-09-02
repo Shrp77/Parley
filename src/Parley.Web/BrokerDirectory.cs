@@ -24,6 +24,25 @@ namespace Parley.Web;
 /// call, because a broker that was up when the page was built tells the reader nothing about
 /// whether it is up now.
 /// </para>
+/// <para>
+/// <b>The project list is not held either, and that reverses what this class did before.</b> It
+/// read the manifest once, in the factory, and a singleton behind a web server then served that
+/// answer for the life of the process. That was defensible while <c>parley console</c> was
+/// something an operator started, looked at, and stopped — a startup read and a live one are the
+/// same read when the process lasts a minute. It stopped being defensible when the console moved
+/// inside the broker and <c>autostart install</c> turned it on by default: the process now lasts
+/// weeks, and the manifest is precisely the file that changes underneath it. The naming page
+/// sends a person away to run <c>parley project add</c> and promises the new name will be on the
+/// list when they come back; with a cached read that promise was false, and the only way to
+/// collect on it was to restart the broker — which drops every agent attached to the deployment,
+/// to pick up a rename the protocol never sees.
+/// </para>
+/// <para>
+/// So the manifest is re-read, and the read is skipped when the file's stamp is unchanged. The
+/// cheap thing here is the file — a few hundred bytes of local JSON, against the gRPC round trips
+/// every page already makes — and the expensive thing is the channel, which is why the channels
+/// stay cached and the projects do not.
+/// </para>
 /// </remarks>
 public sealed class BrokerDirectory : IDisposable
 {
@@ -31,13 +50,23 @@ public sealed class BrokerDirectory : IDisposable
         new(StringComparer.Ordinal);
 
     private readonly Func<string, GrpcChannel> _connect;
+    private readonly string? _manifestPath;
+    private readonly FallbackBroker? _fallback;
+    private volatile Snapshot _snapshot;
     private volatile bool _disposed;
 
-    /// <summary>Builds a directory over an already-resolved set of projects.</summary>
+    /// <summary>Builds a directory over a fixed set of projects, which no file can change.</summary>
     /// <param name="projects">The projects, in the order the manifest listed them.</param>
     /// <param name="connect">Opens a channel to an endpoint. Injected so tests need no sockets.</param>
     /// <param name="manifestProblem">Why the manifest could not be read, when it could not.</param>
     /// <exception cref="ArgumentNullException">Either required argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The list given here is the answer for the life of the object: there is no path to re-read,
+    /// so nothing is watched. That is what a test wants, and it is also the honest shape — a
+    /// caller who supplied the projects owns them, and a directory that quietly replaced them
+    /// with whatever was in this machine's manifest would be answering a question nobody asked.
+    /// <see cref="FromManifest"/> is the constructor that follows a file.
+    /// </remarks>
     public BrokerDirectory(
         IReadOnlyList<ProjectSettings> projects,
         Func<string, GrpcChannel> connect,
@@ -46,13 +75,27 @@ public sealed class BrokerDirectory : IDisposable
         ArgumentNullException.ThrowIfNull(projects);
         ArgumentNullException.ThrowIfNull(connect);
 
-        Projects = projects;
-        ManifestProblem = manifestProblem;
         _connect = connect;
+        _snapshot = new Snapshot(projects, manifestProblem, default);
     }
 
-    /// <summary>The projects named in this machine's manifest.</summary>
-    public IReadOnlyList<ProjectSettings> Projects { get; }
+    /// <summary>Builds a directory that follows this machine's manifest.</summary>
+    /// <param name="manifestPath">The manifest to read, now and whenever it changes.</param>
+    /// <param name="fallback">A broker to offer when the manifest names no projects.</param>
+    /// <param name="connect">Opens a channel to an endpoint.</param>
+    private BrokerDirectory(
+        string manifestPath,
+        FallbackBroker? fallback,
+        Func<string, GrpcChannel> connect)
+    {
+        _connect = connect;
+        _manifestPath = manifestPath;
+        _fallback = fallback;
+        _snapshot = ReadManifest(manifestPath, fallback, StampOf(manifestPath));
+    }
+
+    /// <summary>The projects named in this machine's manifest, as it stands now.</summary>
+    public IReadOnlyList<ProjectSettings> Projects => Current.Projects;
 
     /// <summary>
     /// Why the manifest could not be read, or <see langword="null"/> when it was read.
@@ -62,7 +105,50 @@ public sealed class BrokerDirectory : IDisposable
     /// problem with an empty project list. This is only set when a manifest exists and is
     /// unusable, which the reader must be told rather than shown as "no projects".
     /// </remarks>
-    public string? ManifestProblem { get; }
+    public string? ManifestProblem => Current.Problem;
+
+    /// <summary>The manifest as it stands, re-read only when the file has moved on.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The stamp is taken before the read, not after, and the order is the whole correctness
+    /// of this.</b> Taken afterwards, a write landing mid-read would be stored under the stamp of
+    /// the file that superseded it — content from before the edit, labelled as the state after it,
+    /// and never re-read again. Taken first, the same race stores newer content under an older
+    /// stamp, so the next caller finds a mismatch and reads again. One direction is a stale answer
+    /// that never heals; the other is one redundant read.
+    /// </para>
+    /// <para>
+    /// Two callers arriving together may both read and both assign, and the loser's work is
+    /// discarded. That is deliberate: a lock here would put every page render behind one file
+    /// handle to save an operation that happens when a manifest has just been edited and not
+    /// otherwise. If the later write wins with the older snapshot, its stamp is older too, so the
+    /// next access corrects it by the paragraph above.
+    /// </para>
+    /// </remarks>
+    private Snapshot Current
+    {
+        get
+        {
+            if (_manifestPath is null)
+            {
+                return _snapshot;
+            }
+
+            var stamp = StampOf(_manifestPath);
+            var held = _snapshot;
+
+            if (stamp == held.Stamp)
+            {
+                return held;
+            }
+
+            var fresh = ReadManifest(_manifestPath, _fallback, stamp);
+
+            _snapshot = fresh;
+
+            return fresh;
+        }
+    }
 
     /// <summary>Reads this machine's manifest and builds a directory from it.</summary>
     /// <param name="explicitPath">A path given on the command line, if one was.</param>
@@ -92,22 +178,89 @@ public sealed class BrokerDirectory : IDisposable
     /// </para>
     /// </remarks>
     public static BrokerDirectory FromManifest(
-        string? explicitPath = null, FallbackBroker? fallbackEndpoint = null)
-    {
-        var path = ProjectManifest.Locate(explicitPath, Environment.GetEnvironmentVariable);
+        string? explicitPath = null, FallbackBroker? fallbackEndpoint = null) =>
+        new(ProjectManifest.Locate(explicitPath, Environment.GetEnvironmentVariable),
+            fallbackEndpoint,
+            Connect);
 
+    /// <summary>Reads one manifest into a snapshot.</summary>
+    /// <param name="path">The manifest to read.</param>
+    /// <param name="fallback">A broker to offer when it names no projects.</param>
+    /// <param name="stamp">The file's stamp, taken before this read began.</param>
+    /// <returns>What the file says, including that it could not be read.</returns>
+    /// <remarks>
+    /// A read that fails reports the problem and no projects, rather than keeping the projects
+    /// the last good read found. An operator who has just broken their manifest needs to be told
+    /// so; a console that went on rendering the old list would hide the edit that caused it, and
+    /// the file is the authority whether or not this process liked the last version of it.
+    /// </remarks>
+    private static Snapshot ReadManifest(string path, FallbackBroker? fallback, Stamp stamp)
+    {
         if (!ProjectManifest.TryRead(path, out var projects, out var problem))
         {
-            return new BrokerDirectory([], Connect, problem);
+            return new Snapshot([], problem, stamp);
         }
 
-        if (projects.Count == 0 && fallbackEndpoint is { Endpoint.Length: > 0 } offer)
+        if (projects.Count == 0 && fallback is { Endpoint.Length: > 0 } offer)
         {
-            return new BrokerDirectory([Unnamed(offer.Endpoint)], Connect);
+            return new Snapshot([Unnamed(offer.Endpoint)], null, stamp);
         }
 
-        return new BrokerDirectory(projects, Connect);
+        return new Snapshot(projects, null, stamp);
     }
+
+    /// <summary>Reads the manifest's stamp without opening it.</summary>
+    /// <param name="path">The file to look at.</param>
+    /// <returns>Its stamp, or the default when it is absent or cannot be looked at.</returns>
+    /// <remarks>
+    /// <para>
+    /// Length as well as write time, because the two together are what a filesystem cheaply
+    /// offers and either alone is weaker. A stat that throws reports the default — the same as
+    /// absent — which is the safe direction: a directory built from a file that was present then
+    /// holds a stamp that this cannot equal, so the mismatch sends it to
+    /// <see cref="ReadManifest"/>, where a real failure becomes a problem the operator is shown
+    /// rather than a silence.
+    /// </para>
+    /// <para>
+    /// <b>The accepted limit.</b> Windows updates a file's write time on the system timer tick,
+    /// not per write, so two edits inside about fifteen milliseconds share a timestamp — and if
+    /// they also share a length, this reports no change and the second is missed until something
+    /// else touches the file. Reaching that needs two runs of <c>parley project</c> inside one
+    /// tick, each its own process launch, producing manifests of identical size. It is written
+    /// down rather than closed because closing it means hashing the contents, which is the read
+    /// this exists to avoid.
+    /// </para>
+    /// </remarks>
+    private static Stamp StampOf(string path)
+    {
+        try
+        {
+            var file = new FileInfo(path);
+
+            return file.Exists ? new Stamp(file.Length, file.LastWriteTimeUtc) : default;
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        {
+            return default;
+        }
+    }
+
+    /// <summary>What one read of the manifest found, and the file it found it in.</summary>
+    /// <param name="Projects">The projects, in the order the manifest listed them.</param>
+    /// <param name="Problem">Why the manifest could not be read, when it could not.</param>
+    /// <param name="Stamp">The stamp of the file this was read from.</param>
+    private sealed record Snapshot(
+        IReadOnlyList<ProjectSettings> Projects, string? Problem, Stamp Stamp);
+
+    /// <summary>Enough of a file to tell whether it is the one already read.</summary>
+    /// <param name="Length">Its size in bytes.</param>
+    /// <param name="WrittenUtc">When it was last written.</param>
+    /// <remarks>
+    /// The default value means <i>absent</i>, and is what a machine with no manifest holds — so a
+    /// machine that has never named a deployment does no reading at all, and the file appearing
+    /// is itself the change that provokes one.
+    /// </remarks>
+    private readonly record struct Stamp(long Length, DateTime WrittenUtc);
 
     /// <summary>The single project a machine with no manifest is nonetheless running.</summary>
     /// <param name="endpoint">Where its broker listens.</param>
