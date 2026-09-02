@@ -48,11 +48,33 @@
     alone -- they are the deployment, and somebody reinstalling a tool has not asked to lose
     their history or their launch configurations.
 
+.PARAMETER Force
+    Ends whatever is holding Parley's files, rather than refusing and saying what to close.
+
+    Without it this script stops the broker it registered and nothing else, on the grounds that
+    ending a process somebody launched themselves is their decision rather than a script's. That
+    is the right default and it is also, on a machine with three editors open, an instruction to
+    go and find three windows before anything can be installed. -Force is that decision being
+    made deliberately, once, on the command line.
+
+    What it ends is derived from the tools this installs -- a broker started by hand, and the
+    `parley-mcp` adapter of every editor session with Parley configured. Those sessions keep
+    running and lose their Parley tools until the editor is restarted, which is the cost and is
+    why this is not the default.
+
+    It does not weaken a single check. Every process is waited for and then looked for again,
+    because Windows will not unlink a binary that is still mapped and a kill that has not landed
+    yet fails in exactly the way the guards exist to prevent -- so anything that survives is
+    still fatal, and says so.
+
 .EXAMPLE
     .\install.ps1
 
 .EXAMPLE
     .\install.ps1 -Store D:\parley\parley.db
+
+.EXAMPLE
+    .\install.ps1 -Force
 
 .EXAMPLE
     .\install.ps1 -Uninstall
@@ -62,7 +84,8 @@
 param(
     [string] $Store,
     [string] $NodeConfig,
-    [switch] $Uninstall
+    [switch] $Uninstall,
+    [switch] $Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -149,6 +172,52 @@ function Write-Note($text) { Write-Host "    $text" -ForegroundColor DarkGray }
 
 <#
 .SYNOPSIS
+    Ends the processes holding Parley's files, and reports which of them survived.
+.DESCRIPTION
+    Only ever called under -Force, and it returns rather than throws: the caller knows what it
+    was guarding and can say so better than this can.
+
+    It waits, and then it looks again. Stop-Process returns once the kill has been asked
+    for, not once the process has gone, and a binary is still mapped for as long as the kernel
+    is finishing with it -- so continuing straight from the kill would hit the very failure
+    these guards exist to prevent, with -Force having reported success. That failure is the
+    worst one this script has: `dotnet tool uninstall` fails on the locked file, `dotnet tool
+    install` then exits *zero* saying "is already installed", and the version check afterwards
+    cannot tell, because the version it finds is the version it expected.
+
+    Each name is looked for rather than each process id, because a session that was starting as
+    this ran is a new process holding the same files, and the question is whether anything holds
+    them now rather than whether these particular ones are gone.
+#>
+function Remove-Holders([object[]] $running) {
+    if (-not $running -or $running.Count -eq 0) { return @() }
+
+    foreach ($process in $running) {
+        Write-Note "ending $($process.ProcessName), pid $($process.Id)"
+
+        try {
+            Stop-Process -Id $process.Id -Force -ErrorAction Stop
+        }
+        catch {
+            # Gone between the listing and the kill, or not this user's to end. Neither is
+            # decided here: the look below is what says whether the files are free.
+        }
+    }
+
+    $names = @($running | ForEach-Object { $_.ProcessName } | Sort-Object -Unique)
+    $deadline = (Get-Date).AddSeconds(10)
+
+    while ((Get-Date) -lt $deadline) {
+        if (-not (Get-Process -Name $names -ErrorAction SilentlyContinue)) { break }
+
+        Start-Sleep -Milliseconds 200
+    }
+
+    return @(Get-Process -Name $names -ErrorAction SilentlyContinue)
+}
+
+<#
+.SYNOPSIS
     Settles where the broker's store goes.
 .DESCRIPTION
     Given on the command line, asked for otherwise, and defaulted when there is nobody to ask.
@@ -198,11 +267,23 @@ if ($Uninstall) {
 
     Stop-Broker
 
-    # Anything left is a broker somebody started by hand, and this does not kill it. Ending a
-    # process a person launched themselves is a decision for them -- the uninstall below will
-    # fail honestly, and the check at the end will say why.
-    if (Get-Process -Name 'parley' -ErrorAction SilentlyContinue) {
-        Write-Note 'a broker is still running that no autostart entry started'
+    # Anything left is a broker somebody started by hand. Ending a process a person launched
+    # themselves is a decision for them, so without -Force this does not kill it -- the uninstall
+    # below fails honestly and the check at the end says why. With -Force that decision has been
+    # made, on the command line, by the person it belongs to.
+    $byHand = @(Get-Process -Name 'parley' -ErrorAction SilentlyContinue)
+
+    if ($byHand.Count -gt 0) {
+        if ($Force) {
+            $survived = Remove-Holders $byHand
+
+            if ($survived.Count -gt 0) {
+                Write-Error "A broker is still running after -Force tried to end it: $(($survived | ForEach-Object { "pid $($_.Id)" }) -join ', '). It is probably another user's, which this cannot end. Nothing has been removed."
+            }
+        }
+        else {
+            Write-Note 'a broker is still running that no autostart entry started (-Force ends it)'
+        }
     }
 
     # Then the entry, still before the tools, because it names an executable about to be deleted.
@@ -325,12 +406,36 @@ $holders = @(Get-Process -Name $adapters -ErrorAction SilentlyContinue)
 if ($holders.Count -gt 0) {
     $listed = ($holders | ForEach-Object { "      pid $($_.Id), started $($_.StartTime.ToString('HH:mm'))" }) -join "`n"
 
-    Write-Error @"
+    # Written as a branch rather than leaning on Write-Error being fatal. It is, because
+    # $ErrorActionPreference is Stop at the top of this file, but a reader should not have to
+    # know that to see which of these two things happens.
+    if ($Force) {
+        Write-Note "$($holders.Count) adapter(s) hold the tool store; -Force is ending them"
+
+        $survived = Remove-Holders $holders
+
+        if ($survived.Count -gt 0) {
+            Write-Error @"
+$($survived.Count) adapter(s) are still running after -Force tried to end them:
+$(($survived | ForEach-Object { "      $($_.ProcessName), pid $($_.Id)" }) -join "`n")
+    Nothing has been changed and the broker has not been stopped. A process this user cannot
+    end is the usual reason; 'Get-Process parley-mcp' will show whose it is.
+"@
+        }
+
+        # Said plainly because it is the cost of the flag, and it is paid in somebody else's
+        # window. Those sessions keep running; what they lose is Parley, until the editor restarts.
+        Write-Note 'those editor sessions have lost their Parley tools until each editor restarts'
+    }
+    else {
+        Write-Error @"
 $($holders.Count) Parley adapter(s) are running and hold the files this would replace:
 $listed
     Each one belongs to an editor session with Parley configured. Close those sessions and run
-    this again. Nothing has been changed and the broker has not been stopped.
+    this again, or re-run with -Force to end them. Nothing has been changed and the broker has
+    not been stopped.
 "@
+    }
 }
 
 Write-Note 'no adapter is holding the tool store'
@@ -350,13 +455,29 @@ $strays = @(Get-Process -Name ($tools | ForEach-Object { $_.Command }) -ErrorAct
 if ($strays.Count -gt 0) {
     $listed = ($strays | ForEach-Object { "      $($_.ProcessName), pid $($_.Id)" }) -join "`n"
 
-    Write-Error @"
+    if ($Force) {
+        Write-Note "$($strays.Count) process(es) still hold the tools; -Force is ending them"
+
+        $survived = Remove-Holders $strays
+
+        if ($survived.Count -gt 0) {
+            Write-Error @"
+Something is still holding the tools after -Force tried to end it:
+$(($survived | ForEach-Object { "      $($_.ProcessName), pid $($_.Id)" }) -join "`n")
+    Nothing has been replaced; the autostart broker is stopped and will start again at logon, or
+    now with: Start-ScheduledTask -TaskName $task
+"@
+        }
+    }
+    else {
+        Write-Error @"
 Something is still holding the tools after the broker was stopped:
 $listed
     A broker started by hand is not stopped by this script, on purpose. Stop it and run this
-    again. Nothing has been replaced; the autostart broker is stopped and will start again at
-    logon, or now with: Start-ScheduledTask -TaskName $task
+    again, or re-run with -Force to end it. Nothing has been replaced; the autostart broker is
+    stopped and will start again at logon, or now with: Start-ScheduledTask -TaskName $task
 "@
+    }
 }
 
 Write-Step "Installing version $built"
