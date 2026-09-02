@@ -341,16 +341,37 @@ Rotating the lens matters — three runs of the same review are correlated and m
 the first. After fixing findings, **re-run the same lens** before moving to the next; fixes
 have introduced new problems that only the re-run caught.
 
-**Run to convergence, not to a fixed count.** "Three green" is not three passes; it is passes
-repeated until one finds nothing above low severity. A pass that finds something means the
-branch was not green, so fix it and go round again — including the lenses already run, because
-a fix is a change and changes are what the lenses are for. Stop when a full rotation turns up
-nothing worth acting on, and say how many rounds it took.
+**The gate is three consecutive runs per lens with no finding above low. A finding at any
+severity above low resets that lens to zero.** The lenses are independent and all three must
+reach three. Nine clean runs is the floor, not the expectation — a branch that keeps finding
+things keeps paying.
 
-The failure this corrects is specific and was repeated: running each lens once, fixing what it
-found, verifying the build still passes, and reporting green. A build that passes is not a
-review. The verification sweep at the end confirms the fixes did not break anything; it does
+Each run must probe **something the previous runs did not**. Three re-readings of the same code
+are one run repeated, and the counter is not a formality to be satisfied by rephrasing.
+
+An earlier version of this file asked instead for a *rotation to convergence* — passes repeated
+until one full rotation found nothing. **That is a weaker bar and it was measured to be one.**
+On `004-terminal-surface`, five rotation rounds reported convergence; the counter's first six
+runs then found four more defects, including a seat that held its gRPC call open after giving
+up and a truncated log that stopped being followed while the screen still said *Following …*.
+The rotation's fifth round had been clean because it re-read what the fourth had already
+looked at. Consecutive-clean-per-lens is what forces a new probe each time.
+
+The failure both versions correct is specific and was repeated: running each lens once, fixing
+what it found, verifying the build still passes, and reporting green. A build that passes is not
+a review. The verification sweep at the end confirms the fixes did not break anything; it does
 not look for what the fixes introduced.
+
+**The running count lives in `REVIEW-LEDGER.md`, which is untracked** — it is the state of one
+person's review of one checkout, not a fact about the protocol, and it spans sessions and
+machines, so it is written down rather than remembered. Open a section per branch, keep a
+counter table, and log every run with what it probed and what it found. **Log the clean runs
+too**: a run recorded only when it finds something turns the ledger into a bug list, and the
+next reader cannot tell an area that was probed and held from one nobody looked at.
+
+Record findings that are real but below the bar as *low, recorded not acted on*, with the
+reasoning. They do not reset a lens; leaving them unwritten is how the same one gets
+rediscovered every branch.
 
 The highest-value findings in this repository's history came from adversarially probing a
 guard rather than reading it: a self-referral that asserted both halves of a contradiction, a

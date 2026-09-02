@@ -484,6 +484,22 @@ identically to one added from the command line.
 
       **Five rounds.** 1,711 tests, 0 warnings.
 
+      **And five rounds was not the gate.** `REVIEW-LEDGER.md` — untracked, and the record this
+      repository actually keeps — sets three *consecutive* clean runs per lens, resetting a lens
+      on any finding above low, and says in as many words that a rotation is the weaker bar. This
+      task was written against the rotation because CLAUDE.md described the rotation; the two
+      documents disagreed and the weaker one was the one in front of me.
+
+      The counter was opened for this branch at zero, on the ledger's own precedent that rotation
+      rounds do not count, and its first six runs found four more defects — a seat holding its
+      gRPC call open after giving up, a truncated log silently stopping being followed, five
+      diverging copies of one wait helper, and (out of scope, fixed anyway) an `AgentName` error
+      message naming a grammar the type does not enforce.
+
+      That is the evidence, so CLAUDE.md and the constitution now carry the counter rather than
+      the rotation. **The gate for this branch is the ledger's, and this entry is history rather
+      than the verdict.**
+
 ---
 
 ## Baseline
