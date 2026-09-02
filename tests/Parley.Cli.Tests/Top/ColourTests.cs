@@ -18,8 +18,8 @@ namespace Parley.Cli.Tests.Top;
 /// <para>
 /// <b>Rendered and read back, not inspected.</b> Reading the source for colour tags would check
 /// that somebody wrote the markup they meant to; it would say nothing about whether a fact
-/// survives without it. So these render through a console with colour switched off entirely, and
-/// assert on the text that comes out — which is exactly what a reader without colour sees.
+/// survives without it. So these render, strip everything a terminal would have interpreted, and
+/// assert on the text that is left — which is exactly what a reader without colour sees.
 /// </para>
 /// </remarks>
 public sealed class ColourTests
@@ -121,9 +121,23 @@ public sealed class ColourTests
     /// <param name="renderable">What to draw.</param>
     /// <returns>The text a reader without colour sees.</returns>
     /// <remarks>
-    /// Colour and ANSI both off, rather than styled output with the codes stripped afterwards.
-    /// Stripping would prove the codes could be removed; switching it off asks the renderer the
-    /// question the reader is asking, which is what is left when it cannot use colour at all.
+    /// <para>
+    /// Colour switched off <i>and</i> the escapes stripped, which is belt and braces on purpose.
+    /// </para>
+    /// <para>
+    /// <b>An earlier version did only the first, and CI caught it on all three platforms.</b> The
+    /// reasoning it carried was that stripping merely proves the codes can be removed, while
+    /// switching colour off asks the renderer the reader's own question. That was wrong about the
+    /// mechanism: <c>dim</c> is a <i>decoration</i> and not a colour, so
+    /// <see cref="ColorSystemSupport.NoColors"/> does not remove it — the output still carried a
+    /// dim sequence, and whether it did depended on the environment, which is exactly why it
+    /// passed on one machine and failed on every runner.
+    /// </para>
+    /// <para>
+    /// The stripping is what makes this deterministic. What a reader without colour sees is the
+    /// text with the control sequences gone, and that is now what is asserted rather than whatever
+    /// the profile happened to negotiate.
+    /// </para>
     /// </remarks>
     private static string Plain(IRenderable renderable)
     {
@@ -139,8 +153,38 @@ public sealed class ColourTests
         console.Profile.Width = 160;
         console.Write(renderable);
 
-        return written.ToString();
+        return Bare(written.ToString());
     }
+
+    /// <summary>Removes every control sequence, leaving what a reader reads.</summary>
+    /// <param name="text">Rendered output.</param>
+    /// <returns>The same text with nothing in it a terminal would interpret.</returns>
+    private static string Bare(string text) =>
+        System.Text.RegularExpressions.Regex.Replace(
+            text,
+            Csi,
+            string.Empty,
+            System.Text.RegularExpressions.RegexOptions.None,
+            TimeSpan.FromSeconds(5));
+
+    /// <summary>
+    /// A control sequence: the escape character, a bracket, some parameters, and a letter.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Anchored to the escape character, and that is load-bearing rather than tidy.</b> A
+    /// pattern matching a bare bracket followed by a letter would eat the literal markup tag that
+    /// <see cref="A_message_cannot_style_the_terminal_it_is_read_in"/> exists to find still
+    /// sitting in the output — so the stripper would manufacture the very evidence that the
+    /// injection had been prevented.
+    /// </para>
+    /// <para>
+    /// The escape is spelled as a unicode escape rather than typed. A raw control byte in a source
+    /// file is invisible in most editors and survives edits nobody intended, which this repository
+    /// has already had happen once in a test.
+    /// </para>
+    /// </remarks>
+    private static readonly string Csi = ((char)27) + @"\[[0-9;]*[A-Za-z]";
 
     /// <summary>An agent in a given state.</summary>
     /// <param name="presence">Whether it is there.</param>

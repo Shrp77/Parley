@@ -42,7 +42,7 @@ public sealed class GraphTests
         // graph too, and to the terminal's, made in a project neither of them is named in.
         var referenced = DirectReferences(RepositoryPath("src/Parley.Client/Parley.Client.csproj"))
             .Where(r => r.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
-            .Select(Path.GetFileNameWithoutExtension)
+            .Select(NameOf)
             .Order(StringComparer.Ordinal)
             .ToList();
 
@@ -83,7 +83,7 @@ public sealed class GraphTests
     {
         foreach (var reference in DirectReferences(path))
         {
-            var name = Path.GetFileNameWithoutExtension(reference);
+            var name = NameOf(reference);
 
             if (!reached.TryAdd(name, via))
             {
@@ -106,6 +106,21 @@ public sealed class GraphTests
             }
         }
     }
+
+    /// <summary>The name of a referenced package or project, on any platform.</summary>
+    /// <param name="reference">An <c>Include</c> value, as MSBuild spells it.</param>
+    /// <returns>The bare name, with no directories and no extension.</returns>
+    /// <remarks>
+    /// <b>The separators are normalised first, and CI found out why.</b> MSBuild writes project
+    /// references with backslashes on every platform, and a backslash is a perfectly ordinary
+    /// filename character on Linux and macOS — so <c>Path.GetFileNameWithoutExtension</c>
+    /// there returns the whole relative path rather than the name, and the assertion compared
+    /// <c>Parley.Configuration</c> against <c>..\Parley.Configuration\Parley.Configuration</c>.
+    /// It passed on Windows, which is the machine it was written on, and failed on the two that
+    /// were not.
+    /// </remarks>
+    private static string NameOf(string reference) =>
+        Path.GetFileNameWithoutExtension(reference.Replace('\\', '/'));
 
     /// <summary>The package and project references a project file declares itself.</summary>
     /// <param name="path">The project file.</param>
