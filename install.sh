@@ -26,18 +26,28 @@
 #   ./install.sh --store <path>  the store the broker owns; asked for if not given
 #   ./install.sh --node-config <path>  the catalogue of agents this machine may start
 #   ./install.sh --uninstall     remove both tools and the autostart entry, and stop
+#   ./install.sh --force         end whatever is holding the tools, rather than refusing
+#
+# --force ends a broker somebody started by hand and the parley-mcp adapter of every editor
+# session with Parley configured. Those sessions keep running and lose Parley until the editor
+# is restarted, which is the cost and is why it is not the default: ending a process a person
+# launched themselves is their decision, and this is that decision made deliberately on the
+# command line. It weakens no check -- everything is waited for and then looked for again, and
+# anything still holding the files is still fatal.
 
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 uninstall=0
+force=0
 store=""
 node_config=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --uninstall) uninstall=1; shift ;;
+        --force) force=1; shift ;;
         # --db as well as --store, because `parley serve --db` is the flag this ends up
         # passing and the two being different words is a trap laid for nobody's benefit.
         --store|--db) store="${2:-}"; shift 2 ;;
@@ -48,7 +58,7 @@ while [ $# -gt 0 ]; do
         -h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \\?//'; exit 0 ;;
         *)
             echo "Unknown argument: $1" >&2
-            echo "Usage: ./install.sh [--store <path>] [--node-config <path>] [--uninstall]" >&2
+            echo "Usage: ./install.sh [--store <path>] [--node-config <path>] [--uninstall] [--force]" >&2
             exit 64
             ;;
     esac
@@ -96,6 +106,75 @@ stop_broker() {
     elif command -v launchctl >/dev/null 2>&1; then
         launchctl bootout "gui/$(id -u)/$task" >/dev/null 2>&1 || true
     fi
+}
+
+# The pids of anything running under the given command names.
+#
+# One place, because three guards ask the same question and a fourth asks it again after a kill.
+holding() {
+    local out="" found
+
+    for cmd in "$@"; do
+        found="$(pgrep -x "$cmd" 2>/dev/null || true)"
+        [ -n "$found" ] && out="$out$found
+"
+    done
+
+    printf '%s' "$out" | sed '/^$/d'
+}
+
+# Ends whatever is running under the given command names. Prints the survivors and returns 1
+# when anything is left; prints nothing and returns 0 when the files are free.
+#
+# Only ever called under --force, and it returns rather than exits: each caller knows what it
+# was guarding and can say so better than this can.
+#
+# TERM before KILL, which is where this differs from install.ps1 on purpose. Windows has no
+# reliable polite stop for a console process -- Stop-Process without -Force asks for a window
+# close, which a broker need not honour -- so that script kills outright. Here a broker asked to
+# stop closes its listener and its streams first, and a store left mid-write is worse than
+# waiting two seconds. KILL is the backstop for one that will not go.
+#
+# It waits, and then it looks again. A signal is delivered, not obeyed, and the failure this
+# whole guard exists to prevent needs the process actually gone: `dotnet tool uninstall` fails on
+# a file still held, `dotnet tool install` then exits *zero* saying "is already installed", and
+# the version check afterwards cannot tell -- because the version it finds is the version it
+# expected.
+#
+# Looked for by name rather than by pid, because a session that started while this ran holds the
+# same files, and the question is whether anything holds them now.
+remove_holders() {
+    local pids waited
+
+    pids="$(holding "$@")"
+    [ -z "$pids" ] && return 0
+
+    for pid in $pids; do
+        note "ending pid $pid"
+        kill -TERM "$pid" 2>/dev/null || true
+    done
+
+    waited=0
+    while [ "$waited" -lt 50 ]; do
+        [ -z "$(holding "$@")" ] && return 0
+        sleep 0.2
+        waited=$((waited + 1))
+    done
+
+    for pid in $(holding "$@"); do
+        note "pid $pid did not stop when asked; ending it outright"
+        kill -KILL "$pid" 2>/dev/null || true
+    done
+
+    waited=0
+    while [ "$waited" -lt 25 ]; do
+        [ -z "$(holding "$@")" ] && return 0
+        sleep 0.2
+        waited=$((waited + 1))
+    done
+
+    holding "$@"
+    return 1
 }
 
 # Which of this repository's tools are installed globally.
@@ -164,11 +243,22 @@ if [ "$uninstall" = "1" ]; then
 
     stop_broker
 
-    # Anything left is a broker somebody started by hand, and this does not kill it. Ending a
-    # process a person launched themselves is a decision for them; the check at the end reports
-    # honestly either way.
+    # Anything left is a broker somebody started by hand. Ending a process a person launched
+    # themselves is a decision for them, so without --force this does not kill it and the check
+    # at the end reports honestly either way. With --force that decision has been made, on the
+    # command line, by the person it belongs to.
     if pgrep -x parley >/dev/null 2>&1; then
-        note "a broker is still running that no autostart entry started"
+        if [ "$force" = "1" ]; then
+            if ! survivors="$(remove_holders parley)"; then
+                echo "A broker is still running after --force tried to end it:" >&2
+                printf '      pid %s\n' $survivors >&2
+                echo "    It is probably another user's, which this cannot end. Nothing has" >&2
+                echo "    been removed." >&2
+                exit 1
+            fi
+        else
+            note "a broker is still running that no autostart entry started (--force ends it)"
+        fi
     fi
 
     # Then the entry, still before the tools, because it names an executable about to be deleted.
@@ -295,28 +385,42 @@ step "Checking nothing holds the tools"
 #
 # The broker's own command is excluded: it is stopped a few lines below, deliberately and by name.
 # One started by hand is a different matter and is caught after that, where it can be told apart.
-holders=""
+adapters=()
 
 for cmd in "${commands[@]}"; do
     [ "$cmd" = "$broker" ] && continue
-
-    found="$(pgrep -x "$cmd" 2>/dev/null || true)"
-    [ -n "$found" ] && holders="$holders$found
-"
+    adapters+=("$cmd")
 done
 
-holders="$(printf '%s' "$holders" | sed '/^$/d')"
+holders="$(holding "${adapters[@]}")"
 
 if [ -n "$holders" ]; then
     count="$(printf '%s\n' "$holders" | wc -l | tr -d ' ')"
 
-    echo "==> $count Parley adapter(s) are running and hold the files this would replace:" >&2
-    printf '      pid %s\n' $holders >&2
-    echo "    Each one belongs to an editor session with Parley configured. Close those" >&2
-    echo "    sessions and run this again. Nothing has been changed and the broker has not" >&2
-    echo "    been stopped." >&2
+    if [ "$force" = "1" ]; then
+        note "$count adapter(s) hold the tool store; --force is ending them"
 
-    exit 1
+        if ! survivors="$(remove_holders "${adapters[@]}")"; then
+            echo "==> Adapter(s) still running after --force tried to end them:" >&2
+            printf '      pid %s\n' $survivors >&2
+            echo "    Nothing has been changed and the broker has not been stopped. A process" >&2
+            echo "    this user cannot end is the usual reason." >&2
+
+            exit 1
+        fi
+
+        # Said plainly because it is the cost of the flag, and it is paid in somebody else's
+        # window. Those sessions keep running; what they lose is Parley, until the editor restarts.
+        note "those editor sessions have lost their Parley tools until each editor restarts"
+    else
+        echo "==> $count Parley adapter(s) are running and hold the files this would replace:" >&2
+        printf '      pid %s\n' $holders >&2
+        echo "    Each one belongs to an editor session with Parley configured. Close those" >&2
+        echo "    sessions and run this again, or re-run with --force to end them. Nothing has" >&2
+        echo "    been changed and the broker has not been stopped." >&2
+
+        exit 1
+    fi
 fi
 
 note "no adapter is holding the tool store"
@@ -327,22 +431,28 @@ stop_broker
 # started by hand, which stop_broker deliberately leaves alone -- and which holds the binary just
 # as firmly. Caught here rather than by the uninstall, which would fail and leave the tools half
 # replaced.
-strays=""
+strays="$(holding "${commands[@]}")"
 
-for cmd in "${commands[@]}"; do
-    found="$(pgrep -x "$cmd" 2>/dev/null || true)"
-    [ -n "$found" ] && strays="$strays$cmd $found
-"
-done
+if [ -n "$strays" ]; then
+    if [ "$force" = "1" ]; then
+        note "something still holds the tools; --force is ending it"
 
-if [ -n "$(printf '%s' "$strays" | sed '/^$/d')" ]; then
-    echo "==> Something is still holding the tools after the broker was stopped:" >&2
-    printf '      %s
-' $strays >&2
-    echo "    A broker started by hand is not stopped by this script, on purpose. Stop it and" >&2
-    echo "    run this again. Nothing has been replaced." >&2
+        if ! survivors="$(remove_holders "${commands[@]}")"; then
+            echo "==> Something is still holding the tools after --force tried to end it:" >&2
+            printf '      pid %s\n' $survivors >&2
+            echo "    Nothing has been replaced." >&2
 
-    exit 1
+            exit 1
+        fi
+    else
+        echo "==> Something is still holding the tools after the broker was stopped:" >&2
+        printf '      pid %s\n' $strays >&2
+        echo "    A broker started by hand is not stopped by this script, on purpose. Stop it" >&2
+        echo "    and run this again, or re-run with --force to end it. Nothing has been" >&2
+        echo "    replaced." >&2
+
+        exit 1
+    fi
 fi
 
 step "Installing version $built"

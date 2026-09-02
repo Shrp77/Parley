@@ -158,6 +158,15 @@ that otherwise reports success:
   Installing the tools is not the same as having Parley working, and the gap between the two
   shows up as agents failing to attach — in an editor, days later, a long way from here.
 
+The script refuses to replace a file something is holding, and names what to close: an editor
+session with Parley configured, or a broker somebody started by hand. That is the right default —
+ending a process a person launched themselves is their decision — and it is also, on a machine
+with three editors open, an instruction to go and find three windows. `-Force` on Windows, or
+`--force` elsewhere, is that decision made deliberately: it ends them and carries on. Those
+editor sessions keep running and lose Parley until each editor restarts, which is the cost. It
+weakens no check — everything is waited for and then looked for again, and anything still holding
+the files is still a refusal.
+
 `./install.ps1 -Uninstall` (or `./install.sh --uninstall`) stops the broker, removes the
 autostart entry, removes both tools, and then checks that they are actually gone. It leaves the
 store and any `.mcp.json` alone: those are the deployment rather than the installation, and
