@@ -168,7 +168,7 @@ public sealed class AgreementTests : IAsyncDisposable
 
         foreach (var message in export.Messages)
         {
-            console.Write((IRenderable)TranscriptView.Panel(message, participants, states));
+            console.Write((IRenderable)TranscriptView.Panel(message, participants, states, console.Profile.Width));
         }
 
         return written.ToString();

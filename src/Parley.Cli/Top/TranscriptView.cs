@@ -98,7 +98,7 @@ internal static class TranscriptView
 
         foreach (var message in export.Messages)
         {
-            console.Write(Panel(message, participants, states));
+            console.Write(Panel(message, participants, states, console.Profile.Width));
         }
 
         console.WriteLine();
@@ -108,6 +108,13 @@ internal static class TranscriptView
     /// <param name="message">The message.</param>
     /// <param name="participants">Everybody in the conversation.</param>
     /// <param name="states">Where each exchange stands, by exchange identifier.</param>
+    /// <param name="width">The terminal width, so the attribution can move when it will not fit.</param>
+    /// <remarks>
+    /// <b>Required rather than defaulted.</b> A default of "as wide as you like" would mean a
+    /// caller that forgot it silently got the old truncating behaviour back, and the guard would
+    /// be off in exactly the place nobody was looking — which is how the first version of this
+    /// test passed the fix and failed anyway.
+    /// </remarks>
     /// <returns>The panel.</returns>
     /// <remarks>
     /// The body goes in as escaped text. A message is agent-written and may contain anything,
@@ -118,7 +125,8 @@ internal static class TranscriptView
     internal static Panel Panel(
         Message message,
         IReadOnlyList<AgentName> participants,
-        IReadOnlyDictionary<long, ExchangeSnapshot> states)
+        IReadOnlyDictionary<long, ExchangeSnapshot> states,
+        int width)
     {
         var payload = Payload.Read(message.PayloadJson);
         var body = new System.Text.StringBuilder();
@@ -159,19 +167,52 @@ internal static class TranscriptView
             body.Append("\n\n[yellow]").Append(Safe.Text(unseen)).Append("[/]");
         }
 
+        var kind = message.Type.ToString().ToLowerInvariant();
+
         var exchange = message.ExchangeId is { } id && states.TryGetValue(id, out var snapshot)
-            ? $"[dim] · exchange {id} {Safe.Text(snapshot.State.ToString().ToLowerInvariant())}[/]"
+            ? $" · exchange {id} {snapshot.State.ToString().ToLowerInvariant()}"
             : string.Empty;
+
+        // Measured on the plain text, because the markup below is not what occupies a column.
+        var plain = $" {message.From.Value} to {message.To.Value} · {kind}{exchange} ";
+
+        var decorated =
+            $" {Safe.Text(message.From.Value)} "
+            + $"[dim]to[/] {Safe.Text(message.To.Value)} "
+            + $"[dim]· {Safe.Text(kind)}[/]"
+            + (exchange.Length > 0 ? $"[dim]{Safe.Text(exchange)}[/]" : string.Empty)
+            + " ";
+
+        // **A header that does not fit is truncated, and Spectre gives no sign of what went.**
+        // At eighty columns this reads `orders@alpha to billing@alpha · question`; at forty the
+        // kind of message disappears, and at twenty so does the recipient -- leaving a transcript
+        // that says who spoke and not who they spoke to, which is the half that makes it a
+        // conversation. The spec's edge case is that a narrow terminal *reflows* and that nothing
+        // carrying meaning is truncated away silently; a header cannot reflow, so when it will not
+        // fit the same words go into the body, where they wrap.
+        //
+        // Found by rendering at twenty columns rather than by reading this, and the panel looked
+        // perfectly reasonable at every width somebody would develop at.
+        var fits = plain.Length + Framing <= width;
+
+        if (!fits)
+        {
+            body.Insert(0, decorated.Trim() + "\n\n");
+        }
 
         return new Panel(body.ToString())
         {
-            Header = new PanelHeader(
-                $" {Safe.Text(message.From.Value)} "
-                + $"[dim]to[/] {Safe.Text(message.To.Value)} "
-                + $"[dim]· {Safe.Text(message.Type.ToString().ToLowerInvariant())}[/]"
-                + exchange + " "),
+            Header = fits ? new PanelHeader(decorated) : null,
             Border = BoxBorder.Rounded,
             Expand = true,
         };
     }
+
+    /// <summary>What the border and padding take before any text is drawn.</summary>
+    /// <remarks>
+    /// Two border columns and two of padding. Approximate on purpose and erring towards moving the
+    /// attribution into the body a column early: being one character conservative costs a slightly
+    /// plainer panel, and being one character optimistic costs the recipient's name.
+    /// </remarks>
+    private const int Framing = 4;
 }

@@ -25,6 +25,9 @@ namespace Parley.Cli.Tests.Top;
 /// </remarks>
 public sealed class ColourTests
 {
+    /// <summary>Wide enough that nothing is moved out of the header for want of room.</summary>
+    private const int Wide = 200;
+
     [Theory]
     [InlineData(AgentPresence.Running, AgentStatus.Active, "running")]
     [InlineData(AgentPresence.Startable, AgentStatus.Active, "startable")]
@@ -67,7 +70,7 @@ public sealed class ColourTests
         var participants = Parley.Client.Rendering.Visibility.Participants(messages);
 
         var plain = Plain(TranscriptView.Panel(
-            messages[0], participants, new Dictionary<long, ExchangeSnapshot>()));
+            messages[0], participants, new Dictionary<long, ExchangeSnapshot>(), Wide));
 
         Assert.Contains("inventory@here", plain, StringComparison.Ordinal);
         Assert.Contains("did not see this", plain, StringComparison.Ordinal);
@@ -110,7 +113,8 @@ public sealed class ColourTests
         var plain = Plain(TranscriptView.Panel(
             hostile,
             [AgentName.Create("orders@here"), AgentName.Create("billing@here")],
-            new Dictionary<long, ExchangeSnapshot>()));
+            new Dictionary<long, ExchangeSnapshot>(),
+            Wide));
 
         // The tag survives as characters a reader can see, rather than as styling nobody asked
         // for. If it had been interpreted, this text would be absent from the output entirely.
