@@ -158,9 +158,11 @@ internal static class Naming
                     : ValidationResult.Success()));
 
         Guidance(console,
-            "Optional. The node.json listing the repositories this machine may start on demand "
-            + "for this project, when a question arrives for one nobody has open. Blank if it "
-            + "starts none.");
+            "Optional, and it decides whether this project works unattended. With a node.json "
+            + "here, this machine starts a listed repository's agent when a question arrives for "
+            + "it and nobody has it open, and keeps it running. Without one, a question to an "
+            + "agent nobody has open waits, times out and is ghosted; agents answer only while a "
+            + "person has their repository open. Blank starts nothing.");
 
         var nodeConfig = console.Prompt(
             Prompt("Node catalogue [dim](optional)[/]:", proposed.NodeConfig).AllowEmpty());
