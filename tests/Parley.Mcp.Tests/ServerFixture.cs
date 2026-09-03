@@ -123,11 +123,52 @@ internal sealed class ServerFixture : IAsyncDisposable
 
     /// <summary>Closes a server as its client closing the pipe would.</summary>
     /// <param name="link">The link to close.</param>
-    /// <returns>A task that completes when it is closed.</returns>
+    /// <returns>A task that completes when the broker has seen it go.</returns>
+    /// <exception cref="TimeoutException">The broker never noticed the stream end.</exception>
+    /// <remarks>
+    /// <para>
+    /// Waits for the broker, not just for the client. Disposing the link ends the attach stream
+    /// on this side; the broker releases the session when its handler unwinds, which is a
+    /// separate event on a separate thread. A test that relaunched the same agent straight
+    /// after this returned was racing the two, and when the relaunch won, the agent had never
+    /// been absent at all: two sessions for one name are ordinary (§14), so nothing was released
+    /// and the answer the test expected refused was accepted. One run in thirty on a loaded
+    /// Linux box, never on Windows.
+    /// </para>
+    /// <para>
+    /// The same lesson is written up twice in the Server tests' loopback broker, once for agents
+    /// and once for nodes. This is the third copy, and it waits on the session count rather than
+    /// on the name because a second-session test closes one of two windows and the name is
+    /// supposed to stay.
+    /// </para>
+    /// </remarks>
     public async Task ShutDownAsync(BrokerLink link)
     {
         _links.Remove(link);
+
+        var before = _server.Runtime.SessionsFor(link.Agent);
+
         await link.DisposeAsync();
+
+        if (before == 0)
+        {
+            return;
+        }
+
+        var within = TimeSpan.FromSeconds(5);
+        var deadline = DateTime.UtcNow + within;
+
+        while (_server.Runtime.SessionsFor(link.Agent) >= before)
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException(
+                    $"'{link.Agent.Value}' still had {before} session(s) attached {within} " +
+                    "after its stream ended. The broker did not notice the disconnect.");
+            }
+
+            await Task.Delay(20);
+        }
     }
 
     /// <summary>Runs the broker's sweep, as its own process does on a timer.</summary>

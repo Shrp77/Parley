@@ -835,9 +835,21 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// detail is not the broker stating a rule; it is the broker going away, so it is reported as
     /// what it is.
     /// </para>
+    /// <para>
+    /// <b>And why <see cref="StatusCode.Internal"/> counts as unreachable too.</b> Found the
+    /// same way, one run in thirty on a loaded Linux box: a refusal labelled
+    /// <c>brokerrefused</c> whose detail read <c>Error starting gRPC call.
+    /// HttpRequestException: …</c> — the client's own words about a socket, handed to an agent
+    /// as a rule the broker had stated. Grpc.Net.Client resolves a connection refused to
+    /// Unavailable, but a connection accepted and then torn down during the handshake is an
+    /// HTTP/2 protocol error, and those resolve to Internal, as does everything the client
+    /// cannot otherwise place. The broker never sets Internal; a rule of its own arrives as
+    /// FailedPrecondition, InvalidArgument, NotFound or AlreadyExists. So Internal is the
+    /// transport failing with something to say, and what it has to say is not for an agent.
+    /// </para>
     /// </remarks>
     private static JsonNode Unreachable(RpcException failure) =>
-        failure.StatusCode == StatusCode.Unavailable
+        failure.StatusCode is StatusCode.Unavailable or StatusCode.Internal
             || string.IsNullOrWhiteSpace(failure.Status.Detail)
             ? new JsonObject
             {

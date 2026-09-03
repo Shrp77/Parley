@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Parley.Mcp.Tests;
@@ -95,17 +96,48 @@ public sealed class BrokerAwayTests
         // relabelled `brokerunreachable` and have "Tell your principal rather than retrying"
         // appended -- a refusal that named the fix and then forbade it. SPEC.md §7.3: a refusal
         // returns work, never a retry instruction.
+        //
+        // "Made deterministic" was overstated, and the failure it caused was itself silent
+        // about the cause: 2 runs in 43 on a loaded Linux box, a NullReferenceException at
+        // the first assertion. The call had won the race outright -- the broker listed the
+        // agents and only then went down -- and a listing is a success, which carries no `ok`
+        // at all. That outcome says nothing about the refusal this test exists for, so it is
+        // retried on a fresh broker rather than asserted against, and the test fails only when
+        // the race cannot be reached at all.
         var ct = TestContext.Current.CancellationToken;
 
-        await using var fixture = new ServerFixture(T0);
+        const int Attempts = 10;
 
-        var (link, tools) = await fixture.LaunchAsync("orders@test", ct);
+        JsonNode reply;
 
-        var call = tools.AgentsAsync(ct);
+        for (var attempt = 1; ; attempt++)
+        {
+            await using var fixture = new ServerFixture(T0);
 
-        await fixture.StopBrokerAsync();
+            var (link, tools) = await fixture.LaunchAsync("orders@test", ct);
 
-        var reply = await call;
+            var call = tools.AgentsAsync(ct);
+
+            await fixture.StopBrokerAsync();
+
+            reply = await call;
+
+            await link.DisposeAsync();
+
+            if (reply["ok"] is not null)
+            {
+                break;
+            }
+
+            // A success and not some third shape: this test must not quietly start accepting
+            // whatever a future refusal looks like.
+            Assert.NotNull(reply["agents"]);
+
+            Assert.True(
+                attempt < Attempts,
+                $"the broker answered before it went down on all {Attempts} attempts, " +
+                "so the refusal under test was never produced");
+        }
 
         Assert.False(reply["ok"]!.GetValue<bool>());
 
@@ -134,7 +166,5 @@ public sealed class BrokerAwayTests
             Assert.Equal("brokerunreachable", reply["refused"]!.GetValue<string>());
             Assert.Contains("not something you did", why, StringComparison.Ordinal);
         }
-
-        await link.DisposeAsync();
     }
 }
