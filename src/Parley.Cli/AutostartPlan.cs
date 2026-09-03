@@ -183,6 +183,68 @@ public sealed record AutostartPlan(
         };
     }
 
+    /// <summary>
+    /// Works out what installing an entry that serves the manifest would do on this machine.
+    /// </summary>
+    /// <param name="manifestPath">The manifest whose projects the entry serves.</param>
+    /// <param name="executable">The broker binary, or null to use the running one.</param>
+    /// <param name="consoleOn">
+    /// Where the operator's console should listen, or null to install a broker that hosts none.
+    /// </param>
+    /// <returns>The plan.</returns>
+    /// <exception cref="ArgumentException"><paramref name="manifestPath"/> is blank.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>No store and no port, because the manifest holds them.</b> SPEC.md §4.1 gives every
+    /// project its own store and endpoint and says one process may host them all; <c>serve</c>
+    /// with nothing named does exactly that. An entry written with one explicit store was the
+    /// installer's only shape for a long time, and it is what left every project named
+    /// afterwards "not answering" until somebody found out the entry had never heard of it.
+    /// </para>
+    /// <para>
+    /// The manifest's path is written in, for the reason the catalogue is in
+    /// <see cref="Describe"/>: whether a supervisor sees <c>PARLEY_CONFIG</c> depends on which
+    /// supervisor it is, and an argument is read the same way by all three and is visible in
+    /// <c>autostart status</c>. The log goes beside the manifest rather than beside a store,
+    /// because there is no single store to be beside.
+    /// </para>
+    /// <para>
+    /// <c>--with-node</c> is always written. With several projects the broker hosts a node in each
+    /// one whose entry names a catalogue, so a project catalogued after this was installed is
+    /// hosted at the next start without the entry changing — and a manifest in which none is
+    /// catalogued is reported by the broker rather than refused here.
+    /// </para>
+    /// </remarks>
+    public static AutostartPlan DescribeManifest(
+        string manifestPath,
+        string? executable = null,
+        string? consoleOn = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(manifestPath);
+
+        var manifest = Path.GetFullPath(manifestPath);
+
+        var log = Path.Combine(
+            Path.GetDirectoryName(manifest) ?? ".", Name + ".log");
+
+        var arguments = string.Create(CultureInfo.InvariantCulture,
+            $"serve --config {Quote(manifest)} --log {Quote(log)} --with-node");
+
+        if (consoleOn is { Length: > 0 } front)
+        {
+            arguments = string.Create(CultureInfo.InvariantCulture,
+                $"{arguments} --with-console --console {Quote(front)}");
+        }
+
+        var binary = executable ?? Environment.ProcessPath ?? "parley";
+
+        return Describe("placeholder.db", executable: binary) with
+        {
+            Arguments = arguments,
+            LogPath = log,
+        };
+    }
+
     /// <summary>Which supervisor this platform uses.</summary>
     /// <returns>The supervisor.</returns>
     /// <remarks>

@@ -190,8 +190,16 @@ parley autostart install --db /src/acme/.parley/parley.db
 
 That installs a scheduled task on Windows, a systemd user unit on Linux, or a launch agent on
 macOS, and starts it. **None of them needs administrator rights** — they are user-level, run as
-you, and start the broker again at logon. `parley autostart status` says whether it is set up
-and `parley autostart remove` undoes it, leaving a broker that is already running alone.
+you, and start the broker again at logon. `parley autostart status` says whether it is set up,
+and what it was registered to run; `parley autostart remove` undoes it, leaving a broker that is
+already running alone.
+
+**With projects named, leave off `--db`.** A machine that has named its deployments — with
+`parley project add`, or from the first screen of `parley top` — gets an entry that serves every
+project in the manifest from one process, each on its own store and port, hosting this machine's
+node in each project whose entry names a catalogue. A project named later comes up at the next
+logon without reinstalling anything. The install script does the same: it asks what is named
+before it asks for a store.
 
 **It starts the console too**, on `127.0.0.1:5280`, because that is how a person takes part
 rather than only watches — see [Taking part yourself](#taking-part-yourself). An agent attached

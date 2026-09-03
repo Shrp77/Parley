@@ -187,23 +187,19 @@ public static class ServeCommand
     /// <param name="logPath">Where to copy output, or null.</param>
     /// <param name="output">Where to report what is running.</param>
     /// <param name="error">Where to report what is not.</param>
-    /// <param name="whenListening">
-    /// Something to run alongside the brokers once they are listening, given the addresses and
-    /// the writer they report through, or <see langword="null"/> to run nothing. Permitted only
-    /// when exactly one project is being served.
+    /// <param name="nodeFor">
+    /// Something to run for each project once its broker is listening — this machine's node,
+    /// joined to that project — given the project, its addresses and the writer to report
+    /// through, or <see langword="null"/> to host no node. Each is contained on its own.
     /// </param>
     /// <param name="alongside">
     /// Something to run alongside the brokers that is <em>not</em> bound to any one of them: the
     /// operator's console, which reads this machine's manifest rather than a single endpoint.
-    /// Separate from <paramref name="whenListening"/> because that one joins exactly one broker
-    /// and is refused across several projects, and a console is not.
+    /// Run once, and handed the first started broker's addresses as its fallback.
     /// </param>
     /// <param name="cancellationToken">Stops every broker.</param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
-    /// <exception cref="ArgumentException">
-    /// <paramref name="whenListening"/> was given alongside more than one project.
-    /// </exception>
     /// <remarks>
     /// <para>
     /// SPEC.md §4.1: "One process may host many brokers." Isolation is unaffected because it lives
@@ -221,13 +217,16 @@ public static class ServeCommand
     /// reported success while doing less than it claimed.
     /// </para>
     /// <para>
-    /// <b>A node may be hosted here only when there is one project to host it for.</b> A node
-    /// joins one broker, because §4.1.1 names an agent for the machine it is on and a machine has
-    /// one identity; a process serving three projects has no way to choose which of them this
-    /// machine belongs to, and guessing the first would record a machine as startable in a
-    /// deployment nobody asked it to join. The entry point refuses that combination before
-    /// reaching here, and this refuses it again — an invariant worth stating where it binds, not
-    /// only where it is currently enforced.
+    /// <b>A node is hosted per project, and each one joins its own broker.</b> An earlier version
+    /// refused to host a node across several projects, reasoning from §4.1.1 that a machine has
+    /// one identity and a process serving three projects could not choose which deployment it
+    /// belonged to. That reasoning was right about the choosing and wrong about who makes it: the
+    /// manifest names a catalogue <i>per project</i> — "the catalogue of agents this machine may
+    /// start for it", §4.1 — so the projects this machine belongs to are exactly the ones that
+    /// say so. Each project's registry is its own file, so the same machine name in two of them
+    /// collides no more than the same agent name does. What is still refused, at the entry point,
+    /// is one explicit catalogue offered to several projects, because that is the choice nobody
+    /// made.
     /// </para>
     /// </remarks>
     public static async Task<int> RunAsync(
@@ -235,27 +234,13 @@ public static class ServeCommand
         string? logPath,
         TextWriter output,
         TextWriter error,
-        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? whenListening = null,
+        Func<ProjectSettings, IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? nodeFor = null,
         Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(projects);
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(error);
-
-        // The node only, and the distinction is what this parameter was missing. A console is
-        // hosted through `alongside` precisely because it is not bound to one broker: it reads
-        // this machine's manifest and shows every project in it, so a process serving several is
-        // the case it is best at rather than one it cannot handle. Guarding both through one
-        // parameter is what made `serve --with-console` across two projects throw this at a
-        // person instead of starting.
-        if (whenListening is not null && projects.Count > 1)
-        {
-            throw new ArgumentException(
-                "A node joins one broker, so it cannot be hosted by a process serving several " +
-                "projects. Select one with --project.",
-                nameof(projects));
-        }
 
         using var log = Logging.Open(logPath, error);
 
@@ -367,10 +352,14 @@ public static class ServeCommand
                 "Agents connect with PARLEY_AGENT set; machines join with `parley up`. Ctrl+C stops them all.")
                 .ConfigureAwait(false);
 
-            // The one started project's addresses: a hook is only permitted alongside a single
-            // project, and a run where that project failed to start has already returned above.
-            var hosted = HostAsync(
-                whenListening, alongside, started[0].Server.Addresses, output,
+            // The console once, against the first started broker as its fallback -- it reads the
+            // manifest for the rest -- and a node per started project, each contained on its own
+            // so that one project's node failing leaves the others hosted.
+            var hosted = HostAllAsync(
+                nodeFor,
+                alongside,
+                [.. started.Select(s => (s.Project, s.Server.Addresses))],
+                output,
                 cancellationToken);
 
             // One sweep per broker, all cancelled by the one token the interrupt owns.
@@ -442,6 +431,55 @@ public static class ServeCommand
             return 0;
         }
 
+        return await ContainAsync(
+            () => whenListening(addresses, output, cancellationToken), "This machine's node", output)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Hosts the console once and a node per started project, all contained.</summary>
+    /// <param name="nodeFor">What to run for each project, or null to host no node.</param>
+    /// <param name="alongside">What to run that is not bound to one broker, or null.</param>
+    /// <param name="started">Every project that came up, with where it listens.</param>
+    /// <param name="output">Where to report a failure worth seeing.</param>
+    /// <param name="cancellationToken">Stops them all.</param>
+    /// <returns>The first non-zero exit code, or zero.</returns>
+    private static async Task<int> HostAllAsync(
+        Func<ProjectSettings, IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? nodeFor,
+        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside,
+        IReadOnlyList<(ProjectSettings Project, IReadOnlyList<string> Addresses)> started,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        var hosting = new List<Task<int>>();
+
+        if (alongside is not null)
+        {
+            hosting.Add(alongside(started[0].Addresses, output, cancellationToken));
+        }
+
+        if (nodeFor is not null)
+        {
+            foreach (var (project, addresses) in started)
+            {
+                hosting.Add(ContainAsync(
+                    () => nodeFor(project, addresses, output, cancellationToken),
+                    $"{project.Name}: this machine's node",
+                    output));
+            }
+        }
+
+        var codes = await Task.WhenAll(hosting).ConfigureAwait(false);
+
+        return Array.Find(codes, code => code != 0);
+    }
+
+    /// <summary>Runs a hosted node and survives it failing.</summary>
+    /// <param name="run">The node.</param>
+    /// <param name="who">How to name it in the failure line.</param>
+    /// <param name="output">Where to report a failure worth seeing.</param>
+    /// <returns>Its exit code, or the unavailable code when it threw.</returns>
+    private static async Task<int> ContainAsync(Func<Task<int>> run, string who, TextWriter output)
+    {
         try
         {
             // The broker's writer, not the console. Under a supervisor there is no console at
@@ -449,7 +487,7 @@ public static class ServeCommand
             // exactly what somebody debugging a machine that starts nothing needs: which
             // catalogue it read, what it can start, and which registered agents are missing from
             // it. Writing where the broker writes puts all of that in --log.
-            return await whenListening(addresses, output, cancellationToken).ConfigureAwait(false);
+            return await run().ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -459,7 +497,7 @@ public static class ServeCommand
         catch (Exception failure)
         {
             await output.WriteLineAsync(
-                $"This machine's node stopped: {failure.Message}. The broker is still serving; " +
+                $"{who} stopped: {failure.Message}. The broker is still serving; " +
                 "nothing on this machine will be started until `parley up` runs again.")
                 .ConfigureAwait(false);
 

@@ -1,4 +1,5 @@
 using Parley.Client;
+using Parley.Configuration;
 using Parley.Core;
 using Spectre.Console;
 
@@ -26,11 +27,13 @@ internal static class ProjectList
     /// <summary>Draws the list and returns what the person chose.</summary>
     /// <param name="console">Where to draw.</param>
     /// <param name="directory">The projects, and the clients that reach them.</param>
+    /// <param name="installed">What this machine's supervisor runs, or null for none or unknown.</param>
     /// <param name="cancellationToken">Stops the reads.</param>
     /// <returns>The chosen project, or <see langword="null"/> when the person left.</returns>
     internal static async Task<ProjectSettings?> ChooseAsync(
         IAnsiConsole console,
         BrokerDirectory directory,
+        InstalledEntry? installed,
         CancellationToken cancellationToken)
     {
         var projects = directory.Projects;
@@ -45,7 +48,10 @@ internal static class ProjectList
             return null;
         }
 
-        if (projects.Count == 0)
+        // Nothing named and nothing offered: the form is the way in, and the one thing this
+        // screen can usefully do is open it. Before this it printed the command to run and
+        // stopped, on a machine whose running broker was one form away from being listed.
+        if (projects.Count == 0 && directory.ManifestPath is null)
         {
             console.MarkupLine(
                 "[yellow]This machine names no projects, and no broker was offered.[/]");
@@ -57,14 +63,21 @@ internal static class ProjectList
 
         var health = await HealthAsync(directory, projects, cancellationToken).ConfigureAwait(false);
 
-        console.Write(Table(projects, health));
+        if (projects.Count > 0)
+        {
+            console.Write(Table(projects, health));
+        }
+        else
+        {
+            console.MarkupLine("[yellow]This machine names no projects yet.[/]");
+        }
 
         var choice = console.Prompt(
             new SelectionPrompt<string>()
                 .Title("Which project?")
-                .AddChoices(Choices(projects)));
+                .AddChoices(Choices(projects, installed)));
 
-        if (choice == Name)
+        if (choice is NameRunning or Create)
         {
             if (directory.ManifestPath is not { } manifest)
             {
@@ -74,20 +87,31 @@ internal static class ProjectList
                 console.MarkupLine("[yellow]This surface was given its projects, so there is no "
                     + "manifest here to add one to.[/]");
 
-                return await ChooseAsync(console, directory, cancellationToken).ConfigureAwait(false);
+                return await ChooseAsync(console, directory, installed, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
-            await Naming.AddAsync(console, manifest, cancellationToken)
-                .ConfigureAwait(false);
+            if (choice == NameRunning)
+            {
+                await Naming.NameRunningAsync(console, manifest, projects, installed!, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await Naming.CreateAsync(console, manifest, projects, installed, cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
-            return await ChooseAsync(console, directory, cancellationToken).ConfigureAwait(false);
+            return await ChooseAsync(console, directory, installed, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (choice == Onboard)
         {
             await Onboarding.RunAsync(console, cancellationToken).ConfigureAwait(false);
 
-            return await ChooseAsync(console, directory, cancellationToken).ConfigureAwait(false);
+            return await ChooseAsync(console, directory, installed, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         return choice == Leave ? null : directory.Find(choice);
@@ -151,16 +175,36 @@ internal static class ProjectList
         table.AddColumn("broker");
         table.AddColumn("endpoint");
 
+        // The description, which the form asks for and which this list did not show. The web
+        // console showed it and this did not, so the one surface that collected it was the one
+        // that never displayed it. Only when somebody wrote one: an empty column on every row is
+        // width taken from the endpoint for nothing.
+        var described = projects.Any(p => p.Description is { Length: > 0 });
+
+        if (described)
+        {
+            table.AddColumn("about");
+        }
+
         foreach (var project in projects)
         {
             var said = health.TryGetValue(project.Name.Value, out var found)
                 ? found
                 : new ProjectHealth(null, "not asked");
 
-            table.AddRow(
+            var cells = new List<string>
+            {
                 Safe.Text(project.Name.Value),
                 Describe(said),
-                $"[dim]{Safe.Text(project.Endpoint)}[/]");
+                $"[dim]{Safe.Text(project.Endpoint)}[/]",
+            };
+
+            if (described)
+            {
+                cells.Add($"[dim]{Safe.Text(project.Description ?? string.Empty)}[/]");
+            }
+
+            table.AddRow(cells.ToArray());
         }
 
         return table;
@@ -193,10 +237,46 @@ internal static class ProjectList
     /// is a test that quietly navigates somewhere else the next time an entry is added.
     /// </remarks>
     internal static IReadOnlyList<string> Choices(IReadOnlyList<ProjectSettings> projects) =>
-        [.. projects.Select(p => Safe.Text(p.Name.Value)), Name, Onboard, Leave];
+        Choices(projects, null);
 
-    /// <summary>Naming a new project, which is FR-015 and not a navigation.</summary>
-    private const string Name = "Name a new project";
+    /// <summary>What the first screen offers, given what this machine's supervisor runs.</summary>
+    /// <param name="projects">The projects this machine names.</param>
+    /// <param name="installed">The autostart entry, or null when there is none or it is unknown.</param>
+    /// <returns>The entries.</returns>
+    /// <remarks>
+    /// Naming the running deployment is offered only while there is one to name: an entry
+    /// serving a single store by explicit paths, whose store no project already claims. Once it
+    /// is named the entry is offered nothing further, and a manifest-serving entry has no single
+    /// deployment to offer at all.
+    /// </remarks>
+    internal static IReadOnlyList<string> Choices(
+        IReadOnlyList<ProjectSettings> projects, InstalledEntry? installed)
+    {
+        var choices = new List<string>(projects.Select(p => Safe.Text(p.Name.Value)));
+
+        if (CanNameRunning(projects, installed))
+        {
+            choices.Add(NameRunning);
+        }
+
+        choices.Add(Create);
+        choices.Add(Onboard);
+        choices.Add(Leave);
+
+        return choices;
+    }
+
+    /// <summary>Whether there is a running deployment that nothing in the manifest names yet.</summary>
+    internal static bool CanNameRunning(
+        IReadOnlyList<ProjectSettings> projects, InstalledEntry? installed) =>
+        installed is { ServesManifest: false, Store: { Length: > 0 } store }
+        && !projects.Any(p => ProjectManifest.PathComparer.Equals(p.Store, store));
+
+    /// <summary>Naming the deployment the autostart entry already serves, pre-filled from it.</summary>
+    internal const string NameRunning = "Name the deployment this machine already runs";
+
+    /// <summary>Creating a project that does not exist yet, which is FR-015 and not a navigation.</summary>
+    internal const string Create = "Create a new project";
 
     /// <summary>Enrolling repositories as agents.</summary>
     private const string Onboard = "Onboard repositories as agents";

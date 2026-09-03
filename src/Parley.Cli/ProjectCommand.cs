@@ -56,6 +56,7 @@ public static class ProjectCommand
         {
             ["list"] => await ListAsync(manifestPath, output, error, cancellationToken).ConfigureAwait(false),
             ["add", var name] => await AddAsync(name, manifestPath, fields, output, error).ConfigureAwait(false),
+            ["set", var name] => await SetAsync(name, manifestPath, fields, output, error).ConfigureAwait(false),
             ["remove", var name] => await RemoveAsync(name, manifestPath, output, error, cancellationToken)
                 .ConfigureAwait(false),
             _ => await UsageAsync(error).ConfigureAwait(false),
@@ -69,10 +70,132 @@ public static class ProjectCommand
             "parley project add <name> --db <path>      add a project\n" +
             "                          --listen <url>\n" +
             "                          [--node-config <path>] [--description <text>]\n" +
+            "parley project set <name> [--db <path>]    change what a project says; only the\n" +
+            "                          [--listen <url>]  fields given are changed\n" +
+            "                          [--node-config <path>] [--description <text>]\n" +
             "parley project remove <name>               forget how to reach a project")
             .ConfigureAwait(false);
 
         return Usage;
+    }
+
+    /// <summary>Changes the fields given on one project and leaves the rest as they were.</summary>
+    /// <remarks>
+    /// Because the alternative was remove-and-add, and removing a project prints a paragraph about
+    /// what was not deleted for a change that never meant to delete anything. The case that made
+    /// this necessary is a catalogue: a project named before its machine started agents for it
+    /// has no <c>node_config</c>, and an autostart entry serving the manifest hosts a node only
+    /// where one is named — so without a way to add it, switching entries silently dropped the
+    /// node. Validated as one whole, under the same lock, by the same rules as <c>add</c>.
+    /// </remarks>
+    private static async Task<int> SetAsync(
+        string requested,
+        string manifestPath,
+        ProjectFields fields,
+        TextWriter output,
+        TextWriter error)
+    {
+        if (fields.Store is null && fields.Endpoint is null && fields.NodeConfig is null
+            && fields.Description is null)
+        {
+            await error.WriteLineAsync(
+                "Nothing to change. Give at least one of --db, --listen, --node-config or " +
+                "--description.").ConfigureAwait(false);
+
+            return Usage;
+        }
+
+        string? missing = null;
+        ProjectSettings? changed = null;
+        var faults = new List<string>();
+
+        try
+        {
+            var written = ProjectManifest.TryUpdate(manifestPath, projects =>
+            {
+                var current = projects.FirstOrDefault(p =>
+                    string.Equals(p.Name.Value, requested, StringComparison.Ordinal));
+
+                if (current is null)
+                {
+                    missing = projects.Count == 0
+                        ? $"No project named '{requested}': this machine has none configured."
+                        : $"No project named '{requested}'. Configured: " +
+                          $"{string.Join(", ", projects.Select(p => p.Name.Value).Order(StringComparer.Ordinal))}.";
+
+                    return null;
+                }
+
+                // An empty value clears an optional field, so a catalogue can be taken away as
+                // well as given; the required two cannot be emptied, and the manifest's own
+                // rules say so below.
+                changed = current with
+                {
+                    Store = fields.Store ?? current.Store,
+                    Endpoint = fields.Endpoint ?? current.Endpoint,
+                    NodeConfig = fields.NodeConfig is null
+                        ? current.NodeConfig
+                        : fields.NodeConfig.Length == 0 ? null : fields.NodeConfig,
+                    Description = fields.Description is null
+                        ? current.Description
+                        : fields.Description.Length == 0 ? null : fields.Description,
+                };
+
+                faults.AddRange(changed.Problems());
+                faults.AddRange(ProjectManifest.PathProblems(changed));
+
+                var updated = projects.Select(p => p == current ? changed : p).ToArray();
+
+                faults.AddRange(ProjectManifest.Collisions(updated));
+
+                return faults.Count > 0 ? null : updated;
+            },
+            out var problem);
+
+            if (problem is not null)
+            {
+                await error.WriteLineAsync(problem).ConfigureAwait(false);
+                return Config;
+            }
+
+            if (!written)
+            {
+                await error.WriteLineAsync(
+                    missing ??
+                    $"Cannot change '{requested}':{Environment.NewLine}  - " +
+                    string.Join($"{Environment.NewLine}  - ", faults) +
+                    $"{Environment.NewLine}{manifestPath} is unchanged.")
+                    .ConfigureAwait(false);
+
+                return Config;
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                              or InvalidDataException)
+        {
+            await error.WriteLineAsync($"Could not write {manifestPath}: {exception.Message}")
+                .ConfigureAwait(false);
+
+            return IoError;
+        }
+
+        await output.WriteLineAsync($"Changed '{requested}' in {manifestPath}.").ConfigureAwait(false);
+
+        // What it says now, so the person can see the change landed without a second command --
+        // and because a store or endpoint changed here takes effect at the broker's next start,
+        // which is worth saying where the change is made.
+        await output.WriteLineAsync(
+            $"  endpoint  {changed!.Endpoint}{Environment.NewLine}" +
+            $"  store     {changed.Store}" +
+            (changed.NodeConfig is { Length: > 0 } node ? $"{Environment.NewLine}  node      {node}" : string.Empty) +
+            (changed.Description is { Length: > 0 } about ? $"{Environment.NewLine}  {about}" : string.Empty))
+            .ConfigureAwait(false);
+
+        await output.WriteLineAsync(
+            "A broker already serving this project keeps what it started with; the change is " +
+            "read at its next start.").ConfigureAwait(false);
+
+        return 0;
     }
 
     private static async Task<int> ListAsync(

@@ -535,7 +535,27 @@ Write-Host $reported -ForegroundColor Green
 
 # ---------------------------------------------------------------- broker ----
 
-$store = Resolve-Store $Store
+# A machine that names projects gets an entry that serves them all, and is not asked for a store
+# at all: every project's store and port are in the manifest, and SPEC.md 4.1 says one process
+# may host every one of them. Asked of the tool rather than by looking for the file, because
+# where the manifest lives is the tool's to know. An entry already serving the manifest counts
+# too, so a reinstall does not quietly narrow it back to one store.
+$manifest = $null
+
+if (-not $Store) {
+    $listed = & $parley project list 2>$null
+
+    if ($LASTEXITCODE -eq 0 -and ($listed -join "`n") -notmatch 'No projects configured') {
+        $line = $listed | Where-Object { $_ -match '^manifest:\s+(.+)$' } | Select-Object -Last 1
+
+        if ($line -match '^manifest:\s+(.+)$') { $manifest = $Matches[1].Trim() }
+    }
+    elseif ($existingArguments -match "--config\s+`"?([^`"]+?)`"?(\s|$)") {
+        $manifest = $Matches[1]
+    }
+}
+
+$store = if ($manifest) { $null } else { Resolve-Store $Store }
 
 # Asked before registering anything, and only because the check at the end cannot tell one
 # broker from another. Stop-Broker has already stopped the one an autostart entry started, so
@@ -550,30 +570,42 @@ Write-Step 'Registering the broker to start at logon'
 # No elevation here, and that is not an accident: this goes through the Task Scheduler's COM
 # API, which registers a task for the current user without a consent prompt. `schtasks.exe`
 # refuses the same registration from the same shell.
-# Carried over rather than dropped. `autostart install` registers a broker-alone entry when it
-# is given no catalogue, and a machine reinstalling over a working deployment would silently
-# lose the half that starts its agents -- the loss arriving days later, on a machine nobody is
-# signed into, as a question that waits out its window and is ghosted. The command says so
-# loudly, but the operator ran this script and is reading its output, not that one.
-#
-# Read back from the entry being replaced when it was not given, because somebody reinstalling
-# has not asked to reconfigure anything.
-$catalogue = $NodeConfig
+if ($manifest) {
+    Write-Host "  serving every project in $manifest"
 
-if (-not $catalogue -and $existingArguments -match "--node-config\s+`"?([^`"]+?)`"?(\s|$)") {
-    $catalogue = $Matches[1]
-    Write-Host "  keeping this machine's agent catalogue: $catalogue"
-}
+    if ($NodeConfig) {
+        Write-Note '-NodeConfig is not used by an entry that serves the manifest: each project names its own catalogue'
+    }
 
-if ($catalogue) {
-    & $parley autostart install --db $store --node-config $catalogue
+    & $parley autostart install
 }
 else {
-    & $parley autostart install --db $store
+    # Carried over rather than dropped. `autostart install` registers a broker-alone entry when
+    # it is given no catalogue, and a machine reinstalling over a working deployment would
+    # silently lose the half that starts its agents -- the loss arriving days later, on a machine
+    # nobody is signed into, as a question that waits out its window and is ghosted. The command
+    # says so loudly, but the operator ran this script and is reading its output, not that one.
+    #
+    # Read back from the entry being replaced when it was not given, because somebody
+    # reinstalling has not asked to reconfigure anything.
+    $catalogue = $NodeConfig
+
+    if (-not $catalogue -and $existingArguments -match "--node-config\s+`"?([^`"]+?)`"?(\s|$)") {
+        $catalogue = $Matches[1]
+        Write-Host "  keeping this machine's agent catalogue: $catalogue"
+    }
+
+    if ($catalogue) {
+        & $parley autostart install --db $store --node-config $catalogue
+    }
+    else {
+        & $parley autostart install --db $store
+    }
 }
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Could not set the broker to start automatically. The tools are installed, so running 'parley serve --db $store' by hand will say why."
+    $byHand = if ($manifest) { 'parley serve' } else { "parley serve --db $store" }
+    Write-Error "Could not set the broker to start automatically. The tools are installed, so running '$byHand' by hand will say why."
 }
 
 # ----------------------------------------------------------------- prove ----
@@ -582,15 +614,27 @@ Write-Step 'Checking that it answers'
 
 # Asked of the broker, not of the supervisor. "The task is registered" and "an agent can attach"
 # are different claims, and the second is the one this script is making -- so the check is a
-# client: `parley registry` connects over the transport and exits 69 when nothing is listening.
-$log = Join-Path (Split-Path -Parent $store) 'parley-broker.log'
+# client. With one store, `parley registry` connects over the transport and exits 69 when
+# nothing is listening; with a manifest, `parley project list` asks every project's broker and
+# says which are reachable, and the claim is that all of them are.
+$log = if ($manifest) { Join-Path (Split-Path -Parent $manifest) 'parley-broker.log' } else { Join-Path (Split-Path -Parent $store) 'parley-broker.log' }
 $deadline = (Get-Date).AddSeconds(20)
 $answering = $false
 
 do {
-    & $parley registry 2>&1 | Out-Null
+    if ($manifest) {
+        $listed = (& $parley project list 2>$null) -join "`n"
 
-    if ($LASTEXITCODE -eq 0) { $answering = $true; break }
+        if ($LASTEXITCODE -eq 0 -and $listed -match '(?m)\sreachable$' -and $listed -notmatch 'not reachable') {
+            $answering = $true
+            break
+        }
+    }
+    else {
+        & $parley registry 2>&1 | Out-Null
+
+        if ($LASTEXITCODE -eq 0) { $answering = $true; break }
+    }
 
     Start-Sleep -Milliseconds 250
 }
@@ -600,10 +644,10 @@ if (-not $answering) {
     Write-Error "Registered, but the broker is not answering. It writes its own log, and $log is where it says why."
 }
 
-Write-Note "store: $store"
+if ($manifest) { Write-Note "serves: every project in $manifest" } else { Write-Note "store: $store" }
 Write-Note "log:   $log"
 
-if ($foreign) {
+if ($foreign -and -not $manifest) {
     Write-Warning "A broker that this did not start was already listening, and it is the one answering. It is serving its own store, not $store. Stop it and log out and in, or run 'parley serve --db $store' yourself."
 }
 

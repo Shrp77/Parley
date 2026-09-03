@@ -63,7 +63,11 @@ public static class TopCommand
         // closes every attach stream this book holds -- which is precisely how the broker learns
         // somebody left. There is no politer signal available; there is only the same signal sent
         // sooner. The `using` above still runs on every ordinary exit.
-        return await DriveAsync(AnsiConsole.Console, directory, seats, cancellationToken)
+        // Read once here rather than on every visit to the list: the entry changes when somebody
+        // runs `autostart install`, which is not something done from inside this surface, and
+        // reading a scheduled task on every keystroke is a wait a person notices.
+        return await DriveAsync(
+            AnsiConsole.Console, directory, seats, cancellationToken, InstalledEntry.Installed())
             .ConfigureAwait(false);
     }
 
@@ -72,6 +76,12 @@ public static class TopCommand
     /// <param name="directory">The projects, and the clients that reach them.</param>
     /// <param name="seats">Where a person's seat is held, for as long as they hold one.</param>
     /// <param name="cancellationToken">Stops the surface.</param>
+    /// <param name="installed">
+    /// What this machine's supervisor runs, or null for none or unknown. Passed rather than read
+    /// here, for the reason the console is: a test drives this on a machine that has an entry,
+    /// and a first screen that grew an option according to what the developer's own scheduler
+    /// holds would be a test that navigates somewhere else on somebody else's machine.
+    /// </param>
     /// <returns>The process exit code.</returns>
     /// <remarks>
     /// <para>
@@ -92,7 +102,8 @@ public static class TopCommand
         IAnsiConsole console,
         BrokerDirectory directory,
         SeatBook seats,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        InstalledEntry? installed = null)
     {
         console.Write(Banner());
 
@@ -107,7 +118,8 @@ public static class TopCommand
             // restarting -- and holding a snapshot in a field is exactly the defect the console
             // shipped, where a project renamed on one page went on showing its old name on
             // another until the process was restarted.
-            var chosen = await ProjectList.ChooseAsync(console, directory, cancellationToken)
+            var chosen = await ProjectList
+                .ChooseAsync(console, directory, installed, cancellationToken)
                 .ConfigureAwait(false);
 
             if (chosen is null)
