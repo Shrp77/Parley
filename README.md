@@ -197,9 +197,9 @@ already running alone.
 **With projects named, leave off `--db`.** A machine that has named its deployments — with
 `parley project add`, or from the first screen of `parley top` — gets an entry that serves every
 project in the manifest from one process, each on its own store and port, hosting this machine's
-node in each project whose entry names a catalogue. A project named later comes up at the next
-logon without reinstalling anything. The install script does the same: it asks what is named
-before it asks for a store.
+node in each project whose entry names a catalogue. A project named later gets its broker within
+seconds, because the process watches the manifest; nothing is reinstalled and nothing restarts.
+The install script does the same: it asks what is named before it asks for a store.
 
 **It starts the console too**, on `127.0.0.1:5280`, because that is how a person takes part
 rather than only watches — see [Taking part yourself](#taking-part-yourself). An agent attached

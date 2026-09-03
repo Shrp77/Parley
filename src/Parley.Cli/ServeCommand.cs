@@ -197,6 +197,11 @@ public static class ServeCommand
     /// operator's console, which reads this machine's manifest rather than a single endpoint.
     /// Run once, and handed the first started broker's addresses as its fallback.
     /// </param>
+    /// <param name="reread">
+    /// Reads the manifest again, returning null when it has not changed or cannot be read, or
+    /// <see langword="null"/> to serve only what was given. Given, a project named while this
+    /// runs gets its broker within <see cref="WatchInterval"/>.
+    /// </param>
     /// <param name="cancellationToken">Stops every broker.</param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
@@ -236,6 +241,7 @@ public static class ServeCommand
         TextWriter error,
         Func<ProjectSettings, IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? nodeFor = null,
         Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside = null,
+        Func<IReadOnlyList<ProjectSettings>?>? reread = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(projects);
@@ -258,7 +264,87 @@ public static class ServeCommand
         error = TextWriter.Synchronized(error);
 
         var started = new List<(ProjectSettings Project, BrokerRuntime Runtime, ParleyServer Server)>();
+
+        // Everything that runs for as long as the process does: one sweep per broker, one node
+        // per broker that has one, the console, and the watcher. Grows while it is being awaited,
+        // because the watcher starts brokers after the initial set, so it is read under its own
+        // lock and awaited in rounds below.
+        var work = new List<Task<int>>();
         var failed = 0;
+
+        // Starts one project's broker and everything that lives beside it. Called for the
+        // initial set and again by the watcher for a project named while this runs; the two
+        // never overlap, because the watcher starts after this loop is over.
+        async Task<bool> StartAsync(ProjectSettings project)
+        {
+            BrokerRuntime runtime;
+
+            try
+            {
+                runtime = BrokerRuntime.Open(project.Store, BrokerOptions.Default, TimeProvider.System);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                await error.WriteLineAsync(
+                    $"{project.Name}: could not open '{project.Store}': {exception.Message}")
+                    .ConfigureAwait(false);
+
+                return false;
+            }
+
+            ParleyServer server;
+
+            try
+            {
+                server = await ParleyServer.StartAsync(runtime, project.Endpoint, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                // Disposed on every path out, an interrupt included: this runtime is not in
+                // `started` yet, so the finally below has never heard of it and the open
+                // database handle would go with the process rather than be released.
+                await runtime.DisposeAsync().ConfigureAwait(false);
+
+                if (exception is OperationCanceledException)
+                {
+                    throw;
+                }
+
+                await error.WriteLineAsync(
+                    $"{project.Name}: could not listen on {project.Endpoint}: {exception.Message}")
+                    .ConfigureAwait(false);
+
+                return false;
+            }
+
+            lock (started)
+            {
+                started.Add((project, runtime, server));
+            }
+
+            await output.WriteLineAsync(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{project.Name} on {string.Join(", ", server.Addresses)}, store at {project.Store}, schema {SchemaMigrator.LatestVersion}."))
+                .ConfigureAwait(false);
+
+            // The sweep and, where there is one, the node, each contained on its own so that one
+            // project's node failing leaves the others hosted.
+            lock (work)
+            {
+                work.Add(Quietly(SweepAsync(runtime, output, cancellationToken)));
+
+                if (nodeFor is not null)
+                {
+                    work.Add(ContainAsync(
+                        () => nodeFor(project, server.Addresses, output, cancellationToken),
+                        $"{project.Name}: this machine's node",
+                        output));
+                }
+            }
+
+            return true;
+        }
 
         try
         {
@@ -272,45 +358,8 @@ public static class ServeCommand
             // visible — a machine that only ever starts one project never enters it.
             foreach (var project in projects)
             {
-                BrokerRuntime runtime;
-
-                try
+                if (!await StartAsync(project).ConfigureAwait(false))
                 {
-                    runtime = BrokerRuntime.Open(project.Store, BrokerOptions.Default, TimeProvider.System);
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    await error.WriteLineAsync(
-                        $"{project.Name}: could not open '{project.Store}': {exception.Message}")
-                        .ConfigureAwait(false);
-
-                    failed++;
-                    continue;
-                }
-
-                try
-                {
-                    var server = await ParleyServer.StartAsync(runtime, project.Endpoint, cancellationToken)
-                        .ConfigureAwait(false);
-
-                    started.Add((project, runtime, server));
-                }
-                catch (Exception exception)
-                {
-                    // Disposed on every path out, an interrupt included: this runtime is not in
-                    // `started` yet, so the finally below has never heard of it and the open
-                    // database handle would go with the process rather than be released.
-                    await runtime.DisposeAsync().ConfigureAwait(false);
-
-                    if (exception is OperationCanceledException)
-                    {
-                        throw;
-                    }
-
-                    await error.WriteLineAsync(
-                        $"{project.Name}: could not listen on {project.Endpoint}: {exception.Message}")
-                        .ConfigureAwait(false);
-
                     failed++;
                 }
             }
@@ -321,14 +370,6 @@ public static class ServeCommand
                     "No broker started. Nothing is serving.").ConfigureAwait(false);
 
                 return Unavailable;
-            }
-
-            foreach (var (project, _, server) in started)
-            {
-                await output.WriteLineAsync(string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"{project.Name} on {string.Join(", ", server.Addresses)}, store at {project.Store}, schema {SchemaMigrator.LatestVersion}."))
-                    .ConfigureAwait(false);
             }
 
             if (failed > 0)
@@ -352,24 +393,47 @@ public static class ServeCommand
                 "Agents connect with PARLEY_AGENT set; machines join with `parley up`. Ctrl+C stops them all.")
                 .ConfigureAwait(false);
 
-            // The console once, against the first started broker as its fallback -- it reads the
-            // manifest for the rest -- and a node per started project, each contained on its own
-            // so that one project's node failing leaves the others hosted.
-            var hosted = HostAllAsync(
-                nodeFor,
-                alongside,
-                [.. started.Select(s => (s.Project, s.Server.Addresses))],
-                output,
-                cancellationToken);
-
-            // One sweep per broker, all cancelled by the one token the interrupt owns.
-            await Task.WhenAll(
-                [.. started.Select(s => SweepAsync(s.Runtime, output, cancellationToken)), hosted])
-                .ConfigureAwait(false);
-
-            if (await hosted.ConfigureAwait(false) != 0)
+            lock (work)
             {
-                failed++;
+                // The console once, against the first started broker as its fallback -- it reads
+                // the manifest for the rest. Not contained here: the entry point contains it, and
+                // says what it does when a port is taken.
+                if (alongside is not null)
+                {
+                    work.Add(alongside(started[0].Server.Addresses, output, cancellationToken));
+                }
+
+                if (reread is not null)
+                {
+                    work.Add(WatchAsync(reread, StartAsync, started, output, cancellationToken));
+                }
+            }
+
+            // Awaited in rounds. A round is everything running when it began; the watcher adds
+            // to the list during a round, and everything it adds ends on the same token, so the
+            // round after the interrupt is the one that finds nothing new and stops.
+            while (true)
+            {
+                Task<int>[] round;
+
+                lock (work)
+                {
+                    round = [.. work];
+                }
+
+                var codes = await Task.WhenAll(round).ConfigureAwait(false);
+
+                failed += codes.Count(code => code != 0);
+
+                lock (work)
+                {
+                    if (work.Count == round.Length)
+                    {
+                        break;
+                    }
+
+                    work.RemoveRange(0, round.Length);
+                }
             }
         }
         finally
@@ -384,6 +448,105 @@ public static class ServeCommand
         }
 
         return failed > 0 ? Unavailable : 0;
+    }
+
+    /// <summary>How often the manifest is looked at for a project named since the start.</summary>
+    /// <remarks>
+    /// Two seconds is the time between somebody pressing Enter on the naming form and the list
+    /// they return to showing the project answering. Reading a small JSON file that often costs
+    /// nothing worth measuring, and the entry point reads it only when its stamp has moved.
+    /// </remarks>
+    internal static readonly TimeSpan WatchInterval = TimeSpan.FromSeconds(2);
+
+    /// <summary>Starts the broker of any project named in the manifest since this process began.</summary>
+    /// <param name="reread">Reads the manifest again, or returns null when it has not changed or cannot be read.</param>
+    /// <param name="start">Starts one project, and says whether it came up.</param>
+    /// <param name="started">Every project already serving.</param>
+    /// <param name="output">Where to say what was started.</param>
+    /// <param name="cancellationToken">Ends the watch.</param>
+    /// <returns>Zero, always: a project that will not start is reported by <paramref name="start"/>.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A project has its own broker, so naming one is asking for that broker now.</b> SPEC.md
+    /// §4.1 gives every project a store and an endpoint of its own and lets one process host them
+    /// all; the process that hosts them is this one, and before this it read the manifest once at
+    /// start. A project named from the terminal was therefore "not answering" until the next
+    /// logon, with the form politely saying so — which is documenting a gap rather than closing
+    /// it, and was said to be exactly that by the first person it happened to.
+    /// </para>
+    /// <para>
+    /// Additive only. A project removed from the manifest keeps running: <c>project remove</c>
+    /// is withdrawal, not destruction, and says as much. A running project whose store or
+    /// endpoint changed keeps what it started with, as <c>project set</c> says. And a project
+    /// that would not start is tried once per change to the manifest rather than once per tick,
+    /// because a store that is a directory does not become a file by being asked again every two
+    /// seconds, and the failure line would fill the log.
+    /// </para>
+    /// </remarks>
+    private static async Task<int> WatchAsync(
+        Func<IReadOnlyList<ProjectSettings>?> reread,
+        Func<ProjectSettings, Task<bool>> start,
+        List<(ProjectSettings Project, BrokerRuntime Runtime, ParleyServer Server)> started,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        var tried = new HashSet<ProjectSettings>();
+
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(WatchInterval, cancellationToken).ConfigureAwait(false);
+
+                IReadOnlyList<ProjectSettings>? current;
+
+                try
+                {
+                    current = reread();
+                }
+                catch (Exception exception) when (exception is not OutOfMemoryException)
+                {
+                    // An unreadable manifest is reported by every command that reads it, to the
+                    // person editing it. Said again here every two seconds it would be noise.
+                    current = null;
+                }
+
+                if (current is null)
+                {
+                    continue;
+                }
+
+                foreach (var project in current)
+                {
+                    bool serving;
+
+                    lock (started)
+                    {
+                        serving = started.Exists(s =>
+                            string.Equals(s.Project.Name.Value, project.Name.Value, StringComparison.Ordinal));
+                    }
+
+                    // Records are compared by value, so a project whose entry was changed after
+                    // a failed start is tried again, and one left as it was is not.
+                    if (serving || !tried.Add(project))
+                    {
+                        continue;
+                    }
+
+                    await output.WriteLineAsync(
+                        $"{project.Name}: named in the manifest since this started; starting it.")
+                        .ConfigureAwait(false);
+
+                    _ = await start(project).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The interrupt, which is how this is meant to end.
+        }
+
+        return 0;
     }
 
     /// <summary>Runs whatever wanted the port to be open, and survives it failing.</summary>
@@ -436,41 +599,14 @@ public static class ServeCommand
             .ConfigureAwait(false);
     }
 
-    /// <summary>Hosts the console once and a node per started project, all contained.</summary>
-    /// <param name="nodeFor">What to run for each project, or null to host no node.</param>
-    /// <param name="alongside">What to run that is not bound to one broker, or null.</param>
-    /// <param name="started">Every project that came up, with where it listens.</param>
-    /// <param name="output">Where to report a failure worth seeing.</param>
-    /// <param name="cancellationToken">Stops them all.</param>
-    /// <returns>The first non-zero exit code, or zero.</returns>
-    private static async Task<int> HostAllAsync(
-        Func<ProjectSettings, IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? nodeFor,
-        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside,
-        IReadOnlyList<(ProjectSettings Project, IReadOnlyList<string> Addresses)> started,
-        TextWriter output,
-        CancellationToken cancellationToken)
+    /// <summary>A sweep, as a task that reports nothing: it ends only when the process does.</summary>
+    /// <param name="sweep">The sweep.</param>
+    /// <returns>Zero once it has ended.</returns>
+    private static async Task<int> Quietly(Task sweep)
     {
-        var hosting = new List<Task<int>>();
+        await sweep.ConfigureAwait(false);
 
-        if (alongside is not null)
-        {
-            hosting.Add(alongside(started[0].Addresses, output, cancellationToken));
-        }
-
-        if (nodeFor is not null)
-        {
-            foreach (var (project, addresses) in started)
-            {
-                hosting.Add(ContainAsync(
-                    () => nodeFor(project, addresses, output, cancellationToken),
-                    $"{project.Name}: this machine's node",
-                    output));
-            }
-        }
-
-        var codes = await Task.WhenAll(hosting).ConfigureAwait(false);
-
-        return Array.Find(codes, code => code != 0);
+        return 0;
     }
 
     /// <summary>Runs a hosted node and survives it failing.</summary>

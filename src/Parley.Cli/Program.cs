@@ -506,7 +506,10 @@ if (verb == "serve" && rest.Length == 0)
             TextWriter reporting,
             CancellationToken stopping)
         {
-            if (serving.Count == 1)
+            // The one project this started with, not any project when there happened to be one:
+            // a second named while this runs is a manifest being served, whatever the count was
+            // at the start.
+            if (serving.Count == 1 && ReferenceEquals(project, serving[0]))
             {
                 return await HostingNode(addresses, reporting, stopping).ConfigureAwait(false);
             }
@@ -593,6 +596,28 @@ if (verb == "serve" && rest.Length == 0)
         // the serve refuses to host one across several projects; a console reads this machine's
         // manifest and is at its best across all of them. Handing both through the one hook is
         // what made `serve --with-console` over two projects throw rather than start.
+        // The manifest, read again whenever its stamp moves, so a project named while this runs
+        // gets its broker within seconds rather than at the next logon. Only when the manifest
+        // is what is being served: a process told one project by name serves that one, and a
+        // machine that named nothing has no file to watch.
+        var manifestStamp = File.Exists(manifestPath) ? File.GetLastWriteTimeUtc(manifestPath) : DateTime.MinValue;
+
+        IReadOnlyList<ProjectSettings>? RereadManifest()
+        {
+            var stamp = File.Exists(manifestPath) ? File.GetLastWriteTimeUtc(manifestPath) : DateTime.MinValue;
+
+            if (stamp == manifestStamp)
+            {
+                return null;
+            }
+
+            manifestStamp = stamp;
+
+            return ProjectManifest.TryRead(manifestPath, out var current, out _) ? current : null;
+        }
+
+        var watching = string.IsNullOrWhiteSpace(projectName) && serving.Count > 0;
+
         return serving.Count > 0
             ? ServeCommand.RunAsync(
                 serving,
@@ -601,6 +626,7 @@ if (verb == "serve" && rest.Length == 0)
                 Console.Error,
                 hostNode ? HostingNodeFor : null,
                 hostConsole ? HostingConsole : null,
+                watching ? RereadManifest : null,
                 token)
             : ServeCommand.RunAsync(
                 databasePath ?? fromEnvironment,

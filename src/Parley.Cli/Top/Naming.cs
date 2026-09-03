@@ -362,8 +362,8 @@ internal static class Naming
                 + "serve every project in the manifest.",
 
             _ =>
-                "[dim]The autostart entry serves the manifest, so this starts with the broker: "
-                + "at the next logon, or sooner by restarting it.[/]",
+                "[dim]The broker serving the manifest starts it within a few seconds; the list "
+                + "will show it answering.[/]",
         });
     }
 

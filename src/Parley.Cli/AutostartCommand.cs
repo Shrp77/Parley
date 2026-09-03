@@ -208,7 +208,7 @@ public static class AutostartCommand
         {
             await output.WriteLineAsync(
                 $"  serves: every project in {Path.GetFullPath(manifestToServe)}, and a project " +
-                "named later\n         is served at the next start without reinstalling this.")
+                "named later\n         is started within seconds, without reinstalling this.")
                 .ConfigureAwait(false);
 
             await output.WriteLineAsync(
