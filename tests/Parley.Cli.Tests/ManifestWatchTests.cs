@@ -223,6 +223,127 @@ public sealed class ManifestWatchTests : IDisposable
         Assert.True(File.Exists(billing.Store), "removal deleted the store");
     }
 
+    [Fact]
+    public async Task A_project_removed_and_renamed_back_in_one_edit_is_restarted_on_its_new_settings()
+    {
+        // Lens 1 probe. The watcher stops removed projects before starting new ones so that a
+        // name reused in a single edit -- destroy and recreate between two ticks -- comes up on
+        // the new entry rather than being left on the old one because "billing" was already
+        // serving. The evidence is the ports: the old one frees and the new one answers.
+        var ct = TestContext.Current.CancellationToken;
+
+        var orders = Project("orders");
+        var billingBefore = Project("billing");
+        var billingAfter = Project("billing");
+
+        var manifest = new List<ProjectSettings> { orders, billingBefore };
+        var changed = false;
+
+        var output = new StringWriter();
+
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        var serving = ServeCommand.RunAsync(
+            [orders, billingBefore],
+            null,
+            output,
+            TextWriter.Null,
+            reread: () =>
+            {
+                if (!changed)
+                {
+                    return null;
+                }
+
+                changed = false;
+
+                return manifest;
+            },
+            cancellationToken: stopping.Token);
+
+        try
+        {
+            Assert.True(await AnswersAsync(billingBefore.Endpoint, ct));
+
+            manifest[1] = billingAfter;
+            changed = true;
+
+            Assert.True(await AnswersAsync(billingAfter.Endpoint, ct), "the re-added project never came up on its new port");
+
+            var freed = false;
+
+            for (var attempt = 0; attempt < 50 && !freed; attempt++)
+            {
+                await Task.Delay(100, ct);
+                freed = CanBind(billingBefore.Endpoint);
+            }
+
+            Assert.True(freed, "the old entry's broker kept its port");
+        }
+        finally
+        {
+            await stopping.CancelAsync();
+        }
+
+        var code = await serving.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+        Assert.Equal(0, code);
+    }
+
+    [Fact]
+    public async Task An_interrupt_during_a_late_start_leaves_no_port_held()
+    {
+        // Lens 1 probe. FR-021's failure, reached through the watcher: a project named while
+        // serving is starting when Ctrl+C arrives. The start throws OperationCanceledException
+        // inside the watcher, which must not swallow a half-started broker -- every port is
+        // free once the command returns, or a broker is running that nothing can stop.
+        var ct = TestContext.Current.CancellationToken;
+
+        var orders = Project("orders");
+        var late = Enumerable.Range(0, 6).Select(i => Project($"late{i}")).ToList();
+
+        var manifest = new List<ProjectSettings> { orders };
+        var changed = false;
+
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        var serving = ServeCommand.RunAsync(
+            [orders],
+            null,
+            TextWriter.Null,
+            TextWriter.Null,
+            reread: () =>
+            {
+                if (!changed)
+                {
+                    return null;
+                }
+
+                changed = false;
+
+                return manifest;
+            },
+            cancellationToken: stopping.Token);
+
+        Assert.True(await AnswersAsync(orders.Endpoint, ct));
+
+        manifest.AddRange(late);
+        changed = true;
+
+        // Somewhere between "the watcher has seen the edit" and "all six are up".
+        await Task.Delay(ServeCommand.WatchInterval + TimeSpan.FromMilliseconds(150), ct);
+        await stopping.CancelAsync();
+
+        var code = await serving.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+        Assert.True(code is 0 or 69, $"exit {code}");
+
+        foreach (var project in late.Prepend(orders))
+        {
+            Assert.True(CanBind(project.Endpoint), $"{project.Name} still holds its port after the interrupt");
+        }
+    }
+
     private static async Task<bool> AnswersAsync(string endpoint, CancellationToken cancellationToken, int attempts = 80)
     {
         for (var attempt = 0; attempt < attempts; attempt++)

@@ -532,11 +532,12 @@ public static class ServeCommand
     /// <para>
     /// Stopping is not deleting. A removed project's store stays where it is, as <c>project
     /// remove</c> has always said; <c>remove --destroy</c> is the command that deletes, and it
-    /// waits for this to have stopped the broker first. A running project whose store or
-    /// endpoint changed keeps what it started with, as <c>project set</c> says. And a project
-    /// that would not start is tried once per change to its entry rather than once per tick,
-    /// because a store that is a directory does not become a file by being asked again every two
-    /// seconds, and the failure line would fill the log.
+    /// waits for this to have stopped the broker first. A running project whose store, endpoint
+    /// or catalogue changed is stopped and started on the new entry, because the manifest is
+    /// what this serves and a changed entry is a different broker. And a project that would not
+    /// start is tried once per change to its entry rather than once per tick, because a store
+    /// that is a directory does not become a file by being asked again every two seconds, and
+    /// the failure line would fill the log.
     /// </para>
     /// </remarks>
     private static async Task<int> WatchAsync(
@@ -584,13 +585,23 @@ public static class ServeCommand
                     serving = [.. started];
                 }
 
-                // Removed first, so a project removed and re-added under the same name in one
-                // edit is stopped and started rather than left as it was.
+                // Removed or changed first, so a project removed and re-added under the same
+                // name in one edit -- or given a new port or store with `project set` -- is
+                // stopped and started rather than left as it was. Found by probing: matched by
+                // name alone, a re-added "billing" was "already serving" and stayed on the old
+                // entry's port for ever. The description is not compared, because a broker does
+                // not run differently for having been described.
                 foreach (var hosted in serving)
                 {
-                    if (!current.Any(p => SameName(p, hosted.Project)))
+                    var now = current.FirstOrDefault(p => SameName(p, hosted.Project));
+
+                    if (now is null)
                     {
                         await stop(hosted, "removed from the manifest").ConfigureAwait(false);
+                    }
+                    else if (!SameDeployment(now, hosted.Project))
+                    {
+                        await stop(hosted, "its entry changed").ConfigureAwait(false);
                     }
                 }
 
@@ -602,7 +613,7 @@ public static class ServeCommand
 
                     lock (started)
                     {
-                        already = started.Exists(h => SameName(h.Project, project));
+                        already = started.Exists(h => SameDeployment(h.Project, project));
                     }
 
                     if (already || failing.Contains(project))
@@ -630,6 +641,14 @@ public static class ServeCommand
 
         static bool SameName(ProjectSettings a, ProjectSettings b) =>
             string.Equals(a.Name.Value, b.Name.Value, StringComparison.Ordinal);
+
+        // The same name serving the same store on the same endpoint from the same catalogue:
+        // the parts a broker is made of. A description is not one of them.
+        static bool SameDeployment(ProjectSettings a, ProjectSettings b) =>
+            SameName(a, b)
+            && string.Equals(a.Store, b.Store, StringComparison.Ordinal)
+            && string.Equals(a.Endpoint, b.Endpoint, StringComparison.Ordinal)
+            && string.Equals(a.NodeConfig, b.NodeConfig, StringComparison.Ordinal);
     }
 
     /// <summary>Runs whatever wanted the port to be open, and survives it failing.</summary>

@@ -222,7 +222,7 @@ public static class AutostartCommand
                     $"  WARNING: the entry this replaced started this machine's agents from {dropped}, " +
                     "and no project in the manifest names a catalogue, so none will be started " +
                     "now.\n         Give the project one with `parley project set <name> " +
-                    $"--node-config {AutostartPlan.Quote(dropped)}`; it is hosted at the next start.")
+                    $"--node-config {AutostartPlan.Quote(dropped)}`; the broker picks it up within seconds.")
                     .ConfigureAwait(false);
             }
         }

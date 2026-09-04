@@ -200,8 +200,9 @@ public static class ProjectCommand
             .ConfigureAwait(false);
 
         await output.WriteLineAsync(
-            "A broker already serving this project keeps what it started with; the change is " +
-            "read at its next start.").ConfigureAwait(false);
+            "The process serving the manifest restarts this project on the new store, endpoint " +
+            "or catalogue within a few seconds; a broker started by hand keeps what it started " +
+            "with until its next start.").ConfigureAwait(false);
 
         return 0;
     }
