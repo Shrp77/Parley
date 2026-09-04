@@ -81,6 +81,50 @@ pseudo-terminal, which is a slower and platform-bound test. That would be record
 finding, not a reason to skip the journeys: SC-002 replays every 004 scenario and is the parity
 contract.
 
+### Answered 2026-09-04 by T005 and T006 — neither, and no component factory is supplied at all
+
+The spike was run and **two of the assumptions above are wrong**, both in the same direction: the
+testing surface the XML documentation describes is not reachable from outside the assembly.
+
+- **`ApplicationImpl` is internal.** Its constructor taking `(IComponentFactory, ITimeProvider)` is
+  documented *"INTERNAL: ... for testing"*, and the word to read there is the first one. A test
+  assembly cannot construct it.
+- **A custom factory cannot be registered either.** `DriverRegistry.Register` is public and takes a
+  `DriverDescriptor` carrying a `Func<IComponentFactory>`, and registering one appears to work:
+  `IsRegistered` and `GetSupportedDrivers` both then name it. But `ApplicationImpl.CreateDriver`
+  looks the name up in the registry *and then switches on the string* against `windows`, `dotnet`
+  and `ansi` — read from its IL, not inferred — so a fourth name passes the registry check and
+  falls through to `Unknown driver name`, and the descriptor's factory is never called.
+
+**What works is a recipe rather than an API, and it needs no factory**: `Application.Create` with a
+`VirtualTimeProvider`, `Init("ansi")`, the screen size *set* rather than queried, `Begin` rather
+than `Run`, then `LayoutAndDraw`, `InjectKey` and `ToString`.
+
+Three things make it sound, each measured rather than assumed:
+
+| Worry | What was measured |
+|---|---|
+| The ANSI driver writes escape sequences to somebody's terminal | A session that draws, takes a key and ends writes **zero bytes to stdout** — every terminal write happens in the main loop, and `Begin` does not run it |
+| It reads the console and steals keystrokes | Stdin was **left unread**: `HELLO` piped in was still there afterwards. `Init` starts five threads and none of them consumes input until the loop runs |
+| The screen never renders | It stays 0×0 because the ANSI size monitor asks the terminal with a cursor-position query and nothing answers. Setting `Driver.SetScreenSize` and `Screen` fixes it — and is also what lets a test ask for forty columns without a terminal to resize |
+
+Two smaller findings, both now written into the harness:
+
+- **`Application.Mouse.RaiseMouseEvent` does not route to a view.** It raises the application-level
+  event; the routing lives in the main loop. `Driving.Click` therefore hit-tests the point itself
+  with `View.GetViewsUnderLocation` and delivers to `View.NewMouseEvent`, which does reach the
+  view's own handling — a click still lands on whatever is under the point rather than on the view
+  the test named, so a covered region fails as it should.
+- **Hit testing returns adornments.** The deepest view under a button is its `ShadowView`, drawn
+  outside the view and handling nothing, with `MarginView` above it. `Driving.Click` skips
+  adornments and shadows and takes the deepest ordinary view; without that every click lands on
+  decoration and nothing happens, which is exactly how the spike first failed.
+
+`tests/Parley.Cli.Tests/Top/HarnessTests.cs` asserts every line of the recipe, so a package
+upgrade that breaks one fails there with an obvious cause rather than across twenty screen tests
+with an obscure one. **Eight tests, green on Windows and under podman on Linux (T006).** The
+`Init(DOTNET)` fallback was not needed.
+
 ## R3 — Does an added agent become `startable` within ten seconds?
 
 **No, and not on one count but two. One is fixed here; the other is a specification defect and

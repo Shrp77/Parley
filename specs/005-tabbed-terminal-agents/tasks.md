@@ -45,19 +45,19 @@ halves that do not wait on each other.
 
 **Purpose**: the toolkit is on the graph and the version moves. Nothing is drawn yet.
 
-- [ ] T001 Add `Terminal.Gui` `2.4.17` to `Directory.Packages.props` in the `Terminal` group
+- [X] T001 Add `Terminal.Gui` `2.4.17` to `Directory.Packages.props` in the `Terminal` group
       beside `Spectre.Console` (which stays until T044), pinned exactly. Rewrite the comment above
       the group: the Spectre comment says the package "brings nothing with it", and that stops
       being true — say the graph is twenty-four packages, that no transitive pin binds today
       because none of the `Microsoft.Extensions.*` arrivals has a `PackageVersion` entry, and that
       `NuGetAudit` prices every one of them on each build (research R1). No CLI flag in the
       comment — a double hyphen inside an XML comment breaks the file.
-- [ ] T002 Reference `Terminal.Gui` from `src/Parley.Cli/Parley.Cli.csproj` beside the existing
+- [X] T002 Reference `Terminal.Gui` from `src/Parley.Cli/Parley.Cli.csproj` beside the existing
       `Spectre.Console` reference.
-- [ ] T003 Bump `VersionPrefix` in `Directory.Build.props` from `0.16.9` to `0.17.0`. The minor
+- [X] T003 Bump `VersionPrefix` in `Directory.Build.props` from `0.16.9` to `0.17.0`. The minor
       moves: `parley top` changes wholesale, a shipped package is removed, and `parley node`
       behaves differently when its catalogue changes. In this commit, not at the end.
-- [ ] T004 Verify `dotnet build` succeeds with zero warnings and
+- [X] T004 Verify `dotnet build` succeeds with zero warnings and
       `dotnet list package --vulnerable --include-transitive` reports nothing, so a later failure
       is attributable to the rewrite rather than to the dependency.
 
@@ -78,7 +78,7 @@ ITimeProvider)` documented *for testing*, `GetInputInjector()`, `RaiseKeyDownEve
 (`DriverRegistry.Names` is `WINDOWS`, `DOTNET`, `ANSI`). Whether a factory the library ships can
 run with no console attached, or the tests must write one, is the open question.
 
-- [ ] T005 Spike, in `tests/Parley.Cli.Tests/Top/Driving.cs` (rewritten from the Spectre
+- [X] T005 Spike, in `tests/Parley.Cli.Tests/Top/Driving.cs` (rewritten from the Spectre
       `TestConsole` helper): build an `IApplication` with an `IComponentFactory` that has no
       console, add a `Window` with a `Label` and a `TextField`, inject the key `a` through
       `GetInputInjector()` (or `RaiseKeyDownEvent` if injection needs a run loop), call
@@ -86,12 +86,12 @@ run with no console attached, or the tests must write one, is the open question.
       field now holds `a`. **Record the answer in `research.md` R2** — which factory, and whether
       it is the library's or ours. Never touch the static `Application` class or
       `DefaultKeyBindings`: xUnit runs classes in parallel and both are process-global.
-- [ ] T006 Run T005 on Windows, then under podman (see memory: `verify-linux-locally-with-podman`
+- [X] T006 Run T005 on Windows, then under podman (see memory: `verify-linux-locally-with-podman`
       — CI billing was lapsed on 2026-09-03; verify it is back before relying on it). Drivers are
       where platforms differ. **If no factory can run without a console on either platform**,
       stop, record the fallback research R2 names (`Init(DOTNET)` under a pseudo-terminal) as a
       low finding in `REVIEW-LEDGER.md`, and decide with the owner before T007.
-- [ ] T007 Grow `tests/Parley.Cli.Tests/Top/Driving.cs` into the harness every later test uses:
+- [X] T007 Grow `tests/Parley.Cli.Tests/Top/Driving.cs` into the harness every later test uses:
       `Driving.Open(...)` builds the application over an injectable `ITimeProvider`
       (`VirtualTimeProvider` when the test needs to advance twenty minutes); `Driving.Find(app,
       title)` returns a view by its `Title`; `Driving.Row(view, text)` selects a row in a list by
@@ -100,6 +100,11 @@ run with no console attached, or the tests must write one, is the open question.
       `Driving.Screen(app)` returns `ToString()` with every attribute stripped. **Never by
       coordinates** (contracts/surface.md): a region that moves when the layout stacks must not
       move a test. Keep `Eventually.cs` and `LogFile.cs` as they are.
+> **T008 moved, 2026-09-04.** Rewriting the entry point before a shell exists to run would leave
+> the tool broken and every one of 004's twenty-one test classes uncompilable, since they drive
+> `DriveAsync(IAnsiConsole, ...)`. It is done with T023, which is the first moment there is
+> something for it to run. T009 and T010 are unaffected and stay here.
+
 - [ ] T008 Rewrite `src/Parley.Cli/Top/TopCommand.cs`: `RunAsync` keeps the interactivity refusal
       (`Interactive`, unchanged, FR-018) and the Ctrl+C reasoning already written there; it creates
       an `IApplication` through `Application.Create(TimeProvider.System)` and hands it to a new
