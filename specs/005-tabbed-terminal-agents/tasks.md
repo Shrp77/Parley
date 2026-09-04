@@ -126,7 +126,7 @@ run with no console attached, or the tests must write one, is the open question.
 **Purpose**: the three findings the plan made by reading the code. Each has its own tests and
 lands without a view existing.
 
-- [ ] T011 [P] Create `src/Parley.Cli/Enrolment.cs`: an `internal static class Enrolment` with
+- [X] T011 [P] Create `src/Parley.Cli/Enrolment.cs`: an `internal static class Enrolment` with
       `Add(RepositoryPlan plan, string catalogueFile, ...)` — the per-entry body of
       `EnrollCommand.ApplyAsync` (writing `.mcp.json` from `EnrollmentPlan.Describe`'s result,
       preserving a byte-order mark the file had, and adding `agents.<name> = { command, workspace
@@ -135,23 +135,23 @@ lands without a view existing.
       file itself, remove the catalogue entry, **never touch the instructions file** (research
       R5). Both return what changed as a list of paths so a caller can print it. `<remarks>` says
       why it was extracted: one writer, FR-008.
-- [ ] T012 Make `EnrollCommand.ApplyAsync` call `Enrolment.Add` per entry in
+- [X] T012 Make `EnrollCommand.ApplyAsync` call `Enrolment.Add` per entry in
       `src/Parley.Cli/EnrollCommand.cs`, passing the project it resolved when it has one. Its
       output must not change: `tests/Parley.Cli.Tests/EnrollCommandTests.cs` runs unchanged, and
       a test edited to accommodate the extraction has stopped testing it.
-- [ ] T013 [P] `EnrollmentPlan.Describe` in `src/Parley.Cli/EnrollmentPlan.cs` gains an optional
+- [X] T013 [P] `EnrollmentPlan.Describe` in `src/Parley.Cli/EnrollmentPlan.cs` gains an optional
       `string? project`. When given, `PARLEY_PROJECT=<project>` is written into the `parley`
       server's `env`. When the existing entry carries a different `PARLEY_PROJECT`, or a
       `PARLEY_BROKER` naming another endpoint, the plan is refused naming that project (FR-009,
       research R4). An entry naming this project is "already correct"; one naming neither is
       re-pointed and said.
-- [ ] T014 `src/Parley.Cli/NodeCommand.cs` watches its catalogue: poll the file's stamp at
+- [X] T014 `src/Parley.Cli/NodeCommand.cs` watches its catalogue: poll the file's stamp at
       `ServeCommand.WatchInterval`; on change, end the `Join` stream and join again with the new
       `StartableRoles`, keeping its resident agents (research R3). An unreadable or invalid
       catalogue mid-run is reported and the last good roles are kept — a node that dropped every
       role because somebody was half-way through saving the file is worse than one that lagged a
       poll.
-- [ ] T015 [P] Write `tests/Parley.Cli.Tests/EnrolmentTests.cs`: `Add` then `Withdraw` leaves
+- [X] T015 [P] Write `tests/Parley.Cli.Tests/EnrolmentTests.cs`: `Add` then `Withdraw` leaves
       `.mcp.json` and the catalogue byte-identical to before (other servers, the byte-order mark,
       indentation); `Withdraw` on a repository with no `parley` entry reports "already absent"
       and writes nothing; `Withdraw` never rewrites `CLAUDE.md`; two `Add`s of the same workspace
@@ -159,12 +159,12 @@ lands without a view existing.
       `mcpServers` is a string (refused as unmergeable, unchanged on disk); a catalogue entry
       whose workspace points at a *different* directory than the one being withdrawn (the entry
       is left alone and the report says whose it is).
-- [ ] T016 [P] Add to `tests/Parley.Cli.Tests/EnrollmentPlanTests.cs`: `Describe` with a project
+- [X] T016 [P] Add to `tests/Parley.Cli.Tests/EnrollmentPlanTests.cs`: `Describe` with a project
       writes `PARLEY_PROJECT`; against an entry carrying another project's name, refuses and names
       it; against `PARLEY_BROKER` pointing elsewhere, refuses; against an entry with neither,
       re-points and says so; without a project, writes exactly what it wrote before (the existing
       cases stay green).
-- [ ] T017 [P] Write `tests/Parley.Cli.Tests/NodeCatalogueWatchTests.cs`, driven through the
+- [X] T017 [P] Write `tests/Parley.Cli.Tests/NodeCatalogueWatchTests.cs`, driven through the
       loopback broker the way `HostedNodeTests.cs` is: a role appended to the catalogue file is
       announced within two watch intervals and the registry's `startable` roles reflect it,
       with no restart; the gap between joins reads as `stranded` for under a second and the

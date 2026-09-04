@@ -47,6 +47,24 @@ public static class EnrollmentPlan
     /// <summary>The longest an agent name may be.</summary>
     public const int NameLimit = 32;
 
+    /// <summary>
+    /// The launch variable naming the project an agent belongs to.
+    /// </summary>
+    /// <remarks>
+    /// The same string <c>Parley.Mcp</c>'s <c>ServerOptions</c> reads. Written here rather than
+    /// referenced because this project must not depend on the adapter, and repeated in exactly
+    /// one place on each side so a rename is two edits rather than a search.
+    /// </remarks>
+    public const string ProjectVariable = "PARLEY_PROJECT";
+
+    /// <summary>The launch variable pinning an agent to one broker address.</summary>
+    /// <remarks>
+    /// Never written here — only read, to notice a repository that already belongs somewhere.
+    /// An address goes stale the first time <c>parley project set</c> moves a port, which is why
+    /// <see cref="ProjectVariable"/> is what enrolling writes.
+    /// </remarks>
+    public const string BrokerVariable = "PARLEY_BROKER";
+
     /// <summary>The heading that marks a peers block already present in a file.</summary>
     public const string PeersHeading = "## Peers";
 
@@ -228,17 +246,44 @@ public static class EnrollmentPlan
     /// <param name="launchConfiguration">Its current <c>.mcp.json</c>, or null when it has none.</param>
     /// <param name="instructions">Its current standing instructions, or null when the file is absent.</param>
     /// <param name="nodeAlreadyLists">Whether <c>node.json</c> already names this agent.</param>
+    /// <param name="project">
+    /// The project this repository is being made an agent of, or null to leave it unpinned.
+    /// </param>
     /// <returns>What would change, and the contents that would be written.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="entry"/> is null.</exception>
     /// <exception cref="System.Text.Json.JsonException">The existing launch configuration is not JSON.</exception>
     /// <exception cref="InvalidDataException">
-    /// It is JSON, but a shape this cannot merge into without losing what is there.
+    /// It is JSON, but a shape this cannot merge into without losing what is there — or it is
+    /// already the agent of somewhere else.
     /// </exception>
+    /// <remarks>
+    /// <para>
+    /// <b><paramref name="project"/> is written as <c>PARLEY_PROJECT</c>, which is the name the
+    /// adapter already reads.</b> <c>ServerOptions</c> resolves it through the manifest to the
+    /// project's endpoint and refuses to guess when the name is unknown, on the grounds that
+    /// connecting to another project's broker would put the agent in a roster it does not belong
+    /// to. Pinning by name rather than by <c>PARLEY_BROKER</c> is what keeps it true after
+    /// <c>parley project set</c> moves a port: the name is the stable half.
+    /// </para>
+    /// <para>
+    /// <b>A repository that already belongs somewhere is refused rather than re-pointed.</b>
+    /// Naming a second project would move an agent out of one deployment's roster and into
+    /// another's, silently, from a surface whose person may not know the first exists. An entry
+    /// pinned to a broker address is refused for the same reason and with less certainty — this
+    /// cannot tell whether that address is the project it is being asked to join, and guessing
+    /// wrong in the permissive direction is the move that loses an agent.
+    /// </para>
+    /// <para>
+    /// An entry carrying neither is unpinned, which is what every repository enrolled before this
+    /// existed looks like. Those are re-pointed and the note says so.
+    /// </para>
+    /// </remarks>
     public static RepositoryPlan Describe(
         EnrollmentEntry entry,
         string? launchConfiguration,
         string? instructions,
-        bool nodeAlreadyLists)
+        bool nodeAlreadyLists,
+        string? project = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
@@ -273,7 +318,32 @@ public static class EnrollmentPlan
             root["mcpServers"] = servers;
         }
 
+        var existingParley = servers["parley"] as JsonObject;
+        var existingEnv = existingParley?["env"] as JsonObject;
+        var pinnedTo = Text(existingEnv, ProjectVariable);
+        var pinnedAt = Text(existingEnv, BrokerVariable);
+
+        if (project is not null)
+        {
+            if (pinnedTo is not null && !string.Equals(pinnedTo, project, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"it is already the agent of project '{pinnedTo}'");
+            }
+
+            if (pinnedTo is null && pinnedAt is not null)
+            {
+                throw new InvalidDataException(
+                    $"it is already pinned to the broker at '{pinnedAt}'");
+            }
+        }
+
         var env = new JsonObject { ["PARLEY_AGENT"] = entry.Agent };
+
+        if (project is not null)
+        {
+            env[ProjectVariable] = project;
+        }
 
         if (owns.Length > 0)
         {
@@ -304,6 +374,15 @@ public static class EnrollmentPlan
             notes.Add(others > 0
                 ? $".mcp.json: {(existing is null ? "create" : "update")} parley entry, leaving {others} other server(s)"
                 : $".mcp.json: {(existing is null ? "create" : "update")} parley entry");
+        }
+
+        if (project is not null && pinnedTo is null && existingParley is not null)
+        {
+            // Said because it is a change of allegiance and the file did not previously record
+            // one. A repository enrolled before projects existed names no project at all, so this
+            // is the ordinary case rather than an alarming one — but somebody reading the run
+            // should see which deployment their agent just joined.
+            notes.Add($".mcp.json: named no project; it becomes an agent of '{project}'");
         }
 
         if (owns.Length == 0)
@@ -358,4 +437,21 @@ public static class EnrollmentPlan
 
         return new RepositoryPlan(notes, launchOutput, instructionsOutput, addsNode);
     }
+
+    /// <summary>Reads one environment variable out of a launch entry, when it is a string.</summary>
+    /// <param name="env">The <c>env</c> object, or null when the entry has none.</param>
+    /// <param name="name">The variable to read.</param>
+    /// <returns>Its value, or null when it is absent, empty, or not a string.</returns>
+    /// <remarks>
+    /// A non-string value is treated as absent rather than refused. This reads somebody's file to
+    /// find out whether it already belongs somewhere, and a number where a name should be answers
+    /// that question with "not usefully" — the merge itself is guarded separately, by the shape
+    /// checks above.
+    /// </remarks>
+    private static string? Text(JsonObject? env, string name) =>
+        env?[name] is JsonValue value
+        && value.TryGetValue<string>(out var text)
+        && !string.IsNullOrWhiteSpace(text)
+            ? text
+            : null;
 }

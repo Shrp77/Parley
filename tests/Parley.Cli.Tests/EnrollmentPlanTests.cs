@@ -383,4 +383,103 @@ public sealed class EnrollmentPlanTests
         Assert.True(EnrollmentPlan.IsWellFormedName(suggestion));
         Assert.Equal(EnrollmentPlan.NameLimit, suggestion.Length);
     }
+
+    [Fact]
+    public void Naming_a_project_writes_it_into_the_launch_environment()
+    {
+        // PARLEY_PROJECT rather than PARLEY_BROKER, because an address goes stale the first time
+        // `parley project set` moves a port and the name does not. The adapter already resolves
+        // this variable through the manifest and refuses to guess when it does not know the name.
+        var plan = EnrollmentPlan.Describe(Entry(), null, null, false, project: "acme");
+        var env = JsonNode.Parse(plan.LaunchConfiguration!)!["mcpServers"]!["parley"]!["env"]!;
+
+        Assert.Equal("acme", env[EnrollmentPlan.ProjectVariable]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Naming_no_project_writes_exactly_what_it_wrote_before()
+    {
+        // The parity case for every repository enrolled before projects existed. Adding an
+        // optional parameter that changed the file for callers who did not pass it would rewrite
+        // the launch configuration of every agent on the next run of `enroll apply`.
+        var plan = EnrollmentPlan.Describe(Entry(), null, null, false);
+        var env = (JsonObject)JsonNode.Parse(plan.LaunchConfiguration!)!["mcpServers"]!["parley"]!["env"]!;
+
+        Assert.False(env.ContainsKey(EnrollmentPlan.ProjectVariable));
+    }
+
+    [Fact]
+    public void A_repository_that_is_already_another_project_s_agent_is_refused_by_name()
+    {
+        // The refusal names the project it belongs to, because that is the only thing the person
+        // meeting it can act on. Silently re-pointing would move an agent out of one deployment's
+        // roster and into another's, from a surface whose person may not know the first exists.
+        var existing = """
+            {
+              "mcpServers": {
+                "parley": { "command": "parley-mcp", "env": { "PARLEY_PROJECT": "elsewhere" } }
+              }
+            }
+            """;
+
+        var refusal = Assert.Throws<InvalidDataException>(
+            () => EnrollmentPlan.Describe(Entry(), existing, null, false, project: "acme"));
+
+        Assert.Contains("elsewhere", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_repository_already_pinned_to_a_broker_address_is_refused()
+    {
+        // Refused with less certainty than the case above and for the same reason: this cannot
+        // tell whether that address is the project being joined, and guessing wrong in the
+        // permissive direction is the move that loses an agent from a roster.
+        var existing = """
+            {
+              "mcpServers": {
+                "parley": { "command": "parley-mcp", "env": { "PARLEY_BROKER": "http://127.0.0.1:7777" } }
+              }
+            }
+            """;
+
+        var refusal = Assert.Throws<InvalidDataException>(
+            () => EnrollmentPlan.Describe(Entry(), existing, null, false, project: "acme"));
+
+        Assert.Contains("127.0.0.1:7777", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_repository_already_in_this_project_is_accepted_rather_than_refused()
+    {
+        var existing = """
+            {
+              "mcpServers": {
+                "parley": { "command": "parley-mcp", "env": { "PARLEY_PROJECT": "acme" } }
+              }
+            }
+            """;
+
+        var plan = EnrollmentPlan.Describe(Entry(), existing, null, false, project: "acme");
+
+        Assert.NotNull(plan);
+    }
+
+    [Fact]
+    public void A_repository_naming_neither_is_re_pointed_and_said()
+    {
+        // The ordinary case for anything enrolled before this existed. It is a change of
+        // allegiance in a file that did not previously record one, so it is said rather than
+        // done quietly.
+        var existing = """
+            {
+              "mcpServers": {
+                "parley": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "orders" } }
+              }
+            }
+            """;
+
+        var plan = EnrollmentPlan.Describe(Entry(), existing, null, false, project: "acme");
+
+        Assert.Contains(plan.Notes, n => n.Contains("becomes an agent of 'acme'", StringComparison.Ordinal));
+    }
 }

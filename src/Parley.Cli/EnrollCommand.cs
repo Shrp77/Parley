@@ -39,10 +39,6 @@ public static class EnrollCommand
 
     private const string DefaultManifest = "parley-agents.json";
 
-    private static readonly System.Text.UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
-
-    private static readonly System.Text.UTF8Encoding Utf8WithMark = new(encoderShouldEmitUTF8Identifier: true);
-
     private static readonly string[] Guidance =
     [
         "Fill in `owns` for every repository you want enrolled, then:",
@@ -337,28 +333,6 @@ public static class EnrollCommand
     /// two branches. A folder of worktrees looks exactly like a folder of checkouts to a scan.
     /// </para>
     /// </remarks>
-    /// <summary>Says whether a file already begins with a UTF-8 byte-order mark.</summary>
-    private static bool HadByteOrderMark(string path)
-    {
-        try
-        {
-            if (!File.Exists(path))
-            {
-                return false;
-            }
-
-            using var stream = File.OpenRead(path);
-            Span<byte> head = stackalloc byte[3];
-
-            return stream.ReadAtLeast(head, 3, throwOnEndOfStream: false) == 3
-                && head is [0xEF, 0xBB, 0xBF];
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
-
     private static bool IsWorktree(string workspace)
     {
         var marker = Path.Combine(workspace, ".git");
@@ -795,7 +769,16 @@ public static class EnrollCommand
         // `agents` can be well-formed JSON of the wrong type — an array, a string — in which
         // case casting it away and writing an object over it loses whatever it held just as
         // completely as an unparseable file did. Absent is the only shape that means "empty".
-        if (node["agents"] is not null and not JsonObject)
+        //
+        // The check now lives in Enrolment, which is the one writer of this file, so the surface
+        // cannot make the same mistake by writing its own copy.
+        JsonObject listed;
+
+        try
+        {
+            listed = Enrolment.AgentsOf(node, nodePath);
+        }
+        catch (InvalidDataException)
         {
             await error.WriteLineAsync(
                 $"{nodePath} has an \"agents\" entry that is not an object. Fix or move it first:\n" +
@@ -803,9 +786,6 @@ public static class EnrollCommand
 
             return Config;
         }
-
-        var listed = node["agents"] as JsonObject ?? [];
-        node["agents"] = listed;
 
         var nodeChanged = false;
         var written = 0;
@@ -864,26 +844,13 @@ public static class EnrollCommand
 
             try
             {
-                if (plan.LaunchConfiguration is { } launch)
-                {
-                    await File.WriteAllTextAsync(launchPath, launch, cancellationToken).ConfigureAwait(false);
-                    written++;
-                }
-
-                if (plan.Instructions is { } instructions)
-                {
-                    // The file's own byte-order mark is kept. ReadAllText strips one and
-                    // WriteAllText does not put it back, so appending a block to a file that had
-                    // one rewrites every byte of it — a whole-file diff for a twelve-line
-                    // addition, in the file a project reads on every turn.
-                    await File.WriteAllTextAsync(
-                        instructionsPath,
-                        instructions,
-                        HadByteOrderMark(instructionsPath) ? Utf8WithMark : Utf8,
-                        cancellationToken).ConfigureAwait(false);
-
-                    written++;
-                }
+                // Through Enrolment, the one writer of these two files. This loop wrote them
+                // itself until the terminal needed to write them too, and two copies of a file
+                // write are how a surface and a command come to disagree about what makes a
+                // repository an agent.
+                written += (await Enrolment
+                    .WriteAsync(plan, entry.Workspace, instructionsPath, cancellationToken)
+                    .ConfigureAwait(false)).Count;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -893,12 +860,7 @@ public static class EnrollCommand
 
             if (plan.AddsNodeEntry)
             {
-                listed[entry.Agent] = new JsonObject
-                {
-                    ["command"] = "claude",
-                    ["workspace"] = entry.Workspace,
-                };
-
+                Enrolment.List(listed, entry.Agent, entry.Workspace);
                 nodeChanged = true;
             }
         }
