@@ -190,8 +190,8 @@ public sealed record AutostartPlan(
     /// <para>
     /// <c>--with-node</c> is always written. With several projects the broker hosts a node in each
     /// one whose entry names a catalogue, so a project catalogued after this was installed is
-    /// hosted at the next start without the entry changing — and a manifest in which none is
-    /// catalogued is reported by the broker rather than refused here.
+    /// hosted within seconds, without the entry changing — the broker watches the manifest — and
+    /// a manifest in which none is catalogued is reported by the broker rather than refused here.
     /// </para>
     /// </remarks>
     public static AutostartPlan DescribeManifest(

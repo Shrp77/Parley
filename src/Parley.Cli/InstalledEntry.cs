@@ -24,8 +24,8 @@ namespace Parley.Cli;
 /// <para>
 /// <see cref="Serves"/> is the distinction that matters to a reader. An entry with a store serves
 /// one deployment by explicit paths, exactly as before manifests existed; one with none serves
-/// every project the manifest names, and a project added later comes up at the next start
-/// without the entry changing.
+/// every project the manifest names, and a project added later comes up within seconds without
+/// the entry changing, because the broker watches the manifest.
 /// </para>
 /// </remarks>
 public sealed record InstalledEntry(

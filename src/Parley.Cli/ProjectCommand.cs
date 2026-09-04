@@ -190,8 +190,8 @@ public static class ProjectCommand
         await output.WriteLineAsync($"Changed '{requested}' in {manifestPath}.").ConfigureAwait(false);
 
         // What it says now, so the person can see the change landed without a second command --
-        // and because a store or endpoint changed here takes effect at the broker's next start,
-        // which is worth saying where the change is made.
+        // and because a store, endpoint or catalogue changed here restarts the project in the
+        // process serving the manifest, which is worth saying where the change is made.
         await output.WriteLineAsync(
             $"  endpoint  {changed!.Endpoint}{Environment.NewLine}" +
             $"  store     {changed.Store}" +
