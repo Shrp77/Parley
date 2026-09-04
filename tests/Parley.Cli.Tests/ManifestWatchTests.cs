@@ -482,6 +482,81 @@ public sealed class ManifestWatchTests : IDisposable
         Assert.Equal(0, code);
     }
 
+    [Fact]
+    public async Task A_manifest_that_cannot_be_read_stops_nothing_and_a_fixed_one_is_served_again()
+    {
+        // Lens 1 probe. Somebody halfway through editing projects.json by hand, or a write that
+        // was interrupted: the file is there and is not a manifest. The one thing the watcher
+        // must not do on the strength of that is stop every project -- "removed from the
+        // manifest" is a claim the unreadable file cannot make. Then the file is fixed with a
+        // project added, and that project is served.
+        var ct = TestContext.Current.CancellationToken;
+
+        var manifestPath = Path.Combine(_directory, "projects.json");
+        var orders = Project("orders");
+        var billing = Project("billing");
+
+        Parley.Configuration.ProjectManifest.Write(manifestPath, [orders]);
+
+        var stamp = File.GetLastWriteTimeUtc(manifestPath);
+        var output = new StringWriter();
+
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        var serving = ServeCommand.RunAsync(
+            [orders],
+            null,
+            output,
+            TextWriter.Null,
+            reread: () =>
+            {
+                var now = File.GetLastWriteTimeUtc(manifestPath);
+
+                if (now == stamp)
+                {
+                    return null;
+                }
+
+                stamp = now;
+
+                return Parley.Configuration.ProjectManifest.TryRead(manifestPath, out var current, out _)
+                    ? current
+                    : null;
+            },
+            cancellationToken: stopping.Token);
+
+        try
+        {
+            Assert.True(await AnswersAsync(orders.Endpoint, ct));
+
+            await File.WriteAllTextAsync(manifestPath, "{ this is not a manifest", ct);
+            File.SetLastWriteTimeUtc(manifestPath, DateTime.UtcNow.AddSeconds(1));
+
+            // Long enough for several ticks on the broken file.
+            await Task.Delay(ServeCommand.WatchInterval * 3, ct);
+
+            Assert.True(await AnswersAsync(orders.Endpoint, ct, attempts: 3), "an unreadable manifest stopped a serving project");
+            Assert.DoesNotContain("stopping its broker", output.ToString(), StringComparison.Ordinal);
+
+            // Deleted before it is rewritten, because the writer refuses to write over a file it
+            // cannot parse -- the same refusal that keeps a person's broken edit from being
+            // silently replaced -- and this probe is the person fixing it.
+            File.Delete(manifestPath);
+            Parley.Configuration.ProjectManifest.Write(manifestPath, [orders, billing]);
+            File.SetLastWriteTimeUtc(manifestPath, DateTime.UtcNow.AddSeconds(2));
+
+            Assert.True(await AnswersAsync(billing.Endpoint, ct), "a project named in the repaired manifest never came up");
+        }
+        finally
+        {
+            await stopping.CancelAsync();
+        }
+
+        var code = await serving.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+        Assert.Equal(0, code);
+    }
+
     private static async Task<bool> AnswersAsync(string endpoint, CancellationToken cancellationToken, int attempts = 80)
     {
         for (var attempt = 0; attempt < attempts; attempt++)
