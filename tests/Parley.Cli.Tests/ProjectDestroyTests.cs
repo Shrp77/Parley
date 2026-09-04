@@ -259,6 +259,14 @@ public sealed class ProjectDestroyTests : IDisposable
         // state: entry gone, some files gone, the rest still there, exit zero. What is required
         // is the truth in the exit code and the message: which files went, which did not, and
         // that the entry is gone either way.
+        // Only Windows refuses to delete an open file; on Linux and macOS an unlink succeeds and
+        // the last handle keeps the data until it closes, so the loud failure this guards cannot
+        // occur there and the probe has nothing to assert. Found by the Linux run, 3 of 3.
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Skip("a held file can be deleted on this platform, so there is no refusal to report");
+        }
+
         var ct = TestContext.Current.CancellationToken;
 
         var project = Project("held", null);
