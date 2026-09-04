@@ -492,7 +492,12 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   between them with Tab; and agents added to a project, retired, reinstated or purged from it,
   each destructive act behind a description and the agent's name typed back — the same terms on
   which destroying a project was admitted. `Parley.Client` does not move. Starts from `main` at
-  `c85a271`; `spec.md` is written and `/speckit-plan` is next.
+  `c85a271`. `plan.md` is written and `/speckit-tasks` is next. Its "Q1 settled" records the one
+  place the spec asked for what the protocol cannot give — an added agent listed as `startable`
+  before anything has registered it — and the amendment: the agents region shows the project's
+  catalogue beside the registry, and the node rejoins with new roles when its catalogue changes.
+  `research.md` R2 leaves one thing open, which component factory runs Terminal.Gui without a
+  console, and makes that spike the first task and a gate on every other.
 - Previous: `specs/004-terminal-surface/` — merged 2026-09-03 as `c85a271`, 0.16.9, gate met on
   all three lenses. What use added after its plan is recorded at the end of its `spec.md`:
   pre-filled, validated naming; the manifest-serving autostart entry with a node per catalogued

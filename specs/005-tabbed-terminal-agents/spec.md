@@ -128,8 +128,16 @@ machine, and the surface makes it an agent of *this* project — its launch conf
 to name the project, and an entry added to the project's catalogue so the node may start it
 unattended when a question arrives for it. The surface says exactly what it wrote and where. A
 repository that is already an agent somewhere is told so and left alone. Within seconds the new
-agent appears in the agents region as startable, because the process serving the manifest hosts
-this project's node from that catalogue.
+agent appears in the agents region as *catalogued, not yet registered*, because the process
+serving the manifest hosts this project's node from that catalogue; it reads as startable once its
+server has attached and registered it, which is the adapter's own act and nobody else's.
+
+> **Amended 2026-09-04 by `plan.md`.** This paragraph, scenario 4 below, FR-006 and SC-003
+> originally promised the new agent would be listed as *startable* within ten seconds. Planning
+> found the protocol cannot honour that: the registry holds only agents that have registered
+> themselves (SPEC.md §12.3), and a surface registering on a repository's behalf would be a
+> caller-supplied identity. `plan.md` "Q1 settled" carries the argument; `research.md` R3 the
+> evidence. Revert this paragraph to reverse it.
 
 **Why this priority**: Adding is the half of "who is in a project" that risks nothing: it writes
 two files the person can read and revert, and the same files the enroll commands and the
@@ -138,8 +146,9 @@ terms of what adding did.
 
 **Independent Test**: With a project whose catalogue is empty, add a repository directory through
 the surface; the directory's launch configuration names the project and the agent's role, the
-catalogue names the directory, and the registry lists the agent as startable within ten seconds.
-Adding the same directory again is refused with the reason and changes nothing.
+catalogue names the directory, and the agents region shows the agent as *catalogued, not yet
+registered* within ten seconds; once its server has attached once, the registry lists it as
+startable. Adding the same directory again is refused with the reason and changes nothing.
 
 **Acceptance Scenarios**:
 
@@ -153,7 +162,9 @@ Adding the same directory again is refused with the reason and changes nothing.
    it is named, **Then** the surface says which project it belongs to and refuses to re-point it
    here.
 4. **Given** the agent added, **When** the agents region refreshes, **Then** the new agent is
-   listed with the role the surface gave it and shown as startable, within ten seconds.
+   listed with the role the surface gave it as *catalogued, not yet registered*, within ten
+   seconds; **and When** its server has attached once, **Then** it is shown as startable without
+   the node being restarted. *(Amended 2026-09-04; see the note under this story.)*
 5. **Given** a project whose entry names no catalogue, **When** the person adds an agent,
    **Then** the surface creates a catalogue for the project, records it on the project's entry,
    and says that the process serving the manifest will host the node from it.
@@ -234,8 +245,10 @@ Purge it: the registry no longer has it. At each step a wrong typed name changes
   section "What use added after the plan" there, continue to apply).
 - **FR-005**: Every journey 004's acceptance scenarios describe MUST end in the same registry and
   store state on the new surface, verified through a broker.
-- **FR-006**: The surface MUST open no database; every fact it shows MUST come from a broker over
-  the transport, and the one file it reads is the broker's log.
+- **FR-006**: The surface MUST open no database; every fact about a broker it shows MUST come
+  from that broker over the transport. It reads two files: the broker's log, to follow, and the
+  selected project's catalogue, which the broker never sees and which adding and removing write.
+  *(Amended 2026-09-04; the original allowed the log alone. See User Story 3.)*
 - **FR-007**: A person MUST be able to add an agent to the selected project by naming a
   repository directory, and the surface MUST show what it will write before writing it.
 - **FR-008**: Adding MUST write the repository's launch configuration to name the project and the
@@ -276,6 +289,9 @@ Purge it: the registry no longer has it. At each step a wrong typed name changes
 - **Registry status**: What the broker says about an agent — active or retired — as distinct from
   presence, which is what the connections say. Retiring changes the first; nothing on this
   surface changes the second.
+- **Catalogue membership**: Whether the project's catalogue names the agent, which is what lets
+  the node start it and which the broker never sees. Shown beside registry status, so an agent in
+  one and not the other says so in words. *(Added 2026-09-04; see User Story 3.)*
 - **Confirmation**: A description of the thing and its consequence, followed by the thing's own
   name typed back. The unit every destructive action on this surface is built from.
 
@@ -287,8 +303,10 @@ Purge it: the registry no longer has it. At each step a wrong typed name changes
   and Enter only, with no identifier typed, and separately using the mouse only.
 - **SC-002**: Every one of 004's acceptance scenarios passes on the new surface with its
   assertions unchanged where they read registry or store state.
-- **SC-003**: A repository added as an agent appears as startable in the agents region within ten
-  seconds of confirmation, on a machine whose supervisor entry serves the manifest.
+- **SC-003**: A repository added as an agent appears in the agents region as *catalogued, not yet
+  registered* within ten seconds of confirmation, on a machine whose supervisor entry serves the
+  manifest; and once its server has attached once it reads as startable, with no node restarted.
+  *(Amended 2026-09-04; see User Story 3.)*
 - **SC-004**: Retiring or purging an agent leaves no launch configuration and no catalogue entry
   for it, verified on disk, and a wrong typed name leaves both in place.
 - **SC-005**: A conversation shown here and the same conversation shown in the web console never
