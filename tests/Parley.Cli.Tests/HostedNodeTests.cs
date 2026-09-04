@@ -148,6 +148,92 @@ public sealed class HostedNodeTests : IDisposable
             lines.Exists(l => l.Contains("billing: names no catalogue", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task A_lone_projects_environment_catalogue_survives_the_watcher_restarting_it()
+    {
+        // Lens 1 probe. A machine with one project and its catalogue in PARLEY_NODE_CONFIG --
+        // the documented resolution for one project, and this machine's own arrangement --
+        // hosts its node from the variable at start. The watcher then restarts the project on a
+        // changed entry. If "the one project" is recognised by object identity, the restarted
+        // one is a different record, falls to the per-entry rule, names no catalogue, and the
+        // machine silently stops starting agents until the next logon.
+        var ct = TestContext.Current.CancellationToken;
+
+        var catalogue = Path.Combine(_directory, "env-node.json");
+        await File.WriteAllTextAsync(catalogue, """{"agents":{}}""", ct);
+
+        var before = Project("orders", Path.Combine(_directory, "a.db"), $"http://127.0.0.1:{FreePort()}");
+        var after = Project("orders", Path.Combine(_directory, "a.db"), $"http://127.0.0.1:{FreePort()}");
+
+        ProjectManifest.Write(ManifestPath, [before]);
+
+        using var process = ToolProcess.Launch(
+            [(ProjectManifest.PathVariable, ManifestPath), ("PARLEY_NODE_CONFIG", catalogue)],
+            "serve", "--with-node");
+
+        var seen = new List<string>();
+
+        try
+        {
+            await ReadUntilAsync(process, seen, lines => Hosted(lines) >= 1, TimeSpan.FromSeconds(20), ct);
+
+            Assert.True(Hosted(seen) == 1, $"the node was not hosted from the variable at start:{Environment.NewLine}{string.Join(Environment.NewLine, seen)}");
+
+            ProjectManifest.Write(ManifestPath, [after]);
+
+            await ReadUntilAsync(process, seen, lines => Hosted(lines) >= 2 || Declined(lines), TimeSpan.FromSeconds(20), ct);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                _ = process.WaitForExit(5000);
+            }
+        }
+
+        var said = string.Join(Environment.NewLine, seen);
+
+        Assert.False(Declined(seen), $"after the restart the lone project was told it names no catalogue:{Environment.NewLine}{said}");
+        Assert.True(Hosted(seen) == 2, $"the node was not hosted again after the restart:{Environment.NewLine}{said}");
+
+        static int Hosted(List<string> lines) =>
+            lines.Count(l => l.Contains("Hosting this machine's node", StringComparison.Ordinal));
+
+        static bool Declined(List<string> lines) =>
+            lines.Exists(l => l.Contains("names no catalogue", StringComparison.Ordinal));
+    }
+
+    private static async Task ReadUntilAsync(
+        System.Diagnostics.Process process,
+        List<string> seen,
+        Func<List<string>, bool> done,
+        TimeSpan within,
+        CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + within;
+
+        try
+        {
+            while (DateTime.UtcNow < deadline && !done(seen))
+            {
+                var line = await process.StandardOutput.ReadLineAsync(ct).AsTask()
+                    .WaitAsync(deadline - DateTime.UtcNow, ct);
+
+                if (line is null)
+                {
+                    break;
+                }
+
+                seen.Add(line);
+            }
+        }
+        catch (TimeoutException)
+        {
+            // Asserted on by the caller, with everything that was read.
+        }
+    }
+
     private static int FreePort()
     {
         using var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);

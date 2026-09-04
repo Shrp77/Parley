@@ -334,7 +334,8 @@ public static class ServeCommand
                 hosted.Tasks.Add(ContainAsync(
                     () => nodeFor(project, server.Addresses, output, hosted.Stopping.Token),
                     $"{project.Name}: this machine's node",
-                    output));
+                    output,
+                    hosted.Stopping.Token));
             }
 
             lock (started)
@@ -591,6 +592,8 @@ public static class ServeCommand
                 // name alone, a re-added "billing" was "already serving" and stayed on the old
                 // entry's port for ever. The description is not compared, because a broker does
                 // not run differently for having been described.
+                var restarting = new HashSet<string>(StringComparer.Ordinal);
+
                 foreach (var hosted in serving)
                 {
                     var now = current.FirstOrDefault(p => SameName(p, hosted.Project));
@@ -602,6 +605,7 @@ public static class ServeCommand
                     else if (!SameDeployment(now, hosted.Project))
                     {
                         await stop(hosted, "its entry changed").ConfigureAwait(false);
+                        _ = restarting.Add(hosted.Project.Name.Value);
                     }
                 }
 
@@ -622,7 +626,9 @@ public static class ServeCommand
                     }
 
                     await output.WriteLineAsync(
-                        $"{project.Name}: named in the manifest since this started; starting it.")
+                        restarting.Contains(project.Name.Value)
+                            ? $"{project.Name}: starting it on its changed entry."
+                            : $"{project.Name}: named in the manifest since this started; starting it.")
                         .ConfigureAwait(false);
 
                     if (!await start(project).ConfigureAwait(false))
@@ -697,7 +703,10 @@ public static class ServeCommand
         }
 
         return await ContainAsync(
-            () => whenListening(addresses, output, cancellationToken), "This machine's node", output)
+            () => whenListening(addresses, output, cancellationToken),
+            "This machine's node",
+            output,
+            cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -715,8 +724,10 @@ public static class ServeCommand
     /// <param name="run">The node.</param>
     /// <param name="who">How to name it in the failure line.</param>
     /// <param name="output">Where to report a failure worth seeing.</param>
+    /// <param name="stopping">The token the node was given, so that its ending on it is not a failure.</param>
     /// <returns>Its exit code, or the unavailable code when it threw.</returns>
-    private static async Task<int> ContainAsync(Func<Task<int>> run, string who, TextWriter output)
+    private static async Task<int> ContainAsync(
+        Func<Task<int>> run, string who, TextWriter output, CancellationToken stopping)
     {
         try
         {
@@ -730,6 +741,15 @@ public static class ServeCommand
         catch (OperationCanceledException)
         {
             // The interrupt, which is how this is meant to end.
+            return 0;
+        }
+        catch (Exception) when (stopping.IsCancellationRequested)
+        {
+            // Also how it is meant to end. A node cancelled mid-call sees its gRPC call
+            // cancelled, and that arrives as an RpcException rather than the cancellation it
+            // is -- so a project stopped on purpose was reported as its node having failed,
+            // "nothing will be started until `parley up` runs again", and the process exited
+            // non-zero for a stop it had been asked for. Found by probing the watcher.
             return 0;
         }
         catch (Exception failure)

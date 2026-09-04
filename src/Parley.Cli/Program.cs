@@ -523,10 +523,14 @@ if (verb == "serve" && rest.Length == 0)
             TextWriter reporting,
             CancellationToken stopping)
         {
-            // The one project this started with, not any project when there happened to be one:
-            // a second named while this runs is a manifest being served, whatever the count was
-            // at the start.
-            if (serving.Count == 1 && ReferenceEquals(project, serving[0]))
+            // The one project this started with, by name, not any project when there happened to
+            // be one: a second named while this runs is a manifest being served, whatever the
+            // count was at the start. By name and not by identity, because the watcher restarts a
+            // project on a changed entry as a new record -- and a lone project whose catalogue is
+            // in PARLEY_NODE_CONFIG was, by identity, a different project after that restart, told
+            // it named no catalogue, and silently stopped starting agents. Found by probing.
+            if (serving.Count == 1
+                && string.Equals(project.Name.Value, serving[0].Name.Value, StringComparison.Ordinal))
             {
                 return await HostingNode(addresses, reporting, stopping).ConfigureAwait(false);
             }

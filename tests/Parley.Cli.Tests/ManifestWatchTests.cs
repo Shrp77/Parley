@@ -336,7 +336,10 @@ public sealed class ManifestWatchTests : IDisposable
 
         var code = await serving.WaitAsync(TimeSpan.FromSeconds(30), ct);
 
-        Assert.True(code is 0 or 69, $"exit {code}");
+        // Zero, not "zero or unavailable": an interrupt is how this is meant to end, and a
+        // process that reports failure for being asked to stop teaches its supervisor to
+        // restart it. The looser assertion that stood here briefly would have let that through.
+        Assert.Equal(0, code);
 
         foreach (var project in late.Prepend(orders))
         {
