@@ -23,9 +23,6 @@
     half the point of the project existing: a web host reachable from here would be a way for a
     test of client behaviour to quietly become a test of the console again.
   -->
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\Parley.Client\Parley.Client.csproj" />
-  </ItemGroup>
 
   <!--
     Shared, not copied. It points this assembly's manifest resolution at an absent path; see the

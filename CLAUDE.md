@@ -486,7 +486,18 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/004-terminal-surface/` — `parley top`, a terminal application a person
+- **Active plan**: `specs/005-tabbed-terminal-agents/` — the terminal rewritten on a windowing
+  toolkit (Terminal.Gui v2, the owner's choice, recorded under the spec's "Decisions already
+  made") so a person sees projects, agents, conversations and a transcript at once and moves
+  between them with Tab; and agents added to a project, retired, reinstated or purged from it,
+  each destructive act behind a description and the agent's name typed back — the same terms on
+  which destroying a project was admitted. `Parley.Client` does not move. Starts from `main` at
+  `c85a271`; `spec.md` is written and `/speckit-plan` is next.
+- Previous: `specs/004-terminal-surface/` — merged 2026-09-03 as `c85a271`, 0.16.9, gate met on
+  all three lenses. What use added after its plan is recorded at the end of its `spec.md`:
+  pre-filled, validated naming; the manifest-serving autostart entry with a node per catalogued
+  project; the broker watching the manifest; `project set` and `remove --destroy`; destroying a
+  project from the terminal. `parley top`, a terminal application a person
   takes part from, because SPEC.md §17 question 15's editor-window agent is the one thing
   nothing can hand a turn to. `plan.md` settles the question the spec raised and did not
   assume: **the transport-facing half of `Parley.Web` moves to a new `src/Parley.Client`, and
