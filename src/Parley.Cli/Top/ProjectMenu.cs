@@ -33,6 +33,10 @@ internal static class ProjectMenu
     /// <param name="project">The project everything below is scoped to.</param>
     /// <param name="me">Who is seated in this session, if anybody is.</param>
     /// <param name="cancellationToken">Stops the reads.</param>
+    /// <param name="installed">
+    /// What this machine's supervisor runs, or null for none or unknown. The log view needs it:
+    /// an entry serving the manifest logs beside the manifest, not beside any project's store.
+    /// </param>
     /// <returns>Who is seated when the person goes back, so the session keeps it.</returns>
     /// <remarks>
     /// <b>The seat is passed in and handed back, because it belongs to the session and not to one
@@ -48,7 +52,8 @@ internal static class ProjectMenu
         SeatBook seats,
         ProjectSettings project,
         Seat? me,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        InstalledEntry? installed = null)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -88,7 +93,7 @@ internal static class ProjectMenu
                         break;
 
                     case Logs:
-                        await LogTail.ShowAsync(console, project, cancellationToken)
+                        await LogTail.ShowAsync(console, project, installed, cancellationToken)
                             .ConfigureAwait(false);
                         break;
 

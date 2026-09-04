@@ -39,8 +39,39 @@ internal static class LogTail
     /// elsewhere, and nothing in the manifest records where. So a missing file is reported as
     /// "not where it usually is" rather than as "the broker is not logging".
     /// </remarks>
-    internal static string? For(ProjectSettings project)
+    internal static string? For(ProjectSettings project) => For(project, null);
+
+    /// <summary>Where this project's broker writes its log, given what the supervisor runs.</summary>
+    /// <param name="project">The project.</param>
+    /// <param name="installed">The autostart entry, or null for none or unknown.</param>
+    /// <returns>The path, or <see langword="null"/> when nothing derivable names one.</returns>
+    /// <remarks>
+    /// An entry serving the manifest writes one log for every project, beside the manifest, and
+    /// not beside any store. Derived from the entry when there is one, because the guess beside
+    /// the store is exactly wrong on the machine that switched entries: the old log is still
+    /// there beside the old store, and following it shows a broker that stopped writing hours
+    /// ago while the live one writes somewhere else. Found by reading the spec's assumption
+    /// ("beside the store, as the installer already reports") after the installer stopped
+    /// reporting that.
+    /// </remarks>
+    internal static string? For(ProjectSettings project, InstalledEntry? installed)
     {
+        if (installed is { ServesManifest: true, Manifest: { Length: > 0 } manifest })
+        {
+            try
+            {
+                var beside = Path.GetDirectoryName(Path.GetFullPath(manifest));
+
+                return beside is null ? null : Path.Combine(beside, FileName);
+            }
+            catch (Exception failure) when (failure is ArgumentException
+                                                    or NotSupportedException
+                                                    or PathTooLongException)
+            {
+                return null;
+            }
+        }
+
         if (project is null || string.IsNullOrWhiteSpace(project.Store))
         {
             return null;
@@ -69,12 +100,25 @@ internal static class LogTail
     /// <param name="project">Whose log to follow.</param>
     /// <param name="cancellationToken">Stops following.</param>
     /// <returns>When the person has stopped watching.</returns>
+    internal static Task ShowAsync(
+        IAnsiConsole console,
+        ProjectSettings project,
+        CancellationToken cancellationToken) =>
+        ShowAsync(console, project, null, cancellationToken);
+
+    /// <summary>Follows the log until the person stops watching, given what the supervisor runs.</summary>
+    /// <param name="console">Where to draw.</param>
+    /// <param name="project">Whose log to follow.</param>
+    /// <param name="installed">The autostart entry, which says where a manifest-serving broker logs.</param>
+    /// <param name="cancellationToken">Stops following.</param>
+    /// <returns>When the person has stopped watching.</returns>
     internal static async Task ShowAsync(
         IAnsiConsole console,
         ProjectSettings project,
+        InstalledEntry? installed,
         CancellationToken cancellationToken)
     {
-        var path = For(project);
+        var path = For(project, installed);
 
         if (path is null || !File.Exists(path))
         {

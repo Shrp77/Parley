@@ -128,7 +128,7 @@ public static class TopCommand
             }
 
             me = await ProjectMenu
-                .ShowAsync(console, directory, seats, chosen, me, cancellationToken)
+                .ShowAsync(console, directory, seats, chosen, me, cancellationToken, installed)
                 .ConfigureAwait(false);
         }
 

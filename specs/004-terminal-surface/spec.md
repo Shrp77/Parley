@@ -249,3 +249,33 @@ list` reports it identically to one added from the command line.
   a supported state rather than an error.
 - The web console continues to exist. Nothing here removes it, and FR-014 assumes it is worth
   opening.
+
+## What use added after the plan (2026-09-03)
+
+Recorded here because the plan was built first and the surface was then used, on a real
+deployment, by the person it was for. Each item below was asked for or found in use rather
+than specified; each is built, tested, and in the review ledger. They amend the requirements
+above rather than replace them.
+
+- **FR-015, sharpened.** Naming a project is two forms: *name the deployment this machine already
+  runs*, pre-filled from the autostart entry, and *create a new project*, which proposes a store
+  beside the existing ones and the default port when free, else a free one. Every answer is
+  checked as it is typed, and every prompt says what it is for — the node catalogue's in terms
+  of what having one changes.
+- **The project list shows the description** it collects.
+- **The autostart entry serves the manifest** when projects are named and nothing explicit is
+  given, hosting this machine's node in every project whose entry names a catalogue (decided:
+  one node per catalogued project, replacing the one-node rule). `autostart status` says what
+  the entry serves. `project set` changes an entry in place.
+- **The process serving the manifest watches it**: a project named while it runs gets its broker
+  within seconds, a removed one is stopped, a changed one is restarted on its new entry, and a
+  description change restarts nothing. A project that failed to start is retried on the next
+  change.
+- **A project can be removed from the terminal**: forgotten, which deletes nothing, or destroyed,
+  which stops its broker, deletes its store and catalogue, and names the repositories that were
+  agents in it — behind a description and the project's own name typed back. This amends the
+  surface rule in CLAUDE.md, by the owner's decision, and `remove --destroy` is the command it
+  runs.
+- **The log is found where the entry writes it**: beside the manifest for a manifest-serving
+  entry, beside the store otherwise. The assumption below that it is "beside the store, as the
+  installer already reports" held only for the explicit entry.
