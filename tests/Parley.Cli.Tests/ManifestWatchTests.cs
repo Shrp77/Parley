@@ -557,6 +557,67 @@ public sealed class ManifestWatchTests : IDisposable
         Assert.Equal(0, code);
     }
 
+    [Fact]
+    public async Task A_change_to_the_description_alone_restarts_nothing()
+    {
+        // Lens 2 probe. A broker restarted for a harmless edit drops every attached agent's
+        // session for nothing; the watcher compares what a broker is made of and not the
+        // description, and this holds it to that. The port never frees and no stop is announced.
+        var ct = TestContext.Current.CancellationToken;
+
+        var orders = Project("orders");
+
+        var manifest = new List<ProjectSettings> { orders };
+        var changed = false;
+
+        var output = new StringWriter();
+
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        var serving = ServeCommand.RunAsync(
+            [orders],
+            null,
+            output,
+            TextWriter.Null,
+            reread: () =>
+            {
+                if (!changed)
+                {
+                    return null;
+                }
+
+                changed = false;
+
+                return manifest;
+            },
+            cancellationToken: stopping.Token);
+
+        try
+        {
+            Assert.True(await AnswersAsync(orders.Endpoint, ct));
+
+            manifest[0] = orders with { Description = "described after the fact" };
+            changed = true;
+
+            // Watched across several ticks: the port must stay taken throughout.
+            var deadline = DateTime.UtcNow + ServeCommand.WatchInterval * 3;
+
+            while (DateTime.UtcNow < deadline)
+            {
+                Assert.False(CanBind(orders.Endpoint), "the broker released its port for a description change");
+                await Task.Delay(100, ct);
+            }
+
+            Assert.DoesNotContain("stopping its broker", output.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            await stopping.CancelAsync();
+        }
+
+        Assert.Equal(0, await serving.WaitAsync(TimeSpan.FromSeconds(30), ct));
+    }
+
     private static async Task<bool> AnswersAsync(string endpoint, CancellationToken cancellationToken, int attempts = 80)
     {
         for (var attempt = 0; attempt < attempts; attempt++)
