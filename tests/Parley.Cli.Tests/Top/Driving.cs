@@ -230,7 +230,18 @@ internal static class Driving
         /// into a mouse event, which belongs to the toolkit and is tested there.
         /// </para>
         /// </remarks>
-        internal void Click(View view)
+        internal void Click(View view) => Click(view, MouseFlags.LeftButtonClicked);
+
+        /// <summary>Double-clicks the middle of a view.</summary>
+        /// <param name="view">The view to double-click.</param>
+        /// <remarks>
+        /// What opens a row in a list, where a single click only selects it. Both go through
+        /// <see cref="Click(View, MouseFlags)"/> so a change to the hit testing cannot apply to
+        /// one and not the other.
+        /// </remarks>
+        internal void DoubleClick(View view) => Click(view, MouseFlags.LeftButtonDoubleClicked);
+
+        private void Click(View view, MouseFlags flags)
         {
             ArgumentNullException.ThrowIfNull(view);
 
@@ -242,7 +253,7 @@ internal static class Driving
 
             target.NewMouseEvent(new Mouse
             {
-                Flags = MouseFlags.LeftButtonClicked,
+                Flags = flags,
                 ScreenPosition = at,
                 Position = inside,
                 View = target,

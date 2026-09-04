@@ -187,19 +187,19 @@ out, the mouse does the same, and every state is a phrase.
 named conversation's transcript with Tab, arrows and Enter only, then again with the mouse only;
 both end on the same transcript showing author, recipient and visibility in words (SC-001).
 
-- [ ] T018 [US1] Create `src/Parley.Cli/Top/Shell.cs`: the top-level window holding the four
+- [X] T018 [US1] Create `src/Parley.Cli/Top/Shell.cs`: the top-level window holding the four
       regions and a status line. `Shell.Threshold = 80` columns; at or above, side by side
       (Projects left, Agents over Conversations centre, Transcript right); below, a `TabView`
       whose pages are the same four view objects in the same order (research R10). The status
       line always reads `Focus: <region title>` and lists the focused region's actions with their
       letters. Every phrase is a `const string` on the view that draws it (contracts/surface.md).
       Tab and Shift+Tab move focus in region order and round again; Ctrl+Q quits.
-- [ ] T019 [P] [US1] Create `src/Parley.Cli/Top/ProjectsRegion.cs` from `ProjectList.cs`: a list
+- [X] T019 [P] [US1] Create `src/Parley.Cli/Top/ProjectsRegion.cs` from `ProjectList.cs`: a list
       titled `Projects` of name, whether the broker answers (`not answering` within five seconds,
       the probe already in `ProjectHealth`), and description. The first project is selected on
       open with no key pressed. Selection survives a refresh. Actions come in US2; this task is
       the list.
-- [ ] T020 [P] [US1] Create `src/Parley.Cli/Top/AgentsRegion.cs` from `AgentsView.cs`: a table
+- [X] T020 [P] [US1] Create `src/Parley.Cli/Top/AgentsRegion.cs` from `AgentsView.cs`: a table
       titled `Agents` of the union of `DescribeRegistry` and the selected project's catalogue,
       keyed by name, with the three states of data-model.md as phrases — §14's presence through
       `Roster.State` for a row in both; `catalogued, not yet registered` for catalogue-only; the
@@ -207,35 +207,35 @@ both end on the same transcript showing author, recipient and visibility in word
       adapter is `Seat.Adapter`. The catalogue is read fresh on every draw and a project with no
       catalogue draws the registry alone. Colour may repeat the phrase; nothing is said by colour
       alone.
-- [ ] T021 [P] [US1] Create `src/Parley.Cli/Top/ConversationsRegion.cs` from
+- [X] T021 [P] [US1] Create `src/Parley.Cli/Top/ConversationsRegion.cs` from
       `ConversationList.cs`: a list titled `Conversations`, most recent first. Enter opens the
       selected conversation in the transcript region and the list does not move.
-- [ ] T022 [P] [US1] Create `src/Parley.Cli/Top/TranscriptRegion.cs` from `TranscriptView.cs`:
+- [X] T022 [P] [US1] Create `src/Parley.Cli/Top/TranscriptRegion.cs` from `TranscriptView.cs`:
       a view titled `Transcript` rendering `Parley.Client`'s transcript with author, recipient
       and per-message visibility in words, empty on open, and saying `not answering` when the
       project's broker is. A column that does not fit is dropped with its heading, never cut
       mid-word (004's narrow-terminal rule).
-- [ ] T023 [US1] Wire the four into `Shell` in `src/Parley.Cli/Top/Shell.cs` and `TopCommand.
+- [X] T023 [US1] Wire the four into `Shell` in `src/Parley.Cli/Top/Shell.cs` and `TopCommand.
       DriveAsync`: selecting a project redraws the other three for it; a project whose broker is
       not answering leaves every other project selectable; delete `ProjectList.cs`,
       `AgentsView.cs`, `ConversationList.cs`, `TranscriptView.cs`.
-- [ ] T024 [P] [US1] Rewrite `tests/Parley.Cli.Tests/Top/NavigationTests.cs` through `Driving`:
+- [X] T024 [P] [US1] Rewrite `tests/Parley.Cli.Tests/Top/NavigationTests.cs` through `Driving`:
       the keyboard journey of SC-001 (Tab ×2, arrows, Enter) ends on the named transcript; the
       same journey by `Driving.Click` alone ends on the same screen text; Shift+Tab goes back;
       Tab from Transcript returns to Projects; opening a second conversation leaves the list
       selection one arrow from the first (scenario 3).
-- [ ] T025 [P] [US1] Write `tests/Parley.Cli.Tests/Top/LayoutTests.cs`: at 79 columns the four
+- [X] T025 [P] [US1] Write `tests/Parley.Cli.Tests/Top/LayoutTests.cs`: at 79 columns the four
       regions are tab pages and Tab still visits all four; at 80 they are side by side; at 40 no
       region's screen text contains an ellipsis and every title is present (scenario 5); the same
       `Driving.Find` calls succeed in both layouts.
-- [ ] T026 [P] [US1] Rewrite `tests/Parley.Cli.Tests/Top/ColourTests.cs`: with every attribute
+- [X] T026 [P] [US1] Rewrite `tests/Parley.Cli.Tests/Top/ColourTests.cs`: with every attribute
       stripped, the screen still contains `Focus: Projects`, each presence phrase, `not
       answering` and `seat` wherever the coloured render showed them (SC-006).
-- [ ] T027 [P] [US1] Rewrite `tests/Parley.Cli.Tests/Top/DeadBrokerTests.cs`: a project whose
+- [X] T027 [P] [US1] Rewrite `tests/Parley.Cli.Tests/Top/DeadBrokerTests.cs`: a project whose
       endpoint nothing listens on says `not answering` in all three of its regions within five
       seconds of selection, and Tab then reaches the other project's conversations (SC-008,
       scenario 4).
-- [ ] T028 [P] [US1] Write `tests/Parley.Cli.Tests/Top/CatalogueJoinTests.cs`: the three rows of
+- [X] T028 [P] [US1] Write `tests/Parley.Cli.Tests/Top/CatalogueJoinTests.cs`: the three rows of
       data-model.md drawn from a registry and a catalogue built to produce each; a seat row shows
       `seat`; a project without a catalogue draws the registry alone. **Probe:** a catalogue
       entry whose name is not a well-formed `AgentName` is shown as a row with the reason rather
