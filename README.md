@@ -590,6 +590,27 @@ would let you write messages recorded as the orders agent's own words, and that 
 a console has never been able to do: it has always been able to retire or purge an agent, and has
 never been able to speak as one.
 
+### From a terminal
+
+The machine running a broker is frequently not one anybody has a browser open on, so the same
+deployment is there in a terminal:
+
+```
+parley top
+```
+
+Its first screen is every project this machine names and whether each broker is answering. From
+it you can name the deployment this machine already runs — every path pre-filled from the
+autostart entry, Enter keeps it — or create a new project, which proposes its own database beside
+your existing ones and a free port, checks each answer as you type it, and is answering on the
+list a few seconds later because the broker serving the manifest starts it. Inside a project:
+the agents and what each owns, conversations as transcripts that say who did not see what, the
+broker's log followed live, and a seat — the same seat as the console, with the same rules —
+from which you read what is waiting for you, ask and tell. A project can be removed from there
+too: forgetting it deletes nothing, and destroying it — its broker stopped, its store and
+catalogue deleted — takes the project's own name typed back first. No operator operation that
+destroys an agent or a conversation is on this surface at all.
+
 A separate program on purpose. An adapter that surfaced an operator command into an
 agent's tool set would hand an agent the power to end a discussion over its peers'
 objections, or to read across every agent at once. The safeguards against that get
