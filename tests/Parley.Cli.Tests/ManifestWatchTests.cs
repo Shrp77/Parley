@@ -344,6 +344,75 @@ public sealed class ManifestWatchTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task A_manifest_emptied_and_refilled_leaves_the_process_serving_the_new_project()
+    {
+        // Lens 1 probe. Every project removed at once is the state after somebody destroys the
+        // last one, and the process must neither exit -- the supervisor would restart it into
+        // the same emptiness -- nor lose the watcher, so that the next project named is served.
+        var ct = TestContext.Current.CancellationToken;
+
+        var orders = Project("orders");
+        var billing = Project("billing");
+
+        var manifest = new List<ProjectSettings> { orders };
+        var changed = false;
+
+        var output = new StringWriter();
+
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        var serving = ServeCommand.RunAsync(
+            [orders],
+            null,
+            output,
+            TextWriter.Null,
+            reread: () =>
+            {
+                if (!changed)
+                {
+                    return null;
+                }
+
+                changed = false;
+
+                return manifest;
+            },
+            cancellationToken: stopping.Token);
+
+        try
+        {
+            Assert.True(await AnswersAsync(orders.Endpoint, ct));
+
+            manifest.Clear();
+            changed = true;
+
+            var freed = false;
+
+            for (var attempt = 0; attempt < 50 && !freed; attempt++)
+            {
+                await Task.Delay(100, ct);
+                freed = CanBind(orders.Endpoint);
+            }
+
+            Assert.True(freed, "the last project's broker kept its port");
+            Assert.False(serving.IsCompleted, "the process exited when its last project was removed");
+
+            manifest.Add(billing);
+            changed = true;
+
+            Assert.True(await AnswersAsync(billing.Endpoint, ct), "a project named into an emptied manifest never came up");
+        }
+        finally
+        {
+            await stopping.CancelAsync();
+        }
+
+        var code = await serving.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+        Assert.Equal(0, code);
+    }
+
     private static async Task<bool> AnswersAsync(string endpoint, CancellationToken cancellationToken, int attempts = 80)
     {
         for (var attempt = 0; attempt < attempts; attempt++)
