@@ -92,6 +92,25 @@ internal static class ProjectMenu
                             .ConfigureAwait(false);
                         break;
 
+                    case Remove:
+                        if (directory.ManifestPath is not { } manifest)
+                        {
+                            // Nothing to remove from. A directory built from an explicit list is
+                            // somebody else's list, exactly as it is for naming one.
+                            console.MarkupLine("[yellow]This surface was given its projects, so "
+                                + "there is no manifest here to remove one from.[/]");
+                            break;
+                        }
+
+                        if (await Removing.RunAsync(console, manifest, project, cancellationToken)
+                            .ConfigureAwait(false))
+                        {
+                            // Gone, so there is no project for this menu to be the menu of.
+                            return me;
+                        }
+
+                        break;
+
                     case WebConsole:
                         // The console's own address, not this project's broker. They are different
                         // processes on different ports, and opening the broker's would show a browser
@@ -227,6 +246,10 @@ internal static class ProjectMenu
         if (!seated)
         {
             choices.Add(Join);
+
+            // Only while nobody here is seated: removing a project from under a seat would
+            // leave the book retrying a broker that is not coming back. Leave first.
+            choices.Add(Remove);
         }
         else
         {
@@ -265,6 +288,7 @@ internal static class ProjectMenu
     private const string Tell = "Tell somebody something";
     private const string Leave = "Leave your seat";
     private const string Logs = "Follow the broker log";
+    internal const string Remove = "Remove this project from this machine";
     private const string WebConsole = "Open the web console in a browser";
     internal const string Back = "Back to projects";
 }

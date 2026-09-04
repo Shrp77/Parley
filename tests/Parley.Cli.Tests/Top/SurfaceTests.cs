@@ -42,22 +42,26 @@ public sealed class SurfaceTests
     ];
 
     [Fact]
-    public void The_terminal_never_destroys_a_project()
+    public void Destroying_a_project_happens_in_one_place_and_behind_a_typed_name()
     {
-        // Not an operator operation but the one thing `parley project` can delete: a project's
-        // store and catalogue, behind `remove --destroy`. The command takes it as a flag rather
-        // than a verb so a form here cannot reach it by naming an operation, and this checks that
-        // no form passes the flag either -- a store deleted behind a keystroke is the risk the
-        // list above exists to keep out, arrived at through configuration instead of the broker.
-        var offenders = Sources()
+        // The one destructive thing this surface does, by the owner's decision (CLAUDE.md): a
+        // surface that can create a project must be able to destroy one. What the rule above
+        // asks for is a description first and a deliberate act, so this holds the word to the
+        // one file that provides both -- a second path that reached the flag would be the
+        // keystroke the rule is about -- and RemovingTests drives the typed name itself.
+        var mentioning = Sources()
             .Where(file => File.ReadAllText(file.FullName)
                 .Contains("destroy", StringComparison.OrdinalIgnoreCase))
             .Select(file => file.Name)
+            .Order(StringComparer.Ordinal)
             .ToList();
 
-        Assert.True(
-            offenders.Count == 0,
-            $"destroying a project is off this surface, and it appears in: {string.Join(", ", offenders)}.");
+        Assert.Equal(["Removing.cs"], mentioning);
+
+        var removing = File.ReadAllText(
+            Sources().Single(file => file.Name == "Removing.cs").FullName);
+
+        Assert.Contains("Type the project's name", removing, StringComparison.Ordinal);
     }
 
     [Theory]

@@ -81,7 +81,13 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
                     running a broker is frequently not the one somebody has one open on. It binds
                     no destructive operator operation, and SurfaceTests fails if one appears:
                     a purge behind a keystroke is a different risk from one behind a page that
-                    describes it first.
+                    describes it first. **The one destructive thing it does is destroy a
+                    project**, decided by the owner on 2026-09-03 on the grounds that a surface
+                    that can create a project must be able to destroy one. It is not behind a
+                    keystroke: `Removing` describes what will go, offers forgetting (deletes
+                    nothing) beside destroying, and takes the project's own name typed back
+                    before it deletes. SurfaceTests confines the word to that one file, and
+                    RemovingTests drives the confirmation.
  That was decided deliberately and against the argument
                     recorded here before it: a second tool would have kept ASP.NET Core off
                     the machines that only run an agent, and one command is worth more than
