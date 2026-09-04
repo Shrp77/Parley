@@ -263,13 +263,9 @@ public static class ServeCommand
         output = TextWriter.Synchronized(output);
         error = TextWriter.Synchronized(error);
 
-        var started = new List<(ProjectSettings Project, BrokerRuntime Runtime, ParleyServer Server)>();
-
-        // Everything that runs for as long as the process does: one sweep per broker, one node
-        // per broker that has one, the console, and the watcher. Grows while it is being awaited,
-        // because the watcher starts brokers after the initial set, so it is read under its own
-        // lock and awaited in rounds below.
-        var work = new List<Task<int>>();
+        // Every project serving right now. Grows when the watcher starts one named since the
+        // process began and shrinks when it stops one removed, so it is read under its own lock.
+        var started = new List<Hosted>();
         var failed = 0;
 
         // Starts one project's broker and everything that lives beside it. Called for the
@@ -318,10 +314,11 @@ public static class ServeCommand
                 return false;
             }
 
-            lock (started)
-            {
-                started.Add((project, runtime, server));
-            }
+            // Its own source, linked to the interrupt, so that this one project can be stopped
+            // when its entry is removed while every other keeps serving -- and the interrupt
+            // still stops them all.
+            var hosted = new Hosted(
+                project, server, CancellationTokenSource.CreateLinkedTokenSource(cancellationToken));
 
             await output.WriteLineAsync(string.Create(
                 CultureInfo.InvariantCulture,
@@ -330,20 +327,51 @@ public static class ServeCommand
 
             // The sweep and, where there is one, the node, each contained on its own so that one
             // project's node failing leaves the others hosted.
-            lock (work)
-            {
-                work.Add(Quietly(SweepAsync(runtime, output, cancellationToken)));
+            hosted.Tasks.Add(Quietly(SweepAsync(runtime, output, hosted.Stopping.Token)));
 
-                if (nodeFor is not null)
-                {
-                    work.Add(ContainAsync(
-                        () => nodeFor(project, server.Addresses, output, cancellationToken),
-                        $"{project.Name}: this machine's node",
-                        output));
-                }
+            if (nodeFor is not null)
+            {
+                hosted.Tasks.Add(ContainAsync(
+                    () => nodeFor(project, server.Addresses, output, hosted.Stopping.Token),
+                    $"{project.Name}: this machine's node",
+                    output));
+            }
+
+            lock (started)
+            {
+                started.Add(hosted);
             }
 
             return true;
+        }
+
+        // Stops one project's broker, its sweep and its node, and releases its store. What it
+        // does not do is touch the store: removal is withdrawal (`project remove` says so), and
+        // the one command that deletes says "destroy" in its name.
+        async Task StopAsync(Hosted hosted, string why)
+        {
+            lock (started)
+            {
+                _ = started.Remove(hosted);
+            }
+
+            await output.WriteLineAsync(
+                $"{hosted.Project.Name}: {why}; stopping its broker. Its store at " +
+                $"{hosted.Project.Store} is untouched.").ConfigureAwait(false);
+
+            await hosted.Stopping.CancelAsync().ConfigureAwait(false);
+
+            try
+            {
+                _ = await Task.WhenAll(hosted.Tasks).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // The sweep ending the way a cancelled sweep ends.
+            }
+
+            await hosted.Server.DisposeAsync().ConfigureAwait(false);
+            hosted.Stopping.Dispose();
         }
 
         try
@@ -393,47 +421,53 @@ public static class ServeCommand
                 "Agents connect with PARLEY_AGENT set; machines join with `parley up`. Ctrl+C stops them all.")
                 .ConfigureAwait(false);
 
-            lock (work)
-            {
-                // The console once, against the first started broker as its fallback -- it reads
-                // the manifest for the rest. Not contained here: the entry point contains it, and
-                // says what it does when a port is taken.
-                if (alongside is not null)
-                {
-                    work.Add(alongside(started[0].Server.Addresses, output, cancellationToken));
-                }
+            // What runs beside the brokers rather than inside one of them: the console once,
+            // against the first started broker as its fallback -- it reads the manifest for the
+            // rest -- and the watcher. The console is not contained here: the entry point
+            // contains it, and says what it does when a port is taken.
+            var beside = new List<Task<int>>();
 
-                if (reread is not null)
-                {
-                    work.Add(WatchAsync(reread, StartAsync, started, output, cancellationToken));
-                }
+            if (alongside is not null)
+            {
+                beside.Add(alongside(started[0].Server.Addresses, output, cancellationToken));
             }
 
-            // Awaited in rounds. A round is everything running when it began; the watcher adds
-            // to the list during a round, and everything it adds ends on the same token, so the
-            // round after the interrupt is the one that finds nothing new and stops.
-            while (true)
+            if (reread is not null)
             {
-                Task<int>[] round;
+                beside.Add(WatchAsync(reread, StartAsync, StopAsync, started, output, cancellationToken));
+            }
 
-                lock (work)
-                {
-                    round = [.. work];
-                }
+            // Until the interrupt. Nothing else ends this process: a project's own tasks end when
+            // it is stopped and the others carry on, so waiting on them would either end too
+            // early or need re-collecting every time the watcher changed the set.
+            try
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // The interrupt, which is how this is meant to end.
+            }
 
-                var codes = await Task.WhenAll(round).ConfigureAwait(false);
+            // Every source is linked to the interrupt, so everything is now ending; awaited so
+            // that a node's exit code still reaches the process's, and so that nothing is still
+            // writing when the servers below are disposed.
+            List<Task<int>> everything;
+
+            lock (started)
+            {
+                everything = [.. beside, .. started.SelectMany(h => h.Tasks)];
+            }
+
+            try
+            {
+                var codes = await Task.WhenAll(everything).ConfigureAwait(false);
 
                 failed += codes.Count(code => code != 0);
-
-                lock (work)
-                {
-                    if (work.Count == round.Length)
-                    {
-                        break;
-                    }
-
-                    work.RemoveRange(0, round.Length);
-                }
+            }
+            catch (OperationCanceledException)
+            {
+                // A sweep ending the way a cancelled sweep ends.
             }
         }
         finally
@@ -441,13 +475,31 @@ public static class ServeCommand
             // Everything started is stopped, including when one sweep threw. A broker left holding
             // a port after the process was told to stop is the failure Ctrl+C was just fixed for,
             // reappearing one level up.
-            foreach (var (_, _, server) in started)
+            Hosted[] remaining;
+
+            lock (started)
             {
-                await server.DisposeAsync().ConfigureAwait(false);
+                remaining = [.. started];
+            }
+
+            foreach (var hosted in remaining)
+            {
+                await hosted.Server.DisposeAsync().ConfigureAwait(false);
+                hosted.Stopping.Dispose();
             }
         }
 
         return failed > 0 ? Unavailable : 0;
+    }
+
+    /// <summary>One project this process is serving, and everything that lives beside its broker.</summary>
+    /// <param name="Project">What it is.</param>
+    /// <param name="Server">The broker, listening.</param>
+    /// <param name="Stopping">Ends this project alone; linked to the interrupt, which ends them all.</param>
+    private sealed record Hosted(ProjectSettings Project, ParleyServer Server, CancellationTokenSource Stopping)
+    {
+        /// <summary>Its sweep and, where there is one, its node.</summary>
+        public List<Task<int>> Tasks { get; } = [];
     }
 
     /// <summary>How often the manifest is looked at for a project named since the start.</summary>
@@ -458,27 +510,31 @@ public static class ServeCommand
     /// </remarks>
     internal static readonly TimeSpan WatchInterval = TimeSpan.FromSeconds(2);
 
-    /// <summary>Starts the broker of any project named in the manifest since this process began.</summary>
+    /// <summary>Keeps what is serving in step with what the manifest names.</summary>
     /// <param name="reread">Reads the manifest again, or returns null when it has not changed or cannot be read.</param>
     /// <param name="start">Starts one project, and says whether it came up.</param>
-    /// <param name="started">Every project already serving.</param>
-    /// <param name="output">Where to say what was started.</param>
+    /// <param name="stop">Stops one project, for the reason given.</param>
+    /// <param name="started">Every project serving right now.</param>
+    /// <param name="output">Where to say that a project was named since the start.</param>
     /// <param name="cancellationToken">Ends the watch.</param>
     /// <returns>Zero, always: a project that will not start is reported by <paramref name="start"/>.</returns>
     /// <remarks>
     /// <para>
-    /// <b>A project has its own broker, so naming one is asking for that broker now.</b> SPEC.md
-    /// §4.1 gives every project a store and an endpoint of its own and lets one process host them
-    /// all; the process that hosts them is this one, and before this it read the manifest once at
-    /// start. A project named from the terminal was therefore "not answering" until the next
-    /// logon, with the form politely saying so — which is documenting a gap rather than closing
-    /// it, and was said to be exactly that by the first person it happened to.
+    /// <b>A project has its own broker, so naming one is asking for that broker now — and
+    /// removing one is asking for it to stop.</b> SPEC.md §4.1 gives every project a store and
+    /// an endpoint of its own and lets one process host them all; the process that hosts them is
+    /// this one, and before this it read the manifest once at start. A project named from the
+    /// terminal was therefore "not answering" until the next logon, with the form politely
+    /// saying so — which is documenting a gap rather than closing it, and was said to be exactly
+    /// that by the first person it happened to. Removal followed for the same reason: the only
+    /// way to stop one project's broker was to restart every other project's with it.
     /// </para>
     /// <para>
-    /// Additive only. A project removed from the manifest keeps running: <c>project remove</c>
-    /// is withdrawal, not destruction, and says as much. A running project whose store or
+    /// Stopping is not deleting. A removed project's store stays where it is, as <c>project
+    /// remove</c> has always said; <c>remove --destroy</c> is the command that deletes, and it
+    /// waits for this to have stopped the broker first. A running project whose store or
     /// endpoint changed keeps what it started with, as <c>project set</c> says. And a project
-    /// that would not start is tried once per change to the manifest rather than once per tick,
+    /// that would not start is tried once per change to its entry rather than once per tick,
     /// because a store that is a directory does not become a file by being asked again every two
     /// seconds, and the failure line would fill the log.
     /// </para>
@@ -486,11 +542,14 @@ public static class ServeCommand
     private static async Task<int> WatchAsync(
         Func<IReadOnlyList<ProjectSettings>?> reread,
         Func<ProjectSettings, Task<bool>> start,
-        List<(ProjectSettings Project, BrokerRuntime Runtime, ParleyServer Server)> started,
+        Func<Hosted, string, Task> stop,
+        List<Hosted> started,
         TextWriter output,
         CancellationToken cancellationToken)
     {
-        var tried = new HashSet<ProjectSettings>();
+        // What was tried and did not start, so it is not tried again until its entry changes.
+        // Records compare by value, so a changed entry is a different member.
+        var failing = new HashSet<ProjectSettings>();
 
         try
         {
@@ -507,7 +566,9 @@ public static class ServeCommand
                 catch (Exception exception) when (exception is not OutOfMemoryException)
                 {
                     // An unreadable manifest is reported by every command that reads it, to the
-                    // person editing it. Said again here every two seconds it would be noise.
+                    // person editing it. Said again here every two seconds it would be noise --
+                    // and, more to the point, nothing is stopped on the strength of a file
+                    // somebody is halfway through editing.
                     current = null;
                 }
 
@@ -516,19 +577,35 @@ public static class ServeCommand
                     continue;
                 }
 
+                Hosted[] serving;
+
+                lock (started)
+                {
+                    serving = [.. started];
+                }
+
+                // Removed first, so a project removed and re-added under the same name in one
+                // edit is stopped and started rather than left as it was.
+                foreach (var hosted in serving)
+                {
+                    if (!current.Any(p => SameName(p, hosted.Project)))
+                    {
+                        await stop(hosted, "removed from the manifest").ConfigureAwait(false);
+                    }
+                }
+
+                _ = failing.RemoveWhere(f => !current.Any(p => SameName(p, f)));
+
                 foreach (var project in current)
                 {
-                    bool serving;
+                    bool already;
 
                     lock (started)
                     {
-                        serving = started.Exists(s =>
-                            string.Equals(s.Project.Name.Value, project.Name.Value, StringComparison.Ordinal));
+                        already = started.Exists(h => SameName(h.Project, project));
                     }
 
-                    // Records are compared by value, so a project whose entry was changed after
-                    // a failed start is tried again, and one left as it was is not.
-                    if (serving || !tried.Add(project))
+                    if (already || failing.Contains(project))
                     {
                         continue;
                     }
@@ -537,7 +614,10 @@ public static class ServeCommand
                         $"{project.Name}: named in the manifest since this started; starting it.")
                         .ConfigureAwait(false);
 
-                    _ = await start(project).ConfigureAwait(false);
+                    if (!await start(project).ConfigureAwait(false))
+                    {
+                        _ = failing.Add(project);
+                    }
                 }
             }
         }
@@ -547,6 +627,9 @@ public static class ServeCommand
         }
 
         return 0;
+
+        static bool SameName(ProjectSettings a, ProjectSettings b) =>
+            string.Equals(a.Name.Value, b.Name.Value, StringComparison.Ordinal);
     }
 
     /// <summary>Runs whatever wanted the port to be open, and survives it failing.</summary>

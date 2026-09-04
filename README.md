@@ -230,7 +230,11 @@ entirely normal. `parley serve` is the exception, and starts them all.
 **None of this is required.** A machine with no projects behaves exactly as it always has, its
 absence is never mentioned, and an explicit `--db`, `--broker` or environment variable still wins
 over anything a project says. `parley project remove` forgets an entry and deletes nothing — not
-the store, not the catalogue, not any repository's `.mcp.json` — and says so every time.
+the store, not the catalogue, not any repository's `.mcp.json` — and says so every time; the
+process serving the manifest stops that project's broker within seconds and leaves the rest
+running. `parley project remove <name> --destroy` is the deliberate version: it waits for the
+broker to stop, deletes the store and, unless another project shares it, the catalogue, and lists
+the repositories that were agents in it, whose `.mcp.json` still names it.
 
 The trade is that a user-level supervisor stops the broker at logout. For a machine somebody
 works at that is right — the agents are editor sessions, and there are none when nobody is

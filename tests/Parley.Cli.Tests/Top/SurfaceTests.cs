@@ -41,6 +41,25 @@ public sealed class SurfaceTests
         "PruneAsync",
     ];
 
+    [Fact]
+    public void The_terminal_never_destroys_a_project()
+    {
+        // Not an operator operation but the one thing `parley project` can delete: a project's
+        // store and catalogue, behind `remove --destroy`. The command takes it as a flag rather
+        // than a verb so a form here cannot reach it by naming an operation, and this checks that
+        // no form passes the flag either -- a store deleted behind a keystroke is the risk the
+        // list above exists to keep out, arrived at through configuration instead of the broker.
+        var offenders = Sources()
+            .Where(file => File.ReadAllText(file.FullName)
+                .Contains("destroy", StringComparison.OrdinalIgnoreCase))
+            .Select(file => file.Name)
+            .ToList();
+
+        Assert.True(
+            offenders.Count == 0,
+            $"destroying a project is off this surface, and it appears in: {string.Join(", ", offenders)}.");
+    }
+
     [Theory]
     [InlineData("RetireAsync")]
     [InlineData("ReinstateAsync")]

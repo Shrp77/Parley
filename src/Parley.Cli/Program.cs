@@ -65,7 +65,11 @@ const string Help = """
                         [--listen <url>]               given change, and an empty value
                         [--node-config <path>]         clears an optional one
                         [--description <text>]
-      parley project remove <name>                     forget how to reach one; deletes nothing
+      parley project remove <name> [--destroy]         forget how to reach one; deletes nothing
+                                                       without --destroy, which also stops its
+                                                       broker and deletes its store and
+                                                       catalogue, and names the repositories
+                                                       that were agents in it
 
       parley up [--node-config <path>]                 run this machine's node: report it to
                                                        the broker and start the agents on it
@@ -187,6 +191,7 @@ var selectNoRepositories = TakeFlag("--none");
 var hostNode = TakeFlag("--with-node");
 var hostConsole = TakeFlag("--with-console");
 var noConsole = TakeFlag("--no-console");
+var destroy = TakeFlag("--destroy");
 var databasePath = TakeOption("--db", "-d");
 var listenOn = TakeOption("--listen", "-l");
 var brokerAddress = TakeOption("--broker", "-b");
@@ -317,6 +322,17 @@ if (!ProjectManifest.TryRead(manifestPath, out var configuredProjects, out var m
 
 // Beside `serve` and the rest because managing configuration must not need a broker: the command
 // that fixes "nothing is configured" cannot require something configured.
+// --destroy is refused everywhere but here, by the same rule as --with-node: a flag accepted
+// and ignored is worse than one refused, and this one names a deletion.
+if (destroy && verb != "project")
+{
+    await Console.Error.WriteLineAsync(
+        "--destroy is only for `parley project remove`, which is the one command that deletes a "
+        + $"project's store. `parley {verb}` does not.").ConfigureAwait(false);
+
+    return Usage;
+}
+
 if (verb == "project")
 {
     return await ProjectCommand.RunAsync(
@@ -324,7 +340,8 @@ if (verb == "project")
         manifestPath,
         new ProjectFields(databasePath, listenOn, nodeConfigPath, projectDescription),
         Console.Out,
-        Console.Error).ConfigureAwait(false);
+        Console.Error,
+        destroy: destroy).ConfigureAwait(false);
 }
 
 // Beside `project` and above the selection below, because the console is not scoped to one

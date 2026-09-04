@@ -840,6 +840,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
         if (_ownsConnection)
         {
             await _connection.DisposeAsync().ConfigureAwait(false);
+
+            // Disposing returns the connection to Microsoft.Data.Sqlite's pool, which keeps the
+            // file open. For a broker stopped because its project was removed, that is the
+            // difference between `remove --destroy` deleting the store and being told something
+            // still has it open -- by this process, which has just said it stopped. This pool
+            // only: the other projects' connections are theirs.
+            SqliteConnection.ClearPool(_connection);
         }
     }
 }

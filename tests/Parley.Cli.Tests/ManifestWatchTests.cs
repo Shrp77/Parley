@@ -155,6 +155,74 @@ public sealed class ManifestWatchTests : IDisposable
         Assert.Equal(1, failures);
     }
 
+    [Fact]
+    public async Task A_project_removed_from_the_manifest_is_stopped_and_its_store_is_kept()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var orders = Project("orders");
+        var billing = Project("billing");
+
+        var manifest = new List<ProjectSettings> { orders, billing };
+        var changed = false;
+
+        var output = new StringWriter();
+
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        var serving = ServeCommand.RunAsync(
+            [orders, billing],
+            null,
+            output,
+            TextWriter.Null,
+            reread: () =>
+            {
+                if (!changed)
+                {
+                    return null;
+                }
+
+                changed = false;
+
+                return manifest;
+            },
+            cancellationToken: stopping.Token);
+
+        try
+        {
+            Assert.True(await AnswersAsync(billing.Endpoint, ct), "the second project never came up");
+
+            _ = manifest.Remove(billing);
+            changed = true;
+
+            // Gone within a few ticks: the port can be bound again, so the broker let go of it.
+            var freed = false;
+
+            for (var attempt = 0; attempt < 100 && !freed; attempt++)
+            {
+                await Task.Delay(100, ct);
+                freed = CanBind(billing.Endpoint);
+            }
+
+            Assert.True(freed, "the removed project's broker kept its port");
+
+            // And the other one is untouched by it.
+            Assert.True(await AnswersAsync(orders.Endpoint, ct, attempts: 5), "stopping one project stopped the other");
+        }
+        finally
+        {
+            await stopping.CancelAsync();
+        }
+
+        var code = await serving.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+        Assert.Equal(0, code);
+        Assert.Contains("billing: removed from the manifest; stopping its broker", output.ToString(), StringComparison.Ordinal);
+
+        // Stopping is not deleting. The store is exactly where it was.
+        Assert.True(File.Exists(billing.Store), "removal deleted the store");
+    }
+
     private static async Task<bool> AnswersAsync(string endpoint, CancellationToken cancellationToken, int attempts = 80)
     {
         for (var attempt = 0; attempt < attempts; attempt++)
