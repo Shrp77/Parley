@@ -1,4 +1,5 @@
 using Parley.Client;
+using Parley.Client.Seating;
 using Parley.Core;
 using Parley.Headless;
 using Terminal.Gui.Drawing;
@@ -215,14 +216,112 @@ internal sealed class Shell : Window
         // reads as three of them having been lost to the resize. Naming the other three outright
         // does not fit in forty columns, and a status line clipped mid-word would be the same
         // silent truncation this layout exists to avoid.
+        var actions = Actions();
+
+        var offered = actions.Count == 0
+            ? string.Empty
+            : "  " + string.Join("  ", actions.Select(a => $"{a.Key}: {a.Label}"));
+
         _status.Text = _stacked
-            ? $"{FocusPrefix}{NameOf(region)} ({FocusedRegion + 1} of {_regions.Count}, Tab)"
-            : FocusPrefix + NameOf(region);
+            ? $"{FocusPrefix}{NameOf(region)} ({FocusedRegion + 1} of {_regions.Count}, Tab){offered}"
+            : FocusPrefix + NameOf(region) + offered;
     }
 
     /// <summary>Moves focus to the next region, or the previous one.</summary>
     /// <param name="forwards">Whether to go forwards.</param>
     internal void Move(bool forwards) => Focus(FocusedRegion + (forwards ? 1 : -1));
+
+    /// <summary>What the focused region can do, and the letter that does each.</summary>
+    /// <returns>The actions, in the order the status line lists them.</returns>
+    /// <remarks>
+    /// Actions belong to the region that shows the thing acted on: a seat is taken from the agents
+    /// region, a question is answered from a transcript, a project is created or removed from the
+    /// projects region. That is User Story 2's rule, and having the region answer for its own
+    /// actions is what keeps the status line and the keys from drifting apart.
+    /// </remarks>
+    internal IReadOnlyList<RegionAction> Actions() => _regions[FocusedRegion] switch
+    {
+        AgentsRegion => Seats is null
+            ? []
+            : Held is null
+                ? [new RegionAction('j', AgentsRegion.JoinTitle, Join)]
+                : [new RegionAction('l', "Leave your seat", LeaveSeat)],
+        _ => [],
+    };
+
+    /// <summary>The seat this person holds, if they hold one.</summary>
+    internal SeatHold? Held { get; private set; }
+
+    /// <summary>Where seats are held, or null when this surface cannot seat anybody.</summary>
+    internal SeatBook? Seats { get; init; }
+
+    /// <summary>What the last action said, for the person and for a test.</summary>
+    internal string Said { get; private set; } = string.Empty;
+
+    /// <summary>Opens the dialog that takes a seat.</summary>
+    /// <returns>When the dialog has been opened.</returns>
+    internal Task Join()
+    {
+        if (App is not { } app || Seats is null || Projects.Selected is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        var dialog = Prompting.Text(
+            AgentsRegion.JoinTitle,
+            AgentsRegion.JoinQuestion,
+            problem: AgentsRegion.NameProblem);
+
+        var token = Prompting.Open(app, dialog);
+
+        dialog.Done += (_, typed) =>
+        {
+            Prompting.Close(app, token);
+
+            if (typed is null)
+            {
+                return;
+            }
+
+            Queue(async cancellationToken =>
+            {
+                var registry = await BrokerDirectory.ReadAsync(async () =>
+                    await new BrokerClient(_directory.ClientFor(project))
+                        .RegistryAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+
+                var (hold, said) = await AgentsRegion.JoinAsync(
+                    Seats, _directory, project, registry.Value, typed, cancellationToken)
+                    .ConfigureAwait(false);
+
+                Held = hold ?? Held;
+                Said = said;
+
+                await SelectAsync(project, cancellationToken).ConfigureAwait(false);
+            });
+        };
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Releases this person's seat, in every project at once.</summary>
+    /// <returns>When it has been released.</returns>
+    internal Task LeaveSeat()
+    {
+        if (Seats is null || Held is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        Said = AgentsRegion.Leave(Seats, Held.Seat);
+        Held = null;
+
+        if (Projects.Selected is { } project)
+        {
+            Queue(token => SelectAsync(project, token));
+        }
+
+        return Task.CompletedTask;
+    }
 
     /// <inheritdoc/>
     protected override bool OnKeyDown(Key key)
@@ -245,6 +344,19 @@ internal sealed class Shell : Window
             Move(forwards: false);
 
             return true;
+        }
+
+        // The letter shown beside an action in the status line takes it, when its region has focus.
+        // Every one of them is also a menu entry or a button the mouse reaches: contracts/surface.md
+        // is explicit that no action exists only as a key.
+        foreach (var action in Actions())
+        {
+            if (key == new Key(action.Key))
+            {
+                _ = action.Run();
+
+                return true;
+            }
         }
 
         return base.OnKeyDown(key);
@@ -406,3 +518,14 @@ internal sealed class Shell : Window
             TaskContinuationOptions.None,
             TaskScheduler.Default).Unwrap();
 }
+
+/// <summary>One thing the focused region can do, and the letter that does it.</summary>
+/// <param name="Key">The letter shown in the status line.</param>
+/// <param name="Label">What it is called, in the same words the dialog uses.</param>
+/// <param name="Run">Doing it.</param>
+/// <remarks>
+/// A record rather than a method per action so that the status line and the key handler read the
+/// same list. Two copies of "what can be done here" is how a surface comes to offer something no
+/// key takes, or take something nothing offered.
+/// </remarks>
+internal sealed record RegionAction(char Key, string Label, Func<Task> Run);

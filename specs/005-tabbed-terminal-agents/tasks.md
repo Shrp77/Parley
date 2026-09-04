@@ -255,7 +255,7 @@ store state, verified through a broker.
 **Independent Test**: each 004 acceptance scenario replayed through `Driving` with its
 broker-side assertions unchanged.
 
-- [ ] T029 [US2] Port `Seating.cs` into `src/Parley.Cli/Top/AgentsRegion.cs`: *Take a seat* opens
+- [X] T029 [US2] Port `Seating.cs` into `src/Parley.Cli/Top/AgentsRegion.cs`: *Take a seat* opens
       a dialog for the name; `SeatBook`'s guards refuse a name the registry holds for a real
       agent, with the reason; *Leave your seat* releases it; the region shows the seat within
       five seconds. The frame touches the seat on every draw so the idle rule runs on the
@@ -471,6 +471,34 @@ surface rule asks for.
 - [ ] T064 Walk `quickstart.md` end to end on the real deployment (the one this repository is
       registered with; memory: `parley-repo-registers-as-its-own-agent`) with the built tool,
       and note in this file anything the walk found that the tests did not.
+
+---
+
+## Where this stands
+
+**Phases 1, 2A, 2B and 3 are complete and green, and T029 of Phase 4 with them.** That is the MVP
+the strategy below names, plus the whole of the half that ships behaviour outside the surface.
+
+| Phase | Tasks | State |
+|---|---|---|
+| 1 Setup | T001–T004 | done |
+| 2A Spike and harness | T005–T007, T009, T010 | done except T009/T010, which belong with the entry point |
+| 2B Outside the toolkit | T011–T017 | done |
+| 3 US1 See and move | T018–T028 | done |
+| 4 US2 Take part | T029–T044 | T029 done; T030–T044 remain |
+| 5 US3 Add | T045–T049 | not started |
+| 6 US4 Withdraw | T050–T056 | not started |
+| 7 Polish | T057–T064 | not started |
+
+**What the next session picks up.** T030 is the transcript region's actions (what is waiting,
+answer, ask, tell), and the foundation for every remaining dialog is already in
+`src/Parley.Cli/Top/Prompting.cs` and the `RegionAction` list on `Shell` — a region says what it
+can do and the status line and the key handler read the same list, so adding an action is one
+entry rather than three edits.
+
+**`TopCommand.RunAsync` still drives 004's Spectre surface**, which is deliberate and is the
+"parity before addition" rule: the new shell is reachable only from tests until T040 has counted
+004's journeys against their replacements. T035 is where `RunAsync` flips and `ProjectMenu` goes.
 
 ---
 

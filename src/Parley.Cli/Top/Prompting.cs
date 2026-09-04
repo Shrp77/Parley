@@ -1,0 +1,233 @@
+using Terminal.Gui.App;
+using Terminal.Gui.Input;
+using Terminal.Gui.ViewBase;
+using Terminal.Gui.Views;
+
+namespace Parley.Cli.Top;
+
+/// <summary>
+/// The two dialogs every screen here is built from: one that asks for a line of text, and one
+/// that offers a choice.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Opened as sessions rather than run.</b> <c>Run</c> pumps the main loop until the dialog
+/// closes, which is convenient in production and impossible in a test — the test is the thing that
+/// would have to press the key that ends the loop. <c>Begin</c> puts the dialog on the session
+/// stack and returns, so keys reach it, the caller drives it, and the same code path serves both.
+/// </para>
+/// <para>
+/// <b>Validation runs as the person types.</b> 004 shipped forms whose every proposal was accepted
+/// by Enter and whose every answer was checked while it was being written, and that is what use
+/// added to it after its plan. A dialog that only checked on submission would be a step backwards
+/// wearing a new toolkit.
+/// </para>
+/// </remarks>
+internal static class Prompting
+{
+    /// <summary>What a dialog says on the button that goes ahead.</summary>
+    internal const string Confirm = "OK";
+
+    /// <summary>What a dialog says on the button that does not.</summary>
+    internal const string Cancel = "Cancel";
+
+    /// <summary>
+    /// Asks for one line of text, checked as it is typed.
+    /// </summary>
+    /// <param name="title">What the dialog is called.</param>
+    /// <param name="question">What is being asked for.</param>
+    /// <param name="proposal">What the field starts with, which Enter accepts.</param>
+    /// <param name="problem">
+    /// What is wrong with what has been typed, or null when nothing is. Called on every keystroke.
+    /// </param>
+    /// <returns>The dialog, not yet open.</returns>
+    internal static TextDialog Text(
+        string title,
+        string question,
+        string proposal = "",
+        Func<string, string?>? problem = null) =>
+        new(title, question, proposal, problem);
+
+    /// <summary>Offers a choice, with the safe answer first.</summary>
+    /// <param name="title">What the dialog is called.</param>
+    /// <param name="description">What is being decided, and what each choice would do.</param>
+    /// <param name="choices">The choices, safest first.</param>
+    /// <returns>The dialog, not yet open.</returns>
+    /// <remarks>
+    /// The first choice is the one Enter takes and is always the one that changes nothing. Every
+    /// destructive action on this surface is built from this plus a typed name, and an ordering
+    /// that put the destructive answer under the cursor would make the description decorative.
+    /// </remarks>
+    internal static ChoiceDialog Choose(
+        string title,
+        string description,
+        IReadOnlyList<string> choices) =>
+        new(title, description, choices);
+
+    /// <summary>Opens a dialog and returns the session it is running in.</summary>
+    /// <param name="app">The application to open it in.</param>
+    /// <param name="dialog">The dialog.</param>
+    /// <returns>The session, to be ended when the dialog is done with, or null if it refused to open.</returns>
+    internal static SessionToken? Open(IApplication app, View dialog)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        var token = app.Begin((IRunnable)dialog);
+
+        app.LayoutAndDraw(true);
+
+        return token;
+    }
+
+    /// <summary>Closes a dialog.</summary>
+    /// <param name="app">The application it is open in.</param>
+    /// <param name="token">The session it is running in.</param>
+    internal static void Close(IApplication app, SessionToken? token)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+
+        if (token is not null)
+        {
+            app.End(token);
+            app.LayoutAndDraw(true);
+        }
+    }
+}
+
+/// <summary>A dialog asking for one line of text, checked as it is typed.</summary>
+internal sealed class TextDialog : Dialog
+{
+    private readonly Func<string, string?>? _problem;
+    private readonly TextField _field;
+    private readonly Label _why;
+    private readonly Button _ok;
+
+    internal TextDialog(string title, string question, string proposal, Func<string, string?>? problem)
+    {
+        _problem = problem;
+
+        Title = title;
+        Width = Dim.Percent(70);
+        Height = 9;
+
+        var asked = new Label { Text = question, X = 1, Y = 0 };
+
+        _field = new TextField { X = 1, Y = 1, Width = Dim.Fill(2), Text = proposal };
+        _why = new Label { X = 1, Y = 2, Width = Dim.Fill(2), Text = string.Empty };
+        _ok = new Button { Title = Prompting.Confirm, X = 1, Y = 4, IsDefault = true };
+
+        var cancel = new Button { Title = Prompting.Cancel, X = Pos.Right(_ok) + 1, Y = 4 };
+
+        _field.TextChanged += (_, _) => Check();
+        _ok.Accepting += (_, args) => { args.Handled = true; Finish(taken: true); };
+        cancel.Accepting += (_, args) => { args.Handled = true; Finish(taken: false); };
+
+        Add(asked, _field, _why, _ok, cancel);
+        Check();
+    }
+
+    /// <summary>Raised when the person has answered or declined.</summary>
+    internal event EventHandler<string?>? Done;
+
+    /// <summary>What has been typed so far.</summary>
+    internal string Typed => _field.Text;
+
+    /// <summary>What is wrong with what has been typed, as shown.</summary>
+    internal string Problem => _why.Text;
+
+    /// <summary>Answers as if the person had pressed the button.</summary>
+    /// <param name="taken">Whether they went ahead.</param>
+    internal void Finish(bool taken) => Done?.Invoke(this, taken && _why.Text.Length == 0 ? _field.Text : null);
+
+    /// <inheritdoc/>
+    protected override bool OnKeyDown(Key key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+
+        if (key == Key.Esc)
+        {
+            Finish(taken: false);
+
+            return true;
+        }
+
+        return base.OnKeyDown(key);
+    }
+
+    /// <summary>Re-checks what has been typed and enables or refuses the button.</summary>
+    private void Check()
+    {
+        _why.Text = _problem?.Invoke(_field.Text) ?? string.Empty;
+        _ok.Enabled = _why.Text.Length == 0;
+    }
+}
+
+/// <summary>A dialog offering a choice, with the safe answer first.</summary>
+internal sealed class ChoiceDialog : Dialog
+{
+    private readonly ListView _choices;
+
+    internal ChoiceDialog(string title, string description, IReadOnlyList<string> choices)
+    {
+        ArgumentNullException.ThrowIfNull(choices);
+
+        Title = title;
+        Width = Dim.Percent(70);
+        Height = Dim.Percent(60);
+
+        var said = new Label
+        {
+            Text = description,
+            X = 1,
+            Y = 0,
+            Width = Dim.Fill(2),
+            Height = Dim.Fill(choices.Count + 2),
+        };
+
+        _choices = new ListView
+        {
+            X = 1,
+            Y = Pos.Bottom(said),
+            Width = Dim.Fill(2),
+            Height = choices.Count,
+        };
+
+        _choices.SetSource(new System.Collections.ObjectModel.ObservableCollection<string>([.. choices]));
+        _choices.SelectedItem = 0;
+        _choices.Accepting += (_, args) =>
+        {
+            args.Handled = true;
+            Done?.Invoke(this, Chosen);
+        };
+
+        Add(said, _choices);
+    }
+
+    /// <summary>Raised when the person has chosen, or declined to.</summary>
+    internal event EventHandler<string?>? Done;
+
+    /// <summary>Whichever choice the person is on.</summary>
+    internal string? Chosen =>
+        _choices.SelectedItem is { } at && _choices.Source is { } source && at >= 0 && at < source.Count
+            ? source.ToList()[at]?.ToString()
+            : null;
+
+    /// <summary>The list, so a test can pick a choice by its text.</summary>
+    internal ListView Choices => _choices;
+
+    /// <inheritdoc/>
+    protected override bool OnKeyDown(Key key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+
+        if (key == Key.Esc)
+        {
+            Done?.Invoke(this, null);
+
+            return true;
+        }
+
+        return base.OnKeyDown(key);
+    }
+}

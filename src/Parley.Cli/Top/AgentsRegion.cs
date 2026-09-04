@@ -1,3 +1,4 @@
+using Parley.Client;
 using Parley.Client.Rendering;
 using Parley.Client.Seating;
 using Parley.Core;
@@ -46,6 +47,21 @@ internal sealed class AgentsRegion : FrameView
 
     /// <summary>A person holding a seat rather than an agent.</summary>
     internal const string Seated = "seat";
+
+    /// <summary>What the dialog asking for a seat is called.</summary>
+    internal const string JoinTitle = "Take a seat";
+
+    /// <summary>What it says above the field.</summary>
+    internal const string JoinQuestion = "Join as:";
+
+    /// <summary>What is said when a seat has been taken.</summary>
+    internal const string Took = "Seated as ";
+
+    /// <summary>What is said when the person leaves and was not seated anywhere.</summary>
+    internal const string NotSeated = "You were not seated anywhere.";
+
+    /// <summary>What is said when a seat is released.</summary>
+    internal const string Left = "Left. ";
 
     /// <summary>What is shown before anything has been read.</summary>
     internal const string Nothing = "No agent is registered in this project, and its catalogue names none.";
@@ -178,6 +194,85 @@ internal sealed class AgentsRegion : FrameView
         // against the wrong one, and this region is where the destructive actions are.
         _list.SelectedItem = at >= 0 ? at + offset : _rows.Count > 0 ? offset : null;
     }
+
+    /// <summary>
+    /// Opens the dialog that seats a person, and seats them if they name themselves acceptably.
+    /// </summary>
+    /// <param name="seats">The book that holds seats.</param>
+    /// <param name="directory">The clients.</param>
+    /// <param name="project">The project to sit in.</param>
+    /// <param name="registry">What the broker's registry holds, or null when it could not be read.</param>
+    /// <param name="typed">The name the person gave.</param>
+    /// <param name="cancellationToken">Cancels the attach.</param>
+    /// <returns>The seat taken, and what to say about it.</returns>
+    /// <remarks>
+    /// <para>
+    /// A seat is the one thing this surface has that no operator operation grants. §10.2 lets an
+    /// operator retire, purge and force-conclude anybody, so a console has never been short of
+    /// power — what it could not do is <i>speak as</i> somebody, and a transcript recording words
+    /// an agent never said is a different kind of wrong from an operator visibly instructing it.
+    /// </para>
+    /// <para>
+    /// So that is the one thing guarded, and the guard is <c>SeatBook</c>'s rather than a copy of
+    /// it: it refuses a name the registry holds for anything whose adapter is not a seat, and
+    /// refuses outright when the registry could not be read. A guard that skipped the check on an
+    /// unreachable broker would pass hardest exactly when the deployment is least well known,
+    /// which is why the registry is passed in rather than shrugged off.
+    /// </para>
+    /// </remarks>
+    internal static async Task<(SeatHold? Hold, string Said)> JoinAsync(
+        SeatBook seats,
+        BrokerDirectory directory,
+        ProjectSettings project,
+        IReadOnlyList<AgentRecord>? registry,
+        string typed,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(seats);
+        ArgumentNullException.ThrowIfNull(directory);
+
+        if (!Seat.TryRead(typed, out var seat, out var why))
+        {
+            return (null, why ?? "That is not a name.");
+        }
+
+        var outcome = await seats
+            .TakeAsync(project, seat, registry, cancellationToken)
+            .ConfigureAwait(false);
+
+        return outcome.Seated
+            ? (outcome.Hold, Took + seat.Name.Value + ".")
+            : (null, outcome.Problem ?? "Not seated.");
+    }
+
+    /// <summary>Releases a person's seat in every project at once.</summary>
+    /// <param name="seats">The book holding it.</param>
+    /// <param name="seat">Whose seat.</param>
+    /// <returns>What to say about it.</returns>
+    /// <remarks>
+    /// Every project, not the one on screen. A person leaves a surface rather than a view, and
+    /// releasing only the project they happened to be looking at would leave them present in the
+    /// others with nothing anywhere saying so.
+    /// </remarks>
+    internal static string Leave(SeatBook seats, Seat seat)
+    {
+        ArgumentNullException.ThrowIfNull(seats);
+
+        var released = seats.Leave(seat);
+
+        return released == 0 ? NotSeated : $"{Left}{released} seat(s) released.";
+    }
+
+    /// <summary>What is wrong with a name somebody has typed, as they type it.</summary>
+    /// <param name="typed">What is in the field.</param>
+    /// <returns>The reason, or null when there is none.</returns>
+    /// <remarks>
+    /// Only the shape is checked here. Whether the registry already holds the name for a real
+    /// agent is a question for the broker and is asked by <c>SeatBook</c> when the seat is taken;
+    /// checking it on every keystroke would be a call per character.
+    /// </remarks>
+    internal static string? NameProblem(string typed) =>
+        Seat.TryRead(typed, out _, out var why) ? null : why ?? "not a name";
 
     /// <summary>How one row reads.</summary>
     /// <param name="row">The row.</param>
