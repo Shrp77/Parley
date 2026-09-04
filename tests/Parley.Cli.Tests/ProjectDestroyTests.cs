@@ -169,6 +169,45 @@ public sealed class ProjectDestroyTests : IDisposable
         Assert.Contains("billing: removed from the manifest; stopping its broker", output.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task A_broker_the_serving_process_does_not_own_is_reported_and_left_alone()
+    {
+        // Lens 1 probe, and the adversarial reading of "wait for it to stop": a broker started
+        // by hand on the entry's endpoint never stops when the entry goes, because nothing told
+        // it to. The command must not kill it, must not delete a store it is still using, and
+        // must say so -- and the entry is gone regardless, which it must also say.
+        var ct = TestContext.Current.CancellationToken;
+
+        var store = Path.Combine(_directory, "byhand.db");
+
+        using var byHand = BrokerProcess.Start(store);
+
+        var project = new ProjectSettings(ProjectName.Create("byhand"), store, byHand.Address, null, null);
+
+        ProjectManifest.Write(Manifest, [project]);
+
+        var started = DateTime.UtcNow;
+        var (code, output, error) = await RemoveAsync("byhand", destroy: true);
+
+        Assert.Equal(69, code);
+        Assert.Contains("still answers", error, StringComparison.Ordinal);
+        Assert.Contains("Nothing was deleted", error, StringComparison.Ordinal);
+        Assert.Contains("Removed 'byhand'", output, StringComparison.Ordinal);
+        Assert.True(File.Exists(store), "the store of a broker still running was deleted");
+
+        // It waited for the serving process rather than deciding at once, and gave up in bounded
+        // time rather than for ever.
+        var waited = DateTime.UtcNow - started;
+
+        Assert.True(waited > TimeSpan.FromSeconds(10) && waited < TimeSpan.FromSeconds(40), $"waited {waited}");
+
+        Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
+        Assert.Empty(left);
+
+        // And the broker is untouched by any of it.
+        Assert.True(await AnswersAsync(byHand.Address, ct, attempts: 3), "the by-hand broker was stopped");
+    }
+
     private async Task<(int Code, string Out, string Error)> RemoveAsync(string name, bool destroy)
     {
         var output = new StringWriter();
