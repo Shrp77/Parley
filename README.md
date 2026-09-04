@@ -229,7 +229,10 @@ entirely normal. `parley serve` is the exception, and starts them all.
 
 **None of this is required.** A machine with no projects behaves exactly as it always has, its
 absence is never mentioned, and an explicit `--db`, `--broker` or environment variable still wins
-over anything a project says. `parley project remove` forgets an entry and deletes nothing — not
+over anything a project says. `parley project set <name>` changes what an entry says — only the
+fields given, and an empty value clears an optional one — and the process serving the manifest
+restarts that project on its new store, endpoint or catalogue within seconds; a description
+changes nothing running. `parley project remove` forgets an entry and deletes nothing — not
 the store, not the catalogue, not any repository's `.mcp.json` — and says so every time; the
 process serving the manifest stops that project's broker within seconds and leaves the rest
 running. `parley project remove <name> --destroy` is the deliberate version: it waits for the
