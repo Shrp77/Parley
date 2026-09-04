@@ -35,6 +35,11 @@ const string Help = """
                                                        this machine's node in it, and
                                                        --with-console the operator's console
 
+      parley top                                       a deployment from this terminal: the
+                                                       projects, who is in each, and their
+                                                       conversations as transcripts. Needs a
+                                                       terminal, not a browser
+
       parley console [<url>]                           the operator's console in a browser:
                                                        every project, the agents in each, and
                                                        conversations as a transcript that says
@@ -43,17 +48,28 @@ const string Help = """
 
       parley autostart install [--db <path>]           start the broker when you log in, with
                                [--node-config <path>]  this machine's node and the console.
-                               [--console <url>]       --no-console leaves the console out
-                               [--no-console]
+                               [--console <url>]       With projects named and no --db, the
+                               [--no-console]          entry serves every project in the
+                                                       manifest, each with its own node.
+                                                       --no-console leaves the console out
       parley autostart remove                          stop doing that
-      parley autostart status                          say whether it is set up
+      parley autostart status                          say whether it is set up, and what it
+                                                       was registered to run
 
       parley project list                              what this machine is configured for
       parley project add <name> --db <path>            name a deployment, so commands stop
                         --listen <url>                 being told its paths one at a time
                         [--node-config <path>]
                         [--description <text>]
-      parley project remove <name>                     forget how to reach one; deletes nothing
+      parley project set <name> [--db <path>]          change what one says; only the fields
+                        [--listen <url>]               given change, and an empty value
+                        [--node-config <path>]         clears an optional one
+                        [--description <text>]
+      parley project remove <name> [--destroy]         forget how to reach one; deletes nothing
+                                                       without --destroy, which also stops its
+                                                       broker and deletes its store and
+                                                       catalogue, and names the repositories
+                                                       that were agents in it
 
       parley up [--node-config <path>]                 run this machine's node: report it to
                                                        the broker and start the agents on it
@@ -175,6 +191,7 @@ var selectNoRepositories = TakeFlag("--none");
 var hostNode = TakeFlag("--with-node");
 var hostConsole = TakeFlag("--with-console");
 var noConsole = TakeFlag("--no-console");
+var destroy = TakeFlag("--destroy");
 var databasePath = TakeOption("--db", "-d");
 var listenOn = TakeOption("--listen", "-l");
 var brokerAddress = TakeOption("--broker", "-b");
@@ -305,6 +322,17 @@ if (!ProjectManifest.TryRead(manifestPath, out var configuredProjects, out var m
 
 // Beside `serve` and the rest because managing configuration must not need a broker: the command
 // that fixes "nothing is configured" cannot require something configured.
+// --destroy is refused everywhere but here, by the same rule as --with-node: a flag accepted
+// and ignored is worse than one refused, and this one names a deletion.
+if (destroy && verb != "project")
+{
+    await Console.Error.WriteLineAsync(
+        "--destroy is only for `parley project remove`, which is the one command that deletes a "
+        + $"project's store. `parley {verb}` does not.").ConfigureAwait(false);
+
+    return Usage;
+}
+
 if (verb == "project")
 {
     return await ProjectCommand.RunAsync(
@@ -312,7 +340,8 @@ if (verb == "project")
         manifestPath,
         new ProjectFields(databasePath, listenOn, nodeConfigPath, projectDescription),
         Console.Out,
-        Console.Error).ConfigureAwait(false);
+        Console.Error,
+        destroy: destroy).ConfigureAwait(false);
 }
 
 // Beside `project` and above the selection below, because the console is not scoped to one
@@ -368,6 +397,35 @@ if (verb == "console")
     return 0;
 }
 
+// Beside `console` and for the same reason: `top` is not scoped to one project either — its
+// first screen is the list of them, and it re-reads the manifest while it runs so a project named
+// elsewhere appears without restarting it.
+//
+// The difference from `console` is where it draws. A console needs a browser, which is a thing a
+// machine may not have and a person may not be at; this needs a terminal, which is where the
+// operator already is. SPEC.md §17 question 15 is why either exists: an agent attached through
+// somebody's editor window was started by nobody, so nothing can hand it a turn, and a person
+// needs somewhere to take part that is not an editor.
+if (verb == "top")
+{
+    if (!string.IsNullOrWhiteSpace(projectName))
+    {
+        await Console.Error.WriteLineAsync(
+            $"parley top is not scoped to one project, so --project {projectName} was not used. "
+            + "Every project this machine knows is on its first screen.").ConfigureAwait(false);
+    }
+
+    // The same fallback the console offers, so the two surfaces list the same deployments on a
+    // machine that has named none. A person who can reach a broker from `parley registry` and not
+    // from here would reasonably conclude this surface was broken.
+    var topFallback = ProjectResolution
+        .Endpoint(brokerAddress, Environment.GetEnvironmentVariable, null).Value;
+
+    return await Parley.Cli.Top.TopCommand
+        .RunAsync(manifestPath, topFallback)
+        .ConfigureAwait(false);
+}
+
 // `serve` first and separately, because it is the one command that is not a client. Everything
 // below it needs a broker to talk to; this is the broker.
 //
@@ -401,20 +459,21 @@ if (verb == "serve" && rest.Length == 0)
     // waiting on CancellationToken.None never heard about it. Pressing Ctrl+C again could not
     // help either, because the handler stayed registered and kept cancelling the signal.
     //
-    // A node belongs to one broker, so hosting one here needs the ambiguity resolved rather than
-    // guessed -- the same rule every other command follows, arriving at the one command that is
-    // allowed to serve everything at once. Refused with the fix in it, because the alternative is
-    // a machine silently joined to whichever deployment happened to be listed first.
-    if (hostNode && serving.Count > 1)
+    // A catalogue belongs to a project (SPEC.md §4.1), so one named on the command line needs
+    // the project it is for. With several served, each hosts a node from its own manifest entry
+    // and an explicit catalogue has nowhere to go -- refused with the fix in it, because the
+    // alternative is a machine silently joined to whichever deployment happened to be listed
+    // first.
+    if (hostNode && serving.Count > 1 && nodeConfigPath is not null)
     {
         var serves = string.Create(
             CultureInfo.InvariantCulture,
-            $"--with-node needs one project, and this process would serve {serving.Count}.");
+            $"--node-config names one catalogue, and this process would serve {serving.Count} projects.");
 
         await Console.Error.WriteLineAsync(
-            serves + " A node joins one broker because a machine has one identity " +
-            "(SPEC.md §4.1.1). Name the deployment this machine belongs to with --project, or " +
-            "run `parley up` beside the broker instead.").ConfigureAwait(false);
+            serves + " A catalogue belongs to a project (SPEC.md §4.1): put it in the project's " +
+            "manifest entry with `parley project add <name> ... --node-config <path>`, or name " +
+            "the one deployment it is for with --project.").ConfigureAwait(false);
 
         return Config;
     }
@@ -452,6 +511,52 @@ if (verb == "serve" && rest.Length == 0)
 
             return await NodeCommand.RunAsync(
                 channel, addresses[0], hostedFrom, reporting, stopping).ConfigureAwait(false);
+        }
+
+        // One project keeps every resolution `up` has -- the flag, the variable, the project, the
+        // file in the working directory -- because that is a person at a terminal. Several is a
+        // manifest being served, usually by a supervisor, and there the only catalogue a project
+        // can have is the one its entry names.
+        async Task<int> HostingNodeFor(
+            ProjectSettings project,
+            IReadOnlyList<string> addresses,
+            TextWriter reporting,
+            CancellationToken stopping)
+        {
+            // The one project this started with, by name, not any project when there happened to
+            // be one: a second named while this runs is a manifest being served, whatever the
+            // count was at the start. By name and not by identity, because the watcher restarts a
+            // project on a changed entry as a new record -- and a lone project whose catalogue is
+            // in PARLEY_NODE_CONFIG was, by identity, a different project after that restart, told
+            // it named no catalogue, and silently stopped starting agents. Found by probing.
+            if (serving.Count == 1
+                && string.Equals(project.Name.Value, serving[0].Name.Value, StringComparison.Ordinal))
+            {
+                return await HostingNode(addresses, reporting, stopping).ConfigureAwait(false);
+            }
+
+            if (project.NodeConfig is not { Length: > 0 } catalogue)
+            {
+                // Said per project, because a manifest in which nothing is catalogued looks
+                // exactly like one in which everything is, until a question to a repository
+                // nobody has open waits out its window.
+                await reporting.WriteLineAsync(
+                    $"{project.Name}: names no catalogue, so this machine starts nothing for it. "
+                    + "`parley project add` with --node-config says what it may start.")
+                    .ConfigureAwait(false);
+
+                return 0;
+            }
+
+            var from = Path.GetFullPath(catalogue);
+
+            await reporting.WriteLineAsync(
+                $"{project.Name}: hosting this machine's node, from {from}.").ConfigureAwait(false);
+
+            using var channel = GrpcChannel.ForAddress(addresses[0]);
+
+            return await NodeCommand.RunAsync(
+                channel, addresses[0], from, reporting, stopping).ConfigureAwait(false);
         }
 
         // Contained here rather than left to the broker's own containment, which reports whatever
@@ -512,14 +617,37 @@ if (verb == "serve" && rest.Length == 0)
         // the serve refuses to host one across several projects; a console reads this machine's
         // manifest and is at its best across all of them. Handing both through the one hook is
         // what made `serve --with-console` over two projects throw rather than start.
+        // The manifest, read again whenever its stamp moves, so a project named while this runs
+        // gets its broker within seconds rather than at the next logon. Only when the manifest
+        // is what is being served: a process told one project by name serves that one, and a
+        // machine that named nothing has no file to watch.
+        var manifestStamp = File.Exists(manifestPath) ? File.GetLastWriteTimeUtc(manifestPath) : DateTime.MinValue;
+
+        IReadOnlyList<ProjectSettings>? RereadManifest()
+        {
+            var stamp = File.Exists(manifestPath) ? File.GetLastWriteTimeUtc(manifestPath) : DateTime.MinValue;
+
+            if (stamp == manifestStamp)
+            {
+                return null;
+            }
+
+            manifestStamp = stamp;
+
+            return ProjectManifest.TryRead(manifestPath, out var current, out _) ? current : null;
+        }
+
+        var watching = string.IsNullOrWhiteSpace(projectName) && serving.Count > 0;
+
         return serving.Count > 0
             ? ServeCommand.RunAsync(
                 serving,
                 logPath,
                 Console.Out,
                 Console.Error,
-                hostNode ? HostingNode : null,
+                hostNode ? HostingNodeFor : null,
                 hostConsole ? HostingConsole : null,
+                watching ? RereadManifest : null,
                 token)
             : ServeCommand.RunAsync(
                 databasePath ?? fromEnvironment,
@@ -531,6 +659,95 @@ if (verb == "serve" && rest.Length == 0)
                 hostConsole ? HostingConsole : null,
                 token);
     }).ConfigureAwait(false);
+}
+
+// Beside `serve`, because it installs `serve`. It is not a client either: registering a
+// scheduled task or writing a unit file needs no broker, and needing one would make the command
+// that fixes "no broker is running" require a broker.
+//
+// Above the selection below, and that is new. Every other command acts on one deployment and
+// refuses to choose between several; this one installs the process SPEC.md §4.1 says may host
+// them all, so several configured and none named is not ambiguity here -- it is the case. Told
+// nothing explicit, it installs an entry that serves the manifest; told --db or --project, it
+// installs one deployment by explicit paths, exactly as it always did.
+//
+// Its address is resolved here rather than through the endpoint resolution below, and the
+// difference is the whole reason. That resolution answers "where do I connect", so it consults
+// PARLEY_BROKER -- which on a machine whose agents talk to a broker elsewhere holds somebody
+// else's host. Feeding that to autostart installs a supervisor that tells a local broker to bind
+// a remote address, and the failure surfaces at the next logon, inside a scheduled task, where
+// nobody is watching. Where a broker listens comes from --listen or from the project, and from
+// nothing else.
+if (verb == "autostart" && rest.Length == 1)
+{
+    // --db and the variable are explicit; a project named is explicit; a manifest with projects
+    // and nothing said is the manifest being served. Precedence as §4.1 states it: an explicit
+    // path or variable still wins over anything a project says.
+    var explicitStore = databasePath
+        ?? Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable);
+
+    ProjectSettings? named = null;
+
+    if (!string.IsNullOrWhiteSpace(projectName)
+        && !ProjectResolution.TrySelect(projectName, configuredProjects, out named, out var whyNot))
+    {
+        await Console.Error.WriteLineAsync(whyNot).ConfigureAwait(false);
+        return Config;
+    }
+
+    var servesManifest = explicitStore is null && named is null && configuredProjects.Count > 0;
+
+    // Refused rather than ignored. An entry serving three projects has three endpoints and up to
+    // three catalogues, all in the manifest; a flag that names one of either has nowhere to go,
+    // and an install that accepted it and wrote none of it would be the flag-accepted-and-ignored
+    // failure this file already refuses elsewhere.
+    if (servesManifest && (listenOn is not null || nodeConfigPath is not null))
+    {
+        await Console.Error.WriteLineAsync(
+            "--listen and --node-config describe one deployment, and this entry would serve every "
+            + $"project in {manifestPath}. Each project's endpoint and catalogue live in its "
+            + "manifest entry (`parley project add <name> --listen <url> --node-config <path>`). "
+            + "To install an entry for one deployment instead, name it with --project or --db.")
+            .ConfigureAwait(false);
+
+        return Usage;
+    }
+
+    var entryStore = explicitStore ?? named?.Store;
+    var listenAddress = listenOn ?? named?.Endpoint;
+
+    // A catalogue nobody named is used only if it is actually there. Every other resolution ends
+    // at `node.json`, which is the right answer for a command typed in a directory and the wrong
+    // one to write into a logon task: relative there means "wherever the supervisor happens to
+    // start", which is not a place anybody put a file. Naming one explicitly is taken at its
+    // word, missing file included -- it may be written before the next logon, and refusing would
+    // make installing depend on the order two setup steps were done in.
+    var entryCatalogue = ProjectResolution.NodeConfig(
+        nodeConfigPath, Environment.GetEnvironmentVariable, named);
+
+    var hostFrom = servesManifest
+        ? null
+        : entryCatalogue.Source == ValueSource.Default
+            ? File.Exists(entryCatalogue.Value) ? entryCatalogue.Value : null
+            : entryCatalogue.Value;
+
+    // On by default, which is the whole point of it being here. A person taking part in a
+    // deployment does it through the console: SPEC.md §17 question 15 records that an agent
+    // attached through somebody's window is the one thing nothing can give a turn to, so a
+    // console that has to be remembered separately is the half of the deployment that works
+    // for agents and not for people. `--no-console` is the way out, and it is a flag rather
+    // than an absence so that choosing it is visible in the entry `autostart status` prints.
+    var consoleFor = noConsole ? null : consoleAt;
+
+    return await AutostartCommand.RunAsync(
+        rest[0],
+        entryStore,
+        listenAddress,
+        hostFrom,
+        consoleFor,
+        servesManifest ? manifestPath : null,
+        Console.Out,
+        Console.Error).ConfigureAwait(false);
 }
 
 // Selection is refused rather than guessed, for every command that acts on one deployment.
@@ -546,49 +763,6 @@ if (!ProjectResolution.TrySelect(projectName, configuredProjects, out var projec
 var resolvedStore = ProjectResolution.Store(databasePath, Environment.GetEnvironmentVariable, project);
 var resolvedEndpoint = ProjectResolution.Endpoint(brokerAddress, Environment.GetEnvironmentVariable, project);
 var resolvedNodeConfig = ProjectResolution.NodeConfig(nodeConfigPath, Environment.GetEnvironmentVariable, project);
-
-// Beside `serve`, because it installs `serve` and takes the same --db. It is not a client
-// either: registering a scheduled task or writing a unit file needs no broker, and needing one
-// would make the command that fixes "no broker is running" require a broker.
-//
-// Its address is resolved here rather than taken from `resolvedEndpoint`, and the difference is
-// the whole reason this line exists. `resolvedEndpoint` answers "where do I connect", so it
-// consults PARLEY_BROKER — which on a machine whose agents talk to a broker elsewhere holds
-// somebody else's host. Feeding that to autostart installs a supervisor that tells a local broker
-// to bind a remote address, and the failure surfaces at the next logon, inside a scheduled task,
-// where nobody is watching. Where a broker listens comes from --listen or from the project, and
-// from nothing else.
-if (verb == "autostart" && rest.Length == 1)
-{
-    var listenAddress = listenOn ?? project?.Endpoint;
-
-    // A catalogue nobody named is used only if it is actually there. Every other resolution ends
-    // at `node.json`, which is the right answer for a command typed in a directory and the wrong
-    // one to write into a logon task: relative there means "wherever the supervisor happens to
-    // start", which is not a place anybody put a file. Naming one explicitly is taken at its
-    // word, missing file included -- it may be written before the next logon, and refusing would
-    // make installing depend on the order two setup steps were done in.
-    var hostFrom = resolvedNodeConfig.Source == ValueSource.Default
-        ? File.Exists(resolvedNodeConfig.Value) ? resolvedNodeConfig.Value : null
-        : resolvedNodeConfig.Value;
-
-    // On by default, which is the whole point of it being here. A person taking part in a
-    // deployment does it through the console: SPEC.md §17 question 15 records that an agent
-    // attached through somebody's window is the one thing nothing can give a turn to, so a
-    // console that has to be remembered separately is the half of the deployment that works
-    // for agents and not for people. `--no-console` is the way out, and it is a flag rather
-    // than an absence so that choosing it is visible in the entry `autostart status` prints.
-    var consoleFor = noConsole ? null : consoleAt;
-
-    return await AutostartCommand.RunAsync(
-        rest[0],
-        resolvedStore.Value,
-        listenAddress,
-        hostFrom,
-        consoleFor,
-        Console.Out,
-        Console.Error).ConfigureAwait(false);
-}
 
 // Beside `serve` and `autostart` because it is not a client either. It writes launch
 // configurations, node entries and the placeholder peers block — files on this machine, against

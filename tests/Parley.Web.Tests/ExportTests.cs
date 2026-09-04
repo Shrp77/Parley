@@ -1,6 +1,6 @@
 using System.Net;
 using Parley.Core;
-using Parley.Web.Rendering;
+using Parley.Client.Rendering;
 using Xunit;
 
 namespace Parley.Web.Tests;

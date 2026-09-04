@@ -1,3 +1,5 @@
+using Parley.Client.Seating;
+
 namespace Parley.Web.Seating;
 
 /// <summary>

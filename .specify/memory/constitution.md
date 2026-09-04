@@ -87,10 +87,18 @@ writing the malicious case and watching it be admitted, not by reading a guard a
 it sound. A new invariant is verified by reconstructing the defect it exists for and
 watching the check fail.
 
-**Review runs to convergence, not to a fixed count.** Three lenses — correctness and
-concurrency; security and data integrity; API surface and maintainability — rotated after
-the last edit rather than alongside it, repeated until a full rotation finds nothing above
-low severity. A pass that finds something means the branch was not green.
+**Review is three consecutive clean runs per lens, not a rotation to convergence.** Three
+lenses — correctness and concurrency; security and data integrity; API surface and
+maintainability — run after the last edit rather than alongside it. A finding above low
+severity resets that lens to zero; the lenses are independent and all three must reach three.
+Each run must probe something the previous runs did not, or it is one run repeated.
+
+Convergence-by-rotation was the earlier rule and was measured to be weaker: on
+`004-terminal-surface` five rotation rounds reported convergence, and the counter's first six
+runs then found four more defects. The running count belongs in `REVIEW-LEDGER.md`, which is
+untracked because it is the state of one checkout's review rather than a fact about the
+protocol, and which logs clean runs as well as findings — a ledger of findings alone cannot
+distinguish an area that held from one nobody probed.
 
 **The repository is public and its history goes with it.** No trace of any originating
 private project may appear in any commit. Placeholder agents are `orders`, `billing` and

@@ -1,6 +1,7 @@
 using Parley.Configuration;
 using Parley.Core;
 using Xunit;
+using static Parley.Cli.Tests.Loopback;
 
 namespace Parley.Cli.Tests;
 
@@ -18,9 +19,10 @@ namespace Parley.Cli.Tests;
 /// </para>
 /// <para>
 /// <b>Hosting is opt-in and refused rather than guessed.</b> §4.1 lets one process serve many
-/// projects, and §4.1.1 gives a machine one identity — so a process serving three brokers cannot
-/// work out which deployment this machine belongs to, and picking the first would join it to one
-/// nobody named.
+/// projects and names a catalogue per project, so a process serving three brokers hosts a node in
+/// each project whose entry names one. What it will not do is take one catalogue from the command
+/// line and pick a project for it: that would join this machine to whichever deployment happened
+/// to be listed first, which is one nobody named.
 /// </para>
 /// </remarks>
 public sealed class HostedNodeTests : IDisposable
@@ -48,45 +50,189 @@ public sealed class HostedNodeTests : IDisposable
         new(ProjectName.Create(name), store, endpoint, null, null);
 
     [Fact]
-    public void Serving_several_projects_refuses_to_host_a_node_rather_than_choosing_one()
+    public void One_catalogue_offered_to_several_projects_is_refused_rather_than_placed()
     {
         // The refusal has to name the fix, because the person meeting it has just installed
-        // something and is not going to read §4.1.1 to find out why one flag was rejected.
+        // something and is not going to read §4.1 to find out why one flag was rejected. And it
+        // must come before anything is opened -- no store touched, no port bound -- because the
+        // failure this prevents is not an error message: it is a machine quietly joined to
+        // whichever project happened to be listed first. The ports are ones nothing listens on,
+        // so a refusal that came too late would show up as a bound port rather than pass by luck.
         ProjectManifest.Write(
             ManifestPath,
             [
-                Project("orders", Path.Combine(_directory, "a.db"), "http://127.0.0.1:51707"),
-                Project("billing", Path.Combine(_directory, "b.db"), "http://127.0.0.1:51708"),
+                Project("orders", Path.Combine(_directory, "a.db"), "http://127.0.0.1:1"),
+                Project("billing", Path.Combine(_directory, "b.db"), "http://127.0.0.1:2"),
             ]);
 
+        var catalogue = Path.Combine(_directory, "node.json");
+
         var (code, error) = ToolProcess.Run(
-            [(ProjectManifest.PathVariable, ManifestPath)], "serve", "--with-node");
+            [(ProjectManifest.PathVariable, ManifestPath)],
+            "serve", "--with-node", "--node-config", catalogue);
 
         Assert.Equal(78, code);
+        Assert.Contains("--node-config", error, StringComparison.Ordinal);
         Assert.Contains("--project", error, StringComparison.Ordinal);
-        Assert.Contains("--with-node", error, StringComparison.Ordinal);
+        Assert.Contains("manifest entry", error, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(_directory, "a.db")), "the first project's store was opened");
+        Assert.False(File.Exists(Path.Combine(_directory, "b.db")), "the second project's store was opened");
     }
 
     [Fact]
-    public void Hosting_a_node_never_silently_serves_a_deployment_that_was_not_named()
+    public async Task Serving_several_projects_hosts_a_node_where_a_catalogue_is_named()
     {
-        // The failure this prevents is not an error message: it is a machine quietly joined to
-        // whichever project happened to be listed first, answering for a deployment nobody asked
-        // it to join. So the refusal must come before anything is opened -- no store touched, no
-        // port bound -- which is what the exit code being a configuration error asserts.
+        // The rule the refusal above is the other half of: with several projects, each one whose
+        // entry names a catalogue gets this machine's node and each one that does not is told so,
+        // by name. Read from the real tool's output, because the placement lives in the entry
+        // point and not in the command the in-process test drives. The catalogue file does not
+        // exist, and need not: what is asserted is where the node was placed, and a node that
+        // then stops for want of its file is contained and says so on the next line.
+        var ct = TestContext.Current.CancellationToken;
+
         ProjectManifest.Write(
             ManifestPath,
             [
-                Project("orders", Path.Combine(_directory, "a.db"), "http://127.0.0.1:51707"),
-                Project("billing", Path.Combine(_directory, "b.db"), "http://127.0.0.1:51708"),
+                new ProjectSettings(
+                    ProjectName.Create("orders"),
+                    Path.Combine(_directory, "a.db"),
+                    $"http://127.0.0.1:{FreePort()}",
+                    Path.Combine(_directory, "node.json"),
+                    null),
+                Project("billing", Path.Combine(_directory, "b.db"), $"http://127.0.0.1:{FreePort()}"),
             ]);
 
-        var (code, _) = ToolProcess.Run(
+        using var process = ToolProcess.Launch(
             [(ProjectManifest.PathVariable, ManifestPath)], "serve", "--with-node");
 
-        Assert.Equal(78, code);
-        Assert.False(File.Exists(Path.Combine(_directory, "a.db")), "the first project's store was opened");
-        Assert.False(File.Exists(Path.Combine(_directory, "b.db")), "the second project's store was opened");
+        var seen = new List<string>();
+
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(20);
+
+            while (DateTime.UtcNow < deadline && !(Placed(seen) && Declined(seen)))
+            {
+                var line = await process.StandardOutput.ReadLineAsync(ct).AsTask()
+                    .WaitAsync(deadline - DateTime.UtcNow, ct);
+
+                if (line is null)
+                {
+                    break;
+                }
+
+                seen.Add(line);
+            }
+        }
+        catch (TimeoutException)
+        {
+            // Asserted on below, with everything that was read.
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                _ = process.WaitForExit(5000);
+            }
+        }
+
+        var said = string.Join(Environment.NewLine, seen);
+
+        Assert.True(Placed(seen), $"orders was not offered the node. The tool said:{Environment.NewLine}{said}");
+        Assert.True(Declined(seen), $"billing was not told it names no catalogue. The tool said:{Environment.NewLine}{said}");
+
+        static bool Placed(List<string> lines) =>
+            lines.Exists(l => l.Contains("orders: hosting this machine's node", StringComparison.Ordinal));
+
+        static bool Declined(List<string> lines) =>
+            lines.Exists(l => l.Contains("billing: names no catalogue", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_lone_projects_environment_catalogue_survives_the_watcher_restarting_it()
+    {
+        // Lens 1 probe. A machine with one project and its catalogue in PARLEY_NODE_CONFIG --
+        // the documented resolution for one project, and this machine's own arrangement --
+        // hosts its node from the variable at start. The watcher then restarts the project on a
+        // changed entry. If "the one project" is recognised by object identity, the restarted
+        // one is a different record, falls to the per-entry rule, names no catalogue, and the
+        // machine silently stops starting agents until the next logon.
+        var ct = TestContext.Current.CancellationToken;
+
+        var catalogue = Path.Combine(_directory, "env-node.json");
+        await File.WriteAllTextAsync(catalogue, """{"agents":{}}""", ct);
+
+        var before = Project("orders", Path.Combine(_directory, "a.db"), $"http://127.0.0.1:{FreePort()}");
+        var after = Project("orders", Path.Combine(_directory, "a.db"), $"http://127.0.0.1:{FreePort()}");
+
+        ProjectManifest.Write(ManifestPath, [before]);
+
+        using var process = ToolProcess.Launch(
+            [(ProjectManifest.PathVariable, ManifestPath), ("PARLEY_NODE_CONFIG", catalogue)],
+            "serve", "--with-node");
+
+        var seen = new List<string>();
+
+        try
+        {
+            await ReadUntilAsync(process, seen, lines => Hosted(lines) >= 1, TimeSpan.FromSeconds(20), ct);
+
+            Assert.True(Hosted(seen) == 1, $"the node was not hosted from the variable at start:{Environment.NewLine}{string.Join(Environment.NewLine, seen)}");
+
+            ProjectManifest.Write(ManifestPath, [after]);
+
+            await ReadUntilAsync(process, seen, lines => Hosted(lines) >= 2 || Declined(lines), TimeSpan.FromSeconds(20), ct);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                _ = process.WaitForExit(5000);
+            }
+        }
+
+        var said = string.Join(Environment.NewLine, seen);
+
+        Assert.False(Declined(seen), $"after the restart the lone project was told it names no catalogue:{Environment.NewLine}{said}");
+        Assert.True(Hosted(seen) == 2, $"the node was not hosted again after the restart:{Environment.NewLine}{said}");
+
+        static int Hosted(List<string> lines) =>
+            lines.Count(l => l.Contains("Hosting this machine's node", StringComparison.Ordinal));
+
+        static bool Declined(List<string> lines) =>
+            lines.Exists(l => l.Contains("names no catalogue", StringComparison.Ordinal));
+    }
+
+    private static async Task ReadUntilAsync(
+        System.Diagnostics.Process process,
+        List<string> seen,
+        Func<List<string>, bool> done,
+        TimeSpan within,
+        CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + within;
+
+        try
+        {
+            while (DateTime.UtcNow < deadline && !done(seen))
+            {
+                var line = await process.StandardOutput.ReadLineAsync(ct).AsTask()
+                    .WaitAsync(deadline - DateTime.UtcNow, ct);
+
+                if (line is null)
+                {
+                    break;
+                }
+
+                seen.Add(line);
+            }
+        }
+        catch (TimeoutException)
+        {
+            // Asserted on by the caller, with everything that was read.
+        }
     }
 
     [Theory]

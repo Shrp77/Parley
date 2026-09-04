@@ -51,6 +51,11 @@ public static class AutostartCommand
     /// The node catalogue the installed entry should host this machine's agents from, or null to
     /// install a broker alone.
     /// </param>
+    /// <param name="manifestToServe">
+    /// The manifest the installed entry should serve every project of, or null to install one
+    /// deployment by the explicit paths above. The two are exclusive: an entry serves the
+    /// manifest or a store, and the caller has decided which.
+    /// </param>
     /// <param name="output">Where to report what happened.</param>
     /// <param name="error">Where to report why it could not.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
@@ -62,6 +67,7 @@ public static class AutostartCommand
         string? listenOn,
         string? nodeConfig,
         string? consoleOn,
+        string? manifestToServe,
         TextWriter output,
         TextWriter error,
         CancellationToken cancellationToken = default)
@@ -82,7 +88,8 @@ public static class AutostartCommand
         return action switch
         {
             "install" => await InstallAsync(
-                databasePath, listenOn, nodeConfig, consoleOn, output, error, cancellationToken)
+                databasePath, listenOn, nodeConfig, consoleOn, manifestToServe, output, error,
+                cancellationToken)
                 .ConfigureAwait(false),
 
             "remove" => await RemoveAsync(output, error, cancellationToken).ConfigureAwait(false),
@@ -107,6 +114,7 @@ public static class AutostartCommand
     /// <param name="listenOn">Where to listen.</param>
     /// <param name="nodeConfig">The node catalogue to host from, or null for a broker alone.</param>
     /// <param name="consoleOn">Where the console should listen, or null to host none.</param>
+    /// <param name="manifestToServe">The manifest to serve every project of, or null.</param>
     /// <param name="output">Where to report.</param>
     /// <param name="error">Where to report a failure.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
@@ -116,19 +124,22 @@ public static class AutostartCommand
         string? listenOn,
         string? nodeConfig,
         string? consoleOn,
+        string? manifestToServe,
         TextWriter output,
         TextWriter error,
         CancellationToken cancellationToken)
     {
         databasePath ??= Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable);
 
-        if (string.IsNullOrWhiteSpace(databasePath))
+        if (manifestToServe is null && string.IsNullOrWhiteSpace(databasePath))
         {
             await error.WriteLineAsync(
-                "No database. Pass --db <path>, or set " +
-                $"{DeploymentEnvironment.DatabaseVariable}. A supervisor starts the broker with " +
-                "no shell environment, so the store has to be written into the entry rather " +
-                "than read from a variable that will not be set at logon.").ConfigureAwait(false);
+                "No database and no projects. Pass --db <path>, set " +
+                $"{DeploymentEnvironment.DatabaseVariable}, or name a project first with " +
+                "`parley project add` and this entry will serve every project named. A " +
+                "supervisor starts the broker with no shell environment, so what it serves has " +
+                "to be written into the entry rather than read from a variable that will not be " +
+                "set at logon.").ConfigureAwait(false);
 
             return Config;
         }
@@ -139,8 +150,18 @@ public static class AutostartCommand
         // between them, and the report is the half nobody can check afterwards.
         var catalogue = nodeConfig is { Length: > 0 } named ? Path.GetFullPath(named) : null;
 
-        var plan = AutostartPlan.Describe(
-            databasePath, listenOn, executable: null, catalogue, consoleOn);
+        // Read before the entry is replaced, because afterwards there is nothing to read. The
+        // one thing a switch from an explicit entry to a manifest-serving one can lose is the
+        // node: the old entry named a catalogue on its command line, the new one hosts a node
+        // only where a project's manifest entry names one, and a manifest written before that
+        // mattered names none. Said here, with the command that fixes it, rather than left to
+        // arrive days later as a question nobody was started to answer.
+        var replacing = manifestToServe is not null ? InstalledEntry.Installed() : null;
+
+        var plan = manifestToServe is not null
+            ? AutostartPlan.DescribeManifest(manifestToServe, executable: null, consoleOn)
+            : AutostartPlan.Describe(
+                databasePath!, listenOn, executable: null, catalogue, consoleOn);
 
         // The directory, not the file. The broker creates the store on first run; what it cannot
         // do is create a directory that a supervisor will try to write a log into before it
@@ -183,7 +204,29 @@ public static class AutostartCommand
         // indistinguishable in a task list. A deployment whose node was left out looks identical
         // to one whose node is running, until a question to a repository nobody has open waits
         // out its window and is ghosted.
-        if (catalogue is not null)
+        if (manifestToServe is not null)
+        {
+            await output.WriteLineAsync(
+                $"  serves: every project in {Path.GetFullPath(manifestToServe)}, and a project " +
+                "named later\n         is started within seconds, without reinstalling this.")
+                .ConfigureAwait(false);
+
+            await output.WriteLineAsync(
+                "  hosts: this machine's agents in each project whose entry names a catalogue.")
+                .ConfigureAwait(false);
+
+            if (replacing is { ServesManifest: false, NodeConfig: { Length: > 0 } dropped }
+                && !ProjectsNameACatalogue(manifestToServe))
+            {
+                await output.WriteLineAsync(
+                    $"  WARNING: the entry this replaced started this machine's agents from {dropped}, " +
+                    "and no project in the manifest names a catalogue, so none will be started " +
+                    "now.\n         Give the project one with `parley project set <name> " +
+                    $"--node-config {AutostartPlan.Quote(dropped)}`; the broker picks it up within seconds.")
+                    .ConfigureAwait(false);
+            }
+        }
+        else if (catalogue is not null)
         {
             await output.WriteLineAsync($"  hosts: this machine's agents, from {catalogue}")
                 .ConfigureAwait(false);
@@ -249,6 +292,13 @@ public static class AutostartCommand
 
         return true;
     }
+
+    /// <summary>Whether any project in a manifest names a node catalogue.</summary>
+    /// <param name="manifestPath">The manifest.</param>
+    /// <returns><see langword="true"/> if at least one does; false when none do or it cannot be read.</returns>
+    private static bool ProjectsNameACatalogue(string manifestPath) =>
+        Configuration.ProjectManifest.TryRead(manifestPath, out var projects, out _)
+        && projects.Any(p => p.NodeConfig is { Length: > 0 });
 
     /// <summary>The account a scheduled task should run as.</summary>
     /// <returns>The user, qualified by domain where there is one.</returns>
@@ -428,6 +478,23 @@ public static class AutostartCommand
                 : "Parley's broker does not start on its own here. `parley autostart install` " +
                   "registers it; until then something has to run `parley serve`.")
             .ConfigureAwait(false);
+
+        // What it serves, read back from the entry rather than remembered. "Registered" answered
+        // a question nobody was asking once a machine could name projects: the one they ask is
+        // whether the project they just named will come up at logon, and an entry with one
+        // explicit store is the one that will not.
+        if (present && InstalledEntry.Installed() is { } entry)
+        {
+            await output.WriteLineAsync($"  serves: {entry.Serves}").ConfigureAwait(false);
+
+            if (!entry.ServesManifest)
+            {
+                await output.WriteLineAsync(
+                    "  A project named with `parley project add` is not served by this entry. " +
+                    "Re-run\n  `parley autostart install` with no --db to have it serve every " +
+                    "project in the manifest.").ConfigureAwait(false);
+            }
+        }
 
         return present ? 0 : 1;
     }

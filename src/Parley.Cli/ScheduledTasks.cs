@@ -102,6 +102,33 @@ internal static class ScheduledTasks
         return true;
     }
 
+    /// <summary>The arguments a registered task passes to its program.</summary>
+    /// <param name="name">The task.</param>
+    /// <returns>The arguments of its first action, or null when there is no such task.</returns>
+    /// <remarks>
+    /// The installer used to read these through <c>Get-ScheduledTask</c> to carry a catalogue
+    /// across a reinstall, which worked on the one platform that has that cmdlet. Read here, the
+    /// same question has one answer on every platform — see <see cref="InstalledEntry"/>.
+    /// </remarks>
+    public static string? Arguments(string name)
+    {
+        if (!Exists(name))
+        {
+            return null;
+        }
+
+        dynamic folder = RootFolder();
+        dynamic task = folder.GetTask(name);
+
+        foreach (dynamic action in task.Definition.Actions)
+        {
+            // The first Exec action is the broker. The XML this tool registers has exactly one.
+            return (string?)action.Arguments;
+        }
+
+        return null;
+    }
+
     /// <summary>Whether a task is registered.</summary>
     /// <param name="name">The task.</param>
     /// <returns><see langword="true"/> if it is.</returns>

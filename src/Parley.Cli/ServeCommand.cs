@@ -187,23 +187,24 @@ public static class ServeCommand
     /// <param name="logPath">Where to copy output, or null.</param>
     /// <param name="output">Where to report what is running.</param>
     /// <param name="error">Where to report what is not.</param>
-    /// <param name="whenListening">
-    /// Something to run alongside the brokers once they are listening, given the addresses and
-    /// the writer they report through, or <see langword="null"/> to run nothing. Permitted only
-    /// when exactly one project is being served.
+    /// <param name="nodeFor">
+    /// Something to run for each project once its broker is listening — this machine's node,
+    /// joined to that project — given the project, its addresses and the writer to report
+    /// through, or <see langword="null"/> to host no node. Each is contained on its own.
     /// </param>
     /// <param name="alongside">
     /// Something to run alongside the brokers that is <em>not</em> bound to any one of them: the
     /// operator's console, which reads this machine's manifest rather than a single endpoint.
-    /// Separate from <paramref name="whenListening"/> because that one joins exactly one broker
-    /// and is refused across several projects, and a console is not.
+    /// Run once, and handed the first started broker's addresses as its fallback.
+    /// </param>
+    /// <param name="reread">
+    /// Reads the manifest again, returning null when it has not changed or cannot be read, or
+    /// <see langword="null"/> to serve only what was given. Given, a project named while this
+    /// runs gets its broker within <see cref="WatchInterval"/>.
     /// </param>
     /// <param name="cancellationToken">Stops every broker.</param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
-    /// <exception cref="ArgumentException">
-    /// <paramref name="whenListening"/> was given alongside more than one project.
-    /// </exception>
     /// <remarks>
     /// <para>
     /// SPEC.md §4.1: "One process may host many brokers." Isolation is unaffected because it lives
@@ -221,13 +222,16 @@ public static class ServeCommand
     /// reported success while doing less than it claimed.
     /// </para>
     /// <para>
-    /// <b>A node may be hosted here only when there is one project to host it for.</b> A node
-    /// joins one broker, because §4.1.1 names an agent for the machine it is on and a machine has
-    /// one identity; a process serving three projects has no way to choose which of them this
-    /// machine belongs to, and guessing the first would record a machine as startable in a
-    /// deployment nobody asked it to join. The entry point refuses that combination before
-    /// reaching here, and this refuses it again — an invariant worth stating where it binds, not
-    /// only where it is currently enforced.
+    /// <b>A node is hosted per project, and each one joins its own broker.</b> An earlier version
+    /// refused to host a node across several projects, reasoning from §4.1.1 that a machine has
+    /// one identity and a process serving three projects could not choose which deployment it
+    /// belonged to. That reasoning was right about the choosing and wrong about who makes it: the
+    /// manifest names a catalogue <i>per project</i> — "the catalogue of agents this machine may
+    /// start for it", §4.1 — so the projects this machine belongs to are exactly the ones that
+    /// say so. Each project's registry is its own file, so the same machine name in two of them
+    /// collides no more than the same agent name does. What is still refused, at the entry point,
+    /// is one explicit catalogue offered to several projects, because that is the choice nobody
+    /// made.
     /// </para>
     /// </remarks>
     public static async Task<int> RunAsync(
@@ -235,27 +239,14 @@ public static class ServeCommand
         string? logPath,
         TextWriter output,
         TextWriter error,
-        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? whenListening = null,
+        Func<ProjectSettings, IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? nodeFor = null,
         Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside = null,
+        Func<IReadOnlyList<ProjectSettings>?>? reread = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(projects);
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(error);
-
-        // The node only, and the distinction is what this parameter was missing. A console is
-        // hosted through `alongside` precisely because it is not bound to one broker: it reads
-        // this machine's manifest and shows every project in it, so a process serving several is
-        // the case it is best at rather than one it cannot handle. Guarding both through one
-        // parameter is what made `serve --with-console` across two projects throw this at a
-        // person instead of starting.
-        if (whenListening is not null && projects.Count > 1)
-        {
-            throw new ArgumentException(
-                "A node joins one broker, so it cannot be hosted by a process serving several " +
-                "projects. Select one with --project.",
-                nameof(projects));
-        }
 
         using var log = Logging.Open(logPath, error);
 
@@ -272,8 +263,117 @@ public static class ServeCommand
         output = TextWriter.Synchronized(output);
         error = TextWriter.Synchronized(error);
 
-        var started = new List<(ProjectSettings Project, BrokerRuntime Runtime, ParleyServer Server)>();
+        // Every project serving right now. Grows when the watcher starts one named since the
+        // process began and shrinks when it stops one removed, so it is read under its own lock.
+        var started = new List<Hosted>();
         var failed = 0;
+
+        // Starts one project's broker and everything that lives beside it. Called for the
+        // initial set and again by the watcher for a project named while this runs; the two
+        // never overlap, because the watcher starts after this loop is over.
+        async Task<bool> StartAsync(ProjectSettings project)
+        {
+            BrokerRuntime runtime;
+
+            try
+            {
+                runtime = BrokerRuntime.Open(project.Store, BrokerOptions.Default, TimeProvider.System);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                await error.WriteLineAsync(
+                    $"{project.Name}: could not open '{project.Store}': {exception.Message}")
+                    .ConfigureAwait(false);
+
+                return false;
+            }
+
+            ParleyServer server;
+
+            try
+            {
+                server = await ParleyServer.StartAsync(runtime, project.Endpoint, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                // Disposed on every path out, an interrupt included: this runtime is not in
+                // `started` yet, so the finally below has never heard of it and the open
+                // database handle would go with the process rather than be released.
+                await runtime.DisposeAsync().ConfigureAwait(false);
+
+                if (exception is OperationCanceledException)
+                {
+                    throw;
+                }
+
+                await error.WriteLineAsync(
+                    $"{project.Name}: could not listen on {project.Endpoint}: {exception.Message}")
+                    .ConfigureAwait(false);
+
+                return false;
+            }
+
+            // Its own source, linked to the interrupt, so that this one project can be stopped
+            // when its entry is removed while every other keeps serving -- and the interrupt
+            // still stops them all.
+            var hosted = new Hosted(
+                project, server, CancellationTokenSource.CreateLinkedTokenSource(cancellationToken));
+
+            await output.WriteLineAsync(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{project.Name} on {string.Join(", ", server.Addresses)}, store at {project.Store}, schema {SchemaMigrator.LatestVersion}."))
+                .ConfigureAwait(false);
+
+            // The sweep and, where there is one, the node, each contained on its own so that one
+            // project's node failing leaves the others hosted.
+            hosted.Tasks.Add(Quietly(SweepAsync(runtime, output, hosted.Stopping.Token)));
+
+            if (nodeFor is not null)
+            {
+                hosted.Tasks.Add(ContainAsync(
+                    () => nodeFor(project, server.Addresses, output, hosted.Stopping.Token),
+                    $"{project.Name}: this machine's node",
+                    output,
+                    hosted.Stopping.Token));
+            }
+
+            lock (started)
+            {
+                started.Add(hosted);
+            }
+
+            return true;
+        }
+
+        // Stops one project's broker, its sweep and its node, and releases its store. What it
+        // does not do is touch the store: removal is withdrawal (`project remove` says so), and
+        // the one command that deletes says "destroy" in its name.
+        async Task StopAsync(Hosted hosted, string why)
+        {
+            lock (started)
+            {
+                _ = started.Remove(hosted);
+            }
+
+            await output.WriteLineAsync(
+                $"{hosted.Project.Name}: {why}; stopping its broker. Its store at " +
+                $"{hosted.Project.Store} is untouched.").ConfigureAwait(false);
+
+            await hosted.Stopping.CancelAsync().ConfigureAwait(false);
+
+            try
+            {
+                _ = await Task.WhenAll(hosted.Tasks).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // The sweep ending the way a cancelled sweep ends.
+            }
+
+            await hosted.Server.DisposeAsync().ConfigureAwait(false);
+            hosted.Stopping.Dispose();
+        }
 
         try
         {
@@ -285,48 +385,17 @@ public static class ServeCommand
             // process exits, and nothing has been shut down. Which is FR-021 exactly, and the
             // defect fixed one commit earlier, reappearing in the window where it is least
             // visible — a machine that only ever starts one project never enters it.
+            // Remembered by name, because the watcher may start one of these later -- a port
+            // still held by the previous broker at logon is the usual reason -- and a project
+            // serving at the end is not one that failed, whatever it did at the start.
+            var notStarted = new HashSet<string>(StringComparer.Ordinal);
+
             foreach (var project in projects)
             {
-                BrokerRuntime runtime;
-
-                try
+                if (!await StartAsync(project).ConfigureAwait(false))
                 {
-                    runtime = BrokerRuntime.Open(project.Store, BrokerOptions.Default, TimeProvider.System);
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    await error.WriteLineAsync(
-                        $"{project.Name}: could not open '{project.Store}': {exception.Message}")
-                        .ConfigureAwait(false);
-
                     failed++;
-                    continue;
-                }
-
-                try
-                {
-                    var server = await ParleyServer.StartAsync(runtime, project.Endpoint, cancellationToken)
-                        .ConfigureAwait(false);
-
-                    started.Add((project, runtime, server));
-                }
-                catch (Exception exception)
-                {
-                    // Disposed on every path out, an interrupt included: this runtime is not in
-                    // `started` yet, so the finally below has never heard of it and the open
-                    // database handle would go with the process rather than be released.
-                    await runtime.DisposeAsync().ConfigureAwait(false);
-
-                    if (exception is OperationCanceledException)
-                    {
-                        throw;
-                    }
-
-                    await error.WriteLineAsync(
-                        $"{project.Name}: could not listen on {project.Endpoint}: {exception.Message}")
-                        .ConfigureAwait(false);
-
-                    failed++;
+                    _ = notStarted.Add(project.Name.Value);
                 }
             }
 
@@ -336,14 +405,6 @@ public static class ServeCommand
                     "No broker started. Nothing is serving.").ConfigureAwait(false);
 
                 return Unavailable;
-            }
-
-            foreach (var (project, _, server) in started)
-            {
-                await output.WriteLineAsync(string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"{project.Name} on {string.Join(", ", server.Addresses)}, store at {project.Store}, schema {SchemaMigrator.LatestVersion}."))
-                    .ConfigureAwait(false);
             }
 
             if (failed > 0)
@@ -367,20 +428,62 @@ public static class ServeCommand
                 "Agents connect with PARLEY_AGENT set; machines join with `parley up`. Ctrl+C stops them all.")
                 .ConfigureAwait(false);
 
-            // The one started project's addresses: a hook is only permitted alongside a single
-            // project, and a run where that project failed to start has already returned above.
-            var hosted = HostAsync(
-                whenListening, alongside, started[0].Server.Addresses, output,
-                cancellationToken);
+            // What runs beside the brokers rather than inside one of them: the console once,
+            // against the first started broker as its fallback -- it reads the manifest for the
+            // rest -- and the watcher. The console is not contained here: the entry point
+            // contains it, and says what it does when a port is taken.
+            var beside = new List<Task<int>>();
 
-            // One sweep per broker, all cancelled by the one token the interrupt owns.
-            await Task.WhenAll(
-                [.. started.Select(s => SweepAsync(s.Runtime, output, cancellationToken)), hosted])
-                .ConfigureAwait(false);
-
-            if (await hosted.ConfigureAwait(false) != 0)
+            if (alongside is not null)
             {
-                failed++;
+                beside.Add(alongside(started[0].Server.Addresses, output, cancellationToken));
+            }
+
+            if (reread is not null)
+            {
+                beside.Add(WatchAsync(reread, StartAsync, StopAsync, started, output, cancellationToken));
+            }
+
+            // Until the interrupt. Nothing else ends this process: a project's own tasks end when
+            // it is stopped and the others carry on, so waiting on them would either end too
+            // early or need re-collecting every time the watcher changed the set.
+            try
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // The interrupt, which is how this is meant to end.
+            }
+
+            // Every source is linked to the interrupt, so everything is now ending; awaited so
+            // that a node's exit code still reaches the process's, and so that nothing is still
+            // writing when the servers below are disposed.
+            List<Task<int>> everything;
+
+            lock (started)
+            {
+                everything = [.. beside, .. started.SelectMany(h => h.Tasks)];
+            }
+
+            // What the exit code says is the state at the end: a project that failed at start
+            // and was serving by the time this stopped is not a failure to report to a
+            // supervisor, and a node that exited non-zero is.
+            lock (started)
+            {
+                failed = notStarted.Count(name =>
+                    !started.Exists(h => string.Equals(h.Project.Name.Value, name, StringComparison.Ordinal)));
+            }
+
+            try
+            {
+                var codes = await Task.WhenAll(everything).ConfigureAwait(false);
+
+                failed += codes.Count(code => code != 0);
+            }
+            catch (OperationCanceledException)
+            {
+                // A sweep ending the way a cancelled sweep ends.
             }
         }
         finally
@@ -388,13 +491,185 @@ public static class ServeCommand
             // Everything started is stopped, including when one sweep threw. A broker left holding
             // a port after the process was told to stop is the failure Ctrl+C was just fixed for,
             // reappearing one level up.
-            foreach (var (_, _, server) in started)
+            Hosted[] remaining;
+
+            lock (started)
             {
-                await server.DisposeAsync().ConfigureAwait(false);
+                remaining = [.. started];
+            }
+
+            foreach (var hosted in remaining)
+            {
+                await hosted.Server.DisposeAsync().ConfigureAwait(false);
+                hosted.Stopping.Dispose();
             }
         }
 
         return failed > 0 ? Unavailable : 0;
+    }
+
+    /// <summary>One project this process is serving, and everything that lives beside its broker.</summary>
+    /// <param name="Project">What it is.</param>
+    /// <param name="Server">The broker, listening.</param>
+    /// <param name="Stopping">Ends this project alone; linked to the interrupt, which ends them all.</param>
+    private sealed record Hosted(ProjectSettings Project, ParleyServer Server, CancellationTokenSource Stopping)
+    {
+        /// <summary>Its sweep and, where there is one, its node.</summary>
+        public List<Task<int>> Tasks { get; } = [];
+    }
+
+    /// <summary>How often the manifest is looked at for a project named since the start.</summary>
+    /// <remarks>
+    /// Two seconds is the time between somebody pressing Enter on the naming form and the list
+    /// they return to showing the project answering. Reading a small JSON file that often costs
+    /// nothing worth measuring, and the entry point reads it only when its stamp has moved.
+    /// </remarks>
+    internal static readonly TimeSpan WatchInterval = TimeSpan.FromSeconds(2);
+
+    /// <summary>Keeps what is serving in step with what the manifest names.</summary>
+    /// <param name="reread">Reads the manifest again, or returns null when it has not changed or cannot be read.</param>
+    /// <param name="start">Starts one project, and says whether it came up.</param>
+    /// <param name="stop">Stops one project, for the reason given.</param>
+    /// <param name="started">Every project serving right now.</param>
+    /// <param name="output">Where to say that a project was named since the start.</param>
+    /// <param name="cancellationToken">Ends the watch.</param>
+    /// <returns>Zero, always: a project that will not start is reported by <paramref name="start"/>.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A project has its own broker, so naming one is asking for that broker now — and
+    /// removing one is asking for it to stop.</b> SPEC.md §4.1 gives every project a store and
+    /// an endpoint of its own and lets one process host them all; the process that hosts them is
+    /// this one, and before this it read the manifest once at start. A project named from the
+    /// terminal was therefore "not answering" until the next logon, with the form politely
+    /// saying so — which is documenting a gap rather than closing it, and was said to be exactly
+    /// that by the first person it happened to. Removal followed for the same reason: the only
+    /// way to stop one project's broker was to restart every other project's with it.
+    /// </para>
+    /// <para>
+    /// Stopping is not deleting. A removed project's store stays where it is, as <c>project
+    /// remove</c> has always said; <c>remove --destroy</c> is the command that deletes, and it
+    /// waits for this to have stopped the broker first. A running project whose store, endpoint
+    /// or catalogue changed is stopped and started on the new entry, because the manifest is
+    /// what this serves and a changed entry is a different broker. And a project that would not
+    /// start is tried once per change to its entry rather than once per tick, because a store
+    /// that is a directory does not become a file by being asked again every two seconds, and
+    /// the failure line would fill the log.
+    /// </para>
+    /// </remarks>
+    private static async Task<int> WatchAsync(
+        Func<IReadOnlyList<ProjectSettings>?> reread,
+        Func<ProjectSettings, Task<bool>> start,
+        Func<Hosted, string, Task> stop,
+        List<Hosted> started,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        // What was tried and did not start, so it is not tried again until its entry changes.
+        // Records compare by value, so a changed entry is a different member.
+        var failing = new HashSet<ProjectSettings>();
+
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(WatchInterval, cancellationToken).ConfigureAwait(false);
+
+                IReadOnlyList<ProjectSettings>? current;
+
+                try
+                {
+                    current = reread();
+                }
+                catch (Exception exception) when (exception is not OutOfMemoryException)
+                {
+                    // An unreadable manifest is reported by every command that reads it, to the
+                    // person editing it. Said again here every two seconds it would be noise --
+                    // and, more to the point, nothing is stopped on the strength of a file
+                    // somebody is halfway through editing.
+                    current = null;
+                }
+
+                if (current is null)
+                {
+                    continue;
+                }
+
+                Hosted[] serving;
+
+                lock (started)
+                {
+                    serving = [.. started];
+                }
+
+                // Removed or changed first, so a project removed and re-added under the same
+                // name in one edit -- or given a new port or store with `project set` -- is
+                // stopped and started rather than left as it was. Found by probing: matched by
+                // name alone, a re-added "billing" was "already serving" and stayed on the old
+                // entry's port for ever. The description is not compared, because a broker does
+                // not run differently for having been described.
+                var restarting = new HashSet<string>(StringComparer.Ordinal);
+
+                foreach (var hosted in serving)
+                {
+                    var now = current.FirstOrDefault(p => SameName(p, hosted.Project));
+
+                    if (now is null)
+                    {
+                        await stop(hosted, "removed from the manifest").ConfigureAwait(false);
+                    }
+                    else if (!SameDeployment(now, hosted.Project))
+                    {
+                        await stop(hosted, "its entry changed").ConfigureAwait(false);
+                        _ = restarting.Add(hosted.Project.Name.Value);
+                    }
+                }
+
+                _ = failing.RemoveWhere(f => !current.Any(p => SameName(p, f)));
+
+                foreach (var project in current)
+                {
+                    bool already;
+
+                    lock (started)
+                    {
+                        already = started.Exists(h => SameDeployment(h.Project, project));
+                    }
+
+                    if (already || failing.Contains(project))
+                    {
+                        continue;
+                    }
+
+                    await output.WriteLineAsync(
+                        restarting.Contains(project.Name.Value)
+                            ? $"{project.Name}: starting it on its changed entry."
+                            : $"{project.Name}: named in the manifest since this started; starting it.")
+                        .ConfigureAwait(false);
+
+                    if (!await start(project).ConfigureAwait(false))
+                    {
+                        _ = failing.Add(project);
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The interrupt, which is how this is meant to end.
+        }
+
+        return 0;
+
+        static bool SameName(ProjectSettings a, ProjectSettings b) =>
+            string.Equals(a.Name.Value, b.Name.Value, StringComparison.Ordinal);
+
+        // The same name serving the same store on the same endpoint from the same catalogue:
+        // the parts a broker is made of. A description is not one of them.
+        static bool SameDeployment(ProjectSettings a, ProjectSettings b) =>
+            SameName(a, b)
+            && string.Equals(a.Store, b.Store, StringComparison.Ordinal)
+            && string.Equals(a.Endpoint, b.Endpoint, StringComparison.Ordinal)
+            && string.Equals(a.NodeConfig, b.NodeConfig, StringComparison.Ordinal);
     }
 
     /// <summary>Runs whatever wanted the port to be open, and survives it failing.</summary>
@@ -442,6 +717,33 @@ public static class ServeCommand
             return 0;
         }
 
+        return await ContainAsync(
+            () => whenListening(addresses, output, cancellationToken),
+            "This machine's node",
+            output,
+            cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>A sweep, as a task that reports nothing: it ends only when the process does.</summary>
+    /// <param name="sweep">The sweep.</param>
+    /// <returns>Zero once it has ended.</returns>
+    private static async Task<int> Quietly(Task sweep)
+    {
+        await sweep.ConfigureAwait(false);
+
+        return 0;
+    }
+
+    /// <summary>Runs a hosted node and survives it failing.</summary>
+    /// <param name="run">The node.</param>
+    /// <param name="who">How to name it in the failure line.</param>
+    /// <param name="output">Where to report a failure worth seeing.</param>
+    /// <param name="stopping">The token the node was given, so that its ending on it is not a failure.</param>
+    /// <returns>Its exit code, or the unavailable code when it threw.</returns>
+    private static async Task<int> ContainAsync(
+        Func<Task<int>> run, string who, TextWriter output, CancellationToken stopping)
+    {
         try
         {
             // The broker's writer, not the console. Under a supervisor there is no console at
@@ -449,17 +751,26 @@ public static class ServeCommand
             // exactly what somebody debugging a machine that starts nothing needs: which
             // catalogue it read, what it can start, and which registered agents are missing from
             // it. Writing where the broker writes puts all of that in --log.
-            return await whenListening(addresses, output, cancellationToken).ConfigureAwait(false);
+            return await run().ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             // The interrupt, which is how this is meant to end.
             return 0;
         }
+        catch (Exception) when (stopping.IsCancellationRequested)
+        {
+            // Also how it is meant to end. A node cancelled mid-call sees its gRPC call
+            // cancelled, and that arrives as an RpcException rather than the cancellation it
+            // is -- so a project stopped on purpose was reported as its node having failed,
+            // "nothing will be started until `parley up` runs again", and the process exited
+            // non-zero for a stop it had been asked for. Found by probing the watcher.
+            return 0;
+        }
         catch (Exception failure)
         {
             await output.WriteLineAsync(
-                $"This machine's node stopped: {failure.Message}. The broker is still serving; " +
+                $"{who} stopped: {failure.Message}. The broker is still serving; " +
                 "nothing on this machine will be started until `parley up` runs again.")
                 .ConfigureAwait(false);
 

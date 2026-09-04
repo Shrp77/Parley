@@ -1,6 +1,6 @@
 using System.Net;
 using Parley.Core;
-using Parley.Web.Seating;
+using Parley.Client.Seating;
 using Xunit;
 
 namespace Parley.Web.Tests;
@@ -76,7 +76,7 @@ public sealed class InboxTests
         // Clearing removes what owes nothing back. A question that could be cleared would let
         // somebody tidy the page while the exchange behind it ran on to be ghosted, which is
         // the one outcome the inbox exists to prevent.
-        var hold = File.ReadAllText(RepositoryPath("src/Parley.Web/Seating/SeatHold.cs"));
+        var hold = File.ReadAllText(RepositoryPath("src/Parley.Client/Seating/SeatHold.cs"));
 
         Assert.Contains("RemoveAll(one => !one.Owes)", hold, StringComparison.Ordinal);
 
@@ -115,7 +115,7 @@ public sealed class InboxTests
         // nobody asked, which is stored and closes the exchange.
         Assert.Contains("SubQuestionsAsync", Model, StringComparison.Ordinal);
 
-        var voice = File.ReadAllText(RepositoryPath("src/Parley.Web/Seating/SeatVoice.cs"));
+        var voice = File.ReadAllText(RepositoryPath("src/Parley.Client/Seating/SeatVoice.cs"));
 
         Assert.Contains("GetSubQuestionIdsAsync", voice, StringComparison.Ordinal);
     }
@@ -126,7 +126,7 @@ public sealed class InboxTests
         // §5.3. Rolled up rather than chosen, because a person who could pick it separately
         // could record a question as settled while leaving a sub-question unknown — and §15
         // counts that.
-        var voice = File.ReadAllText(RepositoryPath("src/Parley.Web/Seating/SeatVoice.cs"));
+        var voice = File.ReadAllText(RepositoryPath("src/Parley.Client/Seating/SeatVoice.cs"));
         var rollUp = voice[voice.IndexOf("private static Wire.Resolution RollUp", StringComparison.Ordinal)..];
 
         Assert.True(
@@ -143,7 +143,7 @@ public sealed class InboxTests
         // §15 counts to find an unhealthy deployment — which is a defect this repository has
         // already had once.
         Assert.DoesNotContain("\"ghosted\"",
-            File.ReadAllText(RepositoryPath("src/Parley.Web/Seating/SeatVoice.cs")),
+            File.ReadAllText(RepositoryPath("src/Parley.Client/Seating/SeatVoice.cs")),
             StringComparison.Ordinal);
 
         Assert.Equal(3, SeatVoice.Outcomes.Count);
@@ -191,7 +191,7 @@ public sealed class InboxTests
         //
         // Asserted as the absence of the cache rather than as agreement between two numbers,
         // because two numbers that happen to agree today are still two numbers.
-        var hold = File.ReadAllText(RepositoryPath("src/Parley.Web/Seating/SeatHold.cs"));
+        var hold = File.ReadAllText(RepositoryPath("src/Parley.Client/Seating/SeatHold.cs"));
 
         Assert.DoesNotContain("MessagesWaiting { get;", hold, StringComparison.Ordinal);
 

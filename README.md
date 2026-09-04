@@ -190,8 +190,16 @@ parley autostart install --db /src/acme/.parley/parley.db
 
 That installs a scheduled task on Windows, a systemd user unit on Linux, or a launch agent on
 macOS, and starts it. **None of them needs administrator rights** — they are user-level, run as
-you, and start the broker again at logon. `parley autostart status` says whether it is set up
-and `parley autostart remove` undoes it, leaving a broker that is already running alone.
+you, and start the broker again at logon. `parley autostart status` says whether it is set up,
+and what it was registered to run; `parley autostart remove` undoes it, leaving a broker that is
+already running alone.
+
+**With projects named, leave off `--db`.** A machine that has named its deployments — with
+`parley project add`, or from the first screen of `parley top` — gets an entry that serves every
+project in the manifest from one process, each on its own store and port, hosting this machine's
+node in each project whose entry names a catalogue. A project named later gets its broker within
+seconds, because the process watches the manifest; nothing is reinstalled and nothing restarts.
+The install script does the same: it asks what is named before it asks for a store.
 
 **It starts the console too**, on `127.0.0.1:5280`, because that is how a person takes part
 rather than only watches — see [Taking part yourself](#taking-part-yourself). An agent attached
@@ -221,8 +229,15 @@ entirely normal. `parley serve` is the exception, and starts them all.
 
 **None of this is required.** A machine with no projects behaves exactly as it always has, its
 absence is never mentioned, and an explicit `--db`, `--broker` or environment variable still wins
-over anything a project says. `parley project remove` forgets an entry and deletes nothing — not
-the store, not the catalogue, not any repository's `.mcp.json` — and says so every time.
+over anything a project says. `parley project set <name>` changes what an entry says — only the
+fields given, and an empty value clears an optional one — and the process serving the manifest
+restarts that project on its new store, endpoint or catalogue within seconds; a description
+changes nothing running. `parley project remove` forgets an entry and deletes nothing — not
+the store, not the catalogue, not any repository's `.mcp.json` — and says so every time; the
+process serving the manifest stops that project's broker within seconds and leaves the rest
+running. `parley project remove <name> --destroy` is the deliberate version: it waits for the
+broker to stop, deletes the store and, unless another project shares it, the catalogue, and lists
+the repositories that were agents in it, whose `.mcp.json` still names it.
 
 The trade is that a user-level supervisor stops the broker at logout. For a machine somebody
 works at that is right — the agents are editor sessions, and there are none when nobody is
@@ -574,6 +589,27 @@ And a name another agent already holds is refused rather than taken over. Joinin
 would let you write messages recorded as the orders agent's own words, and that is the one thing
 a console has never been able to do: it has always been able to retire or purge an agent, and has
 never been able to speak as one.
+
+### From a terminal
+
+The machine running a broker is frequently not one anybody has a browser open on, so the same
+deployment is there in a terminal:
+
+```
+parley top
+```
+
+Its first screen is every project this machine names and whether each broker is answering. From
+it you can name the deployment this machine already runs — every path pre-filled from the
+autostart entry, Enter keeps it — or create a new project, which proposes its own database beside
+your existing ones and a free port, checks each answer as you type it, and is answering on the
+list a few seconds later because the broker serving the manifest starts it. Inside a project:
+the agents and what each owns, conversations as transcripts that say who did not see what, the
+broker's log followed live, and a seat — the same seat as the console, with the same rules —
+from which you read what is waiting for you, ask and tell. A project can be removed from there
+too: forgetting it deletes nothing, and destroying it — its broker stopped, its store and
+catalogue deleted — takes the project's own name typed back first. No operator operation that
+destroys an agent or a conversation is on this surface at all.
 
 A separate program on purpose. An adapter that surfaced an operator command into an
 agent's tool set would hand an agent the power to end a discussion over its peers'

@@ -10,8 +10,15 @@
     dotnet tool, and fusing the two would put Kestrel on the dependency graph of every operator who
     only ever runs `parley agents`.
 
-    References Transport for the wire and Configuration for the project manifest, and nothing else.
-    There is no SQLite here and there must never be one; see specs/003-parley-web-console.
+    What it no longer holds is the client half. Reading a deployment and seating a person are not
+    web concerns, and they now live in Parley.Client, which a terminal reads too. What stays here
+    is the part that knows what HTTP is: the host, the pages, the brand, and SeatCookie — which,
+    when the split was measured rather than guessed, turned out to be the only type of the fifteen
+    that touched an HttpRequest at all.
+
+    References Client for all of that, plus Transport for the wire and Configuration for the
+    project manifest, which it still uses directly. There is no SQLite here and there must never
+    be one; see specs/003-parley-web-console and specs/004-terminal-surface.
   -->
   <PropertyGroup>
     <RootNamespace>Parley.Web</RootNamespace>
@@ -32,6 +39,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Parley.Client\Parley.Client.csproj" />
     <ProjectReference Include="..\Parley.Configuration\Parley.Configuration.csproj" />
     <ProjectReference Include="..\Parley.Transport\Parley.Transport.csproj" />
   </ItemGroup>

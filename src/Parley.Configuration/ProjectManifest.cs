@@ -240,7 +240,7 @@ public static class ProjectManifest
                 problems.Add($"projects[{index}] ({projectName}): {fault}");
             }
 
-            foreach (var fault in PathProblems(settings))
+            foreach (var fault in PathProblems(settings, path))
             {
                 problems.Add($"projects[{index}] ({projectName}): {fault}");
             }
@@ -281,7 +281,24 @@ public static class ProjectManifest
     /// direction that lapses is always the one nobody tested.
     /// </para>
     /// </remarks>
-    public static IReadOnlyList<string> PathProblems(ProjectSettings project)
+    public static IReadOnlyList<string> PathProblems(ProjectSettings project) =>
+        PathProblems(project, null);
+
+    /// <summary>
+    /// Says what is wrong with a project's paths, including naming the manifest itself.
+    /// </summary>
+    /// <param name="project">The project to check.</param>
+    /// <param name="manifestPath">The manifest the project is named in, or null to skip that check.</param>
+    /// <returns>One line per problem, empty when the paths are usable.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="project"/> is null.</exception>
+    /// <remarks>
+    /// A store or catalogue that is the manifest itself was accepted, and found by probing what
+    /// <c>project remove --destroy</c> could be made to delete: the one file whose deletion takes
+    /// every project with it. Refused on the way in, at both ends, rather than caught on the way
+    /// out — the command that deletes also refuses, but a rule enforced only there is a rule the
+    /// next deleting command forgets.
+    /// </remarks>
+    public static IReadOnlyList<string> PathProblems(ProjectSettings project, string? manifestPath)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -293,16 +310,51 @@ public static class ProjectManifest
                      ("node_config", project.NodeConfig),
                  })
         {
-            if (!string.IsNullOrEmpty(value) && !Path.IsPathRooted(value))
+            if (string.IsNullOrEmpty(value))
+            {
+                continue;
+            }
+
+            if (!Path.IsPathRooted(value))
             {
                 problems.Add(
                     $"{field} '{value}' is relative. A relative path resolves against whatever " +
                     "directory the caller happened to be in, which is the mistake a manifest " +
                     "exists to remove");
+
+                continue;
+            }
+
+            if (manifestPath is not null && IsTheManifest(value, manifestPath))
+            {
+                problems.Add(
+                    $"{field} '{value}' is this manifest. A project cannot keep its data in the " +
+                    "file that names every project");
             }
         }
 
         return problems;
+    }
+
+    /// <summary>Whether a path names the manifest, however it was spelled.</summary>
+    /// <param name="path">The path to check.</param>
+    /// <param name="manifestPath">The manifest.</param>
+    /// <returns><see langword="true"/> if they are the same file.</returns>
+    public static bool IsTheManifest(string path, string manifestPath)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(manifestPath);
+
+        try
+        {
+            return PathComparer.Equals(Path.GetFullPath(path), Path.GetFullPath(manifestPath));
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException
+                                              or PathTooLongException)
+        {
+            // Not a path at all, so not this one.
+            return false;
+        }
     }
 
     /// <summary>

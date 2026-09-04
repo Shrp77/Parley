@@ -44,6 +44,31 @@ src/Parley.Configuration The project manifest of SPEC.md §4.1: where it lives, 
                     the broker and the store, Parley.Mcp deliberately pulls in neither,
                     and Parley.Core has no I/O. Read by both; written only by Parley.Cli.
                     Nothing here knows what a broker is.
+src/Parley.Client    What a client of a broker needs in order to show a deployment to a person
+                    and to seat one. References Transport and Configuration and nothing else.
+
+                    A project of its own for the reason Parley.Configuration is one, and in nearly
+                    the same words: two programs read it and cannot otherwise share one reader.
+                    The console reads it to render a page and `parley top` reads it to draw a
+                    terminal, and leaving it in an assembly called Web would mean a terminal
+                    depending on ASP.NET Core to find out who is in a conversation.
+
+                    The split was measured, not guessed. Of the fifteen types the console held
+                    outside its Razor pages, exactly one touches HTTP -- checked by type name
+                    rather than by `using` directive, because Microsoft.NET.Sdk.Web supplies
+                    implicit global usings and an absent using proves nothing. SeatCookie stayed;
+                    the other fourteen moved.
+
+                    **There is no SQLite here and there must never be.** GraphTests walks the
+                    project graph transitively from both this and Parley.Web, because the
+                    console's own one-hop check stopped being sufficient the moment it referenced
+                    this one.
+
+                    The drive belongs here too. SeatVoice.TakeDeliveryAsync drains and records in
+                    one act, and its AnswerAsync overload settles the seat when the broker says
+                    the exchange closed. Two surfaces each writing that themselves is how they
+                    come to disagree about what a person has seen.
+
 src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of the broker
                     rather than part of it. References Transport and Configuration and
                     nothing else: there is no SQLite on its graph and there must never be,
@@ -51,7 +76,19 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
                     the same reason.
 
                     `parley console` starts it, so Parley.Cli references this and the tool
-                    carries Kestrel. That was decided deliberately and against the argument
+                    carries Kestrel. `parley top` shows the same deployment in a terminal, built
+                    on Parley.Client and Spectre.Console, and needs no browser -- the machine
+                    running a broker is frequently not the one somebody has one open on. It binds
+                    no destructive operator operation, and SurfaceTests fails if one appears:
+                    a purge behind a keystroke is a different risk from one behind a page that
+                    describes it first. **The one destructive thing it does is destroy a
+                    project**, decided by the owner on 2026-09-03 on the grounds that a surface
+                    that can create a project must be able to destroy one. It is not behind a
+                    keystroke: `Removing` describes what will go, offers forgetting (deletes
+                    nothing) beside destroying, and takes the project's own name typed back
+                    before it deletes. SurfaceTests confines the word to that one file, and
+                    RemovingTests drives the confirmation.
+ That was decided deliberately and against the argument
                     recorded here before it: a second tool would have kept ASP.NET Core off
                     the machines that only run an agent, and one command is worth more than
                     that saving.
@@ -125,6 +162,11 @@ tests/Parley.Broker.Tests Lifecycle, the agent operations, and the surface bound
                           below.
 tests/Parley.Server.Tests Whole exchanges over a real loopback socket, and the adversarial
                           probes. Nothing in it touches a Broker or a SqliteConnection.
+tests/Parley.Client.Tests What both surfaces share: seating's guards, the transcript and
+                          visibility derivations, and a graph walk asserting no route to a store
+                          from either this or the console. Deliberately does NOT reference
+                          Microsoft.AspNetCore.Mvc.Testing — a web host reachable from here is how
+                          a test of client behaviour quietly becomes a test of the console again.
 tests/Parley.Web.Tests    The console: the visibility derivation, what it refuses to render
                           raw, and that its project file references nothing that could open
                           a store.
@@ -305,16 +347,37 @@ Rotating the lens matters — three runs of the same review are correlated and m
 the first. After fixing findings, **re-run the same lens** before moving to the next; fixes
 have introduced new problems that only the re-run caught.
 
-**Run to convergence, not to a fixed count.** "Three green" is not three passes; it is passes
-repeated until one finds nothing above low severity. A pass that finds something means the
-branch was not green, so fix it and go round again — including the lenses already run, because
-a fix is a change and changes are what the lenses are for. Stop when a full rotation turns up
-nothing worth acting on, and say how many rounds it took.
+**The gate is three consecutive runs per lens with no finding above low. A finding at any
+severity above low resets that lens to zero.** The lenses are independent and all three must
+reach three. Nine clean runs is the floor, not the expectation — a branch that keeps finding
+things keeps paying.
 
-The failure this corrects is specific and was repeated: running each lens once, fixing what it
-found, verifying the build still passes, and reporting green. A build that passes is not a
-review. The verification sweep at the end confirms the fixes did not break anything; it does
+Each run must probe **something the previous runs did not**. Three re-readings of the same code
+are one run repeated, and the counter is not a formality to be satisfied by rephrasing.
+
+An earlier version of this file asked instead for a *rotation to convergence* — passes repeated
+until one full rotation found nothing. **That is a weaker bar and it was measured to be one.**
+On `004-terminal-surface`, five rotation rounds reported convergence; the counter's first six
+runs then found four more defects, including a seat that held its gRPC call open after giving
+up and a truncated log that stopped being followed while the screen still said *Following …*.
+The rotation's fifth round had been clean because it re-read what the fourth had already
+looked at. Consecutive-clean-per-lens is what forces a new probe each time.
+
+The failure both versions correct is specific and was repeated: running each lens once, fixing
+what it found, verifying the build still passes, and reporting green. A build that passes is not
+a review. The verification sweep at the end confirms the fixes did not break anything; it does
 not look for what the fixes introduced.
+
+**The running count lives in `REVIEW-LEDGER.md`, which is untracked** — it is the state of one
+person's review of one checkout, not a fact about the protocol, and it spans sessions and
+machines, so it is written down rather than remembered. Open a section per branch, keep a
+counter table, and log every run with what it probed and what it found. **Log the clean runs
+too**: a run recorded only when it finds something turns the ledger into a bug list, and the
+next reader cannot tell an area that was probed and held from one nobody looked at.
+
+Record findings that are real but below the bar as *low, recorded not acted on*, with the
+reasoning. They do not reset a lens; leaving them unwritten is how the same one gets
+rediscovered every branch.
 
 The highest-value findings in this repository's history came from adversarially probing a
 guard rather than reading it: a self-referral that asserted both halves of a contradiction, a
@@ -423,11 +486,21 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/003-parley-web-console/` — a read-only operator web console:
-  projects, the agents registered in each, and conversations as an annotated chat
-  transcript. `plan.md` gates the work behind a `SPEC.md` §10.2 change: nothing lists
-  conversations and an export carries no exchange state, so two operator reads must be
-  specified before they are built. `contracts/operators-additions.md` is the argument.
+- **Active plan**: `specs/004-terminal-surface/` — `parley top`, a terminal application a person
+  takes part from, because SPEC.md §17 question 15's editor-window agent is the one thing
+  nothing can hand a turn to. `plan.md` settles the question the spec raised and did not
+  assume: **the transport-facing half of `Parley.Web` moves to a new `src/Parley.Client`, and
+  both surfaces read it.** That is a move rather than a rewrite — of the fifteen types outside
+  the Razor pages, exactly one (`SeatCookie`) touches HTTP — and it costs no graph, because
+  `Parley.Client` takes the same two references `Parley.Web` has today. Two surfaces that
+  implemented seating and transcripts separately would disagree about who was in a conversation,
+  which SC-003 forbids and which this repository shipped twice in one week. `research.md` R2
+  records why both surfaces keep one `Seat.Adapter`, and what that makes ordinary: a person
+  seated in a browser and a terminal at once is two attachments for one name, which is the case
+  `connected = 1` got wrong until #77.
+- Previous: `specs/003-parley-web-console/` — a read-only operator web console, merged. Its
+  gate was discharged: `ListConversations` and `Export` were specified before being built, and
+  004 is their second reader rather than a reason to add a third.
 - Previous: `specs/002-project-manifest/` — a per-machine manifest of named projects, merged.
   Its obligation was discharged: SPEC.md §4.1 now illustrates `projects.json` rather than
   `parley.yaml`. `tasks.md` carries the review record, including what five rounds turned up.

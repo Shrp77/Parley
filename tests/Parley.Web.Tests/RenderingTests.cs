@@ -100,13 +100,14 @@ public sealed class RenderingTests : IClassFixture<WebApplicationFactory<Program
         // Read as references rather than as text. The file says in a comment that there is no
         // SQLite here and never may be, and a check that matched any occurrence would fail on the
         // sentence promising the thing it is checking for.
-        var project = System.Xml.Linq.XDocument.Load(
+        //
+        // Transitive, and it was not always. While the console referenced only Configuration and
+        // Transport, reading its own references was a complete answer. It now references
+        // Parley.Client, so a store acquired there would arrive here without appearing in this
+        // file at all -- a guard still reporting success about a graph it had stopped covering.
+        // The depth is the point; GraphTests holds the same walk from the client's side.
+        var referenced = ReferencesReachableFrom(
             RepositoryPath("src/Parley.Web/Parley.Web.csproj"));
-
-        var referenced = project.Descendants()
-            .Where(e => e.Name.LocalName is "PackageReference" or "ProjectReference")
-            .Select(e => e.Attribute("Include")?.Value ?? string.Empty)
-            .ToList();
 
         var forbidden = referenced
             .Where(r => r.Contains("Sqlite", StringComparison.OrdinalIgnoreCase)
@@ -117,6 +118,45 @@ public sealed class RenderingTests : IClassFixture<WebApplicationFactory<Program
         Assert.True(
             forbidden.Count == 0,
             "the console has acquired a route to a store: " + string.Join(", ", forbidden));
+    }
+
+    /// <summary>Every reference a project declares, and every one those declare, to any depth.</summary>
+    /// <param name="path">The project file to start from.</param>
+    /// <returns>The <c>Include</c> value of every reference reachable through project references.</returns>
+    private static List<string> ReferencesReachableFrom(string path)
+    {
+        var found = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        Follow(path);
+
+        return found;
+
+        void Follow(string project)
+        {
+            if (!seen.Add(Path.GetFullPath(project)) || !File.Exists(project))
+            {
+                return;
+            }
+
+            var references = System.Xml.Linq.XDocument.Load(project).Descendants()
+                .Where(e => e.Name.LocalName is "PackageReference" or "ProjectReference")
+                .Select(e => e.Attribute("Include")?.Value ?? string.Empty)
+                .Where(v => v.Length > 0);
+
+            var directory = Path.GetDirectoryName(project) ?? string.Empty;
+
+            foreach (var reference in references)
+            {
+                found.Add(reference);
+
+                if (reference.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+                {
+                    Follow(Path.GetFullPath(
+                        Path.Combine(directory, reference.Replace('\\', '/'))));
+                }
+            }
+        }
     }
 
     /// <summary>Finds a path in the repository from wherever the tests run.</summary>

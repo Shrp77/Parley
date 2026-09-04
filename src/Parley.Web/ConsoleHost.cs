@@ -1,3 +1,5 @@
+using Parley.Client;
+
 namespace Parley.Web;
 
 /// <summary>
@@ -112,7 +114,7 @@ public static class ConsoleHost
         // took it, and disposed with the host because an attachment that outlives the console is
         // a person the deployment still believes is present.
         builder.Services.AddSingleton(services =>
-            new Seating.SeatBook(
+            new Parley.Client.Seating.SeatBook(
                 services.GetRequiredService<BrokerDirectory>().AgentsFor));
 
         var app = builder.Build();

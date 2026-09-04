@@ -3893,6 +3893,25 @@ Cheap to collect, disproportionately useful:
     for a report and not good enough for a decision, and whoever builds it should say which of
     those they are building.
 
+    **Answered in part, 2026-09-02: a person now has somewhere to take part from.** The cost above
+    is that an agent in somebody's window is unreachable by an answer until a person gives it a
+    turn. That leaves the person as the mechanism, and until now the only places a person could
+    act were an editor session nothing can wake and single-shot commands that report and exit --
+    neither of which is somewhere to hold a conversation.
+
+    `parley top` is a terminal a person takes part from: it lists the projects a machine knows,
+    shows who is in each and what has been said, seats the person under their own name, and lets
+    them read what is waiting and answer it. The web console already did this in a browser; what
+    is new is that it no longer needs one, which matters because the machine running a broker is
+    frequently not the machine somebody has a browser open on.
+
+    **This does not close the question, and it is worth being exact about what it does not do.**
+    It does not make an editor-window agent reachable -- nothing can, and that is still the
+    documented cost of a correct decision. It does not make the class visible in the registry:
+    `session_ref` is still empty for both kinds, so an operator still cannot list which of their
+    agents cannot be given a turn. What it changes is who has to be at a keyboard for the
+    deployment to make progress, and where they have to be sitting.
+
 16. **Is 8,000 the right cap? It was 4,000, and the move is the first one this document can
     show its working for.** §9.3 keeps a count of what the cap refused "because a limit nobody
     measures is a limit that gets changed on the strength of whoever complains most recently".

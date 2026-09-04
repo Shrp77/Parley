@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Parley.Client;
 
 namespace Parley.Web.Pages.Projects;
 

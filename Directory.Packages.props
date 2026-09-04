@@ -1,4 +1,4 @@
-﻿<Project>
+<Project>
 
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
@@ -84,6 +84,24 @@
   </ItemGroup>
 
   <!--
+    The terminal surface of `parley top`, and the first dependency on the tool that is neither
+    Microsoft's nor gRPC's.
+
+    That is worth a sentence rather than a shrug, because NuGetAudit fails this build on a high or
+    critical advisory and every package is a new place one can land. Spectre.Console earns it by
+    replacing what the alternative would be: drawing a scrolling transcript, a live log tail and a
+    selectable list with System.Console directly, which is how the startup banner is drawn and is
+    the reason the banner is a banner. The fallback if this ever has to go is therefore a smaller
+    feature rather than a different library.
+
+    It brings nothing with it on .NET 10 — no transitive package dependencies at all, so there is
+    no pin below and nothing new on the graph but the one assembly.
+  -->
+  <ItemGroup Label="Terminal">
+    <PackageVersion Include="Spectre.Console" Version="0.57.2" />
+  </ItemGroup>
+
+  <!--
     xUnit v3. The entire v2 package family (xunit, xunit.core, xunit.assert) is marked
     deprecated on NuGet: legacy, security fixes only, all feature work moved to v3. The
     package name carries the product version in v3 so the package version itself can follow
@@ -112,6 +130,7 @@
   -->
   <ItemGroup Label="Testing">
     <PackageVersion Include="xunit.v3" Version="4.0.0" />
+    <PackageVersion Include="Spectre.Console.Testing" Version="0.57.2" />
     <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="4.14.0" />
   </ItemGroup>
 

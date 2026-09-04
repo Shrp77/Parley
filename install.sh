@@ -525,7 +525,22 @@ printf '%s%s%s\n' "$green" "$reported" "$plain"
 
 # ---------------------------------------------------------------- broker ----
 
-store="$(resolve_store)"
+# A machine that names projects gets an entry that serves them all, and is not asked for a store
+# at all: every project's store and port are in the manifest, and SPEC.md 4.1 says one process
+# may host every one of them. Asked of the tool rather than by looking for the file, because
+# where the manifest lives is the tool's to know.
+manifest=""
+
+if [ -z "$store" ]; then
+    if listed="$("$parley_command" project list 2>/dev/null)" \
+        && ! printf '%s' "$listed" | grep -q 'No projects configured'; then
+        manifest="$(printf '%s\n' "$listed" | sed -n 's/^manifest:[[:space:]]*//p' | tail -n 1)"
+    fi
+fi
+
+if [ -z "$manifest" ]; then
+    store="$(resolve_store)"
+fi
 
 # Asked before registering anything, and only because the check at the end cannot tell one
 # broker from another. stop_broker has already stopped the one an autostart entry started, so
@@ -543,29 +558,45 @@ step "Registering the broker to start at logon"
 # No root here, and not by luck: this writes a systemd *user* unit or a per-user launch agent.
 # The broker binds a loopback port and writes under the invoking user's own home, so it needs no
 # privilege they do not already have, and asking for one would be asking for the tool's benefit.
-# `autostart install` registers a broker-alone entry when it is given no catalogue, so a machine
-# whose agents were being started for it loses that half -- and the loss arrives days later, on a
-# machine nobody is signed into, as a question that waits out its window and is ghosted.
-#
-# Said here rather than carried over. install.ps1 reads the catalogue back out of the scheduled
-# task it is replacing; there is no portable equivalent, because this registers a systemd user
-# unit on Linux and a launch agent on macOS and `autostart status` reports neither's arguments.
-# Announcing the gap is better than a read-back that works on one platform and silently does
-# nothing on the other.
-if [ -z "$node_config" ]; then
-    echo "  no agent catalogue given, so this entry starts the broker alone. Pass"
-    echo "  --node-config <path> to have it start this machine's agents too."
-fi
+autostart_arguments=()
 
-autostart_arguments=(--db "$store")
+if [ -n "$manifest" ]; then
+    echo "  serving every project in $manifest"
 
-if [ -n "$node_config" ]; then
-    autostart_arguments+=(--node-config "$node_config")
+    if [ -n "$node_config" ]; then
+        note "--node-config is not used by an entry that serves the manifest: each project names its own catalogue"
+    fi
+else
+    # `autostart install` registers a broker-alone entry when it is given no catalogue, so a
+    # machine whose agents were being started for it loses that half -- and the loss arrives days
+    # later, on a machine nobody is signed into, as a question that waits out its window and is
+    # ghosted.
+    #
+    # Said here rather than carried over. install.ps1 reads the catalogue back out of the
+    # scheduled task it is replacing; there is no portable equivalent here, because this
+    # registers a systemd user unit on Linux and a launch agent on macOS. Announcing the gap is
+    # better than a read-back that works on one platform and silently does nothing on the other.
+    if [ -z "$node_config" ]; then
+        echo "  no agent catalogue given, so this entry starts the broker alone. Pass"
+        echo "  --node-config <path> to have it start this machine's agents too."
+    fi
+
+    autostart_arguments+=(--db "$store")
+
+    if [ -n "$node_config" ]; then
+        autostart_arguments+=(--node-config "$node_config")
+    fi
 fi
 
 if ! "$parley_command" autostart install "${autostart_arguments[@]}"; then
     echo "Could not set the broker to start automatically. The tools are installed, so running" >&2
-    echo "  parley serve --db $store" >&2
+
+    if [ -n "$manifest" ]; then
+        echo "  parley serve" >&2
+    else
+        echo "  parley serve --db $store" >&2
+    fi
+
     echo "by hand will say why." >&2
     exit 1
 fi
@@ -576,12 +607,26 @@ step "Checking that it answers"
 
 # Asked of the broker, not of the supervisor. "The unit is enabled" and "an agent can attach"
 # are different claims, and the second is the one this script is making -- so the check is a
-# client: `parley registry` connects over the transport and exits 69 when nothing is listening.
-log="$(dirname "$store")/parley-broker.log"
+# client. With one store, `parley registry` connects over the transport and exits 69 when
+# nothing is listening; with a manifest, `parley project list` asks every project's broker and
+# says which are reachable, and the claim is that all of them are.
+if [ -n "$manifest" ]; then
+    log="$(dirname "$manifest")/parley-broker.log"
+else
+    log="$(dirname "$store")/parley-broker.log"
+fi
+
 answering=0
 
 for _ in $(seq 1 80); do
-    if "$parley_command" registry >/dev/null 2>&1; then
+    if [ -n "$manifest" ]; then
+        if listed="$("$parley_command" project list 2>/dev/null)" \
+            && printf '%s\n' "$listed" | grep -q ' reachable$' \
+            && ! printf '%s\n' "$listed" | grep -q 'not reachable'; then
+            answering=1
+            break
+        fi
+    elif "$parley_command" registry >/dev/null 2>&1; then
         answering=1
         break
     fi
@@ -595,10 +640,15 @@ if [ "$answering" != "1" ]; then
     exit 1
 fi
 
-note "store: $store"
+if [ -n "$manifest" ]; then
+    note "serves: every project in $manifest"
+else
+    note "store: $store"
+fi
+
 note "log:   $log"
 
-if [ "$foreign" = "1" ]; then
+if [ "$foreign" = "1" ] && [ -z "$manifest" ]; then
     echo "warning: a broker that this did not start was already listening, and it is the one" >&2
     echo "answering. It is serving its own store, not $store. Stop it and log out and in, or" >&2
     echo "run 'parley serve --db $store' yourself." >&2

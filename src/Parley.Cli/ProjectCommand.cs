@@ -28,6 +28,7 @@ public static class ProjectCommand
     private const int Usage = 64;          // EX_USAGE
     private const int Config = 78;         // EX_CONFIG
     private const int IoError = 74;        // EX_IOERR
+    private const int Unavailable = 69;    // EX_UNAVAILABLE
 
     /// <summary>
     /// Runs one project subcommand.
@@ -37,6 +38,10 @@ public static class ProjectCommand
     /// <param name="fields">The values `add` writes, taken before dispatch.</param>
     /// <param name="output">Where to report what happened.</param>
     /// <param name="error">Where to report why it could not.</param>
+    /// <param name="destroy">
+    /// For <c>remove</c>: also stop the project's broker and delete its store and catalogue. The
+    /// one destructive thing this command can do, and it says so in its name.
+    /// </param>
     /// <param name="cancellationToken">Cancels the work.</param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
@@ -46,6 +51,7 @@ public static class ProjectCommand
         ProjectFields fields,
         TextWriter output,
         TextWriter error,
+        bool destroy = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
@@ -56,7 +62,8 @@ public static class ProjectCommand
         {
             ["list"] => await ListAsync(manifestPath, output, error, cancellationToken).ConfigureAwait(false),
             ["add", var name] => await AddAsync(name, manifestPath, fields, output, error).ConfigureAwait(false),
-            ["remove", var name] => await RemoveAsync(name, manifestPath, output, error, cancellationToken)
+            ["set", var name] => await SetAsync(name, manifestPath, fields, output, error).ConfigureAwait(false),
+            ["remove", var name] => await RemoveAsync(name, manifestPath, destroy, output, error, cancellationToken)
                 .ConfigureAwait(false),
             _ => await UsageAsync(error).ConfigureAwait(false),
         };
@@ -69,10 +76,135 @@ public static class ProjectCommand
             "parley project add <name> --db <path>      add a project\n" +
             "                          --listen <url>\n" +
             "                          [--node-config <path>] [--description <text>]\n" +
-            "parley project remove <name>               forget how to reach a project")
+            "parley project set <name> [--db <path>]    change what a project says; only the\n" +
+            "                          [--listen <url>]  fields given are changed\n" +
+            "                          [--node-config <path>] [--description <text>]\n" +
+            "parley project remove <name>               forget how to reach a project\n" +
+            "                      [--destroy]          ...and stop its broker and delete\n" +
+            "                                           its store and catalogue")
             .ConfigureAwait(false);
 
         return Usage;
+    }
+
+    /// <summary>Changes the fields given on one project and leaves the rest as they were.</summary>
+    /// <remarks>
+    /// Because the alternative was remove-and-add, and removing a project prints a paragraph about
+    /// what was not deleted for a change that never meant to delete anything. The case that made
+    /// this necessary is a catalogue: a project named before its machine started agents for it
+    /// has no <c>node_config</c>, and an autostart entry serving the manifest hosts a node only
+    /// where one is named — so without a way to add it, switching entries silently dropped the
+    /// node. Validated as one whole, under the same lock, by the same rules as <c>add</c>.
+    /// </remarks>
+    private static async Task<int> SetAsync(
+        string requested,
+        string manifestPath,
+        ProjectFields fields,
+        TextWriter output,
+        TextWriter error)
+    {
+        if (fields.Store is null && fields.Endpoint is null && fields.NodeConfig is null
+            && fields.Description is null)
+        {
+            await error.WriteLineAsync(
+                "Nothing to change. Give at least one of --db, --listen, --node-config or " +
+                "--description.").ConfigureAwait(false);
+
+            return Usage;
+        }
+
+        string? missing = null;
+        ProjectSettings? changed = null;
+        var faults = new List<string>();
+
+        try
+        {
+            var written = ProjectManifest.TryUpdate(manifestPath, projects =>
+            {
+                var current = projects.FirstOrDefault(p =>
+                    string.Equals(p.Name.Value, requested, StringComparison.Ordinal));
+
+                if (current is null)
+                {
+                    missing = projects.Count == 0
+                        ? $"No project named '{requested}': this machine has none configured."
+                        : $"No project named '{requested}'. Configured: " +
+                          $"{string.Join(", ", projects.Select(p => p.Name.Value).Order(StringComparer.Ordinal))}.";
+
+                    return null;
+                }
+
+                // An empty value clears an optional field, so a catalogue can be taken away as
+                // well as given; the required two cannot be emptied, and the manifest's own
+                // rules say so below.
+                changed = current with
+                {
+                    Store = fields.Store ?? current.Store,
+                    Endpoint = fields.Endpoint ?? current.Endpoint,
+                    NodeConfig = fields.NodeConfig is null
+                        ? current.NodeConfig
+                        : fields.NodeConfig.Length == 0 ? null : fields.NodeConfig,
+                    Description = fields.Description is null
+                        ? current.Description
+                        : fields.Description.Length == 0 ? null : fields.Description,
+                };
+
+                faults.AddRange(changed.Problems());
+                faults.AddRange(ProjectManifest.PathProblems(changed, manifestPath));
+
+                var updated = projects.Select(p => p == current ? changed : p).ToArray();
+
+                faults.AddRange(ProjectManifest.Collisions(updated));
+
+                return faults.Count > 0 ? null : updated;
+            },
+            out var problem);
+
+            if (problem is not null)
+            {
+                await error.WriteLineAsync(problem).ConfigureAwait(false);
+                return Config;
+            }
+
+            if (!written)
+            {
+                await error.WriteLineAsync(
+                    missing ??
+                    $"Cannot change '{requested}':{Environment.NewLine}  - " +
+                    string.Join($"{Environment.NewLine}  - ", faults) +
+                    $"{Environment.NewLine}{manifestPath} is unchanged.")
+                    .ConfigureAwait(false);
+
+                return Config;
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                              or InvalidDataException)
+        {
+            await error.WriteLineAsync($"Could not write {manifestPath}: {exception.Message}")
+                .ConfigureAwait(false);
+
+            return IoError;
+        }
+
+        await output.WriteLineAsync($"Changed '{requested}' in {manifestPath}.").ConfigureAwait(false);
+
+        // What it says now, so the person can see the change landed without a second command --
+        // and because a store, endpoint or catalogue changed here restarts the project in the
+        // process serving the manifest, which is worth saying where the change is made.
+        await output.WriteLineAsync(
+            $"  endpoint  {changed!.Endpoint}{Environment.NewLine}" +
+            $"  store     {changed.Store}" +
+            (changed.NodeConfig is { Length: > 0 } node ? $"{Environment.NewLine}  node      {node}" : string.Empty) +
+            (changed.Description is { Length: > 0 } about ? $"{Environment.NewLine}  {about}" : string.Empty))
+            .ConfigureAwait(false);
+
+        await output.WriteLineAsync(
+            "The process serving the manifest restarts this project on the new store, endpoint " +
+            "or catalogue within a few seconds; a broker started by hand keeps what it started " +
+            "with until its next start.").ConfigureAwait(false);
+
+        return 0;
     }
 
     private static async Task<int> ListAsync(
@@ -208,7 +340,7 @@ public static class ProjectCommand
                 // is about to live in the file under that name, the mapping is one line below, and
                 // one rule with one message is worth more than two messages that agree today.
                 faults.AddRange(settings.Problems());
-                faults.AddRange(ProjectManifest.PathProblems(settings));
+                faults.AddRange(ProjectManifest.PathProblems(settings, manifestPath));
 
                 var updated = projects.Append(settings).ToArray();
 
@@ -263,6 +395,7 @@ public static class ProjectCommand
     private static async Task<int> RemoveAsync(
         string requested,
         string manifestPath,
+        bool destroy,
         TextWriter output,
         TextWriter error,
         CancellationToken cancellationToken)
@@ -273,6 +406,22 @@ public static class ProjectCommand
         // that was actually removed rather than the one that was asked for -- and it is only
         // known inside the lock, where the manifest was read.
         ProjectSettings? going = null;
+        IReadOnlyList<ProjectSettings> staying = [];
+
+        // Asked before the entry goes, because the entry going is what stops the broker, and
+        // the registry is the one place that says which repositories were agents here. Read
+        // only when destroying: plain removal leaves the broker running and has no use for it.
+        IReadOnlyList<(string Agent, string Workspace)>? agents = null;
+
+        if (destroy && ProjectManifest.TryRead(manifestPath, out var before, out _))
+        {
+            var target = before.FirstOrDefault(p => string.Equals(p.Name.Value, requested, StringComparison.Ordinal));
+
+            if (target is not null)
+            {
+                agents = await AgentsAsync(target.Endpoint, cancellationToken).ConfigureAwait(false);
+            }
+        }
 
         try
         {
@@ -294,7 +443,9 @@ public static class ProjectCommand
                     return null;
                 }
 
-                return [.. projects.Where(p => p != going)];
+                staying = [.. projects.Where(p => p != going)];
+
+                return staying;
             },
             out var problem);
 
@@ -325,22 +476,218 @@ public static class ProjectCommand
 
         await output.WriteLineAsync($"Removed '{requested}' from {manifestPath}.").ConfigureAwait(false);
 
+        if (destroy)
+        {
+            return await DestroyAsync(going!, staying, agents, manifestPath, output, error, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         // Said explicitly, every time. Somebody removing a project may well have meant to delete
         // its data too, and the only safe way to offer that is to say what still exists and let
         // them do it deliberately.
         await output.WriteLineAsync(
             $"Nothing was deleted. The store remains at {going!.Store}" +
             (going.NodeConfig is { Length: > 0 } node ? $", the node catalogue at {node}" : string.Empty) +
-            ", and every repository's launch configuration is untouched.").ConfigureAwait(false);
+            ", and every repository's launch configuration is untouched. `remove --destroy` " +
+            "deletes them.").ConfigureAwait(false);
 
         if (await ReachableAsync(going.Endpoint, cancellationToken).ConfigureAwait(false))
         {
             await output.WriteLineAsync(
-                $"A broker still appears to be running at {going.Endpoint}. This entry was how you " +
-                "reached it.").ConfigureAwait(false);
+                $"A broker still appears to be running at {going.Endpoint}. The process serving " +
+                "the manifest stops it within a few seconds; one started by hand keeps running.")
+                .ConfigureAwait(false);
         }
 
         return 0;
+    }
+
+    /// <summary>Stops a removed project's broker and deletes what withdrawal leaves behind.</summary>
+    /// <param name="going">The project, as it was.</param>
+    /// <param name="staying">Every project still named, for what must not be deleted.</param>
+    /// <param name="agents">The registry as read before the entry went, or null if it could not be.</param>
+    /// <param name="manifestPath">The manifest, which is never deleted whatever an entry says.</param>
+    /// <param name="output">Where to say what was deleted.</param>
+    /// <param name="error">Where to say what could not be.</param>
+    /// <param name="cancellationToken">Cancels the wait.</param>
+    /// <returns>The exit code.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>This command does not stop anything itself, and cannot.</b> §4 gives the store to one
+    /// process, and that process is the one serving the manifest: removing the entry is what
+    /// tells it to stop this project's broker, and this waits for that to have happened before
+    /// touching a file the broker still had open. A broker started by hand, or by an entry
+    /// with explicit paths, was not told anything, and is left running rather than killed: it
+    /// is reported, with the store's path, and the deleting is the person's.
+    /// </para>
+    /// <para>
+    /// The catalogue goes with the store. The manifest refuses two projects that share one —
+    /// consent to run unattended is per project because the catalogue is — so a project's
+    /// catalogue is nobody else's, and leaving it behind would be leaving a list of repositories
+    /// that a deleted deployment was allowed to start.
+    /// </para>
+    /// </remarks>
+    private static async Task<int> DestroyAsync(
+        ProjectSettings going,
+        IReadOnlyList<ProjectSettings> staying,
+        IReadOnlyList<(string Agent, string Workspace)>? agents,
+        string manifestPath,
+        TextWriter output,
+        TextWriter error,
+        CancellationToken cancellationToken)
+    {
+        // Answering before is the sign the serving process is about to stop it; answering still,
+        // after a generous multiple of the watch interval, is the sign nothing will. Generous
+        // because stopping a project waits for its node to send every agent it started away,
+        // which has its own grace period, and a wait that expired during that would report a
+        // broker nobody owns while the owner was in the middle of stopping it.
+        if (agents is not null)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            var stopped = false;
+
+            while (DateTime.UtcNow < deadline)
+            {
+                if (!await ReachableAsync(going.Endpoint, cancellationToken).ConfigureAwait(false))
+                {
+                    stopped = true;
+                    break;
+                }
+
+                await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (!stopped)
+            {
+                await error.WriteLineAsync(
+                    $"The entry is gone, but a broker still answers at {going.Endpoint}, so it was " +
+                    "not started by the process serving the manifest and nothing here can stop " +
+                    $"it. Stop it yourself, then delete {going.Store} and its -wal and -shm " +
+                    "files. Nothing was deleted.").ConfigureAwait(false);
+
+                return Unavailable;
+            }
+        }
+
+        var deleted = new List<string>();
+
+        // The store and SQLite's companions. Retried briefly, because the broker releases the
+        // file a moment after it stops answering, and on Windows a file still open cannot go.
+        // Never the manifest, whatever the entry says: the manifest refuses such an entry on the
+        // way in, and this is the second lock on the same door.
+        foreach (var suffix in new[] { string.Empty, "-wal", "-shm", "-journal" })
+        {
+            var path = going.Store + suffix;
+
+            if (!File.Exists(path) || ProjectManifest.IsTheManifest(path, manifestPath))
+            {
+                continue;
+            }
+
+            if (!await TryDeleteAsync(path, cancellationToken).ConfigureAwait(false))
+            {
+                await error.WriteLineAsync(
+                    $"Could not delete {path}: something still has it open. The entry is gone " +
+                    $"and {string.Join(", ", deleted)} {(deleted.Count == 1 ? "was" : "were")} " +
+                    "deleted; delete the rest yourself once the broker has released it.")
+                    .ConfigureAwait(false);
+
+                return IoError;
+            }
+
+            deleted.Add(path);
+        }
+
+        if (going.NodeConfig is { Length: > 0 } catalogue
+            && File.Exists(catalogue)
+            && !ProjectManifest.IsTheManifest(catalogue, manifestPath)
+            && await TryDeleteAsync(catalogue, cancellationToken).ConfigureAwait(false))
+        {
+            deleted.Add(catalogue);
+        }
+
+        _ = staying;
+
+        await output.WriteLineAsync(
+            deleted.Count == 0
+                ? $"Destroyed '{going.Name}'. Nothing was on disk to delete."
+                : $"Destroyed '{going.Name}'. Deleted {string.Join(", ", deleted)}.")
+            .ConfigureAwait(false);
+
+        // The half nothing here can do. A repository's launch configuration names the project or
+        // the broker's address, and a session opened there will be told no broker is listening.
+        // Naming them is the most this can do, and it can only do that if the registry answered
+        // before the broker went.
+        if (agents is null)
+        {
+            await output.WriteLineAsync(
+                "Its registry could not be read before it stopped, so the repositories that were " +
+                "agents in it are not listed here. Each still names it in its launch configuration " +
+                "and will report no broker listening when opened.").ConfigureAwait(false);
+        }
+        else if (agents.Count > 0)
+        {
+            await output.WriteLineAsync(
+                "These repositories were agents in it. Each still names it in its launch " +
+                "configuration (.mcp.json), which nothing here touches:").ConfigureAwait(false);
+
+            foreach (var (agent, workspace) in agents.OrderBy(a => a.Agent, StringComparer.Ordinal))
+            {
+                await output.WriteLineAsync(
+                    $"  {agent,-24} {(workspace.Length > 0 ? workspace : "(workspace not stated)")}")
+                    .ConfigureAwait(false);
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>The agents a project's broker knows, with where each lives.</summary>
+    /// <returns>The list, or null when the broker did not answer.</returns>
+    private static async Task<IReadOnlyList<(string Agent, string Workspace)>?> AgentsAsync(
+        string endpoint, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(3));
+
+            using var channel = GrpcChannel.ForAddress(endpoint);
+            var operators = new Transport.Operators.OperatorsClient(channel);
+
+            var reply = await operators.DescribeRegistryAsync(
+                new Transport.Empty(), cancellationToken: timeout.Token);
+
+            return [.. reply.Rows.Select(row => (row.Name, row.Workspace))];
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Deletes a file, waiting a little for whatever had it open to let go.</summary>
+    private static async Task<bool> TryDeleteAsync(string path, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            try
+            {
+                File.Delete(path);
+
+                return true;
+            }
+            catch (IOException)
+            {
+                await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return !File.Exists(path);
     }
 }
 

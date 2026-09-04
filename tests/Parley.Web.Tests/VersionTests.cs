@@ -1,6 +1,7 @@
 using Parley.Core;
 using Parley.Web.Pages;
 using Xunit;
+using Parley.Client;
 
 namespace Parley.Web.Tests;
 

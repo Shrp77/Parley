@@ -143,13 +143,16 @@ public sealed class AutostartConsoleTests
     }
 
     [Fact]
-    public async Task A_console_is_hosted_across_several_projects_and_a_node_is_not()
+    public async Task Neither_a_console_nor_a_node_is_refused_across_several_projects()
     {
-        // Found by running it. A node joins one broker and `serve` refuses to host one across
-        // several projects; a console reads this machine's manifest and is at its best across all
-        // of them. Both were handed through the one hook, so `serve --with-console` over two
-        // projects hit the node's guard and threw an ArgumentException at a person — not a
-        // refusal, an unhandled exception with a stack trace.
+        // Found by running it, twice over. A console reads this machine's manifest and is at its
+        // best across several projects, and it was once refused because it shared a hook with the
+        // node. The node was then refused across several projects on its own, on the grounds
+        // that a machine has one identity — until an autostart entry serving the manifest had
+        // nowhere to put the node at all. It is hosted per catalogued project now, so neither
+        // hook may throw at a person. Cancelled up front so nothing binds and the test needs no
+        // sockets: anything that is not an ArgumentException got past the guard, which is the
+        // whole claim.
         var projects = new[]
         {
             new ProjectSettings(
@@ -158,25 +161,23 @@ public sealed class AutostartConsoleTests
                 ProjectName.Create("beta"), "beta.db", "http://127.0.0.1:0", null, null)
         };
 
-        await Assert.ThrowsAsync<ArgumentException>(() => ServeCommand.RunAsync(
-            projects, null, TextWriter.Null, TextWriter.Null,
-            whenListening: (_, _, _) => Task.FromResult(0),
-            cancellationToken: TestContext.Current.CancellationToken));
-
-        // The console is not refused. Asserted on the kind of failure rather than on success,
-        // because the guard throws before any port is opened — so anything that is not an
-        // ArgumentException means it got past the guard, which is the whole claim. Cancelled up
-        // front so nothing binds and the test needs no sockets.
         using var stopping = new CancellationTokenSource();
 
         await stopping.CancelAsync();
 
-        var refused = await Record.ExceptionAsync(() => ServeCommand.RunAsync(
+        var node = await Record.ExceptionAsync(() => ServeCommand.RunAsync(
+            projects, null, TextWriter.Null, TextWriter.Null,
+            nodeFor: (_, _, _, _) => Task.FromResult(0),
+            cancellationToken: stopping.Token));
+
+        Assert.IsNotType<ArgumentException>(node);
+
+        var console = await Record.ExceptionAsync(() => ServeCommand.RunAsync(
             projects, null, TextWriter.Null, TextWriter.Null,
             alongside: (_, _, _) => Task.FromResult(0),
             cancellationToken: stopping.Token));
 
-        Assert.IsNotType<ArgumentException>(refused);
+        Assert.IsNotType<ArgumentException>(console);
     }
 
     [Fact]

@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Parley.Configuration;
 using Parley.Core;
 using Xunit;
+using Parley.Client;
 
 namespace Parley.Web.Tests;
 
