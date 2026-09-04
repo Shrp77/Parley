@@ -107,8 +107,8 @@ internal static class Removing
             new ProjectFields(null, null, null, null),
             said,
             complained,
-            cancellationToken,
-            destroy).ConfigureAwait(false);
+            destroy,
+            cancellationToken).ConfigureAwait(false);
 
         foreach (var line in said.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {

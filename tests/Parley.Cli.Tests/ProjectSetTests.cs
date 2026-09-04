@@ -46,7 +46,7 @@ public sealed class ProjectSetTests : IDisposable
             fields ?? new ProjectFields(null, null, null, null),
             output,
             error,
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         return (code, output.ToString(), error.ToString());
     }

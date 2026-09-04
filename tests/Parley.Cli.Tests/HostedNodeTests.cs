@@ -1,6 +1,7 @@
 using Parley.Configuration;
 using Parley.Core;
 using Xunit;
+using static Parley.Cli.Tests.Loopback;
 
 namespace Parley.Cli.Tests;
 
@@ -232,16 +233,6 @@ public sealed class HostedNodeTests : IDisposable
         {
             // Asserted on by the caller, with everything that was read.
         }
-    }
-
-    private static int FreePort()
-    {
-        using var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
-        probe.Start();
-        var port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
-        probe.Stop();
-
-        return port;
     }
 
     [Theory]

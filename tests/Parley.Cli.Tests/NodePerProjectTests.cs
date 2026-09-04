@@ -1,8 +1,7 @@
 using System.Collections.Concurrent;
-using System.Net;
-using System.Net.Sockets;
 using Parley.Core;
 using Xunit;
+using static Parley.Cli.Tests.Loopback;
 
 namespace Parley.Cli.Tests;
 
@@ -78,16 +77,6 @@ public sealed class NodePerProjectTests : IDisposable
         Assert.Equal(0, code);
         Assert.Contains("orders", offered);
         Assert.Contains("billing", offered);
-    }
-
-    private static int FreePort()
-    {
-        using var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
-        probe.Stop();
-
-        return port;
     }
 
     private ProjectSettings Project(string name) =>

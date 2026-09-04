@@ -159,28 +159,7 @@ public sealed record AutostartPlan(
                 $"{arguments} --with-console --console {Quote(front)}");
         }
 
-        var binary = executable ?? Environment.ProcessPath ?? "parley";
-
-        return Detect() switch
-        {
-            Cli.Supervisor.ScheduledTask => new AutostartPlan(
-                Cli.Supervisor.ScheduledTask, Name, binary, arguments, log, null),
-
-            Cli.Supervisor.SystemdUser => new AutostartPlan(
-                Cli.Supervisor.SystemdUser, Name, binary, arguments, log,
-                Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    ".config", "systemd", "user", Name + ".service")),
-
-            Cli.Supervisor.LaunchAgent => new AutostartPlan(
-                Cli.Supervisor.LaunchAgent, Name, binary, arguments, log,
-                Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    "Library", "LaunchAgents", Name + ".plist")),
-
-            _ => new AutostartPlan(
-                Cli.Supervisor.Unsupported, Name, binary, arguments, log, null)
-        };
+        return Compose(executable ?? Environment.ProcessPath ?? "parley", arguments, log);
     }
 
     /// <summary>
@@ -236,14 +215,41 @@ public sealed record AutostartPlan(
                 $"{arguments} --with-console --console {Quote(front)}");
         }
 
-        var binary = executable ?? Environment.ProcessPath ?? "parley";
-
-        return Describe("placeholder.db", executable: binary) with
-        {
-            Arguments = arguments,
-            LogPath = log,
-        };
+        return Compose(executable ?? Environment.ProcessPath ?? "parley", arguments, log);
     }
+
+    /// <summary>The plan for this platform, given what it runs and where it logs.</summary>
+    /// <param name="binary">The broker binary.</param>
+    /// <param name="arguments">What to pass it.</param>
+    /// <param name="log">Where its output goes.</param>
+    /// <returns>The plan.</returns>
+    /// <remarks>
+    /// The one place the supervisor is chosen and the unit path derived. The manifest plan used
+    /// to be built by describing a placeholder store and overwriting two properties, which
+    /// worked and read as a trick — and a trick in the function that decides what runs at
+    /// logon is a trick somebody will one day extend.
+    /// </remarks>
+    private static AutostartPlan Compose(string binary, string arguments, string log) =>
+        Detect() switch
+        {
+            Cli.Supervisor.ScheduledTask => new AutostartPlan(
+                Cli.Supervisor.ScheduledTask, Name, binary, arguments, log, null),
+
+            Cli.Supervisor.SystemdUser => new AutostartPlan(
+                Cli.Supervisor.SystemdUser, Name, binary, arguments, log,
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".config", "systemd", "user", Name + ".service")),
+
+            Cli.Supervisor.LaunchAgent => new AutostartPlan(
+                Cli.Supervisor.LaunchAgent, Name, binary, arguments, log,
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    "Library", "LaunchAgents", Name + ".plist")),
+
+            _ => new AutostartPlan(
+                Cli.Supervisor.Unsupported, Name, binary, arguments, log, null)
+        };
 
     /// <summary>Which supervisor this platform uses.</summary>
     /// <returns>The supervisor.</returns>

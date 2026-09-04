@@ -38,11 +38,11 @@ public static class ProjectCommand
     /// <param name="fields">The values `add` writes, taken before dispatch.</param>
     /// <param name="output">Where to report what happened.</param>
     /// <param name="error">Where to report why it could not.</param>
-    /// <param name="cancellationToken">Cancels the work.</param>
     /// <param name="destroy">
     /// For <c>remove</c>: also stop the project's broker and delete its store and catalogue. The
     /// one destructive thing this command can do, and it says so in its name.
     /// </param>
+    /// <param name="cancellationToken">Cancels the work.</param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     public static async Task<int> RunAsync(
@@ -51,8 +51,8 @@ public static class ProjectCommand
         ProjectFields fields,
         TextWriter output,
         TextWriter error,
-        CancellationToken cancellationToken = default,
-        bool destroy = false)
+        bool destroy = false,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
         ArgumentNullException.ThrowIfNull(output);

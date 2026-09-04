@@ -1,8 +1,6 @@
-using System.Net;
-using System.Net.Sockets;
-using Grpc.Net.Client;
 using Parley.Core;
 using Xunit;
+using static Parley.Cli.Tests.Loopback;
 
 namespace Parley.Cli.Tests;
 
@@ -49,27 +47,6 @@ public sealed class MultiProjectServeTests : IDisposable
         }
     }
 
-    /// <summary>
-    /// Takes a port the kernel is willing to give, and gives it straight back.
-    /// </summary>
-    /// <returns>A port number, free at the moment of asking.</returns>
-    /// <remarks>
-    /// Racy in principle and settled in practice, which is worth saying rather than leaving for
-    /// somebody to rediscover: another process could take the port between the release and the
-    /// bind. The alternative — listening on port zero and reading the address back — cannot be
-    /// used here, because the address has to go into a project's configuration *before* anything
-    /// starts. A collision surfaces as this test failing, not as a silent pass.
-    /// </remarks>
-    private static int FreePort()
-    {
-        using var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
-        probe.Stop();
-
-        return port;
-    }
-
     private ProjectSettings Project(string name, string? store = null) =>
         new(
             ProjectName.Create(name),
@@ -93,49 +70,6 @@ public sealed class MultiProjectServeTests : IDisposable
         Directory.CreateDirectory(path);
 
         return Project(name, path);
-    }
-
-    private static async Task<bool> AnswersAsync(string endpoint, CancellationToken cancellationToken)
-    {
-        // Polled rather than assumed. StartAsync has returned by the time the banner is written,
-        // but the banner is written by a different task than the one this test is on.
-        for (var attempt = 0; attempt < 50; attempt++)
-        {
-            try
-            {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(TimeSpan.FromSeconds(2));
-
-                using var channel = GrpcChannel.ForAddress(endpoint);
-                await channel.ConnectAsync(timeout.Token);
-
-                return true;
-            }
-            catch (Exception exception) when (exception is not OutOfMemoryException)
-            {
-                await Task.Delay(100, cancellationToken);
-            }
-        }
-
-        return false;
-    }
-
-    private static bool CanBind(string endpoint)
-    {
-        var port = new Uri(endpoint).Port;
-
-        try
-        {
-            using var probe = new TcpListener(IPAddress.Loopback, port);
-            probe.Start();
-            probe.Stop();
-
-            return true;
-        }
-        catch (SocketException)
-        {
-            return false;
-        }
     }
 
     /// <summary>

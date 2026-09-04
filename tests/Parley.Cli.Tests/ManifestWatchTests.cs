@@ -1,8 +1,8 @@
 using System.Net;
 using System.Net.Sockets;
-using Grpc.Net.Client;
 using Parley.Core;
 using Xunit;
+using static Parley.Cli.Tests.Loopback;
 
 namespace Parley.Cli.Tests;
 
@@ -616,57 +616,6 @@ public sealed class ManifestWatchTests : IDisposable
         }
 
         Assert.Equal(0, await serving.WaitAsync(TimeSpan.FromSeconds(30), ct));
-    }
-
-    private static async Task<bool> AnswersAsync(string endpoint, CancellationToken cancellationToken, int attempts = 80)
-    {
-        for (var attempt = 0; attempt < attempts; attempt++)
-        {
-            try
-            {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(TimeSpan.FromSeconds(2));
-
-                using var channel = GrpcChannel.ForAddress(endpoint);
-                await channel.ConnectAsync(timeout.Token);
-
-                return true;
-            }
-            catch (Exception exception) when (exception is not OutOfMemoryException)
-            {
-                await Task.Delay(100, cancellationToken);
-            }
-        }
-
-        return false;
-    }
-
-    private static bool CanBind(string endpoint)
-    {
-        var port = new Uri(endpoint).Port;
-
-        try
-        {
-            using var probe = new TcpListener(IPAddress.Loopback, port);
-            probe.Start();
-            probe.Stop();
-
-            return true;
-        }
-        catch (SocketException)
-        {
-            return false;
-        }
-    }
-
-    private static int FreePort()
-    {
-        using var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
-        probe.Stop();
-
-        return port;
     }
 
     private ProjectSettings Project(string name) =>

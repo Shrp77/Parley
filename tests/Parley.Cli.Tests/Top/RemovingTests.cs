@@ -5,6 +5,7 @@ using Parley.Configuration;
 using Parley.Core;
 using Spectre.Console.Testing;
 using Xunit;
+using static Parley.Cli.Tests.Loopback;
 
 namespace Parley.Cli.Tests.Top;
 
@@ -228,57 +229,6 @@ public sealed class RemovingTests : IDisposable
         var code = await serving.WaitAsync(TimeSpan.FromSeconds(30), ct);
 
         Assert.Equal(0, code);
-    }
-
-    private static async Task<bool> AnswersAsync(string endpoint, CancellationToken cancellationToken, int attempts = 80)
-    {
-        for (var attempt = 0; attempt < attempts; attempt++)
-        {
-            try
-            {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(TimeSpan.FromSeconds(2));
-
-                using var channel = Grpc.Net.Client.GrpcChannel.ForAddress(endpoint);
-                await channel.ConnectAsync(timeout.Token);
-
-                return true;
-            }
-            catch (Exception exception) when (exception is not OutOfMemoryException)
-            {
-                await Task.Delay(100, cancellationToken);
-            }
-        }
-
-        return false;
-    }
-
-    private static bool CanBind(string endpoint)
-    {
-        var port = new Uri(endpoint).Port;
-
-        try
-        {
-            using var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, port);
-            probe.Start();
-            probe.Stop();
-
-            return true;
-        }
-        catch (System.Net.Sockets.SocketException)
-        {
-            return false;
-        }
-    }
-
-    private static int FreePort()
-    {
-        using var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
-        probe.Start();
-        var port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
-        probe.Stop();
-
-        return port;
     }
 
     private async Task<ProjectSettings> NamedAsync()

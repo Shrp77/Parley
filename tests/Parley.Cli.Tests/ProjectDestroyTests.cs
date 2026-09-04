@@ -1,9 +1,7 @@
-using System.Net;
-using System.Net.Sockets;
-using Grpc.Net.Client;
 using Parley.Configuration;
 using Parley.Core;
 using Xunit;
+using static Parley.Cli.Tests.Loopback;
 
 namespace Parley.Cli.Tests;
 
@@ -224,7 +222,7 @@ public sealed class ProjectDestroyTests : IDisposable
             new ProjectFields(Manifest, "http://127.0.0.1:1", null, null),
             output,
             error,
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotEqual(0, code);
         Assert.False(ProjectManifest.TryRead(Manifest, out var projects, out _) && projects.Count > 0,
@@ -294,8 +292,8 @@ public sealed class ProjectDestroyTests : IDisposable
             new ProjectFields(null, null, null, null),
             output,
             error,
-            TestContext.Current.CancellationToken,
-            destroy: destroy);
+            destroy,
+            TestContext.Current.CancellationToken);
 
         return (code, output.ToString(), error.ToString());
     }
@@ -308,36 +306,4 @@ public sealed class ProjectDestroyTests : IDisposable
             catalogue,
             null);
 
-    private static async Task<bool> AnswersAsync(string endpoint, CancellationToken cancellationToken, int attempts = 80)
-    {
-        for (var attempt = 0; attempt < attempts; attempt++)
-        {
-            try
-            {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(TimeSpan.FromSeconds(2));
-
-                using var channel = GrpcChannel.ForAddress(endpoint);
-                await channel.ConnectAsync(timeout.Token);
-
-                return true;
-            }
-            catch (Exception exception) when (exception is not OutOfMemoryException)
-            {
-                await Task.Delay(100, cancellationToken);
-            }
-        }
-
-        return false;
-    }
-
-    private static int FreePort()
-    {
-        using var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
-        probe.Stop();
-
-        return port;
-    }
 }
