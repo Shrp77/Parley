@@ -254,6 +254,35 @@ public sealed class ProjectDestroyTests : IDisposable
         Assert.Contains("Nothing was on disk to delete", output, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task A_store_something_else_holds_open_is_reported_not_half_deleted_in_silence()
+    {
+        // Lens 2 probe. The worst outcome of a delete that meets a locked file is a quiet partial
+        // state: entry gone, some files gone, the rest still there, exit zero. What is required
+        // is the truth in the exit code and the message: which files went, which did not, and
+        // that the entry is gone either way.
+        var ct = TestContext.Current.CancellationToken;
+
+        var project = Project("held", null);
+
+        ProjectManifest.Write(Manifest, [project]);
+        await File.WriteAllTextAsync(project.Store, string.Empty, ct);
+        await File.WriteAllTextAsync(project.Store + "-wal", string.Empty, ct);
+
+        // Held the way a process that has the database open holds it: no sharing at all.
+        using var holder = new FileStream(project.Store, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        var (code, output, error) = await RemoveAsync("held", destroy: true);
+
+        Assert.Equal(74, code);
+        Assert.Contains("still has it open", error, StringComparison.Ordinal);
+        Assert.Contains("Removed 'held'", output, StringComparison.Ordinal);
+        Assert.True(File.Exists(project.Store), "a held store was deleted");
+
+        Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
+        Assert.Empty(left);
+    }
+
     private async Task<(int Code, string Out, string Error)> RemoveAsync(string name, bool destroy)
     {
         var output = new StringWriter();
