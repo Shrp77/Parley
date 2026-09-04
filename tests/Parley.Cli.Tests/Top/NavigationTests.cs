@@ -5,8 +5,8 @@ using Parley.Client;
 using Parley.Client.Seating;
 using Parley.Core;
 using Parley.Store;
-using Spectre.Console.Testing;
 using Xunit;
+using static Parley.Cli.Tests.Top.Driving;
 
 namespace Parley.Cli.Tests.Top;
 
@@ -171,43 +171,6 @@ public sealed class NavigationTests : IAsyncDisposable
     /// <summary>Where the test's broker is listening.</summary>
     private string Address => _broker.Address;
 
-    /// <summary>A console that answers prompts from pushed keys.</summary>
-    /// <returns>The console, which also records everything drawn on it.</returns>
-    private static TestConsole Interactive()
-    {
-        var console = new TestConsole();
-
-        console.Interactive();
-        console.Profile.Width = 200;
-
-        return console;
-    }
-
-    /// <summary>Chooses one entry by name, whatever position it is in.</summary>
-    /// <param name="console">The console to push the keys onto.</param>
-    /// <param name="choices">The entries the screen is about to offer.</param>
-    /// <param name="wanted">The one to take.</param>
-    /// <remarks>
-    /// The lists come from the screens themselves, so this cannot drift from what is drawn. A
-    /// test that hard-coded the number of arrow presses would still pass after a menu grew — it
-    /// would simply be selecting a different entry, and the assertion it then failed would point
-    /// anywhere but here.
-    /// </remarks>
-    private static void Pick(
-        TestConsole console, IReadOnlyList<string> choices, string wanted)
-    {
-        var at = choices.ToList().IndexOf(wanted);
-
-        Assert.True(at >= 0, $"'{wanted}' is not on the screen it was expected on");
-
-        for (var step = 0; step < at; step++)
-        {
-            console.Input.PushKey(ConsoleKey.DownArrow);
-        }
-
-        Enter(console);
-    }
-
     /// <summary>What the first screen offers for this test's one project.</summary>
     /// <returns>The entries.</returns>
     private IReadOnlyList<string> Projects() =>
@@ -217,9 +180,4 @@ public sealed class NavigationTests : IAsyncDisposable
     /// <summary>What the project menu offers while nobody is seated.</summary>
     /// <returns>The entries.</returns>
     private static IReadOnlyList<string> Menu() => ProjectMenu.Choices(seated: false);
-
-    /// <summary>Takes whatever is highlighted.</summary>
-    /// <param name="console">The console to push the key onto.</param>
-    private static void Enter(TestConsole console) =>
-        console.Input.PushKey(ConsoleKey.Enter);
 }

@@ -5,6 +5,7 @@ using Parley.Configuration;
 using Parley.Core;
 using Spectre.Console.Testing;
 using Xunit;
+using static Parley.Cli.Tests.Top.Driving;
 
 namespace Parley.Cli.Tests.Top;
 
@@ -199,29 +200,4 @@ public sealed class NamingTests : IDisposable
         Assert.Equal(0, exit);
     }
 
-    private static TestConsole Interactive()
-    {
-        var console = new TestConsole();
-
-        console.Interactive();
-        console.Profile.Width = 200;
-
-        return console;
-    }
-
-    private static void Pick(TestConsole console, IReadOnlyList<string> choices, string wanted)
-    {
-        var at = choices.ToList().IndexOf(wanted);
-
-        Assert.True(at >= 0, $"'{wanted}' is not on the screen it was expected on");
-
-        for (var step = 0; step < at; step++)
-        {
-            console.Input.PushKey(ConsoleKey.DownArrow);
-        }
-
-        Enter(console);
-    }
-
-    private static void Enter(TestConsole console) => console.Input.PushKey(ConsoleKey.Enter);
 }

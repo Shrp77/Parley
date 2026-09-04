@@ -157,7 +157,9 @@ before running `apply`. Three behaviours are worth knowing so the output is not 
    `parley serve --db <path to the store> --with-node --node-config <path to node.json>`.
    One process, because a node that is not running leaves every repository you just enrolled
    reading as startable and never started. To have it survive a reboot, install the same pair as
-   one logon entry: `parley autostart install --db <path> --node-config <path to node.json>`.
+   one logon entry: `parley autostart install --db <path> --node-config <path to node.json>` -
+   or, once the deployment is a named project whose entry carries the catalogue, plain
+   `parley autostart install`, which serves every project in the manifest.
    Name the catalogue explicitly in both rather than relying on `PARLEY_NODE_CONFIG` or a bare
    `node.json`: a logon entry has no working directory worth relying on, and whether it sees an
    environment variable depends on which supervisor it is. `setx` in particular does not affect

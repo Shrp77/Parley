@@ -6,6 +6,7 @@ using Parley.Client.Seating;
 using Parley.Core;
 using Spectre.Console.Testing;
 using Xunit;
+using static Parley.Cli.Tests.Top.Driving;
 using Wire = Parley.Transport;
 
 namespace Parley.Cli.Tests.Top;
@@ -102,36 +103,6 @@ public sealed class BrokerRestartTests
         Assert.Single(seats.Seats(me));
     }
 
-
-    /// <summary>A console that answers prompts from pushed keys.</summary>
-    /// <returns>The console.</returns>
-    private static TestConsole Interactive()
-    {
-        var console = new TestConsole();
-
-        console.Interactive();
-        console.Profile.Width = 200;
-
-        return console;
-    }
-
-    /// <summary>Chooses one entry by name, whatever position it is in.</summary>
-    /// <param name="console">The console to push the keys onto.</param>
-    /// <param name="choices">The entries the screen is about to offer.</param>
-    /// <param name="wanted">The one to take.</param>
-    private static void Pick(TestConsole console, IReadOnlyList<string> choices, string wanted)
-    {
-        var at = choices.ToList().IndexOf(wanted);
-
-        Assert.True(at >= 0, $"'{wanted}' is not on the screen it was expected on");
-
-        for (var step = 0; step < at; step++)
-        {
-            console.Input.PushKey(ConsoleKey.DownArrow);
-        }
-
-        console.Input.PushKey(ConsoleKey.Enter);
-    }
 
     /// <summary>Selects the last entry, whatever it is and however long the menu is.</summary>
     /// <param name="console">The console to push the keys onto.</param>

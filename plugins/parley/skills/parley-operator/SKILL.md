@@ -72,26 +72,41 @@ act on a deployment nobody asked for, and the output would look entirely normal.
 its absence, and every flag and environment variable that worked before still works and still
 wins over a project's values.
 
+`parley project set <name>` changes an entry in place - only the fields given, and an empty value
+clears an optional one. The process serving the manifest restarts that project on its new store,
+endpoint or catalogue within seconds; a description changes nothing running.
+
 `parley project remove` takes out the entry and **deletes nothing** - not the store, not the node
 catalogue, not any repository's launch configuration. It says so each time, and names what is
-still there. Removing a project and then deleting its store are two decisions, and the tool will
-only ever make the first.
+still there; the process serving the manifest stops that project's broker and leaves the rest.
+Removing a project and deleting its store are two decisions, so deleting has its own name:
+`parley project remove <name> --destroy` waits for the broker to stop, deletes the store and the
+catalogue, and lists the repositories that were agents in it, whose launch configuration still
+names it. A broker it does not own - one started by hand - is reported and left running.
+
+**With projects named, `parley autostart install` needs no `--db`.** The entry then serves every
+project in the manifest from one process, hosts this machine's node in each project whose entry
+names a catalogue, and starts a project named later within seconds. `parley autostart status`
+says which form is installed and, for the one-store form, how to switch.
 
 ## The commands
 
 ```
 parley serve --db <path>              run the broker: the one process that opens the store
 parley serve --with-node              and this machine's node in the same process
-parley autostart install              start both whenever you log in
+parley autostart install              start both whenever you log in; with projects named
+                                      and no --db, serve every project in the manifest
 parley autostart remove               stop doing that
-parley autostart status               say whether it is set up
+parley autostart status               say whether it is set up, and what it serves
 parley up                             run this machine's node, so its agents can be started
 parley console [<url>]                the operator's console in a browser; loopback by default
 parley top                            the same deployment in this terminal; needs a real one
 
 parley project list                   what this machine is configured for
 parley project add <name> --db <path> --listen <url>    name a deployment
+parley project set <name> [--db] [--listen] [--node-config] [--description]   change one
 parley project remove <name>          forget how to reach one; deletes nothing
+parley project remove <name> --destroy    ...and stop its broker, delete its store and catalogue
 
 parley enroll scan <dir> [<file>]     find repositories and tick the ones to enroll
 parley enroll scan <dir> --all        tick every one found, for scripts with no terminal
