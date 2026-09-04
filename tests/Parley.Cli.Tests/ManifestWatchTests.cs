@@ -416,6 +416,72 @@ public sealed class ManifestWatchTests : IDisposable
         Assert.Equal(0, code);
     }
 
+    [Fact]
+    public async Task A_project_that_could_not_start_is_started_when_its_port_frees_and_the_manifest_changes()
+    {
+        // Lens 1 probe. A port held by something else at start is the transient failure a
+        // machine actually meets -- the previous broker still exiting at logon -- and the watcher
+        // must not treat "failed once" as "never". It tries again on the next change to the
+        // manifest, and by then the port is free.
+        var ct = TestContext.Current.CancellationToken;
+
+        var orders = Project("orders");
+        var billing = Project("billing");
+
+        var holder = new TcpListener(IPAddress.Loopback, new Uri(billing.Endpoint).Port);
+        holder.Start();
+
+        var manifest = new List<ProjectSettings> { orders, billing };
+        var changed = false;
+
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        var serving = ServeCommand.RunAsync(
+            [orders, billing],
+            null,
+            output,
+            error,
+            reread: () =>
+            {
+                if (!changed)
+                {
+                    return null;
+                }
+
+                changed = false;
+
+                return manifest;
+            },
+            cancellationToken: stopping.Token);
+
+        try
+        {
+            Assert.True(await AnswersAsync(orders.Endpoint, ct));
+            Assert.Contains("billing: could not listen", error.ToString(), StringComparison.Ordinal);
+
+            holder.Stop();
+
+            // A change the watcher notices: any change, here a description.
+            manifest[1] = billing with { Description = "second try" };
+            changed = true;
+
+            Assert.True(await AnswersAsync(billing.Endpoint, ct), "the project whose port was busy at start never came up");
+        }
+        finally
+        {
+            holder.Stop();
+            await stopping.CancelAsync();
+        }
+
+        var code = await serving.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+        // Exit zero: the failure at start was reported then, and the project is serving now.
+        Assert.Equal(0, code);
+    }
+
     private static async Task<bool> AnswersAsync(string endpoint, CancellationToken cancellationToken, int attempts = 80)
     {
         for (var attempt = 0; attempt < attempts; attempt++)

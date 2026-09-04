@@ -385,11 +385,17 @@ public static class ServeCommand
             // process exits, and nothing has been shut down. Which is FR-021 exactly, and the
             // defect fixed one commit earlier, reappearing in the window where it is least
             // visible — a machine that only ever starts one project never enters it.
+            // Remembered by name, because the watcher may start one of these later -- a port
+            // still held by the previous broker at logon is the usual reason -- and a project
+            // serving at the end is not one that failed, whatever it did at the start.
+            var notStarted = new HashSet<string>(StringComparer.Ordinal);
+
             foreach (var project in projects)
             {
                 if (!await StartAsync(project).ConfigureAwait(false))
                 {
                     failed++;
+                    _ = notStarted.Add(project.Name.Value);
                 }
             }
 
@@ -458,6 +464,15 @@ public static class ServeCommand
             lock (started)
             {
                 everything = [.. beside, .. started.SelectMany(h => h.Tasks)];
+            }
+
+            // What the exit code says is the state at the end: a project that failed at start
+            // and was serving by the time this stopped is not a failure to report to a
+            // supervisor, and a node that exited non-zero is.
+            lock (started)
+            {
+                failed = notStarted.Count(name =>
+                    !started.Exists(h => string.Equals(h.Project.Name.Value, name, StringComparison.Ordinal)));
             }
 
             try
