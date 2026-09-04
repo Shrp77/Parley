@@ -199,7 +199,7 @@ public sealed class ProjectDestroyTests : IDisposable
         // time rather than for ever.
         var waited = DateTime.UtcNow - started;
 
-        Assert.True(waited > TimeSpan.FromSeconds(10) && waited < TimeSpan.FromSeconds(40), $"waited {waited}");
+        Assert.True(waited > TimeSpan.FromSeconds(20) && waited < TimeSpan.FromSeconds(60), $"waited {waited}");
 
         Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
         Assert.Empty(left);

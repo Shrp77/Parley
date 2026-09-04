@@ -131,6 +131,156 @@ public sealed class RemovingTests : IDisposable
         Assert.True(File.Exists(alpha.Store));
     }
 
+    [Fact]
+    public async Task Created_from_the_terminal_the_broker_comes_up_and_destroyed_there_it_goes()
+    {
+        // Lens 1 probe, and the owner's own afternoon end to end: a process serving the
+        // manifest with the watcher on, a project created from the form, its broker answering
+        // without anything restarted, then destroyed from the menu -- port freed, files gone,
+        // the other project untouched throughout.
+        var ct = TestContext.Current.CancellationToken;
+
+        var orders = new ProjectSettings(
+            ProjectName.Create("orders"),
+            Path.Combine(_directory, "orders.db"),
+            $"http://127.0.0.1:{FreePort()}",
+            null,
+            null);
+
+        ProjectManifest.Write(Manifest, [orders]);
+
+        var stamp = File.GetLastWriteTimeUtc(Manifest);
+        var serverOutput = new StringWriter();
+
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        var serving = ServeCommand.RunAsync(
+            [orders],
+            null,
+            serverOutput,
+            TextWriter.Null,
+            reread: () =>
+            {
+                var now = File.GetLastWriteTimeUtc(Manifest);
+
+                if (now == stamp)
+                {
+                    return null;
+                }
+
+                stamp = now;
+
+                return ProjectManifest.TryRead(Manifest, out var current, out _) ? current : null;
+            },
+            cancellationToken: stopping.Token);
+
+        try
+        {
+            Assert.True(await AnswersAsync(orders.Endpoint, ct), "the first project never came up");
+
+            // Create "billing" from the form, on a port of the test's choosing.
+            var port = FreePort();
+            var billingEndpoint = $"http://127.0.0.1:{port}";
+
+            using var console = Interactive();
+
+            Pick(console, ProjectList.Choices([orders], null), ProjectList.Create);
+            console.Input.PushTextWithEnter("billing");
+            Enter(console);
+            console.Input.PushTextWithEnter(billingEndpoint);
+            Enter(console);
+            Enter(console);
+
+            var billing = new ProjectSettings(
+                ProjectName.Create("billing"), string.Empty, billingEndpoint, null, null);
+
+            Pick(console, ProjectList.Choices([orders, billing], null), ProjectList.Leave);
+
+            await DriveAsync(console);
+
+            Assert.True(await AnswersAsync(billingEndpoint, ct), "the project created from the form never came up");
+
+            var store = Path.Combine(Naming.ProposedStore("billing", [orders], null));
+
+            Assert.True(File.Exists(store), $"the broker created no store at {store}");
+
+            // Destroy it from the menu.
+            using var again = Interactive();
+
+            Pick(again, ProjectList.Choices([orders, billing], null), "billing");
+            Pick(again, ProjectMenu.Choices(seated: false), ProjectMenu.Remove);
+            Pick(again, Removing.Choices, Removing.Destroy);
+            again.Input.PushTextWithEnter("billing");
+            Pick(again, ProjectList.Choices([orders], null), ProjectList.Leave);
+
+            await DriveAsync(again);
+
+            Assert.Contains("Destroyed 'billing'", again.Output, StringComparison.Ordinal);
+            Assert.False(File.Exists(store), "the store survived");
+            Assert.True(CanBind(billingEndpoint), "the destroyed project's broker kept its port");
+            Assert.True(await AnswersAsync(orders.Endpoint, ct, attempts: 5), "the other project was stopped");
+        }
+        finally
+        {
+            await stopping.CancelAsync();
+        }
+
+        var code = await serving.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+        Assert.Equal(0, code);
+    }
+
+    private static async Task<bool> AnswersAsync(string endpoint, CancellationToken cancellationToken, int attempts = 80)
+    {
+        for (var attempt = 0; attempt < attempts; attempt++)
+        {
+            try
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(TimeSpan.FromSeconds(2));
+
+                using var channel = Grpc.Net.Client.GrpcChannel.ForAddress(endpoint);
+                await channel.ConnectAsync(timeout.Token);
+
+                return true;
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                await Task.Delay(100, cancellationToken);
+            }
+        }
+
+        return false;
+    }
+
+    private static bool CanBind(string endpoint)
+    {
+        var port = new Uri(endpoint).Port;
+
+        try
+        {
+            using var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, port);
+            probe.Start();
+            probe.Stop();
+
+            return true;
+        }
+        catch (System.Net.Sockets.SocketException)
+        {
+            return false;
+        }
+    }
+
+    private static int FreePort()
+    {
+        using var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        probe.Start();
+        var port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
+        probe.Stop();
+
+        return port;
+    }
+
     private async Task<ProjectSettings> NamedAsync()
     {
         var ct = TestContext.Current.CancellationToken;

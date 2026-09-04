@@ -535,10 +535,13 @@ public static class ProjectCommand
         CancellationToken cancellationToken)
     {
         // Answering before is the sign the serving process is about to stop it; answering still,
-        // after a generous multiple of the watch interval, is the sign nothing will.
+        // after a generous multiple of the watch interval, is the sign nothing will. Generous
+        // because stopping a project waits for its node to send every agent it started away,
+        // which has its own grace period, and a wait that expired during that would report a
+        // broker nobody owns while the owner was in the middle of stopping it.
         if (agents is not null)
         {
-            var deadline = DateTime.UtcNow.AddSeconds(15);
+            var deadline = DateTime.UtcNow.AddSeconds(30);
             var stopped = false;
 
             while (DateTime.UtcNow < deadline)
