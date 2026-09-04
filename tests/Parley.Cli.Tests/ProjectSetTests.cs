@@ -113,6 +113,39 @@ public sealed class ProjectSetTests : IDisposable
     }
 
     [Fact]
+    public async Task A_project_cannot_be_pointed_at_another_projects_store_or_at_the_manifest()
+    {
+        // Lens 2 probe. Two ways to make `remove --destroy` delete data that is not the
+        // project's own: point its store at another project's, or at the manifest. Both must be
+        // refused by `set` as they are by `add`, and the entry left exactly as it was.
+        await AddAsync("orders", 51906);
+        await AddAsync("billing", 51907);
+
+        var (shared, _, sharedWhy) = await RunAsync(
+            ["set", "billing"], new ProjectFields(Path.Combine(_directory, "orders.db"), null, null, null));
+
+        Assert.Equal(78, shared);
+        Assert.Contains("unchanged", sharedWhy, StringComparison.Ordinal);
+
+        var (manifest, _, manifestWhy) = await RunAsync(
+            ["set", "billing"], new ProjectFields(ManifestPath, null, null, null));
+
+        Assert.Equal(78, manifest);
+        Assert.Contains("is this manifest", manifestWhy, StringComparison.Ordinal);
+
+        var (catalogue, _, catalogueWhy) = await RunAsync(
+            ["set", "billing"], new ProjectFields(null, null, ManifestPath, null));
+
+        Assert.Equal(78, catalogue);
+        Assert.Contains("is this manifest", catalogueWhy, StringComparison.Ordinal);
+
+        var billing = Projects().Single(p => p.Name.Value == "billing");
+
+        Assert.Equal(Path.Combine(_directory, "billing.db"), billing.Store);
+        Assert.Null(billing.NodeConfig);
+    }
+
+    [Fact]
     public async Task A_project_that_is_not_there_and_a_change_that_is_nothing_are_both_said()
     {
         await AddAsync("orders", 51905);
