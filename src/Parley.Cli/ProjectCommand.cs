@@ -150,7 +150,7 @@ public static class ProjectCommand
                 };
 
                 faults.AddRange(changed.Problems());
-                faults.AddRange(ProjectManifest.PathProblems(changed));
+                faults.AddRange(ProjectManifest.PathProblems(changed, manifestPath));
 
                 var updated = projects.Select(p => p == current ? changed : p).ToArray();
 
@@ -340,7 +340,7 @@ public static class ProjectCommand
                 // is about to live in the file under that name, the mapping is one line below, and
                 // one rule with one message is worth more than two messages that agree today.
                 faults.AddRange(settings.Problems());
-                faults.AddRange(ProjectManifest.PathProblems(settings));
+                faults.AddRange(ProjectManifest.PathProblems(settings, manifestPath));
 
                 var updated = projects.Append(settings).ToArray();
 
@@ -478,7 +478,7 @@ public static class ProjectCommand
 
         if (destroy)
         {
-            return await DestroyAsync(going!, staying, agents, output, error, cancellationToken)
+            return await DestroyAsync(going!, staying, agents, manifestPath, output, error, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -506,6 +506,7 @@ public static class ProjectCommand
     /// <param name="going">The project, as it was.</param>
     /// <param name="staying">Every project still named, for what must not be deleted.</param>
     /// <param name="agents">The registry as read before the entry went, or null if it could not be.</param>
+    /// <param name="manifestPath">The manifest, which is never deleted whatever an entry says.</param>
     /// <param name="output">Where to say what was deleted.</param>
     /// <param name="error">Where to say what could not be.</param>
     /// <param name="cancellationToken">Cancels the wait.</param>
@@ -530,6 +531,7 @@ public static class ProjectCommand
         ProjectSettings going,
         IReadOnlyList<ProjectSettings> staying,
         IReadOnlyList<(string Agent, string Workspace)>? agents,
+        string manifestPath,
         TextWriter output,
         TextWriter error,
         CancellationToken cancellationToken)
@@ -571,11 +573,13 @@ public static class ProjectCommand
 
         // The store and SQLite's companions. Retried briefly, because the broker releases the
         // file a moment after it stops answering, and on Windows a file still open cannot go.
+        // Never the manifest, whatever the entry says: the manifest refuses such an entry on the
+        // way in, and this is the second lock on the same door.
         foreach (var suffix in new[] { string.Empty, "-wal", "-shm", "-journal" })
         {
             var path = going.Store + suffix;
 
-            if (!File.Exists(path))
+            if (!File.Exists(path) || ProjectManifest.IsTheManifest(path, manifestPath))
             {
                 continue;
             }
@@ -596,6 +600,7 @@ public static class ProjectCommand
 
         if (going.NodeConfig is { Length: > 0 } catalogue
             && File.Exists(catalogue)
+            && !ProjectManifest.IsTheManifest(catalogue, manifestPath)
             && await TryDeleteAsync(catalogue, cancellationToken).ConfigureAwait(false))
         {
             deleted.Add(catalogue);

@@ -208,6 +208,52 @@ public sealed class ProjectDestroyTests : IDisposable
         Assert.True(await AnswersAsync(byHand.Address, ct, attempts: 3), "the by-hand broker was stopped");
     }
 
+    [Fact]
+    public async Task The_manifest_itself_cannot_be_named_as_a_store_and_so_cannot_be_destroyed()
+    {
+        // Lens 2 probe. --destroy deletes whatever the entry names as its store. The one file
+        // whose deletion takes every project with it is the manifest, so an entry naming it must
+        // be refused on the way in -- by `add`, which validates the path -- rather than caught
+        // on the way out.
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        var code = await ProjectCommand.RunAsync(
+            ["add", "trap"],
+            Manifest,
+            new ProjectFields(Manifest, "http://127.0.0.1:1", null, null),
+            output,
+            error,
+            TestContext.Current.CancellationToken);
+
+        Assert.NotEqual(0, code);
+        Assert.False(ProjectManifest.TryRead(Manifest, out var projects, out _) && projects.Count > 0,
+            "an entry naming the manifest as its store was written");
+    }
+
+    [Fact]
+    public async Task A_store_that_is_a_directory_is_not_deleted()
+    {
+        // Lens 2 probe. Deleting is by file, and a directory named as a store -- which the
+        // manifest accepts, since a store need not exist yet -- must not become a recursive
+        // delete of whatever is in it.
+        var directoryStore = Path.Combine(_directory, "not-a-file");
+        Directory.CreateDirectory(directoryStore);
+        await File.WriteAllTextAsync(Path.Combine(directoryStore, "precious.txt"), "keep", TestContext.Current.CancellationToken);
+
+        var project = new ProjectSettings(
+            ProjectName.Create("dir"), directoryStore, "http://127.0.0.1:1", null, null);
+
+        ProjectManifest.Write(Manifest, [project]);
+
+        var (code, output, _) = await RemoveAsync("dir", destroy: true);
+
+        Assert.Equal(0, code);
+        Assert.True(Directory.Exists(directoryStore), "a directory named as a store was deleted");
+        Assert.True(File.Exists(Path.Combine(directoryStore, "precious.txt")));
+        Assert.Contains("Nothing was on disk to delete", output, StringComparison.Ordinal);
+    }
+
     private async Task<(int Code, string Out, string Error)> RemoveAsync(string name, bool destroy)
     {
         var output = new StringWriter();
