@@ -129,12 +129,16 @@ internal sealed class AgentsRegion : FrameView
                 state = $"{state}, {NotCatalogued}";
             }
 
+            // Every value here was written by somebody else: the name and the workspace by the
+            // agent's own adapter, the ownership line by whoever wrote its launch configuration.
+            // Neutralised as it enters the row rather than as it is drawn, because the row is what
+            // the withdrawal dialog quotes back at the person about to purge it.
             rows.Add(new AgentRow(
-                agent.Name.Value,
+                Safe.Text(agent.Name.Value),
                 state,
                 agent.Tier.ToString().ToLowerInvariant(),
-                Roster.HasStatedWhatItOwns(agent) ? agent.Owns! : "not stated",
-                agent.Workspace ?? "—",
+                Roster.HasStatedWhatItOwns(agent) ? Safe.Text(agent.Owns) : "not stated",
+                Safe.Text(agent.Workspace ?? "—"),
                 seat));
         }
 
@@ -148,11 +152,11 @@ internal sealed class AgentsRegion : FrameView
                 : null;
 
             rows.Add(new AgentRow(
-                role,
+                Safe.Text(role),
                 CataloguedOnly,
                 "—",
                 "not stated",
-                workspace ?? "—",
+                Safe.Text(workspace ?? "—"),
                 Seat: false));
         }
 
@@ -174,14 +178,14 @@ internal sealed class AgentsRegion : FrameView
 
         var lines = _rows.Count > 0
             ? _rows.Select(Line).ToList()
-            : [problem ?? Nothing];
+            : [Safe.Text(problem) is { Length: > 0 } why ? why : Nothing];
 
         if (problem is not null && _rows.Count > 0)
         {
             // Both, rather than one or the other. The catalogue is still true when the broker is
             // not answering, and saying only "not answering" would hide the half of the picture
             // this machine can still see.
-            lines.Insert(0, problem);
+            lines.Insert(0, Safe.Text(problem));
         }
 
         _list.SetSource(new System.Collections.ObjectModel.ObservableCollection<string>(lines));

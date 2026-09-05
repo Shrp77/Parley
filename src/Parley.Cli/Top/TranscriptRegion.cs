@@ -66,10 +66,13 @@ internal sealed class TranscriptRegion : FrameView
     {
         Open = problem is null ? conversationId : null;
 
-        _written = problem
+        // Neutralised line by line: the layout is Transcript.Write's and the content is the
+        // agents' own, and a payload is eight thousand characters of whatever they chose to send.
+        _written = Safe.Lines(
+            problem
             ?? (export is null || export.Messages.Count == 0
                 ? Empty
-                : Transcript.Write(conversationId, project, export.Messages, export.Exchanges ?? []));
+                : Transcript.Write(conversationId, project, export.Messages, export.Exchanges ?? [])));
 
         Redraw();
     }

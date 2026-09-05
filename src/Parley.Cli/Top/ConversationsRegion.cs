@@ -84,7 +84,7 @@ internal sealed class ConversationsRegion : FrameView
         _conversations = problem is null ? [.. conversations ?? []] : [];
 
         var lines = problem is not null
-            ? [problem]
+            ? [Safe.Text(problem)]
             : _conversations.Count == 0
                 ? new List<string> { Nothing }
                 : [.. _conversations.Select(Line)];
@@ -127,7 +127,8 @@ internal sealed class ConversationsRegion : FrameView
     /// actually remembers a conversation by.
     /// </remarks>
     private static string Line(ConversationSummary conversation) =>
-        $"{conversation.Id}  ({string.Join(", ", conversation.Participants.Select(p => p.Value))})  "
+        $"{Safe.Text(conversation.Id)}  "
+        + $"({string.Join(", ", conversation.Participants.Select(p => Safe.Text(p.Value)))})  "
         + $"{conversation.Messages.ToString(CultureInfo.InvariantCulture)} messages  "
         + $"[{(conversation.HasOpenExchange ? Open : Settled)}]  "
         + conversation.LastActivityUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);

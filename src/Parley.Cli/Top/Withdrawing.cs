@@ -92,17 +92,19 @@ internal static class Withdrawing
         ArgumentNullException.ThrowIfNull(row);
         ArgumentNullException.ThrowIfNull(owed);
 
+        // The row's values are already neutralised where they enter it; the adapter is read here
+        // and is the agent's own string, so it is neutralised here.
         var said = $"{row.Name}{Environment.NewLine}"
             + $"  state      {row.State}{Environment.NewLine}"
             + $"  workspace  {row.Workspace}{Environment.NewLine}"
             + $"  owns       {row.Owns}{Environment.NewLine}"
-            + $"  adapter    {agent?.Adapter ?? "not registered"}{Environment.NewLine}";
+            + $"  adapter    {Safe.Text(agent?.Adapter ?? "not registered")}{Environment.NewLine}";
 
         return owed.Count == 0
             ? said + "  owes       nothing right now"
             : said
               + $"  owes       {owed.Count} open exchange(s): "
-              + string.Join(", ", owed.Select(edge => $"{edge.Waiter.Value} is waiting"));
+              + string.Join(", ", owed.Select(edge => $"{Safe.Text(edge.Waiter.Value)} is waiting"));
     }
 
     /// <summary>Why a typed name would not be accepted, or null when it would.</summary>

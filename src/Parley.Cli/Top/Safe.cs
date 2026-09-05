@@ -63,4 +63,29 @@ internal static class Safe
 
         return made.ToString();
     }
+
+    /// <summary>
+    /// Makes text inert while keeping the lines this program laid out.
+    /// </summary>
+    /// <param name="text">Whatever came from a manifest, a broker, an agent or a log.</param>
+    /// <returns>The same text, line by line, with nothing in it a terminal will act on.</returns>
+    /// <remarks>
+    /// <para>
+    /// For the places where the structure is ours and the content is somebody else's: a transcript
+    /// laid out by <c>Transcript.Write</c>, or a description this surface composed around values it
+    /// read. <see cref="Text"/> would replace the line breaks holding those together and produce
+    /// one unreadable row.
+    /// </para>
+    /// <para>
+    /// A line break inside a value survives as a line break, and that is the deliberate limit of
+    /// this: a message can put its words on two rows. What it cannot do is move the cursor, which
+    /// is the difference between untidy and dishonest.
+    /// </para>
+    /// </remarks>
+    internal static string Lines(string? text) =>
+        text is null
+            ? string.Empty
+            : string.Join(
+                Environment.NewLine,
+                text.ReplaceLineEndings("\n").Split('\n').Select(Text));
 }
