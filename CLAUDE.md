@@ -502,7 +502,38 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/005-tabbed-terminal-agents/` — the terminal rewritten on Terminal.Gui v2
+- **Active plan**: `specs/006-three-view-operator/` — three drill-down views (projects, one project,
+  one conversation) replacing 005's four regions on one screen, on **both** surfaces; and the four
+  operator operations the protocol did not have: `archive`, `unarchive` and `destroy` for a
+  conversation, and `start` for a catalogued agent. The protocol work lands before the views, because
+  the surfaces are clients of it.
+
+  The owner ran 005's built terminal and said the four regions were "confusing and too busy". That is
+  a verdict on its central design decision from the only test that could produce it, so the
+  arrangement is replaced rather than tuned. Everything under it is kept: seating's guards, the
+  enrolment writer, the withdrawal doors with a name typed back, the containment of a broker that
+  does not answer.
+
+  **`plan.md` Q1 reverses 005's amendment, and 005's record is kept rather than edited.** 005 refused
+  to promise a newly added agent would be startable, on the grounds that a surface registering on a
+  repository's behalf is a caller-supplied identity. That reasoning is right about the thing it
+  examined and answers a different question. §12.3's closing paragraph already routes spawn-on-demand
+  through §12's manifest — the node catalogue — and `NodesService.RequestStart`'s only guard is that
+  the node's catalogue names the role, with **no registry lookup on that path at all**. So the new
+  `start` operation asks the node to launch the role once and the adapter registers the agent it
+  attaches, which is exactly what §12.3 permits. Nothing bends. `research.md` R1.
+
+  Two things the spec got wrong and `research.md` corrects rather than implements: colour is derived
+  from an agent's name and is the same everywhere (`Palette` already argues why position-derived
+  colour is actively misleading), not per conversation; and a conversation's "name" is its
+  identifier, which `001_initial.sql:342` already records — no naming scheme is added.
+
+  Archived is a nullable column, not a fourth `state` value, because `state` is the closure lifecycle
+  and a conversation may be both closed and archived. An archived conversation that receives a
+  message **stays archived**: the alternative lets an agent reverse an operator's decision, which is
+  the one direction of authority Principle II does not have.
+
+- Previous: `specs/005-tabbed-terminal-agents/` — the terminal rewritten on Terminal.Gui v2
   (the owner's choice, recorded under the spec's "Decisions already made") so a person sees
   projects, agents, conversations and a transcript at once and moves between them with Tab; and
   agents added to a project, retired, reinstated or purged from it, each destructive act behind a

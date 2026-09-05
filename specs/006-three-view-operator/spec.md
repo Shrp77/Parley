@@ -318,8 +318,11 @@ that was on screen. On a machine with no browser, the surface says so and keeps 
 
 ### Key Entities
 
-- **Conversation**: gains an archived state and a last-activity time. Already carries participants
-  and messages.
+- **Conversation**: gains an archived state. Its **identifier is its name** — `001_initial.sql:342`
+  records that the primary key is the name, constrained against `/`, `:` and runs of dots because it
+  reaches filenames and headings — so FR-013 asks for no new field, and "sort by name" is an ordinal
+  sort on the identifier (`research.md` R5). Participants, message count and last-activity time are
+  already returned by §10.2's `conversations()` (`research.md` R6).
 - **Agent standing**: the pairing of what the registry knows (has this agent ever announced itself;
   is it attached now) with what the project's catalogue permits (may anything here start it), which
   is what FR-009 must express in one readable phrase.
@@ -365,8 +368,11 @@ that was on screen. On a machine with no browser, the surface says so and keeps 
   the evidence of reachability. No new liveness mechanism is introduced.
 - A conversation's "name" is whatever the deployment already identifies it by; this feature does not
   introduce a naming scheme for conversations.
-- Colour assignment is per conversation, not global: the same agent may take a different colour in a
-  different conversation, and consistency is only promised within one.
+- ~~Colour assignment is per conversation, not global.~~ **Corrected by `research.md` R7.** The
+  shared `Palette` already derives colour from a hash of the agent's name, so an agent is one colour
+  on every page and in every conversation, and it argues that position-derived colour would repaint a
+  transcript whenever somebody joined. That is stronger than FR-017 asked for, so the code is kept and
+  this assumption is what was wrong.
 - Sorting and the *show archived* toggle are view state, remembered for the session, not stored on
   the broker.
 - The keystroke for the browser is chosen from the function keys so it cannot collide with the
