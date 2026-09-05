@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Parley.Core;
 using Wire = Parley.Transport;
 
@@ -57,11 +57,12 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
-    public async Task<Page<ConversationSummary>> ConversationsAsync(
+    public async Task<ConversationPage> ConversationsAsync(
         AgentName? participant = null,
         DateTimeOffset? sinceUtc = null,
         DateTimeOffset? untilUtc = null,
         string? pageToken = null,
+        bool includeArchived = false,
         CancellationToken cancellationToken = default)
     {
         var request = new Wire.ListConversationsRequest
@@ -69,7 +70,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             Participant = participant?.Value ?? string.Empty,
             SinceUtc = Render(sinceUtc),
             UntilUtc = Render(untilUtc),
-            PageToken = pageToken ?? string.Empty
+            PageToken = pageToken ?? string.Empty,
+            IncludeArchived = includeArchived
         };
 
         var reply = await _operators
@@ -81,11 +83,61 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             row.Messages,
             Read(row.FirstActivityUtc) ?? DateTimeOffset.MinValue,
             Read(row.LastActivityUtc) ?? DateTimeOffset.MinValue,
-            row.HasOpenExchange));
+            row.HasOpenExchange,
+            row.Archived));
 
-        return new Page<ConversationSummary>(
+        return new ConversationPage(
             [.. conversations],
-            string.IsNullOrEmpty(reply.NextPageToken) ? null : reply.NextPageToken);
+            string.IsNullOrEmpty(reply.NextPageToken) ? null : reply.NextPageToken,
+            reply.ArchivedOmitted);
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> ArchiveAsync(
+        string conversationId, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.ArchiveAsync(
+            new Wire.ConversationRequest { ConversationId = conversationId },
+            cancellationToken: cancellationToken);
+
+        return reply.Changed;
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> UnarchiveAsync(
+        string conversationId, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.UnarchiveAsync(
+            new Wire.ConversationRequest { ConversationId = conversationId },
+            cancellationToken: cancellationToken);
+
+        return reply.Changed;
+    }
+
+    /// <inheritdoc/>
+    public async Task<DestroyOutcome> DestroyAsync(
+        string conversationId, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.DestroyAsync(
+            new Wire.ConversationRequest { ConversationId = conversationId },
+            cancellationToken: cancellationToken);
+
+        return new DestroyOutcome(
+            reply.Verdict == Wire.DestroyVerdict.Gone
+                ? DestroyVerdict.Gone
+                : DestroyVerdict.NoSuchConversation,
+            [.. reply.Destroyed.Select(d => new PurgeToll(d.Table, d.Rows))]);
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> StartAsync(
+        AgentName agent, string because, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.StartAsync(
+            new Wire.StartRequest { Agent = agent.Value, Because = because ?? string.Empty },
+            cancellationToken: cancellationToken);
+
+        return reply.Changed;
     }
 
     /// <inheritdoc/>

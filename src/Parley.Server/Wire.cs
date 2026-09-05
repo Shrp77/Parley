@@ -231,6 +231,36 @@ internal static class Conversions
             nameof(verdict), verdict, "Not a defined verdict.")
     };
 
+    /// <summary>Writes a destroy's verdict to the wire.</summary>
+    /// <param name="verdict">The domain value.</param>
+    /// <returns>The wire value.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The value is not one this build knows.</exception>
+    /// <remarks>
+    /// A separate mapping from the purge one rather than a shared enum, because the two verdicts
+    /// name what was looked for: <see cref="PurgeVerdict.NotRegistered"/> is about an agent and
+    /// means nothing about a conversation. Sharing them would have a caller destroying a
+    /// conversation read back <i>not registered</i>, which is true of nothing here.
+    /// </remarks>
+    public static Wire.DestroyVerdict Out(DestroyVerdict verdict) => verdict switch
+    {
+        DestroyVerdict.NoSuchConversation => Wire.DestroyVerdict.NoSuchConversation,
+        DestroyVerdict.Gone => Wire.DestroyVerdict.Gone,
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(verdict), verdict, "Not a defined verdict.")
+    };
+
+    /// <summary>Reads a destroy's verdict from the wire.</summary>
+    /// <param name="verdict">The wire value.</param>
+    /// <returns>The domain value.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The value is not one this build knows.</exception>
+    public static DestroyVerdict In(Wire.DestroyVerdict verdict) => verdict switch
+    {
+        Wire.DestroyVerdict.NoSuchConversation => DestroyVerdict.NoSuchConversation,
+        Wire.DestroyVerdict.Gone => DestroyVerdict.Gone,
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(verdict), verdict, "Not a defined verdict.")
+    };
+
     /// <summary>Reads an instruction's outcome from the wire.</summary>
     /// <param name="outcome">The wire value.</param>
     /// <returns>The domain value.</returns>

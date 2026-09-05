@@ -26,9 +26,9 @@ the surfaces are clients of a protocol that does not yet have these operations.
 
 **Purpose**: the things that must be true before the first real edit.
 
-- [ ] T001 Bump `VersionPrefix` to `0.18.0` in `Directory.Build.props`. The minor moves because §10.2 is a versioned contract — "a broker either implements all of it or is not a V1 broker" — so adding four operations changes what a V1 broker must implement.
-- [ ] T002 [P] Open a `## 006-three-view-operator` section in `REVIEW-LEDGER.md` with the three-lens counter table at zero. Untracked; it spans sessions and machines, which is why it is written down rather than remembered.
-- [ ] T003 [P] Create `src/Parley.Store/Migrations/004_archive.sql` as an empty file and confirm `SchemaMigrator` discovers it and the suite still passes. A migration that is not discovered fails silently on the machine that most needs it.
+- [X] T001 Bump `VersionPrefix` to `0.18.0` in `Directory.Build.props`. The minor moves because §10.2 is a versioned contract — "a broker either implements all of it or is not a V1 broker" — so adding four operations changes what a V1 broker must implement.
+- [X] T002 [P] Open a `## 006-three-view-operator` section in `REVIEW-LEDGER.md` with the three-lens counter table at zero. Untracked; it spans sessions and machines, which is why it is written down rather than remembered.
+- [X] T003 [P] Create `src/Parley.Store/Migrations/004_archive.sql` as an empty file and confirm `SchemaMigrator` discovers it and the suite still passes. A migration that is not discovered fails silently on the machine that most needs it.
 
 ---
 
@@ -40,16 +40,16 @@ code depends on it.
 
 **Blocks**: every user story.
 
-- [ ] T004 Add `archive(conversation)`, `unarchive(conversation)`, `destroy(conversation)` and `start(agent)` to the §10.2 operations table in `SPEC.md`, each with the description `contracts/operations.md` gives and the reason it is §10.2 rather than §10.1.
-- [ ] T005 Write the `destroy` consequence into `SPEC.md` §14 beside the purge consequence, in the same terms: what the participants lose, what a waiting asker sees, and that it cannot be undone.
-- [ ] T006 Document in `SPEC.md` §12.3 that a broker MAY be asked to start a catalogued role, and that the agent registers itself on attaching — closing by name the gap §12.3's last paragraph already identifies. This is the sentence `research.md` R1 rests on being explicit rather than inferred.
-- [ ] T007 Add `conversations.archived_utc` to the §9 schema in `SPEC.md`, with the argument from `data-model.md` for why it is a column and not a fourth `state` value.
-- [ ] T008 Add the `destroyed_conversations` tombstone table to the §9 schema in `SPEC.md`, and state that it holds no message content and why (§9.4).
-- [ ] T009 State in `SPEC.md` §9 that destroying a conversation removes every message and exchange of it, carried by `ON DELETE CASCADE` rather than by application code — §9.3's own argument.
-- [ ] T010 Extend §10.2's `conversations()` description with the archived flag and the include-archived option. Not a new operation.
-- [ ] T011 Write `src/Parley.Store/Migrations/004_archive.sql` to match the fragments now in `SPEC.md` exactly, including the cascade. Read `003_message_cap.sql`'s recorded ordering hazards first.
-- [ ] T012 Run `tests/Parley.Spec.Tests` and confirm the new fragments execute in the order written, that section references resolve, and that no operation name spans the §10.1/§10.2 boundary. The floor check is what makes T004–T010 more than prose.
-- [ ] T013 [P] Add a case to `tests/Parley.Spec.Tests` asserting the four new names appear in §10.2 and in neither §10.1 nor the agent-facing proto service, so a later edit cannot quietly move one across.
+- [X] T004 Add `archive(conversation)`, `unarchive(conversation)`, `destroy(conversation)` and `start(agent)` to the §10.2 operations table in `SPEC.md`, each with the description `contracts/operations.md` gives and the reason it is §10.2 rather than §10.1.
+- [X] T005 Write the `destroy` consequence into `SPEC.md` §14 beside the purge consequence, in the same terms: what the participants lose, what a waiting asker sees, and that it cannot be undone.
+- [X] T006 Document in `SPEC.md` §12.3 that a broker MAY be asked to start a catalogued role, and that the agent registers itself on attaching — closing by name the gap §12.3's last paragraph already identifies. This is the sentence `research.md` R1 rests on being explicit rather than inferred.
+- [X] T007 Add `conversations.archived_utc` to the §9 schema in `SPEC.md`, with the argument from `data-model.md` for why it is a column and not a fourth `state` value.
+- [X] T008 Add the `destroyed_conversations` tombstone table to the §9 schema in `SPEC.md`, and state that it holds no message content and why (§9.4).
+- [X] T009 State in `SPEC.md` §9 that destroying a conversation removes every message and exchange of it, carried by the foreign keys rather than by application code — §9.3's own argument. **Corrected while doing it: the plan and `data-model.md` said `ON DELETE CASCADE`, and the repository's own `PurgeAsync` already does something better.** The references deliberately do *not* cascade; the deletes run in one transaction with `PRAGMA defer_foreign_keys = ON`, so a table nobody remembered fails the whole destroy at commit instead of being swept silently. A cascade reports nothing, which is the opposite of what §9.3 asks a constraint to do. No table rebuild was needed and the existing FK declarations are untouched.
+- [X] T010 Extend §10.2's `conversations()` description with the archived flag and the include-archived option. Not a new operation.
+- [X] T011 Write `src/Parley.Store/Migrations/004_archive.sql` to match the fragments now in `SPEC.md` exactly, including the cascade. Read `003_message_cap.sql`'s recorded ordering hazards first.
+- [X] T012 Run `tests/Parley.Spec.Tests` and confirm the new fragments execute in the order written, that section references resolve, and that no operation name spans the §10.1/§10.2 boundary. The floor check is what makes T004–T010 more than prose.
+- [X] T013 [P] Add a case to `tests/Parley.Spec.Tests` asserting the four new names appear in §10.2 and in neither §10.1 nor the agent-facing proto service, so a later edit cannot quietly move one across.
 
 **Checkpoint**: `SPEC.md` describes a protocol this repository does not yet implement, and the
 document's own tests prove it is coherent. That is the intended state.
@@ -87,15 +87,15 @@ same project highlighted.
 restart the broker and it holds; destroy and no client can find it and the store holds no message of
 it.
 
-- [ ] T024 [US2] Add archive, unarchive and destroy to `src/Parley.Store/ConversationRepository.cs`, and the tombstone write. Parameterised SQL; CA2100 is an error and the one existing suppression is not a precedent.
-- [ ] T025 [US2] Add the archived flag and the include-archived option to the conversation summary read in `src/Parley.Store/ConversationRepository.cs`.
-- [ ] T026 [P] [US2] Add `tests/Parley.Store.Tests/ArchiveTests.cs`: archived survives a reopen of the database; an archived conversation may be open or closed; unarchiving clears the timestamp.
-- [ ] T027 [US2] Add `tests/Parley.Store.Tests/DestroyTests.cs` **reconstructing the defect twice**: a message of the destroyed conversation surviving, and a message of a *different* conversation not surviving. The second half is what catches a cascade written too wide.
-- [ ] T028 [P] [US2] Add a case to `tests/Parley.Store.Tests` asserting the tombstone holds no message text, no payload and no intent — read the row back and assert its columns are exactly the four in `data-model.md`.
-- [ ] T029 [US2] Add the three operations to `src/Parley.Broker/OperatorConsole.cs`. **`Broker.cs` must not change**; `SurfaceBoundaryTests` fails if its public surface grows.
-- [ ] T030 [US2] Add `Archive`, `Unarchive`, `Destroy` rpcs and the `ConversationSummary.archived` / `ListConversations.include_archived` fields to `proto/parley.proto`, on `Operators` only.
-- [ ] T031 [US2] Implement the three rpcs in `src/Parley.Server/OperatorsService.cs` and map them in `src/Parley.Server/Wire.cs`.
-- [ ] T032 [US2] Add the three client methods to `src/Parley.Client/BrokerClient.cs`.
+- [X] T024 [US2] Add archive, unarchive and destroy to `src/Parley.Store/ConversationRepository.cs`, and the tombstone write. Parameterised SQL; CA2100 is an error and the one existing suppression is not a precedent.
+- [X] T025 [US2] Add the archived flag and the include-archived option to the conversation summary read in `src/Parley.Store/ConversationRepository.cs`.
+- [X] T026 [P] [US2] Add `tests/Parley.Store.Tests/ArchiveTests.cs`: archived survives a reopen of the database; an archived conversation may be open or closed; unarchiving clears the timestamp.
+- [X] T027 [US2] Add `tests/Parley.Store.Tests/DestroyTests.cs` **reconstructing the defect twice**: a message of the destroyed conversation surviving, and a message of a *different* conversation not surviving. The second half is what catches a cascade written too wide.
+- [X] T028 [P] [US2] Add a case to `tests/Parley.Store.Tests` asserting the tombstone holds no message text, no payload and no intent — read the row back and assert its columns are exactly the four in `data-model.md`.
+- [X] T029 [US2] Add the three operations to `src/Parley.Broker/OperatorConsole.cs`. **`Broker.cs` must not change**; `SurfaceBoundaryTests` fails if its public surface grows.
+- [X] T030 [US2] Add `Archive`, `Unarchive`, `Destroy` rpcs and the `ConversationSummary.archived` / `ListConversations.include_archived` fields to `proto/parley.proto`, on `Operators` only.
+- [X] T031 [US2] Implement the three rpcs in `src/Parley.Server/OperatorsService.cs` and map them in `src/Parley.Server/Wire.cs`.
+- [X] T032 [US2] Add the three client methods to `src/Parley.Client/BrokerClient.cs`.
 - [ ] T033 [P] [US2] Add `tests/Parley.Server.Tests/ConversationLifecycleTests.cs` over a real loopback socket: archive, read from a second client, restart, read again; destroy and confirm export can no longer find it.
 - [ ] T034 [P] [US2] Add an adversarial probe to `tests/Parley.Server.Tests`: an `Agents` client attempting each of the three, asserting there is no such method to call. Written as the malicious case, not as a reading of the proto.
 - [ ] T035 [US2] Add the destroy tombstone read, so an operator asking what happened to a conversation is answered — the FR-006 obligation.

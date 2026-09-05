@@ -145,7 +145,24 @@ public sealed class SurfaceBoundaryTests
             // exactly like one not answered yet, and only somebody seeing every open exchange at
             // once can tell them apart. Handing that to an agent would say who is talking to whom
             // across the deployment, which is the disclosure §10.1 exists to prevent.
-            nameof(OperatorConsole.DescribeWaitingAsync)
+            nameof(OperatorConsole.DescribeWaitingAsync),
+
+            // Filing a conversation away, and how many are filed. An operator operation because
+            // it is a decision about an operator's own view of a deployment, and because an agent
+            // able to archive a conversation it is in would be deciding for every operator at
+            // once — the authority Principle II says no agent has. It changes nothing an agent can
+            // observe: delivery, exchanges and the closure poll are all untouched.
+            nameof(OperatorConsole.SetConversationArchivedAsync),
+            nameof(OperatorConsole.CountArchivedConversationsAsync),
+
+            // §14's purge argument applied to a narrower subject, and it sits beside purge rather
+            // than beside force_conclude for that reason: force_conclude ends a discussion and
+            // leaves the record, this removes the record. Every participant's half goes, and an
+            // open exchange inside it does not orphan and is not ghosted — it ceases to exist, so
+            // the agent waiting on it is never told anything at all. An agent able to reach this
+            // could erase a peer's evidence of having dealt with it, which is the same leak the
+            // purge entry above warns about with a smaller blast radius and the same shape.
+            nameof(OperatorConsole.DestroyConversationAsync)
         ];
 
         var unexpected = PublicMethodsOf(typeof(OperatorConsole)).Where(n => !declared.Contains(n));

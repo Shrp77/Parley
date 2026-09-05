@@ -75,3 +75,29 @@ Unchanged in substance from 005, extended to two new subjects.
 requires that file to contain the typed-name prompt. `DestroyAsync` joins that list under the same
 rule. A helper whose *name* merely contains one of those words fails it, which has happened once and
 is the point.
+
+## Not yet bound by either surface
+
+**This section is read by `DriftTests` and must empty out before the feature is done.**
+
+006 lands the protocol before the views that read it, deliberately: the surfaces are clients of
+operations that have to exist first, and building them the other way round means building them
+twice. That leaves a real interval in which `BrokerClient` offers something no surface calls, and
+`DriftTests` is built to fail on exactly that — correctly, because an operation nothing calls is
+usually one kept alive by its own test.
+
+So the interval is written down here rather than exempted in the test file, where a reader of this
+contract could not see it.
+
+| Operation | Bound by | Task |
+|---|---|---|
+| `ArchiveAsync` | neither, yet | T056 |
+| `UnarchiveAsync` | neither, yet | T056 |
+
+`DestroyAsync` and `StartAsync` are absent from this table on purpose: both are already reachable
+from surface code by name, so `DriftTests` does not report them, and their real binding lands at
+T057 and T048. **That is a weaker guarantee than the table gives** — a name matching for another
+reason is not a binding — and it is the one thing about this check worth not trusting.
+
+When T056 lands, delete the two rows. When the table is empty, delete the section: the check then
+finds nothing and is exactly what it was before.

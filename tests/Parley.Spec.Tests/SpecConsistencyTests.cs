@@ -154,6 +154,33 @@ public sealed class SpecConsistencyTests
         Assert.DoesNotContain("project", schema, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("archive")]
+    [InlineData("unarchive")]
+    [InlineData("destroy")]
+    [InlineData("start")]
+    public void The_operations_006_added_are_operator_operations_and_stay_there(string operation)
+    {
+        // Named individually rather than checked as a set, because the failure this guards is one
+        // operation moving, and a set assertion would report only that the sets differ.
+        //
+        // The generic check above already fails when a name appears on both sides. This fails when
+        // a name appears on the *wrong* side alone -- an operation quietly relocated to §10.1,
+        // which the shared-name check cannot see because after such a move nothing is shared.
+        Assert.Contains(operation, OperationNames("10.2"));
+        Assert.DoesNotContain(operation, OperationNames("10.1"));
+    }
+
+    [Fact]
+    public void The_boundary_check_is_reading_operations_at_all()
+    {
+        // Both checks above pass vacuously against a section this regex fails to match, which is
+        // the trap the schema extraction already had to be guarded against. Ten is well under the
+        // real count and well over zero.
+        Assert.True(OperationNames("10.1").Count >= 5, "no agent operations were extracted");
+        Assert.True(OperationNames("10.2").Count >= 10, "no operator operations were extracted");
+    }
+
     private static IReadOnlyList<string> OperationNames(string section) =>
         Regex.Matches(SpecDocument.Section(section), @"^\| `([a-z_]+)\(", RegexOptions.Multiline)
             .Select(m => m.Groups[1].Value)

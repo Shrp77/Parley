@@ -61,11 +61,16 @@ public interface IParleyBrokerClient
     /// identifier is opaque and chosen by an agent (§5.0), so a person does not know one and
     /// cannot guess it.
     /// </remarks>
-    Task<Page<ConversationSummary>> ConversationsAsync(
+    /// <param name="includeArchived">
+    /// Whether to list archived conversations as well. False omits them and reports how many were
+    /// omitted, because an archived conversation goes on receiving messages.
+    /// </param>
+    Task<ConversationPage> ConversationsAsync(
         AgentName? participant = null,
         DateTimeOffset? sinceUtc = null,
         DateTimeOffset? untilUtc = null,
         string? pageToken = null,
+        bool includeArchived = false,
         CancellationToken cancellationToken = default);
 
     /// <summary>Every message in a conversation, and the state of every exchange they belong to.</summary>
@@ -157,4 +162,74 @@ public interface IParleyBrokerClient
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>What was removed, and what the floor held back.</returns>
     Task<PruneResult> PruneAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Put a conversation out of the way.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether anything changed.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Nothing but the listing changes.</b> Messages are still delivered, exchanges still open
+    /// and close, and no agent is told. It is an operator's filing decision, made durable so every
+    /// operator and every client sees the same one rather than each keeping its own.
+    /// </para>
+    /// <para>
+    /// <b>A message into an archived conversation does not un-archive it.</b> That was decided
+    /// rather than left to fall out: the alternative lets any agent reverse an operator's decision
+    /// by sending something, which is the one direction of authority this protocol does not have.
+    /// What stops a busy conversation hiding is <see cref="ConversationPage.ArchivedOmitted"/>,
+    /// not the state changing underneath somebody.
+    /// </para>
+    /// </remarks>
+    Task<bool> ArchiveAsync(string conversationId, CancellationToken cancellationToken = default);
+
+    /// <summary>Return an archived conversation to the ordinary listing.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether anything changed.</returns>
+    Task<bool> UnarchiveAsync(string conversationId, CancellationToken cancellationToken = default);
+
+    /// <summary>Delete a conversation and everything belonging to it.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>What was destroyed, per table.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Every participant's half goes</b>, including peers who did nothing but take part. That
+    /// is not collateral being tolerated; it is what deleting a conversation means, since one with
+    /// a side removed is a record that misleads whoever reads it next — the argument
+    /// <see cref="PurgeOutcome"/> makes about an agent, applied to a narrower subject.
+    /// </para>
+    /// <para>
+    /// <b>An open exchange inside it is not orphaned and not ghosted: it ceases to exist</b>, so
+    /// the agent waiting on it is never told anything at all. That is a different outcome from
+    /// every other way an exchange can end and the one an operator is least likely to predict, so
+    /// a surface offering this without first naming it has warned nobody.
+    /// </para>
+    /// </remarks>
+    Task<DestroyOutcome> DestroyAsync(
+        string conversationId, CancellationToken cancellationToken = default);
+
+    /// <summary>Ask the node that can launch an agent to do so now.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for whoever reads the node's log.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether a node accepted the request.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>This causes a launch and never a registration.</b> The launched adapter registers the one
+    /// agent it attaches, by §12.3's ordinary route and under the identity §13 requires its launch
+    /// to fix. Writing a registration here instead would be the forgery §12.3 forbids wearing an
+    /// operator's clothes: a registration is a claim that an agent exists and has spoken, and only
+    /// the agent can make it.
+    /// </para>
+    /// <para>
+    /// It follows that an agent nothing has ever registered can still be started, because what
+    /// makes the role reachable is the node's catalogue rather than the registry. That is the whole
+    /// of why enrolling a repository need not leave an agent nobody can reach until somebody opens
+    /// that directory by hand.
+    /// </para>
+    /// </remarks>
+    Task<bool> StartAsync(
+        AgentName agent, string because, CancellationToken cancellationToken = default);
 }

@@ -676,6 +676,7 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// <param name="beforeId">
     /// The identifier at that resume point, breaking ties the instant alone cannot.
     /// </param>
+    /// <param name="includeArchived">Whether to list archived conversations as well.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>One page of summaries.</returns>
     /// <remarks>
@@ -710,6 +711,7 @@ public sealed class ConversationRepository(SqliteConnection connection)
         int limit = 50,
         DateTimeOffset? beforeLastActivityUtc = null,
         string? beforeId = null,
+        bool includeArchived = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
@@ -732,10 +734,12 @@ public sealed class ConversationRepository(SqliteConnection connection)
                        a.last_utc                                 AS LastActivityUtc,
                        EXISTS (SELECT 1 FROM exchanges e
                                 WHERE e.conversation_id = c.id
-                                  AND e.state = 'OPEN')           AS HasOpenExchange
+                                  AND e.state = 'OPEN')           AS HasOpenExchange,
+                       (c.archived_utc IS NOT NULL)               AS Archived
                   FROM conversations c
                   JOIN activity a ON a.id = c.id
-                 WHERE (@Participant IS NULL
+                 WHERE (@IncludeArchived OR c.archived_utc IS NULL)
+                   AND (@Participant IS NULL
                         OR EXISTS (SELECT 1 FROM conversation_participants p
                                     WHERE p.conversation_id = c.id
                                       AND p.agent = @Participant))
@@ -754,7 +758,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
                     Until = Format(untilUtc),
                     Before = Format(beforeLastActivityUtc),
                     BeforeId = beforeId ?? string.Empty,
-                    Limit = limit
+                    Limit = limit,
+                    IncludeArchived = includeArchived
                 },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
@@ -779,10 +784,263 @@ public sealed class ConversationRepository(SqliteConnection connection)
                 row.Messages,
                 ExchangeRow.ParseTimestamp(row.FirstActivityUtc),
                 ExchangeRow.ParseTimestamp(row.LastActivityUtc),
-                row.HasOpenExchange));
+                row.HasOpenExchange,
+                row.Archived));
         }
 
         return summaries;
+    }
+
+    /// <summary>
+    /// Counts the archived conversations a listing with the same filters would have omitted.
+    /// </summary>
+    /// <param name="participant">Restrict to conversations this agent is party to, or null for all.</param>
+    /// <param name="sinceUtc">Only those last active at or after this instant, if given.</param>
+    /// <param name="untilUtc">Only those last active at or before this instant, if given.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>How many were left out.</returns>
+    /// <remarks>
+    /// <para>
+    /// Counted across the whole filtered set rather than per page, because it answers <i>are there
+    /// archived conversations here</i> and a per-page number would answer something narrower that
+    /// looks the same. A caller on page three seeing zero would conclude there were none.
+    /// </para>
+    /// <para>
+    /// It exists because archiving does not stop a conversation receiving messages. Without this
+    /// number a surface hiding archived conversations would be hiding traffic, and would have no
+    /// way to know it.
+    /// </para>
+    /// </remarks>
+    public async Task<int> CountArchivedAsync(
+        AgentName? participant = null,
+        DateTimeOffset? sinceUtc = null,
+        DateTimeOffset? untilUtc = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await _connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(
+                """
+                WITH activity AS (
+                    SELECT conversation_id      AS id,
+                           max(created_utc)     AS last_utc
+                      FROM messages
+                     WHERE conversation_id IS NOT NULL
+                     GROUP BY conversation_id
+                )
+                SELECT count(*)
+                  FROM conversations c
+                  JOIN activity a ON a.id = c.id
+                 WHERE c.archived_utc IS NOT NULL
+                   AND (@Participant IS NULL
+                        OR EXISTS (SELECT 1 FROM conversation_participants p
+                                    WHERE p.conversation_id = c.id
+                                      AND p.agent = @Participant))
+                   AND (@Since IS NULL OR a.last_utc >= @Since)
+                   AND (@Until IS NULL OR a.last_utc <= @Until);
+                """,
+                new
+                {
+                    Participant = participant?.Value,
+                    Since = Format(sinceUtc),
+                    Until = Format(untilUtc)
+                },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
+    /// <summary>Puts a conversation out of the ordinary listing, or brings it back.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="archived">Whether it should be archived.</param>
+    /// <param name="nowUtc">The current instant, recorded when archiving.</param>
+    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether anything changed.</returns>
+    /// <remarks>
+    /// <para>
+    /// One method for both directions because they are one column, and two would be two places to
+    /// get the guard below wrong.
+    /// </para>
+    /// <para>
+    /// <b>The state column is not touched and must not be.</b> Archiving is orthogonal to the
+    /// closure lifecycle of SPEC.md §5.0: an operator may file away a conversation that is still
+    /// open, and closing one does not file it. Writing to <c>state</c> here would make the first
+    /// conversation that was both lose one of the two facts.
+    /// </para>
+    /// <para>
+    /// The <c>IS NULL</c> guards make this idempotent, so archiving twice reports no change rather
+    /// than moving the timestamp. An operator who archived something last week and clicks again
+    /// has not re-archived it today, and a surface showing the second date would be reporting an
+    /// event that did not happen.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> SetArchivedAsync(
+        string conversationId,
+        bool archived,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        var changed = await _connection.ExecuteAsync(
+            new CommandDefinition(
+                archived
+                    ? """
+                      UPDATE conversations
+                         SET archived_utc = @When
+                       WHERE id = @Conversation AND archived_utc IS NULL;
+                      """
+                    : """
+                      UPDATE conversations
+                         SET archived_utc = NULL
+                       WHERE id = @Conversation AND archived_utc IS NOT NULL;
+                      """,
+                new
+                {
+                    Conversation = conversationId,
+                    When = ExchangeRow.FormatTimestamp(nowUtc)
+                },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return changed > 0;
+    }
+
+    /// <summary>Deletes a conversation and everything belonging to it.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="nowUtc">The current instant, recorded on the tombstone.</param>
+    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>What was destroyed, per table.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Foreign keys deferred to commit, and deliberately not cascading</b> — the same shape as
+    /// <c>AgentRepository.PurgeAsync</c> and for the same load-bearing reason. A cascade deletes
+    /// whatever it reaches and reports nothing, so a reference added by a later migration is swept
+    /// silently, and one added in the wrong place is swept silently too. A deferred check refuses
+    /// at commit and rolls the whole thing back, which is what SPEC.md §9.3 means by an invariant
+    /// belonging in storage rather than in whichever code happens to be running.
+    /// </para>
+    /// <para>
+    /// <b>The tombstone is written before the deletes.</b> It has to be: the participants and the
+    /// message count are read from rows this method is about to remove, and computing them
+    /// afterwards would record zero of everything.
+    /// </para>
+    /// <para>
+    /// It holds facts and no content — §9.4 argues that a log kept past its usefulness grows the
+    /// blast radius of a leaked database, and keeping message text past a destroy is that argument
+    /// inverted. It also keeps the identifier taken, so a new conversation cannot be opened under
+    /// the name of one somebody already holds an export of.
+    /// </para>
+    /// </remarks>
+    public async Task<DestroyOutcome> DestroyAsync(
+        string conversationId,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        using var scope = WriteScope.Begin(_connection, transaction);
+
+        var exists = await _connection.ExecuteScalarAsync<long>(
+            new CommandDefinition(
+                "SELECT count(*) FROM conversations WHERE id = @Conversation;",
+                new { Conversation = conversationId },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
+
+        if (!exists)
+        {
+            scope.Complete();
+            return DestroyOutcome.NoSuchConversation;
+        }
+
+        var participants = await _connection.QueryAsync<string>(
+            new CommandDefinition(
+                """
+                SELECT agent
+                  FROM conversation_participants
+                 WHERE conversation_id = @Conversation
+                 ORDER BY agent;
+                """,
+                new { Conversation = conversationId },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        var messages = await _connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(
+                "SELECT count(*) FROM messages WHERE conversation_id = @Conversation;",
+                new { Conversation = conversationId },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        // See the remarks: not cascading is the guard, so a table nobody remembered fails the
+        // commit rather than leaving a row pointing at a conversation that has gone.
+        await ExecuteAsync("PRAGMA defer_foreign_keys = ON;").ConfigureAwait(false);
+
+        var toll = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        await RazeAsync(
+            "message_referrals",
+            """
+            DELETE FROM message_referrals
+             WHERE exchange_id IN (SELECT id FROM exchanges
+                                    WHERE conversation_id = @Conversation);
+            """).ConfigureAwait(false);
+
+        await RazeAsync(
+            "messages",
+            "DELETE FROM messages WHERE conversation_id = @Conversation;").ConfigureAwait(false);
+
+        await RazeAsync(
+            "exchanges",
+            "DELETE FROM exchanges WHERE conversation_id = @Conversation;").ConfigureAwait(false);
+
+        await RazeAsync(
+            "conversation_participants",
+            "DELETE FROM conversation_participants WHERE conversation_id = @Conversation;")
+            .ConfigureAwait(false);
+
+        await ExecuteAsync(
+            """
+            INSERT INTO destroyed_conversations (id, destroyed_utc, messages, participants)
+            VALUES (@Conversation, @When, @Messages, @Participants);
+            """).ConfigureAwait(false);
+
+        // Not tolled, for the reason a purge does not toll the agent's own row: the toll is an
+        // account of collateral, and the conversation is the thing that was asked for. Counting it
+        // would make an empty toll impossible and cost the report its clearest reading.
+        await ExecuteAsync("DELETE FROM conversations WHERE id = @Conversation;")
+            .ConfigureAwait(false);
+
+        scope.Complete();
+
+        return DestroyOutcome.Razed(
+            [.. toll.Where(t => t.Value > 0)
+                    .OrderByDescending(t => t.Value)
+                    .ThenBy(t => t.Key, StringComparer.Ordinal)
+                    .Select(t => new PurgeToll(t.Key, t.Value))]);
+
+        Task<int> ExecuteAsync(string sql) =>
+            _connection.ExecuteAsync(
+                new CommandDefinition(
+                    sql,
+                    new
+                    {
+                        Conversation = conversationId,
+                        When = ExchangeRow.FormatTimestamp(nowUtc),
+                        Messages = messages,
+                        Participants = string.Join(", ", participants)
+                    },
+                    scope.Transaction,
+                    cancellationToken: cancellationToken));
+
+        async Task RazeAsync(string table, string sql)
+        {
+            var rows = await ExecuteAsync(sql).ConfigureAwait(false);
+
+            toll[table] = toll.GetValueOrDefault(table) + rows;
+        }
     }
 
     /// <summary>Renders an instant the way the store holds one, or null.</summary>
@@ -811,6 +1069,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
         public string LastActivityUtc { get; init; } = string.Empty;
 
         public bool HasOpenExchange { get; init; }
+
+        public bool Archived { get; init; }
     }
 
     private sealed class ConversationRow

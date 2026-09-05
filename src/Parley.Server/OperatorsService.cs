@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Grpc.Core;
 using Parley.Broker;
 using Parley.Core;
@@ -70,6 +70,91 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             context).ConfigureAwait(false);
 
         return new Wire.DidItReply { Changed = changed };
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.DidItReply> Archive(
+        Wire.ConversationRequest request,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var changed = await Console(
+            (console, now, ct) => console.SetConversationArchivedAsync(
+                request.ConversationId, archived: true, now, ct),
+            context).ConfigureAwait(false);
+
+        return new Wire.DidItReply { Changed = changed };
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.DidItReply> Unarchive(
+        Wire.ConversationRequest request,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var changed = await Console(
+            (console, now, ct) => console.SetConversationArchivedAsync(
+                request.ConversationId, archived: false, now, ct),
+            context).ConfigureAwait(false);
+
+        return new Wire.DidItReply { Changed = changed };
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.DestroyReply> Destroy(
+        Wire.ConversationRequest request,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var outcome = await Console(
+            (console, now, ct) => console.DestroyConversationAsync(request.ConversationId, now, ct),
+            context).ConfigureAwait(false);
+
+        var reply = new Wire.DestroyReply { Verdict = Conversions.Out(outcome.Verdict) };
+
+        foreach (var toll in outcome.Destroyed)
+        {
+            reply.Destroyed.Add(new Wire.PurgeToll { Table = toll.Table, Rows = toll.Rows });
+        }
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// <b>This does not touch the registry, and that is the whole of why it is allowed to exist.</b>
+    /// It asks the node whose catalogue names the role to launch it; the launched adapter then
+    /// registers the one agent it attaches, by SPEC.md §12.3's ordinary route and under the identity
+    /// §13 requires its launch to fix. Writing a registration here would be the forgery §12.3 forbids
+    /// wearing an operator's clothes.
+    /// </para>
+    /// <para>
+    /// It follows that an agent nothing has ever registered can be started, because what makes the
+    /// role reachable is the node's catalogue rather than the registry — which is why enrolling a
+    /// repository need not leave an agent nobody can reach until somebody opens that directory.
+    /// </para>
+    /// </remarks>
+    public override Task<Wire.DidItReply> Start(
+        Wire.StartRequest request,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Name(request.Agent);
+
+        var started = _runtime.RequestAttention(
+            agent,
+            string.IsNullOrWhiteSpace(request.Because) ? "an operator asked for it" : request.Because);
+
+        return Task.FromResult(new Wire.DidItReply { Changed = started });
     }
 
     /// <inheritdoc/>
@@ -451,10 +536,21 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 limit,
                 Parse(resumeAt[0]),
                 resumeAt.Length > 1 ? resumeAt[1] : null,
+                request.IncludeArchived,
                 ct),
             context).ConfigureAwait(false);
 
-        var reply = new Wire.ListConversationsReply();
+        // Counted whether or not archived ones were asked for, because the question it answers is
+        // "are there archived conversations here" and a caller that could not ask would be hiding
+        // traffic: an archived conversation goes on receiving messages.
+        var omitted = request.IncludeArchived
+            ? 0
+            : await Console(
+                (console, _, ct) => console.CountArchivedConversationsAsync(
+                    participant, Parse(request.SinceUtc), Parse(request.UntilUtc), ct),
+                context).ConfigureAwait(false);
+
+        var reply = new Wire.ListConversationsReply { ArchivedOmitted = omitted };
 
         foreach (var summary in summaries)
         {
@@ -464,7 +560,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 Messages = summary.Messages,
                 FirstActivityUtc = summary.FirstActivityUtc.ToString("O", CultureInfo.InvariantCulture),
                 LastActivityUtc = summary.LastActivityUtc.ToString("O", CultureInfo.InvariantCulture),
-                HasOpenExchange = summary.HasOpenExchange
+                HasOpenExchange = summary.HasOpenExchange,
+                Archived = summary.Archived
             };
 
             foreach (var agent in summary.Participants)
