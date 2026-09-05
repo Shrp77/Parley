@@ -458,19 +458,46 @@ surface rule asks for.
       untracked** files (memory: `hygiene-grep-misses-new-files`). Every new file in this
       feature — `Shell.cs`, the four regions, `Adding.cs`, `Withdrawing.cs`, `Enrolment.cs` and
       the new tests — is exactly the case `git grep` cannot see.
-- [ ] T062 Run the full suite by host executable three times on Windows and three times under
+- [X] T062 Run the full suite by host executable three times on Windows and three times under
       podman (memory: `verify-linux-locally-with-podman`, keep the whole output). Record the
       counts under **Parity**. A Linux-only failure is the platform difference the spike was
       looking for and is a finding, not noise (memory:
       `same-sha-different-result-proves-a-flake`).
-- [ ] T063 Run the review gate as CLAUDE.md states it, **after the last edit**: three
+- [X] T063 Run the review gate as CLAUDE.md states it, **after the last edit**: three
       consecutive clean runs per lens, each probing what the previous did not, logged in
       `REVIEW-LEDGER.md` under a section for this branch, clean runs included. A finding above
       low resets that lens. The highest-value probes for this branch are named in T015, T017,
       T047 and T054; a lens that only re-reads them has not run.
-- [ ] T064 Walk `quickstart.md` end to end on the real deployment (the one this repository is
+- [ ] T064 **Open, and left open deliberately.** Walk `quickstart.md` end to end on the real deployment (the one this repository is
       registered with; memory: `parley-repo-registers-as-its-own-agent`) with the built tool,
       and note in this file anything the walk found that the tests did not.
+
+
+### Parity — the counts T062 asks for
+
+Both platforms at `HEAD`, by host executable, three passes each. Every pass green.
+
+| Platform | Passes | Tests per pass | Failures |
+|---|---|---|---|
+| Windows 11, .NET 10.0.11 | 3 | 2,055 | 0 |
+| Linux, `mcr.microsoft.com/dotnet/sdk:10.0` under podman | 3 | 2,055 | 0 |
+
+The two differ only in what they skip: Linux skips one case in `Parley.Cli.Tests` and twenty-one in
+`Parley.Mcp.Tests`, all of them platform-conditional and all of them skipped on purpose. No test
+passed on one platform and failed on the other, which is the finding this task was watching for.
+
+`dotnet build` is clean in Debug and Release, which is the whole lint gate.
+
+### What T064 still needs, and why it is not ticked
+
+The redirect half is done and passes: the built tool, run with its output piped, refuses with the
+sentence step 1 names and points at `project list`, `registry`, `export` and `console`.
+
+**The rest needs a real terminal and the owner's live deployment, and neither is something to take
+without asking.** Walking steps 2 to 7 means `dotnet tool update` over the `parley` on `PATH` — the
+one an eighteen-repository deployment and a scheduled task are running right now — and then driving
+a full-screen application by hand. That is the owner's call to make and their machine to make it on,
+so the task stays open rather than being ticked on a partial walk.
 
 ---
 

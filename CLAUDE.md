@@ -532,6 +532,28 @@ below in the form Spec Kit's checks read; this file remains the authority when t
     is control characters in a payload, a project description or a log line, and they are replaced
     one for one rather than dropped — because a name typed back is what authorises a purge.
 
+  Three more the review gate found, none of them visible by reading:
+
+  - **A withdrawal deleted a launch configuration belonging to a different agent.** The workspace
+    comes from the registry, which is what the agent said about itself and may be long out of date,
+    so a repository re-enrolled under a second name has one `.mcp.json` and two rows pointing at it.
+    Withdrawing the first row removed the second agent's `PARLEY_AGENT` and reported success. The
+    name is read back before the entry goes now. **A test named
+    `Withdrawing_one_agent_leaves_another_agents_launch_configuration_alone` had passed throughout,
+    because it put the two agents in two workspaces** — a test named for a property it does not
+    check is worse than no test.
+  - **The terminal's work queue was not one queue.** `_work = _work.ContinueWith(...)` is three
+    steps on a plain field; sixty-four callers at once overlapped twenty-three times and left
+    forty-five outside the task `Settled` hands back. Every call site today is on the main loop, so
+    it was latent — but `Settled` is what makes every driven test in the suite deterministic, and a
+    guarantee that holds only because of where its callers happen to sit is one nothing enforces.
+    The chain is extended and read under a lock.
+  - **The two surfaces had drifted and no contract said so.** The console binds `Refusals`,
+    `Clarifications`, `Referrals` and `Notifications`; the terminal binds none, which made 004's
+    promise that absences are *listed so their absence is deliberate* untrue for four of them.
+    Written down in 005's `contracts/operations.md`, and `DriftTests` now compares every operation
+    on `BrokerClient` against both trees so the next one-sided one fails the build.
+
 - Previous: `specs/004-terminal-surface/` — merged 2026-09-03 as `c85a271`, 0.16.9, gate met on
   all three lenses. What use added after its plan is recorded at the end of its `spec.md`:
   pre-filled, validated naming; the manifest-serving autostart entry with a node per catalogued
