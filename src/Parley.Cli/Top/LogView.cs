@@ -32,6 +32,7 @@ internal sealed class LogView : Dialog
     internal const string Following = "Following ";
 
     private readonly ObservableCollection<string> _lines = [];
+    private readonly List<string> _pending = [];
     private readonly ListView _list;
     private readonly CancellationTokenSource _stopping = new();
 
@@ -50,7 +51,19 @@ internal sealed class LogView : Dialog
     }
 
     /// <summary>Every line shown so far.</summary>
-    internal IReadOnlyList<string> Lines => [.. _lines];
+    /// <remarks>
+    /// Drained first, so a caller that has just drawn sees what the follower read. Reading the
+    /// bound collection alone would report a view one draw behind the file.
+    /// </remarks>
+    internal IReadOnlyList<string> Lines
+    {
+        get
+        {
+            Drain();
+
+            return [.. _lines];
+        }
+    }
 
     /// <summary>Opens the log of a project and starts following it.</summary>
     /// <param name="app">The application the view opens in.</param>
@@ -146,20 +159,55 @@ internal sealed class LogView : Dialog
     /// <summary>Raised when the person presses Escape.</summary>
     internal event EventHandler? Closing;
 
-    /// <summary>Adds a line and keeps the view on the newest.</summary>
+    /// <summary>
+    /// Takes a line the follower read, to be shown on the next draw.
+    /// </summary>
     /// <param name="line">What the broker wrote.</param>
     /// <remarks>
-    /// The follow loop runs off the main loop, so the list is appended to from another thread. The
-    /// collection is the list's source and the toolkit reads it when it draws, which is why the
-    /// append is locked and the redraw is left to the next draw rather than forced from here.
+    /// <b>It does not touch the view, and that is the whole of it.</b> The follower runs off the
+    /// main loop and the toolkit draws on it; a source collection mutated during a draw throws or
+    /// is read half-written, and either way the failure lands in the draw rather than anywhere
+    /// near its cause. An earlier version added straight to the bound collection and set the
+    /// selection from the follower's thread, which is that bug written twice.
     /// </remarks>
-    private void Append(string line)
+    internal void Append(string line)
     {
-        lock (_lines)
+        lock (_pending)
+        {
+            _pending.Add(line);
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override bool OnDrawingContent(DrawContext? context)
+    {
+        Drain();
+
+        return base.OnDrawingContent(context);
+    }
+
+    /// <summary>Moves whatever the follower has read into the view, on the drawing thread.</summary>
+    private void Drain()
+    {
+        List<string> taken;
+
+        lock (_pending)
+        {
+            if (_pending.Count == 0)
+            {
+                return;
+            }
+
+            taken = [.. _pending];
+            _pending.Clear();
+        }
+
+        foreach (var line in taken)
         {
             _lines.Add(line);
         }
 
+        // Kept on the newest, which is what a person following a log is watching for.
         _list.SelectedItem = _lines.Count - 1;
     }
 }

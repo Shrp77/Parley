@@ -297,17 +297,39 @@ internal sealed class AgentsRegion : FrameView
     /// </para>
     /// </remarks>
     internal static SeatHold? Refresh(
-        SeatBook seats, Seat? me, ProjectSettings project, DateTimeOffset now)
+        SeatBook seats, Seat? me, ProjectSettings project, DateTimeOffset now) =>
+        Refresh(seats, me, project, now, now);
+
+    /// <summary>
+    /// The same, with the moment somebody last used the surface told apart from the moment now.
+    /// </summary>
+    /// <param name="seats">The book.</param>
+    /// <param name="me">The name last seated, if any.</param>
+    /// <param name="project">The project on screen.</param>
+    /// <param name="touched">When somebody last pressed a key or clicked.</param>
+    /// <param name="now">The current instant.</param>
+    /// <returns>The seat still held here, or null when there is none.</returns>
+    /// <remarks>
+    /// <b>The two are not the same instant, and treating them as one is how the idle rule stops
+    /// applying.</b> A terminal redraws itself whether or not anybody is at it, so a touch taken at
+    /// the moment of drawing means the seat of an abandoned terminal is refreshed for ever — which
+    /// is the failure <see cref="SeatBook.IdleAfter"/> exists to prevent, and which this surface
+    /// had until a probe went looking for it. What the specification asks for is twenty minutes
+    /// <i>without touching it</i>, so the touch is dated from the last key or click.
+    /// </remarks>
+    internal static SeatHold? Refresh(
+        SeatBook seats,
+        Seat? me,
+        ProjectSettings project,
+        DateTimeOffset touched,
+        DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(seats);
         ArgumentNullException.ThrowIfNull(project);
 
         if (me is not null)
         {
-            // Looking at the surface is being here. Nothing else reports that a person is still
-            // present, so without this the sweep below releases the seat of somebody sitting in
-            // front of it.
-            seats.Touch(me, now);
+            seats.Touch(me, touched);
         }
 
         seats.Sweep(now);

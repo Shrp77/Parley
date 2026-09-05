@@ -66,6 +66,7 @@ internal sealed class Shell : Window
 
     private bool _stacked;
     private Task _work = Task.CompletedTask;
+    private DateTimeOffset _touched = DateTimeOffset.UtcNow;
 
     internal Shell(BrokerDirectory directory)
     {
@@ -82,6 +83,11 @@ internal sealed class Shell : Window
         Transcript = new TranscriptRegion();
 
         _regions = [Projects, Agents, Conversations, Transcript];
+
+        // Choosing and opening are things a person did, whether by key or by pointer, so both
+        // count as being here. A mouse-only session would otherwise be swept mid-use.
+        Projects.Chose += (_, _) => Touched();
+        Conversations.Opened += (_, _) => Touched();
 
         Projects.Chose += (_, project) => Queue(token => SelectAsync(project, token));
         Conversations.Opened += (_, conversation) => Queue(token =>
@@ -354,6 +360,60 @@ internal sealed class Shell : Window
     /// <summary>The seat this person holds, if they hold one.</summary>
     internal SeatHold? Held { get; private set; }
 
+    /// <summary>
+    /// Who this person is, which is not the same question as whether they are seated here.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from <see cref="Held"/> deliberately, and 004 learned this the hard way: taking
+    /// "no seat in this project" as the answer to "who are you" meant walking into a project you
+    /// were not seated in forgot you, so coming back to the one you <i>were</i> seated in offered
+    /// a join while the book still held the seat and the registry still had you present. Only
+    /// leaving clears a person.
+    /// </remarks>
+    internal Seat? Me { get; private set; }
+
+    /// <summary>What is said when a seat is released for want of anybody at the terminal.</summary>
+    internal static string Released { get; } =
+        $"Your seat was released: nothing touched it for {SeatBook.IdleAfter.TotalMinutes:0} minutes.";
+
+    /// <summary>
+    /// Keeps this person's seat alive because they are here, and releases the ones nobody is at.
+    /// </summary>
+    /// <param name="now">The current instant.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Called on every draw, and that is what makes the idle rule apply at all.</b> 004 swept on
+    /// every visit to its menu; this surface has no menu to visit, so without a hook the seat would
+    /// be released only when the process ended — and a terminal left open overnight holding
+    /// somebody present in the registry is the exact failure <c>SeatBook.IdleAfter</c> exists to
+    /// prevent, reached by a different kind of window than the browser tab it was written for.
+    /// </para>
+    /// <para>
+    /// Being drawn is being here. The sweep therefore cannot take the seat of the person watching
+    /// it, only the seats of people who are not — which is the same rule the console applies from
+    /// its frame.
+    /// </para>
+    /// </remarks>
+    internal void Tick(DateTimeOffset now)
+    {
+        if (Seats is null || Projects.Selected is not { } project)
+        {
+            return;
+        }
+
+        var held = AgentsRegion.Refresh(Seats, Me, project, _touched, now);
+
+        if (Me is not null && Held is not null && held is null)
+        {
+            // Said rather than left to be noticed. A person who came back to a surface that had
+            // quietly stopped being them would ask a question as nobody.
+            Said = Released;
+            Me = null;
+        }
+
+        Held = held;
+    }
+
     /// <summary>Where seats are held, or null when this surface cannot seat anybody.</summary>
     internal SeatBook? Seats { get; init; }
 
@@ -575,6 +635,7 @@ internal sealed class Shell : Window
                     .ConfigureAwait(false);
 
                 Held = hold ?? Held;
+                Me = hold?.Seat ?? Me;
                 Said = said;
 
                 await SelectAsync(project, cancellationToken).ConfigureAwait(false);
@@ -709,6 +770,7 @@ internal sealed class Shell : Window
 
         Said = AgentsRegion.Leave(Seats, Held.Seat);
         Held = null;
+        Me = null;
 
         if (Projects.Selected is { } project)
         {
@@ -719,6 +781,26 @@ internal sealed class Shell : Window
     }
 
     /// <inheritdoc/>
+    protected override bool OnDrawingContent(DrawContext? context)
+    {
+        // Every draw, because there is nowhere else this could hang: the surface has no menu to
+        // revisit, and 004 swept on every visit to one. What it does not do is call this a touch.
+        Tick(DateTimeOffset.UtcNow);
+
+        return base.OnDrawingContent(context);
+    }
+
+    /// <summary>Records that somebody is actually here.</summary>
+    /// <param name="at">When, or now when a caller has no reason to say.</param>
+    /// <remarks>
+    /// A key, a click, or an action taken. Drawing is not on the list, which is the whole point:
+    /// an abandoned terminal goes on drawing, and a touch taken from a draw would keep its seat
+    /// alive for ever. The instant is a parameter for the same reason <see cref="Tick"/>'s is —
+    /// a test moves twenty minutes rather than waiting them.
+    /// </remarks>
+    internal void Touched(DateTimeOffset? at = null) => _touched = at ?? DateTimeOffset.UtcNow;
+
+    /// <inheritdoc/>
     protected override bool OnKeyDown(Key key)
     {
         ArgumentNullException.ThrowIfNull(key);
@@ -727,6 +809,8 @@ internal sealed class Shell : Window
         // view including the list inside a region. What a person means by Tab on this surface is
         // "the next region", and a Tab that stepped into a list and then out of it again would
         // visit eight places to reach four.
+        Touched();
+
         if (key == Key.Tab)
         {
             Move(forwards: true);
@@ -1101,12 +1185,36 @@ internal sealed class Shell : Window
                 }
                 catch (OperationCanceledException)
                 {
-                    // The surface is going away.
+                    // The surface is going away. Not news, and saying so would put "the operation
+                    // was cancelled" on screen every time somebody quit.
+                }
+                catch (Exception failure)
+                {
+                    // **Everything, and it is said rather than swallowed.** An earlier version
+                    // caught only the cancellation while its own comment claimed it contained
+                    // faults, which is the worst of both: the chain's task faulted, nothing
+                    // observed it, and the next `await Settled` rethrew somebody else's exception
+                    // long after the thing that caused it.
+                    //
+                    // Every broker read is already contained by BrokerDirectory.ReadAsync, so what
+                    // reaches here is a defect — and the right answer to a defect in one region's
+                    // redraw is a sentence on the status line, not the end of a session that is
+                    // showing three other projects.
+                    Said = failure.Message;
                 }
             },
             CancellationToken.None,
             TaskContinuationOptions.None,
             TaskScheduler.Default).Unwrap();
+
+    /// <summary>Queues work that throws, so a test can prove the containment above.</summary>
+    /// <param name="failure">What to throw.</param>
+    /// <remarks>
+    /// Internal and test-only, and deliberately not a flag on a real read: the property being
+    /// checked is what the queue does with an exception, and reaching it through a broker that
+    /// happened to misbehave would test the broker instead.
+    /// </remarks>
+    internal void Failing(Exception failure) => Queue(_ => Task.FromException(failure));
 }
 
 /// <summary>One thing the focused region can do, and the letter that does it.</summary>
