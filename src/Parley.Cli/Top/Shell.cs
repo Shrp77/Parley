@@ -208,6 +208,15 @@ internal sealed class Shell : Window
             Transcript.Width = Dim.Fill();
             Transcript.Height = Dim.Fill(1);
 
+            // **Made visible again, because the stacked layout hides three of them.** Going narrow
+            // and coming back is one drag of a window edge, and without this the surface returns
+            // showing one region and three gaps -- which reads as three regions lost to the resize
+            // rather than as a layout that forgot to undo itself.
+            foreach (var region in _regions)
+            {
+                region.Visible = true;
+            }
+
             Add(Projects, Agents, Conversations, Transcript);
         }
 
