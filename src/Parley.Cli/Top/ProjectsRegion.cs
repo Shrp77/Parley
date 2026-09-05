@@ -36,7 +36,9 @@ internal sealed class ProjectsRegion : FrameView
     internal const string Asking = "asking";
 
     /// <summary>What is shown when the machine names none.</summary>
-    internal const string Nothing = "This machine names no projects yet.";
+    internal const string Nothing =
+        "This machine names no projects yet. Press c to create one, or ? for everything this "
+        + "region can do.";
 
     private readonly ListView _list = new() { Width = Dim.Fill(), Height = Dim.Fill() };
 

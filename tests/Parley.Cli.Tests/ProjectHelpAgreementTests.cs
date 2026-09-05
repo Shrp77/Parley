@@ -60,9 +60,16 @@ public sealed partial class ProjectHelpAgreementTests
                  {
                      ("create a new project", Parley.Cli.Top.Naming.CreateTitle),
                      ("name the deployment this machine already runs", Parley.Cli.Top.Naming.NameRunningTitle),
-                     ("removed from there", Parley.Cli.Top.Removing.Title),
+                     ("a project can be removed", Parley.Cli.Top.Removing.Title),
                      ("typed back", Parley.Cli.Top.Removing.Destroy),
                      ("a seat", Parley.Cli.Top.AgentsRegion.JoinTitle),
+
+                     // 005 added the two the README had no reason to describe before, and each
+                     // is the half of "who is in a project" the terminal could not touch.
+                     ("add an agent", Parley.Cli.Top.Adding.Title),
+                     ("remove one", Parley.Cli.Top.Withdrawing.Title),
+                     ("catalogued, not yet registered", Parley.Cli.Top.AgentsRegion.CataloguedOnly),
+                     ("not in this catalogue", Parley.Cli.Top.AgentsRegion.NotCatalogued),
                  })
         {
             Assert.True(

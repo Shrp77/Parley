@@ -32,7 +32,9 @@ internal sealed class ConversationsRegion : FrameView
     internal const string Settled = "settled";
 
     /// <summary>What is shown when a project has had none.</summary>
-    internal const string Nothing = "No conversation has happened in this project yet.";
+    internal const string Nothing =
+        "No conversation has happened in this project yet. One begins when an agent asks another "
+        + "something, or when you do from a seat.";
 
     private readonly ListView _list = new() { Width = Dim.Fill(), Height = Dim.Fill() };
 

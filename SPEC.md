@@ -3773,6 +3773,24 @@ Cheap to collect, disproportionately useful:
     machine can launch a durable fact in a shared store, and §4 has kept that firmly local until
     now. Decide it when somebody has been misled by the word, not before.
 
+    **Two things narrowed this on 2026-09-05, and neither answers it.** The first was a defect
+    rather than a design: a node announced its roles once, at join, so a role added to a running
+    node's catalogue was announced *never* — which produced this question's exact state by a route
+    nobody had noticed, and produced it for an agent somebody had just deliberately enrolled. A
+    node now compares its roles against its catalogue and rejoins when they differ, so the window
+    is a poll rather than a session.
+
+    The second is that a surface can say it. An operator's terminal reads the project's catalogue
+    beside the registry — allowed because the catalogue is the one fact about a deployment the
+    broker never sees, so reading it is not a second answer to a question the broker answers —
+    and shows three states in words: the registry's presence for an agent in both, *catalogued,
+    not yet registered* for one the node could start that has never attached, and the presence
+    followed by *not in this catalogue* for exactly the case above. The misleading word is now
+    said out loud somewhere, which lowers the cost of leaving it further.
+
+    What neither does is make the registry itself honest, which is what the question asks. An
+    operator reading `parley registry` in a pipe still sees `startable`.
+
 14. Should the broker say which agent it recorded, on attach? The acknowledgement of §4.0's
     stream carries counts and nothing else — how many exchanges were orphaned, whether the agent
     was marked live — so an adapter learns that its attach succeeded and never learns what it

@@ -64,7 +64,9 @@ internal sealed class AgentsRegion : FrameView
     internal const string Left = "Left. ";
 
     /// <summary>What is shown before anything has been read.</summary>
-    internal const string Nothing = "No agent is registered in this project, and its catalogue names none.";
+    internal const string Nothing =
+        "No agent is registered in this project and its catalogue names none. Press a to make a "
+        + "repository on this machine one.";
 
     private readonly ListView _list = new() { Width = Dim.Fill(), Height = Dim.Fill() };
 

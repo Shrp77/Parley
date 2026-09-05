@@ -77,17 +77,33 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
 
                     `parley console` starts it, so Parley.Cli references this and the tool
                     carries Kestrel. `parley top` shows the same deployment in a terminal, built
-                    on Parley.Client and Spectre.Console, and needs no browser -- the machine
-                    running a broker is frequently not the one somebody has one open on. It binds
-                    no destructive operator operation, and SurfaceTests fails if one appears:
+                    on Parley.Client and **Terminal.Gui v2**, and needs no browser -- the machine
+                    running a broker is frequently not the one somebody has one open on. Four
+                    regions on one screen, Tab between them, and the toolkit's cost is recorded
+                    beside its pin in `Directory.Packages.props`: twenty-four packages where
+                    Spectre.Console brought none.
+
+                    **The surface rule was amended twice, on the same terms both times.** It read:
                     a purge behind a keystroke is a different risk from one behind a page that
-                    describes it first. **The one destructive thing it does is destroy a
-                    project**, decided by the owner on 2026-09-03 on the grounds that a surface
-                    that can create a project must be able to destroy one. It is not behind a
-                    keystroke: `Removing` describes what will go, offers forgetting (deletes
-                    nothing) beside destroying, and takes the project's own name typed back
-                    before it deletes. SurfaceTests confines the word to that one file, and
-                    RemovingTests drives the confirmation.
+                    describes it first. What the rule actually asks for is a description and a
+                    deliberate act, and a typed name is a deliberate act -- so destroying a
+                    project was admitted in 004 (2026-09-03), and retiring, reinstating and
+                    purging an agent in 005 (2026-09-05), both by the owner and both on the
+                    grounds that a surface which can create a thing must be able to remove it.
+
+                    Neither is behind a keystroke. `Removing` describes a project, offers
+                    forgetting (deletes nothing) beside destroying, and takes the project's own
+                    name typed back. `Withdrawing` describes an agent -- state, workspace, what it
+                    owns, and every open exchange it owes -- offers keeping first, and takes the
+                    agent's name typed back for retiring and for purging; a purge that would
+                    orphan an exchange names the asker and takes that acceptance before the name.
+
+                    **SurfaceTests is what makes both properties of the code rather than habits.**
+                    `Retire`, `Reinstate` and `Purge` may appear in exactly one file, which must
+                    contain the typed-name prompt; the `destroy` argument in exactly one other;
+                    and `ForceConclude`, `Instruct` and `Prune` in none. A helper whose *name*
+                    merely contains one of those words fails it, which has already happened once
+                    and is the point.
  That was decided deliberately and against the argument
                     recorded here before it: a second tool would have kept ASP.NET Core off
                     the machines that only run an agent, and one command is worth more than
@@ -486,18 +502,36 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/005-tabbed-terminal-agents/` — the terminal rewritten on a windowing
-  toolkit (Terminal.Gui v2, the owner's choice, recorded under the spec's "Decisions already
-  made") so a person sees projects, agents, conversations and a transcript at once and moves
-  between them with Tab; and agents added to a project, retired, reinstated or purged from it,
-  each destructive act behind a description and the agent's name typed back — the same terms on
-  which destroying a project was admitted. `Parley.Client` does not move. Starts from `main` at
-  `c85a271`. `plan.md` is written and `/speckit-tasks` is next. Its "Q1 settled" records the one
-  place the spec asked for what the protocol cannot give — an added agent listed as `startable`
-  before anything has registered it — and the amendment: the agents region shows the project's
-  catalogue beside the registry, and the node rejoins with new roles when its catalogue changes.
-  `research.md` R2 leaves one thing open, which component factory runs Terminal.Gui without a
-  console, and makes that spike the first task and a gate on every other.
+- **Active plan**: `specs/005-tabbed-terminal-agents/` — the terminal rewritten on Terminal.Gui v2
+  (the owner's choice, recorded under the spec's "Decisions already made") so a person sees
+  projects, agents, conversations and a transcript at once and moves between them with Tab; and
+  agents added to a project, retired, reinstated or purged from it, each destructive act behind a
+  description and the agent's name typed back. `Parley.Client` did not move. Started from `main` at
+  `c85a271`; 0.17.0. **Built: Phases 1 to 7, with the review gate outstanding.** Its "Q1 settled"
+  records the one place the spec asked for what the protocol cannot give — an added agent listed as
+  `startable` before anything has registered it — and the amendment that replaced it: the agents
+  region shows the project's catalogue beside the registry, and the node rejoins with new roles
+  when its catalogue changes.
+
+  Four findings from building it, each written where it happened:
+
+  - **Terminal.Gui 2.4.17 has no headless driver and no supported way to supply one.**
+    `ApplicationImpl` is internal and `DriverRegistry.Register` records a factory that
+    `CreateDriver` never calls — it switches on the name against three literals. What works is the
+    ANSI driver initialised and never pumped, with the screen size set rather than queried;
+    `HarnessTests` asserts every line of that recipe, including that a driven session writes zero
+    bytes to stdout and leaves stdin unread. `research.md` R2 carries it.
+  - **A node announced its roles once.** A role added to a running node's catalogue was announced
+    never, so an agent enrolled from the terminal read as `startable` and could not be started —
+    §17 question 13's case, reached by a route nobody had noticed. `parley node` now compares its
+    roles every watch interval and rejoins.
+  - **The toolkit's tab strip truncates.** Four region titles across forty columns became
+    `Conversat`, silently, which is what the narrow-terminal rule forbids by name. Stacked mode
+    shows one region at a time instead.
+  - **`Safe` defends against a different hazard now.** There is no markup to escape; what is left
+    is control characters in a payload, a project description or a log line, and they are replaced
+    one for one rather than dropped — because a name typed back is what authorises a purge.
+
 - Previous: `specs/004-terminal-surface/` — merged 2026-09-03 as `c85a271`, 0.16.9, gate met on
   all three lenses. What use added after its plan is recorded at the end of its `spec.md`:
   pre-filled, validated naming; the manifest-serving autostart entry with a node per catalogued

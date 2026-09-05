@@ -438,23 +438,23 @@ surface rule asks for.
 
 ## Phase 7: Polish
 
-- [ ] T057 [P] Empty states in `src/Parley.Cli/Top/AgentsRegion.cs` (no agents: say how to add
+- [X] T057 [P] Empty states in `src/Parley.Cli/Top/AgentsRegion.cs` (no agents: say how to add
       one), `ConversationsRegion.cs` and `ProjectsRegion.cs`, each naming what to do next, as 004's
       T055 did.
-- [ ] T058 [P] Update `CLAUDE.md`: the `Parley.Web` entry's paragraph on `parley top` says it is
+- [X] T058 [P] Update `CLAUDE.md`: the `Parley.Web` entry's paragraph on `parley top` says it is
       built on Terminal.Gui rather than Spectre.Console; the surface rule's amendment now covers
       retire, reinstate and purge on the same terms as destroy, with `Withdrawing.cs` named the
       way `Removing.cs` is; the Active plan entry moves 005 to Previous with its merge commit and
       version once known.
-- [ ] T059 [P] Update `SPEC.md` §17 question 13 with what this changes: the surface now says
+- [X] T059 [P] Update `SPEC.md` §17 question 13 with what this changes: the surface now says
       `not in this catalogue` out loud, and a node rejoins on a catalogue change, so the
       misleading `startable` the question describes is narrower than when it was written. The
       question stays open; only its evidence grows.
-- [ ] T060 [P] Update `plugins/parley/skills/parley-operator/SKILL.md` and `README.md` where they
+- [X] T060 [P] Update `plugins/parley/skills/parley-operator/SKILL.md` and `README.md` where they
       describe `parley top`: agents can now be added, retired, reinstated and purged from it,
       each behind a typed name, and the enroll command writes `PARLEY_PROJECT` on a manifest-mode
       machine. Documentation does not move the version.
-- [ ] T061 Run the hygiene grep for the originating project's names across tracked **and
+- [X] T061 Run the hygiene grep for the originating project's names across tracked **and
       untracked** files (memory: `hygiene-grep-misses-new-files`). Every new file in this
       feature — `Shell.cs`, the four regions, `Adding.cs`, `Withdrawing.cs`, `Enrolment.cs` and
       the new tests — is exactly the case `git grep` cannot see.
