@@ -46,7 +46,7 @@ public sealed class JoinGuardTests
         // registry. This is the value under test: a read contained into an empty list would look
         // identical here and would turn the guard off.
         var (hold, said) = await AgentsRegion.JoinAsync(
-            seats, directory, Unreachable, null, "arvind", token);
+            seats, Unreachable, null, "arvind", token);
 
         Assert.Null(hold);
 
@@ -74,7 +74,7 @@ public sealed class JoinGuardTests
         Assert.NotNull(AgentsRegion.NameProblem("Orders With Spaces"));
 
         var (hold, said) = await AgentsRegion.JoinAsync(
-            seats, directory, Unreachable, null, "Orders With Spaces", token);
+            seats, Unreachable, null, "Orders With Spaces", token);
 
         // Refused by the grammar, and the reason says so rather than blaming the broker -- which
         // is the point: the broker was never asked.

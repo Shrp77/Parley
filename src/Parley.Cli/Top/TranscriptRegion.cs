@@ -77,6 +77,15 @@ internal sealed class TranscriptRegion : FrameView
         Redraw();
     }
 
+    /// <summary>Lays the transcript out again for a width.</summary>
+    /// <param name="width">How many columns there are.</param>
+    /// <remarks>
+    /// Rebuilt from the written transcript rather than from the lines already wrapped, so
+    /// narrowing and widening is not a lossy round trip. A region that wrapped its own output
+    /// would break the first wrap's lines again on the second pass, and those on the third.
+    /// </remarks>
+    internal void Resize(int width) => Redraw(width);
+
     /// <summary>Closes whatever is open.</summary>
     internal void Clear()
     {
@@ -138,10 +147,12 @@ internal sealed class TranscriptRegion : FrameView
     }
 
     /// <summary>Lays the written transcript out for the width there is.</summary>
-    private void Redraw()
-    {
-        var width = Viewport.Width > 0 ? Viewport.Width : 80;
+    private void Redraw() => Redraw(Viewport.Width > 0 ? Viewport.Width : 80);
 
+    /// <summary>Lays the written transcript out for a given width.</summary>
+    /// <param name="width">How many columns there are.</param>
+    private void Redraw(int width)
+    {
         var wrapped = _written
             .ReplaceLineEndings("\n")
             .Split('\n')

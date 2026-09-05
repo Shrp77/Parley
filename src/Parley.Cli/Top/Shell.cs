@@ -648,7 +648,7 @@ internal sealed class Shell : Window
                         .RegistryAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
 
                 var (hold, said) = await AgentsRegion.JoinAsync(
-                    Seats, _directory, project, registry.Value, typed, cancellationToken)
+                    Seats, project, registry.Value, typed, cancellationToken)
                     .ConfigureAwait(false);
 
                 Held = hold ?? Held;

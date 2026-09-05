@@ -1,4 +1,3 @@
-using Parley.Client;
 using Parley.Client.Rendering;
 using Parley.Client.Seating;
 using Parley.Core;
@@ -205,7 +204,6 @@ internal sealed class AgentsRegion : FrameView
     /// Opens the dialog that seats a person, and seats them if they name themselves acceptably.
     /// </summary>
     /// <param name="seats">The book that holds seats.</param>
-    /// <param name="directory">The clients.</param>
     /// <param name="project">The project to sit in.</param>
     /// <param name="registry">What the broker's registry holds, or null when it could not be read.</param>
     /// <param name="typed">The name the person gave.</param>
@@ -228,14 +226,12 @@ internal sealed class AgentsRegion : FrameView
     /// </remarks>
     internal static async Task<(SeatHold? Hold, string Said)> JoinAsync(
         SeatBook seats,
-        BrokerDirectory directory,
         ProjectSettings project,
         IReadOnlyList<AgentRecord>? registry,
         string typed,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(seats);
-        ArgumentNullException.ThrowIfNull(directory);
 
         if (!Seat.TryRead(typed, out var seat, out var why))
         {
