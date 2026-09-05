@@ -65,6 +65,7 @@ internal sealed class Shell : Window
     private readonly CancellationTokenSource _reading = new();
 
     private bool _stacked;
+    private bool _closed;
     private Task _work = Task.CompletedTask;
     private DateTimeOffset _touched = DateTimeOffset.UtcNow;
 
@@ -275,23 +276,21 @@ internal sealed class Shell : Window
         // Naming the running deployment is offered only while there is one nothing names yet.
         // Offered always, it would invite somebody to name the same broker twice, which is two
         // projects sharing a store and is what §4.1 forbids.
-        ProjectsRegion when Naming.CanNameRunning(Projects.Projects, Installed) =>
-        [
-            new RegionAction('c', Naming.CreateTitle, Create),
-            new RegionAction('n', Naming.NameRunningTitle, NameRunning),
-            new RegionAction('r', Removing.Title, Remove),
-            new RegionAction('g', "Follow the broker log", FollowLog),
-            new RegionAction('e', Onboarding.Title, Enrol),
-            new RegionAction('b', "Open the web console in a browser", OpenConsole),
-        ],
-
         ProjectsRegion =>
         [
             new RegionAction('c', Naming.CreateTitle, Create),
+
+            // Offered only while there is a running deployment nothing names yet. Offered always,
+            // it would invite somebody to name the same broker twice, which is two projects
+            // sharing a store and is what §4.1 forbids.
+            .. Naming.CanNameRunning(Projects.Projects, Installed)
+                ? new[] { new RegionAction('n', Naming.NameRunningTitle, NameRunning) }
+                : [],
+
             new RegionAction('r', Removing.Title, Remove),
-            new RegionAction('g', "Follow the broker log", FollowLog),
+            new RegionAction('g', FollowLogTitle, FollowLog),
             new RegionAction('e', Onboarding.Title, Enrol),
-            new RegionAction('b', "Open the web console in a browser", OpenConsole),
+            new RegionAction('b', OpenConsoleTitle, OpenConsole),
         ],
 
         AgentsRegion =>
@@ -310,7 +309,7 @@ internal sealed class Shell : Window
                 ? Array.Empty<RegionAction>()
                 : Held is null
                     ? [new RegionAction('j', AgentsRegion.JoinTitle, Join)]
-                    : new[] { new RegionAction('l', "Leave your seat", LeaveSeat) },
+                    : new[] { new RegionAction('l', LeaveSeatTitle, LeaveSeat) },
         ],
 
         // Taking part needs a seat, because every one of these speaks as somebody. Without one the
@@ -525,6 +524,15 @@ internal sealed class Shell : Window
 
     /// <summary>Where the web console listens when a broker hosts it.</summary>
     internal const string ConsoleAddress = "http://127.0.0.1:5045";
+
+    /// <summary>What leaving a seat is called.</summary>
+    internal const string LeaveSeatTitle = "Leave your seat";
+
+    /// <summary>What following the broker's log is called.</summary>
+    internal const string FollowLogTitle = "Follow the broker log";
+
+    /// <summary>What opening the web console is called.</summary>
+    internal const string OpenConsoleTitle = "Open the web console in a browser";
 
     /// <summary>What the last action said, for the person and for a test.</summary>
     internal string Said { get; private set; } = string.Empty;
@@ -1102,8 +1110,14 @@ internal sealed class Shell : Window
     /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        // **Guarded, because being disposed twice is the ordinary case rather than the odd one.**
+        // The application disposes the view it was running when its session ends, and the caller
+        // holds it in a `using` as well — so an unguarded Cancel on an already-disposed source
+        // throws while somebody is quitting, which is the least recoverable moment there is.
+        if (disposing && !_closed)
         {
+            _closed = true;
+
             // Cancelled before the base disposes the views, so a read still in flight cannot draw
             // into a region that has gone. The seat book's streams are not this object's to end;
             // TopCommand owns those and ends them when the process does.
@@ -1215,6 +1229,15 @@ internal sealed class Shell : Window
     /// happened to misbehave would test the broker instead.
     /// </remarks>
     internal void Failing(Exception failure) => Queue(_ => Task.FromException(failure));
+
+    /// <summary>Queues arbitrary work, so a test can prove the ordering above.</summary>
+    /// <param name="work">What to run.</param>
+    /// <remarks>
+    /// Internal and test-only, for the reason <see cref="Failing"/> is: the property is what the
+    /// queue does with several pieces of work, and reaching it through brokers that happened to
+    /// answer at different speeds would be testing the brokers.
+    /// </remarks>
+    internal void Queued(Func<CancellationToken, Task> work) => Queue(work);
 }
 
 /// <summary>One thing the focused region can do, and the letter that does it.</summary>

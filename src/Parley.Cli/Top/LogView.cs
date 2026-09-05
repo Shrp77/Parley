@@ -37,6 +37,7 @@ internal sealed class LogView : Dialog
     private readonly CancellationTokenSource _stopping = new();
 
     private Task _watching = Task.CompletedTask;
+    private bool _closed;
 
     internal LogView(string title)
     {
@@ -147,8 +148,13 @@ internal sealed class LogView : Dialog
     /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        // Guarded for the reason Shell's is: the application disposes the view it was running and
+        // the caller may hold it too, and an unguarded Cancel on a disposed source throws while
+        // somebody is closing a log.
+        if (disposing && !_closed)
         {
+            _closed = true;
+
             _stopping.Cancel();
             _stopping.Dispose();
         }
