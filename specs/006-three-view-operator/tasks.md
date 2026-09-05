@@ -64,8 +64,8 @@ document's own tests prove it is coherent. That is the intended state.
 highlight changes the summary beside it; choosing opens the project view; back returns with the
 same project highlighted.
 
-- [ ] T014 [US1] Add `src/Parley.Client/Views/ProjectsView.cs` deriving what the projects view shows — the projects, and for one of them its agent and conversation summary — from broker reads, with no toolkit type in it.
-- [ ] T015 [P] [US1] Add `src/Parley.Client/Views/ViewPlace.cs` holding where a person is: which of the three views, and what it is about. Derived once so both surfaces cannot disagree about what "back" means.
+- [X] T014 [US1] Add `src/Parley.Client/Views/ProjectsView.cs` deriving what the projects view shows — the projects, and for one of them its agent and conversation summary — from broker reads, with no toolkit type in it.
+- [X] T015 [P] [US1] Add `src/Parley.Client/Views/ViewPlace.cs` holding where a person is: which of the three views, and what it is about. Derived once so both surfaces cannot disagree about what "back" means.
 - [ ] T016 [P] [US1] Add `tests/Parley.Client.Tests/Views/ProjectsViewTests.cs`: the summary is for the highlighted project only; an unreachable broker yields "not answering" rather than an empty project; a machine naming no projects yields the empty-state sentence.
 - [ ] T017 [US1] Rewrite `src/Parley.Cli/Top/Shell.cs` to host one view at a time over `ViewPlace`, replacing the four-region layout. Keep `OnFrameChanged`, the work queue under its lock, the idle sweep and `Safe` exactly as they are.
 - [ ] T018 [US1] Rewrite `src/Parley.Cli/Top/ProjectsRegion.cs` as the projects view: the list plus the summary beside it.
@@ -117,8 +117,8 @@ catalogue and the running node both reflect it.
 - [ ] T038 [US3] Add `StartAsync` to `src/Parley.Client/BrokerClient.cs` and the operation to `src/Parley.Broker/OperatorConsole.cs`.
 - [ ] T039 [US3] Add `tests/Parley.Server.Tests/StartOnDemandTests.cs`: a node joins declaring a role nothing has ever registered, `start` is called, and the node receives the Start command. **This is `research.md` R1's claim about `NodesService.RequestStart` turned into a test** — that the path has no registry lookup — rather than a reading of it.
 - [ ] T040 [P] [US3] Add a probe asserting `start` on a role no node's catalogue names is refused and starts nothing.
-- [ ] T041 [US3] Add `src/Parley.Client/Views/AgentStanding.cs` deriving one phrase per agent from presence and catalogue membership, per `data-model.md`. **Leave the wording as named constants and settle the words with the owner** — `plan.md` records that choosing them without them is the reason they are being replaced.
-- [ ] T042 [P] [US3] Add `tests/Parley.Client.Tests/Views/AgentStandingTests.cs` covering all four combinations of never-run × startable-here, and asserting the phrases contain neither "catalogued" nor "not in this catalogue".
+- [X] T041 [US3] Add `src/Parley.Client/Views/AgentStanding.cs` deriving one phrase per agent from presence and catalogue membership, per `data-model.md`. **Leave the wording as named constants and settle the words with the owner** — `plan.md` records that choosing them without them is the reason they are being replaced.
+- [X] T042 [P] [US3] Add `tests/Parley.Client.Tests/Views/AgentStandingTests.cs` covering all four combinations of never-run × startable-here, and asserting the phrases contain neither "catalogued" nor "not in this catalogue".
 - [ ] T043 [US3] Add the agents half to the project view in `src/Parley.Cli/Top/AgentsRegion.cs`, showing name, standing and startup behaviour.
 - [ ] T044 [US3] Add the same to `src/Parley.Web/Pages/Projects/Agents.cshtml`.
 - [ ] T045 [US3] Move retire, reinstate and purge onto the project view unchanged, with their tests unedited, and confirm `SurfaceTests`' one-file rule still holds.
@@ -140,9 +140,9 @@ catalogue and the running node both reflect it.
 and the list holds four; *show archived* on and it holds six with two marked; choosing opens the
 conversation view.
 
-- [ ] T051 [US4] Add `src/Parley.Client/Views/ConversationsView.cs` deriving the list — name, last activity — and the detail panel — participants, message count, open, archived — from `conversations()`, which already returns all of it (`research.md` R6).
-- [ ] T052 [US4] Add sorting by name and by date to that derivation, with the highlight expressed as the conversation's identifier so a sort cannot move it.
-- [ ] T053 [P] [US4] Add `tests/Parley.Client.Tests/Views/ConversationsViewTests.cs`: both sorts, the highlight preserved across each, archived excluded by default, archived included and marked, and the archived count present in both.
+- [X] T051 [US4] Add `src/Parley.Client/Views/ConversationsView.cs` deriving the list — name, last activity — and the detail panel — participants, message count, open, archived — from `conversations()`, which already returns all of it (`research.md` R6).
+- [X] T052 [US4] Add sorting by name and by date to that derivation, with the highlight expressed as the conversation's identifier so a sort cannot move it.
+- [X] T053 [P] [US4] Add `tests/Parley.Client.Tests/Views/ConversationsViewTests.cs`: both sorts, the highlight preserved across each, archived excluded by default, archived included and marked, and the archived count present in both.
 - [ ] T054 [US4] Add the conversations half to the project view in `src/Parley.Cli/Top/ConversationsRegion.cs`, with the detail panel beside the list.
 - [ ] T055 [US4] Add the same to `src/Parley.Web/Pages/Conversations/Index.cshtml`.
 - [ ] T056 [US4] Add archive and unarchive actions to both surfaces. No typed name: nothing is destroyed and one keystroke reverses it.
@@ -162,11 +162,11 @@ conversation view.
 carrying paragraph breaks; colours consistent, headers distinguishable with colour stripped, times
 local, paragraphs preserved, JSON laid out.
 
-- [ ] T062 [US5] Add `src/Parley.Client/Rendering/LocalTime.cs`, one way to write a local time, shared by both surfaces so they cannot differ.
-- [ ] T063 [US5] Add message-body layout to `src/Parley.Client/Rendering/Transcript.cs`: the author's line breaks and paragraphs preserved, JSON payloads indented over lines.
-- [ ] T064 [US5] Make the header visually distinct from the body **by a means that survives colour being stripped** — the existing rule that a test stripping all colour must lose no information.
-- [ ] T065 [P] [US5] Add `tests/Parley.Client.Tests/Rendering/ReadabilityTests.cs`: paragraphs survive; a five-key JSON payload occupies at least five lines; headers are identifiable in the colour-stripped text.
-- [ ] T066 [P] [US5] Add a test asserting `parley export` output contains **no local time** and still says UTC. `research.md` R8: the export's reader is by definition somebody else, somewhere else.
+- [X] T062 [US5] Add `src/Parley.Client/Rendering/LocalTime.cs`, one way to write a local time, shared by both surfaces so they cannot differ.
+- [X] T063 [US5] Add message-body layout to `src/Parley.Client/Rendering/Transcript.cs`: the author's line breaks and paragraphs preserved, JSON payloads indented over lines.
+- [X] T064 [US5] Make the header visually distinct from the body **by a means that survives colour being stripped** — the existing rule that a test stripping all colour must lose no information.
+- [X] T065 [P] [US5] Add `tests/Parley.Client.Tests/Rendering/ReadabilityTests.cs`: paragraphs survive; a five-key JSON payload occupies at least five lines; headers are identifiable in the colour-stripped text.
+- [X] T066 [P] [US5] Add a test asserting `parley export` output contains **no local time** and still says UTC. `research.md` R8: the export's reader is by definition somebody else, somewhere else.
 - [ ] T067 [US5] Build the conversation view in `src/Parley.Cli/Top/TranscriptRegion.cs` over those derivations, keeping `Palette` unchanged (`research.md` R7) and the 003 visibility annotation intact.
 - [ ] T068 [US5] Build the same page in `src/Parley.Web/Pages/Conversations/Detail.cshtml`.
 - [ ] T069 [US5] Move taking part — answer, ask, tell, take delivery, seat required — onto this view unchanged, tests unedited.
@@ -176,9 +176,9 @@ local, paragraphs preserved, JSON laid out.
 
 ## Phase 8 (US6, P3): Hand the current thing to a browser
 
-- [ ] T071 [US6] Add `src/Parley.Client/Rendering/Deep.cs` building console addresses from `ConsoleHost.LoopbackAddress` and the console's own routes, in one place.
+- [X] T071 [US6] Add `src/Parley.Client/Rendering/Deep.cs` building console addresses from `ConsoleHost.LoopbackAddress` and the console's own routes, in one place.
 - [ ] T072 [US6] Bind `F8` on all three terminal views to open the address for the thing on screen, and list it among what each view can do.
-- [ ] T073 [P] [US6] Add `tests/Parley.Client.Tests/DeepTests.cs` asserting each address matches a route the console actually serves — reflected from the Razor pages, not written out a second time. The `5045` defect was a hand-copied address; a hand-copied route is the same defect one layer up.
+- [X] T073 [P] [US6] Add `tests/Parley.Client.Tests/DeepTests.cs` asserting each address matches a route the console actually serves — reflected from the Razor pages, not written out a second time. The `5045` defect was a hand-copied address; a hand-copied route is the same defect one layer up.
 - [ ] T074 [P] [US6] Add a terminal test that `F8` on each view produces the right address and that a failed launch is reported without stopping the surface.
 
 ---
