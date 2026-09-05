@@ -23,11 +23,18 @@ namespace Parley.Cli;
 /// one of them grows a step.
 /// </para>
 /// <para>
-/// <b>The instructions file is never touched by either.</b> The peers frame belongs to the
-/// project, the roster block inside it is written by <c>/parley:write-peers</c>, and nothing here
-/// can tell a line the project added from a line a tool did. <c>EnrollmentPlan.Describe</c>
-/// already refuses to rewrite a section it cannot read; withdrawing declines for the same reason,
-/// and says so rather than leaving somebody to wonder.
+/// <b>The instructions file is never rewritten, and withdrawing never touches it at all.</b>
+/// Adding appends the peers frame when the file has no <c>## Peers</c> section, and does nothing
+/// to it when it has one — the frame belongs to the project, the roster block inside it is written
+/// by <c>/parley:write-peers</c>, and nothing here can tell a line the project added from a line a
+/// tool did, so a section that exists is left exactly as it is. Withdrawing declines even the
+/// append, and says so rather than leaving somebody to wonder.
+/// </para>
+/// <para>
+/// <b>That paragraph used to say the file was never touched by either half, which was not true of
+/// adding.</b> Recorded rather than quietly corrected, because a comment claiming a program does
+/// not write a file in somebody's repository is the kind of wrong that is believed: it is read by
+/// whoever is deciding whether this surface is safe to point at a checkout.
 /// </para>
 /// </remarks>
 internal static class Enrolment

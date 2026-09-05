@@ -20,6 +20,11 @@ namespace Parley.Cli.Tests.Top;
 /// what is worth catching is a change that did not happen, or one that happened twice.
 /// </para>
 /// <para>
+/// <b>FR-005 is the standard every assertion here is held to:</b> a journey ends in the same
+/// registry state 004's acceptance scenarios named, not merely in a screen that says so. That is
+/// why every check below reads the registry back through the broker rather than the row.
+/// </para>
+/// <para>
 /// <b>The probes are the point, and each of them is a case where the wrong implementation destroys
 /// something.</b> A name one character out, a name with trailing space, an empty field, Escape, a
 /// broker that refuses: every one must leave the registry and both files exactly as they were.

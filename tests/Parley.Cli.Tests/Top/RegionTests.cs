@@ -21,6 +21,11 @@ namespace Parley.Cli.Tests.Top;
 /// them to have read a database first.
 /// </para>
 /// <para>
+/// <b>FR-002 and FR-004 are what this file carries.</b> Focus moves between regions with Tab and
+/// within one with the arrow keys, and everything 004 displayed is displayed here — the parity
+/// claim the tasks list fills in, checked by a journey rather than by a table.
+/// </para>
+/// <para>
 /// <b>Proved by construction.</b> Nothing but Tab, arrows and Enter is injected, so if any step
 /// wanted text there would be none to read and the journey would not finish. The transcript
 /// appearing is the proof that no step asked.
