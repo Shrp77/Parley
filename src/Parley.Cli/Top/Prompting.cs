@@ -231,3 +231,124 @@ internal sealed class ChoiceDialog : Dialog
         return base.OnKeyDown(key);
     }
 }
+
+/// <summary>One field of a form, and what is wrong with what is in it.</summary>
+/// <param name="Label">What is being asked for.</param>
+/// <param name="Proposal">What the field starts with, which Enter accepts.</param>
+/// <param name="Problem">What is wrong with what has been typed, or null when nothing is.</param>
+internal sealed record FormField(
+    string Label,
+    string Proposal = "",
+    Func<string, string?>? Problem = null);
+
+/// <summary>A dialog collecting several lines at once, each checked as it is typed.</summary>
+/// <remarks>
+/// <para>
+/// Several fields rather than several dialogs in a row. Rule 8.1 asks for an intent, a question
+/// and its consequences together, and a person answering three prompts in sequence cannot revise
+/// the first after writing the third — which is exactly when they realise the intent was wrong.
+/// </para>
+/// <para>
+/// The button that sends is refused while any field is wrong, and every field says what is wrong
+/// with it under itself rather than in one shared line. A single error line names the first
+/// problem and hides the rest, so a form with two mistakes takes two attempts to learn about both.
+/// </para>
+/// </remarks>
+internal sealed class FormDialog : Dialog
+{
+    private readonly IReadOnlyList<FormField> _fields;
+    private readonly List<TextField> _entries = [];
+    private readonly List<Label> _problems = [];
+    private readonly Button _ok;
+
+    internal FormDialog(string title, IReadOnlyList<FormField> fields)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+
+        _fields = fields;
+
+        Title = title;
+        Width = Dim.Percent(80);
+        Height = (fields.Count * 3) + 6;
+
+        var y = 0;
+
+        foreach (var field in fields)
+        {
+            var asked = new Label { Text = field.Label, X = 1, Y = y };
+            var entry = new TextField { X = 1, Y = y + 1, Width = Dim.Fill(2), Text = field.Proposal };
+            var why = new Label { X = 1, Y = y + 2, Width = Dim.Fill(2), Text = string.Empty };
+
+            entry.TextChanged += (_, _) => Check();
+
+            _entries.Add(entry);
+            _problems.Add(why);
+
+            Add(asked, entry, why);
+
+            y += 3;
+        }
+
+        _ok = new Button { Title = Prompting.Confirm, X = 1, Y = y + 1, IsDefault = true };
+
+        var cancel = new Button { Title = Prompting.Cancel, X = Pos.Right(_ok) + 1, Y = y + 1 };
+
+        _ok.Accepting += (_, args) => { args.Handled = true; Finish(taken: true); };
+        cancel.Accepting += (_, args) => { args.Handled = true; Finish(taken: false); };
+
+        Add(_ok, cancel);
+        Check();
+    }
+
+    /// <summary>Raised when the person has filled it in or declined to.</summary>
+    internal event EventHandler<IReadOnlyList<string>?>? Done;
+
+    /// <summary>What is in each field, in the order they were asked for.</summary>
+    internal IReadOnlyList<string> Values => [.. _entries.Select(entry => entry.Text)];
+
+    /// <summary>What is wrong with each field, in the same order.</summary>
+    internal IReadOnlyList<string> Problems => [.. _problems.Select(why => why.Text)];
+
+    /// <summary>Puts text in one field, as if it had been typed.</summary>
+    /// <param name="at">Which field.</param>
+    /// <param name="text">What to put in it.</param>
+    internal void Fill(int at, string text)
+    {
+        _entries[at].Text = text;
+        Check();
+    }
+
+    /// <summary>Answers as if the person had pressed the button.</summary>
+    /// <param name="taken">Whether they went ahead.</param>
+    internal void Finish(bool taken) =>
+        Done?.Invoke(this, taken && _ok.Enabled ? Values : null);
+
+    /// <inheritdoc/>
+    protected override bool OnKeyDown(Key key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+
+        if (key == Key.Esc)
+        {
+            Finish(taken: false);
+
+            return true;
+        }
+
+        return base.OnKeyDown(key);
+    }
+
+    /// <summary>Re-checks every field and enables or refuses the button.</summary>
+    private void Check()
+    {
+        var wrong = false;
+
+        for (var at = 0; at < _fields.Count; at++)
+        {
+            _problems[at].Text = _fields[at].Problem?.Invoke(_entries[at].Text) ?? string.Empty;
+            wrong |= _problems[at].Text.Length > 0;
+        }
+
+        _ok.Enabled = !wrong;
+    }
+}

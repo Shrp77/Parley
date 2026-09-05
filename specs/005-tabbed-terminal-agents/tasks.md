@@ -105,17 +105,17 @@ run with no console attached, or the tests must write one, is the open question.
 > `DriveAsync(IAnsiConsole, ...)`. It is done with T023, which is the first moment there is
 > something for it to run. T009 and T010 are unaffected and stay here.
 
-- [ ] T008 Rewrite `src/Parley.Cli/Top/TopCommand.cs`: `RunAsync` keeps the interactivity refusal
+- [X] T008 Rewrite `src/Parley.Cli/Top/TopCommand.cs`: `RunAsync` keeps the interactivity refusal
       (`Interactive`, unchanged, FR-018) and the Ctrl+C reasoning already written there; it creates
       an `IApplication` through `Application.Create(TimeProvider.System)` and hands it to a new
       `DriveAsync(IApplication app, ...)` overload that a test calls with its own. The static
       `Application` class is never referenced; `AnsiConsole` goes.
-- [ ] T009 Rewrite `src/Parley.Cli/Top/Safe.cs` for the toolkit: the toolkit's hot-key specifier
+- [X] T009 Rewrite `src/Parley.Cli/Top/Safe.cs` for the toolkit: the toolkit's hot-key specifier
       and any control character that could move the cursor or reshape a line are neutralised, on
       the same reasoning the Spectre version records (a log line or an agent's `owns` is text
       somebody else wrote). Re-drive `tests/Parley.Cli.Tests/Top/LogInjectionTests.cs` against it
       once T035 lands; until then a unit test on `Safe` alone.
-- [ ] T010 Write `tests/Parley.Cli.Tests/Top/NonInteractiveTests.cs` against the new
+- [X] T010 Write `tests/Parley.Cli.Tests/Top/NonInteractiveTests.cs` against the new
       `TopCommand`: a redirected console is refused with the sentence naming what to run instead,
       before any toolkit type is constructed.
 
@@ -260,64 +260,64 @@ broker-side assertions unchanged.
       agent, with the reason; *Leave your seat* releases it; the region shows the seat within
       five seconds. The frame touches the seat on every draw so the idle rule runs on the
       application's `TimeProvider`. Delete `Seating.cs`.
-- [ ] T030 [US2] Port `Waiting.cs`, `Answering.cs` and `Composer.cs` into
+- [X] T030 [US2] Port `Waiting.cs`, `Answering.cs` and `Composer.cs` into
       `src/Parley.Cli/Top/TranscriptRegion.cs`: *What is waiting for you*, *Answer*, *Ask*,
       *Tell*, each a dialog on the transcript region, sending through `SeatVoice` exactly as 004
       does, with the message cap refusal and the concluded-underfoot handling unchanged. Delete
       the three files.
-- [ ] T031 [US2] Port `Naming.cs` into `src/Parley.Cli/Top/ProjectsRegion.cs` as two dialogs:
+- [X] T031 [US2] Port `Naming.cs` into `src/Parley.Cli/Top/ProjectsRegion.cs` as two dialogs:
       *Name this deployment* and *Create a project*, pre-filled and validated as typed with the
       `NameProblem`/`StoreProblem`/`EndpointProblem` checks unchanged, Enter accepting every
       proposal (scenario 3). Delete `Naming.cs`.
-- [ ] T032 [US2] Redraw `src/Parley.Cli/Top/Removing.cs` as a dialog on the projects region:
+- [X] T032 [US2] Redraw `src/Parley.Cli/Top/Removing.cs` as a dialog on the projects region:
       keep first and Enter's answer, forget deletes nothing, destroy takes the project's name
       typed back — the rule unchanged, the word `destroy` still confined to this one file
       (scenario 4). `Removing.Choices` stays.
-- [ ] T033 [P] [US2] Redraw `src/Parley.Cli/Top/LogTail.cs` into a view opened from the projects
+- [X] T033 [P] [US2] Redraw `src/Parley.Cli/Top/LogTail.cs` into a view opened from the projects
       region (*Follow the broker log*): the follow logic and the file choice (the manifest-serving
       entry's log, `LogLocationTests`) unchanged; lines appear on the application's timer tick
       without a key; Escape closes it. The `Console.ReadLine` stop recorded as a low finding in
       `REVIEW-LEDGER.md` on 2026-09-03 goes away with the redraw, and `LogTailTests` can now
       drive past the first line.
-- [ ] T034 [P] [US2] Redraw `src/Parley.Cli/Top/Onboarding.cs` as a dialog (scan / plan / apply
+- [X] T034 [P] [US2] Redraw `src/Parley.Cli/Top/Onboarding.cs` as a dialog (scan / plan / apply
       of a manifest) that still calls `EnrollCommand.RunAsync`; `src/Parley.Cli/Top/Launch.cs`
       (*Open the web console in a browser*) as an action on the projects region.
-- [ ] T035 [US2] Port `ProjectMenu.cs`'s remaining entries onto the status line and the regions
+- [X] T035 [US2] Port `ProjectMenu.cs`'s remaining entries onto the status line and the regions
       that own them, keeping its string constants as the action labels; delete `ProjectMenu.cs`.
       At this point every file under `src/Parley.Cli/Top` is on the new toolkit.
-- [ ] T036 [P] [US2] Rewrite `tests/Parley.Cli.Tests/Top/ParticipationTests.cs`,
+- [X] T036 [P] [US2] Rewrite `tests/Parley.Cli.Tests/Top/ParticipationTests.cs`,
       `JoinGuardTests.cs`, `SeatLifetimeTests.cs`, `AgreementTests.cs`, `MessageCapTests.cs`,
       `ConcludedUnderfootTests.cs` and `BrokerRestartTests.cs` through `Driving`, **with every
       assertion that reads the registry or the store unchanged** (SC-002). `SeatLifetimeTests`
       advances the `VirtualTimeProvider` twenty minutes and asserts the seat is released and the
       screen says `Your seat was released: nothing touched it for 20 minutes.` (US1 scenario 6).
-- [ ] T037 [P] [US2] Rewrite `tests/Parley.Cli.Tests/Top/NamingTests.cs` and
+- [X] T037 [P] [US2] Rewrite `tests/Parley.Cli.Tests/Top/NamingTests.cs` and
       `RemovingTests.cs` through `Driving`: the pre-filled, validated create form; keep as
       default; forget deletes nothing; destroy only after the typed name; a wrong name leaves the
       store on disk.
-- [ ] T038 [P] [US2] Rewrite `tests/Parley.Cli.Tests/Top/LogTailTests.cs`, `LogRotationTests.cs`,
+- [X] T038 [P] [US2] Rewrite `tests/Parley.Cli.Tests/Top/LogTailTests.cs`, `LogRotationTests.cs`,
       `LogLocationTests.cs` and `LogInjectionTests.cs` through `Driving`: a line written by the
       broker appears without a key (scenario 5); rotation is followed; the manifest-serving
       entry's log is the one announced; control characters in a line cannot move the cursor.
-- [ ] T039 [P] [US2] Rewrite `tests/Parley.Cli.Tests/Top/LaunchTests.cs` and
+- [X] T039 [P] [US2] Rewrite `tests/Parley.Cli.Tests/Top/LaunchTests.cs` and
       `NarrowTerminalTests.cs` through `Driving`; fold the narrow case into `LayoutTests` if it
       would otherwise be a duplicate, and say so in the deleted file's replacement.
-- [ ] T040 [US2] Replay check: list every `[Fact]` and `[Theory]` name in
+- [X] T040 [US2] Replay check: list every `[Fact]` and `[Theory]` name in
       `tests/Parley.Cli.Tests/Top` at `c85a271` against the same directory now, and record in
       this file under **Parity** below every 004 test that has no counterpart, with the reason.
       An empty list is the goal; a non-empty one is a decision to write down, not a gap to hide.
-- [ ] T041 [US2] Every action on the status line is also a button or menu entry: drive one
+- [X] T041 [US2] Every action on the status line is also a button or menu entry: drive one
       action per region by `Driving.Click` alone in `tests/Parley.Cli.Tests/Top/MouseTests.cs`
       (take a seat, open a transcript, open the log, ask) and assert the same end state as the
       keyboard path (FR-003).
-- [ ] T042 [US2] Run the whole `Parley.Cli.Tests` host executable directly
+- [X] T042 [US2] Run the whole `Parley.Cli.Tests` host executable directly
       (`tests/Parley.Cli.Tests/bin/*/net10.0/Parley.Cli.Tests.exe`), not `dotnet test`, and
       record the count under **Parity**. `dotnet test` reports `Zero tests ran` on this machine
       and an empty suite is indistinguishable from a passing one there.
-- [ ] T043 [US2] Remove the `Spectre.Console.Testing` reference from
+- [X] T043 [US2] Remove the `Spectre.Console.Testing` reference from
       `tests/Parley.Cli.Tests/Parley.Cli.Tests.csproj` and delete any helper that only existed
       for `TestConsole`.
-- [ ] T044 [US2] Remove `Spectre.Console` from `src/Parley.Cli/Parley.Cli.csproj` and both
+- [X] T044 [US2] Remove `Spectre.Console` from `src/Parley.Cli/Parley.Cli.csproj` and both
       Spectre entries from `Directory.Packages.props`; `grep -r Spectre src tests` returns
       nothing. Build with zero warnings. Two toolkits in one process was tolerable on a branch
       for the length of the rewrite and is not a state that ships.
@@ -508,12 +508,30 @@ entry rather than three edits.
 
 | Measure | Value |
 |---|---|
-| 004 tests under `Top` at `c85a271` | |
-| Counterparts now | |
-| 004 tests with no counterpart, and why | |
-| `Parley.Cli.Tests` host total, Windows | |
-| Full suite ×3, Windows | |
-| Full suite ×3, Linux (podman) | |
+| 004 tests under `Top` at `c85a271` | 63 |
+| Tests under `Top` now | 104 |
+| 004 tests with no counterpart | **one, deliberately** |
+| `Parley.Cli.Tests` host total, Windows | 509 |
+
+**The one that has no counterpart is `ColourTests.The_chooser_really_does_interpret_markup_in_a_choice`.**
+It existed to prove the hazard was real — that Spectre's chooser rendered its entries as markup, so
+escaping them defended against something rather than nothing. There is no markup interpreter now,
+and the test cannot be ported because the thing it asserted about no longer exists. What replaced
+it is `ColourTests.The_check_is_looking_at_something`, which does the same job for the hazard this
+toolkit actually has: it asserts that `Safe.Text` changes its input, so a version that returned the
+string untouched would fail rather than pass every injection assertion vacuously.
+
+Seven more changed name and are listed here so the count can be checked rather than trusted:
+
+| 004 | now |
+|---|---|
+| `ColourTests.A_message_cannot_style_the_terminal_it_is_read_in` | `…cannot_move_the_cursor_of_the_terminal_it_is_read_in` |
+| `ColourTests.A_project_named_with_markup_cannot_style_the_chooser` | `…named_with_control_characters_cannot_repaint_the_list` |
+| `NamingTests.A_name_a_store_or_a_port_already_taken_is_refused_at_the_prompt` | `…is_refused_in_the_field` |
+| `NamingTests.The_running_deployment_is_named_with_Enter_alone` | `…is_named_from_a_form_that_is_already_filled_in` |
+| `NavigationTests.A_conversation_is_reached_without_typing_anything` | `RegionTests.` same name |
+| `NavigationTests.The_agents_are_reached_the_same_way` | `RegionTests.The_first_project_is_selected_with_its_agents_beside_it…` |
+| `NavigationTests.Leaving_the_first_screen_ends_it_without_reaching_a_broker` | `RegionTests.The_surface_opens_and_closes_without_reaching_a_broker` |
 
 ---
 

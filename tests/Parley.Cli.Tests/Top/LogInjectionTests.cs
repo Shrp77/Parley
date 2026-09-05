@@ -1,5 +1,4 @@
 using Parley.Cli.Top;
-using Spectre.Console.Testing;
 using Xunit;
 
 namespace Parley.Cli.Tests.Top;
@@ -35,10 +34,10 @@ public sealed class LogInjectionTests : IDisposable
     public async Task A_log_line_cannot_choose_how_the_log_is_drawn(string hostile)
     {
         var token = TestContext.Current.CancellationToken;
-        using var console = new TestConsole();
+        var console = new Collected();
         using var stopping = new CancellationTokenSource();
 
-        var following = LogTail.FollowAsync(console, _log.At, string.Empty, stopping.Token);
+        var following = LogTail.FollowAsync(console.Write, _log.At, string.Empty, stopping.Token);
 
         try
         {
@@ -70,10 +69,10 @@ public sealed class LogInjectionTests : IDisposable
         // turned it into -- a filter that missed a line because the escaping moved the characters
         // would hide exactly the lines somebody was searching for.
         var token = TestContext.Current.CancellationToken;
-        using var console = new TestConsole();
+        var console = new Collected();
         using var stopping = new CancellationTokenSource();
 
-        var following = LogTail.FollowAsync(console, _log.At, "[warn]", stopping.Token);
+        var following = LogTail.FollowAsync(console.Write, _log.At, "[warn]", stopping.Token);
 
         try
         {

@@ -4,9 +4,7 @@ using Parley.Cli.Top;
 using Parley.Client;
 using Parley.Client.Seating;
 using Parley.Core;
-using Spectre.Console.Testing;
 using Xunit;
-using static Parley.Cli.Tests.Top.Driving;
 using Wire = Parley.Transport;
 
 namespace Parley.Cli.Tests.Top;
@@ -64,13 +62,18 @@ public sealed class BrokerRestartTests
         await Eventually.UntilAsync(
             () => taken.Hold!.Lost, "the seat never gave up on a broker refusing it", ct);
 
-        using var console = Interactive();
+        // What a person sees, once the book has decided. A surface still offering the actions of a
+        // seat to somebody whose attachment ended is the cookie-outliving-a-seat failure with a new
+        // frame, so the shell asks the book rather than trusting the name it was handed.
+        using var driving = Driving.Open();
+        using var shell = new Shell(directory) { Seats = seats };
 
-        Leave(console);
+        driving.Show(shell);
+        driving.Tab();
 
-        await ProjectMenu.ShowAsync(console, directory, seats, Alpha, me, ct);
-
-        Assert.Contains("(not seated)", console.Output, StringComparison.Ordinal);
+        Assert.Empty(seats.Seats(me));
+        Assert.Null(shell.Held);
+        Assert.Contains(shell.Actions(), action => action.Label == AgentsRegion.JoinTitle);
     }
 
     [Fact]
@@ -90,39 +93,24 @@ public sealed class BrokerRestartTests
         Assert.True(Seat.TryRead("arvind", out var me, out _));
         Assert.True((await seats.TakeAsync(Alpha, me, [], ct)).Seated);
 
-        using var console = Interactive();
+        using var driving = Driving.Open();
+        using var shell = new Shell(directory) { Seats = seats };
 
-        Pick(console, ProjectMenu.Choices(seated: true), Inbox);
-        Leave(console);
+        driving.Show(shell);
+        await shell.RefreshAsync(ct);
+        await shell.Settled;
 
-        await ProjectMenu.ShowAsync(console, directory, seats, Alpha, me, ct);
+        // Every read the shell makes goes through BrokerDirectory.ReadAsync and comes back as a
+        // sentence. A refusing broker therefore leaves a region saying so rather than taking the
+        // process with it -- in a browser an uncaught exception is a page, and in a terminal it is
+        // the end of the session and every other project's view with it.
+        Assert.Empty(shell.Agents.Rows);
 
         // Said, not thrown. And the seat is left alone: this screen's last exception is not what
         // decides whether an attachment survived, and the hold behind this one is still open.
-        Assert.Contains("did not answer", console.Output, StringComparison.Ordinal);
         Assert.Single(seats.Seats(me));
     }
 
-
-    /// <summary>Selects the last entry, whatever it is and however long the menu is.</summary>
-    /// <param name="console">The console to push the keys onto.</param>
-    /// <remarks>
-    /// By overshooting rather than by counting. "Back to projects" is last on either form of the
-    /// menu and a highlight does not run off the end, so this lands on it whichever menu is drawn
-    /// — which matters here because which menu is drawn is the thing under test.
-    /// </remarks>
-    private static void Leave(TestConsole console)
-    {
-        for (var step = 0; step < 20; step++)
-        {
-            console.Input.PushKey(ConsoleKey.DownArrow);
-        }
-
-        console.Input.PushKey(ConsoleKey.Enter);
-    }
-
-    /// <summary>The menu entry that reaches the broker as the seated person.</summary>
-    private const string Inbox = "What is waiting for you";
 
     /// <summary>
     /// An Agents client that grants one attachment, ends it, and refuses every one after.

@@ -49,7 +49,6 @@
   -->
   <ItemGroup>
     <PackageReference Include="Terminal.Gui" />
-    <PackageReference Include="Spectre.Console" />
   </ItemGroup>
 
 </Project>

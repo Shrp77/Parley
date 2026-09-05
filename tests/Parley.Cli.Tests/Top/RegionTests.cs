@@ -101,6 +101,21 @@ public sealed class RegionTests : IAsyncDisposable
     }
 
     [Fact]
+    public void The_surface_opens_and_closes_without_reaching_a_broker()
+    {
+        // The shortest journey there is, and it must not need the deployment to be up. A surface
+        // that could not be opened and left without a broker answering would strand somebody whose
+        // broker is exactly what they came to find out about.
+        using var driving = Driving.Open();
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+
+        Assert.Contains(ProjectsRegion.RegionTitle, driving.Text(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Tab_visits_every_region_in_turn_and_says_which_in_words()
     {
         // Scenario 2, and SC-006's half of it: the focused region is named in the status line, so
@@ -119,15 +134,14 @@ public sealed class RegionTests : IAsyncDisposable
             driving.Tab();
         }
 
-        Assert.Equal(
-            [
-                Shell.FocusPrefix + ProjectsRegion.RegionTitle,
-                Shell.FocusPrefix + AgentsRegion.RegionTitle,
-                Shell.FocusPrefix + ConversationsRegion.RegionTitle,
-                Shell.FocusPrefix + TranscriptRegion.RegionTitle,
-                Shell.FocusPrefix + ProjectsRegion.RegionTitle,
-            ],
-            visited);
+        // The focused region is named first; what the region can do follows it when there is room.
+        Assert.Collection(
+            visited,
+            said => Assert.StartsWith(Shell.FocusPrefix + ProjectsRegion.RegionTitle, said, StringComparison.Ordinal),
+            said => Assert.StartsWith(Shell.FocusPrefix + AgentsRegion.RegionTitle, said, StringComparison.Ordinal),
+            said => Assert.StartsWith(Shell.FocusPrefix + ConversationsRegion.RegionTitle, said, StringComparison.Ordinal),
+            said => Assert.StartsWith(Shell.FocusPrefix + TranscriptRegion.RegionTitle, said, StringComparison.Ordinal),
+            said => Assert.StartsWith(Shell.FocusPrefix + ProjectsRegion.RegionTitle, said, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -141,7 +155,7 @@ public sealed class RegionTests : IAsyncDisposable
         driving.Tab();
         driving.Press(Terminal.Gui.Input.Key.Tab.WithShift);
 
-        Assert.Equal(Shell.FocusPrefix + ProjectsRegion.RegionTitle, shell.Status);
+        Assert.StartsWith(Shell.FocusPrefix + ProjectsRegion.RegionTitle, shell.Status, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -194,7 +208,7 @@ public sealed class RegionTests : IAsyncDisposable
         await shell.Settled;
 
         Assert.Equal(chosen, shell.Conversations.Selected?.Id);
-        Assert.Equal(Shell.FocusPrefix + ConversationsRegion.RegionTitle, shell.Status);
+        Assert.StartsWith(Shell.FocusPrefix + ConversationsRegion.RegionTitle, shell.Status, StringComparison.Ordinal);
     }
 
     [Fact]

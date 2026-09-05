@@ -263,6 +263,56 @@ internal sealed class AgentsRegion : FrameView
         return released == 0 ? NotSeated : $"{Left}{released} seat(s) released.";
     }
 
+    /// <summary>
+    /// Keeps a seat alive because somebody is looking at the surface, and releases the ones nobody
+    /// is.
+    /// </summary>
+    /// <param name="seats">The book.</param>
+    /// <param name="me">The name last seated, if any.</param>
+    /// <param name="project">The project on screen.</param>
+    /// <param name="now">The current instant.</param>
+    /// <returns>The seat still held here, or null when there is none.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Touch first, then sweep, and the order is the whole of it.</b> Swept first, a person who
+    /// spent longer than <see cref="SeatBook.IdleAfter"/> on one screen comes back to find their
+    /// seat gone — and the screen they were on is the one where they read a question and write an
+    /// answer, which is the slowest and most valuable thing this surface is for. Being unseated
+    /// for thinking about the question is the exact opposite of what an idle timeout is for.
+    /// </para>
+    /// <para>
+    /// Sweeping at all is what stops a terminal left open overnight holding somebody present in
+    /// the registry, which is the failure <c>IdleAfter</c> exists to prevent — reached by a
+    /// different kind of window than the browser tab it was written for. Both halves are needed
+    /// and only in this order.
+    /// </para>
+    /// <para>
+    /// The seat is then <i>asked for</i> rather than assumed: whether the name still holds one is
+    /// the book's answer, including after the sweep has just taken it. And <paramref name="me"/> is
+    /// never overwritten from the result — who somebody is and whether they are seated <i>here</i>
+    /// are different questions, and forgetting the first on visiting a project they are not seated
+    /// in is a defect this had once already.
+    /// </para>
+    /// </remarks>
+    internal static SeatHold? Refresh(
+        SeatBook seats, Seat? me, ProjectSettings project, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(seats);
+        ArgumentNullException.ThrowIfNull(project);
+
+        if (me is not null)
+        {
+            // Looking at the surface is being here. Nothing else reports that a person is still
+            // present, so without this the sweep below releases the seat of somebody sitting in
+            // front of it.
+            seats.Touch(me, now);
+        }
+
+        seats.Sweep(now);
+
+        return me is null ? null : seats.Held(project.Name.Value, me);
+    }
+
     /// <summary>What is wrong with a name somebody has typed, as they type it.</summary>
     /// <param name="typed">What is in the field.</param>
     /// <returns>The reason, or null when there is none.</returns>

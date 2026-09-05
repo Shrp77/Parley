@@ -1,6 +1,5 @@
 using System.Drawing;
 using System.Text.RegularExpressions;
-using Spectre.Console.Testing;
 using Terminal.Gui.App;
 using Terminal.Gui.Input;
 using Terminal.Gui.Testing;
@@ -24,15 +23,9 @@ namespace Parley.Cli.Tests.Top;
 /// <b>Views are found by title and rows by their text, never by coordinates.</b> The surface lays
 /// its four regions out side by side above a threshold width and stacks them below it, so a test
 /// that counted rows or columns would pass in one layout and fail in the other while the surface
-/// was correct in both. It is the same rule the Spectre helpers below were written under —
-/// <see cref="Pick"/> chose a menu entry by name against the list the surface built, never by a
-/// counted number of arrow keys.
-/// </para>
-/// <para>
-/// <b>The Spectre helpers are still here and are going.</b> They drive the screens that have not
-/// been rewritten on the new toolkit yet; the last of them leaves with the last screen that needs
-/// it, along with the package. Two toolkits in one test assembly is a transition and not a
-/// design.
+/// was correct in both. It is the rule 004's helpers were written under too —
+/// a menu entry was chosen by name against the list the surface built, never by a counted number
+/// of arrow keys — and it survived the toolkit changing underneath it.
 /// </para>
 /// </remarks>
 internal static class Driving
@@ -397,37 +390,4 @@ internal static class Driving
         }
     }
 
-    /// <summary>A console that reports itself interactive and wide enough that nothing wraps.</summary>
-    /// <returns>The console.</returns>
-    public static TestConsole Interactive()
-    {
-        var console = new TestConsole();
-
-        console.Interactive();
-        console.Profile.Width = 200;
-
-        return console;
-    }
-
-    /// <summary>Moves the highlight to a named choice and takes it.</summary>
-    /// <param name="console">The console to push the keys onto.</param>
-    /// <param name="choices">The list the surface will draw, in its order.</param>
-    /// <param name="wanted">The entry to take.</param>
-    public static void Pick(TestConsole console, IReadOnlyList<string> choices, string wanted)
-    {
-        var at = choices.ToList().IndexOf(wanted);
-
-        Assert.True(at >= 0, $"'{wanted}' is not on the screen it was expected on");
-
-        for (var step = 0; step < at; step++)
-        {
-            console.Input.PushKey(ConsoleKey.DownArrow);
-        }
-
-        Enter(console);
-    }
-
-    /// <summary>Takes whatever is highlighted, or accepts a prompt's proposal.</summary>
-    /// <param name="console">The console to push the key onto.</param>
-    public static void Enter(TestConsole console) => console.Input.PushKey(ConsoleKey.Enter);
 }

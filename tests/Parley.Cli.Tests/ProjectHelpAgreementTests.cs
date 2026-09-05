@@ -58,11 +58,11 @@ public sealed partial class ProjectHelpAgreementTests
 
         foreach (var offered in new[]
                  {
-                     ("create a new project", Parley.Cli.Top.ProjectList.Create),
-                     ("name the deployment this machine already runs", Parley.Cli.Top.ProjectList.NameRunning),
-                     ("removed from there", Parley.Cli.Top.ProjectMenu.Remove),
+                     ("create a new project", Parley.Cli.Top.Naming.CreateTitle),
+                     ("name the deployment this machine already runs", Parley.Cli.Top.Naming.NameRunningTitle),
+                     ("removed from there", Parley.Cli.Top.Removing.Title),
                      ("typed back", Parley.Cli.Top.Removing.Destroy),
-                     ("a seat", Parley.Cli.Top.ProjectMenu.Choices(seated: false).Single(c => c.Contains("seat", StringComparison.Ordinal))),
+                     ("a seat", Parley.Cli.Top.AgentsRegion.JoinTitle),
                  })
         {
             Assert.True(

@@ -1,12 +1,9 @@
 using Parley.Cli.Top;
 using Parley.Client;
-using Parley.Client.Seating;
 using Parley.Configuration;
 using Parley.Core;
-using Spectre.Console.Testing;
 using Xunit;
 using static Parley.Cli.Tests.Loopback;
-using static Parley.Cli.Tests.Top.Driving;
 
 namespace Parley.Cli.Tests.Top;
 
@@ -15,8 +12,8 @@ namespace Parley.Cli.Tests.Top;
 /// destroyed only after its name is typed back.
 /// </summary>
 /// <remarks>
-/// Driven through <see cref="TopCommand.DriveAsync"/> the way every other journey here is. The
-/// project's broker is on a port nothing answers on, so the command's wait for it to stop is
+/// Driven through the dialogs the surface actually opens, the way every other journey here is.
+/// The project's broker is on a port nothing answers on, so the command's wait for it to stop is
 /// skipped and what is exercised is the surface's own confirmation and the command's deleting.
 /// </remarks>
 public sealed class RemovingTests : IDisposable
@@ -41,31 +38,29 @@ public sealed class RemovingTests : IDisposable
     private string Manifest => Path.Combine(_directory, "projects.json");
 
     [Fact]
-    public async Task Destroying_takes_the_name_typed_back_and_refuses_anything_else()
+    public async Task Keeping_is_first_and_changes_nothing()
     {
         var alpha = await NamedAsync();
 
-        using var console = Interactive();
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
 
-        Pick(console, ProjectList.Choices([alpha], null), "alpha");
-        Pick(console, ProjectMenu.Choices(seated: false), ProjectMenu.Remove);
-        Pick(console, Removing.Choices, Removing.Destroy);
+        await shell.Remove();
 
-        // A wrong name is refused at the prompt and nothing happens; the right one destroys.
-        console.Input.PushTextWithEnter("alhpa");
-        console.Input.PushTextWithEnter("alpha");
+        // Enter on the removal dialog is the safe answer, and the safe answer is first.
+        Assert.Equal(Removing.Keep, Removing.Choices[0]);
 
-        // Back on a list with nothing named, which the form is the way out of.
-        Pick(console, ProjectList.Choices([], null), ProjectList.Leave);
+        var choosing = (ChoiceDialog)driving.Find(Removing.Title);
 
-        await DriveAsync(console);
+        Assert.Equal(Removing.Keep, choosing.Chosen);
 
-        Assert.Contains("not this project's name", console.Output, StringComparison.Ordinal);
-        Assert.Contains("Destroyed 'alpha'", console.Output, StringComparison.Ordinal);
-        Assert.False(File.Exists(alpha.Store), "the store survived");
-        Assert.False(File.Exists(alpha.NodeConfig), "the catalogue survived");
+        driving.Enter();
+        await shell.Settled;
+
+        Assert.Equal(Removing.Kept, shell.Said);
+        Assert.True(File.Exists(alpha.Store));
         Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
-        Assert.Empty(left);
+        Assert.Equal("alpha", Assert.Single(left).Name.Value);
     }
 
     [Fact]
@@ -73,16 +68,18 @@ public sealed class RemovingTests : IDisposable
     {
         var alpha = await NamedAsync();
 
-        using var console = Interactive();
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
 
-        Pick(console, ProjectList.Choices([alpha], null), "alpha");
-        Pick(console, ProjectMenu.Choices(seated: false), ProjectMenu.Remove);
-        Pick(console, Removing.Choices, Removing.Forget);
-        Pick(console, ProjectList.Choices([], null), ProjectList.Leave);
+        await shell.Remove();
 
-        await DriveAsync(console);
+        var choosing = (ChoiceDialog)driving.Find(Removing.Title);
 
-        Assert.Contains("Nothing was deleted", console.Output, StringComparison.Ordinal);
+        driving.Row(choosing.Choices, Removing.Forget);
+        driving.Enter();
+        await shell.Settled;
+
+        Assert.Contains("Nothing was deleted", shell.Said, StringComparison.Ordinal);
         Assert.True(File.Exists(alpha.Store));
         Assert.True(File.Exists(alpha.NodeConfig));
         Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
@@ -90,56 +87,112 @@ public sealed class RemovingTests : IDisposable
     }
 
     [Fact]
-    public async Task Keeping_is_first_and_changes_nothing()
+    public async Task Destroying_takes_the_name_typed_back_and_refuses_anything_else()
     {
         var alpha = await NamedAsync();
 
-        using var console = Interactive();
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
 
-        Pick(console, ProjectList.Choices([alpha], null), "alpha");
-        Pick(console, ProjectMenu.Choices(seated: false), ProjectMenu.Remove);
+        await shell.Remove();
 
-        // Enter on the removal menu is the safe answer.
-        Assert.Equal(Removing.Keep, Removing.Choices[0]);
-        Enter(console);
+        var choosing = (ChoiceDialog)driving.Find(Removing.Title);
 
-        Pick(console, ProjectMenu.Choices(seated: false), ProjectMenu.Back);
-        Pick(console, ProjectList.Choices([alpha], null), ProjectList.Leave);
+        driving.Row(choosing.Choices, Removing.Destroy);
+        driving.Enter();
 
-        await DriveAsync(console);
+        var asking = (TextDialog)driving.Find(Removing.Destroy);
 
-        Assert.True(File.Exists(alpha.Store));
+        // A wrong name is refused while it is being typed, and the button that goes ahead is
+        // refused with it.
+        driving.Type("alhpa");
+
+        Assert.Equal(Removing.WrongName, asking.Problem);
+
+        asking.Finish(taken: true);
+        await shell.Settled;
+
+        Assert.True(File.Exists(alpha.Store), "a wrong name destroyed the store anyway");
+        Assert.True(ProjectManifest.TryRead(Manifest, out var still, out _));
+        Assert.Single(still);
+
+        // The right one destroys.
+        await shell.Remove();
+
+        var again = (ChoiceDialog)driving.Find(Removing.Title);
+
+        driving.Row(again.Choices, Removing.Destroy);
+        driving.Enter();
+
+        var typing = (TextDialog)driving.Find(Removing.Destroy);
+
+        driving.Type("alpha");
+
+        Assert.Equal(string.Empty, typing.Problem);
+
+        typing.Finish(taken: true);
+        await shell.Settled;
+
+        Assert.Contains("Destroyed 'alpha'", shell.Said, StringComparison.Ordinal);
+        Assert.False(File.Exists(alpha.Store), "the store survived");
+        Assert.False(File.Exists(alpha.NodeConfig), "the catalogue survived");
         Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
-        Assert.Equal("alpha", Assert.Single(left).Name.Value);
+        Assert.Empty(left);
     }
 
     [Fact]
     public async Task An_empty_answer_to_the_typed_name_keeps_the_project()
     {
+        // Escape, and an empty field, are both "no". Neither is an answer that destroys anything,
+        // and the difference between them is not one a person should have to know.
         var alpha = await NamedAsync();
 
-        using var console = Interactive();
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
 
-        Pick(console, ProjectList.Choices([alpha], null), "alpha");
-        Pick(console, ProjectMenu.Choices(seated: false), ProjectMenu.Remove);
-        Pick(console, Removing.Choices, Removing.Destroy);
-        Enter(console);
-        Pick(console, ProjectMenu.Choices(seated: false), ProjectMenu.Back);
-        Pick(console, ProjectList.Choices([alpha], null), ProjectList.Leave);
+        await shell.Remove();
 
-        await DriveAsync(console);
+        var choosing = (ChoiceDialog)driving.Find(Removing.Title);
 
-        Assert.Contains("Kept.", console.Output, StringComparison.Ordinal);
+        driving.Row(choosing.Choices, Removing.Destroy);
+        driving.Enter();
+
+        var asking = (TextDialog)driving.Find(Removing.Destroy);
+
+        asking.Finish(taken: true);
+        await shell.Settled;
+
+        Assert.Equal(Removing.Kept, shell.Said);
+        Assert.True(File.Exists(alpha.Store));
+    }
+
+    [Fact]
+    public async Task Escape_at_the_name_keeps_it_too()
+    {
+        var alpha = await NamedAsync();
+
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
+
+        await shell.Remove();
+
+        var choosing = (ChoiceDialog)driving.Find(Removing.Title);
+
+        driving.Row(choosing.Choices, Removing.Destroy);
+        driving.Enter();
+        driving.Escape();
+        await shell.Settled;
+
+        Assert.Equal(Removing.Kept, shell.Said);
         Assert.True(File.Exists(alpha.Store));
     }
 
     [Fact]
     public async Task Created_from_the_terminal_the_broker_comes_up_and_destroyed_there_it_goes()
     {
-        // Lens 1 probe, and the owner's own afternoon end to end: a process serving the
-        // manifest with the watcher on, a project created from the form, its broker answering
-        // without anything restarted, then destroyed from the menu -- port freed, files gone,
-        // the other project untouched throughout.
+        // The owner's own afternoon end to end: a process serving the manifest with the watcher
+        // on, a project created from the form, its broker answering without anything restarted,
+        // then destroyed -- port freed, files gone, the other project untouched throughout.
         var ct = TestContext.Current.CancellationToken;
 
         var orders = new ProjectSettings(
@@ -152,14 +205,13 @@ public sealed class RemovingTests : IDisposable
         ProjectManifest.Write(Manifest, [orders]);
 
         var stamp = File.GetLastWriteTimeUtc(Manifest);
-        var serverOutput = new StringWriter();
 
         using var stopping = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         var serving = ServeCommand.RunAsync(
             [orders],
             null,
-            serverOutput,
+            new StringWriter(),
             TextWriter.Null,
             reread: () =>
             {
@@ -180,47 +232,56 @@ public sealed class RemovingTests : IDisposable
         {
             Assert.True(await AnswersAsync(orders.Endpoint, ct), "the first project never came up");
 
-            // Create "billing" from the form, on a port of the test's choosing.
-            var port = FreePort();
-            var billingEndpoint = $"http://127.0.0.1:{port}";
+            var billingEndpoint = $"http://127.0.0.1:{FreePort()}";
+            var store = Naming.ProposedStore("billing", [orders], null);
 
-            using var console = Interactive();
+            using var driving = Driving.Open();
+            using var shell = await OpenAsync(driving);
 
-            Pick(console, ProjectList.Choices([orders], null), ProjectList.Create);
-            console.Input.PushTextWithEnter("billing");
-            Enter(console);
-            console.Input.PushTextWithEnter(billingEndpoint);
-            Enter(console);
-            Enter(console);
+            await shell.Create();
 
-            var billing = new ProjectSettings(
-                ProjectName.Create("billing"), string.Empty, billingEndpoint, null, null);
+            var form = (FormDialog)driving.Find(Naming.CreateTitle);
 
-            Pick(console, ProjectList.Choices([orders, billing], null), ProjectList.Leave);
+            form.Fill(0, "billing");
+            form.Fill(1, store);
+            form.Fill(2, billingEndpoint);
+            form.Finish(taken: true);
 
-            await DriveAsync(console);
+            await shell.Settled;
 
-            Assert.True(await AnswersAsync(billingEndpoint, ct), "the project created from the form never came up");
-
-            var store = Path.Combine(Naming.ProposedStore("billing", [orders], null));
+            Assert.Contains(Naming.Named, shell.Said, StringComparison.Ordinal);
+            Assert.True(
+                await AnswersAsync(billingEndpoint, ct),
+                "the project created from the form never came up");
 
             Assert.True(File.Exists(store), $"the broker created no store at {store}");
 
-            // Destroy it from the menu.
-            using var again = Interactive();
+            // Destroy it.
+            driving.Row(shell.Projects.List, "billing");
+            await shell.Settled;
 
-            Pick(again, ProjectList.Choices([orders, billing], null), "billing");
-            Pick(again, ProjectMenu.Choices(seated: false), ProjectMenu.Remove);
-            Pick(again, Removing.Choices, Removing.Destroy);
-            again.Input.PushTextWithEnter("billing");
-            Pick(again, ProjectList.Choices([orders], null), ProjectList.Leave);
+            Assert.Equal("billing", shell.Projects.Selected?.Name.Value);
 
-            await DriveAsync(again);
+            await shell.Remove();
 
-            Assert.Contains("Destroyed 'billing'", again.Output, StringComparison.Ordinal);
+            var choosing = (ChoiceDialog)driving.Find(Removing.Title);
+
+            driving.Row(choosing.Choices, Removing.Destroy);
+            driving.Enter();
+
+            var typing = (TextDialog)driving.Find(Removing.Destroy);
+
+            driving.Type("billing");
+            typing.Finish(taken: true);
+
+            await shell.Settled;
+
+            Assert.Contains("Destroyed 'billing'", shell.Said, StringComparison.Ordinal);
             Assert.False(File.Exists(store), "the store survived");
             Assert.True(CanBind(billingEndpoint), "the destroyed project's broker kept its port");
-            Assert.True(await AnswersAsync(orders.Endpoint, ct, attempts: 5), "the other project was stopped");
+            Assert.True(
+                await AnswersAsync(orders.Endpoint, ct, attempts: 5),
+                "the other project was stopped");
         }
         finally
         {
@@ -230,6 +291,22 @@ public sealed class RemovingTests : IDisposable
         var code = await serving.WaitAsync(TimeSpan.FromSeconds(30), ct);
 
         Assert.Equal(0, code);
+    }
+
+    /// <summary>Opens the surface on this test's manifest.</summary>
+    /// <param name="driving">The application.</param>
+    /// <returns>The surface, with its projects read.</returns>
+    private async Task<Shell> OpenAsync(Driving.Session driving)
+    {
+        var directory = BrokerDirectory.FromManifest(Manifest);
+        var shell = TopCommand.Build(directory, manifestPath: Manifest);
+
+        driving.Show(shell);
+
+        await shell.RefreshAsync(TestContext.Current.CancellationToken);
+        await shell.Settled;
+
+        return shell;
     }
 
     private async Task<ProjectSettings> NamedAsync()
@@ -249,16 +326,4 @@ public sealed class RemovingTests : IDisposable
 
         return alpha;
     }
-
-    private async Task DriveAsync(TestConsole console)
-    {
-        using var directory = BrokerDirectory.FromManifest(Manifest);
-        using var seats = new SeatBook(directory.AgentsFor);
-
-        var exit = await TopCommand.DriveAsync(
-            console, directory, seats, TestContext.Current.CancellationToken);
-
-        Assert.Equal(0, exit);
-    }
-
 }

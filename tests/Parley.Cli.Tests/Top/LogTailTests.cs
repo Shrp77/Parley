@@ -1,6 +1,5 @@
 using Parley.Cli.Top;
 using Parley.Core;
-using Spectre.Console.Testing;
 using Xunit;
 
 namespace Parley.Cli.Tests.Top;
@@ -50,10 +49,10 @@ public sealed class LogTailTests : IDisposable
         await File.WriteAllTextAsync(
             path, "started\n", TestContext.Current.CancellationToken);
 
-        using var console = new TestConsole();
+        var console = new Collected();
         using var stopping = new CancellationTokenSource();
 
-        var following = LogTail.FollowAsync(console, path, string.Empty, stopping.Token);
+        var following = LogTail.FollowAsync(console.Write, path, string.Empty, stopping.Token);
 
         // The rotation. This is the operation that fails outright against a reader holding the
         // file without FileShare.Delete, and the whole reason the share mode is what it is.
@@ -75,10 +74,10 @@ public sealed class LogTailTests : IDisposable
         await File.WriteAllTextAsync(
             path, "started\n", TestContext.Current.CancellationToken);
 
-        using var console = new TestConsole();
+        var console = new Collected();
         using var stopping = new CancellationTokenSource();
 
-        var following = LogTail.FollowAsync(console, path, string.Empty, stopping.Token);
+        var following = LogTail.FollowAsync(console.Write, path, string.Empty, stopping.Token);
 
         // Opened the way the broker opens it. A reader holding the default share mode makes this
         // throw, which is a broker that cannot write its own log because somebody is reading it.

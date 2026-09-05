@@ -4,8 +4,6 @@ using Parley.Client;
 using Parley.Client.Rendering;
 using Parley.Core;
 using Parley.Store;
-using Spectre.Console;
-using Spectre.Console.Rendering;
 using Xunit;
 
 namespace Parley.Cli.Tests.Top;
@@ -142,35 +140,20 @@ public sealed class AgreementTests : IAsyncDisposable
     /// <summary>The terminal's rendering of a conversation, as plain text.</summary>
     /// <param name="export">What the broker returned.</param>
     /// <returns>Everything the terminal would draw.</returns>
+    /// <remarks>
+    /// Through the region rather than through a helper of this test's own, because the claim is
+    /// about what a person sees. The region now writes <c>Transcript.Write</c>'s text — the same
+    /// function the console renders from — so the two agreeing is a property of the code rather
+    /// than a coincidence two renderers keep having. The assertions below are unchanged from when
+    /// they were not, which is what makes them worth keeping: they would still catch a region that
+    /// went back to formatting messages itself.
+    /// </remarks>
     private static string Terminal(ConversationExport export)
     {
-        var participants = Visibility.Participants(export.Messages);
-        var states = new Dictionary<long, ExchangeSnapshot>();
+        var region = new TranscriptRegion();
 
-        foreach (var exchange in export.Exchanges)
-        {
-            states[exchange.ExchangeId] = exchange;
-        }
+        region.Show("threeway", "alpha", export, null);
 
-        var written = new StringWriter();
-
-        var console = AnsiConsole.Create(new AnsiConsoleSettings
-        {
-            Ansi = AnsiSupport.No,
-            ColorSystem = ColorSystemSupport.NoColors,
-            Out = new AnsiConsoleOutput(written),
-        });
-
-        // Wide enough that nothing wraps. A name broken across two lines would fail a Contains
-        // that has nothing to do with agreement, which would make this test report the wrong
-        // thing when it eventually failed.
-        console.Profile.Width = 400;
-
-        foreach (var message in export.Messages)
-        {
-            console.Write((IRenderable)TranscriptView.Panel(message, participants, states, console.Profile.Width));
-        }
-
-        return written.ToString();
+        return region.Written;
     }
 }

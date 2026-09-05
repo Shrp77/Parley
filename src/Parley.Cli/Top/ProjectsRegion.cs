@@ -32,6 +32,9 @@ internal sealed class ProjectsRegion : FrameView
     /// <summary>A broker that answered.</summary>
     internal const string Answering = "answering";
 
+    /// <summary>A broker nothing has asked yet.</summary>
+    internal const string Asking = "asking";
+
     /// <summary>What is shown when the machine names none.</summary>
     internal const string Nothing = "This machine names no projects yet.";
 
@@ -109,6 +112,27 @@ internal sealed class ProjectsRegion : FrameView
         }
     }
 
+    /// <summary>
+    /// What a broker's answer means, in words.
+    /// </summary>
+    /// <param name="health">What it said, or null when it has not been asked yet.</param>
+    /// <returns>One phrase.</returns>
+    /// <remarks>
+    /// <b>Three states rather than two, and the third is the one worth carrying.</b> A broker that
+    /// answered with a version this build was not made against is neither fine nor down, and
+    /// showing it as either sends somebody looking in the wrong place. Both numbers are named,
+    /// because "incompatible" without them cannot be acted on — and a colour saying "something is
+    /// wrong here" is that with even less information.
+    /// </remarks>
+    internal static string Describe(ProjectHealth? health) =>
+        health switch
+        {
+            null => Asking,
+            { Reachable: false } => NotAnswering,
+            { Agrees: false } => $"speaks {Safe.Text(health.Speaks)}, this build speaks {ProtocolVersion.Current}",
+            _ => Answering,
+        };
+
     /// <summary>How one project reads.</summary>
     /// <param name="project">The project.</param>
     /// <param name="health">What each broker said.</param>
@@ -119,14 +143,10 @@ internal sealed class ProjectsRegion : FrameView
     {
         var said = health.TryGetValue(project.Name.Value, out var found) ? found : null;
 
-        var state = said is null
-            ? "asking"
-            : said.Reachable ? Answering : NotAnswering;
-
         var description = string.IsNullOrWhiteSpace(project.Description)
             ? string.Empty
-            : $"  {project.Description}";
+            : $"  {Safe.Text(project.Description)}";
 
-        return $"{project.Name.Value}  [{state}]{description}";
+        return $"{Safe.Text(project.Name.Value)}  [{Describe(said)}]{description}";
     }
 }

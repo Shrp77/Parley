@@ -113,15 +113,9 @@
 
     2.4.17 is pinned exactly and is the newest release that is not a -develop or -beta build:
     2.5.0-beta.1 and 2.6.0-develop.* exist and are not stable.
-
-    Spectre.Console sits beside it for the length of the rewrite and no longer. Two toolkits in
-    one process is the fight src/Parley.Cli/Top/Onboarding.cs already describes and refuses to
-    have; what makes it tolerable here is that the old views are dead code between the first
-    rewritten file and the last. It leaves in the same change as the last of them.
   -->
   <ItemGroup Label="Terminal">
     <PackageVersion Include="Terminal.Gui" Version="2.4.17" />
-    <PackageVersion Include="Spectre.Console" Version="0.57.2" />
   </ItemGroup>
 
   <!--
@@ -153,7 +147,6 @@
   -->
   <ItemGroup Label="Testing">
     <PackageVersion Include="xunit.v3" Version="4.0.0" />
-    <PackageVersion Include="Spectre.Console.Testing" Version="0.57.2" />
     <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="4.14.0" />
   </ItemGroup>
 

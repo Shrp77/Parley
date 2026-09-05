@@ -4,7 +4,6 @@ using Parley.Cli.Top;
 using Parley.Client;
 using Parley.Client.Seating;
 using Parley.Core;
-using Spectre.Console.Testing;
 using Xunit;
 using Wire = Parley.Transport;
 
@@ -51,41 +50,21 @@ public sealed class SeatLifetimeTests
 
         Assert.True((await book.TakeAsync(Alpha, me, [], ct)).Seated);
 
-        using var console = new TestConsole();
+        // The seat is asked for per project. In beta there is none; in alpha there still is, and
+        // the person is still the person either way -- an earlier version took "no seat here" as
+        // the answer to who they were, so returning to alpha drew a join while the book still held
+        // the seat and the registry still had them present.
+        var now = DateTimeOffset.UtcNow;
 
-        console.Interactive();
-        console.Profile.Width = 200;
+        Assert.Null(AgentsRegion.Refresh(book, me, Beta, now));
+        Assert.NotNull(AgentsRegion.Refresh(book, me, Alpha, now));
 
-        Back(console);
-
-        var carried = await ProjectMenu.ShowAsync(console, directory, book, Beta, me, ct);
-
-        Assert.Equal(me, carried);
-        Assert.Contains("(not seated)", console.Output, StringComparison.Ordinal);
-
-        using var back = new TestConsole();
-
-        back.Interactive();
-        back.Profile.Width = 200;
-
-        Back(back);
-
-        await ProjectMenu.ShowAsync(back, directory, book, Alpha, carried, ct);
-
-        Assert.Contains("(seated as arvind", back.Output, StringComparison.Ordinal);
+        // And the directory is what the shell would read both from, so this is the same pair of
+        // questions the surface asks rather than a restatement of the book's own test.
+        Assert.NotNull(directory.Find("alpha"));
+        Assert.NotNull(directory.Find("beta"));
     }
 
-    /// <summary>Selects the last entry, whatever it is and however long the menu is.</summary>
-    /// <param name="console">The console to push the keys onto.</param>
-    private static void Back(TestConsole console)
-    {
-        for (var step = 0; step < 20; step++)
-        {
-            console.Input.PushKey(ConsoleKey.DownArrow);
-        }
-
-        console.Input.PushKey(ConsoleKey.Enter);
-    }
 
     [Fact]
     public async Task Thinking_for_longer_than_the_idle_window_does_not_lose_the_seat()
@@ -103,7 +82,7 @@ public sealed class SeatLifetimeTests
 
         await book.TakeAsync(Alpha, me, [], TestContext.Current.CancellationToken);
 
-        var after = ProjectMenu.Refresh(book, me, Alpha, start + SeatBook.IdleAfter.Add(TimeSpan.FromMinutes(5)));
+        var after = AgentsRegion.Refresh(book, me, Alpha, start + SeatBook.IdleAfter.Add(TimeSpan.FromMinutes(5)));
 
         Assert.NotNull(after);
         Assert.Single(book.Seats(me));
@@ -123,7 +102,7 @@ public sealed class SeatLifetimeTests
         await book.TakeAsync(Alpha, gone, [], TestContext.Current.CancellationToken);
         await book.TakeAsync(Alpha, here, [], TestContext.Current.CancellationToken);
 
-        var stillHere = ProjectMenu.Refresh(
+        var stillHere = AgentsRegion.Refresh(
             book, here, Alpha, start + SeatBook.IdleAfter.Add(TimeSpan.FromMinutes(5)));
 
         Assert.NotNull(stillHere);
@@ -144,7 +123,7 @@ public sealed class SeatLifetimeTests
         // Released by hand, as an idle sweep in some other loop would.
         Assert.Equal(1, book.Leave(me));
 
-        Assert.Null(ProjectMenu.Refresh(book, me, Alpha, DateTimeOffset.UtcNow));
+        Assert.Null(AgentsRegion.Refresh(book, me, Alpha, DateTimeOffset.UtcNow));
     }
 
     [Fact]
@@ -152,7 +131,7 @@ public sealed class SeatLifetimeTests
     {
         using var book = new SeatBook(_ => new StubAgents());
 
-        Assert.Null(ProjectMenu.Refresh(book, null, Alpha, DateTimeOffset.UnixEpoch));
+        Assert.Null(AgentsRegion.Refresh(book, null, Alpha, DateTimeOffset.UnixEpoch));
     }
 
     /// <summary>A person's seat, by the name they typed.</summary>

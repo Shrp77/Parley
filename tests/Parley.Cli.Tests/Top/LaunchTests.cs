@@ -1,5 +1,4 @@
 using Parley.Cli.Top;
-using Spectre.Console.Testing;
 using Xunit;
 
 namespace Parley.Cli.Tests.Top;
@@ -22,12 +21,12 @@ public sealed class LaunchTests
     [InlineData("not an address at all")]
     public void Only_web_addresses_are_opened(string hostile)
     {
-        using var console = new TestConsole();
+        var console = new Collected();
 
         // Through Open rather than through the predicate, so this covers the guard being wired
         // in and not only the guard being correct. Safe to call: the refusal path is the one
         // path that hands nothing to the platform.
-        Assert.False(Launch.Open(console, hostile));
+        Assert.False(Launch.Open(console.Write, hostile));
         Assert.Contains("not an http or https address", console.Output, StringComparison.Ordinal);
         Assert.False(Launch.IsWebAddress(hostile));
     }

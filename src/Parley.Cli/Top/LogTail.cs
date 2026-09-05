@@ -1,5 +1,4 @@
 using Parley.Core;
-using Spectre.Console;
 
 namespace Parley.Cli.Top;
 
@@ -95,77 +94,8 @@ internal static class LogTail
         }
     }
 
-    /// <summary>Follows the log until the person stops watching.</summary>
-    /// <param name="console">Where to draw.</param>
-    /// <param name="project">Whose log to follow.</param>
-    /// <param name="cancellationToken">Stops following.</param>
-    /// <returns>When the person has stopped watching.</returns>
-    internal static Task ShowAsync(
-        IAnsiConsole console,
-        ProjectSettings project,
-        CancellationToken cancellationToken) =>
-        ShowAsync(console, project, null, cancellationToken);
-
-    /// <summary>Follows the log until the person stops watching, given what the supervisor runs.</summary>
-    /// <param name="console">Where to draw.</param>
-    /// <param name="project">Whose log to follow.</param>
-    /// <param name="installed">The autostart entry, which says where a manifest-serving broker logs.</param>
-    /// <param name="cancellationToken">Stops following.</param>
-    /// <returns>When the person has stopped watching.</returns>
-    internal static async Task ShowAsync(
-        IAnsiConsole console,
-        ProjectSettings project,
-        InstalledEntry? installed,
-        CancellationToken cancellationToken)
-    {
-        var path = For(project, installed);
-
-        if (path is null || !File.Exists(path))
-        {
-            console.MarkupLine(
-                $"[yellow]No log where this project's broker usually writes one[/] "
-                + $"[dim]({Safe.Text(path ?? "nowhere derivable")}).[/] A broker started "
-                + "with --log elsewhere writes elsewhere, and the manifest does not record where.");
-
-            return;
-        }
-
-        var filter = console.Prompt(
-            new TextPrompt<string>("Filter [dim](blank shows everything)[/]:")
-                .AllowEmpty());
-
-        console.MarkupLine(
-            $"[dim]Following {Safe.Text(path)}"
-            + (filter.Length > 0 ? $", showing lines containing '{Safe.Text(filter)}'" : string.Empty)
-            + ". Press Enter to stop.[/]");
-
-        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-
-        var watching = FollowAsync(console, path, filter, stopping.Token);
-
-        try
-        {
-            // Read a key on a worker so the follow loop keeps drawing. Console.ReadLine blocks,
-            // and blocking the loop is what turns "press Enter to stop" into "the log stopped
-            // updating".
-            await Task.Run(Console.ReadLine, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            // In a finally, and that is not defensive habit. The await above throws when the
-            // surface is cancelled out from under it -- Ctrl+C, which is the ordinary way to
-            // leave. Without this, the follow task is abandoned still holding the log open while
-            // `stopping` is disposed underneath its token, so the loop then faults on a disposed
-            // source with nobody observing it. An unobserved exception on a background task is
-            // how two probes in this repository hung for ten minutes instead of failing.
-            await stopping.CancelAsync().ConfigureAwait(false);
-
-            await watching.ConfigureAwait(false);
-        }
-    }
-
     /// <summary>Prints new lines as they are written.</summary>
-    /// <param name="console">Where to draw.</param>
+    /// <param name="write">Where each line goes.</param>
     /// <param name="path">The file to follow.</param>
     /// <param name="filter">Only lines containing this, or everything when blank.</param>
     /// <param name="cancellationToken">Stops following.</param>
@@ -186,7 +116,7 @@ internal static class LogTail
     /// </para>
     /// </remarks>
     internal static async Task FollowAsync(
-        IAnsiConsole console,
+        Action<string> write,
         string path,
         string filter,
         CancellationToken cancellationToken)
@@ -199,7 +129,7 @@ internal static class LogTail
 
             while (!cancellationToken.IsCancellationRequested)
             {
-                if (!await ReadAsync(console, path, filter, fromEnd, cancellationToken)
+                if (!await ReadAsync(write, path, filter, fromEnd, cancellationToken)
                     .ConfigureAwait(false))
                 {
                     return;
@@ -214,19 +144,19 @@ internal static class LogTail
         }
         catch (IOException failure)
         {
-            console.MarkupLine($"[red]The log could not be followed: {Safe.Text(failure.Message)}[/]");
+            write($"The log could not be followed: {failure.Message}");
         }
     }
 
     /// <summary>Reads one opening of the file, until it is replaced or watching stops.</summary>
-    /// <param name="console">Where to draw.</param>
+    /// <param name="write">Where each line goes.</param>
     /// <param name="path">The file to follow.</param>
     /// <param name="filter">Only lines containing this, or everything when blank.</param>
     /// <param name="fromEnd">Whether to skip what the file already holds.</param>
     /// <param name="cancellationToken">Stops following.</param>
     /// <returns><see langword="true"/> when the file should be opened again.</returns>
     private static async Task<bool> ReadAsync(
-        IAnsiConsole console,
+        Action<string> write,
         string path,
         string filter,
         bool fromEnd,
@@ -273,7 +203,7 @@ internal static class LogTail
             // Escaped, because a log line is not this program's text. It carries whatever an
             // agent's payload put in it, and a bracket read as markup would let a message
             // choose how the operator's own log is drawn.
-            console.MarkupLine($"[dim]{Safe.Text(line)}[/]");
+            write(Safe.Text(line));
         }
 
         return false;

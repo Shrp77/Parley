@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Spectre.Console;
 
 namespace Parley.Cli.Top;
 
@@ -15,7 +14,7 @@ namespace Parley.Cli.Top;
 internal static class Launch
 {
     /// <summary>Opens an address in whatever the platform considers the default browser.</summary>
-    /// <param name="console">Where to report what happened.</param>
+    /// <param name="said">Told what happened.</param>
     /// <param name="address">What to open.</param>
     /// <returns><see langword="true"/> when the platform was asked to open it.</returns>
     /// <remarks>
@@ -32,12 +31,11 @@ internal static class Launch
     /// running when it cannot.
     /// </para>
     /// </remarks>
-    internal static bool Open(IAnsiConsole console, string address)
+    internal static bool Open(Action<string> said, string address)
     {
         if (!IsWebAddress(address))
         {
-            console.MarkupLine(
-                $"[red]'{Safe.Text(address)}' is not an http or https address.[/]");
+            said($"'{address}' is not an http or https address.");
 
             return false;
         }
@@ -52,7 +50,7 @@ internal static class Launch
 
             using var process = Process.Start(started);
 
-            console.MarkupLine($"[green]Opened[/] [dim]{Safe.Text(address)}[/]");
+            said($"Opened {address}");
 
             return true;
         }
@@ -62,10 +60,8 @@ internal static class Launch
         {
             // Named rather than swallowed, and the address is printed so somebody on a headless
             // machine can copy it to a browser that is not on this one.
-            console.MarkupLine(
-                $"[yellow]No browser could be started here.[/] Open "
-                + $"[bold]{Safe.Text(address)}[/] yourself. "
-                + $"[dim]({Safe.Text(failure.Message)})[/]");
+            said(
+                $"No browser could be started here. Open {address} yourself. ({failure.Message})");
 
             return false;
         }

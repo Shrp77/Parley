@@ -145,7 +145,7 @@ public sealed class SeatingRegionTests : IAsyncDisposable
 
         driving.Show(shell);
 
-        Assert.Empty(shell.Actions());
+        Assert.DoesNotContain(shell.Actions(), action => action.Label == AgentsRegion.JoinTitle);
 
         driving.Tab();
 

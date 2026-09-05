@@ -2,6 +2,7 @@ using Parley.Client;
 using Parley.Client.Seating;
 using Parley.Core;
 using Parley.Headless;
+using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
@@ -44,6 +45,19 @@ internal sealed class Shell : Window
 
     /// <summary>What the status line always says, before the region's name.</summary>
     internal const string FocusPrefix = "Focus: ";
+
+    /// <summary>
+    /// The key that lists what the focused region can do.
+    /// </summary>
+    /// <remarks>
+    /// It is also how the actions are reachable by mouse: the list it opens is a menu, and every
+    /// entry in it is selectable with the pointer. contracts/surface.md asks for exactly that — no
+    /// action exists only as a key — and a status line is not clickable.
+    /// </remarks>
+    internal const char ActionsKey = '?';
+
+    /// <summary>What the menu of actions is called.</summary>
+    internal const string ActionsTitle = "What this region can do";
 
     private readonly BrokerDirectory _directory;
     private readonly Label _status = new() { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
@@ -218,13 +232,24 @@ internal sealed class Shell : Window
         // silent truncation this layout exists to avoid.
         var actions = Actions();
 
+        var where = _stacked
+            ? $"{FocusPrefix}{NameOf(region)} ({FocusedRegion + 1}/{_regions.Count}, Tab)"
+            : FocusPrefix + NameOf(region);
+
         var offered = actions.Count == 0
             ? string.Empty
             : "  " + string.Join("  ", actions.Select(a => $"{a.Key}: {a.Label}"));
 
-        _status.Text = _stacked
-            ? $"{FocusPrefix}{NameOf(region)} ({FocusedRegion + 1} of {_regions.Count}, Tab){offered}"
-            : FocusPrefix + NameOf(region) + offered;
+        // **Listed in full when they fit, and behind one key when they do not.** Six labelled
+        // actions are a hundred and forty columns; a status line that simply held them would be
+        // cut by the toolkit at whatever column the terminal ends at, which is the silent
+        // truncation the narrow layout exists to avoid, arrived at from the other direction. What
+        // replaces them is not a shorter list — it is the way to see the whole one.
+        var room = Viewport.Width > 0 ? Viewport.Width : Threshold;
+
+        _status.Text = where.Length + offered.Length <= room
+            ? where + offered
+            : where + (actions.Count == 0 ? string.Empty : $"  {ActionsKey}: actions");
     }
 
     /// <summary>Moves focus to the next region, or the previous one.</summary>
@@ -241,19 +266,192 @@ internal sealed class Shell : Window
     /// </remarks>
     internal IReadOnlyList<RegionAction> Actions() => _regions[FocusedRegion] switch
     {
+        // Naming the running deployment is offered only while there is one nothing names yet.
+        // Offered always, it would invite somebody to name the same broker twice, which is two
+        // projects sharing a store and is what §4.1 forbids.
+        ProjectsRegion when Naming.CanNameRunning(Projects.Projects, Installed) =>
+        [
+            new RegionAction('c', Naming.CreateTitle, Create),
+            new RegionAction('n', Naming.NameRunningTitle, NameRunning),
+            new RegionAction('r', Removing.Title, Remove),
+            new RegionAction('g', "Follow the broker log", FollowLog),
+            new RegionAction('e', Onboarding.Title, Enrol),
+            new RegionAction('b', "Open the web console in a browser", OpenConsole),
+        ],
+
+        ProjectsRegion =>
+        [
+            new RegionAction('c', Naming.CreateTitle, Create),
+            new RegionAction('r', Removing.Title, Remove),
+            new RegionAction('g', "Follow the broker log", FollowLog),
+            new RegionAction('e', Onboarding.Title, Enrol),
+            new RegionAction('b', "Open the web console in a browser", OpenConsole),
+        ],
+
         AgentsRegion => Seats is null
             ? []
             : Held is null
                 ? [new RegionAction('j', AgentsRegion.JoinTitle, Join)]
                 : [new RegionAction('l', "Leave your seat", LeaveSeat)],
+
+        // Taking part needs a seat, because every one of these speaks as somebody. Without one the
+        // region still shows a transcript; it simply has no voice to use in it.
+        TranscriptRegion when Held is not null =>
+        [
+            new RegionAction('w', Participation.DeliveryTitle, TakeDelivery),
+            new RegionAction('a', Participation.AnswerTitle, Answer),
+            new RegionAction('k', Participation.AskTitle, Ask),
+            new RegionAction('t', Participation.TellTitle, Tell),
+        ],
+
         _ => [],
     };
+
+    /// <summary>Opens the menu of what the focused region can do.</summary>
+    /// <returns>When the menu is open.</returns>
+    internal Task Offer()
+    {
+        var actions = Actions();
+
+        if (App is not { } app || actions.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        var menu = Prompting.Choose(
+            ActionsTitle,
+            NameOf(_regions[FocusedRegion]),
+            [.. actions.Select(action => $"{action.Key}: {action.Label}")]);
+
+        var token = Prompting.Open(app, menu);
+
+        menu.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, token);
+
+            if (actions.FirstOrDefault(a => $"{a.Key}: {a.Label}" == chosen) is { } taken)
+            {
+                _ = taken.Run();
+            }
+        };
+
+        return Task.CompletedTask;
+    }
 
     /// <summary>The seat this person holds, if they hold one.</summary>
     internal SeatHold? Held { get; private set; }
 
     /// <summary>Where seats are held, or null when this surface cannot seat anybody.</summary>
     internal SeatBook? Seats { get; init; }
+
+    /// <summary>
+    /// The manifest this machine's projects are named in, or null when there is none.
+    /// </summary>
+    /// <remarks>
+    /// A directory built from an explicit list is somebody else's list, and inventing a path to
+    /// write into would put a project somewhere they were not looking. The actions that write say
+    /// so rather than guessing.
+    /// </remarks>
+    internal string? ManifestPath { get; init; }
+
+    /// <summary>What this machine's supervisor runs, or null for none or unknown.</summary>
+    internal InstalledEntry? Installed { get; init; }
+
+    /// <summary>The log view, while one is open.</summary>
+    internal LogView? Log { get; private set; }
+
+    /// <summary>Opens the form that creates a project.</summary>
+    /// <returns>When the form is open.</returns>
+    internal Task Create() =>
+        App is { } app && Manifest() is { } manifest
+            ? Naming.OpenCreateAsync(app, manifest, Projects.Projects, Installed, Queue, Reporting)
+            : Task.CompletedTask;
+
+    /// <summary>Opens the form that names the deployment this machine already runs.</summary>
+    /// <returns>When the form is open.</returns>
+    internal Task NameRunning()
+    {
+        if (App is not { } app || Manifest() is not { } manifest)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (Installed is not { Store: not null } entry)
+        {
+            Said = "This machine has no autostart entry to name, so there is nothing to pre-fill. "
+                + $"Use '{Naming.CreateTitle}'.";
+
+            return Task.CompletedTask;
+        }
+
+        return Naming.OpenNameRunningAsync(app, manifest, Projects.Projects, entry, Queue, Reporting);
+    }
+
+    /// <summary>Opens the dialog that removes a project from this machine.</summary>
+    /// <returns>When the dialog is open.</returns>
+    internal Task Remove() =>
+        App is { } app && Manifest() is { } manifest && Projects.Selected is { } project
+            ? Removing.OpenAsync(app, manifest, project, Queue, async (said, gone) =>
+            {
+                Said = said;
+
+                if (gone)
+                {
+                    await RefreshAsync(_reading.Token).ConfigureAwait(false);
+                }
+            })
+            : Task.CompletedTask;
+
+    /// <summary>Opens the enrolment dialog.</summary>
+    /// <returns>When the dialog is open.</returns>
+    internal Task Enrol() =>
+        App is { } app ? Onboarding.OpenAsync(app, Queue, Reporting) : Task.CompletedTask;
+
+    /// <summary>Opens the selected project's broker log and follows it.</summary>
+    /// <returns>When the view is open.</returns>
+    internal Task FollowLog()
+    {
+        if (App is not { } app || Projects.Selected is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (LogView.Open(app, project, Installed, string.Empty, said => Said = said)
+            is not var (view, token))
+        {
+            return Task.CompletedTask;
+        }
+
+        Log = view;
+
+        view.Closing += (_, _) =>
+        {
+            Log = null;
+
+            _ = view.StopAsync();
+
+            Prompting.Close(app, token);
+        };
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Opens the web console in a browser.</summary>
+    /// <returns>When it has been asked for.</returns>
+    /// <remarks>
+    /// The surface keeps running whether or not a browser starts. There is no browser on a headless
+    /// machine and no <c>xdg-open</c> on a minimal container, and both are ordinary places to run
+    /// this.
+    /// </remarks>
+    internal Task OpenConsole()
+    {
+        Launch.Open(said => Said = said, ConsoleAddress);
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Where the web console listens when a broker hosts it.</summary>
+    internal const string ConsoleAddress = "http://127.0.0.1:5045";
 
     /// <summary>What the last action said, for the person and for a test.</summary>
     internal string Said { get; private set; } = string.Empty;
@@ -303,6 +501,120 @@ internal sealed class Shell : Window
         return Task.CompletedTask;
     }
 
+    /// <summary>The person's own agent operations, for the project on screen.</summary>
+    /// <returns>The voice, or null when they hold no seat here.</returns>
+    /// <remarks>
+    /// Built per use rather than held, because the seat and the project can each change under it.
+    /// A voice cached across a project change would speak into the wrong deployment, which is the
+    /// one mistake on this surface that cannot be taken back: the transcript would record it.
+    /// </remarks>
+    internal SeatVoice? Voice() =>
+        Held is null || Projects.Selected is not { } project
+            ? null
+            : new SeatVoice(_directory.AgentsFor(project), Held.Seat);
+
+    /// <summary>Takes delivery of what is waiting, after saying what that does.</summary>
+    /// <returns>When the dialog has been opened.</returns>
+    internal Task TakeDelivery()
+    {
+        if (App is not { } app || Held is null || Voice() is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var dialog = Prompting.Choose(
+            Participation.DeliveryTitle,
+            Participation.DeliveryWarning
+            + Environment.NewLine
+            + Environment.NewLine
+            + string.Join(Environment.NewLine, Participation.Held(Held)),
+            ["Not now", Participation.DeliveryTitle]);
+
+        var token = Prompting.Open(app, dialog);
+
+        dialog.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, token);
+
+            if (chosen != Participation.DeliveryTitle)
+            {
+                return;
+            }
+
+            Queue(async cancellationToken =>
+            {
+                if (Voice() is { } voice && Held is { } hold)
+                {
+                    Said = await Participation
+                        .TakeDeliveryAsync(voice, hold, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            });
+        };
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Answers one of the questions this person owes.</summary>
+    /// <returns>When the dialog has been opened.</returns>
+    /// <remarks>
+    /// The sub-question identifiers come from the broker rather than from the delivered payload.
+    /// §5.3 answers by identifier and the store holds what was actually asked; a form built from a
+    /// document this process parsed would be a second opinion about it, and the one that disagrees
+    /// produces an answer resolving a sub-question nobody asked.
+    /// </remarks>
+    internal Task Answer()
+    {
+        if (App is not { } app || Held is not { } hold || Voice() is not { } voice)
+        {
+            return Task.CompletedTask;
+        }
+
+        var owed = hold.Delivered.Where(one => one.Owes).ToList();
+
+        if (owed.Count == 0)
+        {
+            Said = "You owe nothing. Take delivery to see what is waiting.";
+
+            return Task.CompletedTask;
+        }
+
+        var choosing = Prompting.Choose(
+            Participation.AnswerTitle,
+            "Which question?",
+            [.. owed.Select(Participation.Label)]);
+
+        var token = Prompting.Open(app, choosing);
+
+        choosing.Done += (_, picked) =>
+        {
+            Prompting.Close(app, token);
+
+            var chosen = owed.Find(one => Participation.Label(one) == picked);
+
+            if (chosen is null || chosen.Message.ExchangeId is not { } exchange)
+            {
+                Said = picked is null
+                    ? string.Empty
+                    : "That message is not part of an exchange to answer.";
+
+                return;
+            }
+
+            Queue(cancellationToken => ResolveAsync(app, voice, hold, chosen, exchange, cancellationToken));
+        };
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Asks a peer a question, opening a conversation.</summary>
+    /// <returns>When the dialog has been opened.</returns>
+    internal Task Ask() => Compose(asking: true);
+
+    /// <summary>Tells a peer something, expecting no answer.</summary>
+    /// <returns>When the dialog has been opened.</returns>
+    internal Task Tell() => Compose(asking: false);
+
     /// <summary>Releases this person's seat, in every project at once.</summary>
     /// <returns>When it has been released.</returns>
     internal Task LeaveSeat()
@@ -349,6 +661,13 @@ internal sealed class Shell : Window
         // The letter shown beside an action in the status line takes it, when its region has focus.
         // Every one of them is also a menu entry or a button the mouse reaches: contracts/surface.md
         // is explicit that no action exists only as a key.
+        if (key == new Key(ActionsKey))
+        {
+            _ = Offer();
+
+            return true;
+        }
+
         foreach (var action in Actions())
         {
             if (key == new Key(action.Key))
@@ -464,6 +783,155 @@ internal sealed class Shell : Window
         return answers.ToDictionary(a => a.Value, a => a.Health, StringComparer.Ordinal);
     }
 
+    /// <summary>Collects an answer per sub-question, then sends them together.</summary>
+    /// <param name="app">The application the dialogs open in.</param>
+    /// <param name="voice">The person's own agent operations.</param>
+    /// <param name="hold">The seat holding the question.</param>
+    /// <param name="owed">The delivered question.</param>
+    /// <param name="exchange">The exchange it belongs to.</param>
+    /// <param name="cancellationToken">Cancels the calls.</param>
+    /// <returns>When the answer has been sent, or abandoned.</returns>
+    /// <remarks>
+    /// One form for the whole exchange rather than a dialog per sub-question: a person answering
+    /// the third cannot otherwise revise the first, which is exactly when they notice the first was
+    /// answering something narrower than was asked. The outcome for each is chosen from
+    /// <c>SeatVoice.Outcomes</c>, so <c>ghosted</c> can never appear among them.
+    /// </remarks>
+    private async Task ResolveAsync(
+        IApplication app,
+        SeatVoice voice,
+        SeatHold hold,
+        Delivered owed,
+        long exchange,
+        CancellationToken cancellationToken)
+    {
+        var ids = await voice.SubQuestionsAsync(exchange, cancellationToken).ConfigureAwait(false);
+
+        if (ids.Count == 0)
+        {
+            Said = "The broker says that exchange asked nothing to resolve.";
+
+            return;
+        }
+
+        var fields = new List<FormField>();
+
+        foreach (var id in ids)
+        {
+            fields.Add(new FormField(
+                $"{id} — how does it resolve? ({string.Join(" / ", SeatVoice.Outcomes.Select(o => o.Value))})",
+                SeatVoice.Outcomes[0].Value,
+                Outcome));
+
+            fields.Add(new FormField($"{id} — your answer:", string.Empty, Participation.AnswerProblem));
+        }
+
+        var form = new FormDialog(
+            Participation.AnswerTitle + Environment.NewLine + Participation.Asked(owed),
+            fields);
+
+        var token = Prompting.Open(app, form);
+
+        form.Done += (_, values) =>
+        {
+            Prompting.Close(app, token);
+
+            if (values is null)
+            {
+                return;
+            }
+
+            var resolutions = ids
+                .Select((id, at) => (Id: id, Text: values[(at * 2) + 1], Outcome: values[at * 2].Trim()))
+                .ToList();
+
+            Queue(async token2 =>
+            {
+                // Through the overload that settles the seat as well, so this surface never strikes
+                // a question off its own list while the broker still believes it open.
+                var answered = await voice
+                    .AnswerAsync(hold, exchange, resolutions, token2)
+                    .ConfigureAwait(false);
+
+                Said = answered.Says;
+
+                if (Projects.Selected is { } project)
+                {
+                    await SelectAsync(project, token2).ConfigureAwait(false);
+                }
+            });
+        };
+
+        static string? Outcome(string typed) =>
+            SeatVoice.Outcomes.Any(o => string.Equals(o.Value, typed.Trim(), StringComparison.Ordinal))
+                ? null
+                : $"One of: {string.Join(", ", SeatVoice.Outcomes.Select(o => o.Value))}";
+    }
+
+    /// <summary>Opens the form that asks a peer a question, or tells them something.</summary>
+    /// <param name="asking">Whether an answer is expected.</param>
+    /// <returns>When the dialog has been opened.</returns>
+    /// <remarks>
+    /// The fields are collected in the order rule 8.1 puts them — what is being decided, then the
+    /// question, then what turns on the answer. Asking for the question first invites somebody to
+    /// write it and stop.
+    /// </remarks>
+    private Task Compose(bool asking)
+    {
+        if (App is not { } app || Voice() is not { } voice || Projects.Selected is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        var fields = asking
+            ?
+            [
+                new FormField("Peer:", string.Empty, Participation.RequiredProblem),
+                new FormField("What are you trying to decide?", string.Empty, Participation.RequiredProblem),
+                new FormField("The question:", string.Empty, Participation.RequiredProblem),
+                new FormField("What turns on the answer?", string.Empty, Participation.ConsequencesProblem),
+                new FormField("Conversation name:", Participation.Suggested(), Participation.RequiredProblem),
+            ]
+            : new List<FormField>
+            {
+                new("Peer:", string.Empty, Participation.RequiredProblem),
+                new("What are you telling them?", string.Empty, Participation.RequiredProblem),
+                new(
+                    "Conversation name:",
+                    Transcript.Open ?? Participation.Suggested(),
+                    Participation.RequiredProblem),
+            };
+
+        var form = new FormDialog(asking ? Participation.AskTitle : Participation.TellTitle, fields);
+        var token = Prompting.Open(app, form);
+
+        form.Done += (_, values) =>
+        {
+            Prompting.Close(app, token);
+
+            if (values is null || !AgentName.TryCreate(values[0].Trim(), out var peer))
+            {
+                Said = values is null ? string.Empty : $"'{values[0]}' is not an agent name.";
+
+                return;
+            }
+
+            Queue(async cancellationToken =>
+            {
+                Said = asking
+                    ? await voice.AskAsync(
+                        peer, values[1], values[2], values[3], values[4], cancellationToken)
+                        .ConfigureAwait(false)
+                    : await voice.NotifyAsync(peer, values[1], values[2], cancellationToken)
+                        .ConfigureAwait(false);
+
+                await SelectAsync(project, cancellationToken).ConfigureAwait(false);
+            });
+        };
+
+        return Task.CompletedTask;
+    }
+
     /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
@@ -483,6 +951,30 @@ internal sealed class Shell : Window
     /// <param name="region">The region.</param>
     /// <returns>Its title.</returns>
     private static string NameOf(View region) => region.Title;
+
+    /// <summary>The manifest to write into, saying so when there is none.</summary>
+    /// <returns>The path, or null when this surface was given its projects.</returns>
+    private string? Manifest()
+    {
+        if (ManifestPath is { Length: > 0 } path)
+        {
+            return path;
+        }
+
+        Said = "This surface was given its projects, so there is no manifest here to write to.";
+
+        return null;
+    }
+
+    /// <summary>Takes what a screen said and shows it, then reads the projects again.</summary>
+    /// <param name="said">What the command wrote.</param>
+    /// <returns>When the projects have been read again.</returns>
+    private async Task Reporting(string said)
+    {
+        Said = said;
+
+        await RefreshAsync(_reading.Token).ConfigureAwait(false);
+    }
 
     /// <summary>Runs a read after whatever is already running, and remembers it.</summary>
     /// <param name="read">The read to run.</param>
