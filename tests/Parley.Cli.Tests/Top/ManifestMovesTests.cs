@@ -152,7 +152,10 @@ public sealed class ManifestMovesTests : IAsyncDisposable
         {
             shell.Focus(region);
 
-            foreach (var action in shell.Actions())
+            // Every action but the one that starts a browser. It is a real `Process.Start` at the
+            // console's address, so running it here opens a window on whatever machine the suite
+            // is on -- which it did, on the owner's, before this was caught.
+            foreach (var action in shell.Actions().Where(action => !Launches(action)))
             {
                 await action.Run();
                 await shell.Settled;
@@ -205,4 +208,12 @@ public sealed class ManifestMovesTests : IAsyncDisposable
                 at == 0 ? _broker.Address : _second.Address,
                 null,
                 null))]);
+
+    /// <summary>Whether an action leaves this process to do its work.</summary>
+    /// <remarks>
+    /// Named by its label rather than skipped by position, so an action added beside it is still
+    /// exercised and only this one is left out.
+    /// </remarks>
+    private static bool Launches(RegionAction action) =>
+        action.Label.Contains("browser", StringComparison.Ordinal);
 }
