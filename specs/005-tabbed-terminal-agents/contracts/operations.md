@@ -28,6 +28,23 @@ workspace, adapter, status and presence; `Waiting` for what the agent owes, as t
 and that file must contain the typed-name prompt. A second file that reaches any of them fails the
 build's test run. FR-017, SC-007.
 
+## The four reports neither contract had named
+
+`Refusals`, `Clarifications`, `Referrals` and `Notifications`. The web console binds all four; the
+terminal binds none, and until this feature no contract said so — which made 004's promise that
+absences are *listed* untrue for four of them. Written down here rather than quietly left, because
+a gap nobody recorded is indistinguishable from one nobody noticed.
+
+They stay out on the same grounds, and it is scope rather than safety: each is a survey across the
+whole deployment serving an open question in SPEC.md §17 rather than a fact about what is happening
+right now, each already has a command a person runs when they are asking that question, and none of
+them belongs in any of the four regions. The four regions answer *what is this deployment doing*;
+these answer *what has it been doing, in aggregate, and should the protocol change*. A terminal
+that grew a fifth region for them would be a different feature, argued here first.
+
+`DriftTests` compares the two surfaces against this file, so the next operation one of them gains
+alone fails the build rather than waiting to be noticed by somebody moving between them.
+
 ## Still excluded, and listed so their absence is deliberate
 
 `ForceConclude`, `Instruct`, `Prune`. The web console binds them. The terminal does not, and
