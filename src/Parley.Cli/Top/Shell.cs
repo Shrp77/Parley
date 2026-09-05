@@ -1,3 +1,5 @@
+using System.Drawing;
+using System.Text;
 using Parley.Client;
 using Parley.Client.Seating;
 using Parley.Core;
@@ -37,11 +39,21 @@ internal sealed class Shell : Window
 {
     /// <summary>The width at which the four regions stop fitting side by side.</summary>
     /// <remarks>
-    /// Eighty columns, and a test drives seventy-nine and eighty rather than trusting it. The
-    /// number is a constant rather than a calculation because a layout that rearranged itself at
-    /// a width nobody could name would be untestable at its own boundary.
+    /// <para>
+    /// A test drives one column either side of it rather than trusting it. The number is a constant
+    /// rather than a calculation because a layout that rearranged itself at a width nobody could
+    /// name would be untestable at its own boundary.
+    /// </para>
+    /// <para>
+    /// <b>Two hundred is a diagnostic and not the shipped value.</b> It was eighty, and the report
+    /// that dragging a window narrow stacked nothing was first read as a terminal that would not go
+    /// below eighty columns. It was not: nothing called <see cref="Lay"/> after the constructor, so
+    /// the surface could not stack at any width. That is fixed, and this is raised only so the next
+    /// walk can reach the boundary on any window at all. Put it back to eighty — here, in the
+    /// README, and nowhere else — once the stacked layout has been seen working.
+    /// </para>
     /// </remarks>
-    internal const int Threshold = 80;
+    internal const int Threshold = 200;
 
     /// <summary>What the status line always says, before the region's name.</summary>
     internal const string FocusPrefix = "Focus: ";
@@ -150,6 +162,36 @@ internal sealed class Shell : Window
     /// down does not wait on one.
     /// </remarks>
     internal CancellationToken Reading => _reading.Token;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// <b>This is what makes the layout answer to the terminal.</b> Until it existed
+    /// <see cref="Lay"/> was called once, from the constructor, with <see cref="Threshold"/> itself
+    /// — so the surface was laid out side by side at construction and stayed that way for the life
+    /// of the process. Dragging a window to forty columns stacked nothing, because nothing asked
+    /// it to.
+    /// </para>
+    /// <para>
+    /// Every test drove <see cref="Lay"/> directly, which is why a suite with a stacking test, a
+    /// narrow-width test and a dragged-narrow-and-back test all passed against a surface that
+    /// could not stack. They tested the arrangement; nothing tested that anything performs it.
+    /// </para>
+    /// <para>
+    /// Re-entrancy is not a hazard here: <see cref="Lay"/> reparents views, which changes frames,
+    /// which arrives back here — and finds the arrangement already the one being asked for, so it
+    /// returns without touching anything.
+    /// </para>
+    /// </remarks>
+    protected override void OnFrameChanged(in Rectangle frame)
+    {
+        base.OnFrameChanged(in frame);
+
+        if (frame.Width > 0)
+        {
+            Lay(frame.Width);
+        }
+    }
 
     /// <summary>Arranges the regions for a width.</summary>
     /// <param name="width">How wide the screen is.</param>
@@ -542,7 +584,16 @@ internal sealed class Shell : Window
     }
 
     /// <summary>Where the web console listens when a broker hosts it.</summary>
-    private const string ConsoleAddress = "http://127.0.0.1:5045";
+    /// <remarks>
+    /// <b>The console's own constant, not a second copy of the number.</b> This was a literal
+    /// until it was noticed that the literal was <c>5045</c> and every other statement of the
+    /// default — the host, the usage text, the address an autostart entry registers — said
+    /// <c>5280</c>. So the one action on this surface that hands off to a browser opened a port
+    /// nothing listens on, on every machine, and said <c>Opened …</c> while doing it. A browser
+    /// that starts and lands nowhere is the failure <see cref="Launch.Open"/> cannot report,
+    /// because from here it succeeded.
+    /// </remarks>
+    private const string ConsoleAddress = Parley.Web.ConsoleHost.LoopbackAddress;
 
     /// <summary>What leaving a seat is called.</summary>
     private const string LeaveSeatTitle = "Leave your seat";
@@ -855,7 +906,7 @@ internal sealed class Shell : Window
         // The letter shown beside an action in the status line takes it, when its region has focus.
         // Every one of them is also a menu entry or a button the mouse reaches: contracts/surface.md
         // is explicit that no action exists only as a key.
-        if (key == new Key(ActionsKey))
+        if (Typed(key, ActionsKey))
         {
             _ = Offer();
 
@@ -864,7 +915,7 @@ internal sealed class Shell : Window
 
         foreach (var action in Actions())
         {
-            if (key == new Key(action.Key))
+            if (Typed(key, action.Key))
             {
                 _ = action.Run();
 
@@ -874,6 +925,28 @@ internal sealed class Shell : Window
 
         return base.OnKeyDown(key);
     }
+
+    /// <summary>Whether a keystroke is somebody typing a character this surface binds.</summary>
+    /// <param name="key">What arrived.</param>
+    /// <param name="character">The character an action is bound to.</param>
+    /// <returns><see langword="true"/> when the two are the same keystroke.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The character, not the key code.</b> <c>?</c> is Shift and another key on every keyboard
+    /// there is, and a driver is free to say so by carrying the shift modifier on what it hands
+    /// up. Comparing against a bare <c>new Key('?')</c> then matches under one driver and not
+    /// another — the same keystroke, the same code, working on the machine the suite runs on and
+    /// dead on somebody's terminal. That is what happened, and it is invisible from inside a test
+    /// that injects the key it is about to compare against.
+    /// </para>
+    /// <para>
+    /// Control and Alt are excluded rather than ignored. They are how a terminal spells a
+    /// different keystroke entirely, and an action that answered to Ctrl+C as readily as to
+    /// <c>c</c> would fire on the chord half the world presses to stop a program.
+    /// </para>
+    /// </remarks>
+    private static bool Typed(Key key, char character) =>
+        !key.IsCtrl && !key.IsAlt && key.AsRune == new Rune(character);
 
     /// <summary>Reads the manifest and every broker, and draws the projects.</summary>
     /// <param name="cancellationToken">Stops the reads.</param>

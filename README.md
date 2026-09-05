@@ -602,7 +602,7 @@ parley top
 Everything is on one screen: the projects this machine names down the left, and for whichever is
 selected its agents, its conversations, and a transcript when one is opened. Tab moves between the
 four, the arrow keys move within one, and Enter opens — the conversation list does not move when a
-transcript opens, so the next one is one arrow away. The mouse does the same. Below eighty columns
+transcript opens, so the next one is one arrow away. The mouse does the same. Below two hundred columns
 the four stack and Tab still visits every one. Press `?` for everything the region you are on can
 do.
 

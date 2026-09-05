@@ -1,6 +1,5 @@
 using System.Globalization;
 using Parley.Core;
-using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
 namespace Parley.Cli.Top;
@@ -36,7 +35,7 @@ internal sealed class ConversationsRegion : FrameView
         "No conversation has happened in this project yet. One begins when an agent asks another "
         + "something, or when you do from a seat.";
 
-    private readonly ListView _list = new() { Width = Dim.Fill(), Height = Dim.Fill() };
+    private readonly ListView _list = Lists.Filling();
 
     private List<ConversationSummary> _conversations = [];
 

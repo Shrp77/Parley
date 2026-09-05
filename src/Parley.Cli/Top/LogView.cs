@@ -45,7 +45,7 @@ internal sealed class LogView : Dialog
         Width = Dim.Percent(90);
         Height = Dim.Percent(80);
 
-        _list = new ListView { Width = Dim.Fill(), Height = Dim.Fill() };
+        _list = Lists.Filling();
         _list.SetSource(_lines);
 
         Add(_list);

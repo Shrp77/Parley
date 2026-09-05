@@ -50,10 +50,24 @@ public sealed class ReadmeTests
     [Fact]
     public void The_width_it_names_is_the_width_the_layout_uses()
     {
-        // "Below eighty columns the four stack." A number in prose and a number in code that drift
+        // "Below <n> columns the four stack." A number in prose and a number in code that drift
         // apart leave a reader who trusts the first unable to reproduce what they were told.
-        Assert.Equal(80, Shell.Threshold);
-        Assert.Contains("eighty columns", Readme(), StringComparison.Ordinal);
+        //
+        // Spelled from the constant rather than written out a third time. The first draft asserted
+        // the literal 80 in both places, which made the test a second copy of the number it was
+        // meant to be checking — and made moving the threshold a three-file edit that fails the
+        // build if any one of them is forgotten, which is the same drift wearing a green tick.
+        var words = new Dictionary<int, string>
+        {
+            [80] = "eighty columns",
+            [200] = "two hundred columns",
+        };
+
+        Assert.True(
+            words.TryGetValue(Shell.Threshold, out var spelled),
+            $"README has no wording for a threshold of {Shell.Threshold}; add one here and there.");
+
+        Assert.Contains(spelled!, Readme(), StringComparison.Ordinal);
     }
 
     [Fact]

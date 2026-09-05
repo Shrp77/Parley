@@ -37,7 +37,7 @@ internal static class Driving
     /// Above the layout threshold, so a test that does not care about layout gets the side by
     /// side arrangement without asking for it.
     /// </remarks>
-    internal const int DefaultWidth = 120;
+    internal const int DefaultWidth = Parley.Cli.Top.Shell.Threshold + 40;
 
     /// <summary>How tall a driven screen is unless a test says otherwise.</summary>
     internal const int DefaultHeight = 40;
@@ -293,6 +293,17 @@ internal static class Driving
         /// this is what every assertion about what a person can see reads.
         /// </remarks>
         internal string Text() => Escapes.Replace(App.ToString() ?? string.Empty, string.Empty);
+
+        /// <summary>Whether a view with this title is on the screen at all.</summary>
+        /// <param name="title">The title to look for.</param>
+        /// <returns><see langword="true"/> when one is.</returns>
+        /// <remarks>
+        /// For asserting that something did <i>not</i> open. <see cref="Find"/> fails when it finds
+        /// nothing, which is right for a test that needs the view and wrong for one whose whole
+        /// claim is that there is no view — that reads as catching the assertion library's own
+        /// exception, which passes for any reason a search might throw.
+        /// </remarks>
+        internal bool Has(string title) => Search(App.TopRunnableView, title) is not null;
 
         /// <summary>Finds a view by its title, anywhere in the tree.</summary>
         /// <param name="title">The title to look for.</param>

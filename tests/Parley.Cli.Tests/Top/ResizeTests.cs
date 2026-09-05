@@ -26,7 +26,7 @@ public sealed class ResizeTests
     [Fact]
     public void Focus_survives_crossing_the_threshold_in_both_directions()
     {
-        using var driving = Driving.Open(width: 120, height: 40);
+        using var driving = Driving.Open(width: Shell.Threshold + 40, height: 40);
         using var directory = Directory();
         using var shell = new Shell(directory);
 
@@ -52,13 +52,13 @@ public sealed class ResizeTests
     [Fact]
     public void Exactly_one_region_is_visible_when_stacked_and_all_four_when_not()
     {
-        using var driving = Driving.Open(width: 120, height: 40);
+        using var driving = Driving.Open(width: Shell.Threshold + 40, height: 40);
         using var directory = Directory();
         using var shell = new Shell(directory);
 
         driving.Show(shell);
 
-        shell.Lay(40);
+        shell.Lay(Shell.Threshold - 40);
 
         var visible = new Terminal.Gui.ViewBase.View[]
             {
@@ -68,7 +68,7 @@ public sealed class ResizeTests
 
         Assert.Equal(1, visible);
 
-        shell.Lay(120);
+        shell.Lay(Shell.Threshold + 40);
 
         Assert.All(
             new Terminal.Gui.ViewBase.View[]
@@ -88,7 +88,7 @@ public sealed class ResizeTests
         using var shell = new Shell(directory);
 
         driving.Show(shell);
-        shell.Lay(40);
+        shell.Lay(Shell.Threshold - 40);
 
         foreach (var expected in new Terminal.Gui.ViewBase.View[]
                  {
@@ -104,7 +104,7 @@ public sealed class ResizeTests
     [Fact]
     public void A_dialog_opened_before_a_drag_is_still_the_thing_taking_keys_after_it()
     {
-        using var driving = Driving.Open(width: 120, height: 40);
+        using var driving = Driving.Open(width: Shell.Threshold + 40, height: 40);
         using var directory = Directory();
         using var shell = new Shell(directory);
 
@@ -113,8 +113,8 @@ public sealed class ResizeTests
         var dialog = Prompting.Text("Something", "Type here:");
         var token = Prompting.Open(driving.App, dialog);
 
-        shell.Lay(40);
-        shell.Lay(120);
+        shell.Lay(Shell.Threshold - 40);
+        shell.Lay(Shell.Threshold + 40);
 
         driving.Type("still here");
 

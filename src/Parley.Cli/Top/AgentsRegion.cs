@@ -2,7 +2,6 @@ using Parley.Client.Rendering;
 using Parley.Client.Seating;
 using Parley.Core;
 using Parley.Headless;
-using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
 namespace Parley.Cli.Top;
@@ -67,7 +66,7 @@ internal sealed class AgentsRegion : FrameView
         "No agent is registered in this project and its catalogue names none. Press a to make a "
         + "repository on this machine one.";
 
-    private readonly ListView _list = new() { Width = Dim.Fill(), Height = Dim.Fill() };
+    private readonly ListView _list = Lists.Filling();
 
     private List<AgentRow> _rows = [];
     private int _offset;

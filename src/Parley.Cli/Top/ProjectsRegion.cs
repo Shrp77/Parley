@@ -1,6 +1,5 @@
 using Parley.Client;
 using Parley.Core;
-using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
 namespace Parley.Cli.Top;
@@ -40,7 +39,7 @@ internal sealed class ProjectsRegion : FrameView
         "This machine names no projects yet. Press c to create one, or ? for everything this "
         + "region can do.";
 
-    private readonly ListView _list = new() { Width = Dim.Fill(), Height = Dim.Fill() };
+    private readonly ListView _list = Lists.Filling();
 
     private List<ProjectSettings> _projects = [];
 

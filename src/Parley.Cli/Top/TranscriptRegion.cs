@@ -35,7 +35,7 @@ internal sealed class TranscriptRegion : FrameView
     /// <summary>What is shown for a conversation the broker holds no messages for.</summary>
     internal const string Empty = "That conversation has no messages.";
 
-    private readonly ListView _lines = new() { Width = Dim.Fill(), Height = Dim.Fill() };
+    private readonly ListView _lines = Lists.Filling();
 
     private string _written = Nothing;
 
