@@ -288,11 +288,24 @@ internal sealed class Shell : Window
             new RegionAction('b', "Open the web console in a browser", OpenConsole),
         ],
 
-        AgentsRegion => Seats is null
-            ? []
-            : Held is null
-                ? [new RegionAction('j', AgentsRegion.JoinTitle, Join)]
-                : [new RegionAction('l', "Leave your seat", LeaveSeat)],
+        AgentsRegion =>
+        [
+            new RegionAction('a', Adding.Title, Add),
+
+            // Never for a seat, whoever holds it: a person leaves a seat, they are not retired
+            // (research R7). Withdrawing refuses one reached by any other route as well.
+            .. Agents.Selected is { Seat: false } chosen
+                ? chosen.State.Contains("retired", StringComparison.Ordinal)
+                    ? [new RegionAction('i', Withdrawing.ReinstateTitle, Reinstate)]
+                    : new[] { new RegionAction('r', Withdrawing.Title, Withdraw) }
+                : Array.Empty<RegionAction>(),
+
+            .. Seats is null
+                ? Array.Empty<RegionAction>()
+                : Held is null
+                    ? [new RegionAction('j', AgentsRegion.JoinTitle, Join)]
+                    : new[] { new RegionAction('l', "Leave your seat", LeaveSeat) },
+        ],
 
         // Taking part needs a seat, because every one of these speaks as somebody. Without one the
         // region still shows a transcript; it simply has no voice to use in it.
@@ -455,6 +468,76 @@ internal sealed class Shell : Window
 
     /// <summary>What the last action said, for the person and for a test.</summary>
     internal string Said { get; private set; } = string.Empty;
+
+    /// <summary>Opens the dialog that makes a repository an agent of this project.</summary>
+    /// <returns>When the dialog is open.</returns>
+    internal Task Add() =>
+        App is { } app && Projects.Selected is { } project
+            ? Adding.OpenAsync(app, project, new Catalogue(ManifestPath), Queue, async said =>
+            {
+                Said = said;
+
+                await SelectAsync(project, _reading.Token).ConfigureAwait(false);
+            })
+            : Task.CompletedTask;
+
+    /// <summary>Opens the dialog that withdraws the selected agent.</summary>
+    /// <returns>When the dialog is open.</returns>
+    /// <remarks>
+    /// The description is read before it is shown, and both reads already exist: the registry for
+    /// what the agent is, and the waiting graph for what it owes. Asked here rather than kept from
+    /// the last draw, because a debt is exactly the fact most likely to have changed since.
+    /// </remarks>
+    internal Task Withdraw()
+    {
+        if (App is not { } app || Projects.Selected is not { } project
+            || Agents.Selected is not { } row)
+        {
+            return Task.CompletedTask;
+        }
+
+        Queue(async cancellationToken =>
+        {
+            var client = new BrokerClient(_directory.ClientFor(project));
+
+            var registry = await BrokerDirectory.ReadAsync(async () =>
+                await client.RegistryAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+
+            var waiting = await BrokerDirectory.ReadAsync(async () =>
+                await client.WaitingAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+
+            if (!registry.Reachable || !waiting.Reachable)
+            {
+                Said = registry.Problem ?? waiting.Problem!;
+
+                return;
+            }
+
+            var agent = registry.Value?.FirstOrDefault(a => a.Name.Value == row.Name);
+
+            var owed = (waiting.Value ?? [])
+                .Where(edge => edge.WaitedOn.Value == row.Name)
+                .ToList();
+
+            await Withdrawing.OpenAsync(
+                app, client, row, agent, owed, project.NodeConfig, Queue, Reported(project))
+                .ConfigureAwait(false);
+        });
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Opens the dialog that reinstates the selected agent.</summary>
+    /// <returns>When the dialog is open.</returns>
+    internal Task Reinstate() =>
+        App is { } app && Projects.Selected is { } project && Agents.Selected is { } row
+            ? Withdrawing.OfferReinstate(
+                app,
+                new BrokerClient(_directory.ClientFor(project)),
+                row,
+                Queue,
+                Reported(project))
+            : Task.CompletedTask;
 
     /// <summary>Opens the dialog that takes a seat.</summary>
     /// <returns>When the dialog has been opened.</returns>
@@ -965,6 +1048,21 @@ internal sealed class Shell : Window
 
         return null;
     }
+
+    /// <summary>Takes what a screen said and shows it, then reads the project again.</summary>
+    /// <param name="project">The project to read again.</param>
+    /// <returns>What to hand a screen that reports when it is done.</returns>
+    /// <remarks>
+    /// The re-read is the point: an agent that has just been retired must not still be drawn as
+    /// running, and the row is a rendering of the registry rather than a copy of it.
+    /// </remarks>
+    private Func<string, Task> Reported(ProjectSettings project) =>
+        async said =>
+        {
+            Said = said;
+
+            await SelectAsync(project, _reading.Token).ConfigureAwait(false);
+        };
 
     /// <summary>Takes what a screen said and shows it, then reads the projects again.</summary>
     /// <param name="said">What the command wrote.</param>

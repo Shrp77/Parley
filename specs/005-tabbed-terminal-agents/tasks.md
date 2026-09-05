@@ -338,7 +338,7 @@ and the role, the catalogue names the directory, the row appears within ten seco
 server attaches once the registry lists it `startable`; adding it again is refused and changes
 nothing (SC-003 as amended).
 
-- [ ] T045 [US3] Create `src/Parley.Cli/Top/Adding.cs`: a dialog opened by *Add an agent* on the
+- [X] T045 [US3] Create `src/Parley.Cli/Top/Adding.cs`: a dialog opened by *Add an agent* on the
       agents region. A directory field validated as typed against data-model.md's list — exists,
       holds `.git` (a worktree's file is said, not refused), `.mcp.json` mergeable, `parley` entry
       names no other project or broker, name well formed and not in the catalogue under another
@@ -347,14 +347,14 @@ nothing (SC-003 as amended).
       `EnrollmentPlan.OwnsLimit`. Then the two paths it will write, and a confirm. On confirm,
       re-read the catalogue (edge case: edited by hand), call `Enrolment.Add`, report
       `Added '<name>'.` and the two paths, and refresh the region.
-- [ ] T046 [US3] Catalogue creation (FR-010, research R8) in `src/Parley.Cli/Top/Adding.cs`: when
+- [X] T046 [US3] Catalogue creation (FR-010, research R8) in `src/Parley.Cli/Top/Adding.cs`: when
       the project's entry names no `node_config`, propose `<store name>-node.json` beside the
       store, create it with an empty `agents` object, and record it on the entry through the same
       code `parley project set --node-config` runs in `src/Parley.Cli/ProjectCommand.cs`
       (extract `SetAsync`'s write into an internal method if it is not already callable without a
       console). Say `Created <path> and recorded it on '<project>'. Its broker restarts to host
       the node from it.`
-- [ ] T047 [US3] Write `tests/Parley.Cli.Tests/Top/AddingTests.cs`: the happy path through
+- [X] T047 [US3] Write `tests/Parley.Cli.Tests/Top/AddingTests.cs`: the happy path through
       `Driving` against a repository fixture built by `RepositoryFile.cs`, asserting the
       `.mcp.json` contents (`PARLEY_AGENT`, `PARLEY_PROJECT`, `PARLEY_WORKSPACE`) and the
       catalogue entry on disk; each FR-009 refusal writes nothing (compare directory hashes before
@@ -363,11 +363,11 @@ nothing (SC-003 as amended).
       repository already enrolled elsewhere; a `.mcp.json` with a `parley` entry whose `env` is
       an array; a name that is well formed but is the person's own seat name (refused: the
       catalogue check, since the seat holds the name in the registry, and the reason says so).
-- [ ] T048 [US3] Write `tests/Parley.Cli.Tests/Top/CatalogueCreationTests.cs`: a project with no
+- [X] T048 [US3] Write `tests/Parley.Cli.Tests/Top/CatalogueCreationTests.cs`: a project with no
       `node_config` gains one at the proposed path, the manifest entry records it, the phrase is
       shown, and the serve watcher (`ManifestWatchTests`-style loopback with `serve --with-node`)
       restarts the project within two intervals and the node announces the new role.
-- [ ] T049 [US3] Write `tests/Parley.Cli.Tests/Top/StartableAfterAttachTests.cs` for SC-003's
+- [X] T049 [US3] Write `tests/Parley.Cli.Tests/Top/StartableAfterAttachTests.cs` for SC-003's
       second half: after T047's add, attach a `Parley.Mcp` server once with the written
       `.mcp.json` environment, and assert the row moves from `catalogued, not yet registered` to
       `startable` with no node restarted — which is T014 doing its job from the surface's side.
@@ -388,7 +388,7 @@ region.
 peer's roster), reinstate (active, files still gone), purge (gone from the registry); a wrong
 name at each step changes nothing (SC-004).
 
-- [ ] T050 [US4] Create `src/Parley.Cli/Top/Withdrawing.cs` — **the one file under `Top` that
+- [X] T050 [US4] Create `src/Parley.Cli/Top/Withdrawing.cs` — **the one file under `Top` that
       may call `RetireAsync`, `ReinstateAsync` or `PurgeAsync`**. *Remove* on the agents region
       opens it. Order fixed by contracts/operations.md: describe (role, workspace, adapter,
       status, presence from `DescribeRegistry`; every `Waiting` edge naming the agent `WaitedOn`)
@@ -398,20 +398,20 @@ name at each step changes nothing (SC-004).
       `That is not this agent's name. Nothing changed.` → the operation → **only if the broker
       changed something**, `Enrolment.Withdraw` → `Retired '<name>'.` or `Purged '<name>'.` with
       the broker's toll per table, then each file named as removed or already absent.
-- [ ] T051 [US4] *Reinstate* in `src/Parley.Cli/Top/Withdrawing.cs`, offered only on a row whose
+- [X] T051 [US4] *Reinstate* in `src/Parley.Cli/Top/Withdrawing.cs`, offered only on a row whose
       status is retired: describe, name typed back, `ReinstateAsync`, then `Reinstated '<name>'.
       No file was recreated: add it again for it to be startable.` (FR-015).
-- [ ] T052 [US4] A row whose adapter is `Seat.Adapter` — this person's or anybody's — is never
+- [X] T052 [US4] A row whose adapter is `Seat.Adapter` — this person's or anybody's — is never
       offered *Remove* or *Reinstate* (research R7, FR-016): the status line in
       `src/Parley.Cli/Top/AgentsRegion.cs` omits the action for such a row, and
       `src/Parley.Cli/Top/Withdrawing.cs` refuses if reached by any other route.
-- [ ] T053 [US4] Reshape `tests/Parley.Cli.Tests/Top/SurfaceTests.cs`: `RetireAsync`,
+- [X] T053 [US4] Reshape `tests/Parley.Cli.Tests/Top/SurfaceTests.cs`: `RetireAsync`,
       `ReinstateAsync` and `PurgeAsync` may appear in exactly one file under `src/Parley.Cli/Top`,
       that file is `Withdrawing.cs`, and it contains the typed-name prompt constant;
       `ForceConcludeAsync`, `InstructAsync` and `PruneAsync` remain forbidden everywhere under
       `Top`; `destroy` stays confined to `Removing.cs`. The failure message still says admitting
       one is an argument to make in `contracts/operations.md` first (FR-017, SC-007).
-- [ ] T054 [US4] Write `tests/Parley.Cli.Tests/Top/WithdrawingTests.cs` through `Driving`
+- [X] T054 [US4] Write `tests/Parley.Cli.Tests/Top/WithdrawingTests.cs` through `Driving`
       against a loopback broker: the description shows the four facts and the owed exchange;
       `Keep` is Enter; retire with the right name → registry retired, both files gone, the report
       lists them; reinstate → active, files still gone, the phrase shown; purge → gone, toll
@@ -422,12 +422,12 @@ name at each step changes nothing (SC-004).
       as "not registered" for an agent that is catalogue-only — files untouched and the refusal
       shown, which is the right answer since there is nothing to retire and `Withdraw` alone is a
       different action the surface does not offer.
-- [ ] T055 [P] [US4] Write `tests/Parley.Cli.Tests/Top/OrphaningTests.cs`: an agent that owes an
+- [X] T055 [P] [US4] Write `tests/Parley.Cli.Tests/Top/OrphaningTests.cs`: an agent that owes an
       answer, purged — the second confirmation names the asker and appears **before** the name
       prompt; declining it keeps; accepting then the right name purges and the asker's next
       `parley_inbox` shows the outcome the operator command produces today. Retiring the same
       agent shows no second confirmation and the exchange runs out on schedule.
-- [ ] T056 [P] [US4] Write `tests/Parley.Cli.Tests/Top/SeatNotOfferedTests.cs`: with a person
+- [X] T056 [P] [US4] Write `tests/Parley.Cli.Tests/Top/SeatNotOfferedTests.cs`: with a person
       seated from this terminal and another seated from a second `SeatBook` (a browser, in
       effect), neither row offers *Remove*; a real agent beside them does.
 

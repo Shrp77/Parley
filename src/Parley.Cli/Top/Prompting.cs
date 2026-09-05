@@ -167,6 +167,7 @@ internal sealed class TextDialog : Dialog
 internal sealed class ChoiceDialog : Dialog
 {
     private readonly ListView _choices;
+    private readonly string _described;
 
     internal ChoiceDialog(string title, string description, IReadOnlyList<string> choices)
     {
@@ -201,11 +202,20 @@ internal sealed class ChoiceDialog : Dialog
             Done?.Invoke(this, Chosen);
         };
 
+        _described = description;
+
         Add(said, _choices);
     }
 
     /// <summary>Raised when the person has chosen, or declined to.</summary>
     internal event EventHandler<string?>? Done;
+
+    /// <summary>What is being decided, as the dialog states it.</summary>
+    /// <remarks>
+    /// Read by tests that assert a description was given before a choice was offered, which is
+    /// most of what "behind a description" means on this surface.
+    /// </remarks>
+    internal string Described => _described;
 
     /// <summary>Whichever choice the person is on.</summary>
     internal string? Chosen =>

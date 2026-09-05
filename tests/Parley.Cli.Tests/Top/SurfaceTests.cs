@@ -44,14 +44,26 @@ public sealed class SurfaceTests
     [Fact]
     public void Destroying_a_project_happens_in_one_place_and_behind_a_typed_name()
     {
-        // The one destructive thing this surface does, by the owner's decision (CLAUDE.md): a
+        // The first destructive thing this surface did, by the owner's decision (CLAUDE.md): a
         // surface that can create a project must be able to destroy one. What the rule above
-        // asks for is a description first and a deliberate act, so this holds the word to the
-        // one file that provides both -- a second path that reached the flag would be the
-        // keystroke the rule is about -- and RemovingTests drives the typed name itself.
+        // asks for is a description first and a deliberate act, so this holds the flag to the
+        // one file that provides both -- a second path that reached it would be the keystroke the
+        // rule is about -- and RemovingTests drives the typed name itself.
+        //
+        // **The match is the flag rather than the word, and that is a correction.** It used to be
+        // a case-insensitive scan for "destroy", which was right while one file was the only place
+        // the subject came up at all. Withdrawing.cs then had to explain that it was admitted on
+        // the same terms as destroying a project, and had to print the broker's own purge toll
+        // from `PurgeOutcome.Destroyed` -- so the scan began failing on prose and on somebody
+        // else's property name. A check that cannot tell an argument from a sentence about it
+        // pushes people to write worse comments, which is the opposite of what it is for.
+        var flag = new System.Text.RegularExpressions.Regex(
+            @"\bdestroy\b",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1));
+
         var mentioning = Sources()
-            .Where(file => File.ReadAllText(file.FullName)
-                .Contains("destroy", StringComparison.OrdinalIgnoreCase))
+            .Where(file => flag.IsMatch(File.ReadAllText(file.FullName)))
             .Select(file => file.Name)
             .Order(StringComparer.Ordinal)
             .ToList();
@@ -68,6 +80,27 @@ public sealed class SurfaceTests
     [InlineData("RetireAsync")]
     [InlineData("ReinstateAsync")]
     [InlineData("PurgeAsync")]
+    public void Withdrawing_an_agent_happens_in_one_place_and_behind_a_typed_name(string operation)
+    {
+        // Admitted in 005, on the terms destroying a project was admitted on: a description first
+        // and the thing's own name typed back. What keeps that true is this -- the three
+        // operations may appear in exactly one file, and that file must contain the prompt.
+        var mentioning = Sources()
+            .Where(file => File.ReadAllText(file.FullName)
+                .Contains(operation, StringComparison.Ordinal))
+            .Select(file => file.Name)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(["Withdrawing.cs"], mentioning);
+
+        var withdrawing = File.ReadAllText(
+            Sources().Single(file => file.Name == "Withdrawing.cs").FullName);
+
+        Assert.Contains("Type the agent's name", withdrawing, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData("ForceConcludeAsync")]
     [InlineData("InstructAsync")]
     [InlineData("PruneAsync")]
