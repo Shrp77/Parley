@@ -35,7 +35,7 @@ internal static class Onboarding
     internal static readonly IReadOnlyList<string> Choices = [Plan, Scan, Apply];
 
     /// <summary>What is said after a successful apply.</summary>
-    internal const string Applied =
+    private const string Applied =
         "Applied. Each repository still has to be opened once for its adapter to attach and "
         + "register it — nothing here can do that for them.";
 

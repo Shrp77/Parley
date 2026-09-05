@@ -40,7 +40,7 @@ internal static class Safe
     /// A visible stand-in rather than nothing, so a line that contained one reads as a line that
     /// contained one. U+FFFD is what a terminal font will have.
     /// </remarks>
-    internal const char Replacement = '�';
+    private const char Replacement = '�';
 
     /// <summary>Makes text inert, so a terminal shows it rather than obeying it.</summary>
     /// <param name="text">Whatever came from a manifest, a broker, an agent or a log.</param>

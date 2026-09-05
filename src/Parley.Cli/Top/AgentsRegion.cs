@@ -57,7 +57,7 @@ internal sealed class AgentsRegion : FrameView
     internal const string Took = "Seated as ";
 
     /// <summary>What is said when the person leaves and was not seated anywhere.</summary>
-    internal const string NotSeated = "You were not seated anywhere.";
+    private const string NotSeated = "You were not seated anywhere.";
 
     /// <summary>What is said when a seat is released.</summary>
     internal const string Left = "Left. ";

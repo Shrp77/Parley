@@ -534,7 +534,7 @@ internal sealed class Shell : Window
     /// machine and no <c>xdg-open</c> on a minimal container, and both are ordinary places to run
     /// this.
     /// </remarks>
-    internal Task OpenConsole()
+    private Task OpenConsole()
     {
         Launch.Open(said => Said = said, ConsoleAddress);
 
@@ -542,16 +542,16 @@ internal sealed class Shell : Window
     }
 
     /// <summary>Where the web console listens when a broker hosts it.</summary>
-    internal const string ConsoleAddress = "http://127.0.0.1:5045";
+    private const string ConsoleAddress = "http://127.0.0.1:5045";
 
     /// <summary>What leaving a seat is called.</summary>
-    internal const string LeaveSeatTitle = "Leave your seat";
+    private const string LeaveSeatTitle = "Leave your seat";
 
     /// <summary>What following the broker's log is called.</summary>
-    internal const string FollowLogTitle = "Follow the broker log";
+    private const string FollowLogTitle = "Follow the broker log";
 
     /// <summary>What opening the web console is called.</summary>
-    internal const string OpenConsoleTitle = "Open the web console in a browser";
+    private const string OpenConsoleTitle = "Open the web console in a browser";
 
     /// <summary>What the last action said, for the person and for a test.</summary>
     internal string Said { get; private set; } = string.Empty;
@@ -900,7 +900,7 @@ internal sealed class Shell : Window
     /// that does not is a real state — the broker restarting between two calls — and a region
     /// that showed nothing because its neighbour failed would be hiding what it does know.
     /// </remarks>
-    internal async Task SelectAsync(ProjectSettings project, CancellationToken cancellationToken)
+    private async Task SelectAsync(ProjectSettings project, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(project);
 

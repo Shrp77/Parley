@@ -26,7 +26,7 @@ namespace Parley.Cli.Top;
 internal sealed class LogView : Dialog
 {
     /// <summary>What is said when no log can be found where one is expected.</summary>
-    internal const string NoLog = "No log where this project's broker usually writes one";
+    private const string NoLog = "No log where this project's broker usually writes one";
 
     /// <summary>What is said above the lines.</summary>
     internal const string Following = "Following ";

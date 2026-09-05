@@ -52,17 +52,17 @@ internal static class Participation
     internal const string AnswerTitle = "Answer something you owe";
 
     /// <summary>What is said when nothing was waiting.</summary>
-    internal const string NothingWaiting = "Nothing was waiting.";
+    private const string NothingWaiting = "Nothing was waiting.";
 
     /// <summary>What is said when a person is holding nothing.</summary>
-    internal const string HoldingNothing =
+    private const string HoldingNothing =
         "You are holding nothing. Take delivery to see what is waiting.";
 
     /// <summary>What is said beside a message that owes an answer.</summary>
     internal const string Owes = "you owe an answer";
 
     /// <summary>What is said beside one that does not.</summary>
-    internal const string OwesNothing = "nothing owed";
+    private const string OwesNothing = "nothing owed";
 
     /// <summary>Takes delivery, and says what that did.</summary>
     /// <param name="voice">The person's own agent operations.</param>
