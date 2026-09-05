@@ -48,6 +48,16 @@ public static class EnrollmentPlan
     public const int NameLimit = 32;
 
     /// <summary>
+    /// The launch variable naming the agent a repository is.
+    /// </summary>
+    /// <remarks>
+    /// A constant rather than a literal because it is now read as well as written: withdrawing
+    /// checks it before removing an entry, and a name written under one spelling and read under
+    /// another would silently make every entry look like nobody's.
+    /// </remarks>
+    public const string AgentVariable = "PARLEY_AGENT";
+
+    /// <summary>
     /// The launch variable naming the project an agent belongs to.
     /// </summary>
     /// <remarks>
@@ -338,7 +348,7 @@ public static class EnrollmentPlan
             }
         }
 
-        var env = new JsonObject { ["PARLEY_AGENT"] = entry.Agent };
+        var env = new JsonObject { [AgentVariable] = entry.Agent };
 
         if (project is not null)
         {

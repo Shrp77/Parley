@@ -110,6 +110,23 @@ internal static class Enrolment
         };
     }
 
+    /// <summary>Which agent a launch configuration's parley entry says it starts, or null.</summary>
+    /// <param name="entry">The <c>mcpServers.parley</c> node, whatever shape it is in.</param>
+    /// <returns>The name, or null when the entry names nobody.</returns>
+    /// <remarks>
+    /// Null and "somebody else" are deliberately different answers. An entry that names nobody
+    /// cannot be another agent's, because nothing identifies it as anybody's — every entry this
+    /// program writes carries the variable — so a withdrawal proceeds on one and declines on the
+    /// other. Reading the name back is the only thing here that can tell them apart: SPEC.md §16
+    /// makes the launch environment the whole of who an agent is.
+    /// </remarks>
+    internal static string? NamedBy(JsonNode? entry) =>
+        entry?["env"]?[EnrollmentPlan.AgentVariable] is JsonValue value
+        && value.TryGetValue<string>(out var name)
+        && !string.IsNullOrWhiteSpace(name)
+            ? name
+            : null;
+
     /// <summary>Takes an agent out of a catalogue.</summary>
     /// <param name="catalogue">The catalogue's <c>agents</c> object.</param>
     /// <param name="agent">The role to remove.</param>
@@ -234,7 +251,19 @@ internal static class Enrolment
             {
                 if (root["mcpServers"] is JsonObject servers)
                 {
-                    if (servers.Remove(ServerKey))
+                    var named = NamedBy(servers[ServerKey]);
+
+                    if (named is not null && !string.Equals(named, agent, StringComparison.Ordinal))
+                    {
+                        // Somebody else's. The workspace comes from the registry, which is what the
+                        // agent said about itself and may be some time old, so a repository
+                        // re-enrolled under a second name has two rows pointing at one file. Taking
+                        // this one would unhook an agent nobody named, and would report success.
+                        notes.Add(
+                            $"{launchPath}: left alone, its parley entry is '{named}' rather than "
+                            + $"'{agent}'");
+                    }
+                    else if (servers.Remove(ServerKey))
                     {
                         await File.WriteAllTextAsync(
                             launchPath,
