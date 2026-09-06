@@ -259,3 +259,38 @@ its own remark.
 All 81 tasks carry a checkbox, a sequential ID, a file path or a named document, `[P]` only where
 files are disjoint and no incomplete task is depended on, and a `[US#]` label on story-phase tasks
 and on no others.
+
+## Traceability
+
+Every numbered requirement, and where it is answered. **Added during the review gate, not before**
+— lens 3 asked which requirements nothing outside `spec.md` mentions, and thirteen of the
+twenty-four had been built without anything saying which task served them. A requirement nobody
+cites is one that gets built by accident or not at all, and neither is visible until somebody
+looks.
+
+| Requirement | Answered by |
+|---|---|
+| FR-001 archived is durable and shared | T007, T011, T024, T026 |
+| FR-002 archive and unarchive in §10.2 | T004, T030, T031 |
+| FR-003 destroy in §10.2 with §14's consequence | T004, T005 |
+| FR-004 unreachable by an agent | T013, `ArchiveBoundaryTests` |
+| FR-005 no name spans the §10.1/§10.2 boundary | T013 |
+| FR-006 a destroy leaves something answerable | T008, T035 |
+| FR-007 both surfaces, differences recorded | T075, `SurfaceAgreementTests` |
+| FR-008 the projects view summarises the highlighted one | T014, T018, T019 |
+| FR-009 standing in words, without the two phrases | T041, T042, T043 |
+| FR-010 add, retire, reinstate, purge, startup behaviour | T045, T046, T047 |
+| FR-011 an added agent is startable at once | T037–T040, T048, T049 |
+| FR-012 startup behaviour takes effect without a restart | T046 |
+| FR-013 name and last activity, sortable either way | T051, T052, T053 |
+| FR-014 the detail panel describes the highlighted one | T051, T053 |
+| FR-015 archived excluded unless asked for, and marked | T058, T053 |
+| FR-016 a message does not un-archive | T036, `ArchiveBoundaryTests` |
+| FR-017 a colour per agent, consistent | T067, `SurfaceGrowthTests` |
+| FR-018 headers distinguishable with colour stripped | T064, T065 |
+| FR-019 local on screen, UTC in the export | T062, T066 |
+| FR-020 breaks and paragraphs survive, JSON laid out | T063, T065 |
+| FR-021 nothing an agent wrote alters the screen | T070 |
+| FR-022 one keystroke opens the console on this thing | T071, T072, T074 |
+| FR-023 every destructive act keeps its door | T057, T059, `SurfaceTests` |
+| FR-024 nothing truncates | T023 |

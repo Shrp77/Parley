@@ -1,4 +1,4 @@
-using Grpc.Net.Client;
+﻿using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Top;
 using Parley.Client;
@@ -135,16 +135,32 @@ public sealed class OpeningTests : IAsyncDisposable
         await shell.RefreshAsync(ct);
         await shell.Settled;
 
-        driving.Tab();
+        // **This test passed on Windows and failed on Linux, and Windows was the wrong answer.**
+        // It was written for 005's four regions: Tab, Tab, Enter reached the conversations list.
+        // After 006 the first Tab does nothing on a one-pane view and Enter opens the project, so
+        // neither route reached a transcript -- and the assertion compared the empty state to the
+        // empty state and was satisfied. The platforms differed only in which route happened to
+        // land first; what they agreed on was that nothing was being checked.
+        //
+        // So the equivalence is still asserted, and both sides are now required to be a real
+        // transcript before they are compared.
+        driving.Enter();
+        await shell.Settled;
+
         driving.Tab();
         driving.Enter();
         await shell.Settled;
 
         var byKey = shell.Transcript.Written;
 
-        shell.Transcript.Clear();
+        Assert.Contains("about the totals", byKey, StringComparison.Ordinal);
 
-        driving.DoubleClick(shell.Conversations.List);
+        shell.Transcript.Clear();
+        Assert.DoesNotContain("about the totals", shell.Transcript.Written, StringComparison.Ordinal);
+
+        // The call both routes end in. `RegionTests` carries why the pointer itself cannot be
+        // driven to this point in this harness, and what is checked instead.
+        shell.Conversations.OpenSelected();
         await shell.Settled;
 
         Assert.Equal(byKey, shell.Transcript.Written);
