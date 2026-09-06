@@ -51,15 +51,25 @@ public sealed class SurfaceTests
         // one file that provides both -- a second path that reached it would be the keystroke the
         // rule is about -- and RemovingTests drives the typed name itself.
         //
-        // **The match is the flag rather than the word, and that is a correction.** It used to be
-        // a case-insensitive scan for "destroy", which was right while one file was the only place
-        // the subject came up at all. Withdrawing.cs then had to explain that it was admitted on
-        // the same terms as destroying a project, and had to print the broker's own purge toll
-        // from `PurgeOutcome.Destroyed` -- so the scan began failing on prose and on somebody
-        // else's property name. A check that cannot tell an argument from a sentence about it
-        // pushes people to write worse comments, which is the opposite of what it is for.
+        // **The match is the argument rather than the word, and that is the same correction twice.**
+        //
+        // It began as a case-insensitive scan for "destroy", which was right while one file was the
+        // only place the subject came up. Withdrawing.cs then had to explain that it was admitted on
+        // the same terms as destroying a project, and had to print the broker's own purge toll from
+        // `PurgeOutcome.Destroyed` -- so the scan started failing on prose and on somebody else's
+        // property name, and was narrowed to a word-boundary match.
+        //
+        // 006 walked into the same wall from the other side. TranscriptRegion.cs has to say what a
+        // destroyed conversation is, and the clearest way to say it is "tell a destroy from a store
+        // that lost something" -- a sentence *about* the subject, in a file that performs none of
+        // it. A check that cannot tell those apart pushes people to write worse comments, which is
+        // the opposite of what it is for, and its own remarks said so before it happened again.
+        //
+        // So the flag is now what actually performs one: the argument as it is written at a call
+        // site. `Apply(manifestPath, project, destroy: true, done)` is the act; every sentence about
+        // destroying something is not.
         var flag = new System.Text.RegularExpressions.Regex(
-            @"\bdestroy\b",
+            @"\bdestroy\s*:",
             System.Text.RegularExpressions.RegexOptions.CultureInvariant,
             TimeSpan.FromSeconds(1));
 
@@ -69,11 +79,10 @@ public sealed class SurfaceTests
             .Order(StringComparer.Ordinal)
             .ToList();
 
-        // Destroying.cs joins it in 006, on the same terms: 004 admitted destroying a project
-        // and 005 purging an agent, both because a surface that can create a thing must be able to
-        // remove it, and both behind a description and the thing's own name typed back. A
-        // conversation is the third subject and takes the same door.
-        Assert.Equal(["Destroying.cs", "Removing.cs"], mentioning);
+        // **Only Removing.cs, because only it passes the argument.** Destroying.cs is the third
+        // subject and takes the same door, but it calls `DestroyAsync` rather than a `destroy:`
+        // parameter -- and that operation has its own one-file rule below, checked by name.
+        Assert.Equal(["Removing.cs"], mentioning);
 
         var removing = File.ReadAllText(
             Sources().Single(file => file.Name == "Removing.cs").FullName);

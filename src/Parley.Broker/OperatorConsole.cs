@@ -359,7 +359,19 @@ public sealed class OperatorConsole
         var exchanges = await _exchanges
             .GetSnapshotsAsync(conversationId, cancellationToken).ConfigureAwait(false);
 
-        return new ConversationExport(messages, exchanges);
+        // **Asked only when there is nothing else to say.** A conversation with messages is not a
+        // destroyed one, so the extra read costs nothing on the path anybody takes often -- and
+        // the case it serves is somebody arriving with an identifier that returns nothing, which
+        // is exactly when an unexplained empty answer is worst.
+        //
+        // SPEC.md §14: an empty export cannot be told from a store that lost something, and
+        // telling those two apart is the whole reason the record is kept.
+        var destroyed = messages.Count == 0
+            ? await _conversations.GetDestroyedAsync(conversationId, cancellationToken)
+                .ConfigureAwait(false)
+            : null;
+
+        return new ConversationExport(messages, exchanges, destroyed);
     }
 
     /// <summary>Records an instruction before anybody tries to deliver it.</summary>

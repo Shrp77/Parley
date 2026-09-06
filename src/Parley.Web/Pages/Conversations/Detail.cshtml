@@ -48,6 +48,18 @@
 {
     <p class="unreachable" role="alert">@problem</p>
 }
+else if (Model.Destroyed is { } gone)
+{
+    @* A destroyed conversation and one that never existed are different answers, and an operator
+       who cannot tell them apart cannot tell a destroy from a store that lost something. *@
+    <p class="outcome">That conversation was destroyed.</p>
+    <ul>
+        @foreach (var line in Parley.Client.Rendering.Reading.Gone(gone))
+        {
+            <li>@line</li>
+        }
+    </ul>
+}
 else if (Model.Messages.Count == 0)
 {
     <p>Nothing was recorded under this identifier.</p>

@@ -2299,7 +2299,7 @@ as a console showing something no other client could see.
 |---|---|
 | `registry()` | The whole registry, including the workspace directory each agent works in. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
 | `implements()` | Which protocol version this broker speaks. First, and asked before anything else: without it a client cannot tell a broker of the wrong version from one that is switched off, and those two want different words in front of a person. |
-| `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. |
+| `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. |
 | `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, and whether it is archived. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
 | `instruct(agent, text)` | Give an agent an instruction from the operator, delivered as a turn by the machine that holds it. Returns what became of it — taken, declined, undeliverable or failed — and whatever the agent said in reply. Recorded as the operator's own, never as a peer's. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
@@ -3194,6 +3194,14 @@ exported last week is answered rather than left unable to distinguish a destroy 
 lost something — the same failure `waiting()` exists to prevent elsewhere, where an absence could
 equally be two very different things. And the identifier stays taken, so a new conversation
 cannot be opened under the name of one somebody already holds an export of.
+
+**`export` is where it is answered, and that is a decision rather than a convenience.** The record
+could have had an operation of its own; it does not, because the question it answers is one
+somebody arrives at while holding an identifier and asking for the conversation — which is
+`export`. An operator who has to already know a conversation was destroyed in order to ask about
+its destruction has not been helped. A destroyed conversation therefore returns the record and no
+messages, and the two are distinguishable from an identifier that never existed at all, which
+returns neither.
 
 As with a purge, what gets deleted is found from the schema rather than enumerated: every row
 whose foreign key names the conversation goes with it, and an operator is told per table rather

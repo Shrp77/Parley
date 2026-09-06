@@ -401,6 +401,23 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         var reply = new Wire.ExportReply();
 
+        if (exported.Destroyed is { } gone)
+        {
+            var record = new Wire.DestroyedConversation
+            {
+                ConversationId = gone.Id,
+                DestroyedUtc = gone.DestroyedUtc.ToString("O", CultureInfo.InvariantCulture),
+                Messages = gone.Messages,
+            };
+
+            foreach (var agent in gone.Participants)
+            {
+                record.Participants.Add(agent.Value);
+            }
+
+            reply.Destroyed = record;
+        }
+
         foreach (var message in exported.Messages)
         {
             reply.Messages.Add(Conversions.Out(message));

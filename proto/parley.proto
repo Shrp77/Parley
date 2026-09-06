@@ -637,6 +637,22 @@ message ExportReply {
   // next, with nothing to say which was which. Field 2 rather than a replacement, so a client
   // that knows nothing of it keeps working.
   repeated ExchangeSnapshot exchanges = 2;
+
+  // Set only when this conversation was destroyed, in which case the two above are empty.
+  // Section 14: an empty export cannot be told from a store that lost something, and telling those
+  // two apart is the whole reason the record is kept. Optional so an absent one means "no such
+  // conversation ever" rather than "destroyed, and here is nothing about it".
+  optional DestroyedConversation destroyed = 3;
+}
+
+// Facts and no content. Section 9.4 argues that a log kept past its usefulness grows the blast
+// radius of a leaked database, so nothing here can hold message text -- and there is no field to
+// put any in without the addition being obvious.
+message DestroyedConversation {
+  string conversation_id = 1;
+  string destroyed_utc = 2;
+  int32 messages = 3;
+  repeated string participants = 4;
 }
 
 message ExchangeSnapshot {

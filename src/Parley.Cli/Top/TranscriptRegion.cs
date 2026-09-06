@@ -35,6 +35,15 @@ internal sealed class TranscriptRegion : FrameView
     /// <summary>What is shown for a conversation the broker holds no messages for.</summary>
     internal const string Empty = "That conversation has no messages.";
 
+    /// <summary>What is said when the identifier names a conversation somebody destroyed.</summary>
+    /// <remarks>
+    /// Distinct from <see cref="Empty"/> on purpose, and that distinction is the whole of FR-006.
+    /// A conversation with no messages is one nothing was said in; a destroyed one is one whose
+    /// messages were taken away. Saying the first for the second leaves an operator unable to tell
+    /// a destroy from a store that lost something.
+    /// </remarks>
+    internal const string Destroyed = "That conversation was destroyed.";
+
     private readonly ListView _lines = Lists.Filling();
 
     private string _written = Nothing;
@@ -80,9 +89,12 @@ internal sealed class TranscriptRegion : FrameView
         // still arrives indented, so it cannot be mistaken for one.
         _written = Safe.Lines(
             problem
-            ?? (export is null || export.Messages.Count == 0
-                ? Empty
-                : Lay(conversationId, project, export)));
+            ?? (export?.Destroyed is { } gone
+                ? Destroyed + Environment.NewLine + Environment.NewLine
+                    + string.Join(Environment.NewLine, Reading.Gone(gone))
+                : export is null || export.Messages.Count == 0
+                    ? Empty
+                    : Lay(conversationId, project, export)));
 
         Redraw();
     }

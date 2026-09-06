@@ -905,6 +905,56 @@ public sealed class ConversationRepository(SqliteConnection connection)
         return changed > 0;
     }
 
+    /// <summary>Reads what is left of a conversation that was destroyed.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The record, or <see langword="null"/> when no such conversation was destroyed.</returns>
+    /// <remarks>
+    /// <para>
+    /// Null and a record are two different answers and both are useful: null means no conversation
+    /// of that name was ever destroyed, which -- together with an empty message list -- says the
+    /// identifier was never used at all. A record says it was, and when, and how much went.
+    /// </para>
+    /// <para>
+    /// The participants come back as one value because that is how they are stored: a row per
+    /// participant would outlive the agents it named and need a cascade of its own, for a table
+    /// nothing joins against.
+    /// </para>
+    /// </remarks>
+    public async Task<DestroyedConversation?> GetDestroyedAsync(
+        string conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        var row = await _connection.QuerySingleOrDefaultAsync<DestroyedRow>(
+            new CommandDefinition(
+                """
+                SELECT id AS Id, destroyed_utc AS DestroyedUtc, messages AS Messages,
+                       participants AS Participants
+                  FROM destroyed_conversations
+                 WHERE id = @Conversation;
+                """,
+                new { Conversation = conversationId },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        if (row is null)
+        {
+            return null;
+        }
+
+        return new DestroyedConversation(
+            row.Id,
+            ExchangeRow.ParseTimestamp(row.DestroyedUtc),
+            row.Messages,
+            [
+                .. row.Participants
+                    .Split(", ", StringSplitOptions.RemoveEmptyEntries)
+                    .Where(name => AgentName.TryCreate(name, out _))
+                    .Select(AgentName.Create)
+            ]);
+    }
+
     /// <summary>Deletes a conversation and everything belonging to it.</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="nowUtc">The current instant, recorded on the tombstone.</param>
@@ -1058,6 +1108,17 @@ public sealed class ConversationRepository(SqliteConnection connection)
         instant is null ? null : ExchangeRow.FormatTimestamp(instant.Value);
 
     /// <summary>One row of the operator listing, before its participants are read.</summary>
+    private sealed class DestroyedRow
+    {
+        public string Id { get; init; } = string.Empty;
+
+        public string DestroyedUtc { get; init; } = string.Empty;
+
+        public int Messages { get; init; }
+
+        public string Participants { get; init; } = string.Empty;
+    }
+
     private sealed class ConversationSummaryRow
     {
         public string Id { get; init; } = string.Empty;

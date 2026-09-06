@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Parley.Core;
 
 namespace Parley.Client.Rendering;
@@ -73,6 +73,38 @@ public static class Reading
     /// that look alike in two artefacts is how somebody comes to trust the wrong line.
     /// </remarks>
     public const int Indent = 4;
+
+    /// <summary>What a destroyed conversation says instead of a transcript.</summary>
+    /// <param name="destroyed">The record §14 left behind.</param>
+    /// <returns>The lines, in the order they are read.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="destroyed"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>Composed once because both surfaces have to say the same thing.</b> This is the answer to
+    /// "what happened to it", and two surfaces answering it differently would be two accounts of an
+    /// event that has no other account left — the record is the only one that will ever exist.
+    /// </para>
+    /// <para>
+    /// It names what was lost and never what was said. The record holds no content, and this must
+    /// not invent the impression of any.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<string> Gone(DestroyedConversation destroyed)
+    {
+        ArgumentNullException.ThrowIfNull(destroyed);
+
+        var participants = destroyed.Participants.Count == 0
+            ? "nobody"
+            : string.Join(", ", destroyed.Participants.Select(agent => agent.Value));
+
+        return
+        [
+            $"{destroyed.Id} was destroyed on {LocalTime.Write(destroyed.DestroyedUtc)}.",
+            $"It held {destroyed.Messages} message"
+                + $"{(destroyed.Messages == 1 ? string.Empty : "s")}, between {participants}.",
+            "Nothing of what was said was kept, and it cannot be undone.",
+        ];
+    }
 
     /// <summary>Lays out one conversation.</summary>
     /// <param name="messages">Its messages, in the order the broker recorded them.</param>

@@ -148,6 +148,14 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             new Wire.ExportRequest { ConversationId = conversationId },
             cancellationToken: cancellationToken);
 
+        var destroyed = reply.Destroyed is { } gone
+            ? new DestroyedConversation(
+                gone.ConversationId,
+                Read(gone.DestroyedUtc) ?? DateTimeOffset.MinValue,
+                gone.Messages,
+                [.. gone.Participants.Select(AgentName.Create)])
+            : null;
+
         var messages = reply.Messages.Select(m => new Message(
             m.Id,
             m.ExchangeId == 0 ? null : m.ExchangeId,
@@ -166,7 +174,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             Read(e.OpenedUtc) ?? DateTimeOffset.MinValue,
             Read(e.ClosedUtc)));
 
-        return new ConversationExport([.. messages], [.. exchanges]);
+        return new ConversationExport([.. messages], [.. exchanges], destroyed);
     }
 
     /// <inheritdoc/>

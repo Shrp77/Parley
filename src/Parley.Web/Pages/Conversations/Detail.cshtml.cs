@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Parley.Core;
 using Parley.Client.Rendering;
@@ -31,6 +31,14 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
 
     /// <summary>The messages, in the order the broker recorded them.</summary>
     public IReadOnlyList<Message> Messages { get; private set; } = [];
+
+    /// <summary>What is left of it, when an operator destroyed it.</summary>
+    /// <remarks>
+    /// Null for every conversation that still exists, and for an identifier that never named one.
+    /// A destroyed conversation and one that never existed are different answers, and an operator
+    /// who cannot tell them apart cannot tell a destroy from a store that lost something.
+    /// </remarks>
+    public DestroyedConversation? Destroyed { get; private set; }
 
     /// <summary>Everyone party to any exchange in it.</summary>
     public IReadOnlyList<AgentName> Participants { get; private set; } = [];
@@ -429,6 +437,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
             .ConfigureAwait(false);
 
         Messages = read.Value?.Messages ?? [];
+        Destroyed = read.Value?.Destroyed;
         Participants = Visibility.Participants(Messages);
         Exchanges = Snapshots(read.Value?.Exchanges ?? []);
         Problem = read.Problem;
