@@ -308,8 +308,8 @@ Run on the final tree, after the last edit.
 
 | Platform | Passes | Tests | Failures |
 |---|---|---|---|
-| Windows | 3 | 2,237 | 0 |
-| Linux (podman, `mcr.microsoft.com/dotnet/sdk:10.0`) | 3 | 2,237 | 0 |
+| Windows | 3 | 2,303 | 0 |
+| Linux (podman, `mcr.microsoft.com/dotnet/sdk:10.0`) | 3 | 2,303 | 0 |
 
 Debug and Release both build clean on Windows.
 
@@ -317,3 +317,6 @@ Debug and Release both build clean on Windows.
 failure per pass and Windows showed none — `OpeningTests.The_key_and_the_pointer_reach_the_same_transcript`,
 which after the rearrangement was comparing the empty transcript to the empty transcript. Windows
 passed it and Windows was wrong. `REVIEW-LEDGER.md` carries it.
+
+Re-run after T035 and its gate, on the final tree. The earlier figure was 2,237 before the second
+gate's nine probes were written.
