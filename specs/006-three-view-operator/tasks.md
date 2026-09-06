@@ -143,12 +143,12 @@ conversation view.
 - [X] T051 [US4] Add `src/Parley.Client/Views/ConversationsView.cs` deriving the list — name, last activity — and the detail panel — participants, message count, open, archived — from `conversations()`, which already returns all of it (`research.md` R6).
 - [X] T052 [US4] Add sorting by name and by date to that derivation, with the highlight expressed as the conversation's identifier so a sort cannot move it.
 - [X] T053 [P] [US4] Add `tests/Parley.Client.Tests/Views/ConversationsViewTests.cs`: both sorts, the highlight preserved across each, archived excluded by default, archived included and marked, and the archived count present in both.
-- [ ] T054 [US4] Add the conversations half to the project view in `src/Parley.Cli/Top/ConversationsRegion.cs`, with the detail panel beside the list.
-- [ ] T055 [US4] Add the same to `src/Parley.Web/Pages/Conversations/Index.cshtml`.
-- [ ] T056 [US4] Add archive and unarchive actions to both surfaces. No typed name: nothing is destroyed and one keystroke reverses it.
-- [ ] T057 [US4] Add the destroy action to both surfaces behind the full door — participants and count named, an open exchange's waiting asker named and accepted first, the identifier typed back — and add `DestroyAsync` to `SurfaceTests`' one-file rule.
-- [ ] T058 [US4] Add *Start a new conversation* and the *show archived* toggle, the toggle as session view state and not stored on the broker.
-- [ ] T059 [P] [US4] Add `tests/Parley.Cli.Tests/Top/DestroyDoorTests.cs` probing the door: the wrong identifier destroys nothing; declining the asker's outcome stops before the name is asked; the description names every participant.
+- [X] T054 [US4] Add the conversations half to the project view in `src/Parley.Cli/Top/ConversationsRegion.cs`, with the detail panel beside the list.
+- [X] T055 [US4] Add the same to `src/Parley.Web/Pages/Conversations/Index.cshtml`.
+- [X] T056 [US4] Add archive and unarchive actions to both surfaces. No typed name: nothing is destroyed and one keystroke reverses it.
+- [X] T057 [US4] Add the destroy action to both surfaces behind the full door — participants and count named, an open exchange's waiting asker named and accepted first, the identifier typed back — and add `DestroyAsync` to `SurfaceTests`' one-file rule.
+- [X] T058 [US4] Add *Start a new conversation* and the *show archived* toggle, the toggle as session view state and not stored on the broker.
+- [X] T059 [P] [US4] Add `tests/Parley.Cli.Tests/Top/DestroyDoorTests.cs` probing the door: the wrong identifier destroys nothing; declining the asker's outcome stops before the name is asked; the description names every participant.
 - [ ] T060 [P] [US4] Add the equivalent page test in `tests/Parley.Web.Tests/DestroyDoorTests.cs`.
 - [ ] T061 [P] [US4] Add a probe that an archived conversation which then receives a message is still archived and is marked as having had activity — R4 as a test.
 

@@ -1,4 +1,4 @@
-using Xunit;
+﻿using Xunit;
 
 namespace Parley.Cli.Tests.Top;
 
@@ -36,6 +36,7 @@ public sealed class SurfaceTests
         "RetireAsync",
         "ReinstateAsync",
         "PurgeAsync",
+        "DestroyAsync",
         "ForceConcludeAsync",
         "InstructAsync",
         "PruneAsync",
@@ -68,7 +69,11 @@ public sealed class SurfaceTests
             .Order(StringComparer.Ordinal)
             .ToList();
 
-        Assert.Equal(["Removing.cs"], mentioning);
+        // Destroying.cs joins it in 006, on the same terms: 004 admitted destroying a project
+        // and 005 purging an agent, both because a surface that can create a thing must be able to
+        // remove it, and both behind a description and the thing's own name typed back. A
+        // conversation is the third subject and takes the same door.
+        Assert.Equal(["Destroying.cs", "Removing.cs"], mentioning);
 
         var removing = File.ReadAllText(
             Sources().Single(file => file.Name == "Removing.cs").FullName);
@@ -98,6 +103,32 @@ public sealed class SurfaceTests
             Sources().Single(file => file.Name == "Withdrawing.cs").FullName);
 
         Assert.Contains("Type the agent's name", withdrawing, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Destroying_a_conversation_happens_in_one_place_and_behind_a_typed_name()
+    {
+        // The same rule as withdrawing an agent, on a third subject. SPEC.md §14 argues that a
+        // deletion happens inside the system or it happens in a SQL client with no ordering and no
+        // report; the surface's half of that is that nobody reaches it by accident.
+        var mentioning = Sources()
+            .Where(file => File.ReadAllText(file.FullName)
+                .Contains("DestroyAsync", StringComparison.Ordinal))
+            .Select(file => file.Name)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(["Destroying.cs"], mentioning);
+
+        var destroying = File.ReadAllText(
+            Sources().Single(file => file.Name == "Destroying.cs").FullName);
+
+        Assert.Contains("Type the conversation's identifier", destroying, StringComparison.Ordinal);
+
+        // And the waiting asker is named before the identifier is asked for, which is the part an
+        // operator is least likely to predict: an open exchange in a destroyed conversation does
+        // not orphan and is not ghosted, so whoever is waiting is never told anything at all.
+        Assert.Contains("never told anything at all", destroying, StringComparison.Ordinal);
     }
 
     [Theory]

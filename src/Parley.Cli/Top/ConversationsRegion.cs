@@ -1,4 +1,5 @@
-using System.Globalization;
+﻿using System.Globalization;
+using Parley.Client.Views;
 using Parley.Core;
 using Terminal.Gui.Views;
 
@@ -76,17 +77,35 @@ internal sealed class ConversationsRegion : FrameView
     /// <summary>Draws a project's conversations.</summary>
     /// <param name="conversations">What the broker said, or null when it could not be asked.</param>
     /// <param name="problem">Why the broker could not be asked, or null when it could.</param>
-    internal void Show(IReadOnlyList<ConversationSummary>? conversations, string? problem)
+    /// <param name="archivedOmitted">How many archived conversations were left out.</param>
+    /// <param name="showingArchived">Whether the archived ones were asked for.</param>
+    internal void Show(
+        IReadOnlyList<ConversationSummary>? conversations,
+        string? problem,
+        int archivedOmitted = 0,
+        bool showingArchived = false)
     {
         var keep = Selected?.Id;
 
         _conversations = problem is null ? [.. conversations ?? []] : [];
 
+        // **Said whenever anything is hidden, and that is what makes the archived state safe.**
+        // Archiving does not stop a conversation receiving messages, and a message does not
+        // un-archive it, so without this line a busy conversation somebody filed away last month is
+        // invisible with nothing saying so.
+        var hidden = ConversationsView.Hidden(archivedOmitted, showingArchived);
+
         var lines = problem is not null
             ? [Safe.Text(problem)]
             : _conversations.Count == 0
-                ? new List<string> { Nothing }
+                ? new List<string> { archivedOmitted > 0 ? ConversationsView.AllArchived : Nothing }
                 : [.. _conversations.Select(Line)];
+
+        if (hidden.Length > 0 && problem is null)
+        {
+            lines.Add(string.Empty);
+            lines.Add(hidden);
+        }
 
         _list.SetSource(new System.Collections.ObjectModel.ObservableCollection<string>(lines));
 

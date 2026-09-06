@@ -81,6 +81,16 @@ internal sealed class Shell : Window
     private bool _stacked;
     private bool _closed;
     private ViewPlace _place = ViewPlace.Top;
+
+    /// <summary>How the conversations list is ordered, and whether archived ones are in it.</summary>
+    /// <remarks>
+    /// View state, remembered for the session and never sent to the broker. It is a preference
+    /// about looking rather than a fact about the deployment, so two people reading the same
+    /// project may sort it differently without arguing.
+    /// </remarks>
+    private SortBy _sort = SortBy.Activity;
+    private bool _showArchived;
+    private int _archivedOmitted;
     private readonly Lock _chain = new();
     private Task _work = Task.CompletedTask;
     private DateTimeOffset _touched = DateTimeOffset.UtcNow;
@@ -120,9 +130,7 @@ internal sealed class Shell : Window
             // conversation is opened from inside a project, and the list that chose that project
             // was taken off the screen to make room for it. Reading the list here made this depend
             // on a region nobody is looking at.
-            var project = _place.Project is { } named
-                ? _directory.Find(named.Value)
-                : Projects.Selected;
+            var project = Current;
 
             if (project is null)
             {
@@ -501,6 +509,24 @@ internal sealed class Shell : Window
                     : new[] { new RegionAction('l', LeaveSeatTitle, LeaveSeat) },
         ],
 
+        // The conversations half of a project view. Sorting and the archived toggle are view
+        // state; archiving is reversible and asks nothing; destroying is behind the full door.
+        ConversationsRegion =>
+        [
+            new RegionAction('s', SortTitle, SortConversations),
+            new RegionAction('v', _showArchived ? HideArchivedTitle : ShowArchivedTitle, ToggleArchived),
+
+            .. Conversations.Selected is { } chosen
+                ? new[]
+                {
+                    new RegionAction('h', chosen.Archived ? UnarchiveTitle : ArchiveTitle, ArchiveSelected),
+                    new RegionAction('d', Destroying.Title, DestroySelected),
+                }
+                : Array.Empty<RegionAction>(),
+
+            new RegionAction('b', OpenConsoleTitle, OpenConsole),
+        ],
+
         // Taking part needs a seat, because every one of these speaks as somebody. Without one the
         // region still shows a transcript; it simply has no voice to use in it.
         TranscriptRegion when Held is not null =>
@@ -747,6 +773,21 @@ internal sealed class Shell : Window
 
     /// <summary>What opening the web console is called.</summary>
     private const string OpenConsoleTitle = "Open the web console in a browser";
+
+    /// <summary>What changing the order is called.</summary>
+    internal const string SortTitle = "Sort by name or by activity";
+
+    /// <summary>What filing a conversation away is called.</summary>
+    internal const string ArchiveTitle = "Archive this conversation";
+
+    /// <summary>What bringing one back is called.</summary>
+    internal const string UnarchiveTitle = "Put this conversation back in the list";
+
+    /// <summary>What revealing the archived ones is called.</summary>
+    internal const string ShowArchivedTitle = "Show archived conversations";
+
+    /// <summary>What hiding them again is called.</summary>
+    internal const string HideArchivedTitle = "Hide archived conversations";
 
     /// <summary>What the last action said, for the person and for a test.</summary>
     internal string Said { get; private set; } = string.Empty;
@@ -1158,12 +1199,142 @@ internal sealed class Shell : Window
             await client.RegistryAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
 
         var conversations = await BrokerDirectory.ReadAsync(async () =>
-            await client.ConversationsAsync(cancellationToken: cancellationToken).ConfigureAwait(false))
+            await client.ConversationsAsync(
+                includeArchived: _showArchived, cancellationToken: cancellationToken)
+                .ConfigureAwait(false))
             .ConfigureAwait(false);
 
+        // Kept even when the read failed, so the count on screen is not quietly reset to zero by a
+        // broker that stopped answering: a surface saying "no archived conversations" because it
+        // could not ask is saying something it does not know.
+        if (conversations.Value is { } page)
+        {
+            _archivedOmitted = page.ArchivedOmitted;
+        }
+
         Agents.Show(registry.Value, Catalogue(project), registry.Problem);
-        Conversations.Show(conversations.Value?.Items, conversations.Problem);
+        Conversations.Show(
+            Ordered(conversations.Value?.Items), conversations.Problem, _archivedOmitted, _showArchived);
         Transcript.Clear();
+    }
+
+    /// <summary>Puts a page of conversations in the order the person asked for.</summary>
+    /// <param name="page">What the broker returned, or null when it could not be asked.</param>
+    /// <returns>The conversations, ordered.</returns>
+    /// <remarks>
+    /// Sorted here rather than by the broker, because it is a preference about looking. Asking the
+    /// broker to re-page in a different order every time somebody pressed a key would make a view
+    /// preference cost a round trip and, worse, make two orderings two different pages.
+    /// </remarks>
+    private IReadOnlyList<ConversationSummary>? Ordered(IReadOnlyList<ConversationSummary>? page)
+    {
+        if (page is null)
+        {
+            return null;
+        }
+
+        var rows = ConversationsView.Sorted(ConversationsView.Rows(page), _sort);
+
+        return [.. rows.Select(row => page.First(c => c.Id == row.Id))];
+    }
+
+    /// <summary>Changes how the conversations are ordered, and redraws.</summary>
+    /// <returns>When the list has been redrawn.</returns>
+    private Task SortConversations()
+    {
+        _sort = _sort == SortBy.Activity ? SortBy.Name : SortBy.Activity;
+        Said = _sort == SortBy.Name ? "Sorted by name." : "Sorted by most recent activity.";
+
+        Queue(token => Current is { } project ? SelectAsync(project, token) : Task.CompletedTask);
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Shows or hides the archived conversations, and redraws.</summary>
+    /// <returns>When the list has been redrawn.</returns>
+    private Task ToggleArchived()
+    {
+        _showArchived = !_showArchived;
+        Said = _showArchived ? "Showing archived conversations." : "Hiding archived conversations.";
+
+        Queue(token => Current is { } project ? SelectAsync(project, token) : Task.CompletedTask);
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>The project the current view is about.</summary>
+    /// <remarks>
+    /// <b>The view's project, falling back to the list's selection.</b> They are the same until the
+    /// projects list is off screen, which is exactly when every action inside a project runs -- so
+    /// reading the list made those actions depend on a region nobody is looking at, and on a
+    /// region that may never have been filled at all.
+    /// </remarks>
+    private ProjectSettings? Current =>
+        _place.Project is { } named ? _directory.Find(named.Value) : Projects.Selected;
+
+    /// <summary>Files the selected conversation away, or brings it back.</summary>
+    /// <returns>When the change has been asked for.</returns>
+    /// <remarks>
+    /// <b>No typed name, and that is the line 004 drew rather than an oversight.</b> Nothing is
+    /// destroyed and one keystroke reverses it, so a door built for a purge would be a door in
+    /// front of a light switch.
+    /// </remarks>
+    private Task ArchiveSelected()
+    {
+        if (Conversations.Selected is not { } conversation || Current is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        var archived = conversation.Archived;
+
+        Queue(async token =>
+        {
+            var client = new BrokerClient(_directory.ClientFor(project));
+
+            var changed = await BrokerDirectory.ReadAsync(async () => archived
+                ? await client.UnarchiveAsync(conversation.Id, token).ConfigureAwait(false)
+                : await client.ArchiveAsync(conversation.Id, token).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            Said = !changed.Reachable
+                ? changed.Problem!
+                : changed.Value
+                    ? archived
+                        ? $"{Safe.Text(conversation.Id)} is back in the list."
+                        : $"{Safe.Text(conversation.Id)} is archived."
+                    : "Nothing changed.";
+
+            await SelectAsync(project, token).ConfigureAwait(false);
+        });
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Opens the dialog that destroys the selected conversation.</summary>
+    /// <returns>When the dialog is open.</returns>
+    internal Task DestroyConversation() => DestroySelected();
+
+    /// <summary>Opens the dialog that destroys the selected conversation.</summary>
+    /// <returns>When the dialog is open.</returns>
+    private Task DestroySelected()
+    {
+        if (App is not { } app
+            || Conversations.Selected is not { } conversation
+            || Current is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        var row = ConversationsView.Rows([conversation])[0];
+        var client = new BrokerClient(_directory.ClientFor(project));
+
+        return Destroying.OpenAsync(app, client, row, Queue, async said =>
+        {
+            Said = said;
+
+            await SelectAsync(project, _reading.Token).ConfigureAwait(false);
+        });
     }
 
     /// <summary>Reads one conversation and draws it.</summary>
