@@ -92,6 +92,22 @@ internal sealed class Shell : Window
     private bool _showArchived;
     private int _archivedOmitted;
     private readonly Lock _chain = new();
+
+    /// <summary>Guards the view tree, which two threads can reach.</summary>
+    /// <remarks>
+    /// <b>Not the same lock as the work chain, and not paranoia.</b> A change of view is reachable
+    /// from two places: <c>OnKeyDown</c>, on the loop, and the queued handler that opens a
+    /// conversation, on a pool thread. Both call <see cref="Arrange"/>, which adds and removes
+    /// subviews -- and Terminal.Gui's subview list is an ordinary list. Two of them at once throws
+    /// out of <c>List.CopyTo</c> with a message about array bounds, which is what a probe of
+    /// sixty-four concurrent navigations produced.
+    /// <para>
+    /// Separate from <see cref="_chain"/> because that one is held while building the next link of
+    /// the work chain, and a single lock covering both would have a queued item waiting on the
+    /// loop while the loop waited on the queue.
+    /// </para>
+    /// </remarks>
+    private readonly Lock _screen = new();
     private Task _work = Task.CompletedTask;
     private DateTimeOffset _touched = DateTimeOffset.UtcNow;
 
@@ -284,6 +300,15 @@ internal sealed class Shell : Window
     /// <summary>Puts the current view's panes on screen and takes the others off.</summary>
     private void Arrange()
     {
+        lock (_screen)
+        {
+            ArrangeLocked();
+        }
+    }
+
+    /// <summary>Arranges, with the screen already held.</summary>
+    private void ArrangeLocked()
+    {
         var stacked = _stacked;
 
         foreach (var region in _regions)
@@ -354,6 +379,16 @@ internal sealed class Shell : Window
     /// <summary>Moves focus to a region and says so.</summary>
     /// <param name="at">Which region, counted from the projects.</param>
     internal void Focus(int at)
+    {
+        lock (_screen)
+        {
+            FocusLocked(at);
+        }
+    }
+
+    /// <summary>Moves focus, with the screen already held.</summary>
+    /// <param name="at">Which pane.</param>
+    private void FocusLocked(int at)
     {
         var panes = Panes;
 
@@ -448,7 +483,11 @@ internal sealed class Shell : Window
     /// </remarks>
     internal Task GoAsync(ViewPlace place)
     {
-        _place = place;
+        lock (_screen)
+        {
+            _place = place;
+        }
+
         Touched();
 
         // Relaid unconditionally: the panes have changed even though the width has not, so Lay's
