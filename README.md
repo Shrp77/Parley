@@ -209,6 +209,12 @@ for people. `--console <url>` moves it and `--no-console` leaves it out. If the 
 already taken the broker says so and carries on serving: a web page that cannot bind must never
 cost you a deployment.
 
+**`parley top` is the same deployment without a browser**, and the broker names both when it
+starts. The machine running a broker is frequently not the machine you have a browser open on —
+a server you are in over SSH, a box in a cupboard — and on those the console's address is an
+instruction you cannot follow. Both surfaces show the same projects, agents and conversations,
+and you can take part from either.
+
 **More than one deployment on one machine.** Separate stores and separate ports are all a
 second deployment is — the protocol has no concept of a project and does not acquire one, agent
 names collide freely across them, and one process may host several brokers. What that used to

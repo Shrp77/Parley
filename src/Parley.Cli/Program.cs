@@ -572,12 +572,28 @@ if (verb == "serve" && rest.Length == 0)
                 // process's own warnings already comes out mangled on a console whose code page
                 // nobody chose, and a banner that renders as question marks is worse than a plain
                 // one.
-                var rule = new string('-', consoleAt.Length + 12);
+                // Both surfaces, because this block used to name one. A person reading it is at a
+                // terminal on the machine that runs the broker, and that is frequently not a
+                // machine with a browser on it at all -- which is the whole reason `parley top`
+                // exists. Naming only the console here made the terminal surface something you
+                // found in --help after deciding the deployment had no way in.
+                var body =
+                    $"   Console:  {consoleAt}{Environment.NewLine}"
+                    + $"   Open that one in a browser.{Environment.NewLine}"
+                    + Environment.NewLine
+                    + $"   Terminal: parley top{Environment.NewLine}"
+                    + "   The same deployment, from here, and no browser needed.";
+
+                // Sized to the widest line between the rules. It was the address plus twelve,
+                // which was right for as long as the address was the widest thing here and wrong
+                // the moment anything else was -- a rule shorter than what it rules is how a
+                // deliberately set-apart block starts looking like a mistake.
+                var rule = new string(
+                    '-', body.Split(Environment.NewLine).Max(line => line.Length));
 
                 await reporting.WriteLineAsync(
                     $"{Environment.NewLine}  {rule}{Environment.NewLine}"
-                    + $"   Console:  {consoleAt}{Environment.NewLine}"
-                    + $"   Open that one in a browser.{Environment.NewLine}"
+                    + $"{body}{Environment.NewLine}"
                     + $"  {rule}{Environment.NewLine}").ConfigureAwait(false);
 
                 // The address the broker actually bound, not the one it was asked for: --listen
