@@ -76,6 +76,22 @@ public static class ConsoleHost
         builder.Logging.ClearProviders();
         builder.Logging.AddSimpleConsole();
 
+        // Quiet by default, which is what ParleyServer has always done and this never did. That
+        // asymmetry stopped being invisible when `serve --with-console` put both in one process
+        // writing one `--log`: every page render left three lines about an implicit handler
+        // method, and a broker's log became a place you search rather than read.
+        //
+        // Nothing diagnostic is lost. A page that throws logs at Error, a bind that fails logs at
+        // Error, and the two commands that start this each print the address themselves — so the
+        // Information tier here was Kestrel repeating what had just been said, plus a per-request
+        // narration of routing.
+        //
+        // Raisable rather than final: the host binds `Logging` from configuration, so
+        // `Logging__LogLevel__Default=Information` in the environment restores every line above.
+        // This is a floor and not a ceiling, because the one time somebody wants that narration is
+        // the time they cannot rebuild to get it.
+        builder.Logging.SetMinimumLevel(LogLevel.Warning);
+
         var chosen = address
             ?? builder.Configuration["urls"]
             ?? builder.Configuration["ASPNETCORE_URLS"];
