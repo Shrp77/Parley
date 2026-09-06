@@ -1,3 +1,4 @@
+﻿using Parley.Client;
 using Parley.Core;
 using Terminal.Gui.App;
 
@@ -114,7 +115,20 @@ internal static class Adding
         $"{Enrolment.LaunchPath(workspace)}{Environment.NewLine}"
         + $"    a parley server naming this repository, and the project '{project}'"
         + $"{Environment.NewLine}{catalogueFile}{Environment.NewLine}"
-        + "    a line saying this machine may start it when a question arrives for it";
+        + $"    a line saying this machine may start it when a question arrives for it"
+        + $"{Environment.NewLine}{Environment.NewLine}{Starts}";
+
+    /// <summary>What is said about the process this is about to start.</summary>
+    /// <remarks>
+    /// <b>Named because it happens, not because it is dangerous.</b> Adding an agent now launches
+    /// it once so that it registers itself, which is what makes it startable without somebody
+    /// going and opening the repository by hand. That is a process appearing on the operator's
+    /// machine, and a surface that starts one without saying so is a surface doing something its
+    /// description did not cover.
+    /// </remarks>
+    internal const string Starts =
+        "Then it is started once, so that it registers itself and can be started again later. "
+        + "That runs the repository's own server on this machine.";
 
     /// <summary>
     /// Opens the dialog that adds an agent, and writes the two files when it is confirmed.
@@ -124,6 +138,9 @@ internal static class Adding
     /// <param name="catalogue">
     /// The project's catalogue, and a way to create one when it names none.
     /// </param>
+    /// <param name="start">
+    /// Asks the broker to launch the agent once it is written, or null when there is none to ask.
+    /// </param>
     /// <param name="queue">Runs the writes, so the caller can wait for them.</param>
     /// <param name="done">Told what to say when it is over.</param>
     /// <returns>When the first dialog is open.</returns>
@@ -131,6 +148,7 @@ internal static class Adding
         IApplication app,
         ProjectSettings project,
         Catalogue catalogue,
+        Func<AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done)
     {
@@ -164,7 +182,7 @@ internal static class Adding
                 return;
             }
 
-            Confirm(app, project, catalogue, values, queue, done);
+            Confirm(app, project, catalogue, values, start, queue, done);
         };
 
         return Task.CompletedTask;
@@ -176,6 +194,7 @@ internal static class Adding
         ProjectSettings project,
         Catalogue catalogue,
         IReadOnlyList<string> values,
+        Func<AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done)
     {
@@ -207,9 +226,51 @@ internal static class Adding
                 return;
             }
 
-            queue(token2 => WriteAsync(project, catalogue, workspace, role, values[2].Trim(), token2, done));
+            queue(token2 => WriteAsync(
+                project, catalogue, workspace, role, values[2].Trim(), start, token2, done));
         };
     }
+
+    /// <summary>Asks the broker to start the agent that was just added.</summary>
+    /// <param name="start">Asks the broker, or null when there is none to ask.</param>
+    /// <param name="role">The role that was added.</param>
+    /// <param name="project">The project it joined.</param>
+    /// <param name="cancellationToken">Stops the call.</param>
+    /// <returns>What to say about it.</returns>
+    /// <remarks>
+    /// <b>A failure here is reported and never thrown.</b> The two files are already written and
+    /// the agent is already catalogued, so a broker that did not answer leaves an agent somebody
+    /// can still start later -- exactly the state 005 shipped. Losing the whole enrolment because
+    /// the last of three steps could not be taken would be the worse outcome.
+    /// </remarks>
+    private static async Task<string> StartAsync(
+        Func<AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
+        string role,
+        ProjectSettings project,
+        CancellationToken cancellationToken)
+    {
+        if (start is null || !AgentName.TryCreate($"{role}@{MachineName.Current}", out var agent))
+        {
+            return NotStarted;
+        }
+
+        var asked = await start(agent, cancellationToken).ConfigureAwait(false);
+
+        return !asked.Reachable
+            ? $"{asked.Problem} {NotStarted}"
+            : asked.Value
+                ? $"Started '{role}'. It registers itself as it attaches."
+                : NotStarted;
+    }
+
+    /// <summary>What is said when the start did not happen.</summary>
+    /// <remarks>
+    /// The honest fallback rather than a failure: the agent is catalogued, so the next question
+    /// addressed to it starts it, and opening its repository starts it too.
+    /// </remarks>
+    internal const string NotStarted =
+        "It was not started now; the next question for it will start it, and so will opening its "
+        + "repository.";
 
     /// <summary>Writes the two files, creating the catalogue first when there is none.</summary>
     private static async Task WriteAsync(
@@ -218,6 +279,7 @@ internal static class Adding
         string workspace,
         string role,
         string owns,
+        Func<AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
         CancellationToken cancellationToken,
         Func<string, Task> done)
     {
@@ -243,9 +305,17 @@ internal static class Adding
             said.Add($"{Added}'{role}'.");
             said.AddRange(outcome.Notes);
             said.AddRange(outcome.Written.Select(path => $"wrote {path}"));
-            said.Add(
-                $"It will read as '{AgentsRegion.CataloguedOnly}' until its own server attaches "
-                + "once and registers it. Nothing here can do that for it.");
+
+            // **The step 005 said could not be taken.** Its planning was right that a surface must
+            // not write a registration on a repository's behalf -- §12.3 forbids it and §16 makes
+            // that the whole trust model -- and wrong that this left nothing to do. §12.3's own
+            // closing paragraph routes spawn-on-demand through the manifest, which is what the
+            // catalogue entry just written is, so the broker can be asked to launch the role and
+            // the launched adapter registers itself under the identity its launch fixes.
+            //
+            // Nothing here claims to be anybody. The start is a request; the registration is the
+            // agent's own act.
+            said.Add(await StartAsync(start, role, project, cancellationToken).ConfigureAwait(false));
         }
         catch (Exception failure) when (failure is InvalidDataException
                                                or IOException

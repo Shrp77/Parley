@@ -796,7 +796,16 @@ internal sealed class Shell : Window
     /// <returns>When the dialog is open.</returns>
     internal Task Add() =>
         App is { } app && Projects.Selected is { } project
-            ? Adding.OpenAsync(app, project, new Catalogue(ManifestPath), Queue, async said =>
+            ? Adding.OpenAsync(
+                app,
+                project,
+                new Catalogue(ManifestPath),
+                async (agent, token) => await BrokerDirectory.ReadAsync(async () =>
+                    await new BrokerClient(_directory.ClientFor(project))
+                        .StartAsync(agent, "it was just added", token).ConfigureAwait(false))
+                    .ConfigureAwait(false),
+                Queue,
+                async said =>
             {
                 Said = said;
 

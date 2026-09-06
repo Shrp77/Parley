@@ -1,6 +1,7 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Top;
+using Parley.Client.Views;
 using Parley.Client;
 using Parley.Configuration;
 using Parley.Core;
@@ -91,19 +92,68 @@ public sealed class AddingTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task The_added_agent_appears_as_catalogued_but_not_registered()
+    public async Task The_added_agent_is_one_this_machine_can_start()
     {
-        // SC-003 as amended. It cannot say `startable`: §14 defines that for an agent the registry
-        // holds, and nothing here may register on a repository's behalf.
+        // **This reverses 005's amendment and the reasoning behind it is worth keeping.** 005
+        // recorded that an added agent could not be promised as `startable`, because §14 defines
+        // that for an agent the registry holds and nothing here may register on a repository's
+        // behalf. Both halves of that are still true. What 005 missed is that §12.3's closing
+        // paragraph routes spawn-on-demand through the manifest rather than through
+        // self-registration -- so the agent is startable because the catalogue names it, and the
+        // registration remains the agent's own act when it attaches.
+        //
+        // What is asserted is the fact, not the mechanism: the row says this machine can start it,
+        // and it does not say either of the two phrases the owner could not read.
         using var driving = Driving.Open();
         using var shell = await OpenAsync(driving, catalogued: true);
 
         await AddAsync(driving, shell, Workspace, "orders");
 
-        var row = Assert.Single(shell.Agents.Rows, r => r.Name == "orders");
+        var standing = Assert.Single(shell.Agents.Standings, r => r.Name == "orders");
 
-        Assert.Equal(AgentsRegion.CataloguedOnly, row.State);
-        Assert.Contains(AgentsRegion.CataloguedOnly, shell.Said, StringComparison.Ordinal);
+        Assert.True(standing.StartableHere);
+        Assert.Equal(Standing.NeverRun, standing.Standing);
+        Assert.DoesNotContain(
+            AgentsRegion.CataloguedOnly, standing.Standing, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Adding_says_it_is_about_to_start_a_process_before_it_does()
+    {
+        // A process appearing on the operator's machine is not something a surface may do without
+        // its description covering it. The two files were always named; the start is the third
+        // thing and is named beside them.
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving, catalogued: true);
+
+        await shell.Add();
+
+        var form = (FormDialog)driving.Find(Adding.Title);
+
+        form.Fill(0, Workspace);
+        form.Fill(1, "orders");
+        form.Finish(taken: true);
+
+        Assert.Contains(Adding.Starts, driving.Text(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_broker_that_cannot_be_asked_still_leaves_a_startable_agent()
+    {
+        // The files are written before the start is asked for, so a broker that did not answer
+        // leaves exactly the state 005 shipped -- catalogued, and started by the next question for
+        // it. Losing the whole enrolment because the last of three steps failed would be worse.
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving, catalogued: true);
+
+        await AddAsync(driving, shell, Workspace, "orders");
+
+        // The fixture's broker is not listening, which is what makes this the unreachable case.
+        Assert.Contains(Adding.NotStarted, shell.Said, StringComparison.Ordinal);
+
+        var standing = Assert.Single(shell.Agents.Standings, r => r.Name == "orders");
+
+        Assert.True(standing.StartableHere);
     }
 
     [Fact]

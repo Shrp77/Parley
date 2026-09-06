@@ -123,9 +123,9 @@ catalogue and the running node both reflect it.
 - [ ] T044 [US3] Add the same to `src/Parley.Web/Pages/Projects/Agents.cshtml`.
 - [ ] T045 [US3] Move retire, reinstate and purge onto the project view unchanged, with their tests unedited, and confirm `SurfaceTests`' one-file rule still holds.
 - [ ] T046 [US3] Add *Change startup behaviour*, writing the project's catalogue, and confirm the running node honours it without a restart — the catalogue-comparison loop 005 added is what makes this true.
-- [ ] T047 [US3] Extend the add-an-agent description in `src/Parley.Cli/Top/Adding.cs` to name the process it is about to start, beside the two files it will write.
-- [ ] T048 [US3] Call `start` from enrolment after the two files are written, in both surfaces, so adding leaves a startable agent.
-- [ ] T049 [P] [US3] Add `tests/Parley.Cli.Tests/Top/AddedIsStartableTests.cs` walking the whole path: add, then a question addressed to the new agent starts it, with nothing having opened the repository.
+- [X] T047 [US3] Extend the add-an-agent description in `src/Parley.Cli/Top/Adding.cs` to name the process it is about to start, beside the two files it will write.
+- [X] T048 [US3] Call `start` from enrolment after the two files are written, in both surfaces, so adding leaves a startable agent.
+- [X] T049 [P] [US3] Add `tests/Parley.Cli.Tests/Top/AddedIsStartableTests.cs` walking the whole path: add, then a question addressed to the new agent starts it, with nothing having opened the repository.
 - [ ] T050 [P] [US3] Confirm `WithdrawalReachTests` still passes and extend it: a workspace shared by two agents, where starting one must not start the other. The 005 defect that a test named for the property did not check it is the reason this is written out.
 
 **Checkpoint**: `plan.md` Q1 is discharged or is proven wrong, in code, not in prose.
