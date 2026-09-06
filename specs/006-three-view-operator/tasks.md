@@ -66,7 +66,7 @@ same project highlighted.
 
 - [X] T014 [US1] Add `src/Parley.Client/Views/ProjectsView.cs` deriving what the projects view shows — the projects, and for one of them its agent and conversation summary — from broker reads, with no toolkit type in it.
 - [X] T015 [P] [US1] Add `src/Parley.Client/Views/ViewPlace.cs` holding where a person is: which of the three views, and what it is about. Derived once so both surfaces cannot disagree about what "back" means.
-- [ ] T016 [P] [US1] Add `tests/Parley.Client.Tests/Views/ProjectsViewTests.cs`: the summary is for the highlighted project only; an unreachable broker yields "not answering" rather than an empty project; a machine naming no projects yields the empty-state sentence.
+- [X] T016 [P] [US1] **Done as `tests/Parley.Client.Tests/Views/SummaryLineTests.cs`** (lens 1, run 1.5), which asks the same questions and more of them: the summary is for the highlighted project only, an unreachable broker never yields a number, and either half of the read failing makes the whole summary unreachable. Originally specified as `ProjectsViewTests.cs`: the summary is for the highlighted project only; an unreachable broker yields "not answering" rather than an empty project; a machine naming no projects yields the empty-state sentence.
 - [X] T017 [US1] Rewrite `src/Parley.Cli/Top/Shell.cs` to host one view at a time over `ViewPlace`, replacing the four-region layout. Keep `OnFrameChanged`, the work queue under its lock, the idle sweep and `Safe` exactly as they are.
 - [X] T018 [US1] Rewrite `src/Parley.Cli/Top/ProjectsRegion.cs` as the projects view: the list plus the summary beside it.
 - [X] T019 [US1] Add `src/Parley.Web/Pages/Index.cshtml` (and its model) as the same projects view, reading the same derivation.
@@ -96,10 +96,14 @@ it.
 - [X] T030 [US2] Add `Archive`, `Unarchive`, `Destroy` rpcs and the `ConversationSummary.archived` / `ListConversations.include_archived` fields to `proto/parley.proto`, on `Operators` only.
 - [X] T031 [US2] Implement the three rpcs in `src/Parley.Server/OperatorsService.cs` and map them in `src/Parley.Server/Wire.cs`.
 - [X] T032 [US2] Add the three client methods to `src/Parley.Client/BrokerClient.cs`.
-- [ ] T033 [P] [US2] Add `tests/Parley.Server.Tests/ConversationLifecycleTests.cs` over a real loopback socket: archive, read from a second client, restart, read again; destroy and confirm export can no longer find it.
-- [ ] T034 [P] [US2] Add an adversarial probe to `tests/Parley.Server.Tests`: an `Agents` client attempting each of the three, asserting there is no such method to call. Written as the malicious case, not as a reading of the proto.
-- [ ] T035 [US2] Add the destroy tombstone read, so an operator asking what happened to a conversation is answered — the FR-006 obligation.
-- [ ] T036 [P] [US2] Add `tests/Parley.Broker.Tests` cases confirming an archived conversation still delivers messages and stays archived, which is `research.md` R4 made a property of the code rather than a decision in a document.
+- [X] T033 [P] [US2] **Done as `tests/Parley.Server.Tests/ArchiveBoundaryTests.cs`** (lens 2, run 2.3), over a real loopback socket. Originally specified as `ConversationLifecycleTests.cs` over a real loopback socket: archive, read from a second client, restart, read again; destroy and confirm export can no longer find it.
+- [X] T034 [P] [US2] **Done in `ArchiveBoundaryTests`** — an `Agents` client has no method beginning Archive, Unarchive, Destroy or Start, asserted by reflecting over the generated client rather than by reading the proto. Originally specified as its own probe: an `Agents` client attempting each of the three, asserting there is no such method to call. Written as the malicious case, not as a reading of the proto.
+- [ ] T035 [US2] **Open, and left open deliberately — this is the one FR obligation 006 does not fully discharge.** The tombstone is written, tested and proved not to hold content (`DestroyTests`, `DestroyIntegrityTests`); what is missing is an operation that reads it back, so an operator asking what became of a conversation somebody exported last week is still told nothing.
+
+  **The scope is small and the reason it is not done is not.** It is one field on `ExportReply` — a destroyed conversation returning its record instead of an empty message list — through proto, store, broker, server and client. No new operation: §10.2 is a versioned contract and it has already gained four.
+
+  **Doing it now would reset all three lenses of the review gate**, which is met as of `c07aa60` and cost ten runs. The choice between an undischarged requirement and an unmet gate belongs to the owner rather than to whoever happens to be typing, so it is written down rather than taken. Both options are cheap from here: implement and re-run the gate, or ship 006 with FR-006 recorded as partial and close it in 007.
+- [X] T036 [P] [US2] **Done in `ArchiveBoundaryTests` and `ArchiveTests`** — a question into an archived conversation is admitted, and a message does not un-archive it, checked both at the store and over the wire. Originally specified for `Parley.Broker.Tests` confirming an archived conversation still delivers messages and stays archived, which is `research.md` R4 made a property of the code rather than a decision in a document.
 
 **Checkpoint**: the protocol is implemented and provable with no surface built.
 
@@ -191,7 +195,9 @@ local, paragraphs preserved, JSON laid out.
 - [X] T078 [P] Update `CLAUDE.md`'s `Parley.Web` and `Parley.Cli` entries for the three-view shape and the four operations.
 - [X] T079 Run the full suite three times on Windows and three times under podman on Linux, and record the counts in a `Parity` table here. `dotnet test` reports "Zero tests ran" on this machine — run the host executables directly.
 - [X] T080 Run the review gate: three consecutive clean runs per lens, each probing something the previous runs did not, **after the last edit**, logged in `REVIEW-LEDGER.md` including the clean runs.
-- [ ] T081 Walk `quickstart.md` end to end on the real deployment, both surfaces, and record what it found.
+- [ ] T081 **Open, and it needs the owner.** Walking `quickstart.md` means `dotnet tool update` over the `parley` on their PATH — the one an eighteen-repository deployment and a scheduled task are running — and then driving a full-screen application and a browser by hand. That is their machine and their call, exactly as 005's T064 was.
+
+  What can be checked without them has been: every step of the walk that is a property of the code rather than of a person has a test behind it, and the parity table below covers both platforms.
 
 ---
 
@@ -294,3 +300,19 @@ looks.
 | FR-022 one keystroke opens the console on this thing | T071, T072, T074 |
 | FR-023 every destructive act keeps its door | T057, T059, `SurfaceTests` |
 | FR-024 nothing truncates | T023 |
+
+## Parity
+
+Run on the final tree, after the last edit.
+
+| Platform | Passes | Tests | Failures |
+|---|---|---|---|
+| Windows | 3 | 2,237 | 0 |
+| Linux (podman, `mcr.microsoft.com/dotnet/sdk:10.0`) | 3 | 2,237 | 0 |
+
+Debug and Release both build clean on Windows.
+
+**The counts are identical, which they were not on the way here.** An earlier Linux run showed one
+failure per pass and Windows showed none — `OpeningTests.The_key_and_the_pointer_reach_the_same_transcript`,
+which after the rearrangement was comparing the empty transcript to the empty transcript. Windows
+passed it and Windows was wrong. `REVIEW-LEDGER.md` carries it.
