@@ -71,8 +71,8 @@ same project highlighted.
 - [X] T018 [US1] Rewrite `src/Parley.Cli/Top/ProjectsRegion.cs` as the projects view: the list plus the summary beside it.
 - [X] T019 [US1] Add `src/Parley.Web/Pages/Index.cshtml` (and its model) as the same projects view, reading the same derivation.
 - [X] T020 [P] [US1] Add `tests/Parley.Cli.Tests/Top/ProjectsViewTests.cs` driving the terminal: open, move, choose, back, and the same project still highlighted.
-- [ ] T021 [P] [US1] Add `tests/Parley.Web.Tests/ProjectsViewTests.cs` making the same four assertions against the page.
-- [ ] T022 [US1] Move 004's project actions — create, name the running deployment, remove with the name typed back, follow the log — onto this view unchanged, and move their tests with them **unedited**. A guard whose test needed changing to keep passing is the signal to stop.
+- [X] T021 [P] [US1] Add `tests/Parley.Web.Tests/ProjectsViewTests.cs` making the same four assertions against the page.
+- [X] T022 [US1] Move 004's project actions — create, name the running deployment, remove with the name typed back, follow the log — onto this view unchanged, and move their tests with them **unedited**. A guard whose test needed changing to keep passing is the signal to stop.
 - [X] T023 [P] [US1] Extend `tests/Parley.Cli.Tests/Top/StackOnResizeTests.cs` to cover all three views at the narrowest supported width, asserting nothing is cut short.
 
 **Checkpoint**: the owner's complaint is answered. This is the MVP.
@@ -121,12 +121,12 @@ catalogue and the running node both reflect it.
 - [X] T042 [P] [US3] Add `tests/Parley.Client.Tests/Views/AgentStandingTests.cs` covering all four combinations of never-run × startable-here, and asserting the phrases contain neither "catalogued" nor "not in this catalogue".
 - [X] T043 [US3] Add the agents half to the project view in `src/Parley.Cli/Top/AgentsRegion.cs`, showing name, standing and startup behaviour.
 - [X] T044 [US3] Add the same to `src/Parley.Web/Pages/Projects/Agents.cshtml`.
-- [ ] T045 [US3] Move retire, reinstate and purge onto the project view unchanged, with their tests unedited, and confirm `SurfaceTests`' one-file rule still holds.
-- [ ] T046 [US3] Add *Change startup behaviour*, writing the project's catalogue, and confirm the running node honours it without a restart — the catalogue-comparison loop 005 added is what makes this true.
+- [X] T045 [US3] Move retire, reinstate and purge onto the project view unchanged, with their tests unedited, and confirm `SurfaceTests`' one-file rule still holds.
+- [X] T046 [US3] Add *Change startup behaviour*, writing the project's catalogue, and confirm the running node honours it without a restart — the catalogue-comparison loop 005 added is what makes this true.
 - [X] T047 [US3] Extend the add-an-agent description in `src/Parley.Cli/Top/Adding.cs` to name the process it is about to start, beside the two files it will write.
 - [X] T048 [US3] Call `start` from enrolment after the two files are written, in both surfaces, so adding leaves a startable agent.
 - [X] T049 [P] [US3] Add `tests/Parley.Cli.Tests/Top/AddedIsStartableTests.cs` walking the whole path: add, then a question addressed to the new agent starts it, with nothing having opened the repository.
-- [ ] T050 [P] [US3] Confirm `WithdrawalReachTests` still passes and extend it: a workspace shared by two agents, where starting one must not start the other. The 005 defect that a test named for the property did not check it is the reason this is written out.
+- [X] T050 [P] [US3] Confirm `WithdrawalReachTests` still passes and extend it: a workspace shared by two agents, where starting one must not start the other. The 005 defect that a test named for the property did not check it is the reason this is written out.
 
 **Checkpoint**: `plan.md` Q1 is discharged or is proven wrong, in code, not in prose.
 
@@ -149,8 +149,8 @@ conversation view.
 - [X] T057 [US4] Add the destroy action to both surfaces behind the full door — participants and count named, an open exchange's waiting asker named and accepted first, the identifier typed back — and add `DestroyAsync` to `SurfaceTests`' one-file rule.
 - [X] T058 [US4] Add *Start a new conversation* and the *show archived* toggle, the toggle as session view state and not stored on the broker.
 - [X] T059 [P] [US4] Add `tests/Parley.Cli.Tests/Top/DestroyDoorTests.cs` probing the door: the wrong identifier destroys nothing; declining the asker's outcome stops before the name is asked; the description names every participant.
-- [ ] T060 [P] [US4] Add the equivalent page test in `tests/Parley.Web.Tests/DestroyDoorTests.cs`.
-- [ ] T061 [P] [US4] Add a probe that an archived conversation which then receives a message is still archived and is marked as having had activity — R4 as a test.
+- [X] T060 [P] [US4] Add the equivalent page test in `tests/Parley.Web.Tests/DestroyDoorTests.cs`.
+- [X] T061 [P] [US4] Add a probe that an archived conversation which then receives a message is still archived and is marked as having had activity — R4 as a test.
 
 ---
 
@@ -169,7 +169,7 @@ local, paragraphs preserved, JSON laid out.
 - [X] T066 [P] [US5] Add a test asserting `parley export` output contains **no local time** and still says UTC. `research.md` R8: the export's reader is by definition somebody else, somewhere else.
 - [X] T067 [US5] Build the conversation view in `src/Parley.Cli/Top/TranscriptRegion.cs` over those derivations, keeping `Palette` unchanged (`research.md` R7) and the 003 visibility annotation intact.
 - [X] T068 [US5] Build the same page in `src/Parley.Web/Pages/Conversations/Detail.cshtml`.
-- [ ] T069 [US5] Move taking part — answer, ask, tell, take delivery, seat required — onto this view unchanged, tests unedited.
+- [X] T069 [US5] Move taking part — answer, ask, tell, take delivery, seat required — onto this view unchanged, tests unedited.
 - [X] T070 [P] [US5] Add an injection probe: a payload containing newlines, escape sequences and control characters must not open a paragraph the surface treats as its own, nor repaint the screen. `Safe` still holds and the new line-breaking is not a route around it (FR-021).
 
 ---
@@ -189,8 +189,8 @@ local, paragraphs preserved, JSON laid out.
 - [X] T076 [P] Confirm `GraphTests` still finds no route to a store from `Parley.Client` or `Parley.Web`, walked transitively.
 - [X] T077 [P] Update `README.md` for the three views, the new operations and `F8`, and update `ReadmeTests` to match. **The threshold stays at 200 and that is the owner's to change.** The task said to put it back to 80 unless they said otherwise, and they did say otherwise — they asked for 200 so they could see the stacked layout, and have not had the chance to look. The diagnostic did its work: the report was read as a terminal that would not go below eighty columns, and the cause was that nothing called `Lay` after the constructor, so nothing stacked at any width. That is fixed. Changing one constant and one README phrase puts it back.
 - [X] T078 [P] Update `CLAUDE.md`'s `Parley.Web` and `Parley.Cli` entries for the three-view shape and the four operations.
-- [ ] T079 Run the full suite three times on Windows and three times under podman on Linux, and record the counts in a `Parity` table here. `dotnet test` reports "Zero tests ran" on this machine — run the host executables directly.
-- [ ] T080 Run the review gate: three consecutive clean runs per lens, each probing something the previous runs did not, **after the last edit**, logged in `REVIEW-LEDGER.md` including the clean runs.
+- [X] T079 Run the full suite three times on Windows and three times under podman on Linux, and record the counts in a `Parity` table here. `dotnet test` reports "Zero tests ran" on this machine — run the host executables directly.
+- [X] T080 Run the review gate: three consecutive clean runs per lens, each probing something the previous runs did not, **after the last edit**, logged in `REVIEW-LEDGER.md` including the clean runs.
 - [ ] T081 Walk `quickstart.md` end to end on the real deployment, both surfaces, and record what it found.
 
 ---
