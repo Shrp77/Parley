@@ -1,4 +1,5 @@
-using Parley.Cli.Top;
+﻿using Parley.Cli.Top;
+using Parley.Client.Views;
 using Xunit;
 
 namespace Parley.Cli.Tests.Top;
@@ -37,14 +38,37 @@ public sealed class ReadmeTests
     }
 
     [Theory]
-    [InlineData("catalogued, not yet registered")]
-    [InlineData("not in this catalogue")]
+    [InlineData(Standing.NeverRun)]
+    [InlineData(Standing.OnlyWhenOpened)]
     public void The_states_it_quotes_are_the_states_the_surface_draws(string phrase)
     {
         // Quoted in italics in the README as words a person will see on screen, which makes them a
         // promise rather than a description.
+        //
+        // 006 replaced the two phrases this used to name. They were `catalogued, not yet
+        // registered` and `not in this catalogue`, and the owner read both on screen and could not
+        // say what either meant -- fairly, because they named two files a person did not write.
+        // The constants still exist in the region, so this had to be pointed at the wording that
+        // is actually drawn rather than at whatever the surface still happens to declare.
         Assert.Contains(phrase, Readme(), StringComparison.Ordinal);
-        Assert.Contains(phrase, new[] { AgentsRegion.CataloguedOnly, AgentsRegion.NotCatalogued });
+        Assert.Contains(
+            phrase,
+            new[]
+            {
+                Standing.Running, Standing.Idle, Standing.OnlyWhenOpened,
+                Standing.NoMachine, Standing.NeverRun, Standing.NeverRunStuck,
+            });
+    }
+
+    [Fact]
+    public void It_does_not_still_quote_the_phrases_that_were_replaced()
+    {
+        // The half a rewording forgets. A README that gained the new phrases and kept the old ones
+        // would promise a reader they will see words the surface no longer draws.
+        var readme = Readme();
+
+        Assert.DoesNotContain(AgentsRegion.CataloguedOnly, readme, StringComparison.Ordinal);
+        Assert.DoesNotContain(AgentsRegion.NotCatalogued, readme, StringComparison.Ordinal);
     }
 
     [Fact]

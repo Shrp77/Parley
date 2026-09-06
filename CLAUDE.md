@@ -505,8 +505,37 @@ below in the form Spec Kit's checks read; this file remains the authority when t
 - **Active plan**: `specs/006-three-view-operator/` — three drill-down views (projects, one project,
   one conversation) replacing 005's four regions on one screen, on **both** surfaces; and the four
   operator operations the protocol did not have: `archive`, `unarchive` and `destroy` for a
-  conversation, and `start` for a catalogued agent. The protocol work lands before the views, because
-  the surfaces are clients of it.
+  conversation, and `start` for a catalogued agent. The protocol work landed before the views,
+  because the surfaces are clients of it. 0.18.0 — the minor moves because §10.2 is a versioned
+  contract and four new operations change what a V1 broker must implement.
+
+  **`plan.md` Q1 was right, and T039 is what says so rather than the argument.** A node joins
+  declaring a role nothing has ever registered, an operator asks for a start, the node receives the
+  command — and the registry is still empty afterwards, which is the half that would make the
+  operation a forgery if it were false. The test was written with its stop rule attached: had it
+  failed, 005's amendment went back and nobody added a registration path to rescue it.
+
+  Three things learned building it, each written where it happened:
+
+  - **Reading a region's selection from another view is a defect that appeared three times.** The
+    conversation-opening handler, the archive action and the destroy action all read
+    `Projects.Selected` for the project to act on — which is off screen in every case that matters
+    and null in any fixture that never filled it. `Shell.Current` reads the view's own project. One
+    helper now.
+  - **The transcript and the export are different code, and the reason is a forgery.** The export
+    flattens every payload onto one line because a text file has no defence against a payload
+    carrying a newline and then a line shaped like an annotation. On screen the whole point is that
+    the breaks survive, so the defence is the indent instead: a header sits at column zero and
+    nothing else does. That also satisfies FR-018, since it survives colour being stripped.
+  - **A test that drove the thing under test could not see that nothing else drove it.** Eighteen
+    terminal tests failed on the rearrangement and they were not all one kind: some were guards
+    that had to keep their property through a new route, and some were descriptions of the design
+    the owner rejected. `All_four_regions_are_on_screen_at_once` was the second kind and was
+    replaced rather than carried.
+
+  One test could not be driven and says so rather than being made to pass: 005's mouse route
+  clicked the middle of a pane nineteen rows tall, and a project view gives it the full height. It
+  is split into the two halves that can be checked, with the gap written into the test.
 
   The owner ran 005's built terminal and said the four regions were "confusing and too busy". That is
   a verdict on its central design decision from the only test that could produce it, so the

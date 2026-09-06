@@ -1,6 +1,7 @@
-using Microsoft.AspNetCore.Mvc.RazorPages;
+﻿using Microsoft.AspNetCore.Mvc.RazorPages;
 using Parley.Core;
 using Parley.Client;
+using Parley.Client.Views;
 
 namespace Parley.Web.Pages;
 
@@ -25,6 +26,25 @@ public sealed class IndexModel(BrokerDirectory directory) : PageModel
 
     /// <summary>Why the manifest could not be read, when it could not.</summary>
     public string? ManifestProblem { get; private set; }
+
+    /// <summary>
+    /// What is in each project, without having to open it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 006's User Story 1: the question a person opens this page with is which project they want,
+    /// and answering it by making them open each one in turn is the navigation the terminal was
+    /// rearranged to avoid. Counts rather than lists, because this is read while somebody is
+    /// scanning and the lists themselves are one click away.
+    /// </para>
+    /// <para>
+    /// <b>Absent rather than zero when a broker did not answer.</b> Showing an unreachable project
+    /// as empty would read as a project somebody has emptied, which is the containment rule 005
+    /// wrote for the terminal and which this page has to keep too.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyDictionary<string, ProjectSummary> Summaries { get; private set; } =
+        new Dictionary<string, ProjectSummary>(StringComparer.Ordinal);
 
     /// <summary>When this page was built.</summary>
     /// <remarks>
@@ -67,6 +87,36 @@ public sealed class IndexModel(BrokerDirectory directory) : PageModel
     {
         Projects = directory.Projects;
         ManifestProblem = directory.ManifestProblem;
+
+        var summaries = new Dictionary<string, ProjectSummary>(StringComparer.Ordinal);
+
+        // Asked at once with the version check below rather than after it, for the same reason
+        // that one is concurrent: in sequence the cost of the page is the sum of the timeouts.
+        var counting = Projects.Select(async project =>
+        {
+            var broker = new BrokerClient(directory.ClientFor(project));
+            var token = HttpContext.RequestAborted;
+
+            var registry = await BrokerDirectory.ReadAsync(async () =>
+                await broker.RegistryAsync(token).ConfigureAwait(false)).ConfigureAwait(false);
+
+            var conversations = await BrokerDirectory.ReadAsync(async () =>
+                await broker.ConversationsAsync(includeArchived: true, cancellationToken: token)
+                    .ConfigureAwait(false)).ConfigureAwait(false);
+
+            return (project.Name.Value, Summary: ProjectsView.Summarise(
+                registry.Value,
+                conversations.Value?.Items.Count,
+                conversations.Value?.Items.Count(c => c.Archived) ?? 0,
+                registry.Problem ?? conversations.Problem));
+        });
+
+        foreach (var (name, summary) in await Task.WhenAll(counting).ConfigureAwait(false))
+        {
+            summaries[name] = summary;
+        }
+
+        Summaries = summaries;
 
         var asked = Projects.Select(async project =>
         {

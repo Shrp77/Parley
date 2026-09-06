@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using Xunit;
 
 namespace Parley.Cli.Tests;
@@ -68,8 +68,18 @@ public sealed partial class ProjectHelpAgreementTests
                      // is the half of "who is in a project" the terminal could not touch.
                      ("add an agent", Parley.Cli.Top.Adding.Title),
                      ("remove one", Parley.Cli.Top.Withdrawing.Title),
-                     ("catalogued, not yet registered", Parley.Cli.Top.AgentsRegion.CataloguedOnly),
-                     ("not in this catalogue", Parley.Cli.Top.AgentsRegion.NotCatalogued),
+
+                     // 006 reworded the two states this used to name, because the owner read both
+                     // on screen and could not say what either meant. What the README has to carry
+                     // is the wording a person will actually see.
+                     (Parley.Client.Views.Standing.NeverRun, Parley.Client.Views.Standing.NeverRun),
+                     (Parley.Client.Views.Standing.OnlyWhenOpened,
+                      Parley.Client.Views.Standing.OnlyWhenOpened),
+
+                     // And the three things 006 added to the surface.
+                     ("archive", Parley.Cli.Top.Shell.ArchiveTitle),
+                     ("destroy", Parley.Cli.Top.Destroying.Title),
+                     ("F8", "the browser key"),
                  })
         {
             Assert.True(

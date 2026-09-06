@@ -69,7 +69,7 @@ same project highlighted.
 - [ ] T016 [P] [US1] Add `tests/Parley.Client.Tests/Views/ProjectsViewTests.cs`: the summary is for the highlighted project only; an unreachable broker yields "not answering" rather than an empty project; a machine naming no projects yields the empty-state sentence.
 - [X] T017 [US1] Rewrite `src/Parley.Cli/Top/Shell.cs` to host one view at a time over `ViewPlace`, replacing the four-region layout. Keep `OnFrameChanged`, the work queue under its lock, the idle sweep and `Safe` exactly as they are.
 - [X] T018 [US1] Rewrite `src/Parley.Cli/Top/ProjectsRegion.cs` as the projects view: the list plus the summary beside it.
-- [ ] T019 [US1] Add `src/Parley.Web/Pages/Index.cshtml` (and its model) as the same projects view, reading the same derivation.
+- [X] T019 [US1] Add `src/Parley.Web/Pages/Index.cshtml` (and its model) as the same projects view, reading the same derivation.
 - [X] T020 [P] [US1] Add `tests/Parley.Cli.Tests/Top/ProjectsViewTests.cs` driving the terminal: open, move, choose, back, and the same project still highlighted.
 - [ ] T021 [P] [US1] Add `tests/Parley.Web.Tests/ProjectsViewTests.cs` making the same four assertions against the page.
 - [ ] T022 [US1] Move 004's project actions — create, name the running deployment, remove with the name typed back, follow the log — onto this view unchanged, and move their tests with them **unedited**. A guard whose test needed changing to keep passing is the signal to stop.
@@ -120,7 +120,7 @@ catalogue and the running node both reflect it.
 - [X] T041 [US3] Add `src/Parley.Client/Views/AgentStanding.cs` deriving one phrase per agent from presence and catalogue membership, per `data-model.md`. **Leave the wording as named constants and settle the words with the owner** — `plan.md` records that choosing them without them is the reason they are being replaced.
 - [X] T042 [P] [US3] Add `tests/Parley.Client.Tests/Views/AgentStandingTests.cs` covering all four combinations of never-run × startable-here, and asserting the phrases contain neither "catalogued" nor "not in this catalogue".
 - [X] T043 [US3] Add the agents half to the project view in `src/Parley.Cli/Top/AgentsRegion.cs`, showing name, standing and startup behaviour.
-- [ ] T044 [US3] Add the same to `src/Parley.Web/Pages/Projects/Agents.cshtml`.
+- [X] T044 [US3] Add the same to `src/Parley.Web/Pages/Projects/Agents.cshtml`.
 - [ ] T045 [US3] Move retire, reinstate and purge onto the project view unchanged, with their tests unedited, and confirm `SurfaceTests`' one-file rule still holds.
 - [ ] T046 [US3] Add *Change startup behaviour*, writing the project's catalogue, and confirm the running node honours it without a restart — the catalogue-comparison loop 005 added is what makes this true.
 - [X] T047 [US3] Extend the add-an-agent description in `src/Parley.Cli/Top/Adding.cs` to name the process it is about to start, beside the two files it will write.
@@ -168,7 +168,7 @@ local, paragraphs preserved, JSON laid out.
 - [X] T065 [P] [US5] Add `tests/Parley.Client.Tests/Rendering/ReadabilityTests.cs`: paragraphs survive; a five-key JSON payload occupies at least five lines; headers are identifiable in the colour-stripped text.
 - [X] T066 [P] [US5] Add a test asserting `parley export` output contains **no local time** and still says UTC. `research.md` R8: the export's reader is by definition somebody else, somewhere else.
 - [X] T067 [US5] Build the conversation view in `src/Parley.Cli/Top/TranscriptRegion.cs` over those derivations, keeping `Palette` unchanged (`research.md` R7) and the 003 visibility annotation intact.
-- [ ] T068 [US5] Build the same page in `src/Parley.Web/Pages/Conversations/Detail.cshtml`.
+- [X] T068 [US5] Build the same page in `src/Parley.Web/Pages/Conversations/Detail.cshtml`.
 - [ ] T069 [US5] Move taking part — answer, ask, tell, take delivery, seat required — onto this view unchanged, tests unedited.
 - [X] T070 [P] [US5] Add an injection probe: a payload containing newlines, escape sequences and control characters must not open a paragraph the surface treats as its own, nor repaint the screen. `Safe` still holds and the new line-breaking is not a route around it (FR-021).
 
@@ -185,10 +185,10 @@ local, paragraphs preserved, JSON laid out.
 
 ## Phase 9: Polish, parity and the review gate
 
-- [ ] T075 Extend `tests/Parley.Cli.Tests/Top/DriftTests.cs` for the four new operations against both surface trees and `contracts/operations.md`, and confirm the four one-sided survey operations are still recorded as deliberate.
-- [ ] T076 [P] Confirm `GraphTests` still finds no route to a store from `Parley.Client` or `Parley.Web`, walked transitively.
-- [ ] T077 [P] Update `README.md` for the three views, the new operations and `F8`, and update `ReadmeTests` to match — including putting `Shell.Threshold` back to 80 and the README's wording with it, unless the owner has said otherwise.
-- [ ] T078 [P] Update `CLAUDE.md`'s `Parley.Web` and `Parley.Cli` entries for the three-view shape and the four operations.
+- [X] T075 Extend `tests/Parley.Cli.Tests/Top/DriftTests.cs` for the four new operations against both surface trees and `contracts/operations.md`, and confirm the four one-sided survey operations are still recorded as deliberate.
+- [X] T076 [P] Confirm `GraphTests` still finds no route to a store from `Parley.Client` or `Parley.Web`, walked transitively.
+- [X] T077 [P] Update `README.md` for the three views, the new operations and `F8`, and update `ReadmeTests` to match. **The threshold stays at 200 and that is the owner's to change.** The task said to put it back to 80 unless they said otherwise, and they did say otherwise — they asked for 200 so they could see the stacked layout, and have not had the chance to look. The diagnostic did its work: the report was read as a terminal that would not go below eighty columns, and the cause was that nothing called `Lay` after the constructor, so nothing stacked at any width. That is fixed. Changing one constant and one README phrase puts it back.
+- [X] T078 [P] Update `CLAUDE.md`'s `Parley.Web` and `Parley.Cli` entries for the three-view shape and the four operations.
 - [ ] T079 Run the full suite three times on Windows and three times under podman on Linux, and record the counts in a `Parity` table here. `dotnet test` reports "Zero tests ran" on this machine — run the host executables directly.
 - [ ] T080 Run the review gate: three consecutive clean runs per lens, each probing something the previous runs did not, **after the last edit**, logged in `REVIEW-LEDGER.md` including the clean runs.
 - [ ] T081 Walk `quickstart.md` end to end on the real deployment, both surfaces, and record what it found.
