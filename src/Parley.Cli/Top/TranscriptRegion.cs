@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using Parley.Client.Rendering;
 using Parley.Core;
 using Terminal.Gui.ViewBase;
@@ -66,15 +66,53 @@ internal sealed class TranscriptRegion : FrameView
     {
         Open = problem is null ? conversationId : null;
 
-        // Neutralised line by line: the layout is Transcript.Write's and the content is the
+        // **Read on screen rather than exported to it.** What was here was `Transcript.Write`,
+        // which is the export -- one flattened line of JSON per message, times in UTC, no breaks
+        // anywhere. That is right for a file somebody takes away and reads elsewhere, and it is
+        // what the owner called "one long ass blob that is not readable by a human" when it was put
+        // on a screen. `Reading` lays the same messages out for a person: the author's own line
+        // breaks kept, JSON indented, times in the reader's own zone, and every header at column
+        // zero so it can be told from body text with all colour stripped.
+        //
+        // Neutralised line by line either way: the layout is this surface's and the content is the
         // agents' own, and a payload is eight thousand characters of whatever they chose to send.
+        // The indent is what keeps that safe now -- a peer writing a line shaped like a header
+        // still arrives indented, so it cannot be mistaken for one.
         _written = Safe.Lines(
             problem
             ?? (export is null || export.Messages.Count == 0
                 ? Empty
-                : Transcript.Write(conversationId, project, export.Messages, export.Exchanges ?? [])));
+                : Lay(conversationId, project, export)));
 
         Redraw();
+    }
+
+    /// <summary>Lays a conversation out for reading.</summary>
+    /// <param name="conversationId">Which conversation.</param>
+    /// <param name="project">The project it came from.</param>
+    /// <param name="export">Its messages and their exchange states.</param>
+    /// <returns>The transcript, ready to wrap.</returns>
+    /// <remarks>
+    /// A heading of its own before the messages, because the export's heading said which
+    /// conversation and in which project, and losing that would make a screenshot of a transcript
+    /// unattributable. The zone is said once rather than on every line: repeating an offset per
+    /// message would spend the width a message body needs.
+    /// </remarks>
+    private static string Lay(string conversationId, string project, ConversationExport export)
+    {
+        var lines = Reading.Lines(export.Messages, export.Exchanges ?? []);
+        var written = new System.Text.StringBuilder()
+            .Append("Conversation ").Append(conversationId)
+            .Append(" in project ").AppendLine(project)
+            .AppendLine(LocalTime.Note())
+            .AppendLine();
+
+        foreach (var line in lines)
+        {
+            written.AppendLine(line.Text);
+        }
+
+        return written.ToString();
     }
 
     /// <summary>Lays the transcript out again for a width.</summary>

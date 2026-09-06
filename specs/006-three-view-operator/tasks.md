@@ -119,7 +119,7 @@ catalogue and the running node both reflect it.
 - [X] T040 [P] [US3] Add a probe asserting `start` on a role no node's catalogue names is refused and starts nothing.
 - [X] T041 [US3] Add `src/Parley.Client/Views/AgentStanding.cs` deriving one phrase per agent from presence and catalogue membership, per `data-model.md`. **Leave the wording as named constants and settle the words with the owner** — `plan.md` records that choosing them without them is the reason they are being replaced.
 - [X] T042 [P] [US3] Add `tests/Parley.Client.Tests/Views/AgentStandingTests.cs` covering all four combinations of never-run × startable-here, and asserting the phrases contain neither "catalogued" nor "not in this catalogue".
-- [ ] T043 [US3] Add the agents half to the project view in `src/Parley.Cli/Top/AgentsRegion.cs`, showing name, standing and startup behaviour.
+- [X] T043 [US3] Add the agents half to the project view in `src/Parley.Cli/Top/AgentsRegion.cs`, showing name, standing and startup behaviour.
 - [ ] T044 [US3] Add the same to `src/Parley.Web/Pages/Projects/Agents.cshtml`.
 - [ ] T045 [US3] Move retire, reinstate and purge onto the project view unchanged, with their tests unedited, and confirm `SurfaceTests`' one-file rule still holds.
 - [ ] T046 [US3] Add *Change startup behaviour*, writing the project's catalogue, and confirm the running node honours it without a restart — the catalogue-comparison loop 005 added is what makes this true.
@@ -167,10 +167,10 @@ local, paragraphs preserved, JSON laid out.
 - [X] T064 [US5] Make the header visually distinct from the body **by a means that survives colour being stripped** — the existing rule that a test stripping all colour must lose no information.
 - [X] T065 [P] [US5] Add `tests/Parley.Client.Tests/Rendering/ReadabilityTests.cs`: paragraphs survive; a five-key JSON payload occupies at least five lines; headers are identifiable in the colour-stripped text.
 - [X] T066 [P] [US5] Add a test asserting `parley export` output contains **no local time** and still says UTC. `research.md` R8: the export's reader is by definition somebody else, somewhere else.
-- [ ] T067 [US5] Build the conversation view in `src/Parley.Cli/Top/TranscriptRegion.cs` over those derivations, keeping `Palette` unchanged (`research.md` R7) and the 003 visibility annotation intact.
+- [X] T067 [US5] Build the conversation view in `src/Parley.Cli/Top/TranscriptRegion.cs` over those derivations, keeping `Palette` unchanged (`research.md` R7) and the 003 visibility annotation intact.
 - [ ] T068 [US5] Build the same page in `src/Parley.Web/Pages/Conversations/Detail.cshtml`.
 - [ ] T069 [US5] Move taking part — answer, ask, tell, take delivery, seat required — onto this view unchanged, tests unedited.
-- [ ] T070 [P] [US5] Add an injection probe: a payload containing newlines, escape sequences and control characters must not open a paragraph the surface treats as its own, nor repaint the screen. `Safe` still holds and the new line-breaking is not a route around it (FR-021).
+- [X] T070 [P] [US5] Add an injection probe: a payload containing newlines, escape sequences and control characters must not open a paragraph the surface treats as its own, nor repaint the screen. `Safe` still holds and the new line-breaking is not a route around it (FR-021).
 
 ---
 

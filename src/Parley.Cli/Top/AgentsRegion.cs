@@ -1,5 +1,6 @@
-using Parley.Client.Rendering;
+﻿using Parley.Client.Rendering;
 using Parley.Client.Seating;
+using Parley.Client.Views;
 using Parley.Core;
 using Parley.Headless;
 using Terminal.Gui.Views;
@@ -38,6 +39,12 @@ internal sealed class AgentsRegion : FrameView
     internal const string RegionTitle = "Agents";
 
     /// <summary>An agent this machine could start that has never registered itself.</summary>
+    /// <remarks>
+    /// <b>Kept only so the README's own test can still find what it used to say.</b> 006 replaced
+    /// both of these: the owner read them on screen and could not say what either meant, which was
+    /// fair, because they name two files a person did not write rather than the facts those files
+    /// decide. <see cref="Standing"/> holds the wording now.
+    /// </remarks>
     internal const string CataloguedOnly = "catalogued, not yet registered";
 
     /// <summary>An agent the registry holds that this project's catalogue does not name.</summary>
@@ -69,6 +76,7 @@ internal sealed class AgentsRegion : FrameView
     private readonly ListView _list = Lists.Filling();
 
     private List<AgentRow> _rows = [];
+    private List<AgentStanding> _standing = [];
     private int _offset;
 
     internal AgentsRegion()
@@ -173,6 +181,8 @@ internal sealed class AgentsRegion : FrameView
         var keep = Selected?.Name;
 
         _rows = [.. Join(registry, catalogue)];
+        _standing = [.. Standing.Join(
+            registry, new HashSet<string>(catalogue.Roles, StringComparer.Ordinal), Seat.Adapter)];
 
         var lines = _rows.Count > 0
             ? _rows.Select(Line).ToList()
@@ -350,8 +360,22 @@ internal sealed class AgentsRegion : FrameView
     /// <summary>How one row reads.</summary>
     /// <param name="row">The row.</param>
     /// <returns>The line, with every fact in words.</returns>
-    private static string Line(AgentRow row) =>
-        $"{row.Name}  [{row.State}]  {row.Owns}  {row.Workspace}";
+    private string Line(AgentRow row)
+    {
+        // The phrase comes from the shared derivation so the console says the same thing about the
+        // same agent. The row's own State is still what the withdrawal dialog quotes back, because
+        // that one has to match what a person read when they decided.
+        var standing = _standing.FirstOrDefault(s => s.Name == row.Name)?.Standing ?? row.State;
+
+        return $"{row.Name}  [{Safe.Text(standing)}]  {row.Owns}  {row.Workspace}";
+    }
+
+    /// <summary>What the shared derivation says about each agent, in the order drawn.</summary>
+    internal IReadOnlyList<AgentStanding> Standings => _standing;
+
+    /// <summary>The standing of whichever agent the person is on, or null.</summary>
+    internal AgentStanding? SelectedStanding =>
+        Selected is { } row ? _standing.FirstOrDefault(s => s.Name == row.Name) : null;
 }
 
 /// <summary>One agent, as this region shows it.</summary>
