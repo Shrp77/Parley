@@ -1,8 +1,9 @@
-using Grpc.Net.Client;
+﻿using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Top;
 using Parley.Client;
 using Parley.Client.Seating;
+using Parley.Client.Views;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -134,10 +135,13 @@ public sealed class SeatingRegionTests : IAsyncDisposable
     }
 
     [Fact]
-    public void The_status_line_offers_the_seat_from_the_agents_region_and_nowhere_else()
+    public async Task The_status_line_offers_the_seat_from_the_agents_region_and_nowhere_else()
     {
         // Actions belong to the region that shows the thing acted on (User Story 2). Offering the
-        // seat from the projects region would be the menu this replaced, wearing a status line.
+        // seat from the projects view would be the menu this replaced, wearing a status line.
+        //
+        // 006 moved the agents region inside a project rather than beside the projects list, so
+        // reaching it is one step in rather than one Tab across. The property is unchanged.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var seats = new SeatBook(directory.AgentsFor);
@@ -147,7 +151,7 @@ public sealed class SeatingRegionTests : IAsyncDisposable
 
         Assert.DoesNotContain(shell.Actions(), action => action.Label == AgentsRegion.JoinTitle);
 
-        driving.Tab();
+        await Walking.GoAsync(shell, Viewing.Project);
 
         Assert.Contains(shell.Actions(), action => action.Label == AgentsRegion.JoinTitle);
         Assert.Contains(AgentsRegion.JoinTitle, shell.Status, StringComparison.Ordinal);

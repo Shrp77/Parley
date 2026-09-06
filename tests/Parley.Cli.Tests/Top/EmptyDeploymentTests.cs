@@ -1,4 +1,4 @@
-using Grpc.Net.Client;
+﻿using Grpc.Net.Client;
 using Parley.Cli.Top;
 using Parley.Client;
 using Parley.Client.Seating;
@@ -73,8 +73,11 @@ public sealed class EmptyDeploymentTests
     }
 
     [Fact]
-    public async Task Tab_still_visits_every_region_on_an_empty_machine()
+    public async Task Every_view_can_be_reached_and_named_on_an_empty_machine()
     {
+        // A machine with nothing on it is where an empty pane is most likely to be mistaken for a
+        // broken one, so every view is visited and every pane named -- one view at a time now
+        // rather than four regions at once.
         using var driving = Driving.Open();
         using var directory = new BrokerDirectory([], _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
         using var shell = new Shell(directory);
@@ -83,18 +86,18 @@ public sealed class EmptyDeploymentTests
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
 
-        foreach (var title in new[]
-                 {
-                     ProjectsRegion.RegionTitle,
-                     AgentsRegion.RegionTitle,
-                     ConversationsRegion.RegionTitle,
-                     TranscriptRegion.RegionTitle,
-                 })
-        {
-            Assert.StartsWith(Shell.FocusPrefix + title, shell.Status, StringComparison.Ordinal);
+        var named = new List<string>();
 
-            driving.Tab();
+        await foreach (var _ in Walking.EveryPaneAsync(shell))
+        {
+            named.Add(shell.Status);
         }
+
+        Assert.Equal(4, named.Count);
+        Assert.Contains(named, said => said.Contains(ProjectsRegion.RegionTitle, StringComparison.Ordinal));
+        Assert.Contains(named, said => said.Contains(AgentsRegion.RegionTitle, StringComparison.Ordinal));
+        Assert.Contains(named, said => said.Contains(ConversationsRegion.RegionTitle, StringComparison.Ordinal));
+        Assert.Contains(named, said => said.Contains(TranscriptRegion.RegionTitle, StringComparison.Ordinal));
     }
 
     [Fact]

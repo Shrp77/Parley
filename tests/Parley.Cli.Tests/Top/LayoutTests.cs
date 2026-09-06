@@ -1,13 +1,14 @@
-using Grpc.Net.Client;
+﻿using Grpc.Net.Client;
 using Parley.Cli.Top;
 using Parley.Client;
+using Parley.Client.Views;
 using Parley.Core;
 using Xunit;
 
 namespace Parley.Cli.Tests.Top;
 
 /// <summary>
-/// That the four regions stack rather than truncate when the terminal is narrow, and that Tab
+/// That a view's panes stack rather than truncate when the terminal is narrow, and that Tab
 /// still visits every one of them.
 /// </summary>
 /// <remarks>
@@ -22,23 +23,30 @@ namespace Parley.Cli.Tests.Top;
 /// whole harness is built on and this is the test that would break first if it were abandoned: the
 /// regions are in different places in the two layouts and the same test passes in both.
 /// </para>
+/// <para>
+/// <b>Driven on the project view, because it is the only one with two panes.</b> 006 replaced four
+/// regions on one screen with three views of one or two, so the threshold now decides whether a
+/// project's agents and conversations sit side by side or one at a time. A one-pane view fills the
+/// width at every size and has nothing to stack.
+/// </para>
 /// </remarks>
 public sealed class LayoutTests
 {
     [Fact]
-    public void At_the_threshold_the_regions_are_side_by_side()
+    public async Task At_the_threshold_a_projects_two_panes_are_side_by_side()
     {
         using var driving = Driving.Open(width: Shell.Threshold, height: 30);
         using var directory = Directory();
         using var shell = new Shell(directory);
 
         driving.Show(shell);
+        await Walking.GoAsync(shell, Viewing.Project);
         shell.Lay(Shell.Threshold);
         driving.App.LayoutAndDraw(true);
 
         Assert.False(shell.Stacked);
-        Assert.Contains(ProjectsRegion.RegionTitle, driving.Text(), StringComparison.Ordinal);
-        Assert.Contains(TranscriptRegion.RegionTitle, driving.Text(), StringComparison.Ordinal);
+        Assert.Contains(AgentsRegion.RegionTitle, driving.Text(), StringComparison.Ordinal);
+        Assert.Contains(ConversationsRegion.RegionTitle, driving.Text(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -56,35 +64,34 @@ public sealed class LayoutTests
     }
 
     [Fact]
-    public void Tab_still_visits_every_region_when_they_are_stacked()
+    public async Task Tab_still_visits_both_panes_when_they_are_stacked()
     {
         using var driving = Driving.Open(width: 40, height: 20);
         using var directory = Directory();
         using var shell = new Shell(directory);
 
         driving.Show(shell);
+        await Walking.GoAsync(shell, Viewing.Project);
         shell.Lay(40);
 
         var visited = new List<string>();
 
-        for (var step = 0; step < 4; step++)
+        for (var step = 0; step < 2; step++)
         {
             visited.Add(shell.Status);
             driving.Tab();
         }
 
-        // Each in turn, and each named. The stacked status line also names the three that are not
-        // on screen, so what is asserted is that the focused one is said first.
+        // Each in turn, and each named. The status line leads with where in the deployment the
+        // person is, so the pane's own name is asserted as present rather than as the first thing.
         Assert.Collection(
             visited,
-            said => Assert.StartsWith(Shell.FocusPrefix + ProjectsRegion.RegionTitle, said, StringComparison.Ordinal),
-            said => Assert.StartsWith(Shell.FocusPrefix + AgentsRegion.RegionTitle, said, StringComparison.Ordinal),
-            said => Assert.StartsWith(Shell.FocusPrefix + ConversationsRegion.RegionTitle, said, StringComparison.Ordinal),
-            said => Assert.StartsWith(Shell.FocusPrefix + TranscriptRegion.RegionTitle, said, StringComparison.Ordinal));
+            said => Assert.Contains(AgentsRegion.RegionTitle, said, StringComparison.Ordinal),
+            said => Assert.Contains(ConversationsRegion.RegionTitle, said, StringComparison.Ordinal));
     }
 
     [Fact]
-    public void At_forty_columns_each_region_names_itself_in_full_as_it_is_reached()
+    public async Task At_forty_columns_each_pane_names_itself_in_full_as_it_is_reached()
     {
         // Scenario 5, and the assertion is deliberately about full names rather than about all
         // four being visible at once. Four titles do not fit across forty columns and the toolkit's
@@ -97,14 +104,13 @@ public sealed class LayoutTests
         using var shell = new Shell(directory);
 
         driving.Show(shell);
+        await Walking.GoAsync(shell, Viewing.Project);
         shell.Lay(40);
 
         foreach (var title in new[]
         {
-            ProjectsRegion.RegionTitle,
             AgentsRegion.RegionTitle,
             ConversationsRegion.RegionTitle,
-            TranscriptRegion.RegionTitle,
         })
         {
             driving.App.LayoutAndDraw(true);
@@ -112,7 +118,7 @@ public sealed class LayoutTests
             var screen = driving.Text();
 
             Assert.Contains(title, screen, StringComparison.Ordinal);
-            Assert.StartsWith(Shell.FocusPrefix + title, shell.Status, StringComparison.Ordinal);
+            Assert.Contains(title, shell.Status, StringComparison.Ordinal);
             Assert.DoesNotContain("…", screen, StringComparison.Ordinal);
 
             driving.Tab();

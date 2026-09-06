@@ -1,7 +1,9 @@
-using System.Drawing;
+﻿using System.Drawing;
 using System.Text;
 using Parley.Client;
+using Parley.Client.Rendering;
 using Parley.Client.Seating;
+using Parley.Client.Views;
 using Parley.Core;
 using Parley.Headless;
 using Terminal.Gui.App;
@@ -78,6 +80,7 @@ internal sealed class Shell : Window
 
     private bool _stacked;
     private bool _closed;
+    private ViewPlace _place = ViewPlace.Top;
     private readonly Lock _chain = new();
     private Task _work = Task.CompletedTask;
     private DateTimeOffset _touched = DateTimeOffset.UtcNow;
@@ -104,10 +107,33 @@ internal sealed class Shell : Window
         Conversations.Opened += (_, _) => Touched();
 
         Projects.Chose += (_, project) => Queue(token => SelectAsync(project, token));
-        Conversations.Opened += (_, conversation) => Queue(token =>
-            Projects.Selected is { } project
-                ? OpenAsync(project, conversation.Id, token)
-                : Task.CompletedTask);
+
+        // **Opening a conversation is now a change of view as well as a read.** The read still
+        // happens the same way -- the transcript region fills from the broker -- but the surface
+        // moves into the conversation view rather than showing it in a fourth pane beside three
+        // others. Both halves are queued together so a test awaiting Settled sees a finished
+        // screen rather than a half-drawn one.
+        Conversations.Opened += (_, conversation) => Queue(async token =>
+        {
+            // **The project the view is about, not whichever the projects list is on.** They are
+            // the same until the projects list is off screen, which is exactly when this runs: a
+            // conversation is opened from inside a project, and the list that chose that project
+            // was taken off the screen to make room for it. Reading the list here made this depend
+            // on a region nobody is looking at.
+            var project = _place.Project is { } named
+                ? _directory.Find(named.Value)
+                : Projects.Selected;
+
+            if (project is null)
+            {
+                return;
+            }
+
+            await OpenAsync(project, conversation.Id, token).ConfigureAwait(false);
+            await GoAsync(_place.Viewing == Viewing.Project
+                ? _place.Into(conversation.Id)
+                : _place).ConfigureAwait(false);
+        });
 
         Add(_status);
         Lay(Threshold);
@@ -126,8 +152,34 @@ internal sealed class Shell : Window
     /// <summary>The transcript region.</summary>
     internal TranscriptRegion Transcript { get; }
 
-    /// <summary>Which region has focus.</summary>
+    /// <summary>Which pane of the current view has focus.</summary>
     internal int FocusedRegion { get; private set; }
+
+    /// <summary>Which of the three views the person is on, and what it is about.</summary>
+    internal ViewPlace Place => _place;
+
+    /// <summary>
+    /// The panes of the view currently open.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>One view at a time, which is the whole of 006.</b> 005 put all four of these on one
+    /// screen and moved between them with Tab; the owner ran it and called that "confusing and too
+    /// busy", which is a verdict on the arrangement rather than on anything underneath it. So the
+    /// same four view objects are kept — a selection, a scroll position and a test's reference to a
+    /// region all survive — and only the ones belonging to the current view are on screen.
+    /// </para>
+    /// <para>
+    /// Tab still moves between panes, but a view has one or two rather than four, so it is a
+    /// smaller question with a visible answer.
+    /// </para>
+    /// </remarks>
+    internal IReadOnlyList<View> Panes => _place.Viewing switch
+    {
+        Viewing.Project => [Agents, Conversations],
+        Viewing.Conversation => [Transcript],
+        _ => [Projects],
+    };
 
     /// <summary>Whether the regions are stacked as tabs rather than laid side by side.</summary>
     internal bool Stacked => _stacked;
@@ -210,66 +262,82 @@ internal sealed class Shell : Window
         }
 
         _stacked = stacked;
+        Arrange();
+    }
+
+    /// <summary>Rebuilds the current view's panes whatever the width has done.</summary>
+    /// <remarks>
+    /// Split out from <see cref="Lay"/> because that one returns early when the arrangement has not
+    /// changed, which is right for a resize and wrong for a change of view: the panes are different
+    /// even though the width is the same.
+    /// </remarks>
+    private void Relay() => Arrange();
+
+    /// <summary>Puts the current view's panes on screen and takes the others off.</summary>
+    private void Arrange()
+    {
+        var stacked = _stacked;
 
         foreach (var region in _regions)
         {
             region.SuperView?.Remove(region);
         }
 
-        if (stacked)
-        {
-            // One at a time, each filling the width, rather than pages of a tab control.
-            //
-            // **The toolkit's tab strip was tried first and is what the specification forbids.**
-            // Four titles across the top of a forty-column terminal do not fit, and what the strip
-            // does about that is cut them: `Conversations` became `Conversat`, silently. Running
-            // the strip down the side writes each title one letter per row, which is worse. So the
-            // region fills the space, its own frame carries its title in full, and the status line
-            // says which of the four it is and how to reach the rest.
-            foreach (var region in _regions)
-            {
-                region.X = 0;
-                region.Y = 0;
-                region.Width = Dim.Fill();
-                region.Height = Dim.Fill(1);
-            }
+        // **Only the current view's panes go on screen.** The other regions are kept alive rather
+        // than rebuilt, so a selection, a scroll position and a test's reference to one all survive
+        // a walk into a project and back out.
+        var panes = Panes;
 
-            Add(Projects, Agents, Conversations, Transcript);
+        foreach (var pane in _regions)
+        {
+            pane.Visible = panes.Contains(pane);
+        }
+
+        if (panes.Count == 1)
+        {
+            var only = panes[0];
+
+            only.X = 0;
+            only.Y = 0;
+            only.Width = Dim.Fill();
+            only.Height = Dim.Fill(1);
+        }
+        else if (stacked)
+        {
+            // Narrow: one pane at a time, and the status line says which of how many.
+            //
+            // **The toolkit's tab strip was tried in 005 and is what the specification forbids.**
+            // Titles across the top of a forty-column terminal do not fit, and what the strip does
+            // about that is cut them: `Conversations` became `Conversat`, silently. So each pane
+            // fills the space, its own frame carries its title in full, and the status line carries
+            // the rest.
+            foreach (var pane in panes)
+            {
+                pane.X = 0;
+                pane.Y = 0;
+                pane.Width = Dim.Fill();
+                pane.Height = Dim.Fill(1);
+            }
         }
         else
         {
-            // Projects on the left, agents over conversations in the middle, the transcript on
-            // the right. The transcript is widest because it is the only region holding prose.
-            Projects.X = 0;
-            Projects.Y = 0;
-            Projects.Width = Dim.Percent(25);
-            Projects.Height = Dim.Fill(1);
+            // Two panes, side by side. Agents on the left because the question a project view
+            // answers first is who is in it; conversations wider because they carry identifiers and
+            // timestamps rather than short names.
+            panes[0].X = 0;
+            panes[0].Y = 0;
+            panes[0].Width = Dim.Percent(40);
+            panes[0].Height = Dim.Fill(1);
 
-            Agents.X = Pos.Right(Projects);
-            Agents.Y = 0;
-            Agents.Width = Dim.Percent(35);
-            Agents.Height = Dim.Percent(50);
+            panes[1].X = Pos.Right(panes[0]);
+            panes[1].Y = 0;
+            panes[1].Width = Dim.Fill();
+            panes[1].Height = Dim.Fill(1);
+        }
 
-            Conversations.X = Pos.Right(Projects);
-            Conversations.Y = Pos.Bottom(Agents);
-            Conversations.Width = Dim.Percent(35);
-            Conversations.Height = Dim.Fill(1);
-
-            Transcript.X = Pos.Right(Agents);
-            Transcript.Y = 0;
-            Transcript.Width = Dim.Fill();
-            Transcript.Height = Dim.Fill(1);
-
-            // **Made visible again, because the stacked layout hides three of them.** Going narrow
-            // and coming back is one drag of a window edge, and without this the surface returns
-            // showing one region and three gaps -- which reads as three regions lost to the resize
-            // rather than as a layout that forgot to undo itself.
-            foreach (var region in _regions)
-            {
-                region.Visible = true;
-            }
-
-            Add(Projects, Agents, Conversations, Transcript);
+        foreach (var pane in panes)
+        {
+            Add(pane);
         }
 
         Focus(FocusedRegion);
@@ -279,13 +347,17 @@ internal sealed class Shell : Window
     /// <param name="at">Which region, counted from the projects.</param>
     internal void Focus(int at)
     {
-        FocusedRegion = ((at % _regions.Count) + _regions.Count) % _regions.Count;
+        var panes = Panes;
 
-        var region = _regions[FocusedRegion];
+        FocusedRegion = ((at % panes.Count) + panes.Count) % panes.Count;
 
-        if (_stacked)
+        var region = panes[FocusedRegion];
+
+        // Narrow, two panes become one at a time. With one pane there is nothing to hide, and
+        // hiding it would leave an empty screen.
+        if (_stacked && panes.Count > 1)
         {
-            foreach (var other in _regions)
+            foreach (var other in panes)
             {
                 other.Visible = ReferenceEquals(other, region);
             }
@@ -300,9 +372,16 @@ internal sealed class Shell : Window
         // silent truncation this layout exists to avoid.
         var actions = Actions();
 
-        var where = _stacked
-            ? $"{FocusPrefix}{NameOf(region)} ({FocusedRegion + 1}/{_regions.Count}, Tab)"
+        var where = _stacked && panes.Count > 1
+            ? $"{FocusPrefix}{NameOf(region)} ({FocusedRegion + 1}/{panes.Count}, Tab)"
             : FocusPrefix + NameOf(region);
+
+        // Where in the deployment, not only which pane. A view showing one project's agents looks
+        // exactly like another's, and 005's status line -- which only ever had one screen to
+        // describe -- would now be describing three.
+        where = _place.Viewing == Viewing.Projects
+            ? where
+            : $"{_place.Title} / {where}";
 
         var offered = actions.Count == 0
             ? string.Empty
@@ -320,9 +399,58 @@ internal sealed class Shell : Window
             : where + (actions.Count == 0 ? string.Empty : $"  {ActionsKey}: actions");
     }
 
-    /// <summary>Moves focus to the next region, or the previous one.</summary>
+    /// <summary>Moves focus to the next pane, or the previous one.</summary>
     /// <param name="forwards">Whether to go forwards.</param>
     internal void Move(bool forwards) => Focus(FocusedRegion + (forwards ? 1 : -1));
+
+    /// <summary>Opens whatever is selected, one level in.</summary>
+    /// <returns>When the view has been opened and its reads started.</returns>
+    /// <remarks>
+    /// Chosen from the pane that shows the thing: a project from the projects view, a conversation
+    /// from the project view. A transcript has nothing below it, so this does nothing there rather
+    /// than inventing a fourth level.
+    /// </remarks>
+    internal Task OpenAsync() => _place.Viewing switch
+    {
+        Viewing.Projects when Projects.Selected is { } project => GoAsync(ViewPlace.Into(project.Name)),
+        Viewing.Project when Conversations.Selected is { } conversation =>
+            GoAsync(_place.Into(conversation.Id)),
+        _ => Task.CompletedTask,
+    };
+
+    /// <summary>Goes back one level.</summary>
+    /// <returns>When the view has been changed.</returns>
+    /// <remarks>
+    /// <b>Back keeps the place rather than the level.</b> Coming out of a conversation lands on the
+    /// project it was in with that conversation still highlighted, because each region keeps its
+    /// selection by name across a redraw. Reading three conversations in turn should cost three
+    /// keystrokes, not three descents from the top.
+    /// </remarks>
+    internal Task BackAsync() =>
+        _place.CanGoBack ? GoAsync(_place.Back()) : Task.CompletedTask;
+
+    /// <summary>Moves to a view and lays it out.</summary>
+    /// <param name="place">Where to go.</param>
+    /// <returns>When the view is on screen.</returns>
+    /// <remarks>
+    /// Internal rather than private so a test can put the surface on a view without first building
+    /// a deployment to navigate through. One test still walks in the way a person does -- select,
+    /// Enter -- because a suite that only ever arrived by this route could not tell that the route a
+    /// person takes had stopped working.
+    /// </remarks>
+    internal Task GoAsync(ViewPlace place)
+    {
+        _place = place;
+        Touched();
+
+        // Relaid unconditionally: the panes have changed even though the width has not, so Lay's
+        // usual early return -- same arrangement, already built -- would leave the previous view on
+        // screen while the status line said otherwise.
+        Relay();
+        Focus(0);
+
+        return Task.CompletedTask;
+    }
 
     /// <summary>What the focused region can do, and the letter that does each.</summary>
     /// <returns>The actions, in the order the status line lists them.</returns>
@@ -332,7 +460,7 @@ internal sealed class Shell : Window
     /// projects region. That is User Story 2's rule, and having the region answer for its own
     /// actions is what keeps the status line and the keys from drifting apart.
     /// </remarks>
-    internal IReadOnlyList<RegionAction> Actions() => _regions[FocusedRegion] switch
+    internal IReadOnlyList<RegionAction> Actions() => Panes[FocusedRegion] switch
     {
         // Naming the running deployment is offered only while there is one nothing names yet.
         // Offered always, it would invite somebody to name the same broker twice, which is two
@@ -399,7 +527,7 @@ internal sealed class Shell : Window
 
         var menu = Prompting.Choose(
             ActionsTitle,
-            NameOf(_regions[FocusedRegion]),
+            NameOf(Panes[FocusedRegion]),
             [.. actions.Select(action => $"{action.Key}: {action.Label}")]);
 
         var token = Prompting.Open(app, menu);
@@ -576,12 +704,28 @@ internal sealed class Shell : Window
     /// machine and no <c>xdg-open</c> on a minimal container, and both are ordinary places to run
     /// this.
     /// </remarks>
+    /// <remarks>
+    /// <b>The thing on screen, not the front page.</b> A key that always opened the console's home
+    /// page would make somebody navigate it from scratch to reach what they were already looking
+    /// at, which is worse than having no key. The address comes from <see cref="Deep"/> so the
+    /// terminal cannot deep-link to a route the console has renamed — the same defect as the
+    /// hand-copied port, one layer up and with a worse symptom, since a 404 reads as the console
+    /// being broken rather than the link being wrong.
+    /// </remarks>
     private Task OpenConsole()
     {
-        Launch.Open(said => Said = said, ConsoleAddress);
+        Launch.Open(said => Said = said, Deep.For(ConsoleAddress, _place));
 
         return Task.CompletedTask;
     }
+
+    /// <summary>The key that hands whatever is on screen to a browser.</summary>
+    /// <remarks>
+    /// A function key because every letter is spoken for by an action and <c>?</c> by the action
+    /// list. It is listed among what each view can do rather than left as knowledge somebody has to
+    /// have, which is the rule no action exists only as a key.
+    /// </remarks>
+    internal static Key BrowserKey => Key.F8;
 
     /// <summary>Where the web console listens when a broker hosts it.</summary>
     /// <remarks>
@@ -899,6 +1043,37 @@ internal sealed class Shell : Window
         if (key == Key.Tab.WithShift)
         {
             Move(forwards: false);
+
+            return true;
+        }
+
+        // **Escape goes back, and only when there is somewhere to go.** Taken before the dialogs
+        // see it would be wrong -- a dialog's Escape closes the dialog -- but a dialog is a session
+        // on top of this one and takes the key first, so by the time it arrives here there is none
+        // open. Returning false at the top of the tree leaves Escape to whatever else wants it
+        // rather than swallowing it into nothing.
+        if (key == Key.Esc && _place.CanGoBack)
+        {
+            _ = BackAsync();
+
+            return true;
+        }
+
+        if (key == BrowserKey)
+        {
+            OpenConsole();
+
+            return true;
+        }
+
+        // **Enter is taken here only on the projects view, and that asymmetry is deliberate.**
+        // The conversations list raises its own event from the toolkit's `Accepting`, which is what
+        // makes the key route and the mouse route one code path -- so intercepting Enter for every
+        // view would take the key before that fires and break opening a conversation by pointer.
+        // The projects list has no such handler, so there is nothing here to preempt.
+        if (key == Key.Enter && _place.Viewing == Viewing.Projects)
+        {
+            _ = OpenAsync();
 
             return true;
         }

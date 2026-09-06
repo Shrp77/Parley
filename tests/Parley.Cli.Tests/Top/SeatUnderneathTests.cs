@@ -1,6 +1,7 @@
-using Grpc.Net.Client;
+﻿using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Top;
+using Parley.Client.Views;
 using Parley.Client;
 using Parley.Client.Seating;
 using Parley.Core;
@@ -122,7 +123,8 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         using var seats = new SeatBook(directory.AgentsFor);
         using var shell = await SeatedAsync(driving, directory, seats);
 
-        shell.Focus(3);
+        // The transcript, which is its own view now rather than the fourth region of one.
+        await Walking.GoAsync(shell, Viewing.Conversation);
 
         Assert.Contains(shell.Actions(), action => action.Label == Participation.TellTitle);
 

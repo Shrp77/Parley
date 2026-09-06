@@ -1,5 +1,6 @@
-using Grpc.Net.Client;
+﻿using Grpc.Net.Client;
 using Parley.Cli.Top;
+using Parley.Client.Views;
 using Parley.Client;
 using Parley.Client.Seating;
 using Parley.Core;
@@ -130,7 +131,10 @@ public sealed class DialogStackTests
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
 
-        driving.Tab();
+        // On the project view, where there are two panes to move between. The projects view has
+        // one, and Tab on one pane is a Tab that correctly changes nothing -- which would make this
+        // pass or fail for a reason that has nothing to do with the dialog.
+        await Walking.GoAsync(shell, Viewing.Project);
 
         var before = shell.FocusedRegion;
 

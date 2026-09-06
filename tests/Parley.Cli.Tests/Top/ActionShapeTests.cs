@@ -1,7 +1,8 @@
-using Grpc.Net.Client;
+﻿using Grpc.Net.Client;
 using Parley.Cli.Top;
 using Parley.Client;
 using Parley.Client.Seating;
+using Parley.Client.Views;
 using Parley.Core;
 using Xunit;
 
@@ -25,7 +26,7 @@ namespace Parley.Cli.Tests.Top;
 public sealed class ActionShapeTests
 {
     [Fact]
-    public void No_region_binds_one_letter_to_two_actions()
+    public async Task No_region_binds_one_letter_to_two_actions()
     {
         using var driving = Driving.Open();
         using var directory = Directory();
@@ -34,10 +35,8 @@ public sealed class ActionShapeTests
 
         driving.Show(shell);
 
-        for (var region = 0; region < 4; region++)
+        await foreach (var _ in Walking.EveryPaneAsync(shell))
         {
-            shell.Focus(region);
-
             var letters = shell.Actions().Select(action => action.Key).ToList();
 
             Assert.Equal(letters.Count, letters.Distinct().Count());
@@ -45,7 +44,7 @@ public sealed class ActionShapeTests
     }
 
     [Fact]
-    public void No_action_takes_a_letter_the_surface_has_already_spoken_for()
+    public async Task No_action_takes_a_letter_the_surface_has_already_spoken_for()
     {
         // Tab, Enter, Escape and the actions menu are the surface's own, and an action bound to
         // one of them would be unreachable while looking perfectly reachable in the status line.
@@ -56,16 +55,14 @@ public sealed class ActionShapeTests
 
         driving.Show(shell);
 
-        for (var region = 0; region < 4; region++)
+        await foreach (var _ in Walking.EveryPaneAsync(shell))
         {
-            shell.Focus(region);
-
             Assert.DoesNotContain(shell.Actions(), action => action.Key == Shell.ActionsKey);
         }
     }
 
     [Fact]
-    public void Every_action_says_what_it_is_in_the_words_its_dialog_uses()
+    public async Task Every_action_says_what_it_is_in_the_words_its_dialog_uses()
     {
         // The status line and the dialog have to agree, or a person reads one label and meets
         // another. Both come from the same constant.
@@ -75,13 +72,16 @@ public sealed class ActionShapeTests
         using var shell = TopCommand.Build(directory, seats, manifestPath: "nowhere");
 
         driving.Show(shell);
-        shell.Focus(0);
+
+        // Project actions live on the projects view now, and agent actions inside a project. That
+        // is the whole of 006's rearrangement, asserted rather than assumed.
+        await Walking.GoAsync(shell, Viewing.Projects);
 
         Assert.Contains(shell.Actions(), action => action.Label == Naming.CreateTitle);
         Assert.Contains(shell.Actions(), action => action.Label == Removing.Title);
         Assert.Contains(shell.Actions(), action => action.Label == Onboarding.Title);
 
-        shell.Focus(1);
+        await Walking.GoAsync(shell, Viewing.Project);
 
         Assert.Contains(shell.Actions(), action => action.Label == Adding.Title);
     }

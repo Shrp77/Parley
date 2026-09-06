@@ -1,6 +1,7 @@
-using Grpc.Core;
+﻿using Grpc.Core;
 using Grpc.Net.Client;
 using Parley.Cli.Top;
+using Parley.Client.Views;
 using Parley.Client;
 using Parley.Client.Seating;
 using Parley.Core;
@@ -69,7 +70,7 @@ public sealed class BrokerRestartTests
         using var shell = new Shell(directory) { Seats = seats };
 
         driving.Show(shell);
-        driving.Tab();
+        await Walking.GoAsync(shell, Viewing.Project);
 
         Assert.Empty(seats.Seats(me));
         Assert.Null(shell.Held);

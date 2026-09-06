@@ -1,4 +1,4 @@
-using System.Drawing;
+﻿using System.Drawing;
 using System.Text.RegularExpressions;
 using Terminal.Gui.App;
 using Terminal.Gui.Input;
@@ -234,12 +234,43 @@ internal static class Driving
         /// </remarks>
         internal void DoubleClick(View view) => Click(view, MouseFlags.LeftButtonDoubleClicked);
 
+        /// <summary>Clicks the row a list is currently on, wherever it sits.</summary>
+        /// <param name="list">The list.</param>
+        /// <param name="flags">Which click.</param>
+        /// <remarks>
+        /// <b>The selected row rather than the middle of the view</b>, because those are the same
+        /// point only when the list happens to be as tall as its contents. 006 gave the
+        /// conversations pane the full height of a project view, at which point the middle of the
+        /// frame is empty space well below the rows -- so a click there selected nothing and read
+        /// as the mouse route being broken rather than as the test aiming at the wrong place.
+        /// </remarks>
+        internal void ClickRow(ListView list, MouseFlags flags)
+        {
+            ArgumentNullException.ThrowIfNull(list);
+
+            var frame = list.FrameToScreen();
+            var row = Math.Max(0, list.SelectedItem ?? 0);
+            var at = new Point(frame.X + 1, frame.Y + row);
+
+            Deliver(list, at, flags);
+        }
+
         private void Click(View view, MouseFlags flags)
         {
             ArgumentNullException.ThrowIfNull(view);
 
             var frame = view.FrameToScreen();
             var at = new Point(frame.X + (frame.Width / 2), frame.Y + (frame.Height / 2));
+
+            Deliver(view, at, flags);
+        }
+
+        /// <summary>Hit-tests a point and delivers a click to whatever is under it.</summary>
+        /// <param name="view">The view aimed at, used only when nothing is under the point.</param>
+        /// <param name="at">Where on screen.</param>
+        /// <param name="flags">Which click.</param>
+        private void Deliver(View view, Point at, MouseFlags flags)
+        {
             var under = App.TopRunnableView?.GetViewsUnderLocation(in at, ViewportSettingsFlags.None);
             var target = Deepest(under) ?? view;
             var inside = target.ScreenToViewport(in at);

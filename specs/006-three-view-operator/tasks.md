@@ -67,13 +67,13 @@ same project highlighted.
 - [X] T014 [US1] Add `src/Parley.Client/Views/ProjectsView.cs` deriving what the projects view shows — the projects, and for one of them its agent and conversation summary — from broker reads, with no toolkit type in it.
 - [X] T015 [P] [US1] Add `src/Parley.Client/Views/ViewPlace.cs` holding where a person is: which of the three views, and what it is about. Derived once so both surfaces cannot disagree about what "back" means.
 - [ ] T016 [P] [US1] Add `tests/Parley.Client.Tests/Views/ProjectsViewTests.cs`: the summary is for the highlighted project only; an unreachable broker yields "not answering" rather than an empty project; a machine naming no projects yields the empty-state sentence.
-- [ ] T017 [US1] Rewrite `src/Parley.Cli/Top/Shell.cs` to host one view at a time over `ViewPlace`, replacing the four-region layout. Keep `OnFrameChanged`, the work queue under its lock, the idle sweep and `Safe` exactly as they are.
-- [ ] T018 [US1] Rewrite `src/Parley.Cli/Top/ProjectsRegion.cs` as the projects view: the list plus the summary beside it.
+- [X] T017 [US1] Rewrite `src/Parley.Cli/Top/Shell.cs` to host one view at a time over `ViewPlace`, replacing the four-region layout. Keep `OnFrameChanged`, the work queue under its lock, the idle sweep and `Safe` exactly as they are.
+- [X] T018 [US1] Rewrite `src/Parley.Cli/Top/ProjectsRegion.cs` as the projects view: the list plus the summary beside it.
 - [ ] T019 [US1] Add `src/Parley.Web/Pages/Index.cshtml` (and its model) as the same projects view, reading the same derivation.
-- [ ] T020 [P] [US1] Add `tests/Parley.Cli.Tests/Top/ProjectsViewTests.cs` driving the terminal: open, move, choose, back, and the same project still highlighted.
+- [X] T020 [P] [US1] Add `tests/Parley.Cli.Tests/Top/ProjectsViewTests.cs` driving the terminal: open, move, choose, back, and the same project still highlighted.
 - [ ] T021 [P] [US1] Add `tests/Parley.Web.Tests/ProjectsViewTests.cs` making the same four assertions against the page.
 - [ ] T022 [US1] Move 004's project actions — create, name the running deployment, remove with the name typed back, follow the log — onto this view unchanged, and move their tests with them **unedited**. A guard whose test needed changing to keep passing is the signal to stop.
-- [ ] T023 [P] [US1] Extend `tests/Parley.Cli.Tests/Top/StackOnResizeTests.cs` to cover all three views at the narrowest supported width, asserting nothing is cut short.
+- [X] T023 [P] [US1] Extend `tests/Parley.Cli.Tests/Top/StackOnResizeTests.cs` to cover all three views at the narrowest supported width, asserting nothing is cut short.
 
 **Checkpoint**: the owner's complaint is answered. This is the MVP.
 
@@ -177,9 +177,9 @@ local, paragraphs preserved, JSON laid out.
 ## Phase 8 (US6, P3): Hand the current thing to a browser
 
 - [X] T071 [US6] Add `src/Parley.Client/Rendering/Deep.cs` building console addresses from `ConsoleHost.LoopbackAddress` and the console's own routes, in one place.
-- [ ] T072 [US6] Bind `F8` on all three terminal views to open the address for the thing on screen, and list it among what each view can do.
+- [X] T072 [US6] Bind `F8` on all three terminal views to open the address for the thing on screen, and list it among what each view can do.
 - [X] T073 [P] [US6] Add `tests/Parley.Client.Tests/DeepTests.cs` asserting each address matches a route the console actually serves — reflected from the Razor pages, not written out a second time. The `5045` defect was a hand-copied address; a hand-copied route is the same defect one layer up.
-- [ ] T074 [P] [US6] Add a terminal test that `F8` on each view produces the right address and that a failed launch is reported without stopping the surface.
+- [X] T074 [P] [US6] Add a terminal test that `F8` on each view produces the right address and that a failed launch is reported without stopping the surface.
 
 ---
 
