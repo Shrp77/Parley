@@ -1,5 +1,4 @@
 ﻿using System.Globalization;
-using System.Reflection;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Parley.Cli;
@@ -170,17 +169,12 @@ if (arguments.Exists(a => a is "--help" or "-h"))
 // by a package version that moves for a typo in a help string.
 if (arguments.Exists(a => a is "--version" or "-v"))
 {
-    var build = typeof(OperatorCommands).Assembly
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-        ?? "unknown";
-
-    // The informational version carries a source-control suffix when one is built into it.
-    // Trimmed, because what somebody typing --version wants is the number they can compare.
-    var plus = build.IndexOf('+', StringComparison.Ordinal);
-
+    // Trimmed of its source-control suffix by BuildIdentity, because what somebody typing this
+    // wants is the number they can compare. The broker's startup line keeps the commit, and both
+    // read the same property so they cannot disagree about the number.
     await Console.Out.WriteLineAsync(string.Create(
         CultureInfo.InvariantCulture,
-        $"parley {(plus < 0 ? build : build[..plus])}, speaking Parley protocol " +
+        $"parley {BuildIdentity.Version}, speaking Parley protocol " +
         $"{ProtocolVersion.Current}")).ConfigureAwait(false);
 
     return 0;

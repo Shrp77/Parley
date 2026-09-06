@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace Parley.Spec.Tests;
@@ -18,7 +19,7 @@ namespace Parley.Spec.Tests;
 /// four regions on one screen for a day after that stopped being what the terminal did.
 /// </para>
 /// </remarks>
-public sealed class ProjectRecordTests
+public sealed partial class ProjectRecordTests
 {
     private static string Root()
     {
@@ -44,7 +45,7 @@ public sealed class ProjectRecordTests
         var notes = Read("CLAUDE.md");
 
         Assert.Contains("specs/006-three-view-operator/", notes, StringComparison.Ordinal);
-        Assert.Contains("0.18.0", notes, StringComparison.Ordinal);
+        Assert.Contains(Shipping(), notes, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -52,10 +53,39 @@ public sealed class ProjectRecordTests
     {
         // The one convention in CLAUDE.md the build cannot catch, which is why it is written down
         // there — and therefore the one most worth checking from outside.
+        //
+        // Derived rather than written out, and that is the whole substance of this test. Both
+        // halves used to name 0.18.0 as a literal, which checked that somebody had typed the same
+        // number twice here rather than that the two documents agree — so the first patch bump
+        // failed it, in the file that is not the one at fault, and the cheapest way past a test
+        // like that is to update the literal without reading the file it is about.
         var props = Read("Directory.Build.props");
 
-        Assert.Contains("<VersionPrefix>0.18.0</VersionPrefix>", props, StringComparison.Ordinal);
+        Assert.Contains(
+            $"<VersionPrefix>{Shipping()}</VersionPrefix>", props, StringComparison.Ordinal);
     }
+
+    /// <summary>The version this build ships as, read from where the convention puts it.</summary>
+    /// <returns>The version, as <c>Directory.Build.props</c> declares it.</returns>
+    /// <remarks>
+    /// The props file is the source and <c>CLAUDE.md</c> is what has to agree with it, rather than
+    /// the other way round: the build carries this number into every package whatever any document
+    /// says, so a disagreement is the document being wrong.
+    /// </remarks>
+    private static string Shipping()
+    {
+        var props = Read("Directory.Build.props");
+        var version = VersionPrefix().Match(props);
+
+        // Guarded, because a regex that matches nothing would make both tests above pass by
+        // asserting that two files each contain the empty string.
+        Assert.True(version.Success, "Directory.Build.props declares no VersionPrefix");
+
+        return version.Groups[1].Value;
+    }
+
+    [GeneratedRegex(@"<VersionPrefix>([^<]+)</VersionPrefix>")]
+    private static partial Regex VersionPrefix();
 
     [Fact]
     public void The_notes_record_what_the_feature_reversed_rather_than_only_what_it_built()

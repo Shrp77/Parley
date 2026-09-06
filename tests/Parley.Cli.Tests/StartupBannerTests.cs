@@ -1,4 +1,8 @@
-﻿using Xunit;
+﻿using System.Globalization;
+using System.Runtime.InteropServices;
+using Parley.Core;
+using Parley.Store;
+using Xunit;
 
 namespace Parley.Cli.Tests;
 
@@ -44,6 +48,103 @@ public sealed class StartupBannerTests
 
         Assert.DoesNotContain('\u001b', output);
         Assert.DoesNotContain('\u001b', error);
+    }
+
+    [Fact]
+    public async Task The_first_thing_a_broker_says_is_which_versions_are_running()
+    {
+        var (output, _) = await ServeUntilListeningAsync();
+
+        var first = output.Split('\n')[0].TrimEnd('\r');
+
+        // First, because the runs where this matters most are the ones that print nothing after
+        // it: a store this build cannot open, or a port already held.
+        Assert.StartsWith("parley ", first, StringComparison.Ordinal);
+
+        // Every version involved, each answering a different question. Named individually rather
+        // than matched as one string, so a line that drops one says which.
+        Assert.Contains(BuildIdentity.Version, first, StringComparison.Ordinal);
+        Assert.Contains("protocol " + ProtocolVersion.Current, first, StringComparison.Ordinal);
+        Assert.Contains(
+            string.Create(CultureInfo.InvariantCulture, $"schema {SchemaMigrator.LatestVersion}"),
+            first,
+            StringComparison.Ordinal);
+        Assert.Contains(RuntimeInformation.FrameworkDescription, first, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_broker_that_cannot_open_its_store_has_still_named_its_versions()
+    {
+        // The run this line exists for. Everything else the banner says comes after the store is
+        // open, so a build that refuses a store — "this store is at schema 5 and this Parley only
+        // knows 4" — used to leave a log with the complaint in it and nothing saying which Parley.
+        //
+        // A directory rather than a locked or malformed file, because it fails the same way on
+        // every platform this suite runs on and needs no cleanup of its own.
+        var directory = Path.Combine(
+            Path.GetTempPath(), "parley-banner-" + Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(directory);
+
+        await using var output = new StringWriter();
+        await using var error = new StringWriter();
+
+        try
+        {
+            var code = await ServeCommand.RunAsync(
+                directory,
+                "http://127.0.0.1:0",
+                null,
+                output,
+                error,
+                cancellationToken: TestContext.Current.CancellationToken);
+
+            // Non-vacuous: a run that started normally would prove nothing about the failing one.
+            Assert.NotEqual(0, code);
+            Assert.Contains("Could not open", error.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+
+        Assert.Contains(BuildIdentity.Line, output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_version_line_names_the_commit_when_the_build_carried_one()
+    {
+        // Not asserted as present: a build made outside source control carries no revision, and a
+        // test demanding one would fail on a checkout that is a copy rather than a clone. What is
+        // asserted is that it is never invented, and never the whole forty characters — the line
+        // is read on a terminal, and a hash that wraps it is the reason `git log` abbreviates.
+        if (BuildIdentity.Commit is null)
+        {
+            Assert.DoesNotContain('(', BuildIdentity.Line);
+
+            return;
+        }
+
+        Assert.Contains(
+            "(" + BuildIdentity.Commit + ")", BuildIdentity.Line, StringComparison.Ordinal);
+
+        Assert.True(
+            BuildIdentity.Commit.Length <= 7,
+            $"the commit is {BuildIdentity.Commit.Length} characters: {BuildIdentity.Commit}");
+    }
+
+    [Fact]
+    public void What_version_prints_and_what_the_broker_logs_agree_about_the_number()
+    {
+        // They are deliberately not the same line — one is a number somebody compares, the other
+        // identifies a build months later — and that is exactly why the number they share is
+        // checked. Two readings of the same attribute is how they came to differ once.
+        var program = RepositoryFile.Read("src/Parley.Cli/Program.cs");
+
+        Assert.Contains("BuildIdentity.Version", program, StringComparison.Ordinal);
+
+        Assert.DoesNotContain(
+            "AssemblyInformationalVersionAttribute", program, StringComparison.Ordinal);
     }
 
     [Fact]

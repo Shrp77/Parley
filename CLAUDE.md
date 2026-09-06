@@ -506,8 +506,12 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   one conversation) replacing 005's four regions on one screen, on **both** surfaces; and the four
   operator operations the protocol did not have: `archive`, `unarchive` and `destroy` for a
   conversation, and `start` for a catalogued agent. The protocol work landed before the views,
-  because the surfaces are clients of it. 0.18.0 — the minor moves because §10.2 is a versioned
-  contract and four new operations change what a V1 broker must implement.
+  because the surfaces are clients of it. 0.18.1 — the minor moved to 0.18.0 because §10.2 is a
+  versioned contract and four new operations change what a V1 broker must implement; the patch is
+  the line a broker now prints before it opens anything, naming its build, the commit it came
+  from, the protocol it speaks and the schema it expects. Written because a log that records a
+  store it could not open, or a port it could not bind, said nothing about which build said it —
+  and the version on PATH is the fact that had just been wrong.
 
   **`plan.md` Q1 was right, and T039 is what says so rather than the argument.** A node joins
   declaring a role nothing has ever registered, an operator asks for a start, the node receives the

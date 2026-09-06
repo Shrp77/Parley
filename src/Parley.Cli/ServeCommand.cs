@@ -95,6 +95,12 @@ public static class ServeCommand
             output = TextWriter.Synchronized(output);
         }
 
+        // First, and before anything that can fail. A store this build cannot open, a port
+        // already held, a manifest that will not parse -- each of those ends the process, and
+        // the log then holds a failure with nothing saying which build produced it. The version
+        // is most worth having in exactly the runs that print nothing else.
+        await output.WriteLineAsync(BuildIdentity.Line).ConfigureAwait(false);
+
         if (string.IsNullOrWhiteSpace(databasePath))
         {
             await error.WriteLineAsync(
@@ -262,6 +268,11 @@ public static class ServeCommand
         // interleaved is the output an operator reads to find out which broker is unwell.
         output = TextWriter.Synchronized(output);
         error = TextWriter.Synchronized(error);
+
+        // Said once for the process rather than once per project: one build serves all of them,
+        // and a line repeated per project would read as though it could differ. Before the first
+        // store is opened, for the reason the single-store overload gives.
+        await output.WriteLineAsync(BuildIdentity.Line).ConfigureAwait(false);
 
         // Every project serving right now. Grows when the watcher starts one named since the
         // process began and shrinks when it stops one removed, so it is read under its own lock.
