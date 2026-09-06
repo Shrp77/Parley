@@ -1,4 +1,4 @@
-using Grpc.Core;
+﻿using Grpc.Core;
 using Grpc.Net.Client;
 using Parley.Broker;
 using Wire = Parley.Transport;
@@ -420,6 +420,24 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
         }
 
         return new JoinedNodeClient(nodes, machine, stream);
+    }
+
+    /// <summary>Counts every command that arrived within a window.</summary>
+    /// <param name="within">How long to collect for.</param>
+    /// <returns>How many arrived.</returns>
+    /// <remarks>
+    /// For asserting that N asks produce N commands rather than more. <c>WaitForCommandAsync</c>
+    /// answers "did one arrive", which cannot tell one from six -- and one keystroke becoming six
+    /// processes is exactly the failure worth checking on an operation that starts processes.
+    /// </remarks>
+    public async Task<int> CountCommandsAsync(TimeSpan within)
+    {
+        await Task.Delay(within).ConfigureAwait(false);
+
+        lock (_commands)
+        {
+            return _commands.Count;
+        }
     }
 
     /// <summary>Waits for a command to arrive.</summary>

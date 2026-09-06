@@ -141,7 +141,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// repository need not leave an agent nobody can reach until somebody opens that directory.
     /// </para>
     /// </remarks>
-    public override Task<Wire.DidItReply> Start(
+    public override async Task<Wire.DidItReply> Start(
         Wire.StartRequest request,
         ServerCallContext context)
     {
@@ -150,11 +150,30 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         var agent = Name(request.Agent);
 
+        // **A retired agent is not started, and this was found by probing rather than by reading.**
+        // Retirement is an operator's decision that nothing is routed to an agent (§14), and a
+        // start that ignored it would bring back the process for an agent somebody deliberately
+        // withdrew -- undoing one operator operation by a route that is not the one that means it.
+        // `reinstate` is that route and says so.
+        //
+        // **The lookup is deliberately conditional and that is the whole subtlety.** §12.3, and
+        // T039, turn on there being no registry lookup between an operator asking for a start and
+        // the node receiving it: that absence is what lets a catalogued role nothing has ever
+        // registered be started at all. So an agent the registry does not hold is started, because
+        // nothing about it has been retired; only one it holds and marks retired is refused.
+        var registry = await Console(
+            (console, _, ct) => console.DescribeRegistryAsync(ct), context).ConfigureAwait(false);
+
+        if (registry.FirstOrDefault(row => row.Name == agent) is { Status: AgentStatus.Retired })
+        {
+            return new Wire.DidItReply { Changed = false };
+        }
+
         var started = _runtime.RequestAttention(
             agent,
             string.IsNullOrWhiteSpace(request.Because) ? "an operator asked for it" : request.Because);
 
-        return Task.FromResult(new Wire.DidItReply { Changed = started });
+        return new Wire.DidItReply { Changed = started };
     }
 
     /// <inheritdoc/>
