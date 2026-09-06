@@ -3,6 +3,7 @@ using Parley.Client.Seating;
 using Parley.Client.Views;
 using Parley.Core;
 using Parley.Headless;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.Views;
 
 namespace Parley.Cli.Top;
@@ -73,7 +74,7 @@ internal sealed class AgentsRegion : FrameView
         "No agent is registered in this project and its catalogue names none. Press a to make a "
         + "repository on this machine one.";
 
-    private readonly ListView _list = Lists.Filling();
+    private readonly ListView _list = Lists.Filling(Colours.Agents);
 
     private List<AgentRow> _rows = [];
     private List<AgentStanding> _standing = [];
@@ -83,7 +84,9 @@ internal sealed class AgentsRegion : FrameView
     {
         Title = RegionTitle;
         CanFocus = true;
+        SetScheme(Colours.Region(Colours.Agents));
         Add(_list);
+        Lists.Tint(_list, Tint);
     }
 
     /// <summary>The rows as drawn, in order.</summary>
@@ -368,6 +371,50 @@ internal sealed class AgentsRegion : FrameView
         var standing = _standing.FirstOrDefault(s => s.Name == row.Name)?.Standing ?? row.State;
 
         return $"{row.Name}  [{Safe.Text(standing)}]  {row.Owns}  {row.Workspace}";
+    }
+
+    /// <summary>What colour a row earns from where its agent stands.</summary>
+    /// <param name="row">Which row.</param>
+    /// <returns>The colour, or null for a row that is not an agent.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>State rather than identity here, and identity rather than state in the transcript.</b>
+    /// <see cref="Palette"/> gives every agent a colour of its own and says what it is for: helping
+    /// an eye follow one agent down a long conversation. That is the transcript's problem. The
+    /// question this region answers is whether a peer can be asked anything right now, so the
+    /// colour answers that one — eight identity hues here would be eight colours saying nothing
+    /// about the only thing somebody is looking at the list to find out.
+    /// </para>
+    /// <para>
+    /// Read from the typed standing rather than from the drawn phrase, because these facts arrive
+    /// as booleans and matching the words back out would be a second derivation of something the
+    /// shared one already decided.
+    /// </para>
+    /// </remarks>
+    private Color? Tint(int row)
+    {
+        var at = row - _offset;
+
+        // The reason the broker could not be asked, when there is one, occupies the first line.
+        if (_offset == 1 && row == 0)
+        {
+            return Colours.Bad;
+        }
+
+        if (at < 0 || at >= _rows.Count)
+        {
+            return null;
+        }
+
+        var name = _rows[at].Name;
+        var standing = _standing.FirstOrDefault(s => s.Name == name);
+
+        return standing is null ? null
+            : standing.Seat ? Colours.Seated
+            : standing.Retired ? Colours.Bad
+            : standing.Running ? Colours.Good
+            : standing.StartableHere ? Colours.Warn
+            : Colours.Quiet;
     }
 
     /// <summary>What the shared derivation says about each agent, in the order drawn.</summary>

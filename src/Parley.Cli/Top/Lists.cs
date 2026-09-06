@@ -1,3 +1,4 @@
+using Terminal.Gui.Drawing;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -33,7 +34,62 @@ namespace Parley.Cli.Top;
 internal static class Lists
 {
     /// <summary>A list that fills what it is put in, and leaves the keyboard alone.</summary>
+    /// <param name="accent">
+    /// The colour of the region it sits in, or null to take whatever it is put inside.
+    /// </param>
     /// <returns>The list.</returns>
-    internal static ListView Filling() =>
-        new() { Width = Dim.Fill(), Height = Dim.Fill(), KeystrokeNavigator = null };
+    /// <remarks>
+    /// Null is for a list inside a dialog. A dialog is drawn on a ground of the toolkit's choosing,
+    /// and a list that insisted on the terminal's own background would be a rectangle of the wrong
+    /// colour inside it.
+    /// </remarks>
+    internal static ListView Filling(Color? accent = null)
+    {
+        var list = new ListView { Width = Dim.Fill(), Height = Dim.Fill(), KeystrokeNavigator = null };
+
+        if (accent is { } colour)
+        {
+            list.SetScheme(Colours.Rows(colour));
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Colours the rows of a list from what each row says.
+    /// </summary>
+    /// <param name="list">The list.</param>
+    /// <param name="tint">The colour a row earns, or null when it earns none.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>The highlighted row is never tinted, and that is not a detail.</b> A row attribute set
+    /// here replaces the one the toolkit would have drawn, highlight included — so tinting the
+    /// selected row would take away the only mark saying which row a key is about to act on, in
+    /// the two regions where a key retires an agent or destroys a conversation. The toolkit's own
+    /// highlight is left to win.
+    /// </para>
+    /// <para>
+    /// The colour is asked for by row number rather than fixed at the time the list is filled,
+    /// because a list is refilled on every read and a parallel array of colours would be one more
+    /// thing that can fall out of step with the rows it describes.
+    /// </para>
+    /// </remarks>
+    internal static void Tint(ListView list, Func<int, Color?> tint)
+    {
+        ArgumentNullException.ThrowIfNull(list);
+        ArgumentNullException.ThrowIfNull(tint);
+
+        list.RowRender += (_, drawing) =>
+        {
+            if (list.SelectedItem == drawing.Row && list.HasFocus)
+            {
+                return;
+            }
+
+            if (tint(drawing.Row) is { } colour)
+            {
+                drawing.RowAttribute = Colours.Row(colour);
+            }
+        };
+    }
 }

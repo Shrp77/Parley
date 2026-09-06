@@ -70,7 +70,15 @@ public static class TopCommand
         // connection the evidence an agent is reachable, and the process dying closes every attach
         // stream this book holds — which is precisely how the broker learns somebody left. There is
         // no politer signal available; there is only the same signal sent sooner. The `using`
-        // above still runs on every ordinary exit, and Ctrl+Q leaves the surface properly.
+        // above still runs on every ordinary exit, and <see cref="Shell.QuitKey"/> leaves the
+        // surface properly.
+        //
+        // **That last clause was untrue for the life of this file and nothing caught it.** It said
+        // Ctrl+Q, which the toolkit does not bind: enumerating what Terminal.Gui 2.4.17 holds at
+        // application scope turns up ten entries, all navigation, and no Ctrl+Q among them. The
+        // chord did nothing at all, and no test had ever pressed it — the one place the suite
+        // mentioned Ctrl+Q was a comment on a test that disposes the surface directly. `Shell`
+        // binds it now, which is what makes the sentence true rather than aspirational.
         using var app = Application.Create(TimeProvider.System as ITimeProvider);
 
         app.Init();

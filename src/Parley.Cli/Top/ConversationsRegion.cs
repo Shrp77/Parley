@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using Parley.Client.Views;
 using Parley.Core;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.Views;
 
 namespace Parley.Cli.Top;
@@ -36,7 +37,7 @@ internal sealed class ConversationsRegion : FrameView
         "No conversation has happened in this project yet. One begins when an agent asks another "
         + "something, or when you do from a seat.";
 
-    private readonly ListView _list = Lists.Filling();
+    private readonly ListView _list = Lists.Filling(Colours.Conversations);
 
     private List<ConversationSummary> _conversations = [];
 
@@ -44,7 +45,9 @@ internal sealed class ConversationsRegion : FrameView
     {
         Title = RegionTitle;
         CanFocus = true;
+        SetScheme(Colours.Region(Colours.Conversations));
         Add(_list);
+        Lists.Tint(_list, Tint);
 
         // The list's own accept rather than a key handler on this region. Enter reaches the
         // focused view first and the list takes it, so a region-level handler never runs — which
@@ -116,6 +119,27 @@ internal sealed class ConversationsRegion : FrameView
         // Enter do nothing at all, which reads as a surface that has not finished loading.
         _list.SelectedItem = at >= 0 ? at : _conversations.Count > 0 ? 0 : null;
     }
+
+    /// <summary>What colour a row earns from where its exchanges stand.</summary>
+    /// <param name="row">Which row.</param>
+    /// <returns>The colour, or null for a row that is not a conversation.</returns>
+    /// <remarks>
+    /// <para>
+    /// Open and settled, and nothing else — because those are the two words this region writes.
+    /// An archived conversation is deliberately <i>not</i> dimmed here: this list does not say
+    /// "archived" on the row, so a dim row would be the one fact on the screen that exists only as
+    /// a colour, which FR-030 forbids and which the suite could not see. The colour follows the
+    /// words rather than getting ahead of them.
+    /// </para>
+    /// <para>
+    /// Open is the one that is coloured because it is the one somebody can act on: an exchange
+    /// nobody has settled is a peer still waiting.
+    /// </para>
+    /// </remarks>
+    private Color? Tint(int row) =>
+        row >= 0 && row < _conversations.Count
+            ? _conversations[row].HasOpenExchange ? Colours.Warn : Colours.Quiet
+            : null;
 
     /// <summary>Opens whatever the person is on.</summary>
     /// <returns>Whether there was anything to open.</returns>

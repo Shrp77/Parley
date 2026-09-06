@@ -47,15 +47,16 @@ internal sealed class Shell : Window
     /// name would be untestable at its own boundary.
     /// </para>
     /// <para>
-    /// <b>Two hundred is a diagnostic and not the shipped value.</b> It was eighty, and the report
+    /// <b>Eighty, and it was two hundred for one release for a reason worth keeping.</b> The report
     /// that dragging a window narrow stacked nothing was first read as a terminal that would not go
     /// below eighty columns. It was not: nothing called <see cref="Lay"/> after the constructor, so
-    /// the surface could not stack at any width. That is fixed, and this is raised only so the next
-    /// walk can reach the boundary on any window at all. Put it back to eighty — here, in the
-    /// README, and nowhere else — once the stacked layout has been seen working.
+    /// the surface could not stack at any width. Two hundred was a diagnostic that let a walk reach
+    /// the boundary on any window at all; the stacked layout has been seen working, so the number
+    /// is back to the one a person would want — a project's two panes side by side need about that
+    /// much before either is worth reading.
     /// </para>
     /// </remarks>
-    internal const int Threshold = 200;
+    internal const int Threshold = 80;
 
     /// <summary>What the status line always says, before the region's name.</summary>
     internal const string FocusPrefix = "Focus: ";
@@ -72,6 +73,16 @@ internal sealed class Shell : Window
 
     /// <summary>What the menu of actions is called.</summary>
     internal const string ActionsTitle = "What this region can do";
+
+    /// <summary>
+    /// How the status line names the key that goes back.
+    /// </summary>
+    /// <remarks>
+    /// Written out rather than derived from <c>Key.Esc</c>, whose own rendering is the toolkit's
+    /// business and has been <c>Esc</c>, <c>Escape</c> and <c>ESC</c> across versions. What is on
+    /// the status line has to match what is on somebody's keyboard, not what a library calls it.
+    /// </remarks>
+    internal const string BackStroke = "Esc";
 
     private readonly BrokerDirectory _directory;
     private readonly Label _status = new() { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
@@ -158,6 +169,12 @@ internal sealed class Shell : Window
                 ? _place.Into(conversation.Id)
                 : _place).ConfigureAwait(false);
         });
+
+        // A bar rather than a line in the terminal's own colours, and the one place this surface
+        // paints a background of its own. It is the only thing on screen that is always there, and
+        // what it says -- where you are, how to leave, what this region can do -- is what somebody
+        // who is lost reads. A conventional bar is found without being looked for.
+        _status.SetScheme(Colours.StatusBar());
 
         Add(_status);
         Lay(Threshold);
@@ -415,32 +432,116 @@ internal sealed class Shell : Window
         // silent truncation this layout exists to avoid.
         var actions = Actions();
 
-        var where = _stacked && panes.Count > 1
+        var focus = _stacked && panes.Count > 1
             ? $"{FocusPrefix}{NameOf(region)} ({FocusedRegion + 1}/{panes.Count}, Tab)"
             : FocusPrefix + NameOf(region);
 
         // Where in the deployment, not only which pane. A view showing one project's agents looks
         // exactly like another's, and 005's status line -- which only ever had one screen to
         // describe -- would now be describing three.
-        where = _place.Viewing == Viewing.Projects
-            ? where
-            : $"{_place.Title} / {where}";
+        var placed = _place.Viewing == Viewing.Projects ? focus : $"{_place.Title} / {focus}";
 
-        var offered = actions.Count == 0
+        // **The ways out are written next to where you are.** Escape has gone back since 006 was
+        // built and nothing on screen ever said so: the owner walked into a project and reported
+        // there was no way back to the list. Ctrl+Q was worse -- it was named in a comment and
+        // bound nowhere. Both are here, and the menu holds both, so neither is ever only a key.
+        var back = BackLabel is { } label ? "  " + label : string.Empty;
+        var quit = "  " + QuitLabel;
+
+        var listed = actions.Count == 0
             ? string.Empty
-            : "  " + string.Join("  ", actions.Select(a => $"{a.Key}: {a.Label}"));
+            : "  " + string.Join("  ", actions.Select(Caption));
 
-        // **Listed in full when they fit, and behind one key when they do not.** Six labelled
-        // actions are a hundred and forty columns; a status line that simply held them would be
-        // cut by the toolkit at whatever column the terminal ends at, which is the silent
-        // truncation the narrow layout exists to avoid, arrived at from the other direction. What
-        // replaces them is not a shorter list — it is the way to see the whole one.
+        var menu = $"  {ActionsKey}: actions";
+
+        // The last rung that still names the key. `Focus: Conversations (2/2, Tab)` is thirty-one
+        // columns of a forty-column terminal, which leaves nine — enough for this and not for the
+        // word "actions". Measured on the stacked project view, which is the longest focus text
+        // this surface produces.
+        var brief = $"  {ActionsKey}: more";
         var room = Viewport.Width > 0 ? Viewport.Width : Threshold;
 
-        _status.Text = where.Length + offered.Length <= room
-            ? where + offered
-            : where + (actions.Count == 0 ? string.Empty : $"  {ActionsKey}: actions");
+        // **Listed in full when they fit, and behind one key when they do not**, and then further
+        // down a ladder that ends holding the two things that matter most: which pane has focus,
+        // and that `?` exists. A status line clipped by the toolkit at whatever column the terminal
+        // ends at is the silent truncation the narrow layout exists to avoid, arrived at from the
+        // other direction.
+        //
+        // **The ladder replaced a single either/or, which the way-back label had just broken.** At
+        // forty columns `alpha / Focus: Agents  Esc: back to alpha` is over the width before an
+        // action is named, and nothing caught it: the guard for this drives the projects view,
+        // which has no back label, so it only failed once Ctrl+Q pushed the *top* view one column
+        // over as well.
+        //
+        // Dropping back and quit before the menu is deliberate rather than reluctant. `?` opens a
+        // list that holds both of them, so the short form is not a screen with no way out -- it is
+        // the same way out, one keystroke further away, which is the trade the actions themselves
+        // already make.
+        _status.Text = Fits(
+            room,
+            placed + back + quit + listed,
+            placed + back + quit + menu,
+            placed + menu,
+            focus + menu,
+            focus + brief,
+            focus);
     }
+
+    /// <summary>The first of several status lines that fits, or the shortest when none does.</summary>
+    /// <param name="room">How many columns there are.</param>
+    /// <param name="candidates">The lines, longest and most informative first.</param>
+    /// <returns>The one to draw.</returns>
+    /// <remarks>
+    /// Falling back to the last rather than to the empty string: a terminal narrower than
+    /// <c>Focus: Conversations</c> is one where something has to be cut, and cutting to nothing
+    /// would leave a person with no evidence the status line exists at all.
+    /// </remarks>
+    private static string Fits(int room, params string[] candidates)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (candidate.Length <= room)
+            {
+                return candidate;
+            }
+        }
+
+        return candidates[^1];
+    }
+
+    /// <summary>Leaves the surface.</summary>
+    /// <remarks>
+    /// <para>
+    /// Asks nothing first. Every destructive act on this surface is already behind a description
+    /// and a name typed back, so there is nothing unsaved here to lose — and a seat is released by
+    /// leaving rather than in spite of it: <c>SeatBook</c> is disposed on the way out, which ends
+    /// the attach streams, which is how §4.0 says a broker learns somebody has gone.
+    /// </para>
+    /// <para>
+    /// A dialog open on top of this one takes the key first and closes itself with it, so this is
+    /// only ever reached from a view.
+    /// </para>
+    /// </remarks>
+    internal void Quit() => App?.RequestStop();
+
+    /// <summary>How going back is named on the status line and in the menu, or null at the top.</summary>
+    /// <remarks>
+    /// It names where it leads rather than only that it goes back. A person who has walked
+    /// projects to a project to a conversation cannot otherwise tell one step out from all the way
+    /// out, and the two are different keystrokes away from what they were reading.
+    /// </remarks>
+    internal string? BackLabel =>
+        _place.CanGoBack ? $"{BackStroke}: back to {_place.Back().Title}" : null;
+
+    /// <summary>How one action is written wherever it is offered.</summary>
+    /// <param name="action">The action.</param>
+    /// <returns>Its key and its label.</returns>
+    /// <remarks>
+    /// One function so the status line and the menu cannot write it two ways — the menu matches
+    /// the entry the person chose back against the action by this string, so two spellings would
+    /// be a menu whose entries silently do nothing.
+    /// </remarks>
+    private static string Caption(RegionAction action) => $"{action.Key}: {action.Label}";
 
     /// <summary>Moves focus to the next pane, or the previous one.</summary>
     /// <param name="forwards">Whether to go forwards.</param>
@@ -584,8 +685,17 @@ internal sealed class Shell : Window
     internal Task Offer()
     {
         var actions = Actions();
+        var back = BackLabel;
 
-        if (App is not { } app || actions.Count == 0)
+        // **Going back heads the list and leaving ends it, and between them they are why this now
+        // opens on a region with no actions at all.** contracts/surface.md is explicit that no
+        // action exists only as a key, and both of these were exactly that: a conversation view
+        // held by somebody with no seat offers nothing, so the menu refused to open and the only
+        // routes off that screen were two keys nothing named.
+        //
+        // Back is first because it changes nothing, which is the ordering ChoiceDialog is built on;
+        // quitting is last for the same reason read the other way round.
+        if (App is not { } app)
         {
             return Task.CompletedTask;
         }
@@ -593,7 +703,7 @@ internal sealed class Shell : Window
         var menu = Prompting.Choose(
             ActionsTitle,
             NameOf(Panes[FocusedRegion]),
-            [.. actions.Select(action => $"{action.Key}: {action.Label}")]);
+            [.. back is null ? [] : new[] { back }, .. actions.Select(Caption), QuitLabel]);
 
         var token = Prompting.Open(app, menu);
 
@@ -601,7 +711,21 @@ internal sealed class Shell : Window
         {
             Prompting.Close(app, token);
 
-            if (actions.FirstOrDefault(a => $"{a.Key}: {a.Label}" == chosen) is { } taken)
+            if (back is not null && string.Equals(chosen, back, StringComparison.Ordinal))
+            {
+                _ = BackAsync();
+
+                return;
+            }
+
+            if (string.Equals(chosen, QuitLabel, StringComparison.Ordinal))
+            {
+                Quit();
+
+                return;
+            }
+
+            if (actions.FirstOrDefault(a => Caption(a) == chosen) is { } taken)
             {
                 _ = taken.Run();
             }
@@ -779,10 +903,33 @@ internal sealed class Shell : Window
     /// </remarks>
     private Task OpenConsole()
     {
-        Launch.Open(said => Said = said, Deep.For(ConsoleAddress, _place));
+        Opener(said => Said = said, Deep.For(ConsoleAddress, _place));
 
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// How this surface hands an address to a browser.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A seam, and it exists because the suite was opening the developer's browser.</b>
+    /// <see cref="Launch"/> already records this defect being fixed once: a test called
+    /// <c>Launch.Open</c> with a loopback URL to prove the guard let it through, and opened a tab
+    /// on every run. The fix there was to test the predicate instead — correct, and it only closed
+    /// the route it was looking at. Two tests then pressed <see cref="BrowserKey"/> on a driven
+    /// surface, which reaches the same <c>Process.Start</c> through the key rather than through
+    /// the function, and the tabs came back. Running the suite in a loop while working on the
+    /// terminal is what made it intolerable.
+    /// </para>
+    /// <para>
+    /// <b>An instance property rather than a static hook.</b> Test classes run in parallel and
+    /// every one of them builds its own surface, so a static would be the process-global state
+    /// this repository already keeps one semaphore to avoid. Nothing in production sets it: the
+    /// default is the real launcher, so the shipped path is the one that has no seam in it.
+    /// </para>
+    /// </remarks>
+    internal Func<Action<string>, string, bool> Opener { get; set; } = Launch.Open;
 
     /// <summary>The key that hands whatever is on screen to a browser.</summary>
     /// <remarks>
@@ -791,6 +938,27 @@ internal sealed class Shell : Window
     /// have, which is the rule no action exists only as a key.
     /// </remarks>
     internal static Key BrowserKey => Key.F8;
+
+    /// <summary>
+    /// The key that leaves the surface.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It is bound here because the toolkit binds it nowhere.</b> <c>TopCommand</c> said in a
+    /// comment that "Ctrl+Q leaves the surface properly" and nothing in the suite had ever pressed
+    /// it: enumerating what Terminal.Gui 2.4.17 binds at application scope turns up ten entries,
+    /// all of them navigation, and no Ctrl+Q among them. The chord did nothing at all.
+    /// </para>
+    /// <para>
+    /// A chord rather than a letter, for <see cref="BrowserKey"/>'s reason — every letter belongs
+    /// to an action — and Ctrl+Q rather than anything else because it is what the comment already
+    /// promised and what a person coming from any other terminal application will try first.
+    /// </para>
+    /// </remarks>
+    internal static Key QuitKey => Key.Q.WithCtrl;
+
+    /// <summary>How the status line and the menu name leaving.</summary>
+    internal const string QuitLabel = "Ctrl+Q: Quit";
 
     /// <summary>Where the web console listens when a broker hosts it.</summary>
     /// <remarks>
@@ -1136,14 +1304,35 @@ internal sealed class Shell : Window
             return true;
         }
 
-        // **Escape goes back, and only when there is somewhere to go.** Taken before the dialogs
-        // see it would be wrong -- a dialog's Escape closes the dialog -- but a dialog is a session
-        // on top of this one and takes the key first, so by the time it arrives here there is none
-        // open. Returning false at the top of the tree leaves Escape to whatever else wants it
-        // rather than swallowing it into nothing.
-        if (key == Key.Esc && _place.CanGoBack)
+        if (key == QuitKey)
         {
-            _ = BackAsync();
+            Quit();
+
+            return true;
+        }
+
+        // **Escape goes back, and is swallowed at the top rather than passed on.** Taken before the
+        // dialogs see it would be wrong -- a dialog's Escape closes the dialog -- but a dialog is a
+        // session on top of this one and takes the key first, so by the time it arrives here there
+        // is none open.
+        //
+        // **It used to return false at the top, and that was not the harmless thing it reads as.**
+        // The comment said it left Escape "to whatever else wants it"; what wanted it was
+        // Terminal.Gui, which binds `Esc => Quit` at application scope. So Escape on the projects
+        // view ended the program -- which is exactly what the test named
+        // `Escape_at_the_top_does_nothing_rather_than_anything_surprising` says must not happen,
+        // and that test passed throughout because it asserted on the view rather than on whether a
+        // stop had been requested. Nothing had ever pressed the key and looked.
+        //
+        // It matters more now than it did: the status line tells people to press Escape to go
+        // back, so the keystroke that means "up one" reaches the top by design and one press too
+        // many is an ordinary mistake rather than an odd one.
+        if (key == Key.Esc)
+        {
+            if (_place.CanGoBack)
+            {
+                _ = BackAsync();
+            }
 
             return true;
         }

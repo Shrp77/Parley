@@ -152,10 +152,13 @@ public sealed class ManifestMovesTests : IAsyncDisposable
         {
             shell.Focus(region);
 
-            // Every action but the one that starts a browser. It is a real `Process.Start` at the
-            // console's address, so running it here opens a window on whatever machine the suite
-            // is on -- which it did, on the owner's, before this was caught.
-            foreach (var action in shell.Actions().Where(action => !Launches(action)))
+            // Every action, the one that hands off to a browser included. It used to be skipped
+            // here: it reaches a real `Process.Start` at the console's address, so running it
+            // opened a window on whatever machine the suite was on -- which it did, on the
+            // owner's, twice. `Driving.Show` gives a driven surface a launcher that records an
+            // address and opens nothing, so the exception is no longer needed and the action that
+            // was least exercised is now exercised like the rest.
+            foreach (var action in shell.Actions())
             {
                 await action.Run();
                 await shell.Settled;
@@ -208,12 +211,4 @@ public sealed class ManifestMovesTests : IAsyncDisposable
                 at == 0 ? _broker.Address : _second.Address,
                 null,
                 null))]);
-
-    /// <summary>Whether an action leaves this process to do its work.</summary>
-    /// <remarks>
-    /// Named by its label rather than skipped by position, so an action added beside it is still
-    /// exercised and only this one is left out.
-    /// </remarks>
-    private static bool Launches(RegionAction action) =>
-        action.Label.Contains("browser", StringComparison.Ordinal);
 }

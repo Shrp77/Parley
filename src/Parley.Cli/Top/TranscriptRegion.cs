@@ -1,6 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using Parley.Client.Rendering;
 using Parley.Core;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -44,16 +45,20 @@ internal sealed class TranscriptRegion : FrameView
     /// </remarks>
     internal const string Destroyed = "That conversation was destroyed.";
 
-    private readonly ListView _lines = Lists.Filling();
+    private readonly ListView _lines = Lists.Filling(Colours.Transcript);
 
     private string _written = Nothing;
+    private IReadOnlyList<TranscriptLine> _marked = [];
+    private List<Color?> _tints = [];
 
     internal TranscriptRegion()
     {
         Title = RegionTitle;
         CanFocus = true;
+        SetScheme(Colours.Region(Colours.Transcript));
         Add(_lines);
-        Redraw();
+        Lists.Tint(_lines, at => at >= 0 && at < _tints.Count ? _tints[at] : null);
+        Say(Nothing, LineKind.Annotation);
     }
 
     /// <summary>Which conversation is open, or null when none is.</summary>
@@ -61,6 +66,13 @@ internal sealed class TranscriptRegion : FrameView
 
     /// <summary>The whole transcript as written, whether or not it all fits.</summary>
     internal string Written => _written;
+
+    /// <summary>The list, so a test can read a row and the colour it is drawn in.</summary>
+    /// <remarks>
+    /// The same accessor the other three regions carry, added for the same reason: <c>Written</c>
+    /// is the transcript before it was wrapped to a width, and what is on screen is the wrap.
+    /// </remarks>
+    internal ListView List => _lines;
 
     /// <summary>Draws a conversation.</summary>
     /// <param name="conversationId">Which conversation.</param>
@@ -87,44 +99,90 @@ internal sealed class TranscriptRegion : FrameView
         // agents' own, and a payload is eight thousand characters of whatever they chose to send.
         // The indent is what keeps that safe now -- a peer writing a line shaped like a header
         // still arrives indented, so it cannot be mistaken for one.
-        _written = Safe.Lines(
-            problem
-            ?? (export?.Destroyed is { } gone
-                ? Destroyed + Environment.NewLine + Environment.NewLine
-                    + string.Join(Environment.NewLine, Reading.Gone(gone))
-                : export is null || export.Messages.Count == 0
-                    ? Empty
-                    : Lay(conversationId, project, export)));
+        if (problem is not null)
+        {
+            Say(problem, LineKind.Annotation);
 
-        Redraw();
+            return;
+        }
+
+        if (export?.Destroyed is { } gone)
+        {
+            Mark(
+            [
+                new TranscriptLine(Destroyed, LineKind.Header, null),
+                new TranscriptLine(string.Empty, LineKind.Blank, null),
+                .. Reading.Gone(gone).Select(line => new TranscriptLine(line, LineKind.Body, null)),
+            ]);
+
+            return;
+        }
+
+        if (export is null || export.Messages.Count == 0)
+        {
+            Say(Empty, LineKind.Annotation);
+
+            return;
+        }
+
+        Mark(Lay(conversationId, project, export));
     }
 
     /// <summary>Lays a conversation out for reading.</summary>
     /// <param name="conversationId">Which conversation.</param>
     /// <param name="project">The project it came from.</param>
     /// <param name="export">Its messages and their exchange states.</param>
-    /// <returns>The transcript, ready to wrap.</returns>
+    /// <returns>The transcript, line by line and each line knowing what it is.</returns>
     /// <remarks>
+    /// <para>
     /// A heading of its own before the messages, because the export's heading said which
     /// conversation and in which project, and losing that would make a screenshot of a transcript
     /// unattributable. The zone is said once rather than on every line: repeating an offset per
     /// message would spend the width a message body needs.
+    /// </para>
+    /// <para>
+    /// <b>Kept as lines rather than flattened to a string.</b> It was flattened, and the sender's
+    /// colour slot — which <see cref="Reading"/> already works out, and which the console already
+    /// draws with — was thrown away on the way to the screen. A terminal that then wanted it back
+    /// would have had to work out who sent a line by matching the text of the header, which is a
+    /// second derivation of something the shared renderer had already decided.
+    /// </para>
     /// </remarks>
-    private static string Lay(string conversationId, string project, ConversationExport export)
+    private static IReadOnlyList<TranscriptLine> Lay(
+        string conversationId, string project, ConversationExport export) =>
+    [
+        new TranscriptLine(
+            $"Conversation {conversationId} in project {project}", LineKind.Header, null),
+        // Body rather than an annotation, and the difference is emphasis. `Reading` makes an
+        // annotation for one thing — who was *not* party to a message — which SC-006 calls the one
+        // fact on a transcript recoverable from nowhere else, and which is drawn to be noticed. The
+        // zone this surface renders times in is a note about the rendering, and it was the same
+        // colour until a dump of the screen put the two side by side.
+        new TranscriptLine(LocalTime.Note(), LineKind.Body, null),
+        new TranscriptLine(string.Empty, LineKind.Blank, null),
+        .. Reading.Lines(export.Messages, export.Exchanges ?? []),
+    ];
+
+    /// <summary>Puts one line on screen, and nothing else.</summary>
+    /// <param name="said">What it says.</param>
+    /// <param name="kind">What kind of line it is.</param>
+    private void Say(string said, LineKind kind) =>
+        Mark([new TranscriptLine(said, kind, null)]);
+
+    /// <summary>Takes a laid-out transcript and draws it.</summary>
+    /// <param name="lines">The lines, each knowing what it is and who wrote it.</param>
+    /// <remarks>
+    /// Neutralised line by line: the layout is this surface's and the content is the agents' own,
+    /// and a payload is eight thousand characters of whatever they chose to send. The indent is
+    /// what keeps that safe — a peer writing a line shaped like a header still arrives indented,
+    /// so it cannot be mistaken for one.
+    /// </remarks>
+    private void Mark(IReadOnlyList<TranscriptLine> lines)
     {
-        var lines = Reading.Lines(export.Messages, export.Exchanges ?? []);
-        var written = new System.Text.StringBuilder()
-            .Append("Conversation ").Append(conversationId)
-            .Append(" in project ").AppendLine(project)
-            .AppendLine(LocalTime.Note())
-            .AppendLine();
+        _marked = lines;
+        _written = Safe.Lines(string.Join(Environment.NewLine, lines.Select(line => line.Text)));
 
-        foreach (var line in lines)
-        {
-            written.AppendLine(line.Text);
-        }
-
-        return written.ToString();
+        Redraw();
     }
 
     /// <summary>Lays the transcript out again for a width.</summary>
@@ -140,8 +198,7 @@ internal sealed class TranscriptRegion : FrameView
     internal void Clear()
     {
         Open = null;
-        _written = Nothing;
-        Redraw();
+        Say(Nothing, LineKind.Annotation);
     }
 
     /// <summary>Wraps a line to a width, breaking between words where it can.</summary>
@@ -201,14 +258,57 @@ internal sealed class TranscriptRegion : FrameView
 
     /// <summary>Lays the written transcript out for a given width.</summary>
     /// <param name="width">How many columns there are.</param>
+    /// <remarks>
+    /// The colour of every row is worked out here rather than kept beside the source lines,
+    /// because wrapping is what decides how many rows there are: a header that needs two rows
+    /// needs both of them in the sender's colour, and a list of colours built before the wrap
+    /// would be one entry short of the rows it describes.
+    /// </remarks>
     private void Redraw(int width)
     {
-        var wrapped = _written
-            .ReplaceLineEndings("\n")
-            .Split('\n')
-            .SelectMany(line => Wrap(line, width))
-            .ToList();
+        var wrapped = new List<string>();
+        var tints = new List<Color?>();
+
+        foreach (var line in _marked)
+        {
+            var tint = Tint(line);
+
+            foreach (var safe in Safe.Lines(line.Text).ReplaceLineEndings("\n").Split('\n'))
+            {
+                foreach (var piece in Wrap(safe, width))
+                {
+                    wrapped.Add(piece);
+                    tints.Add(tint);
+                }
+            }
+        }
+
+        _tints = tints;
 
         _lines.SetSource(new ObservableCollection<string>(wrapped));
     }
+
+    /// <summary>What colour a line is drawn in.</summary>
+    /// <param name="line">The line.</param>
+    /// <returns>The colour, or null for one drawn in the terminal's own.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>This is the one place an agent's own colour is worth spending.</b> <see cref="Palette"/>
+    /// says what the colour is for — helping an eye follow one agent down a long conversation — and
+    /// this is the long conversation. The slot is the shared derivation's, so an agent is the same
+    /// colour in a browser and in a terminal.
+    /// </para>
+    /// <para>
+    /// Body text is left alone. Colouring it would tint eight thousand characters of somebody
+    /// else's words in a hue this surface chose, which is the opposite of the header standing out.
+    /// </para>
+    /// </remarks>
+    private static Color? Tint(TranscriptLine line) => line.Kind switch
+    {
+        LineKind.Header => line.Colour is { } slot ? Colours.Slot(slot) : Colours.Transcript,
+        LineKind.Annotation => Colours.Warn,
+        LineKind.Point => Colours.Transcript,
+        LineKind.Consequences => Colours.Quiet,
+        _ => null,
+    };
 }

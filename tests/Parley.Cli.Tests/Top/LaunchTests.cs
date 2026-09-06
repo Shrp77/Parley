@@ -1,4 +1,5 @@
 using Parley.Cli.Top;
+using Parley.Client;
 using Xunit;
 
 namespace Parley.Cli.Tests.Top;
@@ -44,5 +45,28 @@ public sealed class LaunchTests
         // and so it opened a real tab every time somebody ran the suite on a machine that has
         // one, which is every machine this is developed on.
         Assert.True(Launch.IsWebAddress(ordinary));
+    }
+
+    [Fact]
+    public void A_driven_surface_cannot_reach_the_real_launcher()
+    {
+        // **The third statement of one defect, and the first one that is a check.** The fix above
+        // closed the route through the function; two tests then reached the same Process.Start
+        // through Shell.BrowserKey and the tabs came back, on the owner's machine, while the suite
+        // was being run in a loop. Prose in three files asked authors not to do it. This is the
+        // version the build enforces.
+        using var driving = Driving.Open();
+        using var directory = new BrokerDirectory(
+            [],
+            _ => Grpc.Net.Client.GrpcChannel.ForAddress("http://127.0.0.1:1"));
+
+        using var shell = new Shell(directory);
+
+        // Production is unchanged: a surface nobody has driven launches for real.
+        Assert.Equal(Launch.Open, shell.Opener);
+
+        driving.Show(shell);
+
+        Assert.NotEqual(Launch.Open, shell.Opener);
     }
 }

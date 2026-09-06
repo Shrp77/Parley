@@ -610,12 +610,19 @@ the highlighted one saying what is in it — how many agents, how many are runni
 conversations — so which project you want is answered before anything is opened. Enter goes into a
 project and shows its agents and its conversations; Enter again opens a conversation and reads it.
 Escape comes back, and lands on what you were looking at rather than at the top, so reading three
-conversations in turn costs three keystrokes.
+conversations in turn costs three keystrokes. The status line says where you are and where Escape
+leads, and the same entry heads the `?` menu, so the way out is never only a key. `Ctrl+Q` leaves
+altogether, from any view, and is written on that line beside it. Escape at the top of the tree
+does nothing — pressing it once more than you meant to costs nothing.
 
 Tab moves between the panes of the view you are on — a project has two, the other views one — and
-the arrow keys move within one. The mouse does the same. Below two hundred columns a project's two
+the arrow keys move within one. The mouse does the same. Below eighty columns a project's two
 panes stack and Tab still visits both. Press `?` for everything the view you are on can do, and
 `F8` to open the web console on whatever is in front of you.
+
+It draws in colour, and no fact rests on it: a project is green because the line says
+`answering`, an agent is pink because the line says `retired`, and each agent keeps the colour
+the web console gives it. Strip every attribute and nothing on the screen is lost.
 
 From the projects region you can name the deployment this machine already runs — every path
 pre-filled from the autostart entry — or create a new project, which proposes its own database

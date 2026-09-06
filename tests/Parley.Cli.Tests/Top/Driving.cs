@@ -34,10 +34,27 @@ internal static class Driving
     /// How wide a driven screen is unless a test says otherwise.
     /// </summary>
     /// <remarks>
-    /// Above the layout threshold, so a test that does not care about layout gets the side by
+    /// <para>
+    /// Well above the layout threshold, so a test that does not care about layout gets the side by
     /// side arrangement without asking for it.
+    /// </para>
+    /// <para>
+    /// <b>A width of its own rather than the threshold plus a margin, which is what it was.</b>
+    /// Derived, it moved when the threshold moved — and the threshold came back down to eighty,
+    /// which left every test that reads a phrase off the screen driving a hundred and twenty
+    /// columns, where a pane holding forty per cent of them clips an agent's standing mid-word.
+    /// Three tests failed and not one of them was about layout. What a test of wording needs is
+    /// room; what a test of layout needs is <see cref="Parley.Cli.Top.Shell.Threshold"/> named
+    /// explicitly, which every one of them already does.
+    /// </para>
+    /// <para>
+    /// Two hundred and forty, which is the number the old expression happened to produce while the
+    /// threshold was two hundred. Chosen so that lowering the threshold changes the geometry of no
+    /// test that was not asking about geometry — a dialog is a percentage of the screen, so a
+    /// narrower default rewraps a sentence and fails a test about the words in it.
+    /// </para>
     /// </remarks>
-    internal const int DefaultWidth = Parley.Cli.Top.Shell.Threshold + 40;
+    internal const int DefaultWidth = 240;
 
     /// <summary>How tall a driven screen is unless a test says otherwise.</summary>
     internal const int DefaultHeight = 40;
@@ -151,16 +168,51 @@ internal static class Driving
             App.LayoutAndDraw(true);
         }
 
+        /// <summary>Every address the surface asked a browser to open, in order.</summary>
+        /// <remarks>
+        /// What a test asserts on instead of watching for a window. Empty until something presses
+        /// <c>Shell.BrowserKey</c> or takes the console action.
+        /// </remarks>
+        internal List<string> Opened { get; } = [];
+
         /// <summary>Begins a session on a view and draws it.</summary>
         /// <param name="runnable">The view to run.</param>
         /// <remarks>
+        /// <para>
         /// <c>Begin</c> rather than <c>Run</c>: <c>Run</c> pumps the main loop until something
         /// stops it, which is a test that hangs rather than one that fails. <c>Begin</c> puts the
         /// view on the session stack and returns, leaving the test to drive every step.
+        /// </para>
+        /// <para>
+        /// <b>A driven surface is given a launcher that opens nothing, and that is a fix rather
+        /// than a convenience.</b> <c>Shell.BrowserKey</c> reaches a real <c>Process.Start</c>, so
+        /// two tests in <c>NavigatingTests</c> opened a tab in the developer's browser on every
+        /// run of this suite — reported by the owner, in those words, while the terminal was being
+        /// worked on and the suite was being run in a loop. <c>Launch</c> already carries the same
+        /// defect being fixed once for a direct caller; that fix closed the route it was looking at
+        /// and this is the other one.
+        /// </para>
+        /// <para>
+        /// It is done here rather than in each test so that the guarantee holds for tests nobody
+        /// has written yet: three files currently step around the console action by name, with a
+        /// comment saying it starts a process, and a rule that depends on every future author
+        /// reading those comments is not a rule.
+        /// </para>
         /// </remarks>
         internal void Show(View runnable)
         {
             ArgumentNullException.ThrowIfNull(runnable);
+
+            if (runnable is Parley.Cli.Top.Shell shell)
+            {
+                shell.Opener = (said, address) =>
+                {
+                    Opened.Add(address);
+                    said($"Opened {address}");
+
+                    return true;
+                };
+            }
 
             var token = App.Begin((IRunnable)runnable);
 

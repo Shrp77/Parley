@@ -67,6 +67,12 @@ public sealed class NavigatingTests
     {
         // A person pressing it twice has not done anything wrong, and a surface that quit on the
         // second press would lose their work for a keystroke that meant "go back".
+        //
+        // **This test was named for that property and did not check it, and the surface did quit.**
+        // It asserted on the view, which is still Projects on a shell that has just requested a
+        // stop — so it passed while Terminal.Gui's application-scope `Esc => Quit` binding, which
+        // the surface used to fall through to at the top of the tree, ended the program. The
+        // assertion that would have caught it is the last one.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var shell = new Shell(directory);
@@ -81,6 +87,9 @@ public sealed class NavigatingTests
 
         Assert.Equal(Viewing.Projects, shell.Place.Viewing);
         Assert.False(shell.Place.CanGoBack);
+        Assert.False(
+            ((Terminal.Gui.App.IRunnable)shell).StopRequested,
+            "Escape at the top of the tree asked the application to stop");
     }
 
     [Fact]
@@ -129,6 +138,10 @@ public sealed class NavigatingTests
     {
         // F8 is exercised through the key rather than through the action, so a binding that was
         // removed from OnKeyDown would fail here even while the action list still offered it.
+        //
+        // The launcher is the harness's, which records an address and opens nothing: this pressed
+        // F8 against a real Process.Start and put a tab in the developer's browser on every run of
+        // the suite. Driving.Show carries that.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var shell = new Shell(directory);
@@ -140,9 +153,10 @@ public sealed class NavigatingTests
         driving.Press(Shell.BrowserKey);
         await shell.Settled;
 
-        // On a machine with no browser this says so instead, and either way the surface keeps
-        // running -- which is the property, since a headless machine is an ordinary place to run
-        // this and FR-014 requires the surface to survive being unable to launch one.
+        // Asked for, said out loud, and the surface still running -- which is the property, since
+        // a headless machine is an ordinary place to run this and FR-014 requires the surface to
+        // survive being unable to launch a browser at all.
+        Assert.Single(driving.Opened);
         Assert.NotEmpty(shell.Said);
         Assert.Equal(Viewing.Projects, shell.Place.Viewing);
     }
@@ -160,7 +174,13 @@ public sealed class NavigatingTests
         driving.Press(Shell.BrowserKey);
         await shell.Settled;
 
-        // Whether a browser started or not, what was aimed at is in the message.
+        // The address itself, not only the sentence about it. Reading the message alone would pass
+        // against a surface that named the right conversation and handed the browser something
+        // else, which is exactly the shape of the defect ConsoleAddressTests was written for.
+        Assert.Contains(
+            "some-discussion",
+            Assert.Single(driving.Opened),
+            StringComparison.Ordinal);
         Assert.Contains("some-discussion", shell.Said, StringComparison.Ordinal);
     }
 

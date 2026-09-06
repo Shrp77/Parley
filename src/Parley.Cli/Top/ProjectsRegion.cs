@@ -1,5 +1,6 @@
 using Parley.Client;
 using Parley.Core;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.Views;
 
 namespace Parley.Cli.Top;
@@ -39,15 +40,22 @@ internal sealed class ProjectsRegion : FrameView
         "This machine names no projects yet. Press c to create one, or ? for everything this "
         + "region can do.";
 
-    private readonly ListView _list = Lists.Filling();
+    private readonly ListView _list = Lists.Filling(Colours.Projects);
 
     private List<ProjectSettings> _projects = [];
+    private List<string> _lines = [];
 
     internal ProjectsRegion()
     {
         Title = RegionTitle;
         CanFocus = true;
+        SetScheme(Colours.Region(Colours.Projects));
         Add(_list);
+
+        // Read back off the drawn line rather than kept beside it. What the colour says is exactly
+        // what the word says, so a row whose text and tint could disagree is a row where one of
+        // them is lying — and the words are the half every test reads.
+        Lists.Tint(_list, Tint);
 
         // Moving the highlight is choosing. There is no second key to press, because the other
         // three regions are already on screen showing whatever is selected — asking a person to
@@ -97,11 +105,35 @@ internal sealed class ProjectsRegion : FrameView
                 ? new List<string> { Nothing }
                 : [.. _projects.Select(project => Line(project, health))];
 
+        _lines = [.. lines];
+
         _list.SetSource(new System.Collections.ObjectModel.ObservableCollection<string>(lines));
 
         var at = keep is null ? -1 : _projects.FindIndex(p => p.Name.Value == keep);
 
         _list.SelectedItem = at >= 0 ? at : 0;
+    }
+
+    /// <summary>What colour a row earns from what it says about its broker.</summary>
+    /// <param name="row">Which row.</param>
+    /// <returns>The colour, or null for a row that says nothing about a broker.</returns>
+    private Color? Tint(int row)
+    {
+        if (row < 0 || row >= _lines.Count)
+        {
+            return null;
+        }
+
+        var line = _lines[row];
+
+        // The bracketed phrase Line wrote, read back. A project whose broker answered with a
+        // protocol this build does not speak is neither: it warns, because that is a deployment
+        // somebody has to go and look at rather than one that is simply down.
+        return line.Contains($"[{Answering}]", StringComparison.Ordinal) ? Colours.Good
+            : line.Contains($"[{NotAnswering}]", StringComparison.Ordinal) ? Colours.Bad
+            : line.Contains($"[{Asking}]", StringComparison.Ordinal) ? Colours.Quiet
+            : line.Contains("speaks ", StringComparison.Ordinal) ? Colours.Warn
+            : null;
     }
 
     /// <summary>Tells whoever is listening which project is selected now.</summary>

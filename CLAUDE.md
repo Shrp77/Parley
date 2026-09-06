@@ -506,8 +506,68 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   one conversation) replacing 005's four regions on one screen, on **both** surfaces; and the four
   operator operations the protocol did not have: `archive`, `unarchive` and `destroy` for a
   conversation, and `start` for a catalogued agent. The protocol work landed before the views,
-  because the surfaces are clients of it. 0.18.3 — the minor moved to 0.18.0 because §10.2 is a
+  because the surfaces are clients of it. 0.18.4 — the minor moved to 0.18.0 because §10.2 is a
   versioned contract and four new operations change what a V1 broker must implement.
+
+  **0.18.4 is three things the owner reported after running the terminal, and two of them are the
+  same finding twice.** The layout threshold goes back to eighty, which is where it was before
+  0.18.0 raised it to two hundred as a *diagnostic* — the raise is recorded in `Shell.Threshold`
+  as temporary and it stayed. The other two are about a screen saying nothing about itself.
+
+  **There was no way back out of a project, and Escape had worked the whole time.** Both halves are
+  true, which is the finding: `NavigatingTests` proves the key goes back, and nothing on the screen
+  ever named it. It was in no status line and in no menu — so on a conversation held by somebody
+  with no seat, where the transcript region offers no actions at all, `Offer` returned without
+  opening anything and the only route out of that screen was a key nobody had been told about. It
+  is on the status line of every view that has one now, before the actions and surviving their
+  collapse to `?: actions`, and it is the menu's first entry. `WayBackTests` presses no Escape at
+  all: that half was never broken, and testing it again would have found nothing.
+
+  **There was no way to quit either, and a comment asserted there was.** `TopCommand` justified not
+  intercepting Ctrl+C partly on the grounds that "Ctrl+Q leaves the surface properly"; enumerating
+  what Terminal.Gui 2.4.17 binds at application scope turns up ten entries, all navigation, and no
+  Ctrl+Q. The chord did nothing, and the only mention of it in the suite was a comment on a test
+  that disposes the surface directly. **What did quit was Escape** — the toolkit binds
+  `Esc => Quit` at application scope and the surface returned false for Escape at the top of the
+  tree, deliberately, "to whatever else wants it". What wanted it ended the program. That is the
+  exact thing `Escape_at_the_top_does_nothing_rather_than_anything_surprising` is named for, and it
+  passed throughout because it asserted on `Place.Viewing` — still `Projects` on a shell that has
+  just requested a stop — rather than on `IRunnable.StopRequested`. Both are fixed and both are on
+  the status line; `QuittingTests` asserts on `StopRequested`, never on the session stack, because
+  the harness does not pump the loop and a popped session is not observable there.
+
+  **The status line grew a ladder, because adding the way back had silently broken the narrow
+  rule.** At forty columns `alpha / Focus: Agents  Esc: back to Projects` is over the width before
+  an action is named, and the guard for that rule drives the projects view — the one view with no
+  place prefix and no back label, so the shortest line the surface ever draws. It only failed once
+  Ctrl+Q pushed the top view one column over as well. `Shell.Fits` now walks candidates longest
+  first, and what it drops before anything else is the pair the `?` menu also holds: at the narrow
+  end the way out is the same way out, one keystroke further away. `LayoutTests` drives every pane
+  of every view now, and asserts the two things that must never be cut — which pane has focus, and
+  that `?` exists.
+
+  **The suite opened the owner's browser, and it is the same defect for the third time.** F8 hands
+  the view to a browser through a real `Process.Start`; two tests in `NavigatingTests` pressed it,
+  so every run of the suite put a tab on whatever machine it ran on — reported by the owner while
+  the terminal was being worked on and the suite was being run in a loop. `Launch` already records
+  this being fixed once for a direct caller, and `EmptyDeploymentTests` and `ManifestMovesTests`
+  each carried a comment asking authors to skip the console action for the same reason. Three
+  statements of it in prose and none of them a check. `Shell.Opener` is the seam — an instance
+  property, not a static, because test classes run in parallel — `Driving.Show` replaces it on
+  every driven surface, and `LaunchTests` asserts both halves: production still holds
+  `Launch.Open`, and a driven surface does not. The two files that stepped around the action now
+  exercise it.
+
+  **The terminal had no colour, and `ColourTests` passed throughout.** That suite reads the screen
+  with every attribute stripped and asserts nothing is lost — the property that matters, and one a
+  surface drawn entirely in the terminal's default satisfies perfectly. `PaintedTests` reads
+  `Driver.Contents`, where a cell's attribute survives, because `App.ToString` renders the cells
+  and none of their attributes: a screen with a bright red row and a screen with none produce the
+  identical string, which is why a year of tests could not see this. `Colours` carries the rules —
+  every colour is derived from a word already on the line, the background is the terminal's own
+  except in the status bar, and an agent's colour is `Palette`'s so it is the same hue in a browser.
+  A conversation's archived state is deliberately *not* dimmed: this list does not write the word,
+  so a dim row would be the one fact on screen existing only as a colour.
 
   **Three patches, every one found by running the thing rather than reading it.** 0.18.3 is the
   startup block naming `parley top` beside the console. It named only the console, to a reader who

@@ -126,10 +126,16 @@ public sealed class LayoutTests
     }
 
     [Fact]
-    public void The_stacked_status_line_fits_the_narrowest_terminal_it_supports()
+    public async Task The_stacked_status_line_fits_the_narrowest_terminal_it_supports()
     {
         // A status line clipped mid-word would be the same silent truncation this layout exists to
         // avoid, arrived at from the other direction.
+        //
+        // **Every pane of every view, because it used to drive only the projects view.** That is
+        // the one view with no place prefix and no way-back label, so it is the shortest line the
+        // surface ever draws — and the guard sat on it while a project view at forty columns was
+        // over the width before an action was named. It went unnoticed until Ctrl+Q pushed the top
+        // view one column over too, which is the whole argument for driving all of them.
         using var driving = Driving.Open(width: 40, height: 20);
         using var directory = Directory();
         using var shell = new Shell(directory);
@@ -137,9 +143,37 @@ public sealed class LayoutTests
         driving.Show(shell);
         shell.Lay(40);
 
-        Assert.True(
-            shell.Status.Length <= 40,
-            $"the status line is {shell.Status.Length} columns: '{shell.Status}'");
+        await foreach (var _ in Walking.EveryPaneAsync(shell))
+        {
+            shell.Lay(40);
+
+            Assert.True(
+                shell.Status.Length <= 40,
+                $"on {shell.Place.Viewing} the status line is "
+                + $"{shell.Status.Length} columns: '{shell.Status}'");
+        }
+    }
+
+    [Fact]
+    public async Task The_narrowest_status_line_still_says_which_pane_and_how_to_see_the_rest()
+    {
+        // What the ladder must never cut. Which pane has focus is the thing Tab acts on, and `?`
+        // is the way to everything the line no longer has room to name — including both ways out,
+        // which is what makes dropping them from the line something other than stranding somebody.
+        using var driving = Driving.Open(width: 40, height: 20);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+        shell.Lay(40);
+
+        await foreach (var _ in Walking.EveryPaneAsync(shell))
+        {
+            shell.Lay(40);
+
+            Assert.Contains(Shell.FocusPrefix, shell.Status, StringComparison.Ordinal);
+            Assert.Contains($"{Shell.ActionsKey}:", shell.Status, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
