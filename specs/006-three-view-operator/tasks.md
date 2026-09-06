@@ -113,10 +113,10 @@ it.
 is listed and can be started, with nobody having opened it. Change its startup behaviour and the
 catalogue and the running node both reflect it.
 
-- [ ] T037 [US3] Add the `start(agent)` rpc to `proto/parley.proto` on `Operators`, implement it in `src/Parley.Server/OperatorsService.cs`, and route it through `src/Parley.Server/BrokerRuntime.cs` to the node whose catalogue names the role.
-- [ ] T038 [US3] Add `StartAsync` to `src/Parley.Client/BrokerClient.cs` and the operation to `src/Parley.Broker/OperatorConsole.cs`.
-- [ ] T039 [US3] Add `tests/Parley.Server.Tests/StartOnDemandTests.cs`: a node joins declaring a role nothing has ever registered, `start` is called, and the node receives the Start command. **This is `research.md` R1's claim about `NodesService.RequestStart` turned into a test** — that the path has no registry lookup — rather than a reading of it.
-- [ ] T040 [P] [US3] Add a probe asserting `start` on a role no node's catalogue names is refused and starts nothing.
+- [X] T037 [US3] Add the `start(agent)` rpc to `proto/parley.proto` on `Operators`, implement it in `src/Parley.Server/OperatorsService.cs`, and route it through `src/Parley.Server/BrokerRuntime.cs` to the node whose catalogue names the role.
+- [X] T038 [US3] Add `StartAsync` to `src/Parley.Client/BrokerClient.cs` and the operation to `src/Parley.Broker/OperatorConsole.cs`.
+- [X] T039 [US3] Add `tests/Parley.Server.Tests/StartOnDemandTests.cs`: a node joins declaring a role nothing has ever registered, `start` is called, and the node receives the Start command. **This is `research.md` R1's claim about `NodesService.RequestStart` turned into a test** — that the path has no registry lookup — rather than a reading of it.
+- [X] T040 [P] [US3] Add a probe asserting `start` on a role no node's catalogue names is refused and starts nothing.
 - [X] T041 [US3] Add `src/Parley.Client/Views/AgentStanding.cs` deriving one phrase per agent from presence and catalogue membership, per `data-model.md`. **Leave the wording as named constants and settle the words with the owner** — `plan.md` records that choosing them without them is the reason they are being replaced.
 - [X] T042 [P] [US3] Add `tests/Parley.Client.Tests/Views/AgentStandingTests.cs` covering all four combinations of never-run × startable-here, and asserting the phrases contain neither "catalogued" nor "not in this catalogue".
 - [ ] T043 [US3] Add the agents half to the project view in `src/Parley.Cli/Top/AgentsRegion.cs`, showing name, standing and startup behaviour.
@@ -234,7 +234,9 @@ leaves `src` alone, which will feel like no progress. It is what stops the surfa
 twice, and `tests/Parley.Spec.Tests` executing the new DDL is what makes the document true rather
 than aspirational.
 
-**T039 is the task that decides whether `plan.md` Q1 was right.** The claim is that
+**T039 decided it, and `plan.md` Q1 was right.** Run 2026-09-05: a node joins declaring `orders`, nothing has ever attached under that name, the operator asks for a start and the node receives the Start command. A second case confirms the registry is still empty afterwards, so the operation causes a launch and never a registration. The stop rule below was not reached.
+
+The original wording: The claim is that
 `NodesService.RequestStart` guards only on the node's catalogue and performs no registry lookup —
 read from the code, and therefore evidence about this build rather than about the protocol. T039
 turns it into a test. **If it fails, stop**: the reasoning that reversed 005's amendment is wrong,
