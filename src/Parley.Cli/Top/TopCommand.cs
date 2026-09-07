@@ -153,7 +153,7 @@ public static class TopCommand
     /// surface redraws by rewriting lines and a redirected stdout turns that into thousands of
     /// frames in somebody's log file.
     /// </remarks>
-    internal static bool Interactive => ConsolePicker.Available;
+    private static bool Interactive => ConsolePicker.Available;
 
     /// <summary>What to say to somebody who is not at a terminal.</summary>
     /// <remarks>
@@ -161,7 +161,7 @@ public static class TopCommand
     /// terminal" to a script leaves whoever wrote the script with a decision and no options; the
     /// commands below are what this surface is a nicer front for, and they all work in a pipe.
     /// </remarks>
-    internal const string Redirected =
+    private const string Redirected =
         "parley top draws a full-screen terminal, and this one is redirected — nothing here "
         + "would be readable and the frames would fill the log. For the same facts in a pipe, "
         + "use `parley project list`, `parley registry` and `parley export <conversation>`. "

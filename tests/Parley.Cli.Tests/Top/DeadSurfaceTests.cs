@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Parley.Cli.Top;
 using Xunit;
 
@@ -103,14 +104,31 @@ public sealed class DeadSurfaceTests
         }
     }
 
+    /// <summary>Whether a file names a member, as a whole word rather than as a substring.</summary>
+    /// <param name="text">The file.</param>
+    /// <param name="member">The member's name.</param>
+    /// <returns><see langword="true"/> when the name appears on its own.</returns>
+    /// <remarks>
+    /// <b>It was <c>Contains</c>, and that made this check quietly weaker than it reads.</b> A
+    /// member called <c>Guard</c> was reported as used by every file mentioning <c>GuardedList</c>;
+    /// one called <c>Agent</c> by every file mentioning <c>AgentsRegion</c>. Both were dead, and
+    /// both passed. Matching on word boundaries is the difference between a check that looks for
+    /// the member and one that looks for its letters — found by lens 3 asking what this test
+    /// cannot see, rather than by reading the members it names.
+    /// </remarks>
+    private static bool Names(string text, string member) =>
+        Regex.IsMatch(text, $@"\b{Regex.Escape(member)}\b", RegexOptions.CultureInvariant, Timeout);
+
+    /// <summary>How long a single match may take.</summary>
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
+
     [Fact]
     public void Every_internal_member_here_is_named_by_a_file_other_than_its_own()
     {
         var sources = Sources();
 
         var unused = Declared()
-            .Where(member => sources
-                .Count(file => file.Text.Contains(member.Member, StringComparison.Ordinal)) < 2)
+            .Where(member => sources.Count(file => Names(file.Text, member.Member)) < 2)
             .Where(member => !SecondTypeInItsOwnFile.Contains(
                 $"{member.Type}.{member.Member}", StringComparer.Ordinal))
             .Select(member => $"{member.Type}.{member.Member}")

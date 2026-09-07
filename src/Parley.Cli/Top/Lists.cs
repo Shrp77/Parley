@@ -137,11 +137,12 @@ internal sealed class GuardedList : ListView
     /// Held while the list is drawn, and while its rows are replaced.
     /// </summary>
     /// <remarks>
-    /// Public to the region so that the fields a row's colour is derived from can be swapped in
-    /// the same breath as the rows themselves. A tint read under one lock and rows written under
-    /// another is the same race one level up: the colours would describe the previous list.
+    /// Private, because <see cref="Replace"/> is the only way anything needs to take it: a region
+    /// swaps the fields a row's colour is derived from through that method's <c>also</c>, in the
+    /// same breath as the rows themselves. Handing the lock out instead would let a caller take it
+    /// for one of the two and not the other, which is the same race one level up.
     /// </remarks>
-    internal Lock Guard { get; } = new();
+    private readonly Lock _guard = new();
 
     /// <summary>Replaces everything the list shows, and what is highlighted in it.</summary>
     /// <param name="rows">The lines to show.</param>
@@ -151,7 +152,7 @@ internal sealed class GuardedList : ListView
     {
         ArgumentNullException.ThrowIfNull(rows);
 
-        lock (Guard)
+        lock (_guard)
         {
             also?.Invoke();
 
@@ -169,7 +170,7 @@ internal sealed class GuardedList : ListView
     /// </remarks>
     protected override bool OnDrawingContent(DrawContext? context)
     {
-        lock (Guard)
+        lock (_guard)
         {
             return base.OnDrawingContent(context);
         }

@@ -473,7 +473,15 @@ internal sealed class Shell : Window
         // Where in the deployment, not only which pane. A view showing one project's agents looks
         // exactly like another's, and 005's status line -- which only ever had one screen to
         // describe -- would now be describing three.
-        var placed = _place.Viewing == Viewing.Projects ? focus : $"{_place.Title} / {focus}";
+        // **Made inert, because neither of these names is this program's.** A project name comes
+        // from a manifest somebody may not have written, and a conversation identifier is chosen by
+        // an agent (SPEC.md 5.0) -- so an escape sequence in one reaches the one line that is on
+        // every screen. A probe put `alpha<ESC>[2Jwiped` in an identifier and the status line
+        // carried it through: that clears the operator's terminal, from a peer, by naming a
+        // conversation.
+        var placed = _place.Viewing == Viewing.Projects
+            ? focus
+            : $"{Safe.Text(_place.Title)} / {focus}";
 
         // **The ways out are written next to where you are.** Escape has gone back since 006 was
         // built and nothing on screen ever said so: the owner walked into a project and reported
@@ -565,7 +573,7 @@ internal sealed class Shell : Window
     /// out, and the two are different keystrokes away from what they were reading.
     /// </remarks>
     internal string? BackLabel =>
-        _place.CanGoBack ? $"{BackStroke}: back to {_place.Back().Title}" : null;
+        _place.CanGoBack ? $"{BackStroke}: back to {Safe.Text(_place.Back().Title)}" : null;
 
     /// <summary>How one action is written wherever it is offered.</summary>
     /// <param name="action">The action.</param>
@@ -888,7 +896,7 @@ internal sealed class Shell : Window
 
     /// <summary>Opens the enrolment dialog.</summary>
     /// <returns>When the dialog is open.</returns>
-    internal Task Enrol() =>
+    private Task Enrol() =>
         App is { } app ? Onboarding.OpenAsync(app, Queue, Reporting) : Task.CompletedTask;
 
     /// <summary>Opens the selected project's broker log and follows it.</summary>
@@ -1172,7 +1180,7 @@ internal sealed class Shell : Window
 
     /// <summary>Takes delivery of what is waiting, after saying what that does.</summary>
     /// <returns>When the dialog has been opened.</returns>
-    internal Task TakeDelivery()
+    private Task TakeDelivery()
     {
         if (App is not { } app || Held is null || Voice() is null)
         {

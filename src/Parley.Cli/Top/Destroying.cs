@@ -56,7 +56,7 @@ internal static class Destroying
     internal const string ConsequenceTitle = "Somebody is waiting on this";
 
     /// <summary>Accepting the consequence.</summary>
-    internal const string Accept = "I understand; continue";
+    private const string Accept = "I understand; continue";
 
     /// <summary>Opens the dialog that destroys a conversation.</summary>
     /// <param name="app">The application the dialogs open in.</param>

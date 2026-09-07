@@ -23,7 +23,7 @@ internal static class Onboarding
     internal const string Title = "Enrolment";
 
     /// <summary>Finding repositories under a directory and writing them into a manifest.</summary>
-    internal const string Scan = "Scan a directory for repositories";
+    private const string Scan = "Scan a directory for repositories";
 
     /// <summary>Saying what enrolling the ticked ones would change, without changing anything.</summary>
     internal const string Plan = "Say what enrolling them would change";

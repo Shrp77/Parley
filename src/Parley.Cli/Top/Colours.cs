@@ -1,5 +1,4 @@
 using Parley.Client.Rendering;
-using Parley.Core;
 using Terminal.Gui.Drawing;
 
 using Attribute = Terminal.Gui.Drawing.Attribute;
@@ -40,10 +39,10 @@ namespace Parley.Cli.Top;
 internal static class Colours
 {
     /// <summary>The terminal's own background, whatever the person has set it to.</summary>
-    internal static Color Ground => Color.None;
+    private static Color Ground => Color.None;
 
     /// <summary>Ordinary text, in the terminal's own foreground.</summary>
-    internal static Color Text => Color.None;
+    private static Color Text => Color.None;
 
     /// <summary>Something that is working: a broker answering, an agent present.</summary>
     internal static Color Good { get; } = new(0x46, 0xB5, 0x96);
@@ -73,10 +72,10 @@ internal static class Colours
     internal static Color Transcript { get; } = new(0x4F, 0xAD, 0xC2);
 
     /// <summary>The ground the status bar sits on.</summary>
-    internal static Color Bar { get; } = new(0x1F, 0x27, 0x33);
+    private static Color Bar { get; } = new(0x1F, 0x27, 0x33);
 
     /// <summary>What the status bar writes on it.</summary>
-    internal static Color Said { get; } = new(0xC9, 0xD4, 0xE3);
+    private static Color Said { get; } = new(0xC9, 0xD4, 0xE3);
 
     /// <summary>
     /// The colours of the eight slots <see cref="Palette"/> divides agents between.
@@ -107,25 +106,6 @@ internal static class Colours
     /// </remarks>
     internal static Color Slot(int slot) =>
         Slots[((slot % Slots.Length) + Slots.Length) % Slots.Length];
-
-    /// <summary>The colour an agent is drawn in, everywhere it appears.</summary>
-    /// <param name="agent">The agent.</param>
-    /// <returns>Its slot's colour.</returns>
-    internal static Color Agent(AgentName agent) => Slots[Palette.SlotFor(agent)];
-
-    /// <summary>
-    /// The same, for a name that has only ever been read as text.
-    /// </summary>
-    /// <param name="name">What the row calls it.</param>
-    /// <returns>Its slot's colour, or ordinary text when the name is not a well-formed one.</returns>
-    /// <remarks>
-    /// A catalogue may name a role that is not a valid agent name — the agents region gives it a
-    /// row saying so rather than dropping it — and there is no slot for something that is not an
-    /// agent. Ordinary text is the honest answer; inventing a fold of its own here would be a
-    /// second derivation, which is the thing <see cref="Palette"/> exists to avoid.
-    /// </remarks>
-    internal static Color Agent(string name) =>
-        AgentName.TryCreate(name, out var agent) ? Agent(agent) : Text;
 
     /// <summary>The scheme a region's frame is drawn in.</summary>
     /// <param name="accent">The colour that names the region.</param>
