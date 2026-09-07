@@ -109,15 +109,47 @@ internal sealed class TextDialog : Dialog
 
         Title = title;
         Width = Dim.Percent(70);
-        Height = 9;
 
-        var asked = new Label { Text = question, X = 1, Y = 0 };
+        // **Tall enough for the question, because the question is the point.** This was nine rows
+        // with the label at Y=0 and the field at Y=1, so whatever was asked got exactly one line
+        // however long it was — and the longest thing this dialog asks is the destroy warning,
+        // which is four lines. Two hundred and fifty characters of it, including "Every
+        // conversation in it goes with the store", were simply never drawn: the owner met it
+        // trying to delete a project and reported the text running off the screen.
+        //
+        // That is the rule this surface is built on — nothing truncates, and where something does
+        // not fit the width the surface says so — broken in the worst place for it, since this is
+        // the description standing between somebody and a store being deleted.
+        //
+        // `ChoiceDialog` next to it always gave its label a width and a height, which is why the
+        // dialog *before* this one reads correctly and this one did not.
+        Height = Dim.Percent(60);
 
-        _field = new TextField { X = 1, Y = 1, Width = Dim.Fill(2), Text = proposal };
-        _why = new Label { X = 1, Y = 2, Width = Dim.Fill(2), Text = string.Empty };
-        _ok = new Button { Title = Prompting.Confirm, X = 1, Y = 4, IsDefault = true };
+        var asked = new Label
+        {
+            Text = question,
+            X = 1,
+            Y = 0,
+            Width = Dim.Fill(2),
+            Height = Dim.Fill(5),
+        };
 
-        var cancel = new Button { Title = Prompting.Cancel, X = Pos.Right(_ok) + 1, Y = 4 };
+        // Asked for outright rather than relied on. A label sized to a rectangle still draws one
+        // long line unless it is told to break at words.
+        asked.TextFormatter.WordWrap = true;
+
+        // The footer sits against the bottom, so the question keeps everything above it however
+        // tall the dialog ends up.
+        _field = new TextField { X = 1, Y = Pos.AnchorEnd(4), Width = Dim.Fill(2), Text = proposal };
+        _why = new Label { X = 1, Y = Pos.AnchorEnd(3), Width = Dim.Fill(2), Text = string.Empty };
+        _ok = new Button { Title = Prompting.Confirm, X = 1, Y = Pos.AnchorEnd(2), IsDefault = true };
+
+        var cancel = new Button
+        {
+            Title = Prompting.Cancel,
+            X = Pos.Right(_ok) + 1,
+            Y = Pos.AnchorEnd(2),
+        };
 
         _field.TextChanged += (_, _) => Check();
         _ok.Accepting += (_, args) => { args.Handled = true; Finish(taken: true); };

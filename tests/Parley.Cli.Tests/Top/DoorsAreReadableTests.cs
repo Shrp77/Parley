@@ -1,5 +1,6 @@
 using Parley.Cli.Top;
 using Parley.Core;
+using Terminal.Gui.ViewBase;
 using Xunit;
 
 namespace Parley.Cli.Tests.Top;
@@ -65,6 +66,68 @@ public sealed class DoorsAreReadableTests
             ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:1", null, null));
 
         Assert.Contains("nothing is started for it", described, StringComparison.Ordinal);
+    }
+
+
+    [Theory]
+    [InlineData(120, 30)]
+    [InlineData(80, 24)]
+    public void Every_word_of_a_destructive_warning_reaches_the_screen(int width, int height)
+    {
+        // **The other half of a description doing its job, and the half that was missing.** The
+        // tests above prove the text cannot be tampered with; none of them proved it could be
+        // read. `TextDialog` gave its question a label with no width and no height, so whatever it
+        // asked got exactly one row however long it was — and the longest thing it asks is the
+        // destroy warning. Seventeen of its words never reached the screen, "Every conversation in
+        // it goes with the store" among them, which is the single most important consequence of
+        // pressing the button.
+        //
+        // Found by the owner trying to delete a project, not by this suite. Two sizes, because the
+        // failure is about fitting and one size proves nothing about the other.
+        using var driving = Driving.Open(width, height);
+
+        var dialog = Prompting.Text(
+            Removing.Destroy,
+            Removing.Destroying + Environment.NewLine + Removing.TypeItBack,
+            string.Empty,
+            _ => null);
+
+        driving.Show((View)dialog);
+        driving.App.LayoutAndDraw(true);
+
+        var screen = driving.Text();
+
+        var missing = Removing.Destroying
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(word => word.Trim('.', ','))
+            .Where(word => !screen.Contains(word, StringComparison.Ordinal))
+            .ToList();
+
+        Assert.True(
+            missing.Count == 0,
+            $"at {width}x{height}, {missing.Count} words of the warning are off screen: "
+            + string.Join(" ", missing.Take(12)));
+    }
+
+    [Theory]
+    [InlineData(120, 30)]
+    [InlineData(80, 24)]
+    public void And_so_does_the_instruction_that_follows_it(int width, int height)
+    {
+        // The line telling somebody what to type is the one that makes the door usable at all. It
+        // sits after the warning, so it is the first thing an overflow eats.
+        using var driving = Driving.Open(width, height);
+
+        var dialog = Prompting.Text(
+            Removing.Destroy,
+            Removing.Destroying + Environment.NewLine + Removing.TypeItBack,
+            string.Empty,
+            _ => null);
+
+        driving.Show((View)dialog);
+        driving.App.LayoutAndDraw(true);
+
+        Assert.Contains("Type the project", driving.Text(), StringComparison.Ordinal);
     }
 
     [Fact]

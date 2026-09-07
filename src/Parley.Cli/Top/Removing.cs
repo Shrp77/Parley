@@ -55,6 +55,13 @@ internal static class Removing
     /// <summary>What is said when the name typed back was not the project's.</summary>
     internal const string WrongName = "That is not this project's name. Nothing changed.";
 
+    /// <summary>What the second dialog asks for, after saying what destroying does.</summary>
+    /// <remarks>
+    /// A constant because a test reads it, and a test that restated the sentence would pass while
+    /// the screen said something else. <c>Destroying</c> next door has always had one.
+    /// </remarks>
+    internal const string TypeItBack = "Type the project's name to go ahead:";
+
     /// <summary>What forgetting does, said before it is done.</summary>
     internal const string Forgetting =
         "Forgetting deletes nothing. The store and catalogue stay where they are, and the broker "
@@ -169,7 +176,7 @@ internal static class Removing
     {
         var asking = Prompting.Text(
             Destroy,
-            Destroying + Environment.NewLine + "Type the project's name to go ahead:",
+            Destroying + Environment.NewLine + TypeItBack,
             string.Empty,
             typed => TypedNameProblem(project, typed));
 

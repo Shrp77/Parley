@@ -506,7 +506,7 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   one conversation) replacing 005's four regions on one screen, on **both** surfaces; and the four
   operator operations the protocol did not have: `archive`, `unarchive` and `destroy` for a
   conversation, and `start` for a catalogued agent. The protocol work landed before the views,
-  because the surfaces are clients of it. 0.18.9 — the minor moved to 0.18.0 because §10.2 is a
+  because the surfaces are clients of it. 0.18.10 — the minor moved to 0.18.0 because §10.2 is a
   versioned contract and four new operations change what a V1 broker must implement.
 
   **0.18.6 is lens 2's finding: a peer could forge another agent's line in a transcript.** FR-018's
@@ -528,6 +528,18 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   as this surface's own words; the third of those is a *broker's* words, since `problem` is
   whatever came back from the far end of a gRPC call. All are indented, so `ColumnZeroTests` can
   assert the whole invariant — every row at column zero is a header — rather than one attack on it.
+
+  **0.18.10 is the destroy warning running off the screen, reported by the owner trying to delete a
+  project.** `TextDialog` gave its question a label with no width and no height, so whatever it
+  asked got exactly one row however long it was. Seventeen words of `Removing.Destroying` were
+  never drawn — including *Every conversation in it goes with the store*, which is the whole
+  consequence of the button. `ChoiceDialog` beside it always sized its label, which is why the
+  dialog *before* this one reads correctly and this one did not.
+
+  **The gate had been over this ground and missed it.** `DoorsAreReadableTests` was written two
+  runs earlier for exactly these dialogs, and asked whether the description could be *tampered
+  with* — never whether it could be *read*. It asks both now, at two terminal sizes, because a
+  failure about fitting proves nothing at one size.
 
   **0.18.9 is what the Linux run found when CI could not run.** GitHub refused the jobs — *"recent
   account payments have failed"* — so the suite was run in a container instead, which is the
