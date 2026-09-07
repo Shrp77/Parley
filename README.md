@@ -209,6 +209,12 @@ for people. `--console <url>` moves it and `--no-console` leaves it out. If the 
 already taken the broker says so and carries on serving: a web page that cannot bind must never
 cost you a deployment.
 
+**`parley top` is the same deployment without a browser**, and the broker names both when it
+starts. The machine running a broker is frequently not the machine you have a browser open on —
+a server you are in over SSH, a box in a cupboard — and on those the console's address is an
+instruction you cannot follow. Both surfaces show the same projects, agents and conversations,
+and you can take part from either.
+
 **More than one deployment on one machine.** Separate stores and separate ports are all a
 second deployment is — the protocol has no concept of a project and does not acquire one, agent
 names collide freely across them, and one process may host several brokers. What that used to
@@ -599,17 +605,65 @@ deployment is there in a terminal:
 parley top
 ```
 
-Its first screen is every project this machine names and whether each broker is answering. From
-it you can name the deployment this machine already runs — every path pre-filled from the
-autostart entry, Enter keeps it — or create a new project, which proposes its own database beside
-your existing ones and a free port, checks each answer as you type it, and is answering on the
-list a few seconds later because the broker serving the manifest starts it. Inside a project:
-the agents and what each owns, conversations as transcripts that say who did not see what, the
-broker's log followed live, and a seat — the same seat as the console, with the same rules —
-from which you read what is waiting for you, ask and tell. A project can be removed from there
-too: forgetting it deletes nothing, and destroying it — its broker stopped, its store and
-catalogue deleted — takes the project's own name typed back first. No operator operation that
-destroys an agent or a conversation is on this surface at all.
+Three views, one thing at a time. It opens on the projects this machine names, with a line beside
+the highlighted one saying what is in it — how many agents, how many are running, how many
+conversations — so which project you want is answered before anything is opened. Enter goes into a
+project and shows its agents and its conversations; Enter again opens a conversation and reads it.
+Escape comes back, and lands on what you were looking at rather than at the top, so reading three
+conversations in turn costs three keystrokes. The status line says where you are and where Escape
+leads, and the same entry heads the `?` menu, so the way out is never only a key. `Ctrl+Q` leaves
+altogether, from any view, and sits on that line beside it — on a terminal too narrow to hold
+both, the line keeps `?` and the menu keeps them. Escape at the top of the tree does nothing:
+pressing it once more than you meant to costs nothing.
+
+Tab moves between the panes of the view you are on — a project has two, the other views one — and
+the arrow keys move within one. The mouse does the same. Below eighty columns a project's two
+panes stack and Tab still visits both. Press `?` for everything the view you are on can do, and
+`F8` to open the web console on whatever is in front of you.
+
+It draws in colour, and no fact rests on it: a project is green because the line says
+`answering`, an agent is pink because the line says `retired`, and each agent keeps the colour
+the web console gives it. Strip every attribute and nothing on the screen is lost.
+
+From the projects region you can name the deployment this machine already runs — every path
+pre-filled from the autostart entry — or create a new project, which proposes its own database
+beside your existing ones and a free port, checks each answer as you type it, and is answering on
+the list a few seconds later because the broker serving the manifest starts it. The broker's log is
+followed live from there, and a project can be removed: forgetting it deletes nothing, and
+destroying it — its broker stopped, its store and catalogue deleted — takes the project's own name
+typed back first.
+
+The agents half of a project view shows who is in it, joining what the broker's registry says to
+what this machine's catalogue could start. It says the two facts that follow from those, in words
+that do not name either file: whether anything has ever run under that name, and whether anything
+here can start it. An agent nothing has run yet reads *never run yet, can be started*; one the
+registry holds that this catalogue does not name reads
+*not running, and only runs when somebody opens it* — which is the state that looks startable to a
+peer and can never be started here.
+
+From there you can also **add an agent**: name a repository directory on this machine and it is
+made an agent of this project — its launch configuration naming the project, a line added to the
+project's catalogue, and then the agent started once so that it registers itself. All three are
+shown before any of them happens, because the third runs a process on your machine. It is startable
+from then on without anybody opening that repository by hand. And **remove one**: the agent is
+described — what it is, where it runs, what it owns, and any answer it owes right now — and then
+keeping is offered first, retiring second, purging last. Retiring and purging each take the agent's
+own name typed back, and a purge that would leave somebody waiting names them and what they will
+see before it asks. Retiring can be undone from the same place; purging cannot be undone at all.
+
+The conversations half lists them by name with the time of the last thing said in each, in your own
+timezone, sortable either way. **Archive** files one out of the list; the count of what is hidden
+stays on screen, because an archived conversation goes on receiving messages and a message does not
+un-archive it. **Destroy** deletes one and every participant's half of it, behind the same door a
+purge stands behind — described first, keeping offered first, the conversation's own identifier
+typed back — and when something in it is still open, what the waiting agent will see is named and
+accepted before the identifier is asked for.
+
+A seat lives in the agents half too — the same seat as the console, with the same rules — and from
+a conversation you read what is waiting for you, answer it, ask, and tell. Each agent has its own
+colour there, the same colour it has everywhere; every message header stands apart from the words
+below it whether or not you can see colour; and a message keeps the paragraphs its author wrote,
+with any JSON in it laid out rather than run together.
 
 A separate program on purpose. An adapter that surfaced an operator command into an
 agent's tool set would hand an agent the power to end a discussion over its peers'

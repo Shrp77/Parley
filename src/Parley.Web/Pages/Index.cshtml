@@ -1,4 +1,4 @@
-@page
+﻿@page
 @model Parley.Web.Pages.IndexModel
 @{
     ViewData["Refresh"] = "30";
@@ -37,6 +37,13 @@ else
                 @if (project.Description is { Length: > 0 } description)
                 {
                     <p>@description</p>
+                }
+                @if (Model.Summaries.TryGetValue(project.Name.Value, out var summary) && summary.Reachable)
+                {
+                    @* What is in it, so "which project do I want" is answered before anything is
+                       opened. Unreachable projects say so above instead; a count of zero there
+                       would read as a project somebody has emptied. *@
+                    <p class="summary">@summary.Line()</p>
                 }
                 @if (!health.Reachable)
                 {

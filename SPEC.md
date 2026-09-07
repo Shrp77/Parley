@@ -1485,6 +1485,13 @@ CREATE TABLE conversations (
   state       TEXT NOT NULL CHECK (state IN ('OPEN', 'CLOSING', 'CLOSED')),
   opened_utc  TEXT NOT NULL,
   closed_utc  TEXT,
+  -- §10.2's archive. A column rather than a fourth value in state, because state is the closure
+  -- lifecycle: it is bound to closed_utc by the check below and driven by the participants'
+  -- votes in §5.0. Archiving is orthogonal to all of that -- an operator may file away a
+  -- conversation that is still open, and closing one does not file it -- so folding the two
+  -- together would mean the first conversation that was both closed and archived had to lose
+  -- one of the two facts.
+  archived_utc TEXT,
 
   CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
   -- A conversation is named by an agent and exported by name (SPEC.md 10.2), so this value
@@ -1501,6 +1508,25 @@ CREATE TABLE conversations (
   CHECK (length(id) BETWEEN 1 AND 64
          AND id NOT GLOB '*[^a-zA-Z0-9._-]*'
          AND id NOT GLOB '*..*')
+) STRICT;
+
+-- What is left of a conversation §10.2 destroyed. Facts and no content: §9.4 argues that a log
+-- kept past its usefulness grows the blast radius of a leaked database, and keeping message text
+-- past a destroy is that argument inverted. So no text, no payloads, no intents.
+--
+-- It is not only a courtesy to an operator asking what became of something. The id stays taken,
+-- which is the part a constraint has to carry: without this row the primary key above is free the
+-- instant the conversation goes, and a new conversation could be opened under the name of one
+-- somebody already holds an export of. Two different discussions answering to one identifier is
+-- the kind of thing that is discovered much later, in a file, by somebody with no way to tell.
+CREATE TABLE destroyed_conversations (
+  id            TEXT PRIMARY KEY,
+  destroyed_utc TEXT NOT NULL,
+  messages      INTEGER NOT NULL CHECK (messages >= 0),
+  -- The agents that were party to it, as a single value: this table is read by an operator
+  -- asking one question and is never joined against. A row per participant would outlive the
+  -- agents it named and need its own cascade.
+  participants  TEXT NOT NULL
 ) STRICT;
 
 -- Membership is derived, not declared: a row appears when an agent first becomes party to
@@ -2273,8 +2299,8 @@ as a console showing something no other client could see.
 |---|---|
 | `registry()` | The whole registry, including the workspace directory each agent works in. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
 | `implements()` | Which protocol version this broker speaks. First, and asked before anything else: without it a client cannot tell a broker of the wrong version from one that is switched off, and those two want different words in front of a person. |
-| `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. |
-| `conversations(participant?, since?, until?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, and whether anything in it is still open. Paged, and the broker bounds the page whatever is asked for. |
+| `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. |
+| `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, and whether it is archived. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
 | `instruct(agent, text)` | Give an agent an instruction from the operator, delivered as a turn by the machine that holds it. Returns what became of it — taken, declined, undeliverable or failed — and whatever the agent said in reply. Recorded as the operator's own, never as a peer's. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
 | `refusals()` | Report what the size cap of rule 8.5 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
@@ -2286,6 +2312,10 @@ as a console showing something no other client could see.
 | `reinstate(agent)` | Withdraw a retirement. Registration does not, and must not, do this. |
 | `purge(agent)` | Delete an agent and every conversation it was party to, freeing its name. Destroys its peers' side of those conversations too, and cannot be undone. See §14. |
 | `force_conclude(conversation)` | Close a conversation regardless of its participants' votes. |
+| `archive(conversation)` | Put a conversation out of the way. It stops appearing in `conversations()` unless the caller asks for archived ones, and nothing else about it changes: messages are still delivered, exchanges still open and close, and no agent is told. A view decision, made durable so every operator and every client sees the same one. |
+| `unarchive(conversation)` | Reverse it. |
+| `destroy(conversation)` | Delete a conversation and every message and exchange belonging to it, for every participant. Destroys its peers' side too and cannot be undone. Leaves the record of §14, which holds facts and no content. Named apart from `purge`, which takes an agent: two operations on different subjects sharing one name is how the wrong one gets bound. |
+| `start(agent)` | Ask the node whose catalogue names this agent's role to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. |
 
 `force_conclude` is named apart from the agent operation `conclude` on purpose. §10.2 opens
 by saying an adapter that surfaced an operator operation into an agent's tool set would breach
@@ -2729,6 +2759,20 @@ Headless (§11.2), where the broker does the invoking and therefore needs the en
 model, and any credential reference; nor for spawn-on-demand, where the whole point is to
 reach an agent whose session is not open. Those need the manifest of §12.
 
+**Which is why an agent nobody has ever opened can still be started.** A broker MAY be asked to
+launch a role its manifest names — `start(agent)` in §10.2 — and the launched adapter then
+registers the one agent it attaches, by the ordinary route above. The manifest is what makes the
+role reachable; the registration is still the agent's own act, under the identity §13 requires
+its launch to fix. Nothing about this lets anything register on another's behalf, and an
+implementation that took the shortcut of writing a registration from the manifest would have
+reintroduced exactly the forgery this section forbids, one layer further out: a registration is
+a claim that an agent exists and has spoken, and only the agent can make it.
+
+The consequence worth stating plainly, because an operator surface will want it: **enrolling a
+repository need not leave an agent nobody can reach until a human opens that directory.** Writing
+the manifest entry and then asking the broker to start it is two steps, both of them ordinary,
+and it ends with a registration that came from the launch.
+
 The two paths are complementary rather than alternatives, and a deployment may use both:
 self-registration bootstraps the agents that come to the broker, the manifest describes the
 ones the broker goes to.
@@ -3123,6 +3167,58 @@ themselves — they orphan and are ghosted on the ordinary schedule, and an answ
 does arrive before that is still accepted, because ghosting does not discard and neither does
 retiring. Retiring does not wait for
 that and does not accelerate it.
+
+### Destroying one conversation
+
+`destroy(conversation)` is `purge(agent)`'s argument applied to a narrower subject, and it
+inherits the whole of it. What an operator is removing is a record; the deletion happens inside
+the system or it happens in a SQL client with no ordering and no report; and every peer's half
+goes, because a conversation has no half that belongs to one participant alone.
+
+**What an asker waiting inside it sees is the part that must be said before the operation, not
+after.** An open exchange in a destroyed conversation does not orphan and is not ghosted: it
+ceases to exist, so the agent waiting on it is never told anything at all — not an answer, not a
+refusal, not the ghost that §7 guarantees for a question nobody answers. That is a different
+outcome from every other way an exchange can end, and it is the one an operator is least likely
+to predict. An implementation that asks for confirmation without naming it has not warned
+anybody.
+
+**What survives is a record of facts and none of the content.** The conversation's identifier,
+when it was destroyed, how many messages went, and which agents were party to it. No message
+text, no payloads, no intents: §9.4 opens by saying Parley is a channel rather than a store and
+argues that a log kept past its usefulness grows the blast radius of a leaked database, and
+keeping content past a destroy is that argument's exact inverse.
+
+The record exists for two reasons. An operator asking what became of a conversation somebody
+exported last week is answered rather than left unable to distinguish a destroy from a store that
+lost something — the same failure `waiting()` exists to prevent elsewhere, where an absence could
+equally be two very different things. And the identifier stays taken, so a new conversation
+cannot be opened under the name of one somebody already holds an export of.
+
+**`export` is where it is answered, and that is a decision rather than a convenience.** The record
+could have had an operation of its own; it does not, because the question it answers is one
+somebody arrives at while holding an identifier and asking for the conversation — which is
+`export`. An operator who has to already know a conversation was destroyed in order to ask about
+its destruction has not been helped. A destroyed conversation therefore returns the record and no
+messages, and the two are distinguishable from an identifier that never existed at all, which
+returns neither.
+
+As with a purge, what gets deleted is found from the schema rather than enumerated: every row
+whose foreign key names the conversation goes with it, and an operator is told per table rather
+than as a total.
+
+**The foreign keys are what carry the invariant, and they carry it by not cascading.** Every
+column declared `REFERENCES conversations(id)` — an exchange, a participant, a message — names
+the conversation, and none of them says `ON DELETE CASCADE`. The deletions are ordered inside one
+transaction with foreign keys deferred to commit, exactly as a purge orders them, so a table
+somebody forgot to include fails the whole destroy at commit instead of leaving a message row
+pointing at a conversation that no longer exists.
+
+That is the opposite of the obvious design and it is the one that holds. A cascade deletes
+whatever it reaches and reports nothing, so a reference added later is silently swept and a
+reference added later *in the wrong place* is silently swept too. A deferred check refuses, names
+the table, and leaves the store as it was — which is what §9.3 means by an invariant belonging in
+storage rather than in the code that happens to be running.
 
 **Recovery is not automatic on its own terms.** Refusing to route to an unreachable agent
 means nothing ever tries to spawn it, so on its own the state would be a one-way door: the
@@ -3772,6 +3868,24 @@ Cheap to collect, disproportionately useful:
     the schema derives from, which is the shape §9.3 prefers but is not free: it makes what a
     machine can launch a durable fact in a shared store, and §4 has kept that firmly local until
     now. Decide it when somebody has been misled by the word, not before.
+
+    **Two things narrowed this on 2026-09-05, and neither answers it.** The first was a defect
+    rather than a design: a node announced its roles once, at join, so a role added to a running
+    node's catalogue was announced *never* — which produced this question's exact state by a route
+    nobody had noticed, and produced it for an agent somebody had just deliberately enrolled. A
+    node now compares its roles against its catalogue and rejoins when they differ, so the window
+    is a poll rather than a session.
+
+    The second is that a surface can say it. An operator's terminal reads the project's catalogue
+    beside the registry — allowed because the catalogue is the one fact about a deployment the
+    broker never sees, so reading it is not a second answer to a question the broker answers —
+    and shows three states in words: the registry's presence for an agent in both, *catalogued,
+    not yet registered* for one the node could start that has never attached, and the presence
+    followed by *not in this catalogue* for exactly the case above. The misleading word is now
+    said out loud somewhere, which lowers the cost of leaving it further.
+
+    What neither does is make the registry itself honest, which is what the question asks. An
+    operator reading `parley registry` in a pipe still sees `startable`.
 
 14. Should the broker say which agent it recorded, on attach? The acknowledgement of §4.0's
     stream carries counts and nothing else — how many exchanges were orphaned, whether the agent

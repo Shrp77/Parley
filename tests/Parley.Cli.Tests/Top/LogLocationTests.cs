@@ -64,27 +64,21 @@ public sealed class LogLocationTests
 
             var entry = new InstalledEntry(null, null, null, null, manifest);
 
-            using var console = Driving.Interactive();
-
-            Driving.Pick(console, ProjectList.Choices([project], entry), "alpha");
-            Driving.Pick(console, ProjectMenu.Choices(seated: false), ProjectMenu.Choices(seated: false).Single(c => c.Contains("log", StringComparison.Ordinal)));
-            console.Input.PushTextWithEnter(string.Empty);   // no filter
-
-            // The view stops on a real-console ReadLine, which returns at once under a test host,
-            // and it shows only lines written after it opened -- so what is asserted is the file
-            // it announces it is following, which is the whole of the defect: the wrong file.
-            Driving.Pick(console, ProjectMenu.Choices(seated: false), ProjectMenu.Back);
-            Driving.Pick(console, ProjectList.Choices([project], entry), ProjectList.Leave);
-
+            using var driving = Driving.Open();
             using var broker = Parley.Client.BrokerDirectory.FromManifest(manifest);
-            using var seats = new Parley.Client.Seating.SeatBook(broker.AgentsFor);
+            using var shell = TopCommand.Build(broker, manifestPath: manifest, installed: entry);
 
-            var exit = await TopCommand.DriveAsync(console, broker, seats, ct, entry);
+            driving.Show(shell);
+            await shell.RefreshAsync(ct);
+            await shell.Settled;
 
-            Assert.Equal(0, exit);
+            await shell.FollowLog();
 
-            var following = console.Output[console.Output.IndexOf("Following", StringComparison.Ordinal)..];
-            var firstLine = following[..following.IndexOf('\n')];
+            // The view shows only lines written after it opened, so what is asserted is the file
+            // it announces it is following -- which is the whole of the defect: the wrong file.
+            Assert.NotNull(shell.Log);
+
+            var firstLine = shell.Log!.Title;
 
             Assert.Contains(Path.Combine("config", LogTail.FileName), firstLine, StringComparison.Ordinal);
             Assert.DoesNotContain(Path.Combine("store", LogTail.FileName), firstLine, StringComparison.Ordinal);

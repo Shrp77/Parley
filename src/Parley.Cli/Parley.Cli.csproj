@@ -48,7 +48,7 @@
     requires — a Version attribute here is a restore error, not a preference.
   -->
   <ItemGroup>
-    <PackageReference Include="Spectre.Console" />
+    <PackageReference Include="Terminal.Gui" />
   </ItemGroup>
 
 </Project>

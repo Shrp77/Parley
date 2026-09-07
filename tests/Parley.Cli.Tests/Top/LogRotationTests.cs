@@ -1,5 +1,4 @@
 using Parley.Cli.Top;
-using Spectre.Console.Testing;
 using Xunit;
 
 namespace Parley.Cli.Tests.Top;
@@ -26,10 +25,10 @@ public sealed class LogRotationTests : IDisposable
         // where every read returns null forever. The screen keeps saying "Following ..." and
         // shows nothing again, which is indistinguishable from a quiet broker.
         var token = TestContext.Current.CancellationToken;
-        using var console = new TestConsole();
+        var console = new Collected();
         using var stopping = new CancellationTokenSource();
 
-        var following = LogTail.FollowAsync(console, _log.At, string.Empty, stopping.Token);
+        var following = LogTail.FollowAsync(console.Write, _log.At, string.Empty, stopping.Token);
 
         try
         {
@@ -61,10 +60,10 @@ public sealed class LogRotationTests : IDisposable
         // The shape that made two probes in this repository hang for ten minutes. Cancelling has
         // to end the task rather than fault it on a background thread nobody is awaiting.
         var token = TestContext.Current.CancellationToken;
-        using var console = new TestConsole();
+        var console = new Collected();
         using var stopping = new CancellationTokenSource();
 
-        var following = LogTail.FollowAsync(console, _log.At, string.Empty, stopping.Token);
+        var following = LogTail.FollowAsync(console.Write, _log.At, string.Empty, stopping.Token);
 
         await _log.AppendAsync("something");
         await Eventually.UntilAsync(

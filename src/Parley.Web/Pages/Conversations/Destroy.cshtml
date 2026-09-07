@@ -1,0 +1,62 @@
+@page
+@model Parley.Web.Pages.Conversations.DestroyModel
+@{
+    ViewData["Title"] = $"Destroy {Model.Id}";
+}
+
+<h1>Destroy this conversation</h1>
+
+@if (Model.Outcome is not null)
+{
+    <p class="outcome">@Model.Outcome</p>
+    <p><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></p>
+}
+else if (Model.Problem is not null)
+{
+    <p class="problem">@Model.Problem</p>
+    <p><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></p>
+}
+else if (Model.Conversation is null)
+{
+    <p>There is no conversation called @Model.Id in @Model.Project.</p>
+    <p><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></p>
+}
+else
+{
+    @* Described first, and in the words the list already used for it, so somebody checking they
+       have the right conversation is comparing like with like. *@
+    <ul>
+        @foreach (var line in Model.Describes)
+        {
+            <li>@line</li>
+        }
+    </ul>
+
+    <p>
+        Every participant's half goes with it, including peers who did nothing but take part.
+        That is what deleting a conversation means: one with a side removed is a record that
+        misleads whoever reads it next. <strong>It cannot be undone.</strong>
+    </p>
+
+    @if (Model.Conversation.HasOpenExchange)
+    {
+        @* The consequence an operator is least likely to predict, which is why it is not a
+           footnote. The exchange does not orphan and is not ghosted: it stops existing. *@
+        <p class="warning">
+            An exchange in this conversation is still open. Destroying it does not orphan that
+            exchange and does not ghost it: the exchange stops existing, so whoever is waiting is
+            <strong>never told anything at all</strong>.
+        </p>
+    }
+
+    <form method="post">
+        <input type="hidden" name="project" value="@Model.Project" />
+        <input type="hidden" name="id" value="@Model.Id" />
+
+        <label for="typed">Type the conversation's identifier to confirm:</label>
+        <input id="typed" name="typed" autocomplete="off" />
+
+        <button type="submit">Destroy it</button>
+        <a href="/Projects/Agents?project=@Model.Project">Keep it</a>
+    </form>
+}

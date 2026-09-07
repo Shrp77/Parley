@@ -359,7 +359,19 @@ public sealed class OperatorConsole
         var exchanges = await _exchanges
             .GetSnapshotsAsync(conversationId, cancellationToken).ConfigureAwait(false);
 
-        return new ConversationExport(messages, exchanges);
+        // **Asked only when there is nothing else to say.** A conversation with messages is not a
+        // destroyed one, so the extra read costs nothing on the path anybody takes often -- and
+        // the case it serves is somebody arriving with an identifier that returns nothing, which
+        // is exactly when an unexplained empty answer is worst.
+        //
+        // SPEC.md §14: an empty export cannot be told from a store that lost something, and
+        // telling those two apart is the whole reason the record is kept.
+        var destroyed = messages.Count == 0
+            ? await _conversations.GetDestroyedAsync(conversationId, cancellationToken)
+                .ConfigureAwait(false)
+            : null;
+
+        return new ConversationExport(messages, exchanges, destroyed);
     }
 
     /// <summary>Records an instruction before anybody tries to deliver it.</summary>
@@ -401,6 +413,7 @@ public sealed class OperatorConsole
     /// <param name="limit">How many to return.</param>
     /// <param name="beforeLastActivityUtc">Resume point: only those last active strictly before it.</param>
     /// <param name="beforeId">The identifier at that resume point, breaking ties on the instant.</param>
+    /// <param name="includeArchived">Whether to list archived conversations as well.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>One page of summaries.</returns>
     /// <remarks>
@@ -416,11 +429,103 @@ public sealed class OperatorConsole
         int limit = 50,
         DateTimeOffset? beforeLastActivityUtc = null,
         string? beforeId = null,
+        bool includeArchived = false,
         CancellationToken cancellationToken = default) =>
         await _conversations.ListAsync(
             participant, sinceUtc, untilUtc, limit, beforeLastActivityUtc, beforeId,
-            cancellationToken)
+            includeArchived, cancellationToken)
             .ConfigureAwait(false);
+
+    /// <summary>
+    /// Counts the archived conversations a listing with the same filters left out.
+    /// </summary>
+    /// <param name="participant">Restrict to conversations this agent is party to, or null for all.</param>
+    /// <param name="sinceUtc">Only those last active at or after this instant, if given.</param>
+    /// <param name="untilUtc">Only those last active at or before this instant, if given.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>How many were omitted.</returns>
+    /// <remarks>
+    /// Part of the listing contract rather than a nicety a surface may add, because archiving does
+    /// not stop a conversation receiving messages: a client that could not tell archived ones
+    /// existed would be hiding traffic rather than filing it, and would have no way to know.
+    /// </remarks>
+    public async Task<int> CountArchivedConversationsAsync(
+        AgentName? participant = null,
+        DateTimeOffset? sinceUtc = null,
+        DateTimeOffset? untilUtc = null,
+        CancellationToken cancellationToken = default) =>
+        await _conversations.CountArchivedAsync(
+            participant, sinceUtc, untilUtc, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Puts a conversation out of the ordinary listing, or brings it back, per SPEC.md §10.2.
+    /// </summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="archived">Whether it should be archived.</param>
+    /// <param name="nowUtc">The current instant.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether anything changed.</returns>
+    /// <exception cref="ArgumentException"><paramref name="conversationId"/> is null or empty.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>Filing, not muting.</b> Nothing about delivery changes, no exchange is affected, and no
+    /// agent is told. It is an operator's decision about their own view of a deployment, made
+    /// durable so every operator and every client sees the same one rather than each keeping its
+    /// own — which is the difference between this and a preference a surface could have kept to
+    /// itself.
+    /// </para>
+    /// <para>
+    /// <b>A message arriving into an archived conversation does not un-archive it.</b> That was
+    /// decided rather than allowed to emerge: the alternative lets any agent reverse an operator's
+    /// decision by sending something, which is the one direction of authority this protocol does
+    /// not have. What stops a busy conversation hiding is the omitted count above.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> SetConversationArchivedAsync(
+        string conversationId,
+        bool archived,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        return await _conversations.SetArchivedAsync(
+            conversationId, archived, nowUtc, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Destroys a conversation and everything belonging to it, per SPEC.md §10.2 and §14.
+    /// </summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="nowUtc">The current instant, recorded on what is left behind.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>What was destroyed, per table.</returns>
+    /// <exception cref="ArgumentException"><paramref name="conversationId"/> is null or empty.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>Every participant's half goes.</b> That is not collateral being tolerated; it is what
+    /// deleting a conversation means, since one with a side removed is a record that misleads
+    /// whoever reads it next — §14's argument about an agent, applied to a narrower subject.
+    /// </para>
+    /// <para>
+    /// <b>An open exchange inside it is not orphaned and not ghosted: it ceases to exist</b>, so
+    /// the agent waiting on it is never told anything at all — not an answer, not a refusal, not
+    /// the ghost §7 guarantees for a question nobody answers. That is a different outcome from
+    /// every other way an exchange can end, and a surface offering this without naming it first
+    /// has warned nobody.
+    /// </para>
+    /// </remarks>
+    public async Task<DestroyOutcome> DestroyConversationAsync(
+        string conversationId,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        return await _conversations.DestroyAsync(
+            conversationId, nowUtc, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Applies the retention policy of SPEC.md §9.4 now, per §10.2.

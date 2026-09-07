@@ -1,63 +1,175 @@
-using Spectre.Console;
+using Terminal.Gui.App;
 
 namespace Parley.Cli.Top;
 
 /// <summary>
-/// Onboarding repositories as agents, through the code the command runs.
+/// Enrolling a folder of repositories, from inside the surface.
 /// </summary>
 /// <remarks>
 /// <para>
-/// FR-015's second half, and the same design as <see cref="Naming"/>: it calls
-/// <see cref="EnrollCommand"/> rather than reimplementing enrolment, so what is written is what
-/// the command writes and the validation is the command's own.
+/// <b>It calls <see cref="EnrollCommand"/> rather than reimplementing enrolment</b>, so what is
+/// written is what the command writes. The three steps are the command's own — scan, plan, apply —
+/// and they are separate here for the reason they are separate there: applying writes into
+/// repositories that are not this one, and a person should have read the plan first.
 /// </para>
 /// <para>
-/// <b>Scan and plan are offered; apply is offered with what it would do already on the screen.</b>
-/// Enrolment writes into repositories that are not this one, which is the most consequential
-/// thing this surface can do to a machine — so the step that does it is reached by reading the
-/// plan first rather than by a keystroke next to the scan.
-/// </para>
-/// <para>
-/// The scan's own picker is not surfaced here. It draws itself with <c>ConsolePicker</c>, which
-/// owns the terminal while it runs, and two full-screen drawers sharing one terminal is a fight
-/// neither wins. <c>--all</c> and <c>--none</c> exist precisely because the picker cannot run
-/// everywhere, and they are what this offers instead.
+/// The one thing this adds is the confirmation before applying, because a full-screen surface
+/// makes it easy to arrive at a step without having read what it does.
 /// </para>
 /// </remarks>
 internal static class Onboarding
 {
-    /// <summary>Runs one enrolment step and shows what it said.</summary>
-    /// <param name="console">Where to draw, and where the paths are typed.</param>
-    /// <param name="cancellationToken">Cancels the step.</param>
-    /// <returns>When the step has finished.</returns>
-    internal static async Task RunAsync(IAnsiConsole console, CancellationToken cancellationToken)
+    /// <summary>What the dialog is called.</summary>
+    internal const string Title = "Enrolment";
+
+    /// <summary>Finding repositories under a directory and writing them into a manifest.</summary>
+    private const string Scan = "Scan a directory for repositories";
+
+    /// <summary>Saying what enrolling the ticked ones would change, without changing anything.</summary>
+    internal const string Plan = "Say what enrolling them would change";
+
+    /// <summary>Doing it.</summary>
+    internal const string Apply = "Configure the ticked ones as agents";
+
+    /// <summary>What is offered, in the order it is offered.</summary>
+    internal static readonly IReadOnlyList<string> Choices = [Plan, Scan, Apply];
+
+    /// <summary>What is said after a successful apply.</summary>
+    private const string Applied =
+        "Applied. Each repository still has to be opened once for its adapter to attach and "
+        + "register it — nothing here can do that for them.";
+
+    /// <summary>Opens the enrolment dialog.</summary>
+    /// <param name="app">The application the dialogs open in.</param>
+    /// <param name="queue">Runs the command, so the caller can wait for it.</param>
+    /// <param name="done">Told what the command said.</param>
+    /// <returns>When the first dialog is open.</returns>
+    internal static Task OpenAsync(
+        IApplication app,
+        Action<Func<CancellationToken, Task>> queue,
+        Func<string, Task> done)
     {
-        var step = console.Prompt(
-            new SelectionPrompt<string>()
-                .Title("Enrolment")
-                .AddChoices(Scan, Plan, Apply, Back));
+        ArgumentNullException.ThrowIfNull(queue);
+        ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(done);
 
-        if (step == Back)
+        var choosing = Prompting.Choose(
+            Title,
+            "Scanning writes a manifest of what it found. The plan says what enrolling the ticked "
+            + "ones would change. Applying writes configuration into every ticked repository.",
+            Choices);
+
+        var token = Prompting.Open(app, choosing);
+
+        choosing.Done += (_, step) =>
         {
-            return;
-        }
+            Prompting.Close(app, token);
 
-        var manifest = console.Prompt(new TextPrompt<string>("Enrolment manifest path:"));
+            if (step is null)
+            {
+                _ = done(string.Empty);
 
-        bool? all = null;
+                return;
+            }
 
-        var arguments = step switch
-        {
-            Scan => Scanned(console, manifest, out all),
-            Plan => (IReadOnlyList<string>)["plan", manifest],
-            _ => ["apply", manifest],
+            Ask(app, step, queue, done);
         };
 
-        if (step == Apply && !Confirmed(console, manifest))
-        {
-            return;
-        }
+        return Task.CompletedTask;
+    }
 
+    /// <summary>Asks for the paths a step needs, then runs it.</summary>
+    private static void Ask(
+        IApplication app,
+        string step,
+        Action<Func<CancellationToken, Task>> queue,
+        Func<string, Task> done)
+    {
+        var fields = step == Scan
+            ?
+            [
+                new FormField("Directory to scan:", string.Empty, Participation.RequiredProblem),
+                new FormField("Enrolment manifest to write:", string.Empty, Participation.RequiredProblem),
+                new FormField("Tick every repository found? (yes / no)", "no", YesOrNo),
+            ]
+            : new List<FormField>
+            {
+                new("Enrolment manifest path:", string.Empty, Participation.RequiredProblem),
+            };
+
+        var form = new FormDialog(step, fields);
+        var token = Prompting.Open(app, form);
+
+        form.Done += (_, values) =>
+        {
+            Prompting.Close(app, token);
+
+            if (values is null)
+            {
+                _ = done(string.Empty);
+
+                return;
+            }
+
+            if (step == Apply)
+            {
+                Confirm(app, values[0], queue, done);
+
+                return;
+            }
+
+            var arguments = step == Scan
+                ? (IReadOnlyList<string>)["scan", values[0], values[1]]
+                : ["plan", values[0]];
+
+            var all = step == Scan ? Yes(values[2]) : (bool?)null;
+
+            queue(_ => RunAsync(arguments, all, step, done));
+        };
+
+        static string? YesOrNo(string typed) =>
+            Yes(typed) || string.Equals(typed.Trim(), "no", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : "yes or no";
+    }
+
+    /// <summary>Asks before writing into repositories that are not this one.</summary>
+    private static void Confirm(
+        IApplication app,
+        string manifest,
+        Action<Func<CancellationToken, Task>> queue,
+        Func<string, Task> done)
+    {
+        var asking = Prompting.Choose(
+            Apply,
+            $"Applying {Safe.Text(manifest)} writes configuration into every ticked repository. "
+            + "Run the plan first if you have not.",
+            ["Not now", Apply]);
+
+        var token = Prompting.Open(app, asking);
+
+        asking.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, token);
+
+            if (chosen != Apply)
+            {
+                _ = done(string.Empty);
+
+                return;
+            }
+
+            queue(_ => RunAsync(["apply", manifest], null, Apply, done));
+        };
+    }
+
+    /// <summary>Runs the command and reports what it said, in its own words.</summary>
+    private static async Task RunAsync(
+        IReadOnlyList<string> arguments,
+        bool? all,
+        string step,
+        Func<string, Task> done)
+    {
         var said = new StringWriter();
         var complained = new StringWriter();
 
@@ -67,57 +179,22 @@ internal static class Onboarding
             null, Environment.GetEnvironmentVariable, null);
 
         var code = await EnrollCommand
-            .RunAsync(arguments, all, nodeConfig, said, complained, cancellationToken)
+            .RunAsync(arguments, all, nodeConfig, said, complained, CancellationToken.None)
             .ConfigureAwait(false);
 
-        foreach (var line in said.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries))
-        {
-            console.MarkupLine($"[dim]{Safe.Text(line.TrimEnd())}[/]");
-        }
-
-        foreach (var line in complained.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries))
-        {
-            console.MarkupLine($"[red]{Safe.Text(line.TrimEnd())}[/]");
-        }
+        var lines = (said.ToString() + complained)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.TrimEnd())
+            .ToList();
 
         if (code == 0 && step == Apply)
         {
-            console.MarkupLine(
-                "[green]Applied.[/] [dim]Each repository still has to be opened once for its "
-                + "adapter to attach and register it — nothing here can do that for them.[/]");
+            lines.Add(Applied);
         }
+
+        await done(string.Join(Environment.NewLine, lines)).ConfigureAwait(false);
     }
 
-    /// <summary>The arguments for a scan, with the flag that avoids a second full-screen picker.</summary>
-    /// <param name="console">Where the directory is typed.</param>
-    /// <param name="manifest">Where to write what was found.</param>
-    /// <param name="all">Whether every repository found is ticked.</param>
-    /// <returns>The command's arguments.</returns>
-    private static IReadOnlyList<string> Scanned(
-        IAnsiConsole console, string manifest, out bool? all)
-    {
-        var directory = console.Prompt(new TextPrompt<string>("Directory to scan:"));
-
-        all = console.Confirm("Tick every repository found?", defaultValue: false);
-
-        return ["scan", directory, manifest];
-    }
-
-    /// <summary>Asks before writing into repositories that are not this one.</summary>
-    /// <param name="console">Where to ask.</param>
-    /// <param name="manifest">What would be applied.</param>
-    /// <returns><see langword="true"/> when the person said so.</returns>
-    private static bool Confirmed(IAnsiConsole console, string manifest)
-    {
-        console.MarkupLine(
-            $"[yellow]Applying {Safe.Text(manifest)} writes configuration into every "
-            + "ticked repository.[/] Run the plan first if you have not.");
-
-        return console.Confirm("Apply it?", defaultValue: false);
-    }
-
-    private const string Scan = "Scan a directory for repositories";
-    private const string Plan = "Say what enrolling them would change";
-    private const string Apply = "Configure the ticked ones as agents";
-    private const string Back = "Back";
+    private static bool Yes(string typed) =>
+        string.Equals(typed.Trim(), "yes", StringComparison.OrdinalIgnoreCase);
 }

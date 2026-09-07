@@ -482,6 +482,21 @@ service Operators {
   rpc ListConversations(ListConversationsRequest) returns (ListConversationsReply);
   rpc DescribeWaiting(Empty) returns (WaitingReply);
   rpc Instruct(InstructRequest) returns (InstructReply);
+
+  // Filing, not muting. SPEC.md section 10.2: an archived conversation still delivers, still
+  // opens and closes exchanges, and no agent is told. Only the listing changes.
+  rpc Archive(ConversationRequest) returns (DidItReply);
+  rpc Unarchive(ConversationRequest) returns (DidItReply);
+
+  // Terminatus for one conversation: section 14's argument for Purge applied to a narrower
+  // subject. Every participant's half goes, and an open exchange inside it is not orphaned and
+  // not ghosted -- it ceases to exist, so whoever was waiting is never told anything at all.
+  rpc Destroy(ConversationRequest) returns (DestroyReply);
+
+  // Causes a launch and never a registration. The launched adapter registers the one agent it
+  // attaches, by section 12.3's ordinary route -- which is why an agent nothing has ever
+  // registered can still be started: what makes the role reachable is the node's catalogue.
+  rpc Start(StartRequest) returns (DidItReply);
 }
 
 message Empty {}
@@ -506,6 +521,27 @@ message PurgeReply {
 message PurgeToll {
   string table = 1;
   int32 rows = 2;
+}
+
+message ConversationRequest {
+  string conversation_id = 1;
+}
+
+message DestroyReply {
+  DestroyVerdict verdict = 1;
+  // Per table rather than as a total, for the reason PurgeReply gives: a total is the one number
+  // that carries no warning, and this is the only account of those rows that will ever exist.
+  repeated PurgeToll destroyed = 2;
+}
+
+enum DestroyVerdict {
+  DESTROY_VERDICT_NO_SUCH_CONVERSATION = 0;
+  DESTROY_VERDICT_GONE = 1;
+}
+
+message StartRequest {
+  string agent = 1;
+  string because = 2;              // for whoever reads the node's log
 }
 
 message RegistryReply {
@@ -601,6 +637,22 @@ message ExportReply {
   // next, with nothing to say which was which. Field 2 rather than a replacement, so a client
   // that knows nothing of it keeps working.
   repeated ExchangeSnapshot exchanges = 2;
+
+  // Set only when this conversation was destroyed, in which case the two above are empty.
+  // Section 14: an empty export cannot be told from a store that lost something, and telling those
+  // two apart is the whole reason the record is kept. Optional so an absent one means "no such
+  // conversation ever" rather than "destroyed, and here is nothing about it".
+  optional DestroyedConversation destroyed = 3;
+}
+
+// Facts and no content. Section 9.4 argues that a log kept past its usefulness grows the blast
+// radius of a leaked database, so nothing here can hold message text -- and there is no field to
+// put any in without the addition being obvious.
+message DestroyedConversation {
+  string conversation_id = 1;
+  string destroyed_utc = 2;
+  int32 messages = 3;
+  repeated string participants = 4;
 }
 
 message ExchangeSnapshot {
@@ -623,11 +675,16 @@ message ListConversationsRequest {
   string until_utc = 3;               // empty for no upper bound
   int32 page_size = 4;                // the broker bounds this whatever is asked for
   string page_token = 5;              // empty for the first page
+  bool include_archived = 6;          // false omits them, and says how many were omitted
 }
 
 message ListConversationsReply {
   repeated ConversationSummary conversations = 1;
   string next_page_token = 2;         // empty at the end
+  // How many archived conversations this listing did not show. Part of the contract rather than
+  // a nicety, because archiving does not stop a conversation receiving messages: a caller that
+  // could not tell they existed would be hiding traffic rather than filing it.
+  int32 archived_omitted = 3;
 }
 
 // Participants are derived from the exchanges rather than declared. Section 5.0 makes an
@@ -640,6 +697,7 @@ message ConversationSummary {
   string first_activity_utc = 4;
   string last_activity_utc = 5;
   bool has_open_exchange = 6;
+  bool archived = 7;
 }
 
 message WaitingReply {

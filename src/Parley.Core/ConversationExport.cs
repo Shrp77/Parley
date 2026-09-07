@@ -1,4 +1,4 @@
-namespace Parley.Core;
+﻿namespace Parley.Core;
 
 /// <summary>
 /// The state of one exchange, for a reader who has its messages in front of them.
@@ -25,6 +25,10 @@ public sealed record ExchangeSnapshot(
 /// </summary>
 /// <param name="Messages">Every message carrying the conversation's identifier, in the order the broker recorded them.</param>
 /// <param name="Exchanges">The state of every exchange those messages belong to.</param>
+/// <param name="Destroyed">
+/// What is left of a conversation an operator destroyed, or null when this one was not.
+/// Both lists are empty when it is set.
+/// </param>
 /// <remarks>
 /// <para>
 /// The two travel together rather than in two calls, so a client never holds one without the
@@ -40,4 +44,34 @@ public sealed record ExchangeSnapshot(
 /// </remarks>
 public sealed record ConversationExport(
     IReadOnlyList<Message> Messages,
-    IReadOnlyList<ExchangeSnapshot> Exchanges);
+    IReadOnlyList<ExchangeSnapshot> Exchanges,
+    DestroyedConversation? Destroyed = null);
+
+/// <summary>
+/// What is left of a conversation an operator destroyed.
+/// </summary>
+/// <param name="Id">Its identifier, which was its name.</param>
+/// <param name="DestroyedUtc">When it was destroyed.</param>
+/// <param name="Messages">How many messages went with it.</param>
+/// <param name="Participants">Which agents were party to it.</param>
+/// <remarks>
+/// <para>
+/// <b>Facts and no content.</b> SPEC.md §9.4 opens by saying Parley is a channel rather than a
+/// store and argues that a log kept past its usefulness grows the blast radius of a leaked
+/// database; keeping message text past a destroy is that argument inverted. So there is no field
+/// here that could hold any, and there is deliberately no room to add one without the addition
+/// being obvious.
+/// </para>
+/// <para>
+/// <b>It answers a question, which is why it is returned by <c>export</c> rather than by an
+/// operation of its own.</b> Somebody arrives at this holding an identifier and asking for a
+/// conversation. An operator who had to already know it was destroyed in order to ask about its
+/// destruction would not have been helped — and an empty export cannot be told from a store that
+/// lost something, which is the failure the record exists to prevent.
+/// </para>
+/// </remarks>
+public sealed record DestroyedConversation(
+    string Id,
+    DateTimeOffset DestroyedUtc,
+    int Messages,
+    IReadOnlyList<AgentName> Participants);

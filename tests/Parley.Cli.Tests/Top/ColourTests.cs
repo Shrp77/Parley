@@ -1,33 +1,32 @@
 using Parley.Cli.Top;
+using Parley.Client;
 using Parley.Core;
-using Spectre.Console;
-using Spectre.Console.Testing;
-using Spectre.Console.Rendering;
+using Parley.Headless;
 using Xunit;
 
 namespace Parley.Cli.Tests.Top;
 
 /// <summary>
-/// That nothing this surface draws means anything by colour alone.
+/// That nothing this surface draws means anything by colour alone, and that nothing it draws can
+/// be made to draw something else.
 /// </summary>
 /// <remarks>
 /// <para>
-/// SC-007 and FR-005. This matters more in a terminal than in a browser, because a terminal may
-/// genuinely have no colour: a pipe, a CI log, PuTTY on a bad day, or a reader who cannot
+/// SC-006. This matters more in a terminal than in a browser, because a terminal may genuinely
+/// have no colour: a pipe, a CI log, a session over a bad connection, or a reader who cannot
 /// distinguish the two the surface happened to pick.
 /// </para>
 /// <para>
-/// <b>Rendered and read back, not inspected.</b> Reading the source for colour tags would check
-/// that somebody wrote the markup they meant to; it would say nothing about whether a fact
-/// survives without it. So these render, strip everything a terminal would have interpreted, and
-/// assert on the text that is left — which is exactly what a reader without colour sees.
+/// <b>The injection half changed shape with the toolkit and got worse rather than better.</b> The
+/// Spectre version defended against markup, because that library reads square brackets as style
+/// tags. This toolkit reads nothing — it draws strings as characters — so what is left is the
+/// older and more serious hazard: an escape sequence in an agent's payload or a broker's log moves
+/// the cursor and repaints rows the surface believes it owns, which can put text on screen that
+/// appears to have come from the surface itself.
 /// </para>
 /// </remarks>
 public sealed class ColourTests
 {
-    /// <summary>Wide enough that nothing is moved out of the header for want of room.</summary>
-    private const int Wide = 200;
-
     [Theory]
     [InlineData(AgentPresence.Running, AgentStatus.Active, "running")]
     [InlineData(AgentPresence.Startable, AgentStatus.Active, "startable")]
@@ -36,23 +35,25 @@ public sealed class ColourTests
     public void An_agents_state_reads_the_same_without_colour(
         AgentPresence presence, AgentStatus status, string expected)
     {
-        // The four states that matter, and the one distinction the spec calls out by name:
-        // startable and stranded both look like "not here", and only one of them means a peer
-        // cannot be asked. A surface that separated them by colour alone would collapse them for
-        // every reader who has none.
-        var plain = Plain(new Markup(AgentsView.State(Agent(presence, status))));
+        // The four states that matter, and the one distinction the specification calls out by
+        // name: startable and stranded both look like "not here", and only one of them means a
+        // peer cannot be asked. A surface that separated them by colour alone would collapse them
+        // for every reader who has none.
+        var row = Assert.Single(AgentsRegion.Join([Agent("orders@here", presence, status)], NodeCatalogue.Empty));
 
-        Assert.Equal(expected, plain.Trim());
+        Assert.StartsWith(expected, row.State, StringComparison.Ordinal);
     }
 
     [Fact]
     public void An_agent_that_stated_nothing_says_so_in_words()
     {
-        // An absent claim is a fact, not a gap. Rendering it as an empty dim cell would read as a
+        // An absent claim is a fact, not a gap. Rendering it as an empty cell would read as a
         // column that failed rather than as something the agent never said.
-        var plain = Plain(new Markup(AgentsView.Owns(Agent(AgentPresence.Running, AgentStatus.Active))));
+        var row = Assert.Single(AgentsRegion.Join(
+            [Agent("orders@here", AgentPresence.Running, AgentStatus.Active)],
+            NodeCatalogue.Empty));
 
-        Assert.Equal("not stated", plain.Trim());
+        Assert.Equal("not stated", row.Owns);
     }
 
     [Fact]
@@ -61,19 +62,21 @@ public sealed class ColourTests
         // The annotation a reader trusts, and the one thing on a transcript that cannot be
         // recovered from anywhere else on the screen. Three participants and a pairwise message
         // means exactly one of them was not party to it, and their name has to appear.
-        var messages = new[]
-        {
-            Message("orders@here", "billing@here", 1),
-            Message("orders@here", "inventory@here", 2),
-        };
+        var region = new TranscriptRegion();
 
-        var participants = Parley.Client.Rendering.Visibility.Participants(messages);
+        region.Show(
+            "threeway",
+            "alpha",
+            new ConversationExport(
+                [
+                    Message("orders@here", "billing@here", 1),
+                    Message("orders@here", "inventory@here", 2),
+                ],
+                []),
+            null);
 
-        var plain = Plain(TranscriptView.Panel(
-            messages[0], participants, new Dictionary<long, ExchangeSnapshot>(), Wide));
-
-        Assert.Contains("inventory@here", plain, StringComparison.Ordinal);
-        Assert.Contains("did not see this", plain, StringComparison.Ordinal);
+        Assert.Contains("inventory@here", region.Written, StringComparison.Ordinal);
+        Assert.Contains("did not see this", region.Written, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -81,189 +84,122 @@ public sealed class ColourTests
     {
         // "Incompatible" without the two numbers cannot be acted on, and a colour saying
         // "something is wrong here" is the version of that with even less information.
-        var plain = Plain(new Markup(
-            ProjectList.Describe(new Parley.Client.ProjectHealth("99.9", null))));
+        var said = ProjectsRegion.Describe(new ProjectHealth("99.9", null));
 
-        Assert.Contains("99.9", plain, StringComparison.Ordinal);
-        Assert.Contains(ProtocolVersion.Current, plain, StringComparison.Ordinal);
+        Assert.Contains("99.9", said, StringComparison.Ordinal);
+        Assert.Contains(ProtocolVersion.Current, said, StringComparison.Ordinal);
     }
 
     [Fact]
     public void A_broker_that_is_not_answering_says_so_rather_than_going_red()
     {
-        var plain = Plain(new Markup(
-            ProjectList.Describe(new Parley.Client.ProjectHealth(null, "connection refused"))));
-
-        Assert.Contains("not answering", plain, StringComparison.Ordinal);
+        Assert.Equal(
+            ProjectsRegion.NotAnswering,
+            ProjectsRegion.Describe(new ProjectHealth(null, "connection refused")));
     }
 
     [Fact]
-    public void A_message_cannot_style_the_terminal_it_is_read_in()
+    public void A_message_cannot_move_the_cursor_of_the_terminal_it_is_read_in()
     {
-        // The injection. A payload is agent-written and may contain anything; markup characters in
-        // one would otherwise let a sender choose how their own words are drawn, or break the
-        // frame around them -- the terminal's version of what the console refuses by never
-        // emitting raw output.
+        // The injection, in the shape this toolkit has. A payload is agent-written and may contain
+        // anything; an escape sequence in one would otherwise let a sender repaint rows around
+        // their own words, or clear the screen the surface believes it is drawing.
         var hostile = Message(
             "orders@here",
             "billing@here",
             1,
-            payload: """{"said":"[red]not really red[/] [[and this is not a tag]]"}""");
+            payload: "{\"said\":\"before\u001b[2Jafter\\rand this\"}");
 
-        var plain = Plain(TranscriptView.Panel(
-            hostile,
-            [AgentName.Create("orders@here"), AgentName.Create("billing@here")],
-            new Dictionary<long, ExchangeSnapshot>(),
-            Wide));
+        var drawn = Safe.Text(hostile.PayloadJson);
 
-        // The tag survives as characters a reader can see, rather than as styling nobody asked
-        // for. If it had been interpreted, this text would be absent from the output entirely.
-        Assert.Contains("[red]", plain, StringComparison.Ordinal);
-        Assert.Contains("not really red", plain, StringComparison.Ordinal);
+        Assert.DoesNotContain("\u001b", drawn, StringComparison.Ordinal);
+        Assert.DoesNotContain("\r", drawn, StringComparison.Ordinal);
+
+        // Still readable, and still the same length: a filter that dropped the characters would
+        // change an identifier's length silently, and on this surface a name typed back is what
+        // stands between an agent and being purged.
+        Assert.Contains("before", drawn, StringComparison.Ordinal);
+        Assert.Contains("after", drawn, StringComparison.Ordinal);
+        Assert.Equal(hostile.PayloadJson.Length, drawn.Length);
     }
 
     [Fact]
-    public void A_project_named_with_markup_cannot_style_the_chooser()
+    public void A_project_named_with_control_characters_cannot_repaint_the_list()
     {
-        // The finding this exists for, and it was found by probing rather than by reading.
-        // SelectionPrompt renders its choices AS MARKUP -- that is how anyone puts a colour in
-        // one -- so a name carrying a tag reaches the chooser as styling rather than as
-        // characters. Panels were escaped from the start and choosers were not, which is the
-        // difference between defending a mechanism and defending the one place it was noticed.
-        var hostile = ProjectList.Choices(
-        [
-            new ProjectSettings(
-                ProjectName.Create("orders"), string.Empty, "http://127.0.0.1:1", null, null),
-        ]);
+        // The same hazard reaching the surface by its other route. A manifest is a file somebody
+        // may not have written themselves, and the project list is drawn before anything is asked
+        // of a broker -- so this is the first text on screen and the earliest chance to be lied to.
+        var region = new ProjectsRegion();
 
-        // The label a project contributes is escaped before it is offered, so a bracket survives
-        // as a bracket. Asserted on the label rather than on rendered output, because what is
-        // being fixed is what gets handed to the prompt.
-        Assert.All(hostile, choice => Assert.DoesNotContain("", choice, StringComparison.Ordinal));
-        Assert.Contains(hostile, choice => choice.Contains("orders", StringComparison.Ordinal));
-    }
+        region.Show(
+            [
+                new ProjectSettings(
+                    ProjectName.Create("orders"),
+                    string.Empty,
+                    "http://127.0.0.1:1",
+                    null,
+                    "quiet\u001b[31m and red"),
+            ],
+            new Dictionary<string, ProjectHealth>(StringComparer.Ordinal),
+            null);
 
-    [Fact]
-    public void The_chooser_really_does_interpret_markup_in_a_choice()
-    {
-        // The premise the escaping rests on, pinned so it cannot quietly stop being true. If a
-        // future Spectre stopped interpreting choices, every escape above would become a visible
-        // backslash in somebody's menu and nothing would say why -- and if it kept interpreting
-        // them while somebody removed an escape, this says what the cost is.
-        using var driven = new TestConsole();
+        var lines = new List<string>();
 
-        driven.Interactive();
-        driven.Profile.Width = 200;
-        driven.Input.PushKey(ConsoleKey.Enter);
-
-        driven.Prompt(
-            new SelectionPrompt<string>().Title("pick").AddChoices("[red]hostile[/]", "other"));
-
-        // Consumed as styling: the tag is gone and the word it wrapped remains.
-        Assert.DoesNotContain("[red]", driven.Output, StringComparison.Ordinal);
-        Assert.Contains("hostile", driven.Output, StringComparison.Ordinal);
-    }
-
-    /// <summary>Renders something the way a terminal with no colour at all would.</summary>
-    /// <param name="renderable">What to draw.</param>
-    /// <returns>The text a reader without colour sees.</returns>
-    /// <remarks>
-    /// <para>
-    /// Colour switched off <i>and</i> the escapes stripped, which is belt and braces on purpose.
-    /// </para>
-    /// <para>
-    /// <b>An earlier version did only the first, and CI caught it on all three platforms.</b> The
-    /// reasoning it carried was that stripping merely proves the codes can be removed, while
-    /// switching colour off asks the renderer the reader's own question. That was wrong about the
-    /// mechanism: <c>dim</c> is a <i>decoration</i> and not a colour, so
-    /// <see cref="ColorSystemSupport.NoColors"/> does not remove it — the output still carried a
-    /// dim sequence, and whether it did depended on the environment, which is exactly why it
-    /// passed on one machine and failed on every runner.
-    /// </para>
-    /// <para>
-    /// The stripping is what makes this deterministic. What a reader without colour sees is the
-    /// text with the control sequences gone, and that is now what is asserted rather than whatever
-    /// the profile happened to negotiate.
-    /// </para>
-    /// </remarks>
-    private static string Plain(IRenderable renderable)
-    {
-        var written = new StringWriter();
-
-        var console = AnsiConsole.Create(new AnsiConsoleSettings
+        for (var at = 0; at < region.List.Source!.Count; at++)
         {
-            Ansi = AnsiSupport.No,
-            ColorSystem = ColorSystemSupport.NoColors,
-            Out = new AnsiConsoleOutput(written),
-        });
+            lines.Add(region.List.Source.ToList()[at]?.ToString() ?? string.Empty);
+        }
 
-        console.Profile.Width = 160;
-        console.Write(renderable);
-
-        return Bare(written.ToString());
+        Assert.All(lines, line => Assert.DoesNotContain("\u001b", line, StringComparison.Ordinal));
     }
 
-    /// <summary>Removes every control sequence, leaving what a reader reads.</summary>
-    /// <param name="text">Rendered output.</param>
-    /// <returns>The same text with nothing in it a terminal would interpret.</returns>
-    private static string Bare(string text) =>
-        System.Text.RegularExpressions.Regex.Replace(
-            text,
-            Csi,
-            string.Empty,
-            System.Text.RegularExpressions.RegexOptions.None,
-            TimeSpan.FromSeconds(5));
+    [Fact]
+    public void A_log_line_cannot_repaint_the_view_that_follows_it()
+    {
+        // The third route, and the one that is not the deployment's own text at all: a broker's
+        // log holds whatever an agent's own output put in it.
+        Assert.DoesNotContain(
+            "\u001b",
+            Safe.Text("started\u001b[2Jand cleared your screen"),
+            StringComparison.Ordinal);
+    }
 
-    /// <summary>
-    /// A control sequence: the escape character, a bracket, some parameters, and a letter.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Anchored to the escape character, and that is load-bearing rather than tidy.</b> A
-    /// pattern matching a bare bracket followed by a letter would eat the literal markup tag that
-    /// <see cref="A_message_cannot_style_the_terminal_it_is_read_in"/> exists to find still
-    /// sitting in the output — so the stripper would manufacture the very evidence that the
-    /// injection had been prevented.
-    /// </para>
-    /// <para>
-    /// The escape is spelled as a unicode escape rather than typed. A raw control byte in a source
-    /// file is invisible in most editors and survives edits nobody intended, which this repository
-    /// has already had happen once in a test.
-    /// </para>
-    /// </remarks>
-    private static readonly string Csi = ((char)27) + @"\[[0-9;]*[A-Za-z]";
+    [Fact]
+    public void The_check_is_looking_at_something()
+    {
+        // Non-vacuity, and it replaces 004's version of the same idea. That one proved the
+        // renderer really did interpret markup, so that escaping it was defending against
+        // something rather than nothing. There is no markup now, so what has to be shown is that
+        // the characters being neutralised are characters that were actually there: a Safe.Text
+        // which returned its input unchanged would pass every assertion above.
+        const string Hostile = "before\u001b[2Jafter";
 
-    /// <summary>An agent in a given state.</summary>
-    /// <param name="presence">Whether it is there.</param>
-    /// <param name="status">Whether its registration stands.</param>
-    /// <returns>The record.</returns>
-    private static AgentRecord Agent(AgentPresence presence, AgentStatus status) =>
-        new(AgentName.Create("orders@here"),
-            "claude-code",
-            AgentTier.Pull,
-            Workspace: null,
-            SessionRef: null,
-            AdapterConfig: null,
-            Connected: presence == AgentPresence.Running,
-            status,
-            Owns: null,
-            presence);
+        Assert.NotEqual(Hostile, Safe.Text(Hostile));
+        Assert.Contains("\u001b", Hostile, StringComparison.Ordinal);
+        Assert.Equal(Hostile.Length, Safe.Text(Hostile).Length);
+    }
 
-    /// <summary>One message in a conversation.</summary>
-    /// <param name="from">Who sent it.</param>
-    /// <param name="to">Who it was for.</param>
-    /// <param name="id">Its identifier.</param>
-    /// <param name="payload">What it carried.</param>
-    /// <returns>The message.</returns>
+    [Fact]
+    public void A_tab_survives_because_it_is_laid_out_rather_than_obeyed()
+    {
+        // Log lines are full of them, and replacing one would make every log unreadable to defend
+        // against something a tab cannot do.
+        Assert.Equal("a\tb", Safe.Text("a\tb"));
+    }
+
+    private static AgentRecord Agent(string name, AgentPresence presence, AgentStatus status) =>
+        new(AgentName.Create(name), "mcp", AgentTier.Pull, null, null, null, true, status, null, presence);
+
     private static Message Message(string from, string to, long id, string? payload = null) =>
-        new(id,
+        new(
+            id,
             ExchangeId: null,
             MessageType.Question,
             AgentName.Create(from),
             AgentName.Create(to),
             "test",
             payload ?? """{"said":"a question"}""",
-            "conversation",
+            "threeway",
             DateTimeOffset.UnixEpoch,
             null);
 }

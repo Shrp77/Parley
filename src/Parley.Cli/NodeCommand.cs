@@ -56,9 +56,26 @@ public static class NodeCommand
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     /// <exception cref="ArgumentException"><paramref name="catalogueFile"/> is blank.</exception>
     /// <remarks>
+    /// <para>
     /// The catalogue is named by the caller rather than found here. Program.cs resolves it once,
     /// through the same precedence every other setting uses, and a node that resolved it a second
     /// time would ignore <c>--node-config</c> — which is what it used to do.
+    /// </para>
+    /// <para>
+    /// <b>The file is watched, and a change to it rejoins.</b> The roles a node can start are sent
+    /// once, in the join request, and a role added to the file afterwards used to be announced
+    /// never — so an agent enrolled under a running node read as <c>startable</c> and could not be
+    /// started, which is exactly the misleading state SPEC.md §17 question 13 describes. Now the
+    /// roles are compared every <see cref="ServeCommand.WatchInterval"/> and a difference ends the
+    /// stream and joins again with the new set.
+    /// </para>
+    /// <para>
+    /// It lives here rather than in the serve watcher because the node is the thing that knows its
+    /// own file, and <c>parley node</c> run on its own must behave the same as one hosted by
+    /// <c>serve --with-node</c>. The gap between the two joins reads as <c>stranded</c> for under
+    /// a second, which is honest: for that moment the machine is not connected. Resident agents
+    /// are kept across it — they belong to the machine, not to the connection.
+    /// </para>
     /// </remarks>
     public static async Task<int> RunAsync(
         GrpcChannel channel,
@@ -84,15 +101,6 @@ public static class NodeCommand
         }
 
         var nodes = new Wire.Nodes.NodesClient(channel);
-
-        var request = new Wire.JoinRequest
-        {
-            Machine = NodeCatalogue.Machine,
-            Facts = Observe()
-        };
-
-        request.StartableRoles.AddRange(catalogue.Roles);
-
         var residents = new ConcurrentDictionary<string, ResidentAgent>(StringComparer.Ordinal);
 
         // Turns now run concurrently and each reports its own outcome, so more than one of them can
@@ -104,46 +112,102 @@ public static class NodeCommand
 
         try
         {
-            using var stream = nodes.Join(request, cancellationToken: cancellationToken);
-
-            await foreach (var command in stream.ResponseStream
-                .ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            while (true)
             {
-                switch (command.CommandCase)
+                var request = new Wire.JoinRequest
                 {
-                    case Wire.NodeCommand.CommandOneofCase.Joined:
-                        await ReportJoinedAsync(
-                            command.Joined, catalogue, catalogueFile, endpoint, output)
-                            .ConfigureAwait(false);
-                        break;
+                    Machine = NodeCatalogue.Machine,
+                    Facts = Observe()
+                };
 
-                    case Wire.NodeCommand.CommandOneofCase.Start:
-                        await StartAsync(command.Start, catalogue, residents, output,
-                            cancellationToken).ConfigureAwait(false);
-                        break;
+                request.StartableRoles.AddRange(catalogue.Roles);
 
-                    case Wire.NodeCommand.CommandOneofCase.Turn:
-                        await TurnAsync(command.Turn, residents, output, cancellationToken)
-                            .ConfigureAwait(false);
-                        break;
+                // Two sources, and they are not the same question. `watching` stops the poll when
+                // this attempt is over for any reason; `rejoining` is cancelled only by the poll,
+                // to end a stream whose announced roles have gone stale. Collapsing them would
+                // make a broker that hung up look like a catalogue that changed.
+                using var watching = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                using var rejoining = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-                    case Wire.NodeCommand.CommandOneofCase.Instruct:
-                        await InstructAsync(
-                            command.Instruct, nodes, request.Machine, residents, output, cancellationToken)
-                            .ConfigureAwait(false);
-                        break;
+                var watcher = WatchAsync(
+                    catalogueFile, catalogue.Roles, output, rejoining, watching.Token);
 
-                    case Wire.NodeCommand.CommandOneofCase.Stop:
-                        await StopAsync(command.Stop.Agent, residents, output).ConfigureAwait(false);
-                        break;
+                try
+                {
+                    using var stream = nodes.Join(request, cancellationToken: rejoining.Token);
 
-                    default:
-                        // A command this build does not know about. Ignored rather than fatal:
-                        // the broker may be newer, and a node that fell over on an unrecognised
-                        // instruction would take a machine off the air over a feature it simply
-                        // does not participate in.
-                        break;
+                    await foreach (var command in stream.ResponseStream
+                        .ReadAllAsync(rejoining.Token).ConfigureAwait(false))
+                    {
+                        switch (command.CommandCase)
+                        {
+                            case Wire.NodeCommand.CommandOneofCase.Joined:
+                                await ReportJoinedAsync(
+                                    command.Joined, catalogue, catalogueFile, endpoint, output)
+                                    .ConfigureAwait(false);
+                                break;
+
+                            case Wire.NodeCommand.CommandOneofCase.Start:
+                                await StartAsync(command.Start, catalogue, residents, output,
+                                    cancellationToken).ConfigureAwait(false);
+                                break;
+
+                            case Wire.NodeCommand.CommandOneofCase.Turn:
+                                await TurnAsync(command.Turn, residents, output, cancellationToken)
+                                    .ConfigureAwait(false);
+                                break;
+
+                            case Wire.NodeCommand.CommandOneofCase.Instruct:
+                                await InstructAsync(
+                                    command.Instruct, nodes, request.Machine, residents, output, cancellationToken)
+                                    .ConfigureAwait(false);
+                                break;
+
+                            case Wire.NodeCommand.CommandOneofCase.Stop:
+                                await StopAsync(command.Stop.Agent, residents, output).ConfigureAwait(false);
+                                break;
+
+                            default:
+                                // A command this build does not know about. Ignored rather than
+                                // fatal: the broker may be newer, and a node that fell over on an
+                                // unrecognised instruction would take a machine off the air over a
+                                // feature it simply does not participate in.
+                                break;
+                        }
+                    }
                 }
+                catch (Exception ending) when (
+                    Rejoinable(ending)
+                    && rejoining.IsCancellationRequested
+                    && !cancellationToken.IsCancellationRequested)
+                {
+                    // The catalogue changed under us. Not an error and not the end of the node.
+                    //
+                    // Both shapes are caught because cancelling a gRPC call does not reliably
+                    // raise the cancellation: the stream reports it as an RpcException carrying
+                    // Cancelled, and a version that caught only OperationCanceledException took
+                    // the whole node down every time somebody added an agent — reported as "this
+                    // machine's node stopped", which reads as the broker's doing.
+                }
+                finally
+                {
+                    await watching.CancelAsync().ConfigureAwait(false);
+                }
+
+                var changed = await watcher.ConfigureAwait(false);
+
+                if (changed is null)
+                {
+                    // Either the person stopped this, or the broker ended the stream. Both mean
+                    // the node is done; neither is a reason to reconnect in a loop.
+                    break;
+                }
+
+                catalogue = changed;
+
+                await output.WriteLineAsync(
+                    $"{catalogueFile} changed. Rejoining with: {Listed(catalogue)}")
+                    .ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -170,6 +234,98 @@ public static class NodeCommand
 
         return 0;
     }
+
+    /// <summary>
+    /// Watches the catalogue and asks for a rejoin when the roles in it change.
+    /// </summary>
+    /// <param name="catalogueFile">The file to watch.</param>
+    /// <param name="announced">The roles the current join announced.</param>
+    /// <param name="output">Where to report a file it could not read.</param>
+    /// <param name="rejoining">Cancelled to end the current stream when the roles have changed.</param>
+    /// <param name="cancellationToken">Stops the watch.</param>
+    /// <returns>The catalogue to rejoin with, or null when nothing asked for one.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The roles are compared, not the file's timestamp.</b> A catalogue rewritten with the same
+    /// agents in it — reformatted, or its commands edited — changes nothing the broker was told,
+    /// and rejoining for it would drop every attached agent to announce the same list again.
+    /// </para>
+    /// <para>
+    /// <b>A file it cannot read keeps the previous roles.</b> Somebody half-way through saving
+    /// leaves a moment of invalid JSON, and a node that dropped all its roles because it read
+    /// during that moment is worse than one that lags a poll. It is said once per spell of
+    /// unreadability rather than every two seconds, because a message repeating thirty times a
+    /// minute is a message nobody reads.
+    /// </para>
+    /// </remarks>
+    private static async Task<NodeCatalogue?> WatchAsync(
+        string catalogueFile,
+        IReadOnlyCollection<string> announced,
+        TextWriter output,
+        CancellationTokenSource rejoining,
+        CancellationToken cancellationToken)
+    {
+        var complained = false;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(ServeCommand.WatchInterval, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return null;
+            }
+
+            if (!NodeCatalogue.TryReadFrom(catalogueFile, out var next, out var problem))
+            {
+                if (!complained)
+                {
+                    await output.WriteLineAsync(
+                        $"{catalogueFile} could not be read: {problem} " +
+                        "Keeping the roles already announced.").ConfigureAwait(false);
+
+                    complained = true;
+                }
+
+                continue;
+            }
+
+            complained = false;
+
+            if (next.Roles.Order(StringComparer.Ordinal)
+                .SequenceEqual(announced.Order(StringComparer.Ordinal), StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            await rejoining.CancelAsync().ConfigureAwait(false);
+
+            return next;
+        }
+
+        return null;
+    }
+
+    /// <summary>Whether an ended stream ended because this asked it to.</summary>
+    /// <param name="ending">What came out of the stream.</param>
+    /// <returns>Whether it is a cancellation rather than a failure.</returns>
+    /// <remarks>
+    /// The caller pairs this with a check that the rejoin was the thing cancelled, so a broker
+    /// that itself cancelled a call is not mistaken for a catalogue that changed.
+    /// </remarks>
+    private static bool Rejoinable(Exception ending) =>
+        ending is OperationCanceledException
+        || ending is RpcException { StatusCode: StatusCode.Cancelled };
+
+    /// <summary>The roles in a catalogue, in a stable order, for a report.</summary>
+    /// <param name="catalogue">What this machine can start.</param>
+    /// <returns>The roles, or a phrase saying there are none.</returns>
+    private static string Listed(NodeCatalogue catalogue) =>
+        catalogue.Roles.Count == 0
+            ? "nothing"
+            : string.Join(", ", catalogue.Roles.Order(StringComparer.Ordinal));
 
     /// <summary>Reports what the broker knows about this machine.</summary>
     /// <param name="joined">The acknowledgement.</param>

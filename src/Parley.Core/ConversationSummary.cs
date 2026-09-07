@@ -9,6 +9,10 @@ namespace Parley.Core;
 /// <param name="FirstActivityUtc">When the earliest of them was written.</param>
 /// <param name="LastActivityUtc">When the latest was.</param>
 /// <param name="HasOpenExchange">Whether anything in it is still awaiting a resolution.</param>
+/// <param name="Archived">
+/// Whether an operator has put it out of the way. Defaulted so every existing caller keeps
+/// compiling and reads the truth: nothing was archived before this existed.
+/// </param>
 /// <remarks>
 /// <para>
 /// <b>Participation is derived and is not evidence of agreement.</b> SPEC.md §5.0 makes an
@@ -28,7 +32,37 @@ public sealed record ConversationSummary(
     int Messages,
     DateTimeOffset FirstActivityUtc,
     DateTimeOffset LastActivityUtc,
-    bool HasOpenExchange);
+    bool HasOpenExchange,
+    bool Archived = false);
+
+/// <summary>
+/// One page of conversations, and how many archived ones were left out of it.
+/// </summary>
+/// <param name="Items">This page.</param>
+/// <param name="NextPageToken">
+/// What to pass to get the following page, or <see langword="null"/> at the end.
+/// </param>
+/// <param name="ArchivedOmitted">
+/// How many archived conversations this listing did not show. Zero when archived ones were asked
+/// for, because then none were left out.
+/// </param>
+/// <remarks>
+/// <para>
+/// A type of its own rather than <see cref="Page{T}"/> of a summary, because of the third value.
+/// <b>Archiving does not stop a conversation receiving messages</b> — SPEC.md §10.2 is explicit
+/// that nothing else about it changes and no agent is told — so a caller that could not tell
+/// archived conversations existed would be hiding traffic rather than filing it, and would have
+/// no way to know it was doing so.
+/// </para>
+/// <para>
+/// That is what makes the count part of the contract rather than a nicety a surface may add. Both
+/// surfaces must show it, and a broker that did not return it would leave them unable to.
+/// </para>
+/// </remarks>
+public sealed record ConversationPage(
+    IReadOnlyList<ConversationSummary> Items,
+    string? NextPageToken,
+    int ArchivedOmitted);
 
 /// <summary>
 /// One page of a listing, and the token for the next.

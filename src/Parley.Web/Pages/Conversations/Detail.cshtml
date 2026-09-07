@@ -1,4 +1,4 @@
-@page
+﻿@page
 @model Parley.Web.Pages.Conversations.DetailModel
 @using Parley.Core
 @{
@@ -17,6 +17,7 @@
 <p class="as-of">
     In the order the broker recorded them. Times are shown for information; they come from the
     machines the agents run on and are not what the order follows.
+    @Parley.Client.Rendering.LocalTime.Note()
 </p>
 
 <p>
@@ -46,6 +47,18 @@
 @if (Model.Problem is { Length: > 0 } problem)
 {
     <p class="unreachable" role="alert">@problem</p>
+}
+else if (Model.Destroyed is { } gone)
+{
+    @* A destroyed conversation and one that never existed are different answers, and an operator
+       who cannot tell them apart cannot tell a destroy from a store that lost something. *@
+    <p class="outcome">That conversation was destroyed.</p>
+    <ul>
+        @foreach (var line in Parley.Client.Rendering.Reading.Gone(gone))
+        {
+            <li>@line</li>
+        }
+    </ul>
 }
 else if (Model.Messages.Count == 0)
 {
@@ -84,7 +97,8 @@ else
         @foreach (var message in Model.Messages)
         {
             var said = Payload.Read(message.PayloadJson);
-            var on = DateOnly.FromDateTime(message.CreatedUtc.UtcDateTime);
+            var on = DateOnly.FromDateTime(
+                TimeZoneInfo.ConvertTime(message.CreatedUtc, TimeZoneInfo.Local).DateTime);
             var ghost = said.Ghosted
                 || (message.ExchangeId is { } gid
                     && Model.Exchanges.TryGetValue(gid, out var snap)
@@ -97,7 +111,7 @@ else
             if (day != on)
             {
                 day = on;
-                <li class="day">@message.CreatedUtc.ToString("dddd, d MMMM yyyy")</li>
+                <li class="day">@TimeZoneInfo.ConvertTime(message.CreatedUtc, TimeZoneInfo.Local).ToString("dddd, d MMMM yyyy")</li>
             }
 
             <li id="@($"m{message.Id}")" data-agent="@message.From.Value"
@@ -109,7 +123,10 @@ else
                         <strong>@message.From.Value</strong>
                         <span class="arrow">to</span>
                         <strong>@message.To.Value</strong>
-                        <span class="stamp">@message.CreatedUtc.ToString("HH:mm")</span>
+                        @* The reader's own clock. What is stored stays UTC, and the export
+                           still says so -- a file read by somebody else, somewhere else, needs the
+                           Z that a screen does not. *@
+                        <span class="stamp">@Parley.Client.Rendering.LocalTime.Clock(message.CreatedUtc)</span>
                     </p>
 
                     @* Razor encodes every one of these. An agent wrote them, and they are content
@@ -194,7 +211,8 @@ else
         @{ var railDay = default(DateOnly?); }
         @foreach (var message in Model.Messages)
         {
-            var on = DateOnly.FromDateTime(message.CreatedUtc.UtcDateTime);
+            var on = DateOnly.FromDateTime(
+                TimeZoneInfo.ConvertTime(message.CreatedUtc, TimeZoneInfo.Local).DateTime);
             var abandoned = Payload.Read(message.PayloadJson).Ghosted
                 || (message.ExchangeId is { } rid
                     && Model.Exchanges.TryGetValue(rid, out var rsnap)
@@ -203,7 +221,7 @@ else
             if (railDay != on)
             {
                 railDay = on;
-                <span class="rail-day">@message.CreatedUtc.ToString("d MMM")</span>
+                <span class="rail-day">@TimeZoneInfo.ConvertTime(message.CreatedUtc, TimeZoneInfo.Local).ToString("d MMM")</span>
             }
 
             <a data-agent="@message.From.Value"

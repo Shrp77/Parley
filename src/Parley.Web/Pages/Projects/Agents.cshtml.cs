@@ -1,7 +1,8 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Parley.Core;
 using Parley.Client;
+using Parley.Client.Views;
 
 namespace Parley.Web.Pages.Projects;
 
@@ -35,6 +36,19 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
     [BindProperty(SupportsGet = true)]
     public string? PageToken { get; set; }
 
+    /// <summary>Whether archived conversations are in the list.</summary>
+    /// <remarks>
+    /// In the query string rather than in a cookie, so a link to this page carries what the sender
+    /// was looking at. A view preference kept per browser would make two people describing the same
+    /// screen disagree about what is on it.
+    /// </remarks>
+    [BindProperty(SupportsGet = true)]
+    public bool ShowArchived { get; set; }
+
+    /// <summary>How the conversations are ordered.</summary>
+    [BindProperty(SupportsGet = true)]
+    public string? Sort { get; set; }
+
     /// <summary>The agents registered in it.</summary>
     public IReadOnlyList<AgentRecord> Agents { get; private set; } = [];
 
@@ -43,6 +57,14 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
 
     /// <summary>The token for the following page, if there is one.</summary>
     public string? NextPageToken { get; private set; }
+
+    /// <summary>What the list says about the archived conversations it is not showing.</summary>
+    /// <remarks>
+    /// Always rendered when anything is hidden. Archiving does not stop a conversation receiving
+    /// messages and a message does not un-archive it, so without this a busy conversation somebody
+    /// filed away last month is invisible with nothing saying so.
+    /// </remarks>
+    public string Hidden { get; private set; } = string.Empty;
 
     /// <summary>Why the roster could not be read, when it could not.</summary>
     public string? Problem { get; private set; }
@@ -101,13 +123,54 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
 
         var listed = await BrokerDirectory.ReadAsync(async () =>
             await broker.ConversationsAsync(participant, pageToken: PageToken,
-                cancellationToken: token).ConfigureAwait(false)).ConfigureAwait(false);
+                includeArchived: ShowArchived, cancellationToken: token).ConfigureAwait(false))
+            .ConfigureAwait(false);
 
-        Conversations = listed.Value?.Items ?? [];
+        var rows = ConversationsView.Sorted(
+            ConversationsView.Rows(listed.Value?.Items ?? []),
+            string.Equals(Sort, "name", StringComparison.Ordinal) ? SortBy.Name : SortBy.Activity);
+
+        // Ordered through the shared derivation and then mapped back, so the console and the
+        // terminal cannot sort the same list differently. The alternative -- an OrderBy here and
+        // another there -- is how the two surfaces came to disagree about who was in a conversation
+        // twice in one week, which is why anything both of them decide is decided once.
+        Conversations =
+        [
+            .. rows.Select(row => (listed.Value?.Items ?? []).First(c => c.Id == row.Id))
+        ];
+
         NextPageToken = listed.Value?.NextPageToken;
+        Hidden = ConversationsView.Hidden(listed.Value?.ArchivedOmitted ?? 0, ShowArchived);
         ConversationProblem = listed.Problem;
         AsOf = DateTimeOffset.Now;
 
         return Page();
+    }
+
+    /// <summary>Files a conversation away, or brings it back.</summary>
+    /// <param name="id">The conversation.</param>
+    /// <param name="archived">Whether it is archived now, so this reverses it.</param>
+    /// <returns>The page again, showing the result.</returns>
+    /// <remarks>
+    /// No typed name, which is the line 004 drew and this does not move: nothing is destroyed and
+    /// one click reverses it, so a confirmation here would be a dialog in front of a light switch.
+    /// </remarks>
+    public async Task<IActionResult> OnPostArchiveAsync(string id, bool archived)
+    {
+        var project = directory.Find(Project);
+
+        if (project is null || string.IsNullOrWhiteSpace(id))
+        {
+            return RedirectToPage("/Index");
+        }
+
+        var token = HttpContext.RequestAborted;
+        var broker = new BrokerClient(directory.ClientFor(project));
+
+        _ = await BrokerDirectory.ReadAsync(async () => archived
+            ? await broker.UnarchiveAsync(id, token).ConfigureAwait(false)
+            : await broker.ArchiveAsync(id, token).ConfigureAwait(false)).ConfigureAwait(false);
+
+        return RedirectToPage(new { project = Project, showArchived = ShowArchived, sort = Sort });
     }
 }

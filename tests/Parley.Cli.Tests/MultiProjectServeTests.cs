@@ -140,6 +140,30 @@ public sealed class MultiProjectServeTests : IDisposable
     }
 
     [Fact]
+    public async Task The_versions_are_named_once_for_the_process_and_not_once_per_project()
+    {
+        // One build serves every project here, so a line repeated per project would read as
+        // though it could differ — and an operator comparing two of them would be answering a
+        // question that cannot arise. Counted rather than merely found, because "contains" passes
+        // just as happily on the version this is written to prevent.
+        var orders = Project("orders");
+        var billing = Project("billing");
+
+        var (code, output, _) = await ServeAsync([orders, billing], async () =>
+        {
+            Assert.True(await AnswersAsync(orders.Endpoint, TestContext.Current.CancellationToken));
+            Assert.True(await AnswersAsync(billing.Endpoint, TestContext.Current.CancellationToken));
+        });
+
+        var lines = output
+            .Split('\n')
+            .Count(line => line.TrimEnd('\r').StartsWith("parley ", StringComparison.Ordinal));
+
+        Assert.Equal(1, lines);
+        Assert.Equal(0, code);
+    }
+
+    [Fact]
     public async Task One_interrupt_stops_every_broker_and_frees_every_port()
     {
         // The regression guard. Each WebApplication installs a console lifetime that answers the

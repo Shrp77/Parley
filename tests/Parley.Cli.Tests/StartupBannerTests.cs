@@ -1,4 +1,8 @@
-﻿using Xunit;
+﻿using System.Globalization;
+using System.Runtime.InteropServices;
+using Parley.Core;
+using Parley.Store;
+using Xunit;
 
 namespace Parley.Cli.Tests;
 
@@ -47,6 +51,103 @@ public sealed class StartupBannerTests
     }
 
     [Fact]
+    public async Task The_first_thing_a_broker_says_is_which_versions_are_running()
+    {
+        var (output, _) = await ServeUntilListeningAsync();
+
+        var first = output.Split('\n')[0].TrimEnd('\r');
+
+        // First, because the runs where this matters most are the ones that print nothing after
+        // it: a store this build cannot open, or a port already held.
+        Assert.StartsWith("parley ", first, StringComparison.Ordinal);
+
+        // Every version involved, each answering a different question. Named individually rather
+        // than matched as one string, so a line that drops one says which.
+        Assert.Contains(BuildIdentity.Version, first, StringComparison.Ordinal);
+        Assert.Contains("protocol " + ProtocolVersion.Current, first, StringComparison.Ordinal);
+        Assert.Contains(
+            string.Create(CultureInfo.InvariantCulture, $"schema {SchemaMigrator.LatestVersion}"),
+            first,
+            StringComparison.Ordinal);
+        Assert.Contains(RuntimeInformation.FrameworkDescription, first, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_broker_that_cannot_open_its_store_has_still_named_its_versions()
+    {
+        // The run this line exists for. Everything else the banner says comes after the store is
+        // open, so a build that refuses a store — "this store is at schema 5 and this Parley only
+        // knows 4" — used to leave a log with the complaint in it and nothing saying which Parley.
+        //
+        // A directory rather than a locked or malformed file, because it fails the same way on
+        // every platform this suite runs on and needs no cleanup of its own.
+        var directory = Path.Combine(
+            Path.GetTempPath(), "parley-banner-" + Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(directory);
+
+        await using var output = new StringWriter();
+        await using var error = new StringWriter();
+
+        try
+        {
+            var code = await ServeCommand.RunAsync(
+                directory,
+                "http://127.0.0.1:0",
+                null,
+                output,
+                error,
+                cancellationToken: TestContext.Current.CancellationToken);
+
+            // Non-vacuous: a run that started normally would prove nothing about the failing one.
+            Assert.NotEqual(0, code);
+            Assert.Contains("Could not open", error.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+
+        Assert.Contains(BuildIdentity.Line, output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_version_line_names_the_commit_when_the_build_carried_one()
+    {
+        // Not asserted as present: a build made outside source control carries no revision, and a
+        // test demanding one would fail on a checkout that is a copy rather than a clone. What is
+        // asserted is that it is never invented, and never the whole forty characters — the line
+        // is read on a terminal, and a hash that wraps it is the reason `git log` abbreviates.
+        if (BuildIdentity.Commit is null)
+        {
+            Assert.DoesNotContain('(', BuildIdentity.Line);
+
+            return;
+        }
+
+        Assert.Contains(
+            "(" + BuildIdentity.Commit + ")", BuildIdentity.Line, StringComparison.Ordinal);
+
+        Assert.True(
+            BuildIdentity.Commit.Length <= 7,
+            $"the commit is {BuildIdentity.Commit.Length} characters: {BuildIdentity.Commit}");
+    }
+
+    [Fact]
+    public void What_version_prints_and_what_the_broker_logs_agree_about_the_number()
+    {
+        // They are deliberately not the same line — one is a number somebody compares, the other
+        // identifies a build months later — and that is exactly why the number they share is
+        // checked. Two readings of the same attribute is how they came to differ once.
+        var program = RepositoryFile.Read("src/Parley.Cli/Program.cs");
+
+        Assert.Contains("BuildIdentity.Version", program, StringComparison.Ordinal);
+
+        Assert.DoesNotContain(
+            "AssemblyInformationalVersionAttribute", program, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_console_address_is_set_apart_from_everything_else()
     {
         // It used to be the third line of five, in the same weight as the broker's address and
@@ -56,19 +157,159 @@ public sealed class StartupBannerTests
         // seam to call; the rendering itself was checked by running it.
         var program = RepositoryFile.Read("src/Parley.Cli/Program.cs");
 
-        // Both halves inside ONE call's arguments, and that is the point rather than a
-        // convenience: ConsoleAnnouncement stops at the first ConfigureAwait, so finding the
-        // address and the instruction in it proves the block is written as a single write.
-        //
-        // Which is what keeps it whole. The node hosted beside this writes its own line to the
-        // same writer at the same time; ServeCommand wraps that writer in TextWriter.Synchronized,
-        // so one call is atomic against it where five would let "Hosting this machine's node"
-        // land in the middle of the block. Measured: 200 blocks against a concurrent writer, none
-        // split.
+        // Both halves in the one composed block, which ConsoleAnnouncement independently holds
+        // to a single write -- the property that keeps it whole. The node hosted beside this
+        // writes its own line to the same writer at the same time; ServeCommand wraps that writer
+        // in TextWriter.Synchronized, so one call is atomic against it where five would let
+        // "Hosting this machine's node" land in the middle of the block. Measured: 200 blocks
+        // against a concurrent writer, none split.
         var block = ConsoleAnnouncement(program);
 
         Assert.Contains("Console:  {consoleAt}", block, StringComparison.Ordinal);
         Assert.Contains("Open that one in a browser.", block, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Both_ways_into_a_deployment_are_named_where_a_person_is_standing()
+    {
+        // The reader of this block is at a terminal on the machine running the broker, which is
+        // frequently not a machine with a browser on it — the case `parley top` was built for.
+        // Naming only the console here left the terminal surface to be discovered in --help,
+        // after deciding the deployment had no way in.
+        var block = ConsoleAnnouncement(RepositoryFile.Read("src/Parley.Cli/Program.cs"));
+
+        Assert.Contains("parley top", block, StringComparison.Ordinal);
+        Assert.Contains("no browser needed", block, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_rule_is_never_shorter_than_what_it_rules()
+    {
+        // Run rather than read, because this is about what lands on the screen. The rule used to
+        // be sized from the address, which was right while the address was the widest thing
+        // between the rules; the second route is wider, and a box narrower than its own contents
+        // reads as a rendering fault rather than as a deliberately set-apart block.
+        //
+        // The only test in this file that starts the tool. Every assertion above it is about text
+        // the broker composes, and this one is about text the broker measures — which nothing can
+        // check without letting it do the measuring.
+        var printed = await ConsoleBlockAsync();
+
+        var rules = printed.Where(line => line.Trim().All(c => c == '-')).ToList();
+        var content = printed.Where(line => !line.Trim().All(c => c == '-')).ToList();
+
+        // Non-vacuous first: a capture that missed the block would make every assertion below it
+        // true of an empty list.
+        Assert.Equal(2, rules.Count);
+        Assert.Contains(content, line => line.Contains("parley top", StringComparison.Ordinal));
+
+        var widest = content.Max(line => line.TrimEnd().Length);
+
+        foreach (var rule in rules)
+        {
+            Assert.True(
+                rule.TrimEnd().Length >= widest,
+                $"a rule of {rule.TrimEnd().Length} over content {widest} wide:"
+                + Environment.NewLine + string.Join(Environment.NewLine, printed));
+        }
+    }
+
+    /// <summary>Starts a broker with a console and captures the block naming both surfaces.</summary>
+    /// <returns>The lines from the opening rule to the closing one, blanks dropped.</returns>
+    /// <remarks>
+    /// A real port for the console and port zero for the broker. The console's address goes into
+    /// the block being measured, so it cannot be zero — the whole subject is how wide that line
+    /// renders — while the broker's is never read here and taking a second real port would be a
+    /// second chance to collide with something.
+    /// </remarks>
+    private static async Task<IReadOnlyList<string>> ConsoleBlockAsync()
+    {
+        var store = Path.Combine(
+            Path.GetTempPath(), "parley-banner-" + Guid.NewGuid().ToString("N") + ".db");
+
+        var console = $"http://127.0.0.1:{Loopback.FreePort()}";
+
+        var process = ToolProcess.Launch(
+            [],
+            "serve",
+            "--db", store,
+            "--listen", "http://127.0.0.1:0",
+            "--with-console",
+            "--console", console);
+
+        var block = new List<string>();
+
+        try
+        {
+            var reading = Task.Run(() =>
+            {
+                var lines = new List<string>();
+
+                while (process.StandardOutput.ReadLine() is { } line)
+                {
+                    if (line.Trim().Length == 0)
+                    {
+                        continue;
+                    }
+
+                    lines.Add(line);
+
+                    // The closing rule, which is the second one. Read to it rather than to a
+                    // fixed number of lines: the node and the sweep write to this same stream,
+                    // so what sits between the rules is the block and what surrounds it is not
+                    // reliably anything.
+                    if (lines.Count(l => l.Trim().All(c => c == '-')) == 2)
+                    {
+                        break;
+                    }
+                }
+
+                return lines;
+            });
+
+            var all = await reading.WaitAsync(
+                TimeSpan.FromSeconds(60), TestContext.Current.CancellationToken);
+
+            var opening = all.FindIndex(line => line.Trim().All(c => c == '-') && line.Trim().Length > 0);
+
+            Assert.True(
+                opening >= 0,
+                "the broker printed no console block: " + string.Join(" / ", all));
+
+            block = all[opening..];
+        }
+        finally
+        {
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                    _ = process.WaitForExit(5000);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // Already gone, which is the outcome this wanted.
+            }
+
+            process.Dispose();
+
+            foreach (var leftover in Directory.GetFiles(
+                Path.GetDirectoryName(store)!, Path.GetFileName(store) + "*"))
+            {
+                try
+                {
+                    File.Delete(leftover);
+                }
+                catch (IOException)
+                {
+                    // A store the broker has not finished releasing.
+                }
+            }
+        }
+
+        return block;
     }
 
     [Fact]
@@ -114,9 +355,21 @@ public sealed class StartupBannerTests
     private static string ConsoleAnnouncement(string program)
     {
         var body = HostingConsole(program);
-        var call = body.IndexOf("reporting.WriteLineAsync(", StringComparison.Ordinal);
 
-        Assert.True(call > 0, "the console no longer announces its address");
+        // From where the block is composed, not from the call. It used to start at the call,
+        // which worked while every line of the block was a literal argument to it — and the
+        // moment the block grew a second route wide enough to need measuring, the text moved
+        // into a variable one line above and the extraction found an empty box.
+        //
+        // The single-write property that start was protecting is now asserted directly, below,
+        // rather than implied by everything happening to sit inside one set of parentheses.
+        var composed = body.IndexOf("var body =", StringComparison.Ordinal);
+
+        Assert.True(composed > 0, "the console block is no longer composed before it is written");
+
+        var call = body.IndexOf("reporting.WriteLineAsync(", composed, StringComparison.Ordinal);
+
+        Assert.True(call > composed, "the console no longer announces its address");
 
         // Guarded rather than sliced blind. Without this, a call that stopped ending in
         // ConfigureAwait would fail as an ArgumentOutOfRangeException from a range operator --
@@ -125,7 +378,17 @@ public sealed class StartupBannerTests
 
         Assert.True(ends > call, "the console announcement no longer ends where this expects");
 
-        return body[call..ends];
+        var block = body[composed..ends];
+
+        // What the old extraction proved by accident and this proves on purpose. The node hosted
+        // beside this writes to the same writer at the same time; ServeCommand wraps it in
+        // TextWriter.Synchronized, so one call is atomic against it where several would let
+        // "Hosting this machine's node" land in the middle of the block.
+        var writes = block.Split("WriteLineAsync(").Length - 1;
+
+        Assert.True(writes == 1, $"the console block is written in {writes} calls, not one");
+
+        return block;
     }
 
 

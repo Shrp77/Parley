@@ -3,7 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using Parley.Configuration;
 using Parley.Core;
-using Spectre.Console;
+using Terminal.Gui.App;
 
 namespace Parley.Cli.Top;
 
@@ -12,51 +12,63 @@ namespace Parley.Cli.Top;
 /// </summary>
 /// <remarks>
 /// <para>
-/// FR-015. Convenience rather than capability: <c>parley project add</c> has always done this, and
-/// it is done once per project. What it buys is not having to leave a full-screen application to
-/// run a command whose arguments are on the screen you left.
+/// Convenience rather than capability: <c>parley project add</c> has always done this, and it is
+/// done once per project. What it buys is not having to leave a full-screen application to run a
+/// command whose arguments are on the screen you left.
 /// </para>
 /// <para>
 /// <b>It calls <see cref="ProjectCommand"/> rather than writing the manifest itself</b>, which is
-/// the whole of the design. The manifest has exactly one writer, and this is that same program;
-/// a second path that assembled a <c>ProjectSettings</c> and wrote it would be a second writer
-/// with its own idea of the rules — and it would sidestep the lock that stops two concurrent
-/// writers discarding one another's work, which was a real defect fixed in #78 and not a
-/// hypothetical one.
+/// the whole of the design. The manifest has exactly one writer, and this is that same program; a
+/// second path that assembled a <c>ProjectSettings</c> and wrote it would be a second writer with
+/// its own idea of the rules — and it would sidestep the lock that stops two concurrent writers
+/// discarding one another's work, which was a real defect and not a hypothetical one.
 /// </para>
 /// <para>
-/// <b>Two forms, because the two questions are different.</b> The first version had one, with
+/// <b>Two forms, because the two questions are different.</b> An earlier version had one, with
 /// five blank prompts, and the person filling it in answered every one only to be told at the end
 /// that the name had to be lowercase — and had to go and read a scheduled task to find the paths
 /// it wanted. Naming the deployment this machine already runs is a form whose every answer is
 /// already written down in the autostart entry, so it is pre-filled from there. Creating a new
 /// project needs values that do <i>not</i> exist yet — a fresh store, a port nothing else holds —
-/// so those are proposed rather than asked for blank. Both validate as each answer is typed,
-/// which is what the refusal at the end could never do.
+/// so those are proposed rather than asked for blank. Both check every answer as it is typed,
+/// which is what a refusal at the end could never do.
 /// </para>
 /// </remarks>
 internal static class Naming
 {
-    /// <summary>Names the deployment this machine's autostart entry already serves.</summary>
-    /// <param name="console">Where to draw, and where the fields are typed.</param>
+    /// <summary>What the form naming the running deployment is called.</summary>
+    internal const string NameRunningTitle = "Name the running deployment";
+
+    /// <summary>What the form creating a project is called.</summary>
+    internal const string CreateTitle = "Create a project";
+
+    /// <summary>What is said when the command refused.</summary>
+    internal const string NothingWritten = "Nothing was written.";
+
+    /// <summary>What is said when it did not.</summary>
+    internal const string Named = "Named. It is on the project list now.";
+
+    /// <summary>Opens the form that names the deployment this machine already runs.</summary>
+    /// <param name="app">The application the form opens in.</param>
     /// <param name="manifestPath">The manifest to write into.</param>
     /// <param name="projects">What the manifest already names.</param>
     /// <param name="entry">The installed entry, whose paths pre-fill the form.</param>
-    /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>When it has been named, or refused.</returns>
-    internal static Task NameRunningAsync(
-        IAnsiConsole console,
+    /// <param name="queue">Runs the command, so the caller can wait for it.</param>
+    /// <param name="done">Told what to say when the form has been dealt with.</param>
+    /// <returns>When the form is open.</returns>
+    internal static Task OpenNameRunningAsync(
+        IApplication app,
         string manifestPath,
         IReadOnlyList<ProjectSettings> projects,
         InstalledEntry entry,
-        CancellationToken cancellationToken)
+        Action<Func<CancellationToken, Task>> queue,
+        Func<string, Task> done)
     {
-        console.MarkupLine(
-            "[bold]The deployment this machine already runs.[/] [dim]Every path below was read "
-            + "from the autostart entry; Enter keeps it.[/]");
+        ArgumentNullException.ThrowIfNull(entry);
 
-        return CollectAndWriteAsync(
-            console,
+        return OpenAsync(
+            app,
+            NameRunningTitle,
             manifestPath,
             projects,
             entry,
@@ -64,19 +76,21 @@ internal static class Naming
                 Store: entry.Store!,
                 Endpoint: entry.Listen ?? DefaultEndpoint,
                 NodeConfig: entry.NodeConfig,
-                StoreWhy: "The database the running broker owns. Every project has its own file.",
-                EndpointWhy: "Where the running broker listens. Change it only if this project's "
-                             + "broker is on another machine."),
-            cancellationToken);
+                StoreWhy: "the database the running broker owns; every project has its own file",
+                EndpointWhy: "where the running broker listens; change it only if this project's "
+                             + "broker is on another machine"),
+            queue,
+            done);
     }
 
-    /// <summary>Creates a project that does not exist yet.</summary>
-    /// <param name="console">Where to draw, and where the fields are typed.</param>
+    /// <summary>Opens the form that creates a project that does not exist yet.</summary>
+    /// <param name="app">The application the form opens in.</param>
     /// <param name="manifestPath">The manifest to write into.</param>
     /// <param name="projects">What the manifest already names.</param>
     /// <param name="entry">The installed entry, if any, for where stores live and what to say after.</param>
-    /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>When it has been named, or refused.</returns>
+    /// <param name="queue">Runs the command, so the caller can wait for it.</param>
+    /// <param name="done">Told what to say when the form has been dealt with.</param>
+    /// <returns>When the form is open.</returns>
     /// <remarks>
     /// The endpoint proposed is the default port when nothing on this machine holds it — an MCP
     /// server told nothing about a broker looks there, which is what lets a repository's launch
@@ -84,16 +98,15 @@ internal static class Naming
     /// deployment cannot share the first one's. SPEC.md §4.1: each project gets its own store and
     /// its own transport endpoint.
     /// </remarks>
-    internal static Task CreateAsync(
-        IAnsiConsole console,
+    internal static Task OpenCreateAsync(
+        IApplication app,
         string manifestPath,
         IReadOnlyList<ProjectSettings> projects,
         InstalledEntry? entry,
-        CancellationToken cancellationToken)
+        Action<Func<CancellationToken, Task>> queue,
+        Func<string, Task> done)
     {
-        console.MarkupLine(
-            "[bold]A new project.[/] [dim]Its own database and its own port, proposed below; "
-            + "Enter accepts a proposal.[/]");
+        ArgumentNullException.ThrowIfNull(projects);
 
         var taken = projects.Select(p => p.Endpoint).ToList();
 
@@ -106,8 +119,9 @@ internal static class Naming
             taken.Add(DefaultEndpoint);
         }
 
-        return CollectAndWriteAsync(
-            console,
+        return OpenAsync(
+            app,
+            CreateTitle,
             manifestPath,
             projects,
             entry,
@@ -115,99 +129,37 @@ internal static class Naming
                 Store: null,
                 Endpoint: FreeEndpoint(taken),
                 NodeConfig: null,
-                StoreWhy: "A new database file. Every project has its own, and the broker creates "
-                          + "it on first start.",
-                EndpointWhy: "Where this project's broker will listen. A port nothing here holds "
-                             + "was chosen; change it only if it must be reachable from elsewhere."),
-            cancellationToken);
+                StoreWhy: "a new database file; every project has its own, and the broker creates "
+                          + "it on first start",
+                EndpointWhy: "where this project's broker will listen; a port nothing here holds "
+                             + "was chosen, so change it only if it must be reachable from elsewhere"),
+            queue,
+            done);
     }
 
-    /// <summary>Asks for each field, validating as it is typed, then writes through the command.</summary>
-    private static async Task CollectAndWriteAsync(
-        IAnsiConsole console,
-        string manifestPath,
-        IReadOnlyList<ProjectSettings> projects,
-        InstalledEntry? entry,
-        Proposed proposed,
-        CancellationToken cancellationToken)
+    /// <summary>Whether there is a running deployment that nothing in the manifest names yet.</summary>
+    /// <param name="projects">What the manifest already names.</param>
+    /// <param name="installed">The installed entry, if any.</param>
+    /// <returns>Whether the form has anything to pre-fill from.</returns>
+    /// <remarks>
+    /// An entry that serves the manifest is already serving whatever is named there, so there is
+    /// no unnamed deployment to name — and an entry whose store some project already claims has
+    /// been named once. Offering it either way would invite somebody to name the same broker
+    /// twice, which is two projects sharing a store and is what §4.1 forbids.
+    /// </remarks>
+    internal static bool CanNameRunning(
+        IReadOnlyList<ProjectSettings> projects, InstalledEntry? installed)
     {
-        Guidance(console,
-            "A label for this machine only, never sent anywhere. Lowercase letters, digits and "
-            + "hyphens, starting with a letter — the same rule as an agent's role.");
+        ArgumentNullException.ThrowIfNull(projects);
 
-        var name = console.Prompt(
-            new TextPrompt<string>("Project name:")
-                .Validate(typed => NameProblem(typed, projects) is { } why
-                    ? ValidationResult.Error($"[red]{Safe.Text(why)}[/]")
-                    : ValidationResult.Success()));
-
-        Guidance(console, proposed.StoreWhy);
-
-        var store = console.Prompt(
-            Prompt("Database path:", proposed.Store ?? ProposedStore(name, projects, entry))
-                .Validate(typed => StoreProblem(typed, projects) is { } why
-                    ? ValidationResult.Error($"[red]{Safe.Text(why)}[/]")
-                    : ValidationResult.Success()));
-
-        Guidance(console, proposed.EndpointWhy);
-
-        var listen = console.Prompt(
-            Prompt("Broker address:", proposed.Endpoint)
-                .Validate(typed => EndpointProblem(typed, projects) is { } why
-                    ? ValidationResult.Error($"[red]{Safe.Text(why)}[/]")
-                    : ValidationResult.Success()));
-
-        Guidance(console,
-            "Optional, and it decides whether this project works unattended. With a node.json "
-            + "here, this machine starts a listed repository's agent when a question arrives for "
-            + "it and nobody has it open, and keeps it running. Without one, a question to an "
-            + "agent nobody has open waits, times out and is ghosted; agents answer only while a "
-            + "person has their repository open. Blank starts nothing.");
-
-        var nodeConfig = console.Prompt(
-            Prompt("Node catalogue [dim](optional)[/]:", proposed.NodeConfig).AllowEmpty());
-
-        Guidance(console,
-            "Optional. One line shown beside the name on the project list, here and in the web "
-            + "console.");
-
-        var description = console.Prompt(
-            new TextPrompt<string>("Description [dim](optional)[/]:").AllowEmpty());
-
-        var said = new StringWriter();
-        var complained = new StringWriter();
-
-        var code = await ProjectCommand.RunAsync(
-            ["add", name],
-            manifestPath,
-            new ProjectFields(
-                store,
-                listen,
-                nodeConfig.Length == 0 ? null : nodeConfig,
-                description.Length == 0 ? null : description),
-            said,
-            complained,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        Report(console, code, said.ToString(), complained.ToString(), entry);
+        return installed is { ServesManifest: false, Store: { Length: > 0 } store }
+            && !projects.Any(p => ProjectManifest.PathComparer.Equals(p.Store, store));
     }
-
-    /// <summary>A prompt with a proposal the person can accept by pressing Enter.</summary>
-    private static TextPrompt<string> Prompt(string question, string? proposal)
-    {
-        var prompt = new TextPrompt<string>(question);
-
-        return proposal is { Length: > 0 } ? prompt.DefaultValue(proposal) : prompt;
-    }
-
-    /// <summary>One dim line saying what a field is for, before it is asked.</summary>
-    private static void Guidance(IAnsiConsole console, string what) =>
-        console.MarkupLine($"[dim]{Safe.Text(what)}[/]");
 
     /// <summary>Why a typed name would be refused, or null.</summary>
     /// <remarks>
     /// The same rule <see cref="ProjectCommand"/> applies, said here so the refusal arrives at
-    /// the prompt rather than after four more answers. Kept in one place there and quoted from
+    /// the field rather than after four more answers. Kept in one place there and quoted from
     /// here: <see cref="ProjectName.TryCreate"/> is the rule, and this only names it.
     /// </remarks>
     internal static string? NameProblem(string typed, IReadOnlyList<ProjectSettings> projects)
@@ -255,6 +207,10 @@ internal static class Naming
     }
 
     /// <summary>Where a new project's store should go, next to the ones this machine has.</summary>
+    /// <param name="name">The project being created.</param>
+    /// <param name="projects">What the manifest already names.</param>
+    /// <param name="entry">The installed entry, if any.</param>
+    /// <returns>A path beside the existing stores.</returns>
     /// <remarks>
     /// Beside the existing stores rather than in a fresh default, because a machine that keeps
     /// its stores somewhere has already decided where, and a second convention is a second place
@@ -263,6 +219,8 @@ internal static class Naming
     internal static string ProposedStore(
         string name, IReadOnlyList<ProjectSettings> projects, InstalledEntry? entry)
     {
+        ArgumentNullException.ThrowIfNull(projects);
+
         var beside = projects.Select(p => Path.GetDirectoryName(p.Store))
             .FirstOrDefault(d => !string.IsNullOrEmpty(d))
             ?? (entry?.Store is { } running ? Path.GetDirectoryName(running) : null)
@@ -277,6 +235,8 @@ internal static class Naming
     /// <returns>An endpoint nothing in <paramref name="taken"/> uses.</returns>
     internal static string FreeEndpoint(IReadOnlyList<string> taken)
     {
+        ArgumentNullException.ThrowIfNull(taken);
+
         if (!taken.Any(t => Same(t, DefaultEndpoint)))
         {
             return DefaultEndpoint;
@@ -302,69 +262,135 @@ internal static class Naming
         }
 
         // Sixteen ports handed out by the system and every one already in the manifest is not a
-        // state a machine reaches; the proposal is left blank and the prompt asks.
+        // state a machine reaches; the proposal is left blank and the field asks.
         return string.Empty;
     }
-
-    private static bool Same(string a, string b) =>
-        string.Equals(a.TrimEnd('/'), b.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The endpoint an MCP server looks for when told nothing.</summary>
     internal static string DefaultEndpoint { get; } = string.Create(
         CultureInfo.InvariantCulture, $"http://127.0.0.1:{BrokerEndpoint.DefaultPort}");
 
-    /// <summary>Shows what the command said, in its own words, and what happens next.</summary>
-    /// <param name="console">Where to draw.</param>
-    /// <param name="code">What the command returned.</param>
-    /// <param name="said">What it wrote to output.</param>
-    /// <param name="complained">What it wrote to error.</param>
-    /// <param name="entry">The installed entry, which decides whether the project will be served.</param>
+    private static bool Same(string a, string b) =>
+        string.Equals(a.TrimEnd('/'), b.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Builds the form, checks every field as it is typed, and writes on confirmation.</summary>
+    private static Task OpenAsync(
+        IApplication app,
+        string title,
+        string manifestPath,
+        IReadOnlyList<ProjectSettings> projects,
+        InstalledEntry? entry,
+        Proposed proposed,
+        Action<Func<CancellationToken, Task>> queue,
+        Func<string, Task> done)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(done);
+
+        var form = new FormDialog(
+            title,
+            [
+                new FormField(
+                    "Project name — a label for this machine only, never sent anywhere:",
+                    string.Empty,
+                    typed => NameProblem(typed, projects)),
+                new FormField(
+                    "Database path — " + proposed.StoreWhy + ":",
+                    proposed.Store ?? ProposedStore("project", projects, entry),
+                    typed => StoreProblem(typed, projects)),
+                new FormField(
+                    "Broker address — " + proposed.EndpointWhy + ":",
+                    proposed.Endpoint,
+                    typed => EndpointProblem(typed, projects)),
+                new FormField(
+                    "Node catalogue (optional) — without one, a question to an agent nobody has "
+                    + "open waits, times out and is ghosted:",
+                    proposed.NodeConfig ?? string.Empty),
+                new FormField(
+                    "Description (optional) — one line shown beside the name:",
+                    string.Empty),
+            ]);
+
+        var token = Prompting.Open(app, form);
+
+        form.Done += (_, values) =>
+        {
+            Prompting.Close(app, token);
+
+            if (values is null)
+            {
+                _ = done(string.Empty);
+
+                return;
+            }
+
+            queue(_ => WriteAsync(manifestPath, values, entry, done));
+        };
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Runs the command and reports what it said, in its own words.</summary>
     /// <remarks>
-    /// The refusal comes back from the command's own validation and is shown as it was written.
-    /// A surface that summarised it to "invalid" would take away the one thing that says which
-    /// rule was broken.
+    /// <para>
+    /// A refusal comes back from the command's own validation and is shown as it was written. A
+    /// surface that summarised it to "invalid" would take away the one thing that says which rule
+    /// was broken.
+    /// </para>
     /// <para>
     /// What happens next is said every time, because naming a project writes a file and starts
-    /// nothing, and the first person to use this form assumed the opposite. Which sentence is
-    /// said depends on the entry: none, one serving a single store, or one serving the manifest.
+    /// nothing, and the first person to use this form assumed the opposite. Which sentence is said
+    /// depends on the entry: none, one serving a single store, or one serving the manifest.
     /// </para>
     /// </remarks>
-    private static void Report(
-        IAnsiConsole console, int code, string said, string complained, InstalledEntry? entry)
+    private static async Task WriteAsync(
+        string manifestPath,
+        IReadOnlyList<string> values,
+        InstalledEntry? entry,
+        Func<string, Task> done)
     {
-        foreach (var line in said.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        var said = new StringWriter();
+        var complained = new StringWriter();
+
+        var code = await ProjectCommand.RunAsync(
+            ["add", values[0]],
+            manifestPath,
+            new ProjectFields(
+                values[1],
+                values[2],
+                values[3].Length == 0 ? null : values[3],
+                values[4].Length == 0 ? null : values[4]),
+            said,
+            complained,
+            cancellationToken: CancellationToken.None).ConfigureAwait(false);
+
+        var lines = (said.ToString() + complained)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.TrimEnd())
+            .ToList();
+
+        lines.Add(code != 0 ? NothingWritten : Named);
+
+        if (code == 0)
         {
-            console.MarkupLine($"[dim]{Safe.Text(line.TrimEnd())}[/]");
+            lines.Add(entry switch
+            {
+                null =>
+                    "Nothing starts it yet. `parley autostart install` registers an entry that "
+                    + "serves every project named here, and starts it now.",
+
+                { ServesManifest: false } =>
+                    "The autostart entry serves one store by explicit paths and will not start "
+                    + "this one. Re-run `parley autostart install` with no --db to have it serve "
+                    + "every project in the manifest.",
+
+                _ =>
+                    "The broker serving the manifest starts it within a few seconds; the list "
+                    + "will show it answering.",
+            });
         }
 
-        foreach (var line in complained.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-        {
-            console.MarkupLine($"[red]{Safe.Text(line.TrimEnd())}[/]");
-        }
-
-        if (code != 0)
-        {
-            console.MarkupLine("[yellow]Nothing was written.[/]");
-            return;
-        }
-
-        console.MarkupLine("[green]Named.[/] [dim]It is on the project list now.[/]");
-
-        console.MarkupLine(entry switch
-        {
-            null =>
-                "[yellow]Nothing starts it yet.[/] `parley autostart install` registers an entry "
-                + "that serves every project named here, and starts it now.",
-
-            { ServesManifest: false } =>
-                "[yellow]The autostart entry serves one store by explicit paths and will not "
-                + "start this one.[/] Re-run `parley autostart install` with no --db to have it "
-                + "serve every project in the manifest.",
-
-            _ =>
-                "[dim]The broker serving the manifest starts it within a few seconds; the list "
-                + "will show it answering.[/]",
-        });
+        await done(string.Join(Environment.NewLine, lines)).ConfigureAwait(false);
     }
 
     /// <summary>What a form proposes for each field, and the one line saying why.</summary>

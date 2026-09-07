@@ -105,28 +105,11 @@ public sealed class HostedNodeTests : IDisposable
         using var process = ToolProcess.Launch(
             [(ProjectManifest.PathVariable, ManifestPath)], "serve", "--with-node");
 
-        var seen = new List<string>();
+        var log = ToolLog.Of(process);
 
         try
         {
-            var deadline = DateTime.UtcNow.AddSeconds(20);
-
-            while (DateTime.UtcNow < deadline && !(Placed(seen) && Declined(seen)))
-            {
-                var line = await process.StandardOutput.ReadLineAsync(ct).AsTask()
-                    .WaitAsync(deadline - DateTime.UtcNow, ct);
-
-                if (line is null)
-                {
-                    break;
-                }
-
-                seen.Add(line);
-            }
-        }
-        catch (TimeoutException)
-        {
-            // Asserted on below, with everything that was read.
+            await log.UntilAsync(l => Placed(l) && Declined(l), TimeSpan.FromSeconds(20), ct);
         }
         finally
         {
@@ -137,16 +120,12 @@ public sealed class HostedNodeTests : IDisposable
             }
         }
 
-        var said = string.Join(Environment.NewLine, seen);
+        Assert.True(Placed(log), $"orders was not offered the node. The tool said:{Environment.NewLine}{log}");
+        Assert.True(Declined(log), $"billing was not told it names no catalogue. The tool said:{Environment.NewLine}{log}");
 
-        Assert.True(Placed(seen), $"orders was not offered the node. The tool said:{Environment.NewLine}{said}");
-        Assert.True(Declined(seen), $"billing was not told it names no catalogue. The tool said:{Environment.NewLine}{said}");
+        static bool Placed(ToolLog log) => log.Said("orders: hosting this machine's node");
 
-        static bool Placed(List<string> lines) =>
-            lines.Exists(l => l.Contains("orders: hosting this machine's node", StringComparison.Ordinal));
-
-        static bool Declined(List<string> lines) =>
-            lines.Exists(l => l.Contains("billing: names no catalogue", StringComparison.Ordinal));
+        static bool Declined(ToolLog log) => log.Said("billing: names no catalogue");
     }
 
     [Fact]
@@ -172,17 +151,17 @@ public sealed class HostedNodeTests : IDisposable
             [(ProjectManifest.PathVariable, ManifestPath), ("PARLEY_NODE_CONFIG", catalogue)],
             "serve", "--with-node");
 
-        var seen = new List<string>();
+        var log = ToolLog.Of(process);
 
         try
         {
-            await ReadUntilAsync(process, seen, lines => Hosted(lines) >= 1, TimeSpan.FromSeconds(20), ct);
+            await log.UntilAsync(l => Hosted(l) >= 1, TimeSpan.FromSeconds(20), ct);
 
-            Assert.True(Hosted(seen) == 1, $"the node was not hosted from the variable at start:{Environment.NewLine}{string.Join(Environment.NewLine, seen)}");
+            Assert.True(Hosted(log) == 1, $"the node was not hosted from the variable at start:{Environment.NewLine}{log}");
 
             ProjectManifest.Write(ManifestPath, [after]);
 
-            await ReadUntilAsync(process, seen, lines => Hosted(lines) >= 2 || Declined(lines), TimeSpan.FromSeconds(20), ct);
+            await log.UntilAsync(l => Hosted(l) >= 2 || Declined(l), TimeSpan.FromSeconds(20), ct);
         }
         finally
         {
@@ -193,46 +172,13 @@ public sealed class HostedNodeTests : IDisposable
             }
         }
 
-        var said = string.Join(Environment.NewLine, seen);
+        Assert.False(Declined(log), $"after the restart the lone project was told it names no catalogue:{Environment.NewLine}{log}");
+        Assert.True(Hosted(log) == 2, $"the node was not hosted again after the restart:{Environment.NewLine}{log}");
 
-        Assert.False(Declined(seen), $"after the restart the lone project was told it names no catalogue:{Environment.NewLine}{said}");
-        Assert.True(Hosted(seen) == 2, $"the node was not hosted again after the restart:{Environment.NewLine}{said}");
+        static int Hosted(ToolLog log) =>
+            log.Lines().Count(l => l.Contains("Hosting this machine's node", StringComparison.Ordinal));
 
-        static int Hosted(List<string> lines) =>
-            lines.Count(l => l.Contains("Hosting this machine's node", StringComparison.Ordinal));
-
-        static bool Declined(List<string> lines) =>
-            lines.Exists(l => l.Contains("names no catalogue", StringComparison.Ordinal));
-    }
-
-    private static async Task ReadUntilAsync(
-        System.Diagnostics.Process process,
-        List<string> seen,
-        Func<List<string>, bool> done,
-        TimeSpan within,
-        CancellationToken ct)
-    {
-        var deadline = DateTime.UtcNow + within;
-
-        try
-        {
-            while (DateTime.UtcNow < deadline && !done(seen))
-            {
-                var line = await process.StandardOutput.ReadLineAsync(ct).AsTask()
-                    .WaitAsync(deadline - DateTime.UtcNow, ct);
-
-                if (line is null)
-                {
-                    break;
-                }
-
-                seen.Add(line);
-            }
-        }
-        catch (TimeoutException)
-        {
-            // Asserted on by the caller, with everything that was read.
-        }
+        static bool Declined(ToolLog log) => log.Said("names no catalogue");
     }
 
     [Theory]

@@ -1,4 +1,4 @@
-using Xunit;
+﻿using Xunit;
 
 namespace Parley.Cli.Tests.Top;
 
@@ -36,6 +36,7 @@ public sealed class SurfaceTests
         "RetireAsync",
         "ReinstateAsync",
         "PurgeAsync",
+        "DestroyAsync",
         "ForceConcludeAsync",
         "InstructAsync",
         "PruneAsync",
@@ -44,18 +45,43 @@ public sealed class SurfaceTests
     [Fact]
     public void Destroying_a_project_happens_in_one_place_and_behind_a_typed_name()
     {
-        // The one destructive thing this surface does, by the owner's decision (CLAUDE.md): a
+        // The first destructive thing this surface did, by the owner's decision (CLAUDE.md): a
         // surface that can create a project must be able to destroy one. What the rule above
-        // asks for is a description first and a deliberate act, so this holds the word to the
-        // one file that provides both -- a second path that reached the flag would be the
-        // keystroke the rule is about -- and RemovingTests drives the typed name itself.
+        // asks for is a description first and a deliberate act, so this holds the flag to the
+        // one file that provides both -- a second path that reached it would be the keystroke the
+        // rule is about -- and RemovingTests drives the typed name itself.
+        //
+        // **The match is the argument rather than the word, and that is the same correction twice.**
+        //
+        // It began as a case-insensitive scan for "destroy", which was right while one file was the
+        // only place the subject came up. Withdrawing.cs then had to explain that it was admitted on
+        // the same terms as destroying a project, and had to print the broker's own purge toll from
+        // `PurgeOutcome.Destroyed` -- so the scan started failing on prose and on somebody else's
+        // property name, and was narrowed to a word-boundary match.
+        //
+        // 006 walked into the same wall from the other side. TranscriptRegion.cs has to say what a
+        // destroyed conversation is, and the clearest way to say it is "tell a destroy from a store
+        // that lost something" -- a sentence *about* the subject, in a file that performs none of
+        // it. A check that cannot tell those apart pushes people to write worse comments, which is
+        // the opposite of what it is for, and its own remarks said so before it happened again.
+        //
+        // So the flag is now what actually performs one: the argument as it is written at a call
+        // site. `Apply(manifestPath, project, destroy: true, done)` is the act; every sentence about
+        // destroying something is not.
+        var flag = new System.Text.RegularExpressions.Regex(
+            @"\bdestroy\s*:",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1));
+
         var mentioning = Sources()
-            .Where(file => File.ReadAllText(file.FullName)
-                .Contains("destroy", StringComparison.OrdinalIgnoreCase))
+            .Where(file => flag.IsMatch(File.ReadAllText(file.FullName)))
             .Select(file => file.Name)
             .Order(StringComparer.Ordinal)
             .ToList();
 
+        // **Only Removing.cs, because only it passes the argument.** Destroying.cs is the third
+        // subject and takes the same door, but it calls `DestroyAsync` rather than a `destroy:`
+        // parameter -- and that operation has its own one-file rule below, checked by name.
         Assert.Equal(["Removing.cs"], mentioning);
 
         var removing = File.ReadAllText(
@@ -68,6 +94,53 @@ public sealed class SurfaceTests
     [InlineData("RetireAsync")]
     [InlineData("ReinstateAsync")]
     [InlineData("PurgeAsync")]
+    public void Withdrawing_an_agent_happens_in_one_place_and_behind_a_typed_name(string operation)
+    {
+        // Admitted in 005, on the terms destroying a project was admitted on: a description first
+        // and the thing's own name typed back. What keeps that true is this -- the three
+        // operations may appear in exactly one file, and that file must contain the prompt.
+        var mentioning = Sources()
+            .Where(file => File.ReadAllText(file.FullName)
+                .Contains(operation, StringComparison.Ordinal))
+            .Select(file => file.Name)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(["Withdrawing.cs"], mentioning);
+
+        var withdrawing = File.ReadAllText(
+            Sources().Single(file => file.Name == "Withdrawing.cs").FullName);
+
+        Assert.Contains("Type the agent's name", withdrawing, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Destroying_a_conversation_happens_in_one_place_and_behind_a_typed_name()
+    {
+        // The same rule as withdrawing an agent, on a third subject. SPEC.md §14 argues that a
+        // deletion happens inside the system or it happens in a SQL client with no ordering and no
+        // report; the surface's half of that is that nobody reaches it by accident.
+        var mentioning = Sources()
+            .Where(file => File.ReadAllText(file.FullName)
+                .Contains("DestroyAsync", StringComparison.Ordinal))
+            .Select(file => file.Name)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(["Destroying.cs"], mentioning);
+
+        var destroying = File.ReadAllText(
+            Sources().Single(file => file.Name == "Destroying.cs").FullName);
+
+        Assert.Contains("Type the conversation's identifier", destroying, StringComparison.Ordinal);
+
+        // And the waiting asker is named before the identifier is asked for, which is the part an
+        // operator is least likely to predict: an open exchange in a destroyed conversation does
+        // not orphan and is not ghosted, so whoever is waiting is never told anything at all.
+        Assert.Contains("never told anything at all", destroying, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData("ForceConcludeAsync")]
     [InlineData("InstructAsync")]
     [InlineData("PruneAsync")]

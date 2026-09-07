@@ -84,6 +84,20 @@ Removing a project and deleting its store are two decisions, so deleting has its
 catalogue, and lists the repositories that were agents in it, whose launch configuration still
 names it. A broker it does not own - one started by hand - is reported and left running.
 
+**Retiring and purging an agent can also be done from `parley top`, since 2026-09-05.** The rule
+that kept them off it was that a purge behind a keystroke is a different risk from one behind a page
+describing it first; what the rule asks for is a description and a deliberate act, and the terminal
+now gives both. It describes the agent — what it is, where it runs, what it owns, and any answer it
+owes right now — offers keeping first, and takes the agent's own name typed back before retiring or
+purging. A purge that would leave an asker waiting names them and what they will see, and takes that
+acceptance before the name. `force-conclude`, `instruct` and `prune` remain command-line only, and a
+test fails the build if one appears on that surface.
+
+The terminal can also add an agent: it names a repository directory and writes the same two files
+`parley enroll apply` writes for one repository. The agent then reads as *catalogued, not yet
+registered* until its own server attaches once — nothing on an operator's surface may register on a
+repository's behalf.
+
 **With projects named, `parley autostart install` needs no `--db`.** The entry then serves every
 project in the manifest from one process, hosts this machine's node in each project whose entry
 names a catalogue, and starts a project named later within seconds. `parley autostart status`
@@ -101,6 +115,7 @@ parley autostart status               say whether it is set up, and what it serv
 parley up                             run this machine's node, so its agents can be started
 parley console [<url>]                the operator's console in a browser; loopback by default
 parley top                            the same deployment in this terminal; needs a real one
+                                      (four regions, Tab between them; adds and removes agents)
 
 parley project list                   what this machine is configured for
 parley project add <name> --db <path> --listen <url>    name a deployment
@@ -111,7 +126,8 @@ parley project remove <name> --destroy    ...and stop its broker, delete its sto
 parley enroll scan <dir> [<file>]     find repositories and tick the ones to enroll
 parley enroll scan <dir> --all        tick every one found, for scripts with no terminal
 parley enroll plan <manifest>         say what enrolling them would change
-parley enroll apply <manifest>        configure them all as agents
+parley enroll apply <manifest>        configure them all as agents, naming the project when
+                                      this machine resolves one (PARLEY_PROJECT)
 
 parley registry                       every registered agent, with its workspace
 parley retire <agent>                 withdraw a registration

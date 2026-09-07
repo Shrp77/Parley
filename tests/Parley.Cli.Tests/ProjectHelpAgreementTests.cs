@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using Xunit;
 
 namespace Parley.Cli.Tests;
@@ -58,11 +58,28 @@ public sealed partial class ProjectHelpAgreementTests
 
         foreach (var offered in new[]
                  {
-                     ("create a new project", Parley.Cli.Top.ProjectList.Create),
-                     ("name the deployment this machine already runs", Parley.Cli.Top.ProjectList.NameRunning),
-                     ("removed from there", Parley.Cli.Top.ProjectMenu.Remove),
+                     ("create a new project", Parley.Cli.Top.Naming.CreateTitle),
+                     ("name the deployment this machine already runs", Parley.Cli.Top.Naming.NameRunningTitle),
+                     ("a project can be removed", Parley.Cli.Top.Removing.Title),
                      ("typed back", Parley.Cli.Top.Removing.Destroy),
-                     ("a seat", Parley.Cli.Top.ProjectMenu.Choices(seated: false).Single(c => c.Contains("seat", StringComparison.Ordinal))),
+                     ("a seat", Parley.Cli.Top.AgentsRegion.JoinTitle),
+
+                     // 005 added the two the README had no reason to describe before, and each
+                     // is the half of "who is in a project" the terminal could not touch.
+                     ("add an agent", Parley.Cli.Top.Adding.Title),
+                     ("remove one", Parley.Cli.Top.Withdrawing.Title),
+
+                     // 006 reworded the two states this used to name, because the owner read both
+                     // on screen and could not say what either meant. What the README has to carry
+                     // is the wording a person will actually see.
+                     (Parley.Client.Views.Standing.NeverRun, Parley.Client.Views.Standing.NeverRun),
+                     (Parley.Client.Views.Standing.OnlyWhenOpened,
+                      Parley.Client.Views.Standing.OnlyWhenOpened),
+
+                     // And the three things 006 added to the surface.
+                     ("archive", Parley.Cli.Top.Shell.ArchiveTitle),
+                     ("destroy", Parley.Cli.Top.Destroying.Title),
+                     ("F8", "the browser key"),
                  })
         {
             Assert.True(

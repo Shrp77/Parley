@@ -77,17 +77,33 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
 
                     `parley console` starts it, so Parley.Cli references this and the tool
                     carries Kestrel. `parley top` shows the same deployment in a terminal, built
-                    on Parley.Client and Spectre.Console, and needs no browser -- the machine
-                    running a broker is frequently not the one somebody has one open on. It binds
-                    no destructive operator operation, and SurfaceTests fails if one appears:
+                    on Parley.Client and **Terminal.Gui v2**, and needs no browser -- the machine
+                    running a broker is frequently not the one somebody has one open on. Four
+                    regions on one screen, Tab between them, and the toolkit's cost is recorded
+                    beside its pin in `Directory.Packages.props`: twenty-four packages where
+                    Spectre.Console brought none.
+
+                    **The surface rule was amended twice, on the same terms both times.** It read:
                     a purge behind a keystroke is a different risk from one behind a page that
-                    describes it first. **The one destructive thing it does is destroy a
-                    project**, decided by the owner on 2026-09-03 on the grounds that a surface
-                    that can create a project must be able to destroy one. It is not behind a
-                    keystroke: `Removing` describes what will go, offers forgetting (deletes
-                    nothing) beside destroying, and takes the project's own name typed back
-                    before it deletes. SurfaceTests confines the word to that one file, and
-                    RemovingTests drives the confirmation.
+                    describes it first. What the rule actually asks for is a description and a
+                    deliberate act, and a typed name is a deliberate act -- so destroying a
+                    project was admitted in 004 (2026-09-03), and retiring, reinstating and
+                    purging an agent in 005 (2026-09-05), both by the owner and both on the
+                    grounds that a surface which can create a thing must be able to remove it.
+
+                    Neither is behind a keystroke. `Removing` describes a project, offers
+                    forgetting (deletes nothing) beside destroying, and takes the project's own
+                    name typed back. `Withdrawing` describes an agent -- state, workspace, what it
+                    owns, and every open exchange it owes -- offers keeping first, and takes the
+                    agent's name typed back for retiring and for purging; a purge that would
+                    orphan an exchange names the asker and takes that acceptance before the name.
+
+                    **SurfaceTests is what makes both properties of the code rather than habits.**
+                    `Retire`, `Reinstate` and `Purge` may appear in exactly one file, which must
+                    contain the typed-name prompt; the `destroy` argument in exactly one other;
+                    and `ForceConclude`, `Instruct` and `Prune` in none. A helper whose *name*
+                    merely contains one of those words fails it, which has already happened once
+                    and is the point.
  That was decided deliberately and against the argument
                     recorded here before it: a second tool would have kept ASP.NET Core off
                     the machines that only run an agent, and one command is worth more than
@@ -486,7 +502,275 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/004-terminal-surface/` — `parley top`, a terminal application a person
+- **Active plan**: `specs/006-three-view-operator/` — three drill-down views (projects, one project,
+  one conversation) replacing 005's four regions on one screen, on **both** surfaces; and the four
+  operator operations the protocol did not have: `archive`, `unarchive` and `destroy` for a
+  conversation, and `start` for a catalogued agent. The protocol work landed before the views,
+  because the surfaces are clients of it. 0.18.9 — the minor moved to 0.18.0 because §10.2 is a
+  versioned contract and four new operations change what a V1 broker must implement.
+
+  **0.18.6 is lens 2's finding: a peer could forge another agent's line in a transcript.** FR-018's
+  rule is structural — a header sits at column zero and nothing else does — so it survives colour
+  being stripped, which is the property every test here is held to. `TranscriptRegion.Wrap` trims
+  the leading space off each piece it breaks off, and that space *is* the indent the rule is made
+  of. A payload is agent-written and eight thousand characters long, so its author picks where the
+  break lands: seventy-six filler characters and then a plausible header rendered
+  `billing@here -> orders@here (Answer)` at column zero, in a conversation `billing@here` had
+  never been sent a message in.
+
+  Colour happened to give it away, which is exactly the crutch the rule exists so as not to need.
+  The fix is in `Redraw` rather than in `Wrap`: the wrap stays a pure width-fitter with its own
+  contract and its own tests, and the transcript — which is where the security decision belongs —
+  wraps to the width less the indent and indents every continuation.
+
+  **The rule is now exact rather than nearly exact**, which is what made it testable. The zone
+  note, the destroyed-conversation record and the three standalone messages all sat at column zero
+  as this surface's own words; the third of those is a *broker's* words, since `problem` is
+  whatever came back from the far end of a gRPC call. All are indented, so `ColumnZeroTests` can
+  assert the whole invariant — every row at column zero is a header — rather than one attack on it.
+
+  **0.18.9 is what the Linux run found when CI could not run.** GitHub refused the jobs — *"recent
+  account payments have failed"* — so the suite was run in a container instead, which is the
+  practice recorded for a lapsed CI. It failed twice where Windows had passed, and one of those was
+  real: `Compose` captured the seat when the composer opened, so a seat swept while somebody was
+  typing still spoke, and the transcript recorded words under a name the book had released.
+  **Windows passed on timing** — whether the attach stream tore down before the send landed — which
+  is a race standing in for a guard. Sweeping for the shape found it twice more, in `Answer` and
+  again inside `ResolveAsync`'s second form; `TakeDelivery` had always re-checked, which is what
+  made it a pattern applied unevenly. The rule is now *at the send*.
+
+  The same gate found `Removing.Describe` quoting a manifest's endpoint, store and catalogue path
+  raw — the description somebody reads before typing a project's name to destroy it, which an
+  escape sequence in an endpoint clears. `ProjectsRegion` had neutralised the same four values
+  since it was written; the dialog never had.
+
+  **0.18.5 is the review gate's first finding, and the lesson was already in this repository.**
+  Every read finishes on a pool thread — `SelectAsync` awaits the broker with
+  `ConfigureAwait(false)` and then calls a region's `Show`, which reaches `ListView.SetSource` —
+  while the main loop is inside `ListView.OnDrawingContent`, which reads its source's count and
+  then indexes it. Swapping the source between those two reads throws on the draw thread, which
+  in a terminal ends the process. Four thousand draws against a writer alternating forty rows with
+  one: 434 failures in the agents region, 1,116 in projects, 499 in agents, 322 in conversations,
+  53 in the transcript.
+
+  **`LogView` had solved this already**, and says so in a remark naming the same bug — its follower
+  only queues into `_pending`, and `Drain` runs from `OnDrawingContent` on the draw thread. The
+  four regions never got the same treatment. That is the argument for `GuardedList` being the place
+  the guarantee lives rather than a rule each region is trusted to follow: `Replace` swaps the rows
+  and the fields a row's colour is derived from together, under the same lock the draw takes.
+
+  **`IApplication.Invoke` was tried first and reverted.** It is the toolkit's answer and it runs
+  inline on the main thread, but the harness deliberately never pumps the loop, so a queued update
+  never ran and `Shell.Settled` stopped meaning "the screen is true" — thirty-odd tests. A lock
+  needed no harness change and cost no test.
+
+  **The probe that found it first found nothing**, across four thousand draws, because the region
+  under it had never been given a size and the row handler had not run once. `RefillRaceTests`
+  keeps both counters — rows rendered, and how many different list lengths were seen mid-draw — so
+  a future version that stops racing anything fails instead of passing.
+
+  **The re-run of the same lens found a second one, by a different mechanism.** `ArrangeLocked`
+  removed all four regions and added back the current view's, which mutates the subview list —
+  while the main loop walks that same list in `View.CollectAll` during layout. `_screen` locked
+  that method against itself and the toolkit takes no lock, so it never protected against the
+  reader; eight threads changing view against three thousand draws threw `Collection was modified`
+  749 times, and the route is the commonest action there is — opening a conversation calls
+  `GoAsync` after awaiting the broker. The regions join the tree in the constructor now and never
+  leave it; `Visible` was already doing the real work.
+
+  That change exposed a third thing, which is why the fix is worth reading: `Lay`'s early return
+  asked `SubViews.Count > 1`, a proxy for "already arranged" that was true from the constructor the
+  moment reparenting stopped. The first call returned early, nothing was ever sized, and the
+  surface drew a blank screen — caught by two tests out of 825, because every other path reaches
+  `Relay`. It asks `_arranged` outright now.
+
+  **0.18.4 is three things the owner reported after running the terminal, and two of them are the
+  same finding twice.** The layout threshold goes back to eighty, which is where it was before
+  0.18.0 raised it to two hundred as a *diagnostic* — the raise is recorded in `Shell.Threshold`
+  as temporary and it stayed. The other two are about a screen saying nothing about itself.
+
+  **There was no way back out of a project, and Escape had worked the whole time.** Both halves are
+  true, which is the finding: `NavigatingTests` proves the key goes back, and nothing on the screen
+  ever named it. It was in no status line and in no menu — so on a conversation held by somebody
+  with no seat, where the transcript region offers no actions at all, `Offer` returned without
+  opening anything and the only route out of that screen was a key nobody had been told about. It
+  is on the status line of every view that has one now, before the actions and surviving their
+  collapse to `?: actions`, and it is the menu's first entry. `WayBackTests` presses no Escape at
+  all: that half was never broken, and testing it again would have found nothing.
+
+  **There was no way to quit either, and a comment asserted there was.** `TopCommand` justified not
+  intercepting Ctrl+C partly on the grounds that "Ctrl+Q leaves the surface properly"; enumerating
+  what Terminal.Gui 2.4.17 binds at application scope turns up ten entries, all navigation, and no
+  Ctrl+Q. The chord did nothing, and the only mention of it in the suite was a comment on a test
+  that disposes the surface directly. **What did quit was Escape** — the toolkit binds
+  `Esc => Quit` at application scope and the surface returned false for Escape at the top of the
+  tree, deliberately, "to whatever else wants it". What wanted it ended the program. That is the
+  exact thing `Escape_at_the_top_does_nothing_rather_than_anything_surprising` is named for, and it
+  passed throughout because it asserted on `Place.Viewing` — still `Projects` on a shell that has
+  just requested a stop — rather than on `IRunnable.StopRequested`. Both are fixed and both are on
+  the status line; `QuittingTests` asserts on `StopRequested`, never on the session stack, because
+  the harness does not pump the loop and a popped session is not observable there.
+
+  **The status line grew a ladder, because adding the way back had silently broken the narrow
+  rule.** At forty columns `alpha / Focus: Agents  Esc: back to Projects` is over the width before
+  an action is named, and the guard for that rule drives the projects view — the one view with no
+  place prefix and no back label, so the shortest line the surface ever draws. It only failed once
+  Ctrl+Q pushed the top view one column over as well. `Shell.Fits` now walks candidates longest
+  first, and what it drops before anything else is the pair the `?` menu also holds: at the narrow
+  end the way out is the same way out, one keystroke further away. `LayoutTests` drives every pane
+  of every view now, and asserts the two things that must never be cut — which pane has focus, and
+  that `?` exists.
+
+  **The suite opened the owner's browser, and it is the same defect for the third time.** F8 hands
+  the view to a browser through a real `Process.Start`; two tests in `NavigatingTests` pressed it,
+  so every run of the suite put a tab on whatever machine it ran on — reported by the owner while
+  the terminal was being worked on and the suite was being run in a loop. `Launch` already records
+  this being fixed once for a direct caller, and `EmptyDeploymentTests` and `ManifestMovesTests`
+  each carried a comment asking authors to skip the console action for the same reason. Three
+  statements of it in prose and none of them a check. `Shell.Opener` is the seam — an instance
+  property, not a static, because test classes run in parallel — `Driving.Show` replaces it on
+  every driven surface, and `LaunchTests` asserts both halves: production still holds
+  `Launch.Open`, and a driven surface does not. The two files that stepped around the action now
+  exercise it.
+
+  **The terminal had no colour, and `ColourTests` passed throughout.** That suite reads the screen
+  with every attribute stripped and asserts nothing is lost — the property that matters, and one a
+  surface drawn entirely in the terminal's default satisfies perfectly. `PaintedTests` reads
+  `Driver.Contents`, where a cell's attribute survives, because `App.ToString` renders the cells
+  and none of their attributes: a screen with a bright red row and a screen with none produce the
+  identical string, which is why a year of tests could not see this. `Colours` carries the rules —
+  every colour is derived from a word already on the line, the background is the terminal's own
+  except in the status bar, and an agent's colour is `Palette`'s so it is the same hue in a browser.
+  A conversation's archived state is deliberately *not* dimmed: this list does not write the word,
+  so a dim row would be the one fact on screen existing only as a colour.
+
+  **Three patches, every one found by running the thing rather than reading it.** 0.18.3 is the
+  startup block naming `parley top` beside the console. It named only the console, to a reader who
+  is by definition at a terminal on the machine running the broker — which is frequently not a
+  machine with a browser on it, and is the entire reason the terminal surface exists. Its rule is
+  measured from the widest line now rather than from the address, because the address stopped
+  being the widest thing between the rules.
+
+  **The other two are about the broker's log, and both were found by reading a real one.** 0.18.1
+  is the line it prints before it opens anything, naming its build, the commit it came from, the
+  protocol it speaks and the schema it expects: a log recording a store it could not open, or a
+  port it could not bind, said nothing about which build said it — and the version on PATH was the
+  fact that had just been wrong. 0.18.2 gives the console the log floor `ParleyServer` has always
+  had. That asymmetry was invisible while they were two processes and obvious once
+  `serve --with-console` made them one writing a single `--log`: three lines about an implicit
+  handler method per page render, between every pair of lines somebody started the broker to read.
+  `Logging__LogLevel__Default=Information` puts them back, which is a floor rather than silence.
+
+  **`plan.md` Q1 was right, and T039 is what says so rather than the argument.** A node joins
+  declaring a role nothing has ever registered, an operator asks for a start, the node receives the
+  command — and the registry is still empty afterwards, which is the half that would make the
+  operation a forgery if it were false. The test was written with its stop rule attached: had it
+  failed, 005's amendment went back and nobody added a registration path to rescue it.
+
+  Three things learned building it, each written where it happened:
+
+  - **Reading a region's selection from another view is a defect that appeared three times.** The
+    conversation-opening handler, the archive action and the destroy action all read
+    `Projects.Selected` for the project to act on — which is off screen in every case that matters
+    and null in any fixture that never filled it. `Shell.Current` reads the view's own project. One
+    helper now.
+  - **The transcript and the export are different code, and the reason is a forgery.** The export
+    flattens every payload onto one line because a text file has no defence against a payload
+    carrying a newline and then a line shaped like an annotation. On screen the whole point is that
+    the breaks survive, so the defence is the indent instead: a header sits at column zero and
+    nothing else does. That also satisfies FR-018, since it survives colour being stripped.
+  - **A test that drove the thing under test could not see that nothing else drove it.** Eighteen
+    terminal tests failed on the rearrangement and they were not all one kind: some were guards
+    that had to keep their property through a new route, and some were descriptions of the design
+    the owner rejected. `All_four_regions_are_on_screen_at_once` was the second kind and was
+    replaced rather than carried.
+
+  One test could not be driven and says so rather than being made to pass: 005's mouse route
+  clicked the middle of a pane nineteen rows tall, and a project view gives it the full height. It
+  is split into the two halves that can be checked, with the gap written into the test.
+
+  The owner ran 005's built terminal and said the four regions were "confusing and too busy". That is
+  a verdict on its central design decision from the only test that could produce it, so the
+  arrangement is replaced rather than tuned. Everything under it is kept: seating's guards, the
+  enrolment writer, the withdrawal doors with a name typed back, the containment of a broker that
+  does not answer.
+
+  **`plan.md` Q1 reverses 005's amendment, and 005's record is kept rather than edited.** 005 refused
+  to promise a newly added agent would be startable, on the grounds that a surface registering on a
+  repository's behalf is a caller-supplied identity. That reasoning is right about the thing it
+  examined and answers a different question. §12.3's closing paragraph already routes spawn-on-demand
+  through §12's manifest — the node catalogue — and `NodesService.RequestStart`'s only guard is that
+  the node's catalogue names the role, with **no registry lookup on that path at all**. So the new
+  `start` operation asks the node to launch the role once and the adapter registers the agent it
+  attaches, which is exactly what §12.3 permits. Nothing bends. `research.md` R1.
+
+  Two things the spec got wrong and `research.md` corrects rather than implements: colour is derived
+  from an agent's name and is the same everywhere (`Palette` already argues why position-derived
+  colour is actively misleading), not per conversation; and a conversation's "name" is its
+  identifier, which `001_initial.sql:342` already records — no naming scheme is added.
+
+  Archived is a nullable column, not a fourth `state` value, because `state` is the closure lifecycle
+  and a conversation may be both closed and archived. An archived conversation that receives a
+  message **stays archived**: the alternative lets an agent reverse an operator's decision, which is
+  the one direction of authority Principle II does not have.
+
+- Previous: `specs/005-tabbed-terminal-agents/` — the terminal rewritten on Terminal.Gui v2
+  (the owner's choice, recorded under the spec's "Decisions already made") so a person sees
+  projects, agents, conversations and a transcript at once and moves between them with Tab; and
+  agents added to a project, retired, reinstated or purged from it, each destructive act behind a
+  description and the agent's name typed back. `Parley.Client` did not move. Started from `main` at
+  `c85a271`; 0.17.0. **Built: Phases 1 to 7, with the review gate outstanding.** Its "Q1 settled"
+  records the one place the spec asked for what the protocol cannot give — an added agent listed as
+  `startable` before anything has registered it — and the amendment that replaced it: the agents
+  region shows the project's catalogue beside the registry, and the node rejoins with new roles
+  when its catalogue changes.
+
+  Four findings from building it, each written where it happened:
+
+  - **Terminal.Gui 2.4.17 has no headless driver and no supported way to supply one.**
+    `ApplicationImpl` is internal and `DriverRegistry.Register` records a factory that
+    `CreateDriver` never calls — it switches on the name against three literals. What works is the
+    ANSI driver initialised and never pumped, with the screen size set rather than queried;
+    `HarnessTests` asserts every line of that recipe, including that a driven session writes zero
+    bytes to stdout and leaves stdin unread. `research.md` R2 carries it.
+  - **A node announced its roles once.** A role added to a running node's catalogue was announced
+    never, so an agent enrolled from the terminal read as `startable` and could not be started —
+    §17 question 13's case, reached by a route nobody had noticed. `parley node` now compares its
+    roles every watch interval and rejoins.
+  - **The toolkit's tab strip truncates.** Four region titles across forty columns became
+    `Conversat`, silently, which is what the narrow-terminal rule forbids by name. Stacked mode
+    shows one region at a time instead.
+  - **`Safe` defends against a different hazard now.** There is no markup to escape; what is left
+    is control characters in a payload, a project description or a log line, and they are replaced
+    one for one rather than dropped — because a name typed back is what authorises a purge.
+
+  Three more the review gate found, none of them visible by reading:
+
+  - **A withdrawal deleted a launch configuration belonging to a different agent.** The workspace
+    comes from the registry, which is what the agent said about itself and may be long out of date,
+    so a repository re-enrolled under a second name has one `.mcp.json` and two rows pointing at it.
+    Withdrawing the first row removed the second agent's `PARLEY_AGENT` and reported success. The
+    name is read back before the entry goes now. **A test named
+    `Withdrawing_one_agent_leaves_another_agents_launch_configuration_alone` had passed throughout,
+    because it put the two agents in two workspaces** — a test named for a property it does not
+    check is worse than no test.
+  - **The terminal's work queue was not one queue.** `_work = _work.ContinueWith(...)` is three
+    steps on a plain field; sixty-four callers at once overlapped twenty-three times and left
+    forty-five outside the task `Settled` hands back. Every call site today is on the main loop, so
+    it was latent — but `Settled` is what makes every driven test in the suite deterministic, and a
+    guarantee that holds only because of where its callers happen to sit is one nothing enforces.
+    The chain is extended and read under a lock.
+  - **The two surfaces had drifted and no contract said so.** The console binds `Refusals`,
+    `Clarifications`, `Referrals` and `Notifications`; the terminal binds none, which made 004's
+    promise that absences are *listed so their absence is deliberate* untrue for four of them.
+    Written down in 005's `contracts/operations.md`, and `DriftTests` now compares every operation
+    on `BrokerClient` against both trees so the next one-sided one fails the build.
+
+- Previous: `specs/004-terminal-surface/` — merged 2026-09-03 as `c85a271`, 0.16.9, gate met on
+  all three lenses. What use added after its plan is recorded at the end of its `spec.md`:
+  pre-filled, validated naming; the manifest-serving autostart entry with a node per catalogued
+  project; the broker watching the manifest; `project set` and `remove --destroy`; destroying a
+  project from the terminal. `parley top`, a terminal application a person
   takes part from, because SPEC.md §17 question 15's editor-window agent is the one thing
   nothing can hand a turn to. `plan.md` settles the question the spec raised and did not
   assume: **the transport-facing half of `Parley.Web` moves to a new `src/Parley.Client`, and

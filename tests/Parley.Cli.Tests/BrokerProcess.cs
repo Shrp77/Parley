@@ -47,18 +47,30 @@ internal sealed partial class BrokerProcess : IDisposable
 
         try
         {
-            // The first line names the addresses it bound. Read rather than parsed loosely,
-            // because a test that guessed the port would pass against any broker on the machine
-            // — including one another test had left running.
-            var announcement = process.StandardOutput.ReadLine();
+            // Read rather than parsed loosely, because a test that guessed the port would pass
+            // against any broker on the machine — including one another test had left running.
+            //
+            // Scanned rather than taken from line one, and the change is not cosmetic: this used
+            // to read exactly the first line, so the day the broker gained a line naming its own
+            // version every test that starts one failed at once, none of them for a reason to do
+            // with what they were testing. What the banner promises is that an address appears,
+            // not that it appears first.
+            var said = new List<string>();
+            string? announcement;
 
-            if (announcement is null || Listening().Match(announcement) is not { Success: true } found)
+            while ((announcement = process.StandardOutput.ReadLine()) is not null)
             {
-                throw new InvalidOperationException(
-                    $"The broker did not announce an address. It said: {announcement ?? "nothing"}");
+                said.Add(announcement);
+
+                if (Listening().Match(announcement) is { Success: true } found)
+                {
+                    return new BrokerProcess(process, found.Value);
+                }
             }
 
-            return new BrokerProcess(process, found.Value);
+            throw new InvalidOperationException(
+                "The broker did not announce an address. It said: " +
+                (said.Count == 0 ? "nothing" : string.Join(" / ", said)));
         }
         catch
         {

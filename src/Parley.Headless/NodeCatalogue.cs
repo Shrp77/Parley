@@ -123,11 +123,47 @@ public sealed class NodeCatalogue
     /// <summary>Reads one catalogue file.</summary>
     /// <param name="path">The file.</param>
     /// <returns>The catalogue, or <see cref="Empty"/>.</returns>
-    private static NodeCatalogue ReadFile(string path)
+    private static NodeCatalogue ReadFile(string path) =>
+        TryReadFrom(path, out var catalogue, out _) ? catalogue : Empty;
+
+    /// <summary>
+    /// Reads a catalogue, saying whether it could be read at all.
+    /// </summary>
+    /// <param name="path">The file, already resolved by the caller.</param>
+    /// <param name="catalogue">What was read, or <see cref="Empty"/> when it could not be.</param>
+    /// <param name="problem">Why it could not be read, or null when it could.</param>
+    /// <returns>Whether the file was readable.</returns>
+    /// <exception cref="ArgumentException"><paramref name="path"/> is blank.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>The distinction exists because the safe direction changes once a node is running.</b>
+    /// At startup a malformed file yielding an empty catalogue is right, for the reason
+    /// <see cref="Read"/> records: the failure becomes "nothing starts automatically", which
+    /// somebody notices, rather than "the supervisor will not run", which takes a deployment down
+    /// over a stray comma.
+    /// </para>
+    /// <para>
+    /// A node watching the file cannot use that reading. Somebody half-way through saving leaves
+    /// a moment of invalid JSON, and treating it as empty makes the node announce that it can
+    /// start nothing — dropping roles it had already announced, because of a file that is about to
+    /// be valid again. Keeping what it had is strictly better there, and it needs to know the
+    /// difference between an empty catalogue and an unreadable one to do it.
+    /// </para>
+    /// <para>
+    /// An absent file is readable and empty rather than unreadable. Deleting a catalogue is a
+    /// deliberate act with an obvious meaning; a half-written one is an accident of timing.
+    /// </para>
+    /// </remarks>
+    public static bool TryReadFrom(string path, out NodeCatalogue catalogue, out string? problem)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        catalogue = Empty;
+        problem = null;
+
         if (!File.Exists(path))
         {
-            return Empty;
+            return true;
         }
 
         try
@@ -137,7 +173,7 @@ public sealed class NodeCatalogue
             if (!document.RootElement.TryGetProperty("agents", out var agents)
                 || agents.ValueKind != JsonValueKind.Object)
             {
-                return Empty;
+                return true;
             }
 
             var entries = new Dictionary<string, Entry>(StringComparer.Ordinal);
@@ -162,12 +198,16 @@ public sealed class NodeCatalogue
                 }
             }
 
-            return new NodeCatalogue(entries);
+            catalogue = new NodeCatalogue(entries);
+
+            return true;
         }
         catch (Exception ex) when (ex is JsonException or IOException
                                       or UnauthorizedAccessException)
         {
-            return Empty;
+            problem = ex.Message;
+
+            return false;
         }
     }
 
