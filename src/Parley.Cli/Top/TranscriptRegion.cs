@@ -11,10 +11,17 @@ namespace Parley.Cli.Top;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The text is <see cref="Transcript.Write"/>'s, not this region's.</b> The web console renders
-/// the same conversation from the same function, which is what makes SC-005 true by construction
-/// rather than by two implementations being watched. A region that formatted messages itself would
-/// be the second renderer, and the two would disagree about visibility on the day it mattered.
+/// <b>The text is <see cref="Reading"/>'s, not this region's.</b> The web console lays the same
+/// conversation out from the same function, which is what makes SC-005 true by construction rather
+/// than by two implementations being watched. A region that formatted messages itself would be the
+/// second renderer, and the two would disagree about visibility on the day it mattered.
+/// </para>
+/// <para>
+/// <b>This paragraph named <see cref="Transcript.Write"/> until a review lens read it.</b> That is
+/// the export — one flattened line of JSON per message — and 006 stopped drawing it here, saying so
+/// in a comment inside <see cref="Show"/> that contradicted this summary from ten lines away. A
+/// remark that has drifted is worse than none: it is the account a reader trusts instead of
+/// reading on.
 /// </para>
 /// <para>
 /// <b>It wraps rather than truncating, and scrolls rather than fitting.</b> A message is capped at

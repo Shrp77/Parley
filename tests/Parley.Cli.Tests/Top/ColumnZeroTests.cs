@@ -102,6 +102,61 @@ public sealed class ColumnZeroTests
         Assert.Equal(4, Reading.Indent);
     }
 
+
+    [Fact]
+    public void The_rule_holds_at_every_width_a_terminal_can_be()
+    {
+        // **Swept rather than sampled.** The indent is applied by `Redraw`, which wraps to the
+        // width less the indent -- so the interesting widths are the ones where that arithmetic
+        // is degenerate, and a test at one comfortable width would never reach them.
+        //
+        // Checked as "is the start of a line this surface wrote" rather than by pattern, because
+        // at four columns a header itself wraps to single characters and a rule looking for `->`
+        // would call those a violation. What FR-018 is about is where a line begins.
+        var region = Region($"{{\"intent\":\"{Said}\"}}");
+        var problems = new List<string>();
+
+        string[] headers =
+        [
+            "Conversation threeway in project alpha",
+            "1969-12-31 19:00:00  orders@here -> inventory@here  (Question)",
+        ];
+
+        for (var width = 1; width <= 200; width++)
+        {
+            region.Resize(width);
+
+            var rows = Rows(region);
+
+            problems.AddRange(rows
+                .Where(AtColumnZero)
+                .Where(row => !headers.Any(header => header.StartsWith(row, StringComparison.Ordinal)))
+                .Select(row => $"width {width}: '{row}' begins at column zero"));
+
+            // And nothing is dropped on the way: every non-space character of the payload is still
+            // somewhere on the screen, at every width.
+            var drawn = string.Concat(rows.Select(Squeezed));
+
+            if (!drawn.Contains(Squeezed(Said), StringComparison.Ordinal))
+            {
+                problems.Add($"width {width}: the payload did not survive the wrap");
+            }
+        }
+
+        Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems.Take(8)));
+    }
+
+    /// <summary>A message long enough to wrap at every width worth testing.</summary>
+    private const string Said =
+        "a decision about the cap with a very-long-identifier-nobody-can-break-sensibly "
+        + "and some ordinary words after it";
+
+    /// <summary>The same text with every space taken out, for comparing across wraps.</summary>
+    /// <param name="text">The text.</param>
+    /// <returns>Its non-space characters.</returns>
+    private static string Squeezed(string text) =>
+        text.Replace(" ", string.Empty, StringComparison.Ordinal);
+
     /// <summary>Whether a row begins at column zero.</summary>
     /// <param name="row">The row.</param>
     /// <returns><see langword="true"/> when it has no leading space.</returns>

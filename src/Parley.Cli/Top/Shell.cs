@@ -15,17 +15,21 @@ using Terminal.Gui.Views;
 namespace Parley.Cli.Top;
 
 /// <summary>
-/// The whole surface: four regions, a status line, and the reads that fill them.
+/// The whole surface: three views built from four regions, a status line, and the reads that fill
+/// them.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Everything at once, rather than one question at a time.</b> 004's terminal was a sequence
-/// of prompts and read as a wizard; what a person looking at a deployment wants is the projects,
-/// the agents and a conversation in front of them together, and to act on what is in front of
-/// them. That is the whole reason this feature exists.
+/// <b>One thing at a time, and this paragraph used to say the opposite.</b> It described 005's
+/// design — the projects, the agents and a conversation in front of somebody together — which is
+/// the arrangement the owner ran and called "confusing and too busy", and which 006 replaced with
+/// three drill-down views. <see cref="Panes"/> has carried the correct account since; this summary
+/// did not, so the file contradicted itself three hundred lines apart. Found by a review lens
+/// asking whether the remarks still describe the code, which is not a question reading the code
+/// answers.
 /// </para>
 /// <para>
-/// <b>Side by side above the threshold, tabbed below it.</b> The same four view objects either
+/// <b>Side by side above the threshold, stacked below it.</b> The same four view objects either
 /// way, so a test that found a region by its title finds it in both — and the 004 defect this
 /// guards against was found by a width test rather than by looking: a recipient column was
 /// silently dropped at forty columns and nothing said so.
