@@ -506,8 +506,28 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   one conversation) replacing 005's four regions on one screen, on **both** surfaces; and the four
   operator operations the protocol did not have: `archive`, `unarchive` and `destroy` for a
   conversation, and `start` for a catalogued agent. The protocol work landed before the views,
-  because the surfaces are clients of it. 0.18.5 — the minor moved to 0.18.0 because §10.2 is a
+  because the surfaces are clients of it. 0.18.6 — the minor moved to 0.18.0 because §10.2 is a
   versioned contract and four new operations change what a V1 broker must implement.
+
+  **0.18.6 is lens 2's finding: a peer could forge another agent's line in a transcript.** FR-018's
+  rule is structural — a header sits at column zero and nothing else does — so it survives colour
+  being stripped, which is the property every test here is held to. `TranscriptRegion.Wrap` trims
+  the leading space off each piece it breaks off, and that space *is* the indent the rule is made
+  of. A payload is agent-written and eight thousand characters long, so its author picks where the
+  break lands: seventy-six filler characters and then a plausible header rendered
+  `billing@here -> orders@here (Answer)` at column zero, in a conversation `billing@here` had
+  never been sent a message in.
+
+  Colour happened to give it away, which is exactly the crutch the rule exists so as not to need.
+  The fix is in `Redraw` rather than in `Wrap`: the wrap stays a pure width-fitter with its own
+  contract and its own tests, and the transcript — which is where the security decision belongs —
+  wraps to the width less the indent and indents every continuation.
+
+  **The rule is now exact rather than nearly exact**, which is what made it testable. The zone
+  note, the destroyed-conversation record and the three standalone messages all sat at column zero
+  as this surface's own words; the third of those is a *broker's* words, since `problem` is
+  whatever came back from the far end of a gRPC call. All are indented, so `ColumnZeroTests` can
+  assert the whole invariant — every row at column zero is a header — rather than one attack on it.
 
   **0.18.5 is the review gate's first finding, and the lesson was already in this repository.**
   Every read finishes on a pool thread — `SelectAsync` awaits the broker with

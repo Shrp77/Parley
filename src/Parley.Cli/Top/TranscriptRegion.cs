@@ -107,11 +107,17 @@ internal sealed class TranscriptRegion : FrameView
 
         if (export?.Destroyed is { } gone)
         {
+            // Indented like any other body text, so that column zero means one thing on this
+            // screen and not two. These lines are this surface's own words rather than an agent's,
+            // so they were never a forgery — but a rule with an exception in it is a rule a reader
+            // has to hold two versions of, and the one that matters is checkable only if it is
+            // exact: nothing but a header begins at column zero.
             Mark(
             [
                 new TranscriptLine(Destroyed, LineKind.Header, null),
                 new TranscriptLine(string.Empty, LineKind.Blank, null),
-                .. Reading.Gone(gone).Select(line => new TranscriptLine(line, LineKind.Body, null)),
+                .. Reading.Gone(gone).Select(line =>
+                    new TranscriptLine(new string(' ', Reading.Indent) + line, LineKind.Body, null)),
             ]);
 
             return;
@@ -157,7 +163,7 @@ internal sealed class TranscriptRegion : FrameView
         // fact on a transcript recoverable from nowhere else, and which is drawn to be noticed. The
         // zone this surface renders times in is a note about the rendering, and it was the same
         // colour until a dump of the screen put the two side by side.
-        new TranscriptLine(LocalTime.Note(), LineKind.Body, null),
+        new TranscriptLine(new string(' ', Reading.Indent) + LocalTime.Note(), LineKind.Body, null),
         new TranscriptLine(string.Empty, LineKind.Blank, null),
         .. Reading.Lines(export.Messages, export.Exchanges ?? []),
     ];
@@ -165,8 +171,14 @@ internal sealed class TranscriptRegion : FrameView
     /// <summary>Puts one line on screen, and nothing else.</summary>
     /// <param name="said">What it says.</param>
     /// <param name="kind">What kind of line it is.</param>
+    /// <remarks>
+    /// Indented like everything that is not a header. Two of the three things said this way are
+    /// this surface's own words, but the third is a broker's — <c>problem</c> is whatever came
+    /// back from the far end of a gRPC call, and a broker able to choose that text could otherwise
+    /// choose one shaped like a header and place it at column zero.
+    /// </remarks>
     private void Say(string said, LineKind kind) =>
-        Mark([new TranscriptLine(said, kind, null)]);
+        Mark([new TranscriptLine(new string(' ', Reading.Indent) + said, kind, null)]);
 
     /// <summary>Takes a laid-out transcript and draws it.</summary>
     /// <param name="lines">The lines, each knowing what it is and who wrote it.</param>
@@ -258,15 +270,38 @@ internal sealed class TranscriptRegion : FrameView
     /// <summary>Lays the written transcript out for a given width.</summary>
     /// <param name="width">How many columns there are.</param>
     /// <remarks>
+    /// <para>
     /// The colour of every row is worked out here rather than kept beside the source lines,
     /// because wrapping is what decides how many rows there are: a header that needs two rows
     /// needs both of them in the sender's colour, and a list of colours built before the wrap
     /// would be one entry short of the rows it describes.
+    /// </para>
+    /// <para>
+    /// <b>Continuations are indented, and that is what makes FR-018 true rather than nearly
+    /// true.</b> The rule the whole view rests on is that a header sits at column zero and nothing
+    /// else does, so the distinction survives every colour being stripped — and
+    /// <see cref="Wrap"/> trims the leading space off each piece it breaks off, which is the
+    /// indent that <i>is</i> the rule. A payload is agent-written and eight thousand characters
+    /// long, so its author picks where the break lands: seventy-six filler characters and then a
+    /// plausible header put <c>billing@here -&gt; orders@here (Answer)</c> at column zero, in a
+    /// message <c>billing@here</c> had no part in.
+    /// </para>
+    /// <para>
+    /// Colour happened to give that away — a body line keeps the terminal's own foreground — which
+    /// is exactly the crutch FR-018 forbids leaning on, and is why this is fixed in the structure
+    /// instead.
+    /// </para>
+    /// <para>
+    /// Wrapped to <see cref="Reading.Indent"/> columns short so that an indented continuation
+    /// still fits the width. The first piece gives up those columns too, which is a few characters
+    /// of ragged edge in exchange for a rule with no width at which it stops holding.
+    /// </para>
     /// </remarks>
     private void Redraw(int width)
     {
         var wrapped = new List<string>();
         var tints = new List<Color?>();
+        var room = width > 0 ? Math.Max(1, width - Reading.Indent) : width;
 
         foreach (var line in _marked)
         {
@@ -274,9 +309,14 @@ internal sealed class TranscriptRegion : FrameView
 
             foreach (var safe in Safe.Lines(line.Text).ReplaceLineEndings("\n").Split('\n'))
             {
-                foreach (var piece in Wrap(safe, width))
+                var pieces = Wrap(safe, room);
+
+                for (var piece = 0; piece < pieces.Count; piece++)
                 {
-                    wrapped.Add(piece);
+                    wrapped.Add(piece == 0
+                        ? pieces[piece]
+                        : new string(' ', Reading.Indent) + pieces[piece]);
+
                     tints.Add(tint);
                 }
             }
