@@ -103,7 +103,7 @@ public sealed class PaintedTests
             },
             null);
 
-        Assert.NotEqual(Tint(region.List, 0), Tint(region.List, 1));
+        Assert.NotEqual(Drawn.Tint(region.List, 0), Drawn.Tint(region.List, 1));
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public sealed class PaintedTests
             NodeCatalogue.Empty,
             null);
 
-        Assert.NotEqual(Tint(region.List, 0), Tint(region.List, 1));
+        Assert.NotEqual(Drawn.Tint(region.List, 0), Drawn.Tint(region.List, 1));
     }
 
     [Fact]
@@ -137,7 +137,7 @@ public sealed class PaintedTests
             NodeCatalogue.Empty,
             null);
 
-        Assert.NotEqual(Tint(region.List, 0), Tint(region.List, 1));
+        Assert.NotEqual(Drawn.Tint(region.List, 0), Drawn.Tint(region.List, 1));
     }
 
     [Fact]
@@ -172,8 +172,8 @@ public sealed class PaintedTests
         driving.App.LayoutAndDraw(true);
 
         Assert.True(region.List.HasFocus, "the agents list should hold focus on a project view");
-        Assert.Null(Tint(region.List, 0));
-        Assert.NotNull(Tint(region.List, 1));
+        Assert.Null(Drawn.Tint(region.List, 0));
+        Assert.NotNull(Drawn.Tint(region.List, 1));
     }
 
     [Fact]
@@ -221,11 +221,11 @@ public sealed class PaintedTests
             new ConversationExport([Message("orders@here", "billing@here", 1)], []),
             null);
 
-        var rows = Rows(region.List);
+        var rows = Drawn.Rows(region.List);
         var body = rows.FindIndex(row => row.Contains("a question", StringComparison.Ordinal));
 
         Assert.True(body >= 0, "the payload is not on screen at all");
-        Assert.Null(Tint(region.List, body));
+        Assert.Null(Drawn.Tint(region.List, body));
     }
 
     /// <summary>Every distinct colour anything on the screen is drawn in.</summary>
@@ -253,23 +253,6 @@ public sealed class PaintedTests
         return [.. seen];
     }
 
-    /// <summary>What colour a list gives one of its rows, or null when it gives it none.</summary>
-    /// <param name="list">The list.</param>
-    /// <param name="row">Which row.</param>
-    /// <returns>The colour, or null.</returns>
-    /// <remarks>
-    /// Asked of the list rather than read off the screen, because a region built outside an
-    /// application has never been drawn — and building the whole surface to find out what colour
-    /// one row is would make every one of these a layout test as well.
-    /// </remarks>
-    private static Color? Tint(Terminal.Gui.Views.ListView list, int row)
-    {
-        var arguments = new Terminal.Gui.Views.ListViewRowEventArgs(row);
-
-        list.OnRowRender(arguments);
-
-        return arguments.RowAttribute?.Foreground;
-    }
 
     /// <summary>The colour of every header line in a transcript, in order.</summary>
     /// <param name="region">The region.</param>
@@ -280,33 +263,18 @@ public sealed class PaintedTests
     /// </remarks>
     private static IEnumerable<Color?> Headers(TranscriptRegion region)
     {
-        var rows = Rows(region.List);
+        var rows = Drawn.Rows(region.List);
 
         for (var at = 0; at < rows.Count; at++)
         {
             if (rows[at].Contains(" -> ", StringComparison.Ordinal)
                 && !rows[at].StartsWith(' '))
             {
-                yield return Tint(region.List, at);
+                yield return Drawn.Tint(region.List, at);
             }
         }
     }
 
-    /// <summary>Everything a list is showing, in order.</summary>
-    /// <param name="list">The list.</param>
-    /// <returns>The rows.</returns>
-    private static List<string> Rows(Terminal.Gui.Views.ListView list)
-    {
-        var rows = new List<string>();
-        var source = list.Source;
-
-        for (var at = 0; at < (source?.Count ?? 0); at++)
-        {
-            rows.Add(source!.ToList()[at]?.ToString() ?? string.Empty);
-        }
-
-        return rows;
-    }
 
     private static AgentRecord Agent(string name, AgentPresence presence, AgentStatus status) =>
         new(AgentName.Create(name), "mcp", AgentTier.Pull, null, null, null, true, status, null, presence);

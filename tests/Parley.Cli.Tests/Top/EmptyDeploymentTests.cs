@@ -39,7 +39,7 @@ public sealed class EmptyDeploymentTests
 
         // Read from the row rather than from the screen: at this width the sentence wraps, and a
         // substring search over a wrapped draw is a check that passes or fails on column count.
-        Assert.Equal(ProjectsRegion.Nothing, Assert.Single(Rows(shell)));
+        Assert.Equal(ProjectsRegion.Nothing, Assert.Single(Drawn.Rows(shell.Projects.List)));
         Assert.Contains(ProjectsRegion.RegionTitle, driving.Text(), StringComparison.Ordinal);
     }
 
@@ -124,7 +124,7 @@ public sealed class EmptyDeploymentTests
             await shell.Settled;
             driving.App.LayoutAndDraw(true);
 
-            var said = Assert.Single(Rows(shell));
+            var said = Assert.Single(Drawn.Rows(shell.Projects.List));
 
             Assert.Contains("could not be read", said, StringComparison.Ordinal);
             Assert.NotEqual(ProjectsRegion.Nothing, said);
@@ -135,12 +135,4 @@ public sealed class EmptyDeploymentTests
         }
     }
 
-    /// <summary>What the projects region is actually showing, row by row.</summary>
-    private static List<string> Rows(Shell shell)
-    {
-        var source = shell.Projects.List.Source;
-
-        return [.. Enumerable.Range(0, source?.Count ?? 0)
-            .Select(at => source!.ToList()[at]?.ToString() ?? string.Empty)];
-    }
 }

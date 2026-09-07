@@ -2,7 +2,6 @@ using Parley.Cli.Top;
 using Parley.Client;
 using Parley.Core;
 using Parley.Headless;
-using Terminal.Gui.Drawing;
 using Terminal.Gui.Views;
 using Xunit;
 
@@ -85,6 +84,47 @@ public sealed class ColourSaysNothingNewTests
         NoColourOnlyDistinction(region.List);
     }
 
+
+    [Fact]
+    public void States_a_person_has_to_tell_apart_are_not_the_same_colour()
+    {
+        // **The converse of everything above, and the half that makes the colour worth having.**
+        // The other tests forbid a colour saying more than the words; this one forbids it saying
+        // less. Five standings share one list, and a person scanning it for "which of these can I
+        // ask right now" is reading the colour first.
+        var region = new AgentsRegion();
+
+        region.Show(
+            [
+                Agent("aa@here", AgentPresence.Running, AgentStatus.Active),
+                Agent("bb@here", AgentPresence.Running, AgentStatus.Retired),
+                Agent("cc@here", AgentPresence.Startable, AgentStatus.Active),
+                Agent("dd@here", AgentPresence.Stranded, AgentStatus.Active),
+                Seated("ee@here"),
+            ],
+            NodeCatalogue.Empty,
+            null);
+
+        var rows = Drawn.Rows(region.List);
+        var tints = Drawn.Tints(region.List);
+
+        for (var one = 0; one < rows.Count; one++)
+        {
+            for (var two = one + 1; two < rows.Count; two++)
+            {
+                if (Phrase(rows[one]) == Phrase(rows[two]))
+                {
+                    continue;
+                }
+
+                Assert.True(
+                    tints[one] != tints[two],
+                    $"'{Phrase(rows[one])}' and '{Phrase(rows[two])}' are different states drawn "
+                    + "in the same colour");
+            }
+        }
+    }
+
     [Fact]
     public void The_check_is_looking_at_something()
     {
@@ -100,7 +140,7 @@ public sealed class ColourSaysNothingNewTests
             NodeCatalogue.Empty,
             null);
 
-        Assert.True(Tints(region.List).Distinct().Count() > 1, "the fixture drew only one colour");
+        Assert.True(Drawn.Tints(region.List).Distinct().Count() > 1, "the fixture drew only one colour");
     }
 
     /// <summary>
@@ -114,8 +154,8 @@ public sealed class ColourSaysNothingNewTests
     /// </remarks>
     private static void NoColourOnlyDistinction(ListView list)
     {
-        var rows = Rows(list);
-        var tints = Tints(list);
+        var rows = Drawn.Rows(list);
+        var tints = Drawn.Tints(list);
 
         for (var one = 0; one < rows.Count; one++)
         {
@@ -145,20 +185,6 @@ public sealed class ColourSaysNothingNewTests
         return opened >= 0 && closed > opened ? row[opened..(closed + 1)] : row;
     }
 
-    private static List<Color?> Tints(ListView list) =>
-        [.. Enumerable.Range(0, list.Source?.Count ?? 0).Select(at =>
-        {
-            var arguments = new ListViewRowEventArgs(at);
-
-            list.OnRowRender(arguments);
-
-            return arguments.RowAttribute?.Foreground;
-        })];
-
-    private static List<string> Rows(ListView list) =>
-        [.. Enumerable
-            .Range(0, list.Source?.Count ?? 0)
-            .Select(at => list.Source!.ToList()[at]?.ToString() ?? string.Empty)];
 
     private static AgentRecord Agent(string name, AgentPresence presence, AgentStatus status) =>
         new(AgentName.Create(name), "mcp", AgentTier.Pull, null, null, null, true, status, null, presence);

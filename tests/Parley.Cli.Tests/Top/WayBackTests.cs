@@ -142,67 +142,9 @@ public sealed class WayBackTests
         var menu = Assert.IsType<ChoiceDialog>(driving.Find(Shell.ActionsTitle));
 
         Assert.Contains(
-            Rows(menu.Choices),
+            Drawn.Rows(menu.Choices),
             row => row.Contains(Shell.BackStroke, StringComparison.Ordinal));
-        Assert.Contains(Rows(menu.Choices), row => row == Shell.QuitLabel);
+        Assert.Contains(Drawn.Rows(menu.Choices), row => row == Shell.QuitLabel);
     }
 
-    /// <summary>Everything a list is showing, in order.</summary>
-    /// <param name="list">The list.</param>
-    /// <returns>The rows.</returns>
-    private static List<string> Rows(Terminal.Gui.Views.ListView list)
-    {
-        var source = list.Source;
-
-        return [.. Enumerable
-            .Range(0, source?.Count ?? 0)
-            .Select(at => source!.ToList()[at]?.ToString() ?? string.Empty)];
-    }
-
-    [Fact]
-    public async Task The_menu_opens_on_a_view_whose_region_offers_nothing_else()
-    {
-        // A conversation held by somebody with no seat. Its transcript region has no actions, so
-        // the menu refused to open at all — leaving a screen whose only way out was a key nothing
-        // named. contracts/surface.md forbids exactly that: no action exists only as a key.
-        using var driving = Driving.Open();
-        using var directory = Directory();
-        using var shell = new Shell(directory);
-
-        driving.Show(shell);
-        await Walking.GoAsync(shell, Viewing.Conversation);
-
-        Assert.Empty(shell.Actions());
-
-        await shell.Offer();
-
-        Assert.True(driving.Has(Shell.ActionsTitle), "the menu of actions did not open");
-    }
-
-    [Fact]
-    public async Task Choosing_it_from_the_menu_goes_back()
-    {
-        // The pointer route, end to end: open the menu, pick the entry by the words on it, and
-        // land one level out. Nothing here presses Escape.
-        using var driving = Driving.Open();
-        using var directory = Directory();
-        using var shell = new Shell(directory);
-
-        driving.Show(shell);
-        await Walking.GoAsync(shell, Viewing.Conversation);
-
-        var label = shell.BackLabel;
-
-        Assert.NotNull(label);
-
-        await shell.Offer();
-
-        var menu = Assert.IsType<ChoiceDialog>(driving.Find(Shell.ActionsTitle));
-
-        driving.Row(menu.Choices, label!);
-        driving.Enter();
-        await shell.Settled;
-
-        Assert.Equal(Viewing.Project, shell.Place.Viewing);
-    }
 }

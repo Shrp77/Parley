@@ -44,7 +44,7 @@ public sealed class ColumnZeroTests
             var region = Region($"{{\"intent\":\"{new string('x', filler)} {Forged}\"}}");
 
             Assert.DoesNotContain(
-                Rows(region).Where(AtColumnZero),
+                Drawn.Rows(region.List).Where(AtColumnZero),
                 row => row.Contains("billing@here", StringComparison.Ordinal));
         }
     }
@@ -58,7 +58,7 @@ public sealed class ColumnZeroTests
         var region = Region(
             $"{{\"said\":\"{new string('y', 200)}\",\"intent\":\"{new string('z', 300)} {Forged}\"}}");
 
-        foreach (var row in Rows(region).Where(AtColumnZero))
+        foreach (var row in Drawn.Rows(region.List).Where(AtColumnZero))
         {
             var header = row.Contains("orders@here -> inventory@here", StringComparison.Ordinal)
                 || row.StartsWith("Conversation ", StringComparison.Ordinal);
@@ -76,7 +76,7 @@ public sealed class ColumnZeroTests
 
         region.Show("threeway", "alpha", null, Forged);
 
-        Assert.DoesNotContain(Rows(region).Where(AtColumnZero), row => row.Length > 0);
+        Assert.DoesNotContain(Drawn.Rows(region.List).Where(AtColumnZero), row => row.Length > 0);
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public sealed class ColumnZeroTests
         // on one row would never reach the code this is about -- and something has to be at column
         // zero, or "nothing forged is at column zero" is true of an empty screen.
         var region = Region($"{{\"intent\":\"{new string('x', 76)} {Forged}\"}}");
-        var rows = Rows(region);
+        var rows = Drawn.Rows(region.List);
 
         Assert.Contains(rows, row => row.StartsWith(' '));
         Assert.Contains(rows, AtColumnZero);
@@ -126,7 +126,7 @@ public sealed class ColumnZeroTests
         {
             region.Resize(width);
 
-            var rows = Rows(region);
+            var rows = Drawn.Rows(region.List);
 
             problems.AddRange(rows
                 .Where(AtColumnZero)
@@ -192,15 +192,4 @@ public sealed class ColumnZeroTests
         return region;
     }
 
-    /// <summary>Everything the region is showing, in order.</summary>
-    /// <param name="region">The region.</param>
-    /// <returns>The rows.</returns>
-    private static List<string> Rows(TranscriptRegion region)
-    {
-        var source = region.List.Source;
-
-        return [.. Enumerable
-            .Range(0, source?.Count ?? 0)
-            .Select(at => source!.ToList()[at]?.ToString() ?? string.Empty)];
-    }
 }

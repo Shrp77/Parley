@@ -612,8 +612,9 @@ project and shows its agents and its conversations; Enter again opens a conversa
 Escape comes back, and lands on what you were looking at rather than at the top, so reading three
 conversations in turn costs three keystrokes. The status line says where you are and where Escape
 leads, and the same entry heads the `?` menu, so the way out is never only a key. `Ctrl+Q` leaves
-altogether, from any view, and is written on that line beside it. Escape at the top of the tree
-does nothing — pressing it once more than you meant to costs nothing.
+altogether, from any view, and sits on that line beside it — on a terminal too narrow to hold
+both, the line keeps `?` and the menu keeps them. Escape at the top of the tree does nothing:
+pressing it once more than you meant to costs nothing.
 
 Tab moves between the panes of the view you are on — a project has two, the other views one — and
 the arrow keys move within one. The mouse does the same. Below eighty columns a project's two
