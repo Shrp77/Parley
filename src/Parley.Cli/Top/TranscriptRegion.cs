@@ -1,5 +1,4 @@
-﻿using System.Collections.ObjectModel;
-using Parley.Client.Rendering;
+﻿using Parley.Client.Rendering;
 using Parley.Core;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.ViewBase;
@@ -45,7 +44,7 @@ internal sealed class TranscriptRegion : FrameView
     /// </remarks>
     internal const string Destroyed = "That conversation was destroyed.";
 
-    private readonly ListView _lines = Lists.Filling(Colours.Transcript);
+    private readonly GuardedList _lines = Lists.Filling(Colours.Transcript);
 
     private string _written = Nothing;
     private IReadOnlyList<TranscriptLine> _marked = [];
@@ -283,9 +282,10 @@ internal sealed class TranscriptRegion : FrameView
             }
         }
 
-        _tints = tints;
-
-        _lines.SetSource(new ObservableCollection<string>(wrapped));
+        // The rows and their colours together, under the list's guard. This one is reachable from
+        // two threads by two routes rather than one: `Show` arrives from a read that finished on
+        // the pool, and `OnViewportChanged` arrives from the draw itself.
+        _lines.Replace(wrapped, _lines.SelectedItem, also: () => _tints = tints);
     }
 
     /// <summary>What colour a line is drawn in.</summary>

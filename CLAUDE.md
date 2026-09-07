@@ -506,8 +506,48 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   one conversation) replacing 005's four regions on one screen, on **both** surfaces; and the four
   operator operations the protocol did not have: `archive`, `unarchive` and `destroy` for a
   conversation, and `start` for a catalogued agent. The protocol work landed before the views,
-  because the surfaces are clients of it. 0.18.4 — the minor moved to 0.18.0 because §10.2 is a
+  because the surfaces are clients of it. 0.18.5 — the minor moved to 0.18.0 because §10.2 is a
   versioned contract and four new operations change what a V1 broker must implement.
+
+  **0.18.5 is the review gate's first finding, and the lesson was already in this repository.**
+  Every read finishes on a pool thread — `SelectAsync` awaits the broker with
+  `ConfigureAwait(false)` and then calls a region's `Show`, which reaches `ListView.SetSource` —
+  while the main loop is inside `ListView.OnDrawingContent`, which reads its source's count and
+  then indexes it. Swapping the source between those two reads throws on the draw thread, which
+  in a terminal ends the process. Four thousand draws against a writer alternating forty rows with
+  one: 434 failures in the agents region, 1,116 in projects, 499 in agents, 322 in conversations,
+  53 in the transcript.
+
+  **`LogView` had solved this already**, and says so in a remark naming the same bug — its follower
+  only queues into `_pending`, and `Drain` runs from `OnDrawingContent` on the draw thread. The
+  four regions never got the same treatment. That is the argument for `GuardedList` being the place
+  the guarantee lives rather than a rule each region is trusted to follow: `Replace` swaps the rows
+  and the fields a row's colour is derived from together, under the same lock the draw takes.
+
+  **`IApplication.Invoke` was tried first and reverted.** It is the toolkit's answer and it runs
+  inline on the main thread, but the harness deliberately never pumps the loop, so a queued update
+  never ran and `Shell.Settled` stopped meaning "the screen is true" — thirty-odd tests. A lock
+  needed no harness change and cost no test.
+
+  **The probe that found it first found nothing**, across four thousand draws, because the region
+  under it had never been given a size and the row handler had not run once. `RefillRaceTests`
+  keeps both counters — rows rendered, and how many different list lengths were seen mid-draw — so
+  a future version that stops racing anything fails instead of passing.
+
+  **The re-run of the same lens found a second one, by a different mechanism.** `ArrangeLocked`
+  removed all four regions and added back the current view's, which mutates the subview list —
+  while the main loop walks that same list in `View.CollectAll` during layout. `_screen` locked
+  that method against itself and the toolkit takes no lock, so it never protected against the
+  reader; eight threads changing view against three thousand draws threw `Collection was modified`
+  749 times, and the route is the commonest action there is — opening a conversation calls
+  `GoAsync` after awaiting the broker. The regions join the tree in the constructor now and never
+  leave it; `Visible` was already doing the real work.
+
+  That change exposed a third thing, which is why the fix is worth reading: `Lay`'s early return
+  asked `SubViews.Count > 1`, a proxy for "already arranged" that was true from the constructor the
+  moment reparenting stopped. The first call returned early, nothing was ever sized, and the
+  surface drew a blank screen — caught by two tests out of 825, because every other path reaches
+  `Relay`. It asks `_arranged` outright now.
 
   **0.18.4 is three things the owner reported after running the terminal, and two of them are the
   same finding twice.** The layout threshold goes back to eighty, which is where it was before

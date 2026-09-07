@@ -40,7 +40,7 @@ internal sealed class ProjectsRegion : FrameView
         "This machine names no projects yet. Press c to create one, or ? for everything this "
         + "region can do.";
 
-    private readonly ListView _list = Lists.Filling(Colours.Projects);
+    private readonly GuardedList _list = Lists.Filling(Colours.Projects);
 
     private List<ProjectSettings> _projects = [];
     private List<string> _lines = [];
@@ -105,13 +105,11 @@ internal sealed class ProjectsRegion : FrameView
                 ? new List<string> { Nothing }
                 : [.. _projects.Select(project => Line(project, health))];
 
-        _lines = [.. lines];
-
-        _list.SetSource(new System.Collections.ObjectModel.ObservableCollection<string>(lines));
-
         var at = keep is null ? -1 : _projects.FindIndex(p => p.Name.Value == keep);
 
-        _list.SelectedItem = at >= 0 ? at : 0;
+        // The rows and the lines their colour is read back from go in together, under the list's
+        // own guard. Assigned separately they would disagree for as long as a draw takes.
+        _list.Replace([.. lines], at >= 0 ? at : 0, also: () => _lines = [.. lines]);
     }
 
     /// <summary>What colour a row earns from what it says about its broker.</summary>

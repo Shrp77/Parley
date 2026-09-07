@@ -90,6 +90,9 @@ internal sealed class Shell : Window
     private readonly CancellationTokenSource _reading = new();
 
     private bool _stacked;
+
+    /// <summary>Whether the regions have been given a size at least once.</summary>
+    private bool _arranged;
     private bool _closed;
     private ViewPlace _place = ViewPlace.Top;
 
@@ -176,7 +179,14 @@ internal sealed class Shell : Window
         // who is lost reads. A conventional bar is found without being looked for.
         _status.SetScheme(Colours.StatusBar());
 
+        // Every region joins the tree here and none ever leaves it. ArrangeLocked carries why:
+        // reparenting on a change of view races the main loop's own walk of this list.
         Add(_status);
+        Add(Projects);
+        Add(Agents);
+        Add(Conversations);
+        Add(Transcript);
+
         Lay(Threshold);
         Focus(0);
     }
@@ -289,15 +299,27 @@ internal sealed class Shell : Window
     /// <summary>Arranges the regions for a width.</summary>
     /// <param name="width">How wide the screen is.</param>
     /// <remarks>
-    /// The four views are reparented rather than rebuilt, so a selection, a scroll position and a
-    /// test's reference to a region all survive a resize. Rebuilding them would lose the person's
-    /// place every time somebody dragged a window edge.
+    /// <para>
+    /// The four views are shown and hidden rather than rebuilt, so a selection, a scroll position
+    /// and a test's reference to a region all survive a resize. Rebuilding them would lose the
+    /// person's place every time somebody dragged a window edge.
+    /// </para>
+    /// <para>
+    /// <b>"Has this been arranged yet" is asked outright, and it used to be guessed.</b> The
+    /// condition was <c>SubViews.Count &gt; 1</c>, which was true only once a pane had been added
+    /// — a fair proxy while <c>ArrangeLocked</c> reparented, and silently wrong the moment it
+    /// stopped: every region joins the tree in the constructor now, so the count is above one
+    /// before anything has been laid out, and the early return fired on the very first call. The
+    /// regions kept their default size, which is none, and the surface drew an empty screen. Two
+    /// tests caught it and the rest did not, because opening any view calls <c>Relay</c>, which
+    /// does not take this path.
+    /// </para>
     /// </remarks>
     internal void Lay(int width)
     {
         var stacked = width < Threshold;
 
-        if (stacked == _stacked && SubViews.Count > 1)
+        if (stacked == _stacked && _arranged)
         {
             return;
         }
@@ -323,15 +345,30 @@ internal sealed class Shell : Window
         }
     }
 
-    /// <summary>Arranges, with the screen already held.</summary>
+    /// <summary>
+    /// Arranges, with the screen already held.
+    /// </summary>
+    /// <remarks>
+    /// <b>The regions are added once and never reparented, and that is a fix rather than a
+    /// tidy-up.</b> This used to remove all four and add back the current view's, which mutates
+    /// the subview list — while the main loop walks that same list in <c>View.CollectAll</c>
+    /// during layout. <see cref="_screen"/> locks this method against itself and the toolkit
+    /// takes no lock at all, so it never protected against the reader. Eight threads changing
+    /// view against three thousand draws threw <c>Collection was modified</c> out of
+    /// <c>LayoutSubViews</c> seven hundred and forty-nine times.
+    /// <para>
+    /// It is reachable by the commonest action the surface has: opening a conversation queues a
+    /// read, and that read calls <c>GoAsync</c> after awaiting the broker — on a pool thread.
+    /// </para>
+    /// <para>
+    /// Visibility does the whole job instead. The tree is fixed from the constructor, so there is
+    /// nothing for a draw to trip over, and the property this method actually needs — only the
+    /// current view's panes on screen — is exactly what <c>Visible</c> says.
+    /// </para>
+    /// </remarks>
     private void ArrangeLocked()
     {
         var stacked = _stacked;
-
-        foreach (var region in _regions)
-        {
-            region.SuperView?.Remove(region);
-        }
 
         // **Only the current view's panes go on screen.** The other regions are kept alive rather
         // than rebuilt, so a selection, a scroll position and a test's reference to one all survive
@@ -385,10 +422,7 @@ internal sealed class Shell : Window
             panes[1].Height = Dim.Fill(1);
         }
 
-        foreach (var pane in panes)
-        {
-            Add(pane);
-        }
+        _arranged = true;
 
         Focus(FocusedRegion);
     }

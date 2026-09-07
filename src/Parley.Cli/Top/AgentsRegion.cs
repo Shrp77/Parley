@@ -74,7 +74,7 @@ internal sealed class AgentsRegion : FrameView
         "No agent is registered in this project and its catalogue names none. Press a to make a "
         + "repository on this machine one.";
 
-    private readonly ListView _list = Lists.Filling(Colours.Agents);
+    private readonly GuardedList _list = Lists.Filling(Colours.Agents);
 
     private List<AgentRow> _rows = [];
     private List<AgentStanding> _standing = [];
@@ -183,15 +183,19 @@ internal sealed class AgentsRegion : FrameView
     {
         var keep = Selected?.Name;
 
-        _rows = [.. Join(registry, catalogue)];
-        _standing = [.. Standing.Join(
-            registry, new HashSet<string>(catalogue.Roles, StringComparer.Ordinal), Seat.Adapter)];
+        // Built into locals and swapped in together. Assigned to the fields as they are computed,
+        // a draw landing between two of them would colour this list from one registry while
+        // reading its rows from another -- and `Selected` would name an agent by an offset
+        // belonging to the previous read, which in this region is what a purge acts on.
+        var rows = Join(registry, catalogue);
+        var standing = Standing.Join(
+            registry, new HashSet<string>(catalogue.Roles, StringComparer.Ordinal), Seat.Adapter);
 
-        var lines = _rows.Count > 0
-            ? _rows.Select(Line).ToList()
+        var lines = rows.Count > 0
+            ? rows.Select(row => Line(row, standing)).ToList()
             : [Safe.Text(problem) is { Length: > 0 } why ? why : Nothing];
 
-        if (problem is not null && _rows.Count > 0)
+        if (problem is not null && rows.Count > 0)
         {
             // Both, rather than one or the other. The catalogue is still true when the broker is
             // not answering, and saying only "not answering" would hide the half of the picture
@@ -199,17 +203,25 @@ internal sealed class AgentsRegion : FrameView
             lines.Insert(0, Safe.Text(problem));
         }
 
-        _list.SetSource(new System.Collections.ObjectModel.ObservableCollection<string>(lines));
-
-        _offset = problem is null || _rows.Count == 0 ? 0 : 1;
-
-        var offset = _offset;
-        var at = keep is null ? -1 : _rows.FindIndex(row => row.Name == keep);
+        var offset = problem is null || rows.Count == 0 ? 0 : 1;
+        var at = keep is null ? -1 : rows.ToList().FindIndex(row => row.Name == keep);
 
         // The selection follows the agent rather than the position. A refresh that moved
         // somebody's highlight onto a different agent is how a destructive action gets taken
         // against the wrong one, and this region is where the destructive actions are.
-        _list.SelectedItem = at >= 0 ? at + offset : _rows.Count > 0 ? offset : null;
+        //
+        // The offset goes in with the rows, under the list's guard: `Selected` subtracts it from
+        // the highlighted line, so a moment where one has been swapped and the other has not is a
+        // moment where this region names the wrong agent.
+        _list.Replace(
+            [.. lines],
+            at >= 0 ? at + offset : rows.Count > 0 ? offset : null,
+            also: () =>
+            {
+                _rows = [.. rows];
+                _standing = [.. standing];
+                _offset = offset;
+            });
     }
 
     /// <summary>
@@ -362,13 +374,17 @@ internal sealed class AgentsRegion : FrameView
 
     /// <summary>How one row reads.</summary>
     /// <param name="row">The row.</param>
+    /// <param name="standings">What the shared derivation says about each agent.</param>
     /// <returns>The line, with every fact in words.</returns>
-    private string Line(AgentRow row)
+    private static string Line(AgentRow row, IReadOnlyList<AgentStanding> standings)
     {
         // The phrase comes from the shared derivation so the console says the same thing about the
         // same agent. The row's own State is still what the withdrawal dialog quotes back, because
         // that one has to match what a person read when they decided.
-        var standing = _standing.FirstOrDefault(s => s.Name == row.Name)?.Standing ?? row.State;
+        //
+        // The standings are passed in rather than read from the field, because this runs while the
+        // field still holds the previous read's -- the two are swapped together, after.
+        var standing = standings.FirstOrDefault(s => s.Name == row.Name)?.Standing ?? row.State;
 
         return $"{row.Name}  [{Safe.Text(standing)}]  {row.Owns}  {row.Workspace}";
     }

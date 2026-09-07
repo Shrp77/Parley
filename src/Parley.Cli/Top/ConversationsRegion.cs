@@ -37,7 +37,7 @@ internal sealed class ConversationsRegion : FrameView
         "No conversation has happened in this project yet. One begins when an agent asks another "
         + "something, or when you do from a seat.";
 
-    private readonly ListView _list = Lists.Filling(Colours.Conversations);
+    private readonly GuardedList _list = Lists.Filling(Colours.Conversations);
 
     private List<ConversationSummary> _conversations = [];
 
@@ -90,7 +90,9 @@ internal sealed class ConversationsRegion : FrameView
     {
         var keep = Selected?.Id;
 
-        _conversations = problem is null ? [.. conversations ?? []] : [];
+        // A local until it goes in with the rows: the colour of a row is read from this list while
+        // the list is drawn, so the two must never be a draw apart.
+        var summaries = problem is null ? [.. conversations ?? []] : new List<ConversationSummary>();
 
         // **Said whenever anything is hidden, and that is what makes the archived state safe.**
         // Archiving does not stop a conversation receiving messages, and a message does not
@@ -100,9 +102,9 @@ internal sealed class ConversationsRegion : FrameView
 
         var lines = problem is not null
             ? [Safe.Text(problem)]
-            : _conversations.Count == 0
+            : summaries.Count == 0
                 ? new List<string> { archivedOmitted > 0 ? ConversationsView.AllArchived : Nothing }
-                : [.. _conversations.Select(Line)];
+                : [.. summaries.Select(Line)];
 
         if (hidden.Length > 0 && problem is null)
         {
@@ -110,14 +112,15 @@ internal sealed class ConversationsRegion : FrameView
             lines.Add(hidden);
         }
 
-        _list.SetSource(new System.Collections.ObjectModel.ObservableCollection<string>(lines));
-
-        var at = keep is null ? -1 : _conversations.FindIndex(c => c.Id == keep);
+        var at = keep is null ? -1 : summaries.FindIndex(c => c.Id == keep);
 
         // Something is always on, so that Enter has something to open the moment the region has
         // focus. A list whose selection is null until somebody presses an arrow makes the first
         // Enter do nothing at all, which reads as a surface that has not finished loading.
-        _list.SelectedItem = at >= 0 ? at : _conversations.Count > 0 ? 0 : null;
+        _list.Replace(
+            [.. lines],
+            at >= 0 ? at : summaries.Count > 0 ? 0 : null,
+            also: () => _conversations = summaries);
     }
 
     /// <summary>What colour a row earns from where its exchanges stand.</summary>
