@@ -88,6 +88,8 @@ public sealed class WayBackTests
 
         driving.Show(shell);
 
+        var checked_ = 0;
+
         await foreach (var _ in Walking.EveryPaneAsync(shell))
         {
             if (shell.Place.Viewing == Viewing.Projects)
@@ -96,7 +98,12 @@ public sealed class WayBackTests
             }
 
             Assert.Contains(Shell.BackStroke, shell.Status, StringComparison.Ordinal);
+            checked_++;
         }
+
+        // Non-vacuity: a walk that yielded nothing would make the loop above pass by never running,
+        // which is the shape this repository has been bitten by more than once.
+        Assert.True(checked_ > 0, "no pane below the top was visited, so nothing was checked");
     }
 
     [Fact]

@@ -142,8 +142,8 @@ internal static class Onboarding
     {
         var asking = Prompting.Choose(
             Apply,
-            $"Applying {manifest} writes configuration into every ticked repository. Run the plan "
-            + "first if you have not.",
+            $"Applying {Safe.Text(manifest)} writes configuration into every ticked repository. "
+            + "Run the plan first if you have not.",
             ["Not now", Apply]);
 
         var token = Prompting.Open(app, asking);

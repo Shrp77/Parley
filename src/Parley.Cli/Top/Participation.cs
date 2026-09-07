@@ -39,6 +39,18 @@ internal static class Participation
         "Taking delivery marks these messages delivered and starts the working window on anything "
         + "you then owe. It is not a look at the inbox.";
 
+    /// <summary>
+    /// What is said when the seat went while somebody was still writing.
+    /// </summary>
+    /// <remarks>
+    /// It names the sweep rather than blaming the person, and it says outright that nothing was
+    /// sent — which is the fact they need, because what they would otherwise assume is that the
+    /// message went and the peer is thinking about it.
+    /// </remarks>
+    internal const string Gone =
+        "Your seat was released while you were writing, so nothing was sent. Take a seat again to "
+        + "send it.";
+
     /// <summary>What the dialog offering delivery is called.</summary>
     internal const string DeliveryTitle = "Take delivery";
 

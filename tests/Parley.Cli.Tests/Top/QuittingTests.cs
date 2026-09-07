@@ -95,10 +95,16 @@ public sealed class QuittingTests
 
         driving.Show(shell);
 
+        var checked_ = 0;
+
         await foreach (var _ in Walking.EveryPaneAsync(shell))
         {
             Assert.Contains(Shell.QuitLabel, shell.Status, StringComparison.Ordinal);
+            checked_++;
         }
+
+        // Non-vacuity: an empty walk would make this pass by never looking at a status line.
+        Assert.True(checked_ > 0, "no pane was visited, so no status line was read");
     }
 
     [Fact]

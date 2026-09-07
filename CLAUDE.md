@@ -529,6 +529,21 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   whatever came back from the far end of a gRPC call. All are indented, so `ColumnZeroTests` can
   assert the whole invariant — every row at column zero is a header — rather than one attack on it.
 
+  **0.18.9 is what the Linux run found when CI could not run.** GitHub refused the jobs — *"recent
+  account payments have failed"* — so the suite was run in a container instead, which is the
+  practice recorded for a lapsed CI. It failed twice where Windows had passed, and one of those was
+  real: `Compose` captured the seat when the composer opened, so a seat swept while somebody was
+  typing still spoke, and the transcript recorded words under a name the book had released.
+  **Windows passed on timing** — whether the attach stream tore down before the send landed — which
+  is a race standing in for a guard. Sweeping for the shape found it twice more, in `Answer` and
+  again inside `ResolveAsync`'s second form; `TakeDelivery` had always re-checked, which is what
+  made it a pattern applied unevenly. The rule is now *at the send*.
+
+  The same gate found `Removing.Describe` quoting a manifest's endpoint, store and catalogue path
+  raw — the description somebody reads before typing a project's name to destroy it, which an
+  escape sequence in an endpoint clears. `ProjectsRegion` had neutralised the same four values
+  since it was written; the dialog never had.
+
   **0.18.5 is the review gate's first finding, and the lesson was already in this repository.**
   Every read finishes on a pool thread — `SelectAsync` awaits the broker with
   `ConfigureAwait(false)` and then calls a region's `Show`, which reaches `ListView.SetSource` —

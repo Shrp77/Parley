@@ -73,10 +73,19 @@ internal static class Removing
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        return $"{project.Name.Value}{Environment.NewLine}"
-            + $"  broker     {project.Endpoint}{Environment.NewLine}"
-            + $"  store      {project.Store}{Environment.NewLine}"
-            + $"  catalogue  {project.NodeConfig ?? "none: nothing is started for it"}";
+        // **Every one of these is a manifest's, and a manifest is a file this person may not have
+        // written.** `ProjectsRegion` has always neutralised the same values on its way to a row;
+        // this dialog did not, and it is the more dangerous of the two — it is the description
+        // somebody reads before typing a project's name to destroy it, and an escape sequence in
+        // an endpoint clears it.
+        var catalogue = Safe.Text(project.NodeConfig) is { Length: > 0 } named
+            ? named
+            : "none: nothing is started for it";
+
+        return $"{Safe.Text(project.Name.Value)}{Environment.NewLine}"
+            + $"  broker     {Safe.Text(project.Endpoint)}{Environment.NewLine}"
+            + $"  store      {Safe.Text(project.Store)}{Environment.NewLine}"
+            + $"  catalogue  {catalogue}";
     }
 
     /// <summary>Why a typed name would not be accepted, or null when it would.</summary>

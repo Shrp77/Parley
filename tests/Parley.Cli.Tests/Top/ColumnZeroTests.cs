@@ -116,11 +116,17 @@ public sealed class ColumnZeroTests
         var region = Region($"{{\"intent\":\"{Said}\"}}");
         var problems = new List<string>();
 
-        string[] headers =
-        [
-            "Conversation threeway in project alpha",
-            "1969-12-31 19:00:00  orders@here -> inventory@here  (Question)",
-        ];
+        // **Read off the widest render rather than written down.** The first version of this
+        // hard-coded the header text, which embeds a time rendered in the machine's own zone --
+        // so it passed on a developer's machine in Eastern time and failed in a UTC container at
+        // widths seven to fourteen, naming pieces of `1970-01-01` as violations. That is the same
+        // class of trap as the CRLF one the spec suite carries a note about: a check that passes
+        // on one machine and not another is not checking what it claims.
+        region.Resize(400);
+
+        var headers = Drawn.Rows(region.List).Where(AtColumnZero).ToList();
+
+        Assert.NotEmpty(headers);
 
         for (var width = 1; width <= 200; width++)
         {

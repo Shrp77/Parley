@@ -114,6 +114,33 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task An_answer_is_not_recorded_under_a_name_that_was_released_either()
+    {
+        // **The same defect as the test above, one dialog along, and worse.** Answering settles
+        // somebody else's exchange, so a stale seat here does not merely attribute words to a
+        // person who had left — it closes a question on their behalf.
+        //
+        // Both composers captured the seat when the dialog opened and never asked again;
+        // `TakeDelivery` re-checked, which is what made it a pattern applied unevenly rather than
+        // a decision. Found by running the suite on Linux while CI was down: the sibling test
+        // passed on Windows purely because the attach stream tore down before the send landed.
+        using var driving = Driving.Open();
+        using var directory = Directory();
+        using var seats = new SeatBook(directory.AgentsFor);
+        using var shell = await SeatedAsync(driving, directory, seats);
+
+        await shell.Answer();
+
+        Sweep(shell);
+
+        await shell.Settled;
+
+        // Nothing is asserted about which dialog opened -- with nothing owed there may be none.
+        // What is asserted is that the surface knows the seat has gone.
+        Assert.Null(shell.Voice());
+    }
+
+    [Fact]
     public async Task The_actions_a_seatless_surface_offers_no_longer_include_speaking()
     {
         // What the person sees after the sweep, which is the part that tells them why the composer

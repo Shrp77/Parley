@@ -1270,7 +1270,22 @@ internal sealed class Shell : Window
                 return;
             }
 
-            Queue(cancellationToken => ResolveAsync(app, voice, hold, chosen, exchange, cancellationToken));
+            // Asked for again rather than used as captured, for the reason `Compose` carries — and
+            // more sharply here, because answering settles somebody else's exchange. A dialog is
+            // open for as long as a person takes to choose, and the idle sweep runs on every draw.
+            // `TakeDelivery` already re-checked; these two did not, which is what makes it a
+            // pattern applied unevenly rather than a decision.
+            Queue(cancellationToken =>
+            {
+                if (Voice() is not { } speaking || Held is not { } holding)
+                {
+                    Said = Participation.Gone;
+
+                    return Task.CompletedTask;
+                }
+
+                return ResolveAsync(app, speaking, holding, chosen, exchange, cancellationToken);
+            });
         };
 
         return Task.CompletedTask;
@@ -1743,10 +1758,22 @@ internal sealed class Shell : Window
 
             Queue(async token2 =>
             {
+                // **Asked for again here too, which is the third place and the one that was easiest
+                // to miss.** The outer dialog picks a question and this one takes the words, so the
+                // seat can go while somebody writes the answer — after the check that let them
+                // start. Re-checking only where the dialog opened would have left exactly this gap,
+                // which is why the rule is "at the send" rather than "at the composer".
+                if (Voice() is not { } speaking || Held is not { } holding)
+                {
+                    Said = Participation.Gone;
+
+                    return;
+                }
+
                 // Through the overload that settles the seat as well, so this surface never strikes
                 // a question off its own list while the broker still believes it open.
-                var answered = await voice
-                    .AnswerAsync(hold, exchange, resolutions, token2)
+                var answered = await speaking
+                    .AnswerAsync(holding, exchange, resolutions, token2)
                     .ConfigureAwait(false);
 
                 Said = answered.Says;
@@ -1812,13 +1839,30 @@ internal sealed class Shell : Window
                 return;
             }
 
+            // **The seat is asked for again here, and the one captured when the form opened is
+            // thrown away.** A composer is open for as long as somebody takes to write, and the
+            // idle sweep runs on every draw — so the seat can go while they are still typing. The
+            // captured voice would go on speaking under a name the book had already released,
+            // which is a transcript row attributed to somebody who had left: the one outcome the
+            // test for this calls worse than the message not being sent.
+            //
+            // **It passed on Windows and failed on Linux**, because nothing here decided it — what
+            // decided it was whether the attach stream had finished tearing down before the send
+            // reached the broker. A guard that is really a race is not a guard.
             Queue(async cancellationToken =>
             {
+                if (Voice() is not { } speaking)
+                {
+                    Said = Participation.Gone;
+
+                    return;
+                }
+
                 Said = asking
-                    ? await voice.AskAsync(
+                    ? await speaking.AskAsync(
                         peer, values[1], values[2], values[3], values[4], cancellationToken)
                         .ConfigureAwait(false)
-                    : await voice.NotifyAsync(peer, values[1], values[2], cancellationToken)
+                    : await speaking.NotifyAsync(peer, values[1], values[2], cancellationToken)
                         .ConfigureAwait(false);
 
                 await SelectAsync(project, cancellationToken).ConfigureAwait(false);
