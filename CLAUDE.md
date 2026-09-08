@@ -595,7 +595,7 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/007-split-terminal-tool/` — 0.19.0. The terminal and the web UI
+- **Active plan**: `specs/007-split-terminal-tool/` — 0.20.1. The terminal and the web UI
   become their own
   tool packages, so changing either no longer stops the broker. Today one executable holds
   everything, an executable cannot be replaced while it runs, and stopping the broker stops the
@@ -717,8 +717,32 @@ below in the form Spec Kit's checks read; this file remains the authority when t
     measure. Rather than reword the message, the skill names the old spelling and the version it
     goes at — which is true, and tells an agent both things.
 
-  One step remains: the open-exchange warning before a broker stop. `research.md` carries eight
-  decisions, `contracts/commands.md` the command surface each tool exposes.
+  **Step 4 is done (0.20.1): an install that must stop the broker says what that will interrupt.**
+  Both scripts ask before stopping, name the conversations with an exchange still open, and warn
+  rather than refuse — `-Force` already means the decision belongs to the person making it.
+
+  **It needed a command the CLI did not have, and `parley waiting` was the wrong one.** That counts
+  messages *queued* for an agent, which is the opposite of the risk: a question already drained
+  into an inbox is marked delivered and no longer queued, so it sits in §4.2's four-hour Working
+  window with nothing running to answer it once the agent is killed. That is exactly the exchange
+  that ends as `ghosted` and exactly the one `waiting` would say nothing about. `parley open` is
+  the §10.2 `conversations()` reply both surfaces already read, filtered to what is open — and a
+  test asserts it prints identifiers and participants and not one word of any payload.
+
+  **A guard that fails open says so.** When the broker cannot be asked, the scripts say they could
+  not ask rather than implying nothing is in flight; the two are indistinguishable from the
+  operator's side and lead somewhere completely different. That path is reached more often than it
+  looks: a `parley` older than 0.20.1 has no `open` command, exits non-zero, and the script
+  correctly degrades to "could not ask" — which is what every upgrade from an earlier version will
+  do once, and is the honest answer.
+
+  Neither script opens the store. §4 gives it to one process, and reading it for a progress message
+  would break the boundary the whole architecture rests on; a test names the ways a script could
+  open one rather than forbidding the word, because both scripts say "SQLite" out loud in prose
+  they print.
+
+  `research.md` carries eight decisions, `contracts/commands.md` the command surface each tool
+  exposes.
 
 - Previous: `specs/006-three-view-operator/` — three drill-down views (projects, one project,
   one conversation) replacing 005's four regions on one screen, on **both** surfaces; and the four

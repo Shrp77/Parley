@@ -5,6 +5,7 @@ using Parley.Setup;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Parley.Cli;
+using Parley.Client;
 using Parley.Configuration;
 using Parley.Core;
 using Wire = Parley.Transport;
@@ -98,6 +99,10 @@ const string Help = """
       parley clarifications                            the clarify depth distribution, and whether the cap binds
       parley referrals                                 where questions are sent onward, and to whom
       parley notifications                             how much Notify carries, and who has had enough to judge
+      parley open                                      every conversation with an exchange
+                                                       still open, and who is in it. What a
+                                                       broker restart would interrupt
+
       parley waiting <agent>                           how many messages and polls await an agent
 
       parley --version                                 this build, and the protocol it speaks
@@ -1017,6 +1022,38 @@ try
 
                     return 0;
                 }).ConfigureAwait(false);
+
+        // **What is in flight, for the one caller that has to know before it stops a broker.**
+        // §12 says the node stopping tells every agent it started to quit, and a question already
+        // drained into an agent's inbox sits in §4.2's four-hour Working window rather than the
+        // fifteen-minute Delivery one -- so killing the agent that holds it leaves the exchange
+        // open and owed with nothing running to answer, ending in `ghosted`, which §5.3 defines as
+        // "nobody replied". Against an agent that was killed rather than one that ignored anything.
+        //
+        // Both surfaces already read this; the command line could not, so `install.ps1` had no way
+        // to ask. It is the same §10.2 `conversations()` reply filtered to what is open, and it
+        // discloses nothing a surface does not.
+        //
+        // One line per conversation, identifier and participants, because the caller is a script
+        // and the reader is a person about to make a decision.
+        case "open" when rest.Length == 0:
+        {
+            var page = await new BrokerClient(new Wire.Operators.OperatorsClient(channel))
+                .ConversationsAsync(cancellationToken: CancellationToken.None)
+                .ConfigureAwait(false);
+
+            var open = page.Items.Where(c => c.HasOpenExchange).ToList();
+
+            foreach (var conversation in open)
+            {
+                await Console.Out.WriteLineAsync(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{conversation.Id} {string.Join(",", conversation.Participants.Select(p => p.Value))}"))
+                    .ConfigureAwait(false);
+            }
+
+            return 0;
+        }
 
         default:
             await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);

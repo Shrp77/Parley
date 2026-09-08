@@ -143,6 +143,8 @@ parley clarifications                 how deep clarification went, and whether t
 parley referrals                      where questions are sent onward, and to whom
 parley notifications                  how much Notify carries, and who can judge it
 parley waiting <agent>                how many messages and polls await an agent
+parley open                           conversations with an exchange still open, and who is in
+                                      them; what stopping the broker would interrupt
 parley --help                         the same list, on stdout, exiting zero
 ```
 

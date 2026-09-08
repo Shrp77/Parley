@@ -572,6 +572,50 @@ Write-Note 'nothing is holding the tool store'
 $replacingBroker = @($tools | Where-Object { $_.Command -eq $broker -and (Wanted $_) }).Count -gt 0
 
 if ($replacingBroker) {
+    # **What stopping it will interrupt, said before it is stopped.**
+    #
+    # SPEC.md section 12: the node stopping tells every agent it started to quit, and the process
+    # is what held everything each of them had learned. A question already drained into an agent's
+    # inbox is marked delivered, so it sits in section 4.2's four-hour Working window rather than
+    # the fifteen-minute Delivery one -- and killing the agent that holds it leaves the exchange
+    # open and owed with nothing running to answer. It ends as `ghosted`, which section 5.3
+    # defines as "nobody replied", recorded against an agent that was killed rather than one that
+    # ignored anything.
+    #
+    # **Asked of the broker, never of the store.** Only the broker opens the database (section 4),
+    # and reading it here for a progress message would break the one boundary this whole
+    # architecture is built on. `parley open` is the same conversations() reply both surfaces read.
+    #
+    # A warning and not a refusal. The person running this has decided to upgrade, and stopping
+    # them is not this script's job.
+    $parleyOnPath = Get-Command parley -ErrorAction SilentlyContinue
+
+    if ($parleyOnPath) {
+        $inFlight = & parley open 2>$null
+        $asked = $LASTEXITCODE -eq 0
+    }
+    else {
+        $inFlight = $null
+        $asked = $false
+    }
+
+    if (-not $asked) {
+        # **Said as could-not-ask, not as nothing-in-flight.** A guard that fails open has to say
+        # so: the two readings look identical from here and lead somewhere completely different.
+        Write-Warning 'Could not ask the broker what is open, so this cannot say what stopping it will interrupt. That is not the same as nothing being in flight.'
+    }
+    elseif ($inFlight) {
+        $lines = @($inFlight | Where-Object { $_ -is [string] -and $_.Trim() })
+
+        if ($lines.Count -gt 0) {
+            Write-Warning "$($lines.Count) conversation(s) have an exchange still open. Stopping the broker ends every agent it started, and a question already delivered has nothing left to answer it:"
+
+            foreach ($line in $lines) {
+                Write-Host "      $line" -ForegroundColor DarkGray
+            }
+        }
+    }
+
     Write-Step 'Stopping any running broker'
 
     Stop-Broker

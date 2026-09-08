@@ -202,4 +202,29 @@ internal static class ToolProcess
     /// <returns>Its exit code and what it wrote to standard error.</returns>
     public static (int ExitCode, string Error) Run(params string[] arguments) =>
         Run([], arguments);
+
+    /// <summary>Runs the tool and keeps what it wrote to standard output as well.</summary>
+    /// <param name="arguments">The command line.</param>
+    /// <returns>Its exit code, its output, and what it complained.</returns>
+    /// <remarks>
+    /// Most commands here are checked by their exit code and their complaint, which is why the
+    /// overloads above drop the output. <c>parley open</c> is the exception and had to be: it
+    /// writes a line per open conversation to standard output because a script reads it, and a
+    /// test that could not see that would be asserting the exit code of a command whose whole
+    /// value is what it printed.
+    /// </remarks>
+    public static (int ExitCode, string Output, string Error) Reading(params string[] arguments)
+    {
+        using var process = Launch([], arguments);
+
+        // Both pipes drained at once, for the reason the overload above spells out: reading one to
+        // the end while the other fills deadlocks both.
+        var error = process.StandardError.ReadToEndAsync();
+        var output = process.StandardOutput.ReadToEndAsync();
+
+        Assert.True(process.WaitForExit(TimeSpan.FromSeconds(30)), "the tool never exited");
+        Task.WaitAll([error, output], TimeSpan.FromSeconds(10));
+
+        return (process.ExitCode, output.Result, error.Result);
+    }
 }

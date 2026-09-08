@@ -54,6 +54,7 @@ public sealed class GraphTests
     [InlineData("src/Parley.Web/Parley.Web.csproj")]
     [InlineData("src/Parley.Top/Parley.Top.csproj")]
     [InlineData("src/Parley.Setup/Parley.Setup.csproj")]
+    [InlineData("src/Parley.WebUi/Parley.WebUi.csproj")]
     public void Nothing_reachable_from_a_client_can_open_a_store(string project)
     {
         // Both, and transitively. The console is included here as well as in its own suite

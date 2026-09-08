@@ -530,6 +530,42 @@ for i in "${!commands[@]}"; do
 done
 
 if [ "$replacing_broker" = "1" ]; then
+    # **What stopping it will interrupt, said before it is stopped.**
+    #
+    # SPEC.md section 12: the node stopping tells every agent it started to quit, and the process
+    # is what held everything each of them had learned. A question already drained into an agent's
+    # inbox is marked delivered, so it sits in section 4.2's four-hour Working window rather than
+    # the fifteen-minute Delivery one -- and killing the agent that holds it leaves the exchange
+    # open and owed with nothing running to answer. It ends as `ghosted`, which section 5.3
+    # defines as "nobody replied", recorded against an agent that was killed rather than one that
+    # ignored anything.
+    #
+    # **Asked of the broker, never of the store.** Only the broker opens the database (section 4),
+    # and reading it here for a progress message would break the one boundary this architecture is
+    # built on. `parley open` is the same conversations() reply both surfaces read.
+    #
+    # A warning and not a refusal: the person running this has decided to upgrade.
+    if command -v parley >/dev/null 2>&1 && in_flight="$(parley open 2>/dev/null)"; then
+        if [ -n "$in_flight" ]; then
+            count="$(printf '%s
+' "$in_flight" | grep -c . || true)"
+
+            echo "warning: $count conversation(s) have an exchange still open. Stopping the broker" >&2
+            echo "         ends every agent it started, and a question already delivered has nothing" >&2
+            echo "         left to answer it:" >&2
+
+            printf '%s
+' "$in_flight" | while IFS= read -r line; do
+                [ -n "$line" ] && echo "      $line" >&2
+            done
+        fi
+    else
+        # **Said as could-not-ask, not as nothing-in-flight.** A guard that fails open has to say
+        # so: the two readings look identical from here and lead somewhere completely different.
+        echo "warning: could not ask the broker what is open, so this cannot say what stopping it" >&2
+        echo "         will interrupt. That is not the same as nothing being in flight." >&2
+    fi
+
     step "Stopping any running broker"
 
     stop_broker
