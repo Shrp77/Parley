@@ -208,6 +208,29 @@ public sealed class GraphTests
     }
 
     [Fact]
+    public void The_brokers_tool_carries_no_part_of_the_web_stack()
+    {
+        // **SC-005, and the reason it is a walk rather than a reading of one project file.** The
+        // broker's tool hosted the web console in its own process, so `Parley.Cli` referenced
+        // `Parley.Web` and every machine that installed a broker installed Kestrel and Razor with
+        // it — including the machines that only run agents, which is most of them.
+        //
+        // The web UI is its own tool now. This asserts the reference is gone and that nothing has
+        // put it back by another route, which is the part a reading of the csproj cannot say.
+        var reached = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        Walk(RepositoryPath("src/Parley.Cli/Parley.Cli.csproj"), "Parley.Cli", reached);
+
+        Assert.False(
+            reached.ContainsKey("Parley.Web"),
+            "the broker's tool reaches the web stack via " + reached.GetValueOrDefault("Parley.Web"));
+
+        // Non-vacuity: the walk resolved a real graph rather than nothing at all.
+        Assert.Contains("Parley.Broker", reached.Keys);
+        Assert.Contains("Parley.Store", reached.Keys);
+    }
+
+    [Fact]
     public void Configuration_reaches_neither_a_store_nor_the_transport()
     {
         // **It is about to be referenced by every tool, so anything acquired here is acquired by

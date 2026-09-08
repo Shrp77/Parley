@@ -156,7 +156,7 @@ public sealed record AutostartPlan(
         if (consoleOn is { Length: > 0 } front)
         {
             arguments = string.Create(CultureInfo.InvariantCulture,
-                $"{arguments} --with-console --console {Quote(front)}");
+                $"{arguments} --with-web-ui --web-ui {Quote(front)}");
         }
 
         return Compose(executable ?? Environment.ProcessPath ?? "parley", arguments, log);
@@ -212,7 +212,7 @@ public sealed record AutostartPlan(
         if (consoleOn is { Length: > 0 } front)
         {
             arguments = string.Create(CultureInfo.InvariantCulture,
-                $"{arguments} --with-console --console {Quote(front)}");
+                $"{arguments} --with-web-ui --web-ui {Quote(front)}");
         }
 
         return Compose(executable ?? Environment.ProcessPath ?? "parley", arguments, log);

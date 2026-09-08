@@ -1,4 +1,5 @@
-﻿using Parley.Core;
+﻿using Parley.Configuration;
+using Parley.Core;
 using Parley.Setup;
 using Xunit;
 
@@ -33,7 +34,7 @@ public sealed class AutostartConsoleTests
             Store, listenOn: null, executable: Binary, nodeConfig: null,
             consoleOn: "http://127.0.0.1:5280");
 
-        Assert.Contains("--with-console", plan.Arguments, StringComparison.Ordinal);
+        Assert.Contains("--with-web-ui", plan.Arguments, StringComparison.Ordinal);
         Assert.Contains("http://127.0.0.1:5280", plan.Arguments, StringComparison.Ordinal);
     }
 
@@ -45,10 +46,10 @@ public sealed class AutostartConsoleTests
         // default somebody has to already know.
         var plan = AutostartPlan.Describe(
             Store, listenOn: null, executable: Binary, nodeConfig: null,
-            consoleOn: Parley.Web.ConsoleHost.LoopbackAddress);
+            consoleOn: WebUiAddress.Loopback);
 
         Assert.Contains(
-            Parley.Web.ConsoleHost.LoopbackAddress, plan.Arguments, StringComparison.Ordinal);
+            WebUiAddress.Loopback, plan.Arguments, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -57,8 +58,8 @@ public sealed class AutostartConsoleTests
         var plan = AutostartPlan.Describe(
             Store, listenOn: null, executable: Binary, nodeConfig: null, consoleOn: null);
 
-        Assert.DoesNotContain("--with-console", plan.Arguments, StringComparison.Ordinal);
-        Assert.DoesNotContain("--console", plan.Arguments, StringComparison.Ordinal);
+        Assert.DoesNotContain("--with-web-ui", plan.Arguments, StringComparison.Ordinal);
+        Assert.DoesNotContain("--web-ui", plan.Arguments, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -69,11 +70,11 @@ public sealed class AutostartConsoleTests
         var plan = AutostartPlan.Describe(
             Store, listenOn: null, executable: Binary,
             nodeConfig: "/tmp/parley/node.json",
-            consoleOn: Parley.Web.ConsoleHost.LoopbackAddress);
+            consoleOn: WebUiAddress.Loopback);
 
         Assert.Contains("serve", plan.Arguments, StringComparison.Ordinal);
         Assert.Contains("--with-node", plan.Arguments, StringComparison.Ordinal);
-        Assert.Contains("--with-console", plan.Arguments, StringComparison.Ordinal);
+        Assert.Contains("--with-web-ui", plan.Arguments, StringComparison.Ordinal);
         Assert.Equal("parley-broker", AutostartPlan.Name);
     }
 
@@ -89,9 +90,9 @@ public sealed class AutostartConsoleTests
 
         var split = AutostartPlan.Split(plan.Arguments);
 
-        var at = split.ToList().IndexOf("--console");
+        var at = split.ToList().IndexOf("--web-ui");
 
-        Assert.True(at >= 0, "the console flag did not survive splitting: " + plan.Arguments);
+        Assert.True(at >= 0, "the web UI flag did not survive splitting: " + plan.Arguments);
         Assert.Equal("http://127.0.0.1:5280", split[at + 1]);
     }
 
@@ -108,7 +109,7 @@ public sealed class AutostartConsoleTests
         var program = RepositoryFile.Read("src/Parley.Cli/Program.cs");
 
         Assert.Contains(
-            "if (hostConsole && verb != \"serve\")", program, StringComparison.Ordinal);
+            "if (hostWebUi && verb != \"serve\")", program, StringComparison.Ordinal);
 
         Assert.Contains(
             "--console and --no-console are for `parley serve`", program,
@@ -118,19 +119,19 @@ public sealed class AutostartConsoleTests
     [Fact]
     public void The_console_cannot_take_the_broker_down_with_it()
     {
-        // The containment that makes hosting it in the broker's process defensible at all. Its
-        // likeliest failure is not a fault but a port already in use, and a broker that refused
-        // to start because a web page could not bind would take a whole deployment down for the
-        // one part of it no agent uses.
+        // The containment, which matters as much now that the web UI is a child process as it did
+        // when it was hosted here. Its likeliest failures are a port already in use and a tool that
+        // is not installed -- and a broker that refused to serve for either would take a whole
+        // deployment down for the one part of it no agent uses.
         var program = RepositoryFile.Read("src/Parley.Cli/Program.cs");
 
         //
         // Asserted on what the block does rather than on what it says. An earlier version pinned
         // the sentence, and rewording it broke a test that had no opinion about the wording —
         // which teaches the next person to loosen the assertion rather than to keep the guard.
-        var start = program.IndexOf("async Task<int> HostingConsole", StringComparison.Ordinal);
+        var start = program.IndexOf("async Task<int> HostingWebUi", StringComparison.Ordinal);
 
-        Assert.True(start > 0, "the console is no longer hosted from Program.cs");
+        Assert.True(start > 0, "the web UI is no longer started from Program.cs");
 
         var rest = program[start..];
         var next = rest.IndexOf("        async Task<int> Hosting", 10, StringComparison.Ordinal);
@@ -140,7 +141,7 @@ public sealed class AutostartConsoleTests
 
         // Handled, not propagated: a rethrow here is the broker going down with the web page.
         Assert.DoesNotContain("throw;", hosting, StringComparison.Ordinal);
-        Assert.Contains("return Unavailable;", hosting, StringComparison.Ordinal);
+        Assert.Contains("The broker is still serving", hosting, StringComparison.Ordinal);
     }
 
     [Fact]

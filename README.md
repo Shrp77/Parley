@@ -142,13 +142,14 @@ start when you log in, starts it, and then checks that it answers. It asks where
 should go, defaulting to `.parley` in your home directory; `-Store <path>` on Windows or
 `--store <path>` elsewhere answers that in advance, for an unattended run.
 
-There are three tools, and which of them a machine wants is a real question:
+There are four tools, and which of them a machine wants is a real question:
 
 | Tool | What it is | Installed by default |
 |---|---|---|
 | `parley` | The operator's commands, and the broker itself | Always |
 | `parley-mcp` | The MCP server a launch configuration names | Always |
 | `parley-top` | The terminal a person watches a deployment from | Windows yes, Linux no |
+| `parley-web-ui` | The web UI a person opens in a browser | Yes |
 
 `-Surfaces terminal|web-ui|both|none` on Windows, or `--surfaces` elsewhere, chooses. The
 default is both on Windows and the web UI alone elsewhere, because the machine `install.sh`
@@ -225,17 +226,23 @@ node in each project whose entry names a catalogue. A project named later gets i
 seconds, because the process watches the manifest; nothing is reinstalled and nothing restarts.
 The install script does the same: it asks what is named before it asks for a store.
 
-**It starts the console too**, on `127.0.0.1:5280`, because that is how a person takes part
+**It starts the web UI too**, on `127.0.0.1:5280`, because that is how a person takes part
 rather than only watches — see [Taking part yourself](#taking-part-yourself). An agent attached
-through your own editor window is the one thing nothing can hand a turn to, so a console you had
+through your own editor window is the one thing nothing can hand a turn to, so a web UI you had
 to remember to start separately would be the half of a deployment that works for agents and not
-for people. `--console <url>` moves it and `--no-console` leaves it out. If the address is
-already taken the broker says so and carries on serving: a web page that cannot bind must never
-cost you a deployment.
+for people. `--web-ui <url>` moves it and `--no-web-ui` leaves it out.
+
+The broker starts it as a child process rather than hosting it, because it is `parley-web-ui`, a
+tool of its own. If the address is already taken, or the tool is not installed on this machine,
+the broker says so and carries on serving: a web page that cannot bind must never cost you a
+deployment, and it names `parley top` in the same breath so you are never told there is no way in.
+
+`--with-console`, `--console` and `--no-console` are the old spellings. They still work and are
+removed at 0.21.0.
 
 **`parley top` is the same deployment without a browser**, and the broker names both when it
 starts. The machine running a broker is frequently not the machine you have a browser open on —
-a server you are in over SSH, a box in a cupboard — and on those the console's address is an
+a server you are in over SSH, a box in a cupboard — and on those the web UI's address is an
 instruction you cannot follow. Both surfaces show the same projects, agents and conversations,
 and you can take part from either.
 
@@ -582,10 +589,11 @@ parley force-conclude <conv>        close a discussion over its participants' vo
 parley prune                        apply the retention policy now
 parley refusals                     what the message size cap refused, and how far over
 parley waiting <agent>              how many messages and polls await an agent
-parley console [<url>]              a console in a browser: every project, the agents in
+parley web-ui [<url>]               the web UI in a browser: every project, the agents in
                                     each, and conversations as a transcript that says who
                                     did not see what. Join it with a name to take part as
-                                    yourself. Binds loopback unless you give it an address
+                                    yourself. Binds loopback unless you give it an address.
+                                    Its own tool, parley-web-ui, installed separately
 parley serve                        run the broker: the one process that opens the store
 parley up                           run this machine's node, so its agents can be started
 parley project list|add|remove      the deployments this machine is configured for
@@ -593,7 +601,7 @@ parley --help                       the same list, on stdout, exiting zero
 ```
 
 Every one of these except `serve`, `up` and `project` is a client: they connect to the broker at
-`--broker`, or `PARLEY_BROKER`, and default to the local one. `console` reads this machine's named
+`--broker`, or `PARLEY_BROKER`, and default to the local one. `web-ui` reads this machine's named
 projects instead, and falls back to that same broker when none are named — so it works on a
 machine configured entirely by explicit paths, which is a supported way to run. None of them opens the store, so none can be pointed at the wrong
 file — `--db` belongs to `parley serve` alone. `prune` applies the policy the broker was started
@@ -601,7 +609,7 @@ with, which is the only policy in the deployment; your shell no longer has an op
 
 ### Taking part yourself
 
-The console has a Join button. Type a name and you are an agent like any other: a registration,
+The web UI has a Join button. Type a name and you are an agent like any other: a registration,
 a place in every roster, and an identity recorded against everything you say. Then the box at the
 bottom of a conversation stops being a way to instruct agents and becomes a way to talk to them —
 your message lands in the transcript under your own name, and a peer answers you rather than
@@ -650,11 +658,11 @@ pressing it once more than you meant to costs nothing.
 Tab moves between the panes of the view you are on — a project has two, the other views one — and
 the arrow keys move within one. The mouse does the same. Below eighty columns a project's two
 panes stack and Tab still visits both. Press `?` for everything the view you are on can do, and
-`F8` to open the web console on whatever is in front of you.
+`F8` to open the web UI on whatever is in front of you.
 
 It draws in colour, and no fact rests on it: a project is green because the line says
 `answering`, an agent is pink because the line says `retired`, and each agent keeps the colour
-the web console gives it. Strip every attribute and nothing on the screen is lost.
+the web UI gives it. Strip every attribute and nothing on the screen is lost.
 
 From the projects region you can name the deployment this machine already runs — every path
 pre-filled from the autostart entry — or create a new project, which proposes its own database
@@ -690,7 +698,7 @@ purge stands behind — described first, keeping offered first, the conversation
 typed back — and when something in it is still open, what the waiting agent will see is named and
 accepted before the identifier is asked for.
 
-A seat lives in the agents half too — the same seat as the console, with the same rules — and from
+A seat lives in the agents half too — the same seat as the web UI, with the same rules — and from
 a conversation you read what is waiting for you, answer it, ask, and tell. Each agent has its own
 colour there, the same colour it has everywhere; every message header stands apart from the words
 below it whether or not you can see colour; and a message keeps the paragraphs its author wrote,

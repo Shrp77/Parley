@@ -91,10 +91,10 @@ done
 # A fourth array rather than three. `surface_of` says which of the two operator surfaces a tool
 # is, and empty means it is not one: the broker and the agent adapter are what Parley is, and
 # every machine that runs Parley at all needs both.
-packages=("Parley.Cli" "Parley.Mcp" "Parley.Top")
-projects=("src/Parley.Cli/Parley.Cli.csproj" "src/Parley.Mcp/Parley.Mcp.csproj" "src/Parley.Top/Parley.Top.csproj")
-commands=("parley" "parley-mcp" "parley-top")
-surface_of=("" "" "terminal")
+packages=("Parley.Cli" "Parley.Mcp" "Parley.Top" "Parley.WebUi")
+projects=("src/Parley.Cli/Parley.Cli.csproj" "src/Parley.Mcp/Parley.Mcp.csproj" "src/Parley.Top/Parley.Top.csproj" "src/Parley.WebUi/Parley.WebUi.csproj")
+commands=("parley" "parley-mcp" "parley-top" "parley-web-ui")
+surface_of=("" "" "terminal" "web-ui")
 
 # The web UI alone by default, for the reason at the top: this script runs where there is usually
 # no browser, and a terminal nobody has a session on is a package installed to be never run.

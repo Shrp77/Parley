@@ -119,6 +119,24 @@ src/Parley.Top      The terminal operator surface, and its own tool — `parley-
                     schema number would be a claim about somebody else's build — and the type that
                     reads one references the assembly that owns the store.
 
+src/Parley.WebUi    The web UI as its own tool -- `parley-web-ui` -- and nothing more than a way
+                    to start it. Everything it does lives in Parley.Web's ConsoleHost, because two
+                    callers each building a host is two hosts that differ the first time one of
+                    them is edited.
+
+                    **It takes ASP.NET Core off the broker's tool.** Parley.Cli referenced
+                    Parley.Web so that a broker could host the web UI in its own process, which put
+                    Kestrel and Razor on every machine that installed a broker -- including the
+                    ones that only run agents, which is most of them. The broker starts this as a
+                    child process now and knows one thing about it: its command name.
+
+                    `serve --with-web-ui` starts it, does not wait on it, does not restart it, and
+                    ends it when the broker ends. A web UI that cannot start -- a held port, a tool
+                    not installed -- leaves the broker serving and says so, in a block that still
+                    names `parley top`. Suppressing the block on that path would take the terminal
+                    line with it, on exactly the run where somebody needs to be told there is
+                    another way in.
+
 src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of the broker
                     rather than part of it. References Transport and Configuration and
                     nothing else: there is no SQLite on its graph and there must never be,
@@ -251,6 +269,12 @@ tests/Parley.Top.Tests    The terminal. Driving, Walking and Drawn moved here wi
                           TypeInitializationException before its first line. Nothing ships that
                           arrangement; it is written down because the failure looks exactly like a
                           broken tool.
+
+tests/Parley.WebUi.Tests  The web UI tool. Small, and it exists for one reason: Razor Pages are
+                          found by walking the entry assembly, so the failure worth catching only
+                          happens when the entry assembly is something other than Parley.Web. These
+                          tests lived in Parley.Cli.Tests, which was exactly that until the broker's
+                          tool stopped referencing the web stack at all.
 
 tests/Parley.Web.Tests    The console: the visibility derivation, what it refuses to render
                           raw, and that its project file references nothing that could open
@@ -655,9 +679,46 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   **No test was lost in the move**, checked rather than claimed: the method listings before and
   after differ by exactly two, both additions, both named.
 
-  Two steps remain: `Parley.WebUi` with the rename and the child-process launch; then the
-  open-exchange warning before a broker stop. `research.md` carries eight decisions,
-  `contracts/commands.md` the command surface each tool exposes.
+  **Step 3 is done (0.20.0): `parley-web-ui` is its own package, and "console" now means one
+  thing.** The broker starts it as a child process, does not wait on it, does not restart it, and
+  ends it when the broker ends. `Parley.Cli` no longer references `Parley.Web`, checked by a graph
+  walk that failed before the reference was removed and by reading the packed tool — a project file
+  says what is referenced directly, and a package says what lands on a machine.
+
+  **The deprecation has a date rather than being a kindness that becomes permanent.**
+  `parley console`, `--with-console`, `--console` and `--no-console` are the old spellings. They
+  work, warn once naming the new one, and are **removed at 0.21.0**. Two things made that
+  non-negotiable rather than polite: the owner's scheduled task holds `--with-console` right now,
+  and `InstalledEntry` must keep reading `--console` for as long as any machine has an entry
+  written before 0.19.0 — a reader knowing only the new name would report those entries as having
+  no web UI, so `autostart status` would say one thing while the entry did another.
+
+  `OperatorConsole` and `ConsolePicker` do **not** change, and a test says so. "Console" meant
+  three things here: the operator operations of §10.2, whether there is a terminal to draw on, and
+  the web pages. Only the third is a browser surface, and one of the other two is a protocol
+  boundary.
+
+  Four things learned building it, each written where it happened:
+
+  - **SC-005 is narrower than it reads, and it is narrowed in the open.** "A broker-only machine
+    carries no part of the web stack" cannot be literally true: the broker serves gRPC over Kestrel
+    and always has, so `Grpc.AspNetCore.Server` is in its package because `Parley.Server` needs it.
+    What this removes is the web UI's own half — the pages, Razor, and `Parley.Web` — and that is
+    what `PackedToolTests` asserts.
+  - **Suppressing the startup block on a failed web UI would take the terminal line with it.** The
+    first version printed the block only after the child started; a broker whose web UI could not
+    bind then never mentioned `parley top`, on exactly the run where somebody needs telling there
+    is another way in. The failure is a line inside the block now, not instead of it.
+  - **A banner extraction anchored to `var body` broke for the second time**, because the web UI's
+    line moved up one more variable when it gained a second form. Anchored at the first step of the
+    composition now, so it covers however many steps there are.
+  - **The plugin's skill lists `parley console` on purpose.** A test compares the verbs in the
+    tool's source against the skill's, and the deprecation message itself is a verb by that
+    measure. Rather than reword the message, the skill names the old spelling and the version it
+    goes at — which is true, and tells an agent both things.
+
+  One step remains: the open-exchange warning before a broker stop. `research.md` carries eight
+  decisions, `contracts/commands.md` the command surface each tool exposes.
 
 - Previous: `specs/006-three-view-operator/` — three drill-down views (projects, one project,
   one conversation) replacing 005's four regions on one screen, on **both** surfaces; and the four

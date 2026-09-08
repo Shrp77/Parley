@@ -90,6 +90,12 @@ public sealed record InstalledEntry(
                     i++;
                     break;
 
+                // Both spellings, and reading the old one is not optional. Every machine with an
+                // entry installed before 0.19.0 has `--console` in its scheduled task right now,
+                // and a reader that knew only the new name would report those entries as having no
+                // web UI -- so `autostart status` would say one thing while the entry did another,
+                // and a reinstall carrying the arguments forward would drop it.
+                case "--web-ui":
                 case "--console":
                     console = value;
                     i++;

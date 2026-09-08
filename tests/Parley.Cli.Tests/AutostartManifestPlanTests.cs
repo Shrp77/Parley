@@ -42,7 +42,7 @@ public sealed class AutostartManifestPlanTests
         Assert.DoesNotContain("--node-config", plan.Arguments, StringComparison.Ordinal);
 
         Assert.Contains(
-            "--with-console --console http://127.0.0.1:5280", plan.Arguments, StringComparison.Ordinal);
+            "--with-web-ui --web-ui http://127.0.0.1:5280", plan.Arguments, StringComparison.Ordinal);
     }
 
     [Fact]

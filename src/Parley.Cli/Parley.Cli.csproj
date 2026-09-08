@@ -40,7 +40,6 @@
     <ProjectReference Include="..\Parley.Setup\Parley.Setup.csproj" />
     <ProjectReference Include="..\Parley.Headless\Parley.Headless.csproj" />
     <ProjectReference Include="..\Parley.Server\Parley.Server.csproj" />
-    <ProjectReference Include="..\Parley.Web\Parley.Web.csproj" />
     <ProjectReference Include="..\Parley.Transport\Parley.Transport.csproj" />
   </ItemGroup>
 

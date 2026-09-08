@@ -130,6 +130,7 @@ $tools = @(
     @{ Package = 'Parley.Cli'; Project = 'src\Parley.Cli\Parley.Cli.csproj'; Command = 'parley';     Surface = '' }
     @{ Package = 'Parley.Mcp'; Project = 'src\Parley.Mcp\Parley.Mcp.csproj'; Command = 'parley-mcp'; Surface = '' }
     @{ Package = 'Parley.Top'; Project = 'src\Parley.Top\Parley.Top.csproj'; Command = 'parley-top'; Surface = 'terminal' }
+    @{ Package = 'Parley.WebUi'; Project = 'src\Parley.WebUi\Parley.WebUi.csproj'; Command = 'parley-web-ui'; Surface = 'web-ui' }
 )
 
 # Which surfaces this machine wants, resolved once. Windows takes both; anything else takes the
