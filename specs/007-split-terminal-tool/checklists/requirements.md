@@ -31,23 +31,20 @@
 
 ## Notes
 
-Three things about this spec are deliberate and worth defending at review rather than
-"fixing":
+Deliberate choices, to defend at review rather than "fix":
 
-- **It names existing components and quotes SPEC.md.** A spec that described the cost in the
-  abstract would be unable to state *why* a terminal change ends a conversation, which is the
-  entire case for the feature. The named things are the subject of the change, not an
-  implementation choice smuggled in — the boundary between packages is what is being specified.
-- **One scope question was settled by the owner rather than guessed**: the console moves out too,
-  because on a headless Linux agent host it is not merely unused but unusable — 16 confines the
-  transport to a trusted path and the console listens on loopback — while being the heaviest
-  dependency in the tree. The remaining open question, how the one-command experience is softened
-  across three tools, is recorded as an assumption with the decision named for the plan.
-- **SC-002 is measured by replaying real history** rather than by a forward-looking guess, because
-  the repository already holds the evidence: 29 of the changed source files in the last cycle were
-  the terminal's.
+- **It names existing components and quotes SPEC.md.** The boundary between packages is what is
+  being specified, so the components are the subject, not leaked implementation.
+- **SC-002 is measured by replaying real history**, because the repository already holds the
+  evidence: 29 of the changed source files last cycle were the terminal's.
 
-One finding was made while writing this and is recorded in the spec body rather than deferred: the
-terminal reaches SQLite today through `NodeCatalogue` → `Parley.Headless` → `Parley.Store`, and no
-check could have caught it because `GraphTests` does not walk the terminal. FR-004 and FR-005 make
-that a property of the build rather than of the layout.
+Two corrections made during review, recorded so they are not re-argued:
+
+- An earlier draft said the web UI was "unusable" on a headless machine. That was wrong. It is an
+  HTTP server, runs without a display, and is reachable over an SSH port-forward, which 16 permits.
+  The argument for splitting it is that it should be a choice, not that it is useless.
+- An earlier draft was over-written. The owner asked for plainer prose. Rewritten shorter.
+
+One defect found while writing and carried in the spec body: the terminal reaches SQLite today
+through NodeCatalogue in Parley.Headless, which references Parley.Store. GraphTests could not have
+caught it, because it does not walk the terminal. FR-004 and FR-005 make it checkable.
