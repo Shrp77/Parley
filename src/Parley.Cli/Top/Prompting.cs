@@ -278,10 +278,30 @@ internal sealed class ChoiceDialog : Dialog
 /// <param name="Label">What is being asked for.</param>
 /// <param name="Proposal">What the field starts with, which Enter accepts.</param>
 /// <param name="Problem">What is wrong with what has been typed, or null when nothing is.</param>
+/// <param name="Correct">
+/// What the typed text becomes, for a field whose rule can be applied rather than only reported.
+/// Null leaves whatever is typed alone.
+/// </param>
+/// <param name="Corrected">
+/// What to say when <see cref="Correct"/> changed something. Required by
+/// <see cref="FormDialog"/> whenever a correction is given, because a field that silently rewrites
+/// what somebody typed is worse than one that refuses it: they are left believing they typed
+/// something they did not.
+/// </param>
+/// <remarks>
+/// <b>Correcting and reporting are both here, and neither replaces the other.</b> A rule that can
+/// be applied should be — the owner typed <c>TimeTracker</c> into the project name and met no
+/// resistance at all, because the only thing enforcing lowercase was a sentence under a field, on
+/// a row that had been clipped. A field that will not accept a capital in the first place cannot
+/// have that failure. But the message still exists for what correcting cannot fix: a name already
+/// taken, a path that is not writable, a first character that is a digit.
+/// </remarks>
 internal sealed record FormField(
     string Label,
     string Proposal = "",
-    Func<string, string?>? Problem = null);
+    Func<string, string?>? Problem = null,
+    Func<string, string>? Correct = null,
+    string? Corrected = null);
 
 /// <summary>A dialog collecting several lines at once, each checked as it is typed.</summary>
 /// <remarks>
@@ -301,6 +321,13 @@ internal sealed class FormDialog : Dialog
     private readonly IReadOnlyList<FormField> _fields;
     private readonly List<TextField> _entries = [];
     private readonly List<Label> _problems = [];
+
+    /// <summary>What each field last said about correcting what was typed into it.</summary>
+    /// <remarks>
+    /// Kept beside the fields rather than written straight into the label, because
+    /// <see cref="Check"/> rewrites every label on every keystroke and would erase it.
+    /// </remarks>
+    private readonly List<string> _corrections = [];
     private readonly Button _ok;
 
     internal FormDialog(string title, IReadOnlyList<FormField> fields)
@@ -311,24 +338,61 @@ internal sealed class FormDialog : Dialog
 
         Title = title;
         Width = Dim.Percent(80);
-        Height = (fields.Count * 3) + 6;
+
+        // **Every label is given the rows its own words need.** This was one row per label and a
+        // height counted three rows to the field, so a label longer than the dialog was cut where
+        // it ran out — and these labels are sentences: the node catalogue's is a hundred and ten
+        // characters. The owner met it creating a project and reported the form running off the
+        // screen, which is the same defect `TextDialog` had, in the neighbour nobody looked at
+        // after fixing that one.
+        //
+        // Measured per field rather than assumed, because the height of the dialog is the sum of
+        // them and a fixed three-per-field is what made this wrong.
+        var rows = fields.Select(field => Lines(field.Label)).ToList();
+
+        Height = rows.Sum() + (fields.Count * 2) + 6;
 
         var y = 0;
 
-        foreach (var field in fields)
+        for (var at = 0; at < fields.Count; at++)
         {
-            var asked = new Label { Text = field.Label, X = 1, Y = y };
-            var entry = new TextField { X = 1, Y = y + 1, Width = Dim.Fill(2), Text = field.Proposal };
-            var why = new Label { X = 1, Y = y + 2, Width = Dim.Fill(2), Text = string.Empty };
+            var field = fields[at];
+            var tall = rows[at];
 
-            entry.TextChanged += (_, _) => Check();
+            var asked = new Label
+            {
+                Text = field.Label,
+                X = 1,
+                Y = y,
+                Width = Dim.Fill(2),
+                Height = tall,
+            };
+
+            asked.TextFormatter.WordWrap = true;
+
+            var entry = new TextField
+            {
+                X = 1,
+                Y = y + tall,
+                Width = Dim.Fill(2),
+                Text = field.Correct is { } correct ? correct(field.Proposal) : field.Proposal,
+            };
+
+            var why = new Label { X = 1, Y = y + tall + 1, Width = Dim.Fill(2), Text = string.Empty };
+
+            entry.TextChanged += (_, _) =>
+            {
+                Fix(entry, field);
+                Check();
+            };
 
             _entries.Add(entry);
             _problems.Add(why);
+            _corrections.Add(string.Empty);
 
             Add(asked, entry, why);
 
-            y += 3;
+            y += tall + 2;
         }
 
         _ok = new Button { Title = Prompting.Confirm, X = 1, Y = y + 1, IsDefault = true };
@@ -341,6 +405,20 @@ internal sealed class FormDialog : Dialog
         Add(_ok, cancel);
         Check();
     }
+
+    /// <summary>
+    /// How many rows a label needs.
+    /// </summary>
+    /// <param name="label">The label.</param>
+    /// <returns>The row count, at least one.</returns>
+    /// <remarks>
+    /// Estimated against a width this cannot know yet — the dialog is a percentage of a screen
+    /// that has not been laid out. Sixty is the narrow end of what eighty per cent of an ordinary
+    /// terminal gives, so the estimate errs towards more rows than are needed: a label with a
+    /// spare row below it looks like spacing, and one row short is the defect this replaces.
+    /// </remarks>
+    private static int Lines(string label) =>
+        Math.Max(1, (int)Math.Ceiling((label ?? string.Empty).Length / 60.0));
 
     /// <summary>Raised when the person has filled it in or declined to.</summary>
     internal event EventHandler<IReadOnlyList<string>?>? Done;
@@ -387,10 +465,72 @@ internal sealed class FormDialog : Dialog
 
         for (var at = 0; at < _fields.Count; at++)
         {
-            _problems[at].Text = _fields[at].Problem?.Invoke(_entries[at].Text) ?? string.Empty;
-            wrong |= _problems[at].Text.Length > 0;
+            var problem = _fields[at].Problem?.Invoke(_entries[at].Text) ?? string.Empty;
+
+            // A correction's note stands until the next keystroke replaces it, so that somebody who
+            // typed a capital sees why the field now holds something else. A real problem outranks
+            // it: "this name is already taken" matters more than "the capital was lowered".
+            _problems[at].Text = problem.Length > 0 ? problem : _corrections[at];
+
+            wrong |= problem.Length > 0;
         }
 
         _ok.Enabled = !wrong;
+    }
+
+    /// <summary>
+    /// Applies a field's own rule to what has just been typed, and says so when it changed it.
+    /// </summary>
+    /// <param name="entry">The field.</param>
+    /// <param name="field">Its rule.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Nothing is rewritten silently.</b> A field that quietly replaces what somebody typed
+    /// leaves them believing they typed something else, which is worse than refusing it — so a
+    /// correction always leaves its note behind, and <see cref="FormField.Corrected"/> is required
+    /// whenever a correction is given.
+    /// </para>
+    /// <para>
+    /// Re-entrant by construction: setting <c>Text</c> raises <c>TextChanged</c> again. The guard
+    /// is that a corrected value corrects to itself, so the second pass changes nothing and stops.
+    /// The cursor is left to the toolkit, which puts it at the end of a field whose text was just
+    /// set — which is where somebody typing wants it. 2.4.17 exposes no caret on TextField to put
+    /// back anywhere else, so a driven test types a whole name in one character at a time rather
+    /// than trusting that.
+    /// </para>
+    /// </remarks>
+    private void Fix(TextField entry, FormField field)
+    {
+        if (field.Correct is not { } correct)
+        {
+            return;
+        }
+
+        var typed = entry.Text;
+        var corrected = correct(typed);
+        var at = _fields.IndexOf(field);
+
+        if (string.Equals(typed, corrected, StringComparison.Ordinal))
+        {
+            // **The note stays while the corrected text does, and goes when the field is
+            // emptied.** Clearing it on the first keystroke that needed no correction was tried
+            // and is wrong: typing `TimeTracker` corrects on the `T` and then every remaining
+            // letter is already acceptable, so the note was gone by the second character and
+            // nobody could read it. What it explains — that the field holds something other than
+            // what was typed — is true for as long as that text is there.
+            if (at >= 0 && corrected.Length == 0)
+            {
+                _corrections[at] = string.Empty;
+            }
+
+            return;
+        }
+
+        entry.Text = corrected;
+
+        if (at >= 0)
+        {
+            _corrections[at] = field.Corrected ?? string.Empty;
+        }
     }
 }

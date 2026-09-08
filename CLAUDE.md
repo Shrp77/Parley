@@ -506,7 +506,7 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   one conversation) replacing 005's four regions on one screen, on **both** surfaces; and the four
   operator operations the protocol did not have: `archive`, `unarchive` and `destroy` for a
   conversation, and `start` for a catalogued agent. The protocol work landed before the views,
-  because the surfaces are clients of it. 0.18.10 — the minor moved to 0.18.0 because §10.2 is a
+  because the surfaces are clients of it. 0.18.11 — the minor moved to 0.18.0 because §10.2 is a
   versioned contract and four new operations change what a V1 broker must implement.
 
   **0.18.6 is lens 2's finding: a peer could forge another agent's line in a transcript.** FR-018's
@@ -528,6 +528,24 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   as this surface's own words; the third of those is a *broker's* words, since `problem` is
   whatever came back from the far end of a gRPC call. All are indented, so `ColumnZeroTests` can
   assert the whole invariant — every row at column zero is a header — rather than one attack on it.
+
+  **0.18.11 is the same overflow in the neighbour, and the reason the name rule never bit.** The
+  owner typed `TimeTracker` into the create form and met no resistance at all — because
+  `FormDialog` gave every label one row and counted three rows per field, so the sentence saying
+  *lowercase letters, digits and hyphens* sat on a clipped row under a label that had itself
+  overflowed. Fixing `TextDialog` for the destroy warning and not looking at `FormDialog` beside
+  it is what left this standing.
+
+  So the rule is **applied rather than reported**: `FormField.Correct` folds case and drops
+  anything outside the rule as it is typed, with `Corrected` saying what it did, because a field
+  that will not take a capital cannot fail because of a layout. It corrects and never completes —
+  an empty name, or one starting with a digit, is left for the message to refuse, since guessing
+  what somebody meant is how a field comes to hold a name they did not choose.
+
+  Two defects in that came from the existing suite rather than from thought: `NamingTests` caught
+  the note never clearing, and typing the name one key at a time caught it clearing on the very
+  next keystroke — `TimeTracker` corrects on the `T` and every letter after it is already
+  acceptable, so the note was gone by the second character. It stays while the corrected text does.
 
   **0.18.10 is the destroy warning running off the screen, reported by the owner trying to delete a
   project.** `TextDialog` gave its question a label with no width and no height, so whatever it

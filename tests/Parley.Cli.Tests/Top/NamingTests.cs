@@ -56,10 +56,25 @@ public sealed class NamingTests : IDisposable
         Assert.EndsWith(".db", form.Values[1], StringComparison.Ordinal);
         Assert.Equal(Naming.DefaultEndpoint, form.Values[2]);
 
-        // Refused as it is typed, not after four more answers.
+        // **Corrected as it is typed, not refused after four more answers — and this assertion
+        // changed shape rather than being deleted.** It used to fill "Alpha" and expect the words
+        // "lowercase letters" in the problem, which is what the field said when it accepted a
+        // capital and complained about it. The owner typed `TimeTracker` into this field and met no
+        // resistance at all, because that complaint sat on a clipped row; the rule is applied now,
+        // so a capital never survives to be complained about.
         form.Fill(0, "Alpha");
 
-        Assert.Contains("lowercase letters", form.Problems[0], StringComparison.Ordinal);
+        Assert.Equal("alpha", form.Values[0]);
+        Assert.Contains(Naming.NameWasCorrected, form.Problems[0], StringComparison.Ordinal);
+
+        // The note stays while the corrected text does -- it explains why the field holds
+        // something other than what was typed, which is true until that text goes -- and clears
+        // when the field is emptied.
+        form.Fill(0, string.Empty);
+
+        // An empty name has a problem of its own, and a real problem outranks the note -- so what
+        // is asserted here is that the note is gone, not that the line is.
+        Assert.DoesNotContain(Naming.NameWasCorrected, form.Problems[0], StringComparison.Ordinal);
 
         form.Fill(0, "alpha");
 

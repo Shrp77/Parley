@@ -175,6 +175,52 @@ internal static class Naming
             : null;
     }
 
+    /// <summary>What is said when a name had to be corrected as it was typed.</summary>
+    internal const string NameWasCorrected =
+        "capitals were lowered and anything but letters, digits and hyphens was dropped";
+
+    /// <summary>
+    /// The name rule applied to what is being typed, rather than reported after the fact.
+    /// </summary>
+    /// <param name="typed">What is in the field.</param>
+    /// <returns>The same name, made acceptable.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Because reporting it was not enough.</b> The owner typed <c>TimeTracker</c> and met no
+    /// resistance: the only thing enforcing lowercase was <see cref="NameProblem"/>'s sentence,
+    /// on a clipped row under a label that had itself overflowed. A field that will not take a
+    /// capital in the first place cannot fail that way, whatever the layout does.
+    /// </para>
+    /// <para>
+    /// <b>It corrects and never completes.</b> Case is folded and disallowed characters are
+    /// dropped, because both are unambiguous — there is exactly one lowercase form of a letter.
+    /// What it does not do is invent: an empty name, or one starting with a digit, is left alone
+    /// for <see cref="NameProblem"/> to refuse, because guessing what somebody meant is how a
+    /// field ends up holding a name they did not choose.
+    /// </para>
+    /// </remarks>
+    internal static string NameCorrection(string? typed)
+    {
+        if (string.IsNullOrEmpty(typed))
+        {
+            return string.Empty;
+        }
+
+        var made = new System.Text.StringBuilder(typed.Length);
+
+        foreach (var character in typed)
+        {
+            var lowered = char.ToLowerInvariant(character);
+
+            if (lowered is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-')
+            {
+                made.Append(lowered);
+            }
+        }
+
+        return made.ToString();
+    }
+
     /// <summary>Why a typed store would be refused, or null.</summary>
     internal static string? StoreProblem(string typed, IReadOnlyList<ProjectSettings> projects)
     {
@@ -293,7 +339,9 @@ internal static class Naming
                 new FormField(
                     "Project name — a label for this machine only, never sent anywhere:",
                     string.Empty,
-                    typed => NameProblem(typed, projects)),
+                    typed => NameProblem(typed, projects),
+                    Correct: NameCorrection,
+                    Corrected: NameWasCorrected),
                 new FormField(
                     "Database path — " + proposed.StoreWhy + ":",
                     proposed.Store ?? ProposedStore("project", projects, entry),
