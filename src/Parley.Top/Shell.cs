@@ -91,6 +91,33 @@ internal sealed class Shell : Window
 
     private readonly BrokerDirectory _directory;
     private readonly Label _status = new() { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
+
+    /// <summary>
+    /// Where every outcome this surface reports is written.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It did not exist, and <see cref="Said"/> was written to nothing.</b> Twenty-odd
+    /// places set it — seated as somebody, the broker refused the join, sorted by name, showing
+    /// archived, an agent retired, a seat released, a log that could not be read — and fifteen test
+    /// files asserted on it, and no line of this surface ever drew it. Every one of those messages
+    /// was computed, checked, and shown to nobody. The owner met it as `j`, a name typed, and
+    /// nothing happening.
+    /// </para>
+    /// <para>
+    /// That is the same shape as the terminal having no colour while <c>ColourTests</c> passed: a
+    /// property the suite holds to and the screen never shows. A test that reads
+    /// <see cref="Said"/> is testing a string; what makes it a message is this label.
+    /// </para>
+    /// <para>
+    /// <b>Always present rather than appearing when there is something to say.</b> A row that comes
+    /// and goes resizes every region under it, and this surface has been bitten three times by what
+    /// happens when regions are resized or rearranged while a read is landing — twice in the review
+    /// gate for 006 alone. One reserved row costs less than a race, and a fixed place to look costs
+    /// a person nothing at all.
+    /// </para>
+    /// </remarks>
+    private readonly Label _message = new() { X = 0, Y = Pos.AnchorEnd(2), Width = Dim.Fill() };
     private readonly List<View> _regions;
     private readonly CancellationTokenSource _reading = new();
 
@@ -184,8 +211,14 @@ internal sealed class Shell : Window
         // who is lost reads. A conventional bar is found without being looked for.
         _status.SetScheme(Colours.StatusBar());
 
+        // No scheme of its own, deliberately. The bar paints a background because it is
+        // furniture that must be found without being looked for; a message is one sentence in
+        // the terminal's own colours, and Colours' rule is that every colour is derived from a
+        // word already on the line -- which a message line, being anything at all, has not got.
+
         // Every region joins the tree here and none ever leaves it. ArrangeLocked carries why:
         // reparenting on a change of view races the main loop's own walk of this list.
+        Add(_message);
         Add(_status);
         Add(Projects);
         Add(Agents);
@@ -392,7 +425,7 @@ internal sealed class Shell : Window
             only.X = 0;
             only.Y = 0;
             only.Width = Dim.Fill();
-            only.Height = Dim.Fill(1);
+            only.Height = Dim.Fill(2);
         }
         else if (stacked)
         {
@@ -408,7 +441,7 @@ internal sealed class Shell : Window
                 pane.X = 0;
                 pane.Y = 0;
                 pane.Width = Dim.Fill();
-                pane.Height = Dim.Fill(1);
+                pane.Height = Dim.Fill(2);
             }
         }
         else
@@ -419,12 +452,12 @@ internal sealed class Shell : Window
             panes[0].X = 0;
             panes[0].Y = 0;
             panes[0].Width = Dim.Percent(40);
-            panes[0].Height = Dim.Fill(1);
+            panes[0].Height = Dim.Fill(2);
 
             panes[1].X = Pos.Right(panes[0]);
             panes[1].Y = 0;
             panes[1].Width = Dim.Fill();
-            panes[1].Height = Dim.Fill(1);
+            panes[1].Height = Dim.Fill(2);
         }
 
         _arranged = true;
@@ -687,6 +720,14 @@ internal sealed class Shell : Window
                 ? chosen.State.Contains("retired", StringComparison.Ordinal)
                     ? [new RegionAction('i', Withdrawing.ReinstateTitle, Reinstate)]
                     : new[] { new RegionAction('r', Withdrawing.Title, Withdraw) }
+                : Array.Empty<RegionAction>(),
+
+            // Taking the seat under the cursor, offered rather than left as a bare Enter. The
+            // surface's rule is that no action exists only as a key, and a row carrying somebody's
+            // own name is exactly where they will press Enter before reading anything.
+            .. Seats is not null && Held is null && Agents.Selected is { Seat: true } mine
+                && Mine(mine.Name)
+                ? new[] { new RegionAction('t', TakeThisSeat + mine.Name, SeatSelected) }
                 : Array.Empty<RegionAction>(),
 
             .. Seats is null
@@ -1044,7 +1085,36 @@ internal sealed class Shell : Window
     internal const string HideArchivedTitle = "Hide archived conversations";
 
     /// <summary>What the last action said, for the person and for a test.</summary>
-    internal string Said { get; private set; } = string.Empty;
+    /// <remarks>
+    /// <b>Setting this draws it.</b> The property and the label are one thing on purpose: the
+    /// defect it replaced was twenty callers setting a string that reached no screen, and a design
+    /// where a caller has to remember a second step is that defect waiting to happen again.
+    /// </remarks>
+    internal string Said
+    {
+        get;
+
+        private set
+        {
+            field = value;
+
+            // Neutralised on the way to the screen, not on the way in. Some of these sentences are
+            // this surface's own words and some are a broker's -- `The broker refused the join:`
+            // ends with whatever came back from the far end of a gRPC call -- and a message line is
+            // as good a place to smuggle an escape sequence as a transcript is.
+            _message.Text = Safe.Text(value);
+        }
+    } = string.Empty;
+
+    /// <summary>Puts a sentence on the message line.</summary>
+    /// <param name="said">What to say.</param>
+    /// <remarks>
+    /// A seam, like <see cref="Opener"/>, and for the same kind of reason: about half of what this
+    /// line ever shows is a broker's words rather than this surface's, and there is no way to make
+    /// a real broker say a chosen thing. What has to be checked is that whatever it says is
+    /// neutralised on the way to the screen, and that needs a caller who can choose the words.
+    /// </remarks>
+    internal void Report(string said) => Said = said;
 
     /// <summary>Opens the dialog that makes a repository an agent of this project.</summary>
     /// <returns>When the dialog is open.</returns>
@@ -1125,6 +1195,148 @@ internal sealed class Shell : Window
                 Reported(project))
             : Task.CompletedTask;
 
+    /// <summary>What taking the seat under the cursor is called, before the name.</summary>
+    internal const string TakeThisSeat = "Take the seat: ";
+
+    /// <summary>What a retired seat's dialog is called.</summary>
+    internal const string RetiredSeatTitle = "That seat is retired";
+
+    /// <summary>Taking a retired seat back.</summary>
+    internal const string ReinstateAndSit = "Reinstate it and take it";
+
+    /// <summary>Leaving a retired seat alone.</summary>
+    internal const string LeaveRetired = "Leave it retired";
+
+    /// <summary>
+    /// Takes the seat the person is standing on.
+    /// </summary>
+    /// <returns>When the seat has been taken, or the dialog that has to come first is open.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Enter on a seat takes it, which is what somebody expects of a row with their own name on
+    /// it.</b> Before this, the only way in was `j` and typing the name back — which works, and
+    /// which nobody guesses when the name is already on the screen under the cursor.
+    /// </para>
+    /// <para>
+    /// <b>A retired seat asks first, and the asking is the point.</b> The broker refuses a retired
+    /// agent's attach outright, so Enter would otherwise be a keystroke that reports a failure and
+    /// leaves the person to find `i`. Reinstating is an operator operation (§10.2) and this surface
+    /// does not take one silently — but a seat is the person's own name rather than another agent's,
+    /// so what it needs is a sentence and a deliberate answer, not a name typed back. That is the
+    /// same distinction the withdrawal doors already draw between describing and destroying.
+    /// </para>
+    /// </remarks>
+    internal Task SeatSelected()
+    {
+        // `Current` rather than `Projects.Selected`, which is the fourth time that distinction has
+        // mattered here. The projects region is off screen in a project view and its selection is
+        // null in any fixture that never filled it, so a seat taken through it would be a seat
+        // taken in no project at all.
+        if (App is not { } app
+            || Seats is null
+            || Held is not null
+            || Current is not { } project
+            || Agents.Selected is not { Seat: true } row
+            || !Mine(row.Name))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (Agents.SelectedStanding is { Retired: true })
+        {
+            var dialog = Prompting.Choose(
+                RetiredSeatTitle,
+                $"'{row.Name}' is a seat an operator withdrew, so the broker will refuse it as it "
+                + "stands. Reinstating puts the name back in the registry and then seats you in it; "
+                + "nothing else about the deployment changes.",
+                [LeaveRetired, ReinstateAndSit]);
+
+            var token = Prompting.Open(app, dialog);
+
+            dialog.Done += (_, chosen) =>
+            {
+                Prompting.Close(app, token);
+
+                if (chosen != ReinstateAndSit)
+                {
+                    return;
+                }
+
+                Queue(async cancellationToken =>
+                {
+                    // Through Withdrawing, which is the one file an operator operation is reached
+                    // from. SurfaceTests holds that, and it is the check rather than a convention.
+                    await Withdrawing.ReinstateSeatAsync(
+                        new BrokerClient(_directory.ClientFor(project)), row.Name, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    await TakeSeatAsync(project, Person(row.Name), cancellationToken)
+                        .ConfigureAwait(false);
+                });
+            };
+
+            return Task.CompletedTask;
+        }
+
+        Queue(cancellationToken => TakeSeatAsync(project, Person(row.Name), cancellationToken));
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>The person's half of a seat's name.</summary>
+    /// <param name="seat">The agent name a seat row carries.</param>
+    /// <returns>The role, which is what a person types when they join.</returns>
+    /// <remarks>
+    /// <b>A seat is named by the person and the machine is added.</b> <c>Seat.TryRead</c> takes
+    /// <c>arvind</c> and makes <c>arvind@this-machine</c>; handing it <c>arvind@test</c> whole is
+    /// refused as not a name. The row carries the whole thing, so the halves have to be separated
+    /// here — a first draft passed the row's name straight through and every Enter reported that
+    /// the name on the screen was not a name.
+    /// </remarks>
+    private static string Person(string seat) =>
+        AgentName.TryCreate(seat, out var name) ? name.Role : seat;
+
+    /// <summary>Whether a seat on this row would be seated under the name it shows.</summary>
+    /// <param name="seat">The agent name a seat row carries.</param>
+    /// <returns>Whether its machine is this one.</returns>
+    /// <remarks>
+    /// <b>A seat names a machine, and taking one only ever seats you on yours.</b> Pressing Enter
+    /// on <c>arvind@somewhere-else</c> would seat <c>arvind@here</c> — a different agent from the
+    /// row under the cursor, appearing somewhere else in the list, while the row pressed carried on
+    /// belonging to somebody at another desk. Offering nothing is the honest answer: that seat is
+    /// not this person's to take.
+    /// </remarks>
+    private static bool Mine(string seat) =>
+        AgentName.TryCreate(seat, out var name)
+        && string.Equals(name.Machine, MachineName.Current, StringComparison.Ordinal);
+
+    /// <summary>Seats the person under one name and says what happened.</summary>
+    /// <param name="project">The project to sit in.</param>
+    /// <param name="name">The seat's name.</param>
+    /// <param name="cancellationToken">Cancels the attach.</param>
+    /// <returns>When the seat is taken or refused.</returns>
+    /// <remarks>
+    /// Shared by the key and by the dialog that types a name, so both report the same way and both
+    /// go through <c>SeatBook</c>'s guard. A second path that seated somebody without it is how the
+    /// one thing this surface actually protects would be lost.
+    /// </remarks>
+    private async Task TakeSeatAsync(
+        ProjectSettings project, string name, CancellationToken cancellationToken)
+    {
+        var registry = await BrokerDirectory.ReadAsync(async () =>
+            await new BrokerClient(_directory.ClientFor(project))
+                .RegistryAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+
+        var (hold, said) = await AgentsRegion.JoinAsync(
+            Seats!, project, registry.Value, name, cancellationToken).ConfigureAwait(false);
+
+        Held = hold ?? Held;
+        Me = hold?.Seat ?? Me;
+        Said = said;
+
+        await SelectAsync(project, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>Opens the dialog that takes a seat.</summary>
     /// <returns>When the dialog has been opened.</returns>
     internal Task Join()
@@ -1150,22 +1362,9 @@ internal sealed class Shell : Window
                 return;
             }
 
-            Queue(async cancellationToken =>
-            {
-                var registry = await BrokerDirectory.ReadAsync(async () =>
-                    await new BrokerClient(_directory.ClientFor(project))
-                        .RegistryAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
-
-                var (hold, said) = await AgentsRegion.JoinAsync(
-                    Seats, project, registry.Value, typed, cancellationToken)
-                    .ConfigureAwait(false);
-
-                Held = hold ?? Held;
-                Me = hold?.Seat ?? Me;
-                Said = said;
-
-                await SelectAsync(project, cancellationToken).ConfigureAwait(false);
-            });
+            // The same path the key takes, so a name typed and a row chosen are seated alike and
+            // reported alike.
+            Queue(cancellationToken => TakeSeatAsync(project, typed, cancellationToken));
         };
 
         return Task.CompletedTask;
@@ -1414,6 +1613,21 @@ internal sealed class Shell : Window
         if (key == Key.Enter && _place.Viewing == Viewing.Projects)
         {
             _ = OpenAsync();
+
+            return true;
+        }
+
+        // **Enter on a seat takes it**, which is what somebody expects of a row carrying their own
+        // name. The agents list raises no `Accepting` of its own, so there is nothing here to
+        // preempt -- the reason the projects view is singled out above does not apply to it.
+        //
+        // Only a seat. Enter on an agent is left alone: there is no one obvious thing it should do
+        // to a peer, and guessing would be a key that does something different from what the
+        // status line says it does.
+        if (key == Key.Enter && Panes[FocusedRegion] is AgentsRegion
+            && Agents.Selected is { Seat: true })
+        {
+            _ = SeatSelected();
 
             return true;
         }

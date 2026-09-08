@@ -1,5 +1,7 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
+using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -144,6 +146,21 @@ internal sealed class GuardedList : ListView
     /// </remarks>
     private readonly Lock _guard = new();
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <b>The mouse and a direct assignment arrive here, and only here.</b> The key override below
+    /// knows which way the cursor was travelling and carries on that way; a click knows nothing of
+    /// the sort, and a click landing on a heading would leave somebody on a line where every action
+    /// has quietly gone away. Downwards by default, because a heading always has rows under it —
+    /// otherwise it would not have been drawn.
+    /// </remarks>
+    protected override void OnValueChanged(ValueChangedEventArgs<int?> args)
+    {
+        base.OnValueChanged(args);
+
+        Settle(1);
+    }
+
     /// <summary>Replaces everything the list shows, and what is highlighted in it.</summary>
     /// <param name="rows">The lines to show.</param>
     /// <param name="selected">Which row to highlight, or null for none.</param>
@@ -159,6 +176,127 @@ internal sealed class GuardedList : ListView
             SetSource(new ObservableCollection<string>([.. rows]));
 
             SelectedItem = selected;
+        }
+    }
+
+    /// <summary>Which rows the cursor may not rest on, or null when it may rest on any.</summary>
+    /// <remarks>
+    /// <para>
+    /// Set by a region that draws headings among its rows. A heading is not a thing to act on, so
+    /// leaving the cursor free to sit on one gives a person a position where every action has
+    /// quietly gone away — which reads as the surface having broken rather than as the cursor
+    /// being somewhere that means nothing.
+    /// </para>
+    /// <para>
+    /// A predicate rather than a set of indices, because the rows are replaced whole on every
+    /// refresh and a set would be a second thing to swap in step with them.
+    /// </para>
+    /// </remarks>
+    internal Func<int, bool>? Skip
+    {
+        get;
+
+        set
+        {
+            field = value;
+
+            if (value is not null && !_settling)
+            {
+                // Whatever is highlighted now may be a heading: the predicate is set after the
+                // list exists, and rows arrive later still.
+                Settle(1);
+            }
+        }
+    }
+
+    /// <summary>Whether a settle is already running, so the event it raises does not start another.</summary>
+    private bool _settling;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <b>The cursor is moved past a heading after the base has moved it, not instead.</b> The
+    /// toolkit owns what Up, Down, Home, End and the page keys mean, and a version that
+    /// reimplemented them would be a second definition to keep in step — so this lets the list
+    /// move and then carries on in the same direction until the cursor is on something real.
+    /// </remarks>
+    protected override bool OnKeyDown(Key key)
+    {
+        if (Skip is null)
+        {
+            return base.OnKeyDown(key);
+        }
+
+        var before = SelectedItem;
+        var handled = base.OnKeyDown(key);
+        var after = SelectedItem;
+
+        if (after != before)
+        {
+            // Up and back mean "away from the end of the list"; everything else means towards it.
+            // A key that jumped rather than stepped is still travelling one way or the other, and
+            // this only has to know which.
+            Settle(after < before ? -1 : 1);
+        }
+
+        return handled;
+    }
+
+    /// <summary>Moves the cursor off a skipped row, in the direction it was already going.</summary>
+    /// <param name="direction">-1 towards the top, 1 towards the bottom.</param>
+    /// <remarks>
+    /// It turns back at the ends rather than stopping on a heading. A list whose first line is a
+    /// heading — which is every grouped list — would otherwise leave the cursor on it after Home,
+    /// and there is always something below a heading, or the heading would not be there.
+    /// </remarks>
+    private void Settle(int direction)
+    {
+        if (_settling)
+        {
+            return;
+        }
+
+        var count = Source?.Count ?? 0;
+
+        if (count == 0 || Skip is not { } skip)
+        {
+            return;
+        }
+
+        var at = SelectedItem ?? 0;
+
+        while (at >= 0 && at < count && skip(at))
+        {
+            at += direction;
+        }
+
+        if (at < 0 || at >= count)
+        {
+            // Off the end, so come back the other way. The row this lands on is the nearest one
+            // that is not a heading, which is where the cursor was trying to get to.
+            at = Math.Clamp(SelectedItem ?? 0, 0, count - 1);
+
+            while (at >= 0 && at < count && skip(at))
+            {
+                at -= direction;
+            }
+        }
+
+        if (at < 0 || at >= count)
+        {
+            return;
+        }
+
+        // Guarded, because assigning this raises SelectedItemChanged, which settles again. One
+        // move is what is wanted; a second would be a loop between two headings.
+        _settling = true;
+
+        try
+        {
+            SelectedItem = at;
+        }
+        finally
+        {
+            _settling = false;
         }
     }
 

@@ -157,20 +157,23 @@ public sealed class PaintedTests
         driving.Show(shell);
         await Walking.GoAsync(shell, Viewing.Project);
 
-        var region = shell.Agents;
+        // **Asked of the conversations region now, and the move is the point rather than a
+        // convenience.** This guard needs a row that would be tinted if it were not highlighted,
+        // and the agents region has none any more: its states became group headings when the owner
+        // reported them being cut off, headings are the only thing it tints, and a heading is not
+        // selectable. Conversations still colour every row by whether an exchange is open, so the
+        // property is checked where it still exists rather than checked against nothing.
+        var region = shell.Conversations;
 
-        region.Show(
-            [
-                Agent("billing@here", AgentPresence.Running, AgentStatus.Retired),
-                Agent("orders@here", AgentPresence.Running, AgentStatus.Active),
-            ],
-            NodeCatalogue.Empty,
-            null);
+        // Tab onto it: a project view opens on the agents pane, and the guard turns on focus.
+        shell.Move(forwards: true);
+
+        region.Show([Discussion("open-one"), Discussion("open-two")], null);
 
         region.List.SelectedItem = 0;
         driving.App.LayoutAndDraw(true);
 
-        Assert.True(region.List.HasFocus, "the agents list should hold focus on a project view");
+        Assert.True(region.List.HasFocus, "the conversations list should hold focus here");
         Assert.Null(Drawn.Tint(region.List, 0));
         Assert.NotNull(Drawn.Tint(region.List, 1));
     }
@@ -303,4 +306,29 @@ public sealed class PaintedTests
             "threeway",
             DateTimeOffset.UnixEpoch,
             null);
+
+    /// <summary>A conversation with an exchange still open, so its row earns a colour.</summary>
+    /// <param name="id">Its identifier.</param>
+    /// <returns>The summary.</returns>
+    private static ConversationSummary Discussion(string id) =>
+        new(
+            id,
+            [AgentName.Create("orders@here")],
+            1,
+            DateTimeOffset.UnixEpoch,
+            DateTimeOffset.UnixEpoch,
+            true);
+
+    /// <summary>The colour of one group's heading.</summary>
+    /// <param name="region">The agents region.</param>
+    /// <param name="heading">The heading's exact words.</param>
+    /// <returns>Its colour.</returns>
+    private static Color? Heading(AgentsRegion region, string heading)
+    {
+        var at = Drawn.Rows(region.List).IndexOf(heading);
+
+        Assert.True(at >= 0, $"no heading reads '{heading}'");
+
+        return Drawn.Tint(region.List, at);
+    }
 }

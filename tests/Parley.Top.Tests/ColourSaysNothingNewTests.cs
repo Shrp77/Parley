@@ -1,4 +1,4 @@
-using Parley.Client;
+﻿using Parley.Client;
 using Parley.Configuration;
 using Parley.Core;
 using Terminal.Gui.Views;
@@ -104,12 +104,25 @@ public sealed class ColourSaysNothingNewTests
             NodeCatalogue.Empty,
             null);
 
+        // **Asked of the headings, because they are what names a state now.** The states used to be
+        // one per row, in brackets after the name; they are group headings since the owner reported
+        // that a half-width pane cut them off. An agent's own row carries no state and takes no
+        // colour, so comparing every row against every other would be asserting that two names are
+        // different colours — which is not a fact about anything.
         var rows = Drawn.Rows(region.List);
         var tints = Drawn.Tints(region.List);
 
-        for (var one = 0; one < rows.Count; one++)
+        var headings = Enumerable.Range(0, rows.Count)
+            .Where(at => !rows[at].StartsWith("  ", StringComparison.Ordinal))
+            .ToList();
+
+        // Non-vacuity: a version that stopped drawing headings, or indented them, would compare
+        // nothing at all and pass.
+        Assert.True(headings.Count >= 4, $"only {headings.Count} headings were drawn");
+
+        foreach (var one in headings)
         {
-            for (var two = one + 1; two < rows.Count; two++)
+            foreach (var two in headings.Where(other => other > one))
             {
                 if (Phrase(rows[one]) == Phrase(rows[two]))
                 {

@@ -23,6 +23,27 @@ namespace Parley.Top.Tests;
 /// </remarks>
 public sealed class SelectionTests
 {
+    /// <summary>Puts the cursor on the row that names one agent.</summary>
+    /// <param name="region">The region.</param>
+    /// <param name="name">The agent.</param>
+    /// <remarks>
+    /// <b>By name rather than by index, which is the change grouping forced.</b> These tests said
+    /// <c>SelectedItem = 0</c> and meant "the first agent"; row zero is a group heading now, and a
+    /// heading is not selectable — so the old spelling put the cursor nowhere and the region
+    /// correctly answered null. Naming the agent says what the test always meant.
+    /// </remarks>
+    private static void Select(AgentsRegion region, string name)
+    {
+        var rows = Drawn.Rows(region.List);
+        var at = rows.FindIndex(row => row.Trim() == name);
+
+        Assert.True(at >= 0, $"no row names {name}: " + string.Join(" | ", rows));
+
+        region.List.SelectedItem = at;
+
+        Assert.Equal(name, region.Selected?.Name);
+    }
+
     private static AgentRecord Agent(string name) =>
         new(AgentName.Create(name), "mcp", AgentTier.Pull, "/srv", null, null, true, AgentStatus.Active,
             null, AgentPresence.Running);
@@ -33,7 +54,7 @@ public sealed class SelectionTests
         var region = new AgentsRegion();
 
         region.Show([Agent("orders@test")], NodeCatalogue.Empty, null);
-        region.List.SelectedItem = 0;
+        Select(region, "orders@test");
 
         Assert.Equal("orders@test", region.Selected?.Name);
 
@@ -54,7 +75,7 @@ public sealed class SelectionTests
         var catalogue = NodeCatalogue.Empty;
 
         region.Show([Agent("alpha@test"), Agent("orders@test")], catalogue, null);
-        region.List.SelectedItem = 1;
+        Select(region, "orders@test");
 
         Assert.Equal("orders@test", region.Selected?.Name);
 
@@ -74,10 +95,16 @@ public sealed class SelectionTests
         // agent, or the next destructive action would take one they never pointed at.
         var region = new AgentsRegion();
 
+        // **The promise is stronger than it was, and grouping is what made it so.** Landing on the
+        // reason used to answer null; the cursor cannot land on it at all now, because unselectable
+        // lines became an ordinary thing and the list settles off them. Asserted both ways: putting
+        // the cursor there does not leave it there, and where it does leave it is a real agent.
         region.Show([Agent("orders@test")], NodeCatalogue.Empty, "not answering");
+
         region.List.SelectedItem = 0;
 
-        Assert.Null(region.Selected);
+        Assert.NotEqual(0, region.List.SelectedItem);
+        Assert.Equal("orders@test", region.Selected?.Name);
     }
 
     [Fact]
@@ -121,9 +148,7 @@ public sealed class SelectionTests
         var region = new AgentsRegion();
 
         region.Show([Agent("alpha@test"), Agent("orders@test")], NodeCatalogue.Empty, null);
-        region.List.SelectedItem = 1;
-
-        Assert.Equal("orders@test", region.Selected?.Name);
+        Select(region, "orders@test");
 
         region.Show([Agent("alpha@test")], NodeCatalogue.Empty, null);
 
@@ -144,7 +169,7 @@ public sealed class SelectionTests
         var region = new AgentsRegion();
 
         region.Show([Agent("alpha@test"), seat, Agent("zulu@test")], NodeCatalogue.Empty, null);
-        region.List.SelectedItem = 1;
+        Select(region, "mid@test");
 
         Assert.True(region.Selected?.Seat);
     }

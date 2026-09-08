@@ -54,6 +54,25 @@ internal sealed class AgentsRegion : FrameView
     /// <summary>A person holding a seat rather than an agent.</summary>
     internal const string Seated = "seat";
 
+    /// <summary>The heading the seats are grouped under.</summary>
+    /// <remarks>
+    /// Their own group rather than a state they share with software. A seat is a person, and filing
+    /// one under a state a process can be in would answer a different question from the one being
+    /// asked. No standing is quoted here on purpose: <c>SurfaceAgreementTests</c> forbids either
+    /// surface writing one as a literal, and it does not read a comment differently from code —
+    /// which is what makes it a check rather than a habit.
+    /// </remarks>
+    internal const string Seats = "seats — people, not agents";
+
+    /// <summary>The heading a withdrawn seat is grouped under.</summary>
+    /// <remarks>
+    /// <b>Apart from the live ones, and the owner's own deployment is why.</b> Both seats on it
+    /// were retired, and filing them with the takeable ones made a seat that the broker will refuse
+    /// look exactly like one it will not. Enter still explains it, but a list that has to be acted
+    /// on to be understood is a list that has not said what it knows.
+    /// </remarks>
+    internal const string RetiredSeats = "seats — withdrawn, take one to put it back";
+
     /// <summary>What the dialog asking for a seat is called.</summary>
     internal const string JoinTitle = "Take a seat";
 
@@ -78,7 +97,43 @@ internal sealed class AgentsRegion : FrameView
 
     private List<AgentRow> _rows = [];
     private List<AgentStanding> _standing = [];
-    private int _offset;
+
+    /// <summary>
+    /// What each drawn line is: an agent, or a heading and no agent.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A map rather than an offset, and the offset is what grouping broke.</b> This used to be a
+    /// single number — one when a broker's complaint occupied the first line, zero otherwise — and
+    /// <c>Selected</c> subtracted it. Grouping puts a heading above each set of agents, so the
+    /// distance between a line and its agent is no longer constant, and a version that kept
+    /// subtracting would name the agent above the one highlighted. In this region that is the
+    /// difference between retiring the right agent and the wrong one.
+    /// </para>
+    /// <para>
+    /// Null for a heading and for a broker's complaint, which is what makes both unselectable
+    /// without a second list of exceptions to keep in step.
+    /// </para>
+    /// </remarks>
+    private List<AgentRow?> _at = [];
+
+    /// <summary>Whether the first line is a broker's complaint rather than a heading.</summary>
+    /// <remarks>
+    /// Held rather than inferred from the text, because inferring it would mean matching a
+    /// sentence the broker wrote against the headings this surface writes, and a broker whose
+    /// complaint happened to read like a heading would be coloured as one.
+    /// </remarks>
+    private bool _complained;
+
+    /// <summary>What colour each drawn line earns when it is a heading, null when it is not.</summary>
+    /// <remarks>
+    /// <b>A heading takes the colour of the state it names.</b> It would have been simpler to draw
+    /// every heading alike, and <c>ColourSaysNothingNewTests</c> said why not: two states a person
+    /// has to tell apart must not be the same colour. The heading <i>is</i> the state now, so it is
+    /// the thing that has to carry it — and the rule still holds the way it always did, because the
+    /// state is also written out in words and survives the colour being stripped.
+    /// </remarks>
+    private List<Color?> _tone = [];
 
     internal AgentsRegion()
     {
@@ -87,23 +142,24 @@ internal sealed class AgentsRegion : FrameView
         SetScheme(Colours.Region(Colours.Agents));
         Add(_list);
         Lists.Tint(_list, Tint);
+
+        // Headings and a broker's complaint are lines with no agent behind them, and the map says
+        // which those are. Read through the same field `Selected` reads, so the cursor can never
+        // rest somewhere this region would answer null for.
+        _list.Skip = row => row >= 0 && row < _at.Count && _at[row] is null;
     }
 
     /// <summary>The rows as drawn, in order.</summary>
     internal IReadOnlyList<AgentRow> Rows => _rows;
 
-    /// <summary>Whichever row the person is on, or null when there are none.</summary>
+    /// <summary>Whichever row the person is on, or null when they are on a heading.</summary>
     /// <remarks>
-    /// The offset is why this is not simply an index into the rows. When the broker could not be
-    /// asked, the reason occupies the first line and the rows follow it — so a person on the third
-    /// line is on the second agent, and a version that forgot that would answer with the agent
-    /// above the one highlighted. In this region that is the difference between retiring the right
-    /// agent and the wrong one.
+    /// Read through <see cref="_at"/> rather than by arithmetic. Headings and a broker's complaint
+    /// are lines with no agent behind them, so "which agent is highlighted" has a null answer for
+    /// some lines and no amount of index maths makes it otherwise.
     /// </remarks>
     internal AgentRow? Selected =>
-        _list.SelectedItem is { } at && at - _offset >= 0 && at - _offset < _rows.Count
-            ? _rows[at - _offset]
-            : null;
+        _list.SelectedItem is { } at && at >= 0 && at < _at.Count ? _at[at] : null;
 
     /// <summary>The list, so a test can pick a row by its text.</summary>
     internal ListView List => _list;
@@ -191,38 +247,175 @@ internal sealed class AgentsRegion : FrameView
         var standing = Standing.Join(
             registry, new HashSet<string>(catalogue.Roles, StringComparer.Ordinal), Seat.Adapter);
 
-        var lines = rows.Count > 0
-            ? rows.Select(row => Line(row, standing)).ToList()
-            : [Safe.Text(problem) is { Length: > 0 } why ? why : Nothing];
+        var lines = new List<string>();
+        var map = new List<AgentRow?>();
+        var tone = new List<Color?>();
 
-        if (problem is not null && rows.Count > 0)
+        if (problem is not null)
         {
             // Both, rather than one or the other. The catalogue is still true when the broker is
             // not answering, and saying only "not answering" would hide the half of the picture
             // this machine can still see.
-            lines.Insert(0, Safe.Text(problem));
+            lines.Add(Safe.Text(problem));
+            map.Add(null);
+            tone.Add(Colours.Bad);
         }
 
-        var offset = problem is null || rows.Count == 0 ? 0 : 1;
-        var at = keep is null ? -1 : rows.ToList().FindIndex(row => row.Name == keep);
+        if (rows.Count == 0)
+        {
+            if (problem is null)
+            {
+                lines.Add(Nothing);
+                map.Add(null);
+                tone.Add(null);
+            }
+        }
+        else
+        {
+            foreach (var group in Grouped(rows, standing))
+            {
+                lines.Add(group.Heading);
+                map.Add(null);
+                tone.Add(Shade(group.Rows[0], standing));
 
-        // The selection follows the agent rather than the position. A refresh that moved
-        // somebody's highlight onto a different agent is how a destructive action gets taken
-        // against the wrong one, and this region is where the destructive actions are.
+                foreach (var row in group.Rows)
+                {
+                    lines.Add(Line(row));
+                    map.Add(row);
+                    tone.Add(null);
+                }
+            }
+        }
+
+        // The selection follows the agent rather than the position. A refresh that moved somebody's
+        // highlight onto a different agent is how a destructive action gets taken against the wrong
+        // one, and this region is where the destructive actions are.
         //
-        // The offset goes in with the rows, under the list's guard: `Selected` subtracts it from
-        // the highlighted line, so a moment where one has been swapped and the other has not is a
-        // moment where this region names the wrong agent.
+        // Grouping makes that matter more rather than less: an agent whose state changes moves to a
+        // different group, so its line number changes for a reason that has nothing to do with the
+        // person's cursor.
+        var at = keep is null ? -1 : map.FindIndex(row => row?.Name == keep);
+
+        // The map goes in with the rows, under the list's guard. A moment where one has been
+        // swapped and the other has not is a moment where this region names the wrong agent.
         _list.Replace(
             [.. lines],
-            at >= 0 ? at + offset : rows.Count > 0 ? offset : null,
+            at >= 0 ? at : map.FindIndex(row => row is not null) is var first && first >= 0 ? first : null,
             also: () =>
             {
                 _rows = [.. rows];
                 _standing = [.. standing];
-                _offset = offset;
+                _at = map;
+                _tone = tone;
+                _complained = problem is not null;
             });
     }
+
+    /// <summary>One heading and the agents under it.</summary>
+    /// <param name="Heading">What the group is called.</param>
+    /// <param name="Rows">Its agents, alphabetically.</param>
+    internal sealed record AgentGroup(string Heading, IReadOnlyList<AgentRow> Rows);
+
+    /// <summary>Groups agents by where they stand, seats first.</summary>
+    /// <param name="rows">Every agent.</param>
+    /// <param name="standings">What the shared derivation says about each.</param>
+    /// <returns>The groups, in the order they are drawn.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The state moved from the row to the heading because it did not fit.</b> A line was
+    /// <c>name [standing] owns workspace</c>, and in the half-width pane a project view gives this
+    /// region, a 27-character agent name and a 50-character standing are over the width before the
+    /// ownership line begins — so the one fact a person is looking for was the one cut off. Said
+    /// once above a group, it is always readable, and the rows below it are short enough to be
+    /// scanned.
+    /// </para>
+    /// <para>
+    /// <b>Seats first, and their own group.</b> A seat is a person rather than an agent, so
+    /// grouping it under a state it shares with software would answer a different question from
+    /// the one being asked. It is also what somebody looks for first, being their own.
+    /// </para>
+    /// <para>
+    /// The remaining groups are ordered by how much they ask of the reader: what is running, what
+    /// could be, what will not be, and what an operator withdrew. Alphabetical within a group,
+    /// because the order of two agents in the same state carries no information and a stable order
+    /// is what lets an eye return to where it was.
+    /// </para>
+    /// </remarks>
+    internal static IReadOnlyList<AgentGroup> Grouped(
+        IReadOnlyList<AgentRow> rows,
+        IReadOnlyList<AgentStanding> standings)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        ArgumentNullException.ThrowIfNull(standings);
+
+        var groups = rows
+            .GroupBy(row => Heading(row, standings.FirstOrDefault(s => s.Name == row.Name)))
+            .Select(group => new AgentGroup(
+                group.Key,
+                [.. group.OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase)]))
+            .ToList();
+
+        return [.. groups.OrderBy(group => Rank(group.Heading)).ThenBy(
+            group => group.Heading, StringComparer.Ordinal)];
+    }
+
+    /// <summary>Which group one agent belongs in.</summary>
+    /// <param name="row">The agent.</param>
+    /// <param name="standing">What the shared derivation says about it, when it says anything.</param>
+    /// <returns>The heading.</returns>
+    /// <remarks>
+    /// A seat is filed by whether it can be taken rather than by a state software can be in, and
+    /// everything else takes the shared derivation's own phrase — so a reworded standing moves its
+    /// group rather than quietly growing a second one beside it.
+    /// </remarks>
+    private static string Heading(AgentRow row, AgentStanding? standing) =>
+        row.Seat
+            ? standing is { Retired: true } ? RetiredSeats : Seats
+            : standing?.Standing ?? row.State;
+
+    /// <summary>What colour a group's heading earns from the state it names.</summary>
+    /// <param name="first">Any agent in the group; they all stand in the same place.</param>
+    /// <param name="standings">What the shared derivation says about each agent.</param>
+    /// <returns>The colour, or null when the state earns none.</returns>
+    /// <remarks>
+    /// Read from the typed standing rather than from the heading's words, for the reason the row
+    /// colours were: these facts arrive as booleans, and matching the words back out would be a
+    /// second derivation of something the shared one already decided.
+    /// </remarks>
+    private static Color? Shade(AgentRow first, IReadOnlyList<AgentStanding> standings)
+    {
+        var standing = standings.FirstOrDefault(s => s.Name == first.Name);
+
+        return standing is null ? null
+            : standing.Seat ? Colours.Seated
+            : standing.Retired ? Colours.Bad
+            : standing.Running ? Colours.Good
+            : standing.StartableHere ? Colours.Warn
+            : Colours.Quiet;
+    }
+
+    /// <summary>Where a group sits in the order.</summary>
+    /// <param name="heading">The group's name.</param>
+    /// <returns>Its rank, lower first.</returns>
+    /// <remarks>
+    /// Matched against the shared derivation's own phrases rather than re-deriving the state, so a
+    /// reworded standing moves its group rather than silently falling to the end. Anything
+    /// unrecognised sorts between "can be started" and "retired", which is where a state nobody has
+    /// ranked yet is least misleading.
+    /// </remarks>
+    private static int Rank(string heading) => heading switch
+    {
+        Seats => 0,
+        RetiredSeats => 1,
+        Standing.Running => 2,
+        Standing.NeverRun => 3,
+        Standing.Idle => 4,
+        Standing.OnlyWhenOpened => 6,
+        Standing.NoMachine => 7,
+        Standing.NeverRunStuck => 8,
+        Standing.Retired => 10,
+        _ => 5,
+    };
 
     /// <summary>
     /// Opens the dialog that seats a person, and seats them if they name themselves acceptably.
@@ -374,20 +567,21 @@ internal sealed class AgentsRegion : FrameView
 
     /// <summary>How one row reads.</summary>
     /// <param name="row">The row.</param>
-    /// <param name="standings">What the shared derivation says about each agent.</param>
-    /// <returns>The line, with every fact in words.</returns>
-    private static string Line(AgentRow row, IReadOnlyList<AgentStanding> standings)
-    {
-        // The phrase comes from the shared derivation so the console says the same thing about the
-        // same agent. The row's own State is still what the withdrawal dialog quotes back, because
-        // that one has to match what a person read when they decided.
-        //
-        // The standings are passed in rather than read from the field, because this runs while the
-        // field still holds the previous read's -- the two are swapped together, after.
-        var standing = standings.FirstOrDefault(s => s.Name == row.Name)?.Standing ?? row.State;
-
-        return $"{row.Name}  [{Safe.Text(standing)}]  {row.Owns}  {row.Workspace}";
-    }
+    /// <returns>The line: the agent's name, indented under its group.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The name and nothing else, which is the change.</b> It was
+    /// <c>name [standing] owns workspace</c> — four facts on a line in a pane half a screen wide,
+    /// where the standing was routinely cut off. The standing is the group's heading now, and the
+    /// ownership line and workspace are on the agent's own screen rather than crushed into a list.
+    /// </para>
+    /// <para>
+    /// Indented by two, so a heading sits at column zero and an agent does not. That is the same
+    /// rule the transcript uses to tell a header from a payload, and it survives colour being
+    /// stripped — which is what makes it a rule rather than a decoration.
+    /// </para>
+    /// </remarks>
+    private static string Line(AgentRow row) => "  " + row.Name;
 
     /// <summary>What colour a row earns from where its agent stands.</summary>
     /// <param name="row">Which row.</param>
@@ -409,28 +603,26 @@ internal sealed class AgentsRegion : FrameView
     /// </remarks>
     private Color? Tint(int row)
     {
-        var at = row - _offset;
-
-        // The reason the broker could not be asked, when there is one, occupies the first line.
-        if (_offset == 1 && row == 0)
-        {
-            return Colours.Bad;
-        }
-
-        if (at < 0 || at >= _rows.Count)
+        if (row < 0 || row >= _at.Count)
         {
             return null;
         }
 
-        var name = _rows[at].Name;
-        var standing = _standing.FirstOrDefault(s => s.Name == name);
+        // A heading, or the reason the broker could not be asked. Both are lines with no agent
+        // behind them, and they do not earn the same colour: the complaint is bad news, and a
+        // heading is this surface's own word for a state rather than a fact about any one agent.
+        // A heading, or the reason the broker could not be asked. A heading names a state and
+        // takes that state's colour; the complaint is bad news and takes the colour of bad news.
+        if (_at[row] is not { } here)
+        {
+            return row < _tone.Count ? _tone[row] : null;
+        }
 
-        return standing is null ? null
-            : standing.Seat ? Colours.Seated
-            : standing.Retired ? Colours.Bad
-            : standing.Running ? Colours.Good
-            : standing.StartableHere ? Colours.Warn
-            : Colours.Quiet;
+        // **An agent under a heading takes no colour of its own, and that is the rule rather than
+        // a saving.** The heading above it already says where it stands, in words and in colour;
+        // painting the same fact onto every row beneath would be a colour that says nothing new,
+        // which is the one thing Colours forbids. It was caught by the test that forbids it.
+        return null;
     }
 
     /// <summary>What the shared derivation says about each agent, in the order drawn.</summary>

@@ -595,7 +595,7 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/007-split-terminal-tool/` — 0.20.1. The terminal and the web UI
+- **Active plan**: `specs/007-split-terminal-tool/` — 0.20.2, merged. The terminal and the web UI
   become their own
   tool packages, so changing either no longer stops the broker. Today one executable holds
   everything, an executable cannot be replaced while it runs, and stopping the broker stops the
@@ -743,6 +743,48 @@ below in the form Spec Kit's checks read; this file remains the authority when t
 
   `research.md` carries eight decisions, `contracts/commands.md` the command surface each tool
   exposes.
+
+  **0.20.2 is what the owner found on first use, and one of the three was invisible to the whole
+  suite.** `Shell.Said` was written in twenty-odd places — seated as somebody, the broker refused
+  the join, sorted by name, an agent retired, a log that could not be read — and **read by nothing
+  on screen**. Fifteen test files asserted on the property. Every message this surface produced was
+  computed, checked, and shown to nobody; the owner met it as `j`, a name typed, and nothing
+  happening. That is the same shape as the terminal having no colour while `ColourTests` passed: a
+  property the suite holds to and the screen never shows. There is a message line above the status
+  bar now, always present rather than appearing on demand — a row that comes and goes resizes every
+  region under it, and this surface has been bitten three times by exactly that.
+
+  **Enter on a seat takes it.** The name is already on the screen under the cursor, so that is what
+  somebody presses; `j` and typing the name back works and nobody guesses it. A retired seat asks
+  first, because reinstating is an operator operation and this surface does not take one silently —
+  but it is the person's own name, so what it needs is a sentence and a deliberate answer rather
+  than a name typed back. The call lives in `Withdrawing` with the other operator operations,
+  because `SurfaceTests` allows `Reinstate` in exactly one file and that check is the point.
+
+  Two defects found while building it, both of which would have shipped:
+
+  - **`Seat.TryRead` takes the person's name and adds the machine**, so passing a row's
+    `arvind@test` whole is refused as not a name. Every Enter would have reported that the name on
+    the screen was not a name.
+  - **A seat on another machine would have seated you under a different name.** `arvind@elsewhere`
+    resolves to `arvind@here` — a different agent, in a different row, while the row pressed went on
+    belonging to somebody at another desk. Not offered at all now.
+
+  **Reading a region's selection from another view is a defect that has now appeared four times.**
+  `SeatSelected` read `Projects.Selected`, which is null in a project view. `Shell.Current` is the
+  answer and was already there.
+
+  **The agents list groups by state.** The owner reported the state scrolling off the end of a row,
+  and it did: a row was `name [standing] owns workspace`, and in the half-width pane a project view
+  gives that region, a 27-character name and a 50-character standing are over the width before the
+  ownership line begins — so the one fact somebody opens the screen to read was the one cut off. The
+  state is a heading now, said once, and a row is a name indented under it. Seats are their own
+  group and come first, because a seat is a person rather than an agent.
+
+  Grouping cost three checks their meaning, and each was moved rather than deleted: the
+  highlighted-row guard went to the conversations region, which still tints selectable rows; the
+  colour comparison now asks the headings, which is where a state is drawn; and the selection tests
+  name the agent instead of its index, which is what they always meant.
 
 - Previous: `specs/006-three-view-operator/` — three drill-down views (projects, one project,
   one conversation) replacing 005's four regions on one screen, on **both** surfaces; and the four
