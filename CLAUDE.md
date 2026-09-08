@@ -69,6 +69,56 @@ src/Parley.Client    What a client of a broker needs in order to show a deployme
                     the exchange closed. Two surfaces each writing that themselves is how they
                     come to disagree about what a person has seen.
 
+src/Parley.Setup    What a person does to a machine so Parley can run on it: enrolling a
+                    repository as an agent, naming projects, resolving where the per-machine files
+                    live, and installing or reading the autostart entry. References
+                    Parley.Configuration and Parley.Transport.
+
+                    A project of its own for the reason Parley.Configuration is one: two programs
+                    do this and cannot otherwise share one implementation. `parley` does it from a
+                    shell and `parley-top` from a screen, and the terminal does not reimplement
+                    it — it runs the same commands in process and prints what they said, so a
+                    machine configured from a screen is configured exactly as one configured from
+                    a shell.
+
+                    Not folded into Parley.Configuration, which it otherwise resembles, because
+                    Parley.Mcp references that one: an agent's own server would then carry the
+                    code that writes its launch configuration. Harmless at runtime and wrong as a
+                    surface.
+
+                    The transport is here because destroying or listing a project asks its broker
+                    whether it is reachable, and what it holds, before touching anything. That is
+                    a client of a broker; it is not a route to a store.
+
+                    **There is no store here and there must never be.** GraphTests walks it.
+
+src/Parley.Top      The terminal operator surface, and its own tool — `parley-top` — rather than a
+                    subcommand of the broker's. References Parley.Client, Parley.Configuration,
+                    Parley.Setup and Parley.Transport.
+
+                    **Windows cannot replace a running executable.** While the terminal lived
+                    inside `parley`, every terminal change required stopping the broker, and
+                    SPEC.md §12 says what that costs: the node stops, tells every agent it started
+                    to quit, and the process is what held everything each had learned. The
+                    churniest component in the repository was forcing the most expensive restart —
+                    29 of the source files changed on main since c85a271 were the terminal, 1 was
+                    the broker.
+
+                    `parley top` still works and forwards here, passing the raw command line minus
+                    the verb and parsing nothing. One parser per tool rather than one and an
+                    imitation of it. When the tool is absent it names it and how to install it,
+                    rather than "unknown command", which would be untrue.
+
+                    **There is no store here and there must never be**, checked by the same
+                    transitive walk Parley.Client and Parley.Web are held to. That walk replaced
+                    the one that found the leak: while the terminal had no project of its own,
+                    `GraphTests` could say nothing about it at all, so its store-freedom was an
+                    intention rather than a check.
+
+                    `BuildIdentity` here is its own, not the broker's: this opens no store, so a
+                    schema number would be a claim about somebody else's build — and the type that
+                    reads one references the assembly that owns the store.
+
 src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of the broker
                     rather than part of it. References Transport and Configuration and
                     nothing else: there is no SQLite on its graph and there must never be,
@@ -183,6 +233,25 @@ tests/Parley.Client.Tests What both surfaces share: seating's guards, the transc
                           from either this or the console. Deliberately does NOT reference
                           Microsoft.AspNetCore.Mvc.Testing — a web host reachable from here is how
                           a test of client behaviour quietly becomes a test of the console again.
+tests/Parley.Top.Tests    The terminal. Driving, Walking and Drawn moved here with it; Loopback,
+                          LoopbackOperator, ToolProcess and TestMachine are linked from
+                          Parley.Cli.Tests rather than copied, because an executable referencing an
+                          executable is a shape MTP does not run. It references Parley.Cli for the
+                          one test that is genuinely about both tools — a project created from the
+                          terminal whose broker comes up, and destroyed there and gone.
+
+                          **`TopProcess` runs the tool out of its own build directory and must.**
+                          A copy of `parley-top` lands beside these tests, and it does not work:
+                          this project also references Parley.Cli, which brings a framework
+                          reference to ASP.NET Core, so several Microsoft.Extensions.Configuration
+                          assemblies resolve from the shared framework and are left out of the
+                          output — while the terminal's own runtime configuration names only the
+                          base framework, and Terminal.Gui's module initializer scans every loaded
+                          assembly on start-up. The co-located copy dies with a
+                          TypeInitializationException before its first line. Nothing ships that
+                          arrangement; it is written down because the failure looks exactly like a
+                          broken tool.
+
 tests/Parley.Web.Tests    The console: the visibility derivation, what it refuses to render
                           raw, and that its project file references nothing that could open
                           a store.
@@ -502,7 +571,7 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/007-split-terminal-tool/` — 0.18.12 so far. The terminal and the web UI
+- **Active plan**: `specs/007-split-terminal-tool/` — 0.19.0. The terminal and the web UI
   become their own
   tool packages, so changing either no longer stops the broker. Today one executable holds
   everything, an executable cannot be replaced while it runs, and stopping the broker stops the
@@ -543,9 +612,52 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   nor the transport, because every tool is about to reference it and anything acquired there is
   acquired by all four.
 
-  Four steps, each shippable: the leak; then `Parley.Top`; then `Parley.WebUi` with the rename and
-  the child-process launch; then the open-exchange warning before a broker stop. `research.md`
-  carries seven decisions, `contracts/commands.md` the command surface each tool exposes.
+  **Step 2 is done (0.19.0): `parley-top` is its own package, and it cost a project the plan did
+  not foresee.** The terminal does not reimplement enrolling a repository or creating a project —
+  it runs the same commands in process and prints what they said, with a remark saying why. Closing
+  over every `Parley.Cli` type it names in non-comment code is 11 files and 4,153 lines, every one
+  of which imports only `Parley.Configuration`, `Parley.Core` and the BCL. That became
+  `Parley.Setup`; `research.md` R8 carries why not `Parley.Configuration` (Parley.Mcp references
+  it, and an agent's server would then carry the code that writes its launch configuration) and why
+  not left where it was (the leak reopened through a wider route).
+
+  Five things learned building it, each written where it happened:
+
+  - **The terminal's tests lost a module initializer in the move.** `TestMachine` fixes the machine
+    half of every agent name; without it a registry holding `orders@test` no longer matched a seat
+    asking for `orders@<this laptop>`, and two seating guards stopped refusing. The guards were
+    intact and the fixture had gone, which is the more dangerous of the two.
+  - **`DriftTests` named two surfaces and there are three.** It read the whole of `Parley.Cli` as
+    "the terminal", so `PruneAsync` — bound by `parley prune` and deliberately by neither screen —
+    counted as bound by a screen. The command line is named as the third surface rather than the
+    operation exempted.
+  - **Two tools in one output directory break the child.** `Parley.Top.Tests` references both, and
+    `Parley.Cli` brings a framework reference to ASP.NET Core, so several
+    `Microsoft.Extensions.Configuration` assemblies resolve from the shared framework and are left
+    out — while the terminal's runtime configuration names only the base framework and
+    Terminal.Gui's module initializer scans every loaded assembly on start-up. The co-located copy
+    dies before its first line. Nothing ships that arrangement, and `TopProcess` says so.
+  - **SC-001 has two halves and the second is easy to miss.** Not stopping the broker is worthless
+    if the script re-registers the autostart entry afterwards: that replaces the scheduled task,
+    which restarts the process, which ends every resident agent anyway — the stop avoided and the
+    cost paid three hundred lines later. Found by reading the script's tail before running it on a
+    live deployment, which is where it would have been paid for real.
+  - **`install.ps1` read the version from `Parley.Cli`'s package**, which a surface-only run never
+    packs, so it stopped with "nothing was packed" on a run that had just packed exactly what it
+    was asked to. Found by running it.
+
+  **`-Only` is what SC-001 actually rests on, and the plan had not designed it.** `-Surfaces`
+  chooses which surfaces a machine installs; `-Only <command>` installs exactly those tools, and
+  the broker is stopped only when its own binary is among them. Verified on a live deployment
+  rather than asserted: `install.ps1 -Only parley-top` with a broker running left the same pid, the
+  same start time, the task Running, the project reachable and every agent registered.
+
+  **No test was lost in the move**, checked rather than claimed: the method listings before and
+  after differ by exactly two, both additions, both named.
+
+  Two steps remain: `Parley.WebUi` with the rename and the child-process launch; then the
+  open-exchange warning before a broker stop. `research.md` carries eight decisions,
+  `contracts/commands.md` the command surface each tool exposes.
 
 - Previous: `specs/006-three-view-operator/` — three drill-down views (projects, one project,
   one conversation) replacing 005's four regions on one screen, on **both** surfaces; and the four

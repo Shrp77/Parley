@@ -137,13 +137,34 @@ cd Parley
 ./install.sh         # Linux, macOS
 ```
 
-That is the whole of it. The script packs both tools and installs them, registers the broker to
+That is the whole of it. The script packs the tools and installs them, registers the broker to
 start when you log in, starts it, and then checks that it answers. It asks where the store
 should go, defaulting to `.parley` in your home directory; `-Store <path>` on Windows or
 `--store <path>` elsewhere answers that in advance, for an unattended run.
 
-`parley` is the operator's tool and the broker itself; `parley-mcp` is the MCP server a launch
-configuration names.
+There are three tools, and which of them a machine wants is a real question:
+
+| Tool | What it is | Installed by default |
+|---|---|---|
+| `parley` | The operator's commands, and the broker itself | Always |
+| `parley-mcp` | The MCP server a launch configuration names | Always |
+| `parley-top` | The terminal a person watches a deployment from | Windows yes, Linux no |
+
+`-Surfaces terminal|web-ui|both|none` on Windows, or `--surfaces` elsewhere, chooses. The
+default is both on Windows and the web UI alone elsewhere, because the machine `install.sh`
+usually runs on has nobody sitting at it — though it can still serve a web UI through an SSH
+tunnel, which is why the default there is not `none`.
+
+**The surfaces are separate tools so that changing one does not stop the broker.** Windows
+cannot replace a running executable, so while the terminal lived inside `parley` every change
+to it meant stopping the broker — and stopping a broker tells every agent it started to quit,
+losing everything each of them had learned. `-Only parley-top` (or `--only parley-top`)
+replaces just the terminal: nothing being unlinked is the broker's, so it is not stopped, no
+autostart entry is re-registered, and nothing in flight is interrupted.
+
+A surface you do not select is not removed. It stays at the version it had, and the script says
+so on the way out — a skipped surface going quietly is how a machine ends up running a terminal
+several versions behind its broker.
 
 **The two checks are the point of the script rather than a flourish.** Each guards a failure
 that otherwise reports success:
@@ -159,7 +180,8 @@ that otherwise reports success:
   shows up as agents failing to attach — in an editor, days later, a long way from here.
 
 The script refuses to replace a file something is holding, and names what to close: an editor
-session with Parley configured, or a broker somebody started by hand. That is the right default —
+session with Parley configured, a terminal somebody has open, or a broker somebody started by
+hand. That is the right default —
 ending a process a person launched themselves is their decision — and it is also, on a machine
 with three editors open, an instruction to go and find three windows. `-Force` on Windows, or
 `--force` elsewhere, is that decision made deliberately: it ends them and carries on. Those
@@ -168,7 +190,9 @@ weakens no check — everything is waited for and then looked for again, and any
 the files is still a refusal.
 
 `./install.ps1 -Uninstall` (or `./install.sh --uninstall`) stops the broker, removes the
-autostart entry, removes both tools, and then checks that they are actually gone. It leaves the
+autostart entry, removes every tool — `-Surfaces` and `-Only` are not consulted, because an
+uninstall that honoured them would leave a tool nothing installs and nothing removes — and then
+checks that they are actually gone. It leaves the
 store and any `.mcp.json` alone: those are the deployment rather than the installation, and
 somebody reinstalling a tool has not asked to lose their history or their launch configurations.
 
@@ -604,6 +628,13 @@ deployment is there in a terminal:
 ```
 parley top
 ```
+
+That is `parley-top`, a tool of its own, and `parley top` forwards to it without reading the
+arguments — so `parley-top` works identically if you would rather type it. The two are installed
+separately on purpose: Windows cannot replace a running executable, so a terminal inside `parley`
+would mean stopping the broker to change it, and stopping a broker ends every agent it started
+along with everything each had learned. On a machine that does not have it, `parley top` says
+which tool provides the command and how to install it.
 
 Three views, one thing at a time. It opens on the projects this machine names, with a line beside
 the highlighted one saying what is in it — how many agents, how many are running, how many
