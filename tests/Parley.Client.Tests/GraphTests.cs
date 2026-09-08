@@ -137,6 +137,99 @@ public sealed class GraphTests
             f => f.StartsWith("Microsoft.AspNetCore", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public void The_terminal_reaches_no_store_by_any_assembly_it_imports()
+    {
+        // **The terminal's graph, asked before the terminal is a project.** Every guard above walks
+        // project references, and the terminal has none of its own: it lives inside `Parley.Cli`,
+        // which owns the store legitimately, so no walk in this file could ever have said anything
+        // about it. Its store-freedom has been an intention, never a check.
+        //
+        // So the terminal's future graph is read from what its sources actually import. `using
+        // Parley.X` is a claim on assembly X, and X's own references are then walked as any other.
+        // When the terminal becomes a project this test is replaced by an ordinary walk from it;
+        // until then this is the only way to ask the question at all.
+        var terminal = RepositoryPath("src/Parley.Cli/Top");
+        var imported = new SortedSet<string>(StringComparer.Ordinal);
+
+        foreach (var file in Directory.EnumerateFiles(terminal, "*.cs", SearchOption.AllDirectories))
+        {
+            foreach (var line in File.ReadLines(file))
+            {
+                if (!line.StartsWith("using Parley.", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                // `using Parley.Client.Views;` is a claim on Parley.Client. Two segments name the
+                // assembly; anything deeper is a namespace inside it.
+                var named = line["using ".Length..].TrimEnd(';', ' ').Split('.');
+
+                if (named.Length >= 2)
+                {
+                    imported.Add($"{named[0]}.{named[1]}");
+                }
+            }
+        }
+
+        Assert.NotEmpty(imported);
+
+        var reached = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var assembly in imported)
+        {
+            var project = RepositoryPath($"src/{assembly}/{assembly}.csproj");
+
+            if (!File.Exists(project))
+            {
+                continue;
+            }
+
+            reached.TryAdd(assembly, "the terminal's own sources");
+            Walk(project, assembly, reached);
+        }
+
+        var breaches = reached
+            .Where(r => Forbidden.Any(f => r.Key.Contains(f, StringComparison.OrdinalIgnoreCase)))
+            .Select(r => $"{r.Key} (via {r.Value})")
+            .ToList();
+
+        Assert.True(
+            breaches.Count == 0,
+            "the terminal has a route to a store: " + string.Join(", ", breaches));
+    }
+
+    [Fact]
+    public void Configuration_reaches_neither_a_store_nor_the_transport()
+    {
+        // **It is about to be referenced by every tool, so anything acquired here is acquired by
+        // all four.** `Parley.Configuration` was already the assembly two programs shared a reader
+        // through; it is now the assembly the broker, the terminal, the web UI and the adapter all
+        // read their per-machine files from. A store added here would put one in a terminal, and a
+        // transport would put a socket in a file reader.
+        //
+        // The transport is included as well as a store because this project's whole claim is that
+        // it knows nothing of brokers. Something that can dial one is something that will.
+        var reached = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        Walk(
+            RepositoryPath("src/Parley.Configuration/Parley.Configuration.csproj"),
+            "Parley.Configuration",
+            reached);
+
+        string[] forbidden = [.. Forbidden, "Parley.Transport", "Grpc"];
+
+        var breaches = reached
+            .Where(r => forbidden.Any(f => r.Key.Contains(f, StringComparison.OrdinalIgnoreCase)))
+            .Select(r => $"{r.Key} (via {r.Value})")
+            .ToList();
+
+        Assert.True(
+            breaches.Count == 0,
+            "Parley.Configuration has acquired something every tool would then carry: "
+            + string.Join(", ", breaches));
+    }
+
     /// <summary>Follows project references from one project file, depth first.</summary>
     /// <param name="path">The project file to read.</param>
     /// <param name="via">How this project was reached, for the failure message.</param>

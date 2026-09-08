@@ -4,8 +4,8 @@ using Parley.Client;
 using Parley.Client.Rendering;
 using Parley.Client.Seating;
 using Parley.Client.Views;
+using Parley.Configuration;
 using Parley.Core;
-using Parley.Headless;
 using Terminal.Gui.Drawing;
 using Xunit;
 

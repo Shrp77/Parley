@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using Grpc.Core;
 using Grpc.Net.Client;
+using Parley.Configuration;
 using Parley.Core;
 using Parley.Headless;
 using Wire = Parley.Transport;

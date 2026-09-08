@@ -1,6 +1,5 @@
 using Parley.Configuration;
 using Parley.Core;
-using Parley.Headless;
 
 namespace Parley.Cli;
 

@@ -4,7 +4,6 @@ using Grpc.Net.Client;
 using Parley.Cli;
 using Parley.Configuration;
 using Parley.Core;
-using Parley.Headless;
 using Wire = Parley.Transport;
 
 // The operator's way in, and the broker's. SPEC.md §10.2 operations, plus the two processes a

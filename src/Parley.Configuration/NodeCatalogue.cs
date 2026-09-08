@@ -2,7 +2,7 @@
 using System.Text.Json;
 using Parley.Core;
 
-namespace Parley.Headless;
+namespace Parley.Configuration;
 
 /// <summary>
 /// What this machine knows about the agents on it: which are here, and how to start them.
@@ -26,6 +26,20 @@ namespace Parley.Headless;
 /// was one: recording *how* to start a repository had been read as consent to run it unwatched,
 /// so the two had to be prised apart. When starting is local configuration the question does not
 /// arise — somebody put this file here and named the repositories in it.
+/// </para>
+/// <para>
+/// <b>It lives in Configuration rather than Headless, and that move fixed a defect.</b> It sat
+/// beside the node because the node reads it, but the terminal reads it too — and
+/// <c>Parley.Headless</c> references <c>Parley.Store</c> for <c>AgentFleet</c>, so the terminal
+/// had a route to a store. No check could catch that: <c>GraphTests</c> walks project references,
+/// and the terminal had no project of its own, living inside the one assembly that owns the store
+/// legitimately.
+/// </para>
+/// <para>
+/// This class never needed to be there. It uses <c>System.Text.Json</c> and <c>Parley.Core</c> and
+/// nothing else in that assembly. Here it is what this project already exists for: a per-machine
+/// file that two programs read and cannot otherwise share a reader for, knowing nothing of
+/// brokers — the same shape as the project manifest beside it.
 /// </para>
 /// </remarks>
 public sealed class NodeCatalogue

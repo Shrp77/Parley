@@ -2,7 +2,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Parley.Configuration;
-using Parley.Headless;
 using Xunit;
 
 namespace Parley.Cli.Tests;

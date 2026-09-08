@@ -103,10 +103,18 @@ public static class Standing
     /// <exception cref="ArgumentNullException"><paramref name="catalogued"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// Takes the roles as plain strings rather than a catalogue object, because
-    /// <c>NodeCatalogue</c> lives in an assembly this one does not reference and must not: the
-    /// console reads this too, and a route from a web page to anything that opens files is the
-    /// dependency <c>GraphTests</c> exists to refuse.
+    /// Takes the roles as plain strings rather than a catalogue object, and keeps doing so now
+    /// that it could do otherwise. This said that <c>NodeCatalogue</c> lived in an assembly this
+    /// one does not reference and must not — true when it was written, and no longer: the reader
+    /// has moved to <c>Parley.Configuration</c>, which this project already references. It was
+    /// there because the terminal reached a store through it, which nothing could check.
+    /// </para>
+    /// <para>
+    /// The strings stay because they were always the better boundary, not merely the available
+    /// one. What this needs is the set of role names; a file reader is a thing that answers that
+    /// question and several others, and its callers reach it from different places — the node from
+    /// a path it was given, a surface from a project it is showing. Narrowing the parameter to what
+    /// is used keeps both callers honest about what they are passing.
     /// </para>
     /// <para>
     /// A catalogue name that is not a well-formed agent name still gets a row, saying so. Dropping

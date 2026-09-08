@@ -1,7 +1,6 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using Parley.Configuration;
-using Parley.Headless;
 
 namespace Parley.Cli;
 

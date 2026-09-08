@@ -502,7 +502,8 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/007-split-terminal-tool/` — the terminal and the web UI become their own
+- **Active plan**: `specs/007-split-terminal-tool/` — 0.18.12 so far. The terminal and the web UI
+  become their own
   tool packages, so changing either no longer stops the broker. Today one executable holds
   everything, an executable cannot be replaced while it runs, and stopping the broker stops the
   node, which SPEC.md §12 says "tells every agent it started to quit" — where "the process holds
@@ -525,6 +526,22 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   reader uses only `System.Text.Json` and `Parley.Core`, so it moves to `Parley.Configuration` at no
   cost. `Parley.Client/Views/AgentStanding.cs` already documents the problem as a workaround it had
   to code around.
+
+  **Step 1 is done (0.18.12): the leak is closed.** `NodeCatalogue` is in `Parley.Configuration`,
+  which is what it always needed — it uses `System.Text.Json` and `Parley.Core` and referenced
+  nothing else in `Parley.Headless`. `Parley.Headless` keeps `Parley.Store` for `AgentFleet` alone.
+
+  **The failing check came first, and that ordering is the point.**
+  `The_terminal_reaches_no_store_by_any_assembly_it_imports` reads every `using Parley.X` under the
+  terminal's sources and walks X's own references, because the terminal has no project to walk
+  from — it lives inside the one assembly that owns the store legitimately, which is exactly why no
+  existing guard could see it. Run before the move it said
+  `the terminal has a route to a store: Parley.Store (via Parley.Headless)`. It is replaced by an
+  ordinary project walk once `Parley.Top` exists.
+
+  `Parley.Configuration` gains a walk of its own in the same change: it must reach neither a store
+  nor the transport, because every tool is about to reference it and anything acquired there is
+  acquired by all four.
 
   Four steps, each shippable: the leak; then `Parley.Top`; then `Parley.WebUi` with the rename and
   the child-process launch; then the open-exchange warning before a broker stop. `research.md`

@@ -41,7 +41,7 @@ internal static class ToolProcess
         // projects and watched the tool refuse — on that machine only, for a reason nothing in
         // the test mentions.
         Parley.Core.BrokerEndpoint.Variable,
-        Parley.Headless.NodeCatalogue.PathVariable,
+        Parley.Configuration.NodeCatalogue.PathVariable,
         Parley.Configuration.ProjectManifest.PathVariable
     ];
 

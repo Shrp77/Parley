@@ -1,7 +1,7 @@
 using Parley.Cli.Top;
 using Parley.Client;
+using Parley.Configuration;
 using Parley.Core;
-using Parley.Headless;
 using Terminal.Gui.Views;
 using Xunit;
 

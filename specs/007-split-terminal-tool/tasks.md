@@ -20,9 +20,9 @@ dependency on an incomplete task in the same phase.
 
 ## Phase 1: Setup
 
-- [ ] T001 Read `specs/007-split-terminal-tool/plan.md`, `research.md` and `contracts/commands.md` before writing code; the seven decisions are settled and are not to be re-litigated during implementation
-- [ ] T002 Open a section for this branch in `REVIEW-LEDGER.md` with a counter table per lens, per the constitution's review gate
-- [ ] T003 Confirm the Linux container path works before relying on it: `podman run --rm -v "<repo>:/src:ro" mcr.microsoft.com/dotnet/sdk:10.0` builds and runs the suite, since CI is unavailable and Linux has already caught two defects Windows passed
+- [x] T001 Read `specs/007-split-terminal-tool/plan.md`, `research.md` and `contracts/commands.md` before writing code; the seven decisions are settled and are not to be re-litigated during implementation
+- [x] T002 Open a section for this branch in `REVIEW-LEDGER.md` with a counter table per lens, per the constitution's review gate
+- [x] T003 Confirm the Linux container path works before relying on it: `podman run --rm -v "<repo>:/src:ro" mcr.microsoft.com/dotnet/sdk:10.0` builds and runs the suite, since CI is unavailable and Linux has already caught two defects Windows passed
 
 ---
 
@@ -37,30 +37,30 @@ other behaviour changes.
 
 ### Probe first — the constitution requires the failure to be seen
 
-- [ ] T004 Extend `tests/Parley.Client.Tests/.../GraphTests` to walk transitively from the terminal's sources (`src/Parley.Cli/Top`) and fail when a store is reachable — **run it and watch it fail** on `NodeCatalogue` → `Parley.Headless` → `Parley.Store`, and record the failure text in `REVIEW-LEDGER.md` before changing any source
-- [ ] T005 Record in the same ledger entry why the existing walk could not have caught this: it starts from `Parley.Client` and `Parley.Web`, and the terminal sits inside `Parley.Cli`, which owns the store legitimately
+- [x] T004 Extend `tests/Parley.Client.Tests/.../GraphTests` to walk transitively from the terminal's sources (`src/Parley.Cli/Top`) and fail when a store is reachable — **run it and watch it fail** on `NodeCatalogue` → `Parley.Headless` → `Parley.Store`, and record the failure text in `REVIEW-LEDGER.md` before changing any source
+- [x] T005 Record in the same ledger entry why the existing walk could not have caught this: it starts from `Parley.Client` and `Parley.Web`, and the terminal sits inside `Parley.Cli`, which owns the store legitimately
 
 ### The move
 
-- [ ] T006 Move `src/Parley.Headless/NodeCatalogue.cs` to `src/Parley.Configuration/NodeCatalogue.cs`, changing only the namespace; it uses `System.Text.Json` and `Parley.Core` and references nothing else in `Parley.Headless`
-- [ ] T007 Update the `using` in every caller: `src/Parley.Cli/EnrollCommand.cs`, `FleetCommand.cs`, `NodeCommand.cs`, `Program.cs`, `ProjectResolution.cs`, `Top/AgentsRegion.cs`, `Top/Shell.cs`, `src/Parley.Headless/AgentFleet.cs`
-- [ ] T008 Confirm `src/Parley.Headless/Parley.Headless.csproj` keeps its `Parley.Store` reference — `AgentFleet` needs it — and add a `<remarks>` on `AgentFleet` saying so, since the assembly's one remaining reason to hold the store should be findable
-- [ ] T009 [P] Add a `<remarks>` to the moved `NodeCatalogue` recording why it lives in `Parley.Configuration`: a per-machine file two programs read, and a reader the terminal must reach without a route to a store
-- [ ] T010 [P] Reword the remark at `src/Parley.Client/Views/AgentStanding.cs:107`, which cites a constraint that will no longer be true. Keep the `IReadOnlySet<string>` boundary and say why it is still right — `Standing.Join` needs role names, not a file reader
+- [x] T006 Move `src/Parley.Headless/NodeCatalogue.cs` to `src/Parley.Configuration/NodeCatalogue.cs`, changing only the namespace; it uses `System.Text.Json` and `Parley.Core` and references nothing else in `Parley.Headless`
+- [x] T007 Update the `using` in every caller: `src/Parley.Cli/EnrollCommand.cs`, `FleetCommand.cs`, `NodeCommand.cs`, `Program.cs`, `ProjectResolution.cs`, `Top/AgentsRegion.cs`, `Top/Shell.cs`, `src/Parley.Headless/AgentFleet.cs`
+- [x] T008 Confirm `src/Parley.Headless/Parley.Headless.csproj` keeps its `Parley.Store` reference — `AgentFleet` needs it — and add a `<remarks>` on `AgentFleet` saying so, since the assembly's one remaining reason to hold the store should be findable
+- [x] T009 [P] Add a `<remarks>` to the moved `NodeCatalogue` recording why it lives in `Parley.Configuration`: a per-machine file two programs read, and a reader the terminal must reach without a route to a store
+- [x] T010 [P] Reword the remark at `src/Parley.Client/Views/AgentStanding.cs:107`, which cites a constraint that will no longer be true. Keep the `IReadOnlySet<string>` boundary and say why it is still right — `Standing.Join` needs role names, not a file reader
 
 ### Make it checkable
 
-- [ ] T011 Add a `GraphTests` walk from `Parley.Configuration` asserting it reaches neither a store nor the transport; it is about to be referenced by every tool, so anything acquired there is acquired by all four
-- [ ] T012 Run the extended walk and confirm it now passes, and that the non-vacuity assertions in `GraphTests` still hold — a walk that resolves nothing passes for the wrong reason
-- [ ] T013 Bump `VersionPrefix` in `Directory.Build.props` (patch) in this same change
-- [ ] T014 Record the fix in `CLAUDE.md` under the active plan: what the leak was, why nothing caught it, and where the reader now lives
-- [ ] T015 Full suite on Windows and in the Linux container; both green before merge
+- [x] T011 Add a `GraphTests` walk from `Parley.Configuration` asserting it reaches neither a store nor the transport; it is about to be referenced by every tool, so anything acquired there is acquired by all four
+- [x] T012 Run the extended walk and confirm it now passes, and that the non-vacuity assertions in `GraphTests` still hold — a walk that resolves nothing passes for the wrong reason
+- [x] T013 Bump `VersionPrefix` in `Directory.Build.props` (patch) in this same change
+- [x] T014 Record the fix in `CLAUDE.md` under the active plan: what the leak was, why nothing caught it, and where the reader now lives
+- [x] T015 Full suite on Windows and in the Linux container; both green before merge
 
 ### Review gate for Step 1
 
-- [ ] T016 Lens 1 (correctness and concurrency) × 3 consecutive clean, each probing something new, logged in `REVIEW-LEDGER.md`
-- [ ] T017 Lens 2 (security and data integrity) × 3 consecutive clean, logged
-- [ ] T018 Lens 3 (API surface and maintainability) × 3 consecutive clean, logged
+- [x] T016 Lens 1 (correctness and concurrency) × 3 consecutive clean, each probing something new, logged in `REVIEW-LEDGER.md`
+- [x] T017 Lens 2 (security and data integrity) × 3 consecutive clean, logged
+- [x] T018 Lens 3 (API surface and maintainability) × 3 consecutive clean, logged
 
 **Checkpoint**: the terminal cannot reach a store, proved by a check that failed before the fix
 (SC-004). Nothing about packaging has changed yet.
