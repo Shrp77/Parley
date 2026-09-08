@@ -67,6 +67,17 @@ public sealed class NodeCatalogueWatchTests : IDisposable
             Assert.True(
                 await log.UntilAsync(l => l.Said("Rejoining with:"), TimeSpan.FromSeconds(40), ct),
                 $"the node did not rejoin after its catalogue changed:{Environment.NewLine}{log}");
+
+            // **Waited for here rather than asserted after the process is stopped.** The broker
+            // writes this line when it accepts the rejoin, which is necessarily after the node
+            // announced one -- so waiting only for the announcement and then killing the process
+            // is a race the test loses whenever the machine is busy. It lost it on Linux under the
+            // parallel suite while passing three times out of three in isolation, and the log it
+            // printed showed the rejoin had happened: the product was right and the test was
+            // early.
+            Assert.True(
+                await log.UntilAsync(l => l.Said("Can start", "billing"), TimeSpan.FromSeconds(40), ct),
+                $"the broker was never told the added role could be started:{Environment.NewLine}{log}");
         }
         finally
         {
