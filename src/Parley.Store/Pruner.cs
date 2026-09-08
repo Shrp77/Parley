@@ -270,6 +270,43 @@ public sealed class Pruner(SqliteConnection connection)
                 OR unixepoch(created_utc) <= @NowSeconds - @MaximumAgeSeconds);
         """;
 
+    /// <summary>
+    /// Removes instructions past the age cap, whatever became of them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Its own statement rather than a clause on the message delete, and the separation is the
+    /// point.</b> That statement carries three floors — an exchange that may still be replayed,
+    /// the deduplication window, an inbox nobody has read — and not one of them means anything for
+    /// an instruction. Sharing it would carry predicates that are always true here and invite the
+    /// next reader to work out whether they matter.
+    /// </para>
+    /// <para>
+    /// <b>Aged from <c>issued_utc</c>, and this is the trap worth naming.</b> The schema pairs a
+    /// settled outcome with a settled instant, so a row still running has none by construction. A
+    /// rule measured from settlement would therefore never reach the rows nothing ever settled —
+    /// which is exactly the set most in need of a bound. An unbounded table can hide inside a
+    /// retention policy that looks complete.
+    /// </para>
+    /// <para>
+    /// No floor, because there is nothing an instruction is still doing at the age cap. It is not
+    /// replayed, it is not deduplicated against, and nobody is waiting to collect it: §11.5 makes
+    /// delivery the node's, so an instruction that was going to be delivered has been. What is left
+    /// is a record, and §9.4's argument against a permanent record applies to it exactly as it
+    /// applies to traffic.
+    /// </para>
+    /// <para>
+    /// Unbatched, unlike the message delete. That one batches because it walks a log of hundreds of
+    /// thousands; instructions are typed by a person, one at a time, and a deployment that has
+    /// enough of them to need batching has a different problem.
+    /// </para>
+    /// </remarks>
+    private const string DeleteInstructions =
+        """
+        DELETE FROM instructions
+         WHERE unixepoch(issued_utc) <= @NowSeconds - @MaximumAgeSeconds;
+        """;
+
     private readonly SqliteConnection _connection =
         connection ?? throw new ArgumentNullException(nameof(connection));
 
@@ -373,7 +410,20 @@ public sealed class Pruner(SqliteConnection connection)
             contended += batch.Count - went - surviving;
         }
 
-        return new PruneResult(removed, held, contended, capped);
+        // After the messages, and outside their batching. One statement, one lock, and it is
+        // ordinary for it to remove nothing: instructions are issued by hand.
+        using var instructions = WriteScope.Begin(_connection, ambient: null);
+
+        var instructionsRemoved = await _connection.ExecuteAsync(
+            new CommandDefinition(
+                DeleteInstructions,
+                parameters,
+                instructions.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        instructions.Complete();
+
+        return new PruneResult(removed, held, contended, capped, instructionsRemoved);
     }
 
     /// <summary>Binds a batch of identifiers alongside the windows the floor is re-checked on.</summary>

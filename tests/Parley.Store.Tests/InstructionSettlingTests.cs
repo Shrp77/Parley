@@ -5,7 +5,7 @@ using Xunit;
 namespace Parley.Store.Tests;
 
 /// <summary>
-/// What happens to an agent's reply when two settlements race, and one of them is wrong.
+/// First-come settlement, and what it costs the loser.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,6 +18,12 @@ namespace Parley.Store.Tests;
 /// First-wins is the right rule and these tests are not an argument against it. They pin what it
 /// costs, because the cost is invisible: the loser is discarded silently, and the loser is the only
 /// party that ever knows what the agent said.
+/// </para>
+/// <para>
+/// <b>Which is why the broker must not settle an instruction because it stopped waiting.</b> That
+/// was the defect, and it lived one layer up — the rule here then did its job perfectly on a record
+/// that should still have been open, and the agent's answer arrived to find the door shut. The
+/// repair is in <c>Parley.Server</c>; these tests stayed to say the rule came through it intact.
 /// </para>
 /// </remarks>
 public sealed class InstructionSettlingTests : IDisposable
@@ -51,12 +57,18 @@ public sealed class InstructionSettlingTests : IDisposable
         new(2026, 1, 1, 12, minute, 0, TimeSpan.Zero);
 
     [Fact]
-    public async Task A_reply_that_arrives_after_the_broker_gave_up_is_discarded()
+    public async Task A_settled_instruction_refuses_a_later_report()
     {
-        // **The loss, in the order it happens.** The broker waits five minutes and the node will
-        // wait twenty, so a turn that takes longer than five is settled `failed` by the broker
-        // while the agent is still working. When the agent finishes and the node reports what it
-        // said, the row is no longer pending and the report is refused.
+        // **This pins first-come settlement, which is correct, and it is NOT where the defect
+        // was.** Written while the loss was being diagnosed, and named for the loss, which sent
+        // the reader to the wrong layer: a late report *should* be refused, or an operator's
+        // record would change under them after they had read it.
+        //
+        // What was wrong was upstream. The broker settled `failed` because it had stopped
+        // waiting — a fact about the broker, not about the turn — and that settlement is what
+        // made the agent's real answer late. The rule below did exactly its job on a record that
+        // should never have been settled. `Parley.Server.Tests` is where the repair is checked;
+        // this stays to say the rule survived it.
         var id = await _instructions.RecordAsync(Orders, "look at the retry policy", At(0), Ct);
 
         // The broker's patience runs out. Nothing has gone wrong; it simply stopped waiting.
@@ -72,8 +84,8 @@ public sealed class InstructionSettlingTests : IDisposable
 
         var read = await _instructions.GetAsync(id, Ct);
 
-        // What the store now says: the turn did not complete, and the agent said nothing. Both
-        // are untrue, and there is no other copy of either.
+        // The first settlement stands, whole. That is the property; whether the first settlement
+        // deserved to happen is a question for whoever made it.
         Assert.NotNull(read);
         Assert.Equal(InstructionOutcome.Failed, read!.Outcome);
         Assert.Null(read.Reply);
