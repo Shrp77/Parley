@@ -128,6 +128,21 @@ public sealed class SurfaceBoundaryTests
             // entirely and carries no operator operation at all.
             nameof(OperatorConsole.RecordInstructionAsync),
             nameof(OperatorConsole.SettleInstructionAsync),
+
+            // Reading an instruction back, and it belongs here for a stronger reason than the two
+            // above. Writing one is obviously the operator's; *reading* one looks harmless until
+            // you ask who else could. An agent able to read an instruction could learn what the
+            // operator had told a peer to do — which is a disclosure §10.1 withholds even for
+            // ordinary traffic between agents, and this is not ordinary traffic. It is the one
+            // channel where a person's own words are on the record.
+            nameof(OperatorConsole.ListInstructionsAsync),
+
+            // Settling a departed machine's turns. Maintenance rather than an operator's decision,
+            // and it could have gone on the broker beside the reaper — but it writes an outcome
+            // into the instruction log, and everything that writes there is on this side. Keeping
+            // the log's writers together is what makes "who can write a person's words" answerable
+            // by looking at one type.
+            nameof(OperatorConsole.SettleInstructionsForMachineAsync),
             nameof(OperatorConsole.PruneAsync),
             nameof(OperatorConsole.DescribeRefusalsAsync),
 

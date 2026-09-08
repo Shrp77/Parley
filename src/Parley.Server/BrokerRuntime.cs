@@ -104,6 +104,17 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public TimeProvider Clock { get; }
 
     /// <summary>
+    /// Gets how long <c>Instruct</c> waits for a turn before answering that it is still running.
+    /// </summary>
+    /// <remarks>
+    /// Surfaced from the options rather than written in the service, because it was written in the
+    /// service and that is most of why it was wrong: nothing could compare it against the turn
+    /// budget it silently contradicted, and nothing could shorten it for a test that needed to
+    /// watch the wait elapse.
+    /// </remarks>
+    public TimeSpan InstructionPatience => _options.InstructionPatience;
+
+    /// <summary>
     /// Gets the retention policy this deployment prunes to.
     /// </summary>
     /// <remarks>
@@ -460,6 +471,23 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 await new NodeRepository(connection).LeaveAsync(joined.Machine, now, ct)
                     .ConfigureAwait(false);
 
+                // **Every turn this machine was holding stopped when it did.**
+                //
+                // SPEC.md §11.5 gives delivery to the node — "an agent on a machine whose node is
+                // not connected cannot be instructed" — so when the node goes, so does any turn it
+                // had begun. That is what `failed` has always meant, and it is now claimed only by
+                // something that knows: the broker used to write it merely for having stopped
+                // waiting, which settled the record and made the agent's real answer arrive too
+                // late to be recorded.
+                //
+                // In the same unit of work as the departure rather than after it. The two are one
+                // fact about this machine, and a process that died between them would leave turns
+                // pending against a node the registry already showed as gone — reachable only by
+                // the sweep, twenty-five minutes later, for a machine known to be down now.
+                _ = await new Parley.Store.InstructionRepository(connection)
+                    .SettleForMachineAsync(joined.Machine, now, ct)
+                    .ConfigureAwait(false);
+
                 return true;
             },
             cancellationToken).ConfigureAwait(false);
@@ -515,8 +543,19 @@ public sealed class BrokerRuntime : IAsyncDisposable
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(patience);
 
+            // **Pending, not failed, and this is the same defect one layer in.** Removing the
+            // settling write stopped the broker *recording* a verdict it had no grounds for; this
+            // stops it *reporting* one. `Failed` is defined as "the turn was attempted and did not
+            // complete", which is a claim about the turn — and while the patience elapses the turn
+            // is simply still running. An operator told `failed` reissues the instruction, which
+            // §10.2 names as the one response that makes the situation worse.
+            //
+            // Note that the linked token covers the caller giving up as well as the patience
+            // elapsing, and both mean the same thing here: this call is over and the turn is not.
+            // Which of the two happened is a fact about the operator, and neither is a fact about
+            // the agent.
             await using var registration = timeout.Token.Register(
-                () => waiting.TrySetResult(new InstructionResult(InstructionOutcome.Failed, null)))
+                () => waiting.TrySetResult(new InstructionResult(InstructionOutcome.Pending, null)))
                 .ConfigureAwait(false);
 
             return await waiting.Task.ConfigureAwait(false);

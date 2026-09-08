@@ -483,6 +483,13 @@ service Operators {
   rpc DescribeWaiting(Empty) returns (WaitingReply);
   rpc Instruct(InstructRequest) returns (InstructReply);
 
+  // What became of the instructions an operator gave, and what each agent said back.
+  //
+  // On this service and never on Agents. An agent able to read an instruction could learn what the
+  // operator had told a peer to do, which is a disclosure section 10.1 withholds even for ordinary
+  // traffic between agents -- and this is the one channel carrying a person's own words.
+  rpc Instructions(InstructionsRequest) returns (InstructionsReply);
+
   // Filing, not muting. SPEC.md section 10.2: an archived conversation still delivers, still
   // opens and closes exchanges, and no agent is told. Only the listing changes.
   rpc Archive(ConversationRequest) returns (DidItReply);
@@ -718,6 +725,47 @@ message InstructRequest {
 message InstructReply {
   InstructionOutcome outcome = 1;
   string reply = 2;                   // empty when the agent never got the turn
+
+  // Which instruction this was, so a caller told PENDING knows where to come back to.
+  //
+  // An operator told the turn is still running and given no identifier has been told to look
+  // again and not told where. Additive, so an older client ignores it and a newer one reading an
+  // older broker sees zero -- which is honest, since a broker without Instructions has nothing to
+  // read back anyway.
+  int64 instruction_id = 3;
+}
+
+// Reading instructions back. SPEC.md section 10.2.
+//
+// The section always said the reply "is kept beside the instruction rather than in the message
+// log", and it was -- with nothing on this service able to ask for it. The only route to an
+// agent's answer was the return value of Instruct, so anything that interrupted that call lost
+// the answer for ever while the broker still held it.
+message InstructionsRequest {
+  string agent = 1;                   // empty for every agent
+  int64 instruction_id = 2;           // 0 for all that match; otherwise exactly this one
+  int32 page_size = 3;                // the broker bounds this whatever is asked for
+  string page_token = 4;              // empty for the first page
+}
+
+message InstructionRecord {
+  int64 id = 1;
+  string agent = 2;
+
+  // The operator's own words. Disclosed deliberately: these are a person's instructions to their
+  // own agent, on a service no agent can reach, and a reply with no question beside it is half a
+  // transcript.
+  string text = 3;
+
+  InstructionOutcome outcome = 4;
+  string reply = 5;                   // empty unless settled
+  string issued_utc = 6;
+  string settled_utc = 7;             // empty while the turn is still running
+}
+
+message InstructionsReply {
+  repeated InstructionRecord instructions = 1;
+  string next_page_token = 2;         // empty at the end
 }
 
 message PruneReply {

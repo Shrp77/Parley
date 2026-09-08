@@ -247,6 +247,38 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
+    public async Task<InstructionPage> InstructionsAsync(
+        AgentName? agent = null,
+        long? instructionId = null,
+        int pageSize = 0,
+        string? pageToken = null,
+        CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.InstructionsAsync(
+            new Wire.InstructionsRequest
+            {
+                Agent = agent?.Value ?? string.Empty,
+                InstructionId = instructionId ?? 0,
+                PageSize = pageSize,
+                PageToken = pageToken ?? string.Empty
+            },
+            cancellationToken: cancellationToken);
+
+        return new InstructionPage(
+            [.. reply.Instructions.Select(i => new InstructionRecord(
+                i.Id,
+                AgentName.Create(i.Agent),
+                i.Text,
+                Outcome(i.Outcome),
+                string.IsNullOrEmpty(i.Reply) ? null : i.Reply,
+                DateTimeOffset.Parse(i.IssuedUtc, CultureInfo.InvariantCulture),
+                string.IsNullOrEmpty(i.SettledUtc)
+                    ? null
+                    : DateTimeOffset.Parse(i.SettledUtc, CultureInfo.InvariantCulture)))],
+            string.IsNullOrEmpty(reply.NextPageToken) ? null : reply.NextPageToken);
+    }
+
+    /// <inheritdoc/>
     public async Task<InstructionResult> InstructAsync(
         AgentName agent, string text, CancellationToken cancellationToken = default)
     {
@@ -256,7 +288,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
 
         return new InstructionResult(
             Outcome(reply.Outcome),
-            string.IsNullOrEmpty(reply.Reply) ? null : reply.Reply);
+            string.IsNullOrEmpty(reply.Reply) ? null : reply.Reply,
+            reply.InstructionId);
     }
 
     /// <inheritdoc/>

@@ -45,7 +45,6 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// alternative is an operator holding a page open against a turn that may never end, and an
     /// instruction that outlives its patience settles as failed rather than staying pending.
     /// </remarks>
-    private static readonly TimeSpan InstructionPatience = TimeSpan.FromMinutes(5);
     private readonly BrokerRuntime _runtime;
 
     /// <summary>Creates the service over a runtime.</summary>
@@ -501,21 +500,136 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             context).ConfigureAwait(false);
 
         var result = await _runtime.DeliverInstructionAsync(
-            id, agent, request.Text, InstructionPatience, context.CancellationToken)
+            id, agent, request.Text, _runtime.InstructionPatience, context.CancellationToken)
             .ConfigureAwait(false);
 
-        // Settled here as well as by the reporting path, because an operator who gave up waiting
-        // must not leave a row that says pending for ever.
-        _ = await Console(
-            (console, now, ct) => console.SettleInstructionAsync(
-                id, result.Outcome, result.Reply, now, ct),
-            context).ConfigureAwait(false);
+        // **Nothing is settled here, and that removal is the whole defect.**
+        //
+        // This used to write the outcome it had just computed, including the one it computed by
+        // giving up. Ceasing to wait is a fact about the broker; `failed` is a claim about the
+        // turn -- "attempted and did not complete" -- which nobody is entitled to make while it is
+        // still being attempted. Worse, writing it *settled* the record, and settlement is
+        // first-come: the agent's real answer was refused when it arrived minutes later, so the
+        // work was done and both the operator and the store were told it had failed.
+        //
+        // The perverse part was that patience was punished. The write took `context`'s token, so
+        // an operator who closed the tab cancelled it, the row stayed open, and the node's true
+        // report landed -- while an operator who waited got `failed` written first and lost the
+        // answer. Two operators, opposite outcomes, neither told which they had had.
+        //
+        // What settles an instruction now is only ever something that knows: the node reporting,
+        // the node departing, or the sweep past TurnBudget.PresumedDead.
+        //
+        // **With one exception, and it is an exception because it is knowledge rather than
+        // impatience.** Undeliverable is decided before any waiting at all -- no node holds the
+        // machine, or the node's catalogue does not name the role -- so no turn was begun and
+        // there is nothing to be premature about. §11.5 requires the operator to be told rather
+        // than left looking as though the instruction arrived, and a row left pending would say
+        // the opposite of what happened.
+        //
+        // **Written with no cancellation token, deliberately.** The old code took the operator's,
+        // which is how patience came to be punished: an operator who walked away cancelled the
+        // write. Whether this row records what the broker already knows must not depend on
+        // whether anybody is still listening. It is one small update against a row this call just
+        // inserted.
+        if (result.Outcome == InstructionOutcome.Undeliverable)
+        {
+            _ = await _runtime.UseConnectionAsync(
+                (connection, now, ct) => new OperatorConsole(connection)
+                    .SettleInstructionAsync(id, result.Outcome, result.Reply, now, ct),
+                CancellationToken.None).ConfigureAwait(false);
+        }
 
         return new Wire.InstructReply
         {
             Outcome = Conversions.Out(result.Outcome),
-            Reply = result.Reply ?? string.Empty
+            Reply = result.Reply ?? string.Empty,
+            InstructionId = id
         };
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// The page is bounded by the broker whatever was asked for, exactly as
+    /// <c>ListConversations</c> is, and for the reason recorded there: §10.2 makes rule 8.5's
+    /// argument one level up, and a caller's number is a caller's number.
+    /// </para>
+    /// <para>
+    /// An agent filter that is not a name is refused rather than ignored. Dropping it would answer
+    /// a narrow question with a wide result, and the caller cannot tell the difference — an empty
+    /// list invites a second look, a full one reads as the answer.
+    /// </para>
+    /// </remarks>
+    public override async Task<Wire.InstructionsReply> Instructions(
+        Wire.InstructionsRequest request,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        AgentName? agent = null;
+
+        if (!string.IsNullOrEmpty(request.Agent))
+        {
+            if (!AgentName.TryCreate(request.Agent, out var named))
+            {
+                throw new RpcException(new Status(
+                    StatusCode.InvalidArgument,
+                    $"'{request.Agent}' is not an agent name, so it cannot narrow this list. "
+                    + "Ask again without it to see everything."));
+            }
+
+            agent = named;
+        }
+
+        var limit = request.PageSize <= 0
+            ? DefaultPageSize
+            : Math.Min(request.PageSize, MaximumPageSize);
+
+        // Opaque to the caller, for the reason ListConversations gives: a token whose shape a
+        // client parsed would be a shape the broker could not change. One more row is asked for
+        // than will be returned, so the end of the listing is known rather than guessed -- a token
+        // handed out on a full last page would send the caller back for nothing.
+        var resumeAt = long.TryParse(
+            request.PageToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var before)
+            ? before
+            : (long?)null;
+
+        var found = await Console(
+            (console, _, ct) => console.ListInstructionsAsync(
+                agent,
+                request.InstructionId > 0 ? request.InstructionId : null,
+                limit + 1,
+                resumeAt,
+                ct),
+            context).ConfigureAwait(false);
+
+        var more = found.Count > limit;
+        var page = more ? found.Take(limit).ToList() : found;
+
+        var reply = new Wire.InstructionsReply
+        {
+            NextPageToken = more
+                ? page[^1].Id.ToString(CultureInfo.InvariantCulture)
+                : string.Empty
+        };
+
+        foreach (var instruction in page)
+        {
+            reply.Instructions.Add(new Wire.InstructionRecord
+            {
+                Id = instruction.Id,
+                Agent = instruction.Agent.Value,
+                Text = instruction.Text,
+                Outcome = Conversions.Out(instruction.Outcome),
+                Reply = instruction.Reply ?? string.Empty,
+                IssuedUtc = Conversions.Stamp(instruction.IssuedUtc),
+                SettledUtc = instruction.SettledUtc is { } settled ? Conversions.Stamp(settled) : string.Empty
+            });
+        }
+
+        return reply;
     }
 
     /// <inheritdoc/>

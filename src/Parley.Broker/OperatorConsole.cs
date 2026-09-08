@@ -388,6 +388,54 @@ public sealed class OperatorConsole
         await _instructions.RecordAsync(agent, text, nowUtc, cancellationToken)
             .ConfigureAwait(false);
 
+    /// <summary>Reads instructions back, newest first.</summary>
+    /// <param name="agent">Narrow to one agent, or null for every agent.</param>
+    /// <param name="id">Narrow to exactly one instruction, or null for all that match.</param>
+    /// <param name="limit">How many to return. The caller bounds this; the wire edge clamps it.</param>
+    /// <param name="beforeId">Resume before this identifier, or null to start at the newest.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The instructions.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>On this side of the boundary, and it is not a close call.</b> An instruction is a
+    /// person's words to their own agent; an agent able to read one could learn what the operator
+    /// had told a peer to do, which is a disclosure §10.1 withholds even for ordinary traffic. It
+    /// sits beside <see cref="RecordInstructionAsync"/> for the same reason that one is here.
+    /// </para>
+    /// <para>
+    /// <b>It exists because §10.2 promised the reply was kept and gave nothing that could ask.</b>
+    /// The section says the reply "is kept beside the instruction rather than in the message log" —
+    /// true, and unreachable: the only route to it was the return value of the call that issued the
+    /// instruction, so any interruption lost the answer for ever while the broker still held it.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<InstructionRecord>> ListInstructionsAsync(
+        AgentName? agent = null,
+        long? id = null,
+        int limit = 50,
+        long? beforeId = null,
+        CancellationToken cancellationToken = default) =>
+        await _instructions.ListAsync(agent, id, limit, beforeId, cancellationToken)
+            .ConfigureAwait(false);
+
+    /// <summary>Settles every instruction still running for agents on a departed machine.</summary>
+    /// <param name="machine">The machine that has gone.</param>
+    /// <param name="nowUtc">When it went.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>How many were settled.</returns>
+    /// <remarks>
+    /// The precise half of what replaced the broker settling an instruction because it had stopped
+    /// waiting. §11.5 gives delivery to the node, so when a node goes every turn it was holding
+    /// stopped with it — which is what <c>failed</c> has always claimed and, until now, was
+    /// claimed on much weaker grounds.
+    /// </remarks>
+    public async Task<int> SettleInstructionsForMachineAsync(
+        string machine,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default) =>
+        await _instructions.SettleForMachineAsync(machine, nowUtc, cancellationToken)
+            .ConfigureAwait(false);
+
     /// <summary>Records what became of an instruction.</summary>
     /// <param name="id">Which instruction.</param>
     /// <param name="outcome">What became of it.</param>

@@ -1756,6 +1756,15 @@ CREATE TABLE size_refusals (
 --
 -- Cascades on the agent like size_refusals does: §10.2's purge removes an agent and everything
 -- that referred to it, and an instruction to an agent that no longer exists refers to nothing.
+--
+-- `pending` is a state a reader will meet, not a transient the writer expects to be brief. A turn
+-- may run for as long as the machine hosting it allows, and §10.2 forbids a broker from settling a
+-- row because it stopped waiting — so rows sit here unsettled for the length of real work, and
+-- anything reading this table has to render that as "still running" rather than as a fault. What
+-- bounds it is §14: the machine departing, or the row outliving any permitted turn.
+--
+-- Read back through §10.2's `instructions()`. The reply column was written long before anything
+-- could ask for it, which made every answer here true and unreachable.
 CREATE TABLE instructions (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   agent        TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
@@ -2147,6 +2156,24 @@ row recording `ghosted` survives for §15 either way. The remedy for an agent th
 coming back is `retire` (§10.2), which is a decision about the registry and does not depend
 on this.
 
+**Instructions are bounded too, and were not.** The `instructions` table (§9.2) holds a person's
+own words to their own agents and whatever those agents said back. Nothing about the argument above
+exempts it — a log that grows forever grows the blast radius of a leaked database forever with it,
+and this is the one table where the words are a human's. So an instruction is removed once it is
+older than the age cap, whatever became of it.
+
+**Age is measured from when it was issued, never from when it settled**, and the distinction is
+not pedantry. §9.2 pairs a settled outcome with a settled instant, so an instruction still running
+has no settled instant at all. A rule measured from settlement would compile, read correctly,
+remove settled rows on schedule — and never once reach a row that nothing ever settled, which is
+precisely the set most in need of a bound. An unbounded table can hide inside a retention policy
+that looks complete.
+
+No floor applies. An instruction is not replayed, is not deduplicated against, and is nobody's
+inbox: §11.5 gives delivery to the node, so an instruction that was going to be delivered has been,
+and §14 settles the ones that were not. What is left at the cap is a record, and this section's
+whole argument is against permanent records.
+
 **The idle rule.** Once every exchange in a conversation is closed and nothing has been
 added to it for the configured idle period, the discussion is over and its messages are
 prunable. Messages with no `conversation_id` are treated as a conversation of one
@@ -2301,7 +2328,8 @@ as a console showing something no other client could see.
 | `implements()` | Which protocol version this broker speaks. First, and asked before anything else: without it a client cannot tell a broker of the wrong version from one that is switched off, and those two want different words in front of a person. |
 | `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. |
 | `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, and whether it is archived. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
-| `instruct(agent, text)` | Give an agent an instruction from the operator, delivered as a turn by the machine that holds it. Returns what became of it — taken, declined, undeliverable or failed — and whatever the agent said in reply. Recorded as the operator's own, never as a peer's. |
+| `instruct(agent, text)` | Give an agent an instruction from the operator, delivered as a turn by the machine that holds it. Returns an identifier, what became of it — taken, declined, undeliverable, failed or still running — and whatever the agent said in reply. Recorded as the operator's own, never as a peer's. A turn may outlast any wait a caller can reasonably be held for, so *still running* is an ordinary answer rather than a fault, and `instructions()` is how the rest of it is collected. |
+| `instructions(agent?, id?, page)` | What became of the instructions this operator gave, most recent first: the agent, the instruction's own words, the outcome, whatever the agent said, when it was issued and when it settled. Narrowable to one agent or one instruction. Paged, and the broker bounds the page whatever is asked for. The reply is disclosed to the operator who asked for it, which needs no argument — but the *text* is disclosed too, and that is deliberate: they are a person's own words to their own agent, on a surface no agent can reach, and a reply with no question beside it is half a transcript. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
 | `refusals()` | Report what the size cap of rule 8.5 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
 | `clarifications()` | Report the clarify depth distribution of §5.2, how often the cap was reached, and whether answers ever resolve sub-questions differently from one another. The evidence §17 question 4 asks for. |
@@ -2363,10 +2391,29 @@ cover.
 
 **An instruction returns what became of it, and that is not a courtesy.** An operator who cannot
 see whether an instruction was taken has been given a button and no indicator, and the obvious
-response — issue it again — is the one thing that makes the situation worse. So there are four
+response — issue it again — is the one thing that makes the situation worse. So there are five
 outcomes and they are different facts: *taken*, the agent was given the turn and acted; *declined*,
 it was given the turn and would not; *undeliverable*, the machine that holds it is not connected
-and nothing was given at all; *failed*, the turn was attempted and did not complete.
+and nothing was given at all; *failed*, the turn was attempted and did not complete; *still
+running*, the turn was begun and has not finished.
+
+**A broker MUST NOT record an outcome because it stopped waiting for one.** Ceasing to wait is a
+fact about the broker, and *failed* is a claim about the turn. A caller cannot be held for the
+length of a turn — a turn is a model working, and may take as long as the machine hosting it
+allows — so a broker will routinely stop waiting on work that is proceeding perfectly. The answer
+in that case is *still running*, and nothing is written down.
+
+This matters more than it looks, because settlement is first-come: an outcome recorded early is an
+outcome recorded for ever, and the agent's real answer is refused when it arrives. A broker that
+settled on its own impatience would therefore not merely mislead the operator in front of it — it
+would destroy the reply, permanently, for everyone. The reference implementation did exactly this,
+and the loss was invisible from both ends.
+
+**So what settles an instruction is only ever something that knows.** The machine reports what the
+agent did; or that machine goes away, and every turn it was holding demonstrably stopped with it;
+or the instruction outlives any turn a machine is permitted to run and is presumed dead (§14). An
+undeliverable settles at once, because no turn was begun and there is nothing to be premature
+about.
 
 A decline is not a failure and must not be reported as one. §11.5 says an agent may refuse, because
 the operator is a person rather than a superior process, and an interface that renders refusal as
@@ -2375,6 +2422,14 @@ malfunction teaches whoever reads it to work around the agent instead of asking 
 The reply is the agent's own words and is kept beside the instruction rather than in the message
 log. It answers a person, not a peer, and filing it among the traffic would make the log claim an
 exchange that never happened.
+
+**And it must be readable after the call that asked for it has gone**, which is what `instructions()`
+is for. A reply reachable only through the return value of `instruct` is a reply that survives
+exactly as long as one connection: an operator whose browser closed, whose network dropped, or who
+simply asked from one machine and looked from another has no way to reach an answer the broker is
+still holding. That is the same failure this section opens by naming — a button and no indicator —
+merely delayed past the request instead of prevented, and a record kept where nothing can read it
+is not kept in any sense that matters.
 
 The instruction is recorded as the operator's. A log whose worth is that it says who said what
 stops having any the moment a person's words appear under an agent's name — and the agent that
@@ -3303,6 +3358,29 @@ An exchange is ghostable exactly once: if the close committed and the notice did
 sweep would revisit it — the exchange is no longer orphaned — and the asker would wait for a
 message nothing will ever write again. Silence is the single outcome this section exists to
 prevent, so it must not be reachable by a crash between two statements.
+
+**An instruction nobody comes back for is settled on the same reasoning.** §10.2 forbids a broker
+from recording an outcome because it stopped waiting — but something has to settle an instruction
+whose turn genuinely never finishes, or the record says *still running* for ever and the operator
+is left with the state the outcomes exist to prevent. Two things do, and both are facts rather than
+impatience:
+
+- **The machine goes.** §11.5 gives delivery to the node and says a turn travels down the channel
+  the node owns, so when a node's connection ends, every turn it was holding stopped with it. Those
+  instructions settle as *failed*, which is exactly what *failed* has always meant.
+- **The instruction outlives any turn.** A node may stay connected while the process behind it
+  dies, which the first rule cannot see. So an instruction still running for longer than the
+  longest turn a machine is permitted to run, plus a margin, is presumed dead and settled *failed*
+  on a subsequent sweep.
+
+**The margin is not optional and the two clocks are why.** A node measures a turn from when it
+starts the process; a broker measures from when it recorded the instruction, which is earlier by
+however long delivery took. A sweep with no margin would reach turns still inside their own budget
+— which is the defect §10.2 forbids, arriving by a different route.
+
+**A sweep MUST NOT alter an instruction that has already settled.** Settlement is first-come, and a
+sweep is not evidence about a turn; it is the absence of evidence. This is the same rule that makes
+a late report safe to refuse, applied to the other side.
 
 **A Question is not delivered once its exchange has ended.** A Question asks for a move, and
 an exchange that is not `OPEN` has none left — so handing one over spends an agent's turn on

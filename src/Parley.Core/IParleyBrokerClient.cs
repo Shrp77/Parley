@@ -116,6 +116,32 @@ public interface IParleyBrokerClient
     /// </remarks>
     Task<NotifyVolumeReport> NotificationsAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Read back what became of the instructions an operator gave.</summary>
+    /// <param name="agent">Narrow to one agent, or null for every agent.</param>
+    /// <param name="instructionId">Narrow to exactly one instruction, or null for all that match.</param>
+    /// <param name="pageSize">How many to ask for. The broker bounds this whatever is asked.</param>
+    /// <param name="pageToken">A token from a previous page, or null to start at the newest.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>A bounded page, newest first.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The operation SPEC.md §10.2 promised and did not have.</b> The section says an agent's
+    /// reply "is kept beside the instruction rather than in the message log" — and it was, with
+    /// nothing able to ask. The only route to an answer was the return value of
+    /// <see cref="InstructAsync"/>, which blocks for the turn, so anything that interrupted that
+    /// call lost the answer for ever while the broker still held it.
+    /// </para>
+    /// <para>
+    /// The token is opaque. A client that parsed it would fix a shape the broker could not change.
+    /// </para>
+    /// </remarks>
+    Task<InstructionPage> InstructionsAsync(
+        AgentName? agent = null,
+        long? instructionId = null,
+        int pageSize = 0,
+        string? pageToken = null,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Give an agent an instruction from the operator.</summary>
     /// <param name="agent">Who to instruct.</param>
     /// <param name="text">What to tell it.</param>

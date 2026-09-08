@@ -52,6 +52,7 @@ public sealed class Broker
     private readonly ExchangeRepository _exchanges;
     private readonly MessageRepository _messages;
     private readonly ConversationRepository _conversations;
+    private readonly InstructionRepository _instructions;
     private readonly Reaper _reaper;
     private readonly Pruner _pruner;
     private readonly BrokerOptions _options;
@@ -108,6 +109,7 @@ public sealed class Broker
         _exchanges = new ExchangeRepository(connection);
         _messages = new MessageRepository(connection);
         _conversations = new ConversationRepository(connection);
+        _instructions = new InstructionRepository(connection);
         _reaper = new Reaper(_exchanges, _messages, connection);
         _pruner = new Pruner(connection);
     }
@@ -1468,6 +1470,21 @@ public sealed class Broker
         var concluded = await ConcludeSatisfiedPollsAsync(nowUtc, cancellationToken)
             .ConfigureAwait(false);
 
+        // Instructions nothing ever reported on, presumed dead rather than left open for ever.
+        //
+        // **This is half of what replaced the broker settling an instruction because it had
+        // stopped waiting.** That was never a fact about the turn, and it destroyed the agent's
+        // real answer when it arrived — settlement is first-come, so the record was already shut.
+        // A node leaving settles its own agents' turns precisely; this catches the case that
+        // cannot reach: a node that stays connected while the process behind it dies.
+        //
+        // The threshold is TurnBudget.PresumedDead rather than a number written here, so a sweep
+        // can never reach a turn a node is still permitted to be running. TurnBudgetTests is what
+        // holds the two apart, and it is the only place they are in the same room.
+        var abandoned = await _instructions
+            .SweepAsync(nowUtc - TurnBudget.PresumedDead, nowUtc, cancellationToken)
+            .ConfigureAwait(false);
+
         // Last, because both of the passes above make things prunable and neither is made
         // easier by running after this one. Ghosting closes an orphan, which lifts the floor
         // clause holding its messages; concluding a conversation short-circuits the idle period
@@ -1496,7 +1513,7 @@ public sealed class Broker
             _prunedUtc = nowUtc;
         }
 
-        return new TickResult(swept, concluded, pruned);
+        return new TickResult(swept, concluded, pruned, abandoned);
     }
 
     /// <summary>
