@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Builds Parley from this checkout and installs its two tools.
+    Builds Parley from this checkout and installs its tools.
 
 .DESCRIPTION
     Parley is not on nuget.org, so installing it means building it. That is three commands per
@@ -44,9 +44,34 @@
     that waits out its window and is ghosted.
 
 .PARAMETER Uninstall
-    Removes both tools and the autostart entry, and stops. The store and any .mcp.json are left
+    Removes every tool in the table above and the autostart entry, and stops. -Surfaces is not
+    consulted: an uninstall that left a surface behind would leave a tool nothing installs and
+    nothing removes. The store and any .mcp.json are left
     alone -- they are the deployment, and somebody reinstalling a tool has not asked to lose
     their history or their launch configurations.
+
+.PARAMETER Surfaces
+    Which operator surfaces to install: terminal, web-ui, both or none. Defaults to both on
+    Windows and to web-ui elsewhere.
+
+    The surfaces are separate tools so that changing one does not stop the broker: Windows
+    cannot replace a running executable, and stopping the broker ends every resident agent
+    on the machine along with everything each had learned. Being separate, they are also
+    skippable, and a machine that only runs agents has no reason for either.
+
+    A surface not named here is not removed. It is left at whatever version it already had,
+    and this script says so on the way out -- a skipped surface going quietly is how a
+    machine ends up running a terminal from three versions ago.
+
+.PARAMETER Only
+    Install exactly these tools, by command name, and leave every other one alone. This is what
+    SC-001 is about: -Only parley-top replaces the terminal and does not stop the broker, because
+    the broker's binary is not among the files being unlinked.
+
+    That matters more than it sounds. SPEC.md section 12 says three things end a resident agent,
+    and the first is the node stopping and telling every agent it started to quit -- and the
+    process is what held everything the agent had learned. Restarting a broker to change a
+    terminal costs every agent's accumulated context on the machine.
 
 .PARAMETER Force
     Ends whatever is holding Parley's files, rather than refusing and saying what to close.
@@ -85,16 +110,76 @@ param(
     [string] $Store,
     [string] $NodeConfig,
     [switch] $Uninstall,
-    [switch] $Force
+    [switch] $Force,
+    [string] $Surfaces,
+    [string[]] $Only
 )
 
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Four columns rather than three. `Surface` says which of the two operator surfaces a tool is,
+# and empty means it is not one: the broker and the agent adapter are what Parley is, and every
+# machine that runs Parley at all needs both.
+#
+# A surface is optional because the surfaces are where the cost is. A machine that only runs
+# agents does not need a terminal, and a headless Linux box has no browser to point at a web UI
+# -- though it can still serve one over a tunnel, which is why the default there is the web UI
+# and not nothing.
 $tools = @(
-    @{ Package = 'Parley.Cli'; Project = 'src\Parley.Cli\Parley.Cli.csproj'; Command = 'parley' }
-    @{ Package = 'Parley.Mcp'; Project = 'src\Parley.Mcp\Parley.Mcp.csproj'; Command = 'parley-mcp' }
+    @{ Package = 'Parley.Cli'; Project = 'src\Parley.Cli\Parley.Cli.csproj'; Command = 'parley';     Surface = '' }
+    @{ Package = 'Parley.Mcp'; Project = 'src\Parley.Mcp\Parley.Mcp.csproj'; Command = 'parley-mcp'; Surface = '' }
+    @{ Package = 'Parley.Top'; Project = 'src\Parley.Top\Parley.Top.csproj'; Command = 'parley-top'; Surface = 'terminal' }
+    @{ Package = 'Parley.WebUi'; Project = 'src\Parley.WebUi\Parley.WebUi.csproj'; Command = 'parley-web-ui'; Surface = 'web-ui' }
 )
+
+# Which surfaces this machine wants, resolved once. Windows takes both; anything else takes the
+# web UI alone, because a terminal surface on a machine nobody has a session on is a package
+# installed to be never run.
+if (-not $Surfaces) {
+    $Surfaces = if ([Environment]::OSVersion.Platform -eq 'Win32NT') { 'both' } else { 'web-ui' }
+
+    # Said only when it decides anything. -Only names the tools outright, so announcing a
+    # surface set it does not consult is a line that contradicts what the run then does.
+    if (-not $Only) {
+        Write-Host "    surfaces: $Surfaces (this machine's default)" -ForegroundColor DarkGray
+    }
+}
+
+# Checked before anything is built. A mistyped -Only would otherwise select no tool at all and
+# this script would pack nothing, install nothing, and report success -- which is the exact shape
+# of failure every other guard in this file exists to prevent.
+if ($Only) {
+    $known = @($tools | ForEach-Object { $_.Command })
+    $unknown = @($Only | Where-Object { $known -notcontains $_ })
+
+    if ($unknown.Count -gt 0) {
+        Write-Error "-Only names no such tool: $($unknown -join ', '). This repository ships $($known -join ', ')."
+    }
+}
+
+$wanted = switch ($Surfaces) {
+    'both'     { @('terminal', 'web-ui') }
+    'terminal' { @('terminal') }
+    'web-ui'   { @('web-ui') }
+    'none'     { @() }
+    default    { Write-Error "-Surfaces takes terminal, web-ui, both or none, and was given '$Surfaces'."; @() }
+}
+
+<#
+.SYNOPSIS
+    Whether this machine asked for a tool.
+.DESCRIPTION
+    A tool with no surface is always installed: it is not optional, it is Parley. A surface tool
+    is installed only when -Surfaces named it.
+#>
+function Wanted([hashtable] $tool) {
+    # -Only is exact and overrides everything: it names the tools, so a surface set would be a
+    # second answer to a question already answered.
+    if ($Only) { return $Only -contains $tool.Command }
+
+    return -not $tool.Surface -or $wanted -contains $tool.Surface
+}
 
 # What `parley autostart install` calls the scheduled task. Duplicated from AutostartPlan.Name
 # rather than asked for, because the one command that could report it is the one this script
@@ -262,7 +347,7 @@ if ($Uninstall) {
     # The broker first, before anything that deletes a file. Windows will not unlink a binary
     # that is still mapped into a running process, so `dotnet tool uninstall` fails against a
     # live broker -- and it fails the same way it fails when the tool was never there, which is
-    # how this script came to print "Both tools are gone" with one of them still installed.
+    # how this script came to print "Every tool is gone" with one of them still installed.
     Write-Step 'Stopping the broker'
 
     Stop-Broker
@@ -326,7 +411,7 @@ if ($Uninstall) {
     }
 
     Write-Host ''
-    Write-Host 'Both tools are gone, and so is the autostart entry. The store and any .mcp.json'
+    Write-Host 'Every Parley tool is gone, and so is the autostart entry. The store and any .mcp.json'
     Write-Host 'are left alone: those are the deployment rather than the installation.'
     exit 0
 }
@@ -350,6 +435,8 @@ Write-Note 'global.json pins the SDK band; dotnet will say so if this one is out
 Write-Step 'Clearing previously packed versions'
 
 foreach ($tool in $tools) {
+    if (-not (Wanted $tool)) { continue }
+
     $output = Join-Path $root (Split-Path -Parent $tool.Project | Join-Path -ChildPath 'bin\Release')
     $stale = Get-ChildItem -Path $output -Filter '*.nupkg' -ErrorAction SilentlyContinue
 
@@ -362,6 +449,14 @@ foreach ($tool in $tools) {
 # -------------------------------------------------------------------- pack ---
 
 foreach ($tool in $tools) {
+    if (-not (Wanted $tool)) {
+        $why = if ($Only) { "-Only did not name $($tool.Command)" }
+               else { "-Surfaces did not name $($tool.Surface)" }
+
+        Write-Note "skipping $($tool.Package): $why"
+        continue
+    }
+
     Write-Step "Packing $($tool.Package)"
 
     & dotnet pack (Join-Path $root $tool.Project) -c Release --nologo -v quiet
@@ -372,9 +467,17 @@ foreach ($tool in $tools) {
 # The version every package just took, read from the packages rather than from the project file.
 # What matters is what was produced, and a build that ignored the property would be exactly the
 # defect this check should catch.
-$built = Get-ChildItem -Path $root -Filter 'Parley.Cli.*.nupkg' -Recurse |
+# Read from whichever package was just built, rather than from Parley.Cli's. That was right
+# while every run packed every tool, and became wrong the moment a run could pack only a
+# surface: it looked for a package nothing had produced and stopped with "nothing was packed",
+# on a run that had just packed exactly what it was asked to.
+$first = $tools | Where-Object { Wanted $_ } | Select-Object -First 1
+
+if (-not $first) { Write-Error 'No tool was selected, so nothing would be installed.' }
+
+$built = Get-ChildItem -Path $root -Filter "$($first.Package).*.nupkg" -Recurse |
     Where-Object { $_.FullName -like '*\bin\Release\*' } |
-    ForEach-Object { $_.BaseName -replace '^Parley\.Cli\.', '' } |
+    ForEach-Object { $_.BaseName -replace "^$([regex]::Escape($first.Package))\.", '' } |
     Select-Object -First 1
 
 if (-not $built) { Write-Error 'Nothing was packed. The build produced no package.' }
@@ -399,12 +502,17 @@ Write-Step 'Checking nothing holds the tools'
 #
 # The broker's own command is excluded: it is stopped a few lines below, deliberately and by name.
 # One started by hand is a different matter and is caught after that, where it can be told apart.
-$adapters = @($tools | Where-Object { $_.Command -ne $broker } | ForEach-Object { $_.Command })
+# **Only the tools about to be replaced.** A surface this run is skipping is not going to be
+# unlinked, so a terminal somebody has open is no reason to refuse an install of the broker --
+# and refusing anyway would make -Surfaces useless on the machine most likely to want it.
+$adapters = @($tools |
+    Where-Object { $_.Command -ne $broker -and (Wanted $_) } |
+    ForEach-Object { $_.Command })
 
 $holders = @(Get-Process -Name $adapters -ErrorAction SilentlyContinue)
 
 if ($holders.Count -gt 0) {
-    $listed = ($holders | ForEach-Object { "      pid $($_.Id), started $($_.StartTime.ToString('HH:mm'))" }) -join "`n"
+    $listed = ($holders | ForEach-Object { "      $($_.ProcessName), pid $($_.Id), started $($_.StartTime.ToString('HH:mm'))" }) -join "`n"
 
     # Written as a branch rather than leaning on Write-Error being fatal. It is, because
     # $ErrorActionPreference is Stop at the top of this file, but a reader should not have to
@@ -428,29 +536,100 @@ $(($survived | ForEach-Object { "      $($_.ProcessName), pid $($_.Id)" }) -join
         Write-Note 'those editor sessions have lost their Parley tools until each editor restarts'
     }
     else {
+        # Named by kind, because the two are closed differently and by different people. An
+        # adapter belongs to an editor session somebody may not realise is Parley; a terminal is
+        # a window they are looking at, and Ctrl+Q closes it.
+        $kinds = @()
+
+        if ($holders | Where-Object { $_.ProcessName -eq 'parley-mcp' }) {
+            $kinds += 'an adapter belongs to an editor session with Parley configured; close the session'
+        }
+
+        if ($holders | Where-Object { $_.ProcessName -eq 'parley-top' }) {
+            $kinds += 'a terminal is a window somebody has open; Ctrl+Q leaves it'
+        }
+
         Write-Error @"
-$($holders.Count) Parley adapter(s) are running and hold the files this would replace:
+$($holders.Count) Parley process(es) are running and hold the files this would replace:
 $listed
-    Each one belongs to an editor session with Parley configured. Close those sessions and run
-    this again, or re-run with -Force to end them. Nothing has been changed and the broker has
-    not been stopped.
+    $($kinds -join "; ").
+    Close them and run this again, or re-run with -Force to end them. Nothing has been changed
+    and the broker has not been stopped.
 "@
     }
 }
 
-Write-Note 'no adapter is holding the tool store'
+Write-Note 'nothing is holding the tool store'
 
-# Before anything replaces a file. A live broker holds the binary open, which makes the
-# uninstall below fail and the install after it a no-op that reports success.
-Write-Step 'Stopping any running broker'
+# Before anything replaces a file, and only when that file is the broker's. A live broker holds
+# `parley` open, which makes the uninstall below fail and the install after it a no-op that
+# reports success -- so it has to stop. But it only has to stop for its own binary.
+#
+# **This is the whole point of the split, and it is one `if`.** A run that replaces only the
+# terminal unlinks a file the broker never opened, so there is nothing to stop: SPEC.md section 12
+# has the node telling every agent it started to quit, and each of those processes is what held
+# everything that agent had learned. Restarting a broker to change a terminal spends all of it.
+$replacingBroker = @($tools | Where-Object { $_.Command -eq $broker -and (Wanted $_) }).Count -gt 0
 
-Stop-Broker
+if ($replacingBroker) {
+    # **What stopping it will interrupt, said before it is stopped.**
+    #
+    # SPEC.md section 12: the node stopping tells every agent it started to quit, and the process
+    # is what held everything each of them had learned. A question already drained into an agent's
+    # inbox is marked delivered, so it sits in section 4.2's four-hour Working window rather than
+    # the fifteen-minute Delivery one -- and killing the agent that holds it leaves the exchange
+    # open and owed with nothing running to answer. It ends as `ghosted`, which section 5.3
+    # defines as "nobody replied", recorded against an agent that was killed rather than one that
+    # ignored anything.
+    #
+    # **Asked of the broker, never of the store.** Only the broker opens the database (section 4),
+    # and reading it here for a progress message would break the one boundary this whole
+    # architecture is built on. `parley open` is the same conversations() reply both surfaces read.
+    #
+    # A warning and not a refusal. The person running this has decided to upgrade, and stopping
+    # them is not this script's job.
+    $parleyOnPath = Get-Command parley -ErrorAction SilentlyContinue
+
+    if ($parleyOnPath) {
+        $inFlight = & parley open 2>$null
+        $asked = $LASTEXITCODE -eq 0
+    }
+    else {
+        $inFlight = $null
+        $asked = $false
+    }
+
+    if (-not $asked) {
+        # **Said as could-not-ask, not as nothing-in-flight.** A guard that fails open has to say
+        # so: the two readings look identical from here and lead somewhere completely different.
+        Write-Warning 'Could not ask the broker what is open, so this cannot say what stopping it will interrupt. That is not the same as nothing being in flight.'
+    }
+    elseif ($inFlight) {
+        $lines = @($inFlight | Where-Object { $_ -is [string] -and $_.Trim() })
+
+        if ($lines.Count -gt 0) {
+            Write-Warning "$($lines.Count) conversation(s) have an exchange still open. Stopping the broker ends every agent it started, and a question already delivered has nothing left to answer it:"
+
+            foreach ($line in $lines) {
+                Write-Host "      $line" -ForegroundColor DarkGray
+            }
+        }
+    }
+
+    Write-Step 'Stopping any running broker'
+
+    Stop-Broker
+}
+else {
+    Write-Step 'Leaving the broker alone'
+    Write-Note 'nothing being replaced is the broker''s, so no agent is ended and no exchange is interrupted'
+}
 
 # After the stop, because until now a running broker was expected. What is left is one somebody
 # started by hand, which Stop-Broker deliberately leaves alone -- and which holds parley.exe just
 # as firmly. Caught here rather than by the uninstall, which would report a denied path and leave
 # the tools half replaced.
-$strays = @(Get-Process -Name ($tools | ForEach-Object { $_.Command }) -ErrorAction SilentlyContinue)
+$strays = @(Get-Process -Name ($tools | Where-Object { Wanted $_ } | ForEach-Object { $_.Command }) -ErrorAction SilentlyContinue)
 
 if ($strays.Count -gt 0) {
     $listed = ($strays | ForEach-Object { "      $($_.ProcessName), pid $($_.Id)" }) -join "`n"
@@ -482,7 +661,25 @@ $listed
 
 Write-Step "Installing version $built"
 
+# What happened to each, said one line per tool at the end. Three outcomes, and only one of them
+# is "nothing happened": a surface this machine did not ask for may still be installed from
+# before, at whatever version it was, and that is the case worth naming. A skipped surface going
+# quietly is how a machine ends up running a terminal three versions behind its broker.
+$outcomes = @()
+$listedBefore = Installed
+
 foreach ($tool in $tools) {
+    if (-not (Wanted $tool)) {
+        $outcomes += if ($listedBefore -contains $tool.Package.ToLowerInvariant()) {
+            @{ Command = $tool.Command; Said = "left as it was, not selected by $(if ($Only) { '-Only' } else { '-Surfaces' })" }
+        }
+        else {
+            @{ Command = $tool.Command; Said = "not installed, not selected by $(if ($Only) { '-Only' } else { '-Surfaces' })" }
+        }
+
+        continue
+    }
+
     $source = Join-Path $root (Split-Path -Parent $tool.Project | Join-Path -ChildPath 'bin\Release')
 
     # Uninstall first rather than `update`, which is a no-op when the version has not moved --
@@ -504,7 +701,20 @@ foreach ($tool in $tools) {
         Write-Error "$($tool.Package) was already installed and could not be replaced, so the build just packed is not the one on PATH. Something is holding its files -- 'Get-Process parley' will show a broker -- and it has to stop before this can work."
     }
 
-    Write-Note "$($tool.Command) installed"
+    $outcomes += @{ Command = $tool.Command; Said = "installed $built" }
+}
+
+foreach ($outcome in $outcomes) {
+    Write-Note "$($outcome.Command): $($outcome.Said)"
+}
+
+# Said loudly rather than in the list above, because it is the one outcome that leaves the
+# machine inconsistent. The surfaces speak SPEC.md §10.2, which is a versioned contract, so
+# a surface left behind is a client of a broker it may no longer agree with.
+$stale = @($outcomes | Where-Object { $_.Said -like 'left as it was*' })
+
+if ($stale.Count -gt 0) {
+    Write-Warning "$(($stale | ForEach-Object { $_.Command }) -join ', ') is installed and was not updated to $built. Re-run with -Surfaces both to bring it up, or with -Uninstall to remove everything."
 }
 
 # ------------------------------------------------------------------ verify ---
@@ -524,16 +734,52 @@ $parley = Join-Path $shims 'parley.exe'
 
 # The check the whole script exists for. An install that silently did nothing leaves the old
 # version here, and every other step reports success.
-$reported = & $parley --version
+#
+# **Asked of each tool that was installed, rather than of `parley`.** It used to ask the broker,
+# which was right while every run installed every tool -- and became wrong the moment a run could
+# replace only a surface: it would compare the version just built against a broker deliberately
+# left alone, and fail a run that did exactly what it was asked.
+$reported = @()
 
-if ($reported -notmatch [regex]::Escape($built)) {
-    Write-Error "Installed $built but PATH reports '$reported'. Something older is still there; run this with -Uninstall and try again."
+foreach ($tool in $tools) {
+    if (-not (Wanted $tool)) { continue }
+
+    $binary = Join-Path $shims ($tool.Command + '.exe')
+    $says = & $binary --version
+
+    if ($says -notmatch [regex]::Escape($built)) {
+        Write-Error "Installed $built but $($tool.Command) reports '$says'. Something older is still there; run this with -Uninstall and try again."
+    }
+
+    $reported += $says
 }
 
 Write-Host ''
-Write-Host $reported -ForegroundColor Green
+
+foreach ($says in $reported) {
+    Write-Host $says -ForegroundColor Green
+}
 
 # ---------------------------------------------------------------- broker ----
+
+# **Skipped entirely when the broker is not being replaced, and this is the half of SC-001 that
+# is easy to miss.** Not stopping the broker earlier is worthless if the script re-registers the
+# autostart entry down here: `autostart install` replaces the scheduled task, which restarts the
+# process, which ends every resident agent on the machine along with everything each had
+# learned. The stop would have been avoided and the cost paid anyway, three hundred lines later.
+#
+# Nothing here is needed for a surface: a terminal is not registered with a supervisor, does not
+# listen on a port, and has no store. There is nothing to configure and nothing to prove.
+if (-not $replacingBroker) {
+    Write-Host ''
+    Write-Host 'The broker was not touched, and is still serving whatever it was serving.' -ForegroundColor Green
+    Write-Host ''
+    Write-Host 'That is the point of the surfaces being their own tools: SPEC.md section 12 has a'
+    Write-Host 'node stopping tell every agent it started to quit, and the process is what held'
+    Write-Host 'everything that agent had learned.'
+
+    exit 0
+}
 
 # A machine that names projects gets an entry that serves them all, and is not asked for a store
 # at all: every project's store and port are in the manifest, and SPEC.md 4.1 says one process

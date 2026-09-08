@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Builds Parley from this checkout and installs its two tools.
+# Builds Parley from this checkout and installs its tools.
 #
 # Parley is not on nuget.org, so installing it means building it. That is three commands per
 # tool and two of them have a trap in, which is why this exists rather than a paragraph in the
@@ -25,7 +25,25 @@
 #   ./install.sh                 build, install, and set the broker up
 #   ./install.sh --store <path>  the store the broker owns; asked for if not given
 #   ./install.sh --node-config <path>  the catalogue of agents this machine may start
-#   ./install.sh --uninstall     remove both tools and the autostart entry, and stop
+#   ./install.sh --uninstall     remove every tool and the autostart entry, and stop
+#   ./install.sh --surfaces X    which operator surfaces to install: terminal, web-ui,
+#                                both or none. Defaults to web-ui here and to both on
+#                                Windows -- a headless box has no browser to point at a
+#                                web UI, but it can still serve one over a tunnel, and a
+#                                terminal surface on a machine nobody has a session on is
+#                                a package installed to be never run.
+#
+#                                A surface not named is not removed. It is left at
+#                                whatever version it had, and this says so on the way out:
+#                                a skipped surface going quietly is how a machine ends up
+#                                running a terminal three versions behind its broker.
+#   ./install.sh --only parley-top
+#                                install exactly these tools and leave every other one alone.
+#                                This is what SC-001 is about: --only parley-top replaces the
+#                                terminal and does not stop the broker, because the broker's
+#                                binary is not among the files being unlinked. SPEC.md section 12
+#                                says the node stopping tells every agent it started to quit, and
+#                                the process is what held everything that agent had learned.
 #   ./install.sh --force         end whatever is holding the tools, rather than refusing
 #
 # --force ends a broker somebody started by hand and the parley-mcp adapter of every editor
@@ -43,10 +61,16 @@ uninstall=0
 force=0
 store=""
 node_config=""
+surfaces=""
+only=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --uninstall) uninstall=1; shift ;;
+        --surfaces) surfaces="${2:-}"; shift 2 ;;
+        --only) only="${only:+$only }${2:-}"; shift 2 ;;
+        --only=*) only="${only:+$only }${1#--only=}"; shift ;;
+        --surfaces=*) surfaces="${1#--surfaces=}"; shift ;;
         --force) force=1; shift ;;
         # --db as well as --store, because `parley serve --db` is the flag this ends up
         # passing and the two being different words is a trap laid for nobody's benefit.
@@ -58,15 +82,73 @@ while [ $# -gt 0 ]; do
         -h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \\?//'; exit 0 ;;
         *)
             echo "Unknown argument: $1" >&2
-            echo "Usage: ./install.sh [--store <path>] [--node-config <path>] [--uninstall] [--force]" >&2
+            echo "Usage: ./install.sh [--store <path>] [--node-config <path>] [--surfaces terminal|web-ui|both|none] [--only <command>] [--uninstall] [--force]" >&2
             exit 64
             ;;
     esac
 done
 
-packages=("Parley.Cli" "Parley.Mcp")
-projects=("src/Parley.Cli/Parley.Cli.csproj" "src/Parley.Mcp/Parley.Mcp.csproj")
-commands=("parley" "parley-mcp")
+# A fourth array rather than three. `surface_of` says which of the two operator surfaces a tool
+# is, and empty means it is not one: the broker and the agent adapter are what Parley is, and
+# every machine that runs Parley at all needs both.
+packages=("Parley.Cli" "Parley.Mcp" "Parley.Top" "Parley.WebUi")
+projects=("src/Parley.Cli/Parley.Cli.csproj" "src/Parley.Mcp/Parley.Mcp.csproj" "src/Parley.Top/Parley.Top.csproj" "src/Parley.WebUi/Parley.WebUi.csproj")
+commands=("parley" "parley-mcp" "parley-top" "parley-web-ui")
+surface_of=("" "" "terminal" "web-ui")
+
+# The web UI alone by default, for the reason at the top: this script runs where there is usually
+# no browser, and a terminal nobody has a session on is a package installed to be never run.
+if [ -z "$surfaces" ]; then
+    surfaces="web-ui"
+fi
+
+case "$surfaces" in
+    both)     wanted="terminal web-ui" ;;
+    terminal) wanted="terminal" ;;
+    web-ui)   wanted="web-ui" ;;
+    none)     wanted="" ;;
+    *)
+        echo "--surfaces takes terminal, web-ui, both or none, and was given '$surfaces'." >&2
+        exit 64
+        ;;
+esac
+
+# Whether this machine asked for a tool. One with no surface is always installed: it is not
+# optional, it is Parley. --only is exact and overrides everything: it names the tools, so a
+# surface set would be a second answer to a question already answered.
+is_wanted() {
+    if [ -n "$only" ]; then
+        case " $only " in
+            *" ${commands[$1]} "*) return 0 ;;
+            *) return 1 ;;
+        esac
+    fi
+
+    [ -z "${surface_of[$1]}" ] && return 0
+
+    case " $wanted " in
+        *" ${surface_of[$1]} "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Checked before anything is built. A mistyped --only would otherwise select no tool at all and
+# this script would pack nothing, install nothing, and report success -- which is the exact shape
+# of failure every other guard in this file exists to prevent.
+if [ -n "$only" ]; then
+    for name in $only; do
+        found=0
+
+        for cmd in "${commands[@]}"; do
+            [ "$cmd" = "$name" ] && found=1
+        done
+
+        if [ "$found" = "0" ]; then
+            echo "--only names no such tool: $name. This repository ships ${commands[*]}." >&2
+            exit 64
+        fi
+    done
+fi
 
 if [ -t 1 ]; then
     cyan=$'\033[36m'; grey=$'\033[90m'; green=$'\033[32m'; plain=$'\033[0m'
@@ -302,7 +384,7 @@ if [ "$uninstall" = "1" ]; then
     fi
 
     echo
-    echo "Both tools are gone, and so is the autostart entry. The store and any .mcp.json are"
+    echo "Every Parley tool is gone, and so is the autostart entry. The store and any .mcp.json are"
     echo "left alone: those are the deployment rather than the installation."
     exit 0
 fi
@@ -342,6 +424,11 @@ done
 # -------------------------------------------------------------------- pack ---
 
 for i in "${!packages[@]}"; do
+    if ! is_wanted "$i"; then
+        note "skipping ${packages[$i]}: --surfaces did not name ${surface_of[$i]}"
+        continue
+    fi
+
     step "Packing ${packages[$i]}"
 
     if ! dotnet pack "$root/${projects[$i]}" -c Release --nologo -v quiet; then
@@ -363,10 +450,6 @@ fi
 
 # ----------------------------------------------------------------- install ---
 
-# Before anything replaces a file. A live broker holds its binary, which makes the uninstall
-# below fail and the install after it a no-op that reports success.
-step "Stopping any running broker"
-
 # Before anything is stopped, because the failure this catches used to arrive afterwards.
 #
 # A running `parley-mcp` holds its own files in the tool store, so `dotnet tool uninstall` fails
@@ -385,11 +468,16 @@ step "Checking nothing holds the tools"
 #
 # The broker's own command is excluded: it is stopped a few lines below, deliberately and by name.
 # One started by hand is a different matter and is caught after that, where it can be told apart.
+#
+# **Only the tools about to be replaced.** A surface this run is skipping is not going to be
+# unlinked, so a terminal somebody has open is no reason to refuse an install of the broker --
+# and refusing anyway would make --surfaces useless on the machine most likely to want it.
 adapters=()
 
-for cmd in "${commands[@]}"; do
-    [ "$cmd" = "$broker" ] && continue
-    adapters+=("$cmd")
+for i in "${!commands[@]}"; do
+    [ "${commands[$i]}" = "$broker" ] && continue
+    is_wanted "$i" || continue
+    adapters+=("${commands[$i]}")
 done
 
 holders="$(holding "${adapters[@]}")"
@@ -423,15 +511,81 @@ if [ -n "$holders" ]; then
     fi
 fi
 
-note "no adapter is holding the tool store"
+note "nothing is holding the tool store"
 
-stop_broker
+# Only when the file being replaced is the broker's own. A live broker holds `parley` open, which
+# makes the uninstall fail and the install after it a no-op that reports success -- so it has to
+# stop. But it only has to stop for its own binary.
+#
+# **This is the whole point of the split, and it is one `if`.** A run that replaces only the
+# terminal unlinks a file the broker never opened, so there is nothing to stop: SPEC.md section 12
+# has the node telling every agent it started to quit, and each of those processes is what held
+# everything that agent had learned. Restarting a broker to change a terminal spends all of it.
+replacing_broker=0
+
+for i in "${!commands[@]}"; do
+    if [ "${commands[$i]}" = "$broker" ] && is_wanted "$i"; then
+        replacing_broker=1
+    fi
+done
+
+if [ "$replacing_broker" = "1" ]; then
+    # **What stopping it will interrupt, said before it is stopped.**
+    #
+    # SPEC.md section 12: the node stopping tells every agent it started to quit, and the process
+    # is what held everything each of them had learned. A question already drained into an agent's
+    # inbox is marked delivered, so it sits in section 4.2's four-hour Working window rather than
+    # the fifteen-minute Delivery one -- and killing the agent that holds it leaves the exchange
+    # open and owed with nothing running to answer. It ends as `ghosted`, which section 5.3
+    # defines as "nobody replied", recorded against an agent that was killed rather than one that
+    # ignored anything.
+    #
+    # **Asked of the broker, never of the store.** Only the broker opens the database (section 4),
+    # and reading it here for a progress message would break the one boundary this architecture is
+    # built on. `parley open` is the same conversations() reply both surfaces read.
+    #
+    # A warning and not a refusal: the person running this has decided to upgrade.
+    if command -v parley >/dev/null 2>&1 && in_flight="$(parley open 2>/dev/null)"; then
+        if [ -n "$in_flight" ]; then
+            count="$(printf '%s
+' "$in_flight" | grep -c . || true)"
+
+            echo "warning: $count conversation(s) have an exchange still open. Stopping the broker" >&2
+            echo "         ends every agent it started, and a question already delivered has nothing" >&2
+            echo "         left to answer it:" >&2
+
+            printf '%s
+' "$in_flight" | while IFS= read -r line; do
+                [ -n "$line" ] && echo "      $line" >&2
+            done
+        fi
+    else
+        # **Said as could-not-ask, not as nothing-in-flight.** A guard that fails open has to say
+        # so: the two readings look identical from here and lead somewhere completely different.
+        echo "warning: could not ask the broker what is open, so this cannot say what stopping it" >&2
+        echo "         will interrupt. That is not the same as nothing being in flight." >&2
+    fi
+
+    step "Stopping any running broker"
+
+    stop_broker
+else
+    step "Leaving the broker alone"
+    note "nothing being replaced is the broker's, so no agent is ended and no exchange interrupted"
+fi
 
 # After the stop, because until now a running broker was expected. What is left is one somebody
 # started by hand, which stop_broker deliberately leaves alone -- and which holds the binary just
 # as firmly. Caught here rather than by the uninstall, which would fail and leave the tools half
 # replaced.
-strays="$(holding "${commands[@]}")"
+# Only what is being replaced, for the reason the adapter check gives.
+replacing=()
+
+for i in "${!commands[@]}"; do
+    is_wanted "$i" && replacing+=("${commands[$i]}")
+done
+
+strays="$(holding "${replacing[@]}")"
 
 if [ -n "$strays" ]; then
     if [ "$force" = "1" ]; then
@@ -457,7 +611,27 @@ fi
 
 step "Installing version $built"
 
+# What happened to each, said one line per tool at the end. Three outcomes, and only one of them
+# is "nothing happened": a surface this machine did not ask for may still be installed from
+# before, at whatever version it was, and that is the case worth naming.
+outcomes=()
+skew=""
+listed_before="$(dotnet tool list -g 2>/dev/null || true)"
+
 for i in "${!packages[@]}"; do
+    if ! is_wanted "$i"; then
+        lowered="$(printf '%s' "${packages[$i]}" | tr '[:upper:]' '[:lower:]')"
+
+        if printf '%s' "$listed_before" | grep -qi "^$lowered[[:space:]]"; then
+            outcomes+=("${commands[$i]}: left as it was, not selected by --surfaces")
+            skew="$skew ${commands[$i]}"
+        else
+            outcomes+=("${commands[$i]}: not installed, not selected by --surfaces")
+        fi
+
+        continue
+    fi
+
     source_dir="$root/$(dirname "${projects[$i]}")/bin/Release"
 
     # Uninstall first rather than `update`, which is a no-op when the version has not moved --
@@ -484,8 +658,20 @@ for i in "${!packages[@]}"; do
             ;;
     esac
 
-    note "${commands[$i]} installed"
+    outcomes+=("${commands[$i]}: installed $built")
 done
+
+for outcome in "${outcomes[@]}"; do
+    note "$outcome"
+done
+
+# Said loudly rather than in the list above, because it is the one outcome that leaves the
+# machine inconsistent. The surfaces speak SPEC.md section 10.2, which is a versioned contract,
+# so a surface left behind is a client of a broker it may no longer agree with.
+if [ -n "$skew" ]; then
+    echo "==>${skew} is installed and was not updated to $built. Re-run with --surfaces both to" >&2
+    echo "    bring it up, or with --uninstall to remove everything." >&2
+fi
 
 # ------------------------------------------------------------------ verify ---
 
@@ -509,21 +695,57 @@ fi
 
 # The check the whole script exists for. An install that silently did nothing leaves the old
 # version here, and every other step reports success.
-reported="$("$parley_command" --version)"
-
-case "$reported" in
-    *"$built"*) ;;
-    *)
-        echo "Installed $built but PATH reports '$reported'. Something older is still there;" >&2
-        echo "run this with --uninstall and try again." >&2
-        exit 1
-        ;;
-esac
-
+#
+# **Asked of each tool that was installed, rather than of `parley`.** It used to ask the broker,
+# which was right while every run installed every tool, and became wrong the moment a run could
+# replace only a surface: it would compare the version just built against a broker deliberately
+# left alone, and fail a run that did exactly what it was asked.
 echo
-printf '%s%s%s\n' "$green" "$reported" "$plain"
+
+for i in "${!commands[@]}"; do
+    is_wanted "$i" || continue
+
+    if [ -x "$shims/${commands[$i]}" ]; then
+        binary="$shims/${commands[$i]}"
+    else
+        binary="${commands[$i]}"
+    fi
+
+    says="$("$binary" --version)"
+
+    case "$says" in
+        *"$built"*) ;;
+        *)
+            echo "Installed $built but ${commands[$i]} reports '$says'. Something older is still" >&2
+            echo "there; run this with --uninstall and try again." >&2
+            exit 1
+            ;;
+    esac
+
+    printf '%s%s%s\n' "$green" "$says" "$plain"
+done
 
 # ---------------------------------------------------------------- broker ----
+
+# **Skipped entirely when the broker is not being replaced, and this is the half of SC-001 that
+# is easy to miss.** Not stopping the broker earlier is worthless if the script re-registers the
+# autostart entry down here: `autostart install` replaces the unit or launch agent, which
+# restarts the process, which ends every resident agent on the machine along with everything each
+# had learned. The stop would have been avoided and the cost paid anyway, hundreds of lines later.
+#
+# Nothing here is needed for a surface: a terminal is not registered with a supervisor, does not
+# listen on a port, and has no store. There is nothing to configure and nothing to prove.
+if [ "$replacing_broker" != "1" ]; then
+    echo ""
+    echo "${green}The broker was not touched, and is still serving whatever it was serving.${plain}"
+    echo ""
+    echo "That is the point of the surfaces being their own tools: SPEC.md section 12 has a node"
+    echo "stopping tell every agent it started to quit, and the process is what held everything"
+    echo "that agent had learned."
+
+    exit 0
+fi
+
 
 # A machine that names projects gets an entry that serves them all, and is not asked for a store
 # at all: every project's store and port are in the manifest, and SPEC.md 4.1 says one process

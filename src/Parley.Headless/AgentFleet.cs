@@ -1,4 +1,5 @@
 ﻿using Microsoft.Data.Sqlite;
+using Parley.Configuration;
 using Parley.Core;
 using Parley.Store;
 
@@ -48,6 +49,19 @@ public sealed record FleetAction(
 /// would multiply the token cost of a pass by the number of agents with mail, and the work is
 /// not urgent — anything missed is picked up on the next pass. A pass that gives three agents a
 /// turn in sequence is one an operator can watch happening; three at once is a bill.
+/// </para>
+/// <para>
+/// <b>This is why <c>Parley.Headless</c> holds a reference to <c>Parley.Store</c>, and now the
+/// only reason.</b> A fleet reads the registry and the exchanges directly because it runs in the
+/// broker's process, which SPEC.md §4 makes the one thing that opens the database.
+/// </para>
+/// <para>
+/// Written down because the assembly used to have a second reason and no longer does.
+/// <c>NodeCatalogue</c> sat here — it reads a per-machine file and touches no store at all — and
+/// through it the terminal, which lives in <c>Parley.Cli</c>, had a route to SQLite that no check
+/// could see. It has moved to <c>Parley.Configuration</c>. Anything else added here inherits the
+/// store, so the next thing that wants to live beside the fleet should be asked whether it needs
+/// one.
 /// </para>
 /// </remarks>
 public sealed class AgentFleet : IAsyncDisposable

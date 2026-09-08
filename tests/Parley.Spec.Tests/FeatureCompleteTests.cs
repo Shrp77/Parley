@@ -93,7 +93,7 @@ public sealed class FeatureCompleteTests
         // is a temporary value in shipped code, which is exactly the kind of thing that becomes
         // permanent by nobody remembering it was temporary.
         var tasks = Flowed(Tasks());
-        var shell = Read("src", "Parley.Cli", "Top", "Shell.cs");
+        var shell = Read("src", "Parley.Top", "Shell.cs");
 
         if (shell.Contains("internal const int Threshold = 200;", StringComparison.Ordinal))
         {

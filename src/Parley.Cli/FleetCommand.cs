@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using Microsoft.Data.Sqlite;
+using Parley.Configuration;
 using Parley.Headless;
 
 namespace Parley.Cli;

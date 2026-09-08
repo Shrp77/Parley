@@ -1,4 +1,4 @@
-using Xunit;
+﻿using Xunit;
 
 namespace Parley.Cli.Tests;
 
@@ -33,7 +33,7 @@ public sealed class InstallScriptManifestTests
         // that rewording the command's output fails this rather than the next reinstall on
         // somebody else's machine, where the script would fall back to asking for a store and
         // register an entry that narrows the deployment to one project.
-        var command = RepositoryFile.Read("src/Parley.Cli/ProjectCommand.cs");
+        var command = RepositoryFile.Read("src/Parley.Setup/ProjectCommand.cs");
 
         foreach (var literal in new[] { "manifest: ", "reachable", "not reachable", "No projects configured" })
         {

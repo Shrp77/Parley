@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    The operator's web UI as its own tool, and nothing more than a way to start it.
+
+    Everything it does lives in Parley.Web's ConsoleHost, because two callers each building a host
+    is two hosts that differ the first time one of them is edited. What this project adds is a
+    package: `parley-web-ui`, installed and replaced on its own.
+
+    That is the whole point. Windows cannot replace a running executable, so while the web UI was
+    hosted inside `parley` a change to a page meant stopping the broker, and SPEC.md section 12
+    says what that costs: the node stops, tells every agent it started to quit, and the process is
+    what held everything each of them had learned.
+
+    It also takes ASP.NET Core off the broker's tool. Parley.Cli referenced Parley.Web so that
+    a broker could host it in its own process, which put Kestrel and Razor on every machine
+    that installed a broker, including the ones that only run agents. The broker starts this as a
+    child process now and knows only the command name.
+
+    There is no store here and there must never be one: Parley.Web has none, and GraphTests walks
+    this project along with the rest.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Parley.WebUi</RootNamespace>
+    <AssemblyName>parley-web-ui</AssemblyName>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>parley-web-ui</ToolCommandName>
+    <PackageId>Parley.WebUi</PackageId>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parley.Web\Parley.Web.csproj" />
+    <ProjectReference Include="..\Parley.Configuration\Parley.Configuration.csproj" />
+  </ItemGroup>
+
+</Project>

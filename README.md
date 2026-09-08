@@ -137,13 +137,35 @@ cd Parley
 ./install.sh         # Linux, macOS
 ```
 
-That is the whole of it. The script packs both tools and installs them, registers the broker to
+That is the whole of it. The script packs the tools and installs them, registers the broker to
 start when you log in, starts it, and then checks that it answers. It asks where the store
 should go, defaulting to `.parley` in your home directory; `-Store <path>` on Windows or
 `--store <path>` elsewhere answers that in advance, for an unattended run.
 
-`parley` is the operator's tool and the broker itself; `parley-mcp` is the MCP server a launch
-configuration names.
+There are four tools, and which of them a machine wants is a real question:
+
+| Tool | What it is | Installed by default |
+|---|---|---|
+| `parley` | The operator's commands, and the broker itself | Always |
+| `parley-mcp` | The MCP server a launch configuration names | Always |
+| `parley-top` | The terminal a person watches a deployment from | Windows yes, Linux no |
+| `parley-web-ui` | The web UI a person opens in a browser | Yes |
+
+`-Surfaces terminal|web-ui|both|none` on Windows, or `--surfaces` elsewhere, chooses. The
+default is both on Windows and the web UI alone elsewhere, because the machine `install.sh`
+usually runs on has nobody sitting at it — though it can still serve a web UI through an SSH
+tunnel, which is why the default there is not `none`.
+
+**The surfaces are separate tools so that changing one does not stop the broker.** Windows
+cannot replace a running executable, so while the terminal lived inside `parley` every change
+to it meant stopping the broker — and stopping a broker tells every agent it started to quit,
+losing everything each of them had learned. `-Only parley-top` (or `--only parley-top`)
+replaces just the terminal: nothing being unlinked is the broker's, so it is not stopped, no
+autostart entry is re-registered, and nothing in flight is interrupted.
+
+A surface you do not select is not removed. It stays at the version it had, and the script says
+so on the way out — a skipped surface going quietly is how a machine ends up running a terminal
+several versions behind its broker.
 
 **The two checks are the point of the script rather than a flourish.** Each guards a failure
 that otherwise reports success:
@@ -159,7 +181,8 @@ that otherwise reports success:
   shows up as agents failing to attach — in an editor, days later, a long way from here.
 
 The script refuses to replace a file something is holding, and names what to close: an editor
-session with Parley configured, or a broker somebody started by hand. That is the right default —
+session with Parley configured, a terminal somebody has open, or a broker somebody started by
+hand. That is the right default —
 ending a process a person launched themselves is their decision — and it is also, on a machine
 with three editors open, an instruction to go and find three windows. `-Force` on Windows, or
 `--force` elsewhere, is that decision made deliberately: it ends them and carries on. Those
@@ -168,7 +191,9 @@ weakens no check — everything is waited for and then looked for again, and any
 the files is still a refusal.
 
 `./install.ps1 -Uninstall` (or `./install.sh --uninstall`) stops the broker, removes the
-autostart entry, removes both tools, and then checks that they are actually gone. It leaves the
+autostart entry, removes every tool — `-Surfaces` and `-Only` are not consulted, because an
+uninstall that honoured them would leave a tool nothing installs and nothing removes — and then
+checks that they are actually gone. It leaves the
 store and any `.mcp.json` alone: those are the deployment rather than the installation, and
 somebody reinstalling a tool has not asked to lose their history or their launch configurations.
 
@@ -201,17 +226,23 @@ node in each project whose entry names a catalogue. A project named later gets i
 seconds, because the process watches the manifest; nothing is reinstalled and nothing restarts.
 The install script does the same: it asks what is named before it asks for a store.
 
-**It starts the console too**, on `127.0.0.1:5280`, because that is how a person takes part
+**It starts the web UI too**, on `127.0.0.1:5280`, because that is how a person takes part
 rather than only watches — see [Taking part yourself](#taking-part-yourself). An agent attached
-through your own editor window is the one thing nothing can hand a turn to, so a console you had
+through your own editor window is the one thing nothing can hand a turn to, so a web UI you had
 to remember to start separately would be the half of a deployment that works for agents and not
-for people. `--console <url>` moves it and `--no-console` leaves it out. If the address is
-already taken the broker says so and carries on serving: a web page that cannot bind must never
-cost you a deployment.
+for people. `--web-ui <url>` moves it and `--no-web-ui` leaves it out.
+
+The broker starts it as a child process rather than hosting it, because it is `parley-web-ui`, a
+tool of its own. If the address is already taken, or the tool is not installed on this machine,
+the broker says so and carries on serving: a web page that cannot bind must never cost you a
+deployment, and it names `parley top` in the same breath so you are never told there is no way in.
+
+`--with-console`, `--console` and `--no-console` are the old spellings. They still work and are
+removed at 0.21.0.
 
 **`parley top` is the same deployment without a browser**, and the broker names both when it
 starts. The machine running a broker is frequently not the machine you have a browser open on —
-a server you are in over SSH, a box in a cupboard — and on those the console's address is an
+a server you are in over SSH, a box in a cupboard — and on those the web UI's address is an
 instruction you cannot follow. Both surfaces show the same projects, agents and conversations,
 and you can take part from either.
 
@@ -558,10 +589,11 @@ parley force-conclude <conv>        close a discussion over its participants' vo
 parley prune                        apply the retention policy now
 parley refusals                     what the message size cap refused, and how far over
 parley waiting <agent>              how many messages and polls await an agent
-parley console [<url>]              a console in a browser: every project, the agents in
+parley web-ui [<url>]               the web UI in a browser: every project, the agents in
                                     each, and conversations as a transcript that says who
                                     did not see what. Join it with a name to take part as
-                                    yourself. Binds loopback unless you give it an address
+                                    yourself. Binds loopback unless you give it an address.
+                                    Its own tool, parley-web-ui, installed separately
 parley serve                        run the broker: the one process that opens the store
 parley up                           run this machine's node, so its agents can be started
 parley project list|add|remove      the deployments this machine is configured for
@@ -569,7 +601,7 @@ parley --help                       the same list, on stdout, exiting zero
 ```
 
 Every one of these except `serve`, `up` and `project` is a client: they connect to the broker at
-`--broker`, or `PARLEY_BROKER`, and default to the local one. `console` reads this machine's named
+`--broker`, or `PARLEY_BROKER`, and default to the local one. `web-ui` reads this machine's named
 projects instead, and falls back to that same broker when none are named — so it works on a
 machine configured entirely by explicit paths, which is a supported way to run. None of them opens the store, so none can be pointed at the wrong
 file — `--db` belongs to `parley serve` alone. `prune` applies the policy the broker was started
@@ -577,7 +609,7 @@ with, which is the only policy in the deployment; your shell no longer has an op
 
 ### Taking part yourself
 
-The console has a Join button. Type a name and you are an agent like any other: a registration,
+The web UI has a Join button. Type a name and you are an agent like any other: a registration,
 a place in every roster, and an identity recorded against everything you say. Then the box at the
 bottom of a conversation stops being a way to instruct agents and becomes a way to talk to them —
 your message lands in the transcript under your own name, and a peer answers you rather than
@@ -605,6 +637,13 @@ deployment is there in a terminal:
 parley top
 ```
 
+That is `parley-top`, a tool of its own, and `parley top` forwards to it without reading the
+arguments — so `parley-top` works identically if you would rather type it. The two are installed
+separately on purpose: Windows cannot replace a running executable, so a terminal inside `parley`
+would mean stopping the broker to change it, and stopping a broker ends every agent it started
+along with everything each had learned. On a machine that does not have it, `parley top` says
+which tool provides the command and how to install it.
+
 Three views, one thing at a time. It opens on the projects this machine names, with a line beside
 the highlighted one saying what is in it — how many agents, how many are running, how many
 conversations — so which project you want is answered before anything is opened. Enter goes into a
@@ -619,11 +658,11 @@ pressing it once more than you meant to costs nothing.
 Tab moves between the panes of the view you are on — a project has two, the other views one — and
 the arrow keys move within one. The mouse does the same. Below eighty columns a project's two
 panes stack and Tab still visits both. Press `?` for everything the view you are on can do, and
-`F8` to open the web console on whatever is in front of you.
+`F8` to open the web UI on whatever is in front of you.
 
 It draws in colour, and no fact rests on it: a project is green because the line says
 `answering`, an agent is pink because the line says `retired`, and each agent keeps the colour
-the web console gives it. Strip every attribute and nothing on the screen is lost.
+the web UI gives it. Strip every attribute and nothing on the screen is lost.
 
 From the projects region you can name the deployment this machine already runs — every path
 pre-filled from the autostart entry — or create a new project, which proposes its own database
@@ -659,7 +698,7 @@ purge stands behind — described first, keeping offered first, the conversation
 typed back — and when something in it is still open, what the waiting agent will see is named and
 accepted before the identifier is asked for.
 
-A seat lives in the agents half too — the same seat as the console, with the same rules — and from
+A seat lives in the agents half too — the same seat as the web UI, with the same rules — and from
 a conversation you read what is waiting for you, answer it, ask, and tell. Each agent has its own
 colour there, the same colour it has everywhere; every message header stands apart from the words
 below it whether or not you can see colour; and a message keeps the paragraphs its author wrote,

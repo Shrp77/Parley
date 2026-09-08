@@ -52,6 +52,9 @@ public sealed class GraphTests
     [Theory]
     [InlineData("src/Parley.Client/Parley.Client.csproj")]
     [InlineData("src/Parley.Web/Parley.Web.csproj")]
+    [InlineData("src/Parley.Top/Parley.Top.csproj")]
+    [InlineData("src/Parley.Setup/Parley.Setup.csproj")]
+    [InlineData("src/Parley.WebUi/Parley.WebUi.csproj")]
     public void Nothing_reachable_from_a_client_can_open_a_store(string project)
     {
         // Both, and transitively. The console is included here as well as in its own suite
@@ -79,7 +82,8 @@ public sealed class GraphTests
 
     [Theory]
     [InlineData("src/Parley.Client/Parley.Client.csproj")]
-    [InlineData("src/Parley.Cli/Parley.Cli.csproj")]
+    [InlineData("src/Parley.Top/Parley.Top.csproj")]
+    [InlineData("src/Parley.Setup/Parley.Setup.csproj")]
     public void A_terminal_does_not_take_on_a_web_framework_to_find_out_who_is_in_a_conversation(
         string project)
     {
@@ -114,6 +118,8 @@ public sealed class GraphTests
     [InlineData("src/Parley.Client/Parley.Client.csproj")]
     [InlineData("src/Parley.Configuration/Parley.Configuration.csproj")]
     [InlineData("src/Parley.Core/Parley.Core.csproj")]
+    [InlineData("src/Parley.Top/Parley.Top.csproj")]
+    [InlineData("src/Parley.Setup/Parley.Setup.csproj")]
     public void The_doors_a_reference_element_does_not_cover_are_shut_too(string project)
     {
         // A `PackageReference` is not the only way in, and the other two leave nothing for the
@@ -135,6 +141,125 @@ public sealed class GraphTests
         Assert.DoesNotContain(
             frameworks,
             f => f.StartsWith("Microsoft.AspNetCore", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void No_source_in_the_tree_imports_an_assembly_its_project_does_not_reference()
+    {
+        // **The replacement for the check that found the leak, and the reason it could be**
+        // **replaced.** That one read `using Parley.X` out of `src/Parley.Cli/Top` and walked X,
+        // because the terminal had no project of its own to walk: it lived inside `Parley.Cli`,
+        // which owns the store legitimately, so no ordinary walk could say anything about it. It
+        // found `NodeCatalogue` reaching `Parley.Store` through `Parley.Headless`.
+        //
+        // `Parley.Top` is a project now, so the three walks above cover it the way they cover
+        // every other, and this asks the narrower question that survives: that no source imports
+        // an assembly its project does not reference. The compiler enforces exactly that, so this
+        // cannot fail while the build passes -- which is the point. It is here as the record of
+        // what the import walk was for, and as the guard for a directory that is compiled into a
+        // project it does not sit under.
+        foreach (var (project, sources) in new[]
+                 {
+                     ("src/Parley.Top/Parley.Top.csproj", "src/Parley.Top"),
+                     ("src/Parley.Setup/Parley.Setup.csproj", "src/Parley.Setup"),
+                     ("src/Parley.Client/Parley.Client.csproj", "src/Parley.Client"),
+                 })
+        {
+            var reached = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            Walk(RepositoryPath(project), NameOf(RepositoryPath(project)), reached);
+
+            var imported = new SortedSet<string>(StringComparer.Ordinal);
+
+            foreach (var file in Directory.EnumerateFiles(
+                         RepositoryPath(sources), "*.cs", SearchOption.AllDirectories))
+            {
+                foreach (var line in File.ReadLines(file))
+                {
+                    if (!line.StartsWith("using Parley.", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    // `using Parley.Client.Views;` is a claim on Parley.Client. Two segments name
+                    // the assembly; anything deeper is a namespace inside it.
+                    var named = line["using ".Length..].TrimEnd(';', ' ').Split('.');
+
+                    if (named.Length >= 2)
+                    {
+                        imported.Add($"{named[0]}.{named[1]}");
+                    }
+                }
+            }
+
+            Assert.NotEmpty(imported);
+
+            var breaches = imported
+                .Where(assembly => File.Exists(RepositoryPath($"src/{assembly}/{assembly}.csproj")))
+                .Where(assembly => !string.Equals(assembly, NameOf(RepositoryPath(project)),
+                    StringComparison.Ordinal))
+                .Where(assembly => !reached.ContainsKey(assembly))
+                .ToList();
+
+            Assert.True(
+                breaches.Count == 0,
+                $"{sources} imports what {project} does not reference: "
+                + string.Join(", ", breaches));
+        }
+    }
+
+    [Fact]
+    public void The_brokers_tool_carries_no_part_of_the_web_stack()
+    {
+        // **SC-005, and the reason it is a walk rather than a reading of one project file.** The
+        // broker's tool hosted the web console in its own process, so `Parley.Cli` referenced
+        // `Parley.Web` and every machine that installed a broker installed Kestrel and Razor with
+        // it — including the machines that only run agents, which is most of them.
+        //
+        // The web UI is its own tool now. This asserts the reference is gone and that nothing has
+        // put it back by another route, which is the part a reading of the csproj cannot say.
+        var reached = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        Walk(RepositoryPath("src/Parley.Cli/Parley.Cli.csproj"), "Parley.Cli", reached);
+
+        Assert.False(
+            reached.ContainsKey("Parley.Web"),
+            "the broker's tool reaches the web stack via " + reached.GetValueOrDefault("Parley.Web"));
+
+        // Non-vacuity: the walk resolved a real graph rather than nothing at all.
+        Assert.Contains("Parley.Broker", reached.Keys);
+        Assert.Contains("Parley.Store", reached.Keys);
+    }
+
+    [Fact]
+    public void Configuration_reaches_neither_a_store_nor_the_transport()
+    {
+        // **It is about to be referenced by every tool, so anything acquired here is acquired by
+        // all four.** `Parley.Configuration` was already the assembly two programs shared a reader
+        // through; it is now the assembly the broker, the terminal, the web UI and the adapter all
+        // read their per-machine files from. A store added here would put one in a terminal, and a
+        // transport would put a socket in a file reader.
+        //
+        // The transport is included as well as a store because this project's whole claim is that
+        // it knows nothing of brokers. Something that can dial one is something that will.
+        var reached = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        Walk(
+            RepositoryPath("src/Parley.Configuration/Parley.Configuration.csproj"),
+            "Parley.Configuration",
+            reached);
+
+        string[] forbidden = [.. Forbidden, "Parley.Transport", "Grpc"];
+
+        var breaches = reached
+            .Where(r => forbidden.Any(f => r.Key.Contains(f, StringComparison.OrdinalIgnoreCase)))
+            .Select(r => $"{r.Key} (via {r.Value})")
+            .ToList();
+
+        Assert.True(
+            breaches.Count == 0,
+            "Parley.Configuration has acquired something every tool would then carry: "
+            + string.Join(", ", breaches));
     }
 
     /// <summary>Follows project references from one project file, depth first.</summary>

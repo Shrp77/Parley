@@ -39,7 +39,7 @@ internal static class DeploymentVariables
                 // read a variable at all, and their absence made the "only variables a server
                 // reads" check refuse two names the plugin was right to mention.
                 typeof(MachineName),
-                typeof(Parley.Headless.NodeCatalogue),
+                typeof(Parley.Configuration.NodeCatalogue),
 
                 // The manifest's, read by all three processes rather than by any one of them.
                 // See Machine() for why that makes it a fourth set instead of a fourth entry in
@@ -92,7 +92,7 @@ internal static class DeploymentVariables
     /// </remarks>
     public static IReadOnlyList<string> Node() =>
     [
-        Parley.Headless.NodeCatalogue.PathVariable
+        Parley.Configuration.NodeCatalogue.PathVariable
     ];
 
     /// <summary>

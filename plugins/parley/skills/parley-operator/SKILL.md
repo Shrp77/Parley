@@ -113,9 +113,11 @@ parley autostart install              start both whenever you log in; with proje
 parley autostart remove               stop doing that
 parley autostart status               say whether it is set up, and what it serves
 parley up                             run this machine's node, so its agents can be started
-parley console [<url>]                the operator's console in a browser; loopback by default
+parley web-ui [<url>]                 the operator's web UI in a browser; loopback by default
+                                      (its own tool: parley-web-ui, installed separately)
+parley console [<url>]                the old spelling of web-ui; works until 0.21.0
 parley top                            the same deployment in this terminal; needs a real one
-                                      (four regions, Tab between them; adds and removes agents)
+                                      (its own tool: parley-top, installed separately)
 
 parley project list                   what this machine is configured for
 parley project add <name> --db <path> --listen <url>    name a deployment
@@ -141,6 +143,8 @@ parley clarifications                 how deep clarification went, and whether t
 parley referrals                      where questions are sent onward, and to whom
 parley notifications                  how much Notify carries, and who can judge it
 parley waiting <agent>                how many messages and polls await an agent
+parley open                           conversations with an exchange still open, and who is in
+                                      them; what stopping the broker would interrupt
 parley --help                         the same list, on stdout, exiting zero
 ```
 

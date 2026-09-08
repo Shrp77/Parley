@@ -165,7 +165,7 @@ public sealed class StartupBannerTests
         // against a concurrent writer, none split.
         var block = ConsoleAnnouncement(program);
 
-        Assert.Contains("Console:  {consoleAt}", block, StringComparison.Ordinal);
+        Assert.Contains("Web UI:   {consoleAt}", block, StringComparison.Ordinal);
         Assert.Contains("Open that one in a browser.", block, StringComparison.Ordinal);
     }
 
@@ -324,7 +324,7 @@ public sealed class StartupBannerTests
         // The whole region, comments included, because this process's own warnings already lose
         // their section signs on a console whose code page nobody chose. A banner that renders as
         // question marks is worse than a plain one.
-        var region = HostingConsole(RepositoryFile.Read("src/Parley.Cli/Program.cs"));
+        var region = HostingWebUiBlock(RepositoryFile.Read("src/Parley.Cli/Program.cs"));
 
         var offending = region.Where(character => !char.IsAscii(character)).Distinct().ToList();
 
@@ -336,11 +336,11 @@ public sealed class StartupBannerTests
     /// <summary>The source of the local function that hosts the console.</summary>
     /// <param name="program">The whole of <c>Program.cs</c>.</param>
     /// <returns>Its text, from the signature to the comment that follows it.</returns>
-    private static string HostingConsole(string program)
+    private static string HostingWebUiBlock(string program)
     {
-        var start = program.IndexOf("async Task<int> HostingConsole", StringComparison.Ordinal);
+        var start = program.IndexOf("async Task<int> HostingWebUi", StringComparison.Ordinal);
 
-        Assert.True(start > 0, "the console is no longer hosted from Program.cs");
+        Assert.True(start > 0, "the web UI is no longer started from Program.cs");
 
         var end = program.IndexOf("// Passed apart", start, StringComparison.Ordinal);
 
@@ -354,7 +354,7 @@ public sealed class StartupBannerTests
     /// <returns>The arguments of that call.</returns>
     private static string ConsoleAnnouncement(string program)
     {
-        var body = HostingConsole(program);
+        var body = HostingWebUiBlock(program);
 
         // From where the block is composed, not from the call. It used to start at the call,
         // which worked while every line of the block was a literal argument to it — and the
@@ -363,9 +363,13 @@ public sealed class StartupBannerTests
         //
         // The single-write property that start was protecting is now asserted directly, below,
         // rather than implied by everything happening to sit inside one set of parentheses.
-        var composed = body.IndexOf("var body =", StringComparison.Ordinal);
+        // Anchored at `var opening` rather than `var body`, which is the same lesson this
+        // extraction already learned once: the web UI's line moved up one more variable when it
+        // gained a second form for the case where the tool did not start. Anchoring at the first
+        // step covers however many the composition takes.
+        var composed = body.IndexOf("var opening =", StringComparison.Ordinal);
 
-        Assert.True(composed > 0, "the console block is no longer composed before it is written");
+        Assert.True(composed > 0, "the web UI block is no longer composed before it is written");
 
         var call = body.IndexOf("reporting.WriteLineAsync(", composed, StringComparison.Ordinal);
 

@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      xUnit v3 test projects are stand-alone executables, not libraries. Omitting this
+      produces a project that builds but discovers no tests.
+    -->
+    <OutputType>Exe</OutputType>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    The web UI tool, and the host it is a way of starting.
+
+    A project of its own because of what it checks: Razor Pages are found by walking the entry
+    assembly and its dependencies, so the failure worth catching only happens when the entry
+    assembly is something other than Parley.Web. It used to live in Parley.Cli.Tests, which was
+    exactly that until the broker's tool stopped referencing the web stack at all.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Parley.WebUi\Parley.WebUi.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)..\ManifestIsolation.cs" Link="ManifestIsolation.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <!-- See Directory.Packages.props: one banned symbol, and why. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)..\..\BannedSymbols.txt" />
+  </ItemGroup>
+</Project>

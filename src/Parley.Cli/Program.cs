@@ -1,10 +1,13 @@
-﻿using System.Globalization;
+﻿using System.ComponentModel;
+using System.Diagnostics;
+using System.Globalization;
+using Parley.Setup;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Parley.Cli;
+using Parley.Client;
 using Parley.Configuration;
 using Parley.Core;
-using Parley.Headless;
 using Wire = Parley.Transport;
 
 // The operator's way in, and the broker's. SPEC.md §10.2 operations, plus the two processes a
@@ -30,27 +33,33 @@ const string Help = """
 
       parley serve [--db <path>] [--listen <url>]      run the broker: the one process that
                    [--log <path>] [--with-node]         opens the store, and what everything
-                   [--with-console [--console <url>]]   else connects to. --with-node also runs
+                   [--with-web-ui [--web-ui <url>]]     else connects to. --with-node also runs
                                                        this machine's node in it, and
-                                                       --with-console the operator's console
+                                                       --with-web-ui starts the web UI beside it
 
       parley top                                       a deployment from this terminal: the
                                                        projects, who is in each, and their
                                                        conversations as transcripts. Needs a
-                                                       terminal, not a browser
+                                                       terminal, not a browser. Provided by
+                                                       the parley-top tool, installed
+                                                       separately so that changing it does
+                                                       not stop the broker
 
-      parley console [<url>]                           the operator's console in a browser:
+      parley web-ui [<url>]                            the operator's web UI in a browser:
                                                        every project, the agents in each, and
                                                        conversations as a transcript that says
                                                        who did not see what. Loopback unless
-                                                       you say otherwise
+                                                       you say otherwise. Provided by the
+                                                       parley-web-ui tool, installed
+                                                       separately so that changing it does
+                                                       not stop the broker
 
       parley autostart install [--db <path>]           start the broker when you log in, with
-                               [--node-config <path>]  this machine's node and the console.
-                               [--console <url>]       With projects named and no --db, the
-                               [--no-console]          entry serves every project in the
+                               [--node-config <path>]  this machine's node and the web UI.
+                               [--web-ui <url>]        With projects named and no --db, the
+                               [--no-web-ui]           entry serves every project in the
                                                        manifest, each with its own node.
-                                                       --no-console leaves the console out
+                                                       --no-web-ui leaves the web UI out
       parley autostart remove                          stop doing that
       parley autostart status                          say whether it is set up, and what it
                                                        was registered to run
@@ -90,6 +99,10 @@ const string Help = """
       parley clarifications                            the clarify depth distribution, and whether the cap binds
       parley referrals                                 where questions are sent onward, and to whom
       parley notifications                             how much Notify carries, and who has had enough to judge
+      parley open                                      every conversation with an exchange
+                                                       still open, and who is in it. What a
+                                                       broker restart would interrupt
+
       parley waiting <agent>                           how many messages and polls await an agent
 
       parley --version                                 this build, and the protocol it speaks
@@ -147,6 +160,12 @@ const string Help = """
 
 const int Usage = 64;          // EX_USAGE
 const int Config = 78;         // EX_CONFIG
+// **The only thing this tool knows about the web UI.** FR-015: the broker's tool must not learn
+// the web stack in order to start one, so what it holds is a command name and an address. The
+// name is here rather than inline because `serve --with-web-ui` and the `web-ui` wrapper both
+// need it, and two spellings of one command name is a machine where one of them is wrong.
+const string WebUiTool = "parley-web-ui";
+
 const int IoError = 74;        // EX_IOERR
 const int Unavailable = 69;    // EX_UNAVAILABLE
 
@@ -183,20 +202,58 @@ if (arguments.Exists(a => a is "--version" or "-v"))
 var selectAllRepositories = TakeFlag("--all");
 var selectNoRepositories = TakeFlag("--none");
 var hostNode = TakeFlag("--with-node");
+// **Two spellings for one flag, and the old one lives for one minor version.** `--with-console`
+// is what the owner's scheduled task holds right now, and an install that silently stopped
+// honouring it would take the web UI off a machine at the next logon with nothing said. It warns
+// once, names the new spelling, and is removed at 0.21.0 -- a date rather than a kindness that
+// becomes permanent.
+var hostWebUi = TakeFlag("--with-web-ui");
 var hostConsole = TakeFlag("--with-console");
+
+if (hostConsole)
+{
+    hostWebUi = true;
+}
 var noConsole = TakeFlag("--no-console");
 var destroy = TakeFlag("--destroy");
 var databasePath = TakeOption("--db", "-d");
 var listenOn = TakeOption("--listen", "-l");
 var brokerAddress = TakeOption("--broker", "-b");
 var logPath = TakeOption("--log", null);
+var webUiOn = TakeOption("--web-ui", null);
 var consoleOn = TakeOption("--console", null);
+var noWebUi = TakeFlag("--no-web-ui");
 
 // Resolved once. `serve --with-console` and `autostart install` both need the address, and
 // a default written in two places is two answers to one question that agree only until
 // somebody changes one of them -- here, by installing an entry pointing somewhere the
 // running console is not.
-var consoleAt = consoleOn ?? Parley.Web.ConsoleHost.LoopbackAddress;
+// **Either spelling, resolved once.** `--console` and `--with-console` are the old names and work
+// for one minor version: the owner's scheduled task holds `--with-console` right now, and an
+// install that silently stopped honouring it would take the web UI off a machine at the next
+// logon with nothing said. Removed at 0.20.0, which is a date rather than a kindness that becomes
+// permanent -- CLAUDE.md carries it.
+var webUiAt = webUiOn ?? consoleOn;
+var consoleAt = webUiAt ?? WebUiAddress.Loopback;
+
+// Said once, on standard error, and only when an old spelling was actually used. A warning on
+// every run would train somebody to stop reading this stream, which is where the broker reports
+// the things that matter.
+var oldSpelling = new List<string>();
+
+if (hostConsole) { oldSpelling.Add("--with-console"); }
+
+if (consoleOn is not null) { oldSpelling.Add("--console"); }
+
+if (noConsole) { oldSpelling.Add("--no-console"); }
+
+if (oldSpelling.Count > 0)
+{
+    await Console.Error.WriteLineAsync(
+        $"{string.Join(", ", oldSpelling)} still works and is removed at 0.21.0. The web UI is a"
+        + " tool of its own now, so the flags name it: --with-web-ui, --web-ui <url>,"
+        + " --no-web-ui.").ConfigureAwait(false);
+}
 
 // Taken here with the rest, and it has to be: everything left starting with a hyphen is refused
 // below as an option this does not have, so a flag consumed by the command it belongs to never
@@ -256,18 +313,18 @@ var rest = arguments.Skip(1).ToArray();
 // as switching something on and changes nothing: the console is installed by default there, so
 // the only meaningful choices are the address and the way out. A flag accepted and ignored is
 // worse than one refused, because the person who typed it believes it did something.
-if (hostConsole && verb != "serve")
+if (hostWebUi && verb != "serve")
 {
     await Console.Error.WriteLineAsync(
-        "--with-console is only for `parley serve`, which is the process that would host the "
-        + $"console. `parley {verb}` accepts it no more than any other command it does not "
-        + "have — and `autostart install` needs no flag to install one, only --console to move "
-        + "it or --no-console to leave it out.").ConfigureAwait(false);
+        "--with-web-ui is only for `parley serve`, which is the process that would start the "
+        + $"web UI. `parley {verb}` accepts it no more than any other command it does not "
+        + "have — and `autostart install` needs no flag to register one, only --web-ui to move "
+        + "it or --no-web-ui to leave it out.").ConfigureAwait(false);
 
     return Usage;
 }
 
-if ((consoleOn is not null || noConsole) && verb != "serve" && verb != "autostart")
+if ((webUiAt is not null || noWebUi || noConsole) && verb != "serve" && verb != "autostart")
 {
     await Console.Error.WriteLineAsync(
         $"--console and --no-console are for `parley serve` and `parley autostart install`, "
@@ -338,57 +395,41 @@ if (verb == "project")
         destroy: destroy).ConfigureAwait(false);
 }
 
-// Beside `project` and above the selection below, because the console is not scoped to one
-// project — it is the page you choose one from, and it reads the manifest itself. Naming a
-// project here would be naming one for a view whose first screen is the list of them.
+// **`web-ui` forwards now, and `console` is the old spelling of it.** The web UI is its own tool:
+// `parley` no longer references it, so a machine that installs a broker no longer installs Kestrel
+// and Razor with it. Windows cannot replace a running executable either, so hosting it here meant
+// stopping the broker to change a page, which SPEC.md §12 makes expensive.
 //
-// It is a client like every other command and opens no database. That it is served rather than
-// printed changes nothing about which side of §4 it sits on: it holds a connection to each
-// project's broker and asks, exactly as `parley registry` does.
-if (verb == "console")
+// The raw command line minus the verb is passed on and nothing is parsed here, for the reason
+// `top` gives: one parser per tool rather than one and an imitation of it.
+if (verb is "web-ui" or "console")
 {
-    var listenTo = rest.Length > 0 ? rest[0] : listenOn;
+    if (verb == "console")
+    {
+        await Console.Error.WriteLineAsync(
+            "`parley console` still works and is removed at 0.21.0. It is `parley web-ui` now: the"
+            + " web UI is a tool of its own, and console already meant three things here.")
+            .ConfigureAwait(false);
+    }
 
-    // Said rather than ignored. Every other command here acts on one deployment, so naming one
-    // is the habit; the console's first page is the list of them, and silently dropping the name
-    // would answer a narrower question than was asked without saying so.
+    // Said rather than ignored. Every other command here acts on one deployment, so naming one is
+    // the habit; the web UI's first page is the list of them, and silently dropping the name would
+    // answer a narrower question than was asked without saying so.
     if (!string.IsNullOrWhiteSpace(projectName))
     {
         await Console.Error.WriteLineAsync(
-            $"The console is not scoped to one project, so --project {projectName} was not "
+            $"The web UI is not scoped to one project, so --project {projectName} was not "
             + "used. Every project this machine knows is listed on its first page.")
             .ConfigureAwait(false);
     }
 
-    // Checked here rather than left to Kestrel, which refuses a malformed address several frames
-    // deep in a stack trace that says nothing about what was typed.
-    if (listenTo is not null
-        && !Uri.TryCreate(listenTo, UriKind.Absolute, out _))
-    {
-        await Console.Error.WriteLineAsync(
-            $"'{listenTo}' is not an address the console can bind. Give it one like "
-            + $"{Parley.Web.ConsoleHost.LoopbackAddress}.").ConfigureAwait(false);
+    var forwarded = new List<string>(args);
 
-        return Usage;
-    }
+    forwarded.Remove(verb);
 
-    // The broker every other command here would have connected to, offered when this machine has
-    // named no projects. Running by explicit paths is supported (§4.1), and on such a machine a
-    // console that listed nothing would be the only client unable to reach a broker the rest of
-    // the tool talks to happily — while saying "no projects", which is true and reads as
-    // "nothing to see".
-    var fallbackBroker = ProjectResolution
-        .Endpoint(brokerAddress, Environment.GetEnvironmentVariable, null).Value;
-
-    await Console.Out.WriteLineAsync(
-        $"Parley console on {listenTo ?? Parley.Web.ConsoleHost.LoopbackAddress}. Ctrl+C stops it.")
+    return await Forwarding
+        .RunAsync(WebUiTool, "Parley.WebUi", $"parley {verb}", forwarded, Console.Error)
         .ConfigureAwait(false);
-
-    await Parley.Web.ConsoleHost
-        .RunAsync([], listenTo, Console.Error, fallbackBroker)
-        .ConfigureAwait(false);
-
-    return 0;
 }
 
 // Beside `console` and for the same reason: `top` is not scoped to one project either — its
@@ -400,23 +441,23 @@ if (verb == "console")
 // operator already is. SPEC.md §17 question 15 is why either exists: an agent attached through
 // somebody's editor window was started by nobody, so nothing can hand it a turn, and a person
 // needs somewhere to take part that is not an editor.
+// **This forwards now, and parses nothing on the way.** The terminal is its own tool, because
+// Windows cannot replace a running executable and every terminal change therefore stopped the
+// broker — which §12 makes expensive: the node stops, every agent it started is told to quit, and
+// the process was what held everything each had learned.
+//
+// What is passed on is the raw command line minus the verb, not the options this file has already
+// taken. `--config` and `--broker` mean the same to both tools and there is one parser for them,
+// in the tool that uses them. Anything else is the child's to accept or refuse, including
+// `--project`, which it warns about in the words this branch used to.
 if (verb == "top")
 {
-    if (!string.IsNullOrWhiteSpace(projectName))
-    {
-        await Console.Error.WriteLineAsync(
-            $"parley top is not scoped to one project, so --project {projectName} was not used. "
-            + "Every project this machine knows is on its first screen.").ConfigureAwait(false);
-    }
+    var forwarded = new List<string>(args);
 
-    // The same fallback the console offers, so the two surfaces list the same deployments on a
-    // machine that has named none. A person who can reach a broker from `parley registry` and not
-    // from here would reasonably conclude this surface was broken.
-    var topFallback = ProjectResolution
-        .Endpoint(brokerAddress, Environment.GetEnvironmentVariable, null).Value;
+    forwarded.Remove("top");
 
-    return await Parley.Cli.Top.TopCommand
-        .RunAsync(manifestPath, topFallback)
+    return await Forwarding
+        .RunAsync("parley-top", "Parley.Top", "parley top", forwarded, Console.Error)
         .ConfigureAwait(false);
 }
 
@@ -553,75 +594,148 @@ if (verb == "serve" && rest.Length == 0)
                 channel, addresses[0], from, reporting, stopping).ConfigureAwait(false);
         }
 
-        // Contained here rather than left to the broker's own containment, which reports whatever
-        // it catches as the node stopping. The console's likeliest failure is not a fault at all
-        // but a port already in use — a second console, or anything else on 5280 — and a broker
-        // that refused to start because a web page could not bind would take a whole deployment
-        // down for the one part of it no agent uses.
-        async Task<int> HostingConsole(
+        // **Started as a child process, not hosted here, and that is the change.** The web UI is
+        // its own tool now: `parley` no longer references it, so a machine that installs a broker
+        // no longer installs Kestrel and Razor with it -- which is most machines, since most only
+        // run agents.
+        //
+        // What this knows about the web UI is its command name and its address. That is FR-015
+        // exactly: the broker's tool must not learn the web stack in order to start one.
+        //
+        // Contained, for the reason the in-process version was. The web UI's likeliest failure is
+        // not a fault at all but a port already in use -- a second one, or anything else on 5280 --
+        // and a broker that refused to serve because a web page could not bind would take a whole
+        // deployment down for the one part of it no agent uses.
+        async Task<int> HostingWebUi(
             IReadOnlyList<string> addresses, TextWriter reporting, CancellationToken stopping)
+        {
+            // Set apart, because this is the one address on the screen a person is meant to type
+            // into a browser and it used to be the third line of five, in the same weight as
+            // everything else. Ruled rather than coloured: this writer is tee'd into --log, so
+            // escape codes would be written into a file somebody greps.
+            //
+            // ASCII only, for the same reason a supervisor's log is: the section sign in this
+            // process's own warnings already comes out mangled on a console whose code page nobody
+            // chose, and a banner that renders as question marks is worse than a plain one.
+            //
+            // Both surfaces, because this block used to name one. A person reading it is at a
+            // terminal on the machine that runs the broker, and that is frequently not a machine
+            // with a browser on it at all.
+
+            Process? child = null;
+            string? whyNot = null;
+
+            try
+            {
+                // The address the broker actually bound, not the one it was asked for: --listen may
+                // name port 0, and a web UI pointed at port 0 reaches nothing.
+                var start = new ProcessStartInfo(WebUiTool) { UseShellExecute = false };
+
+                start.ArgumentList.Add("--listen");
+                start.ArgumentList.Add(consoleAt);
+                start.ArgumentList.Add("--broker");
+                start.ArgumentList.Add(addresses[0]);
+
+                child = Process.Start(start);
+
+                if (child is null)
+                {
+                    throw new InvalidOperationException($"{WebUiTool} could not be started.");
+                }
+            }
+            catch (Exception failure) when (failure is Win32Exception
+                                                or InvalidOperationException
+                                                or FileNotFoundException)
+            {
+                // Not installed, most likely, which is an ordinary state now that the surfaces are
+                // chosen per machine. Named as a missing tool rather than as a fault, and the
+                // broker keeps serving -- which is the containment FR-017 asks for.
+                whyNot = failure.Message;
+            }
+
+            // **Printed either way, and the failure is a line inside it rather than instead of**
+            // **it.** The block names both ways into a deployment, and the reader is at a terminal
+            // on the machine running the broker -- frequently not a machine with a browser at all,
+            // which is the whole reason `parley top` exists. A version that suppressed the block
+            // when the web UI could not start would take the terminal line with it, on exactly the
+            // run where somebody needs to be told there is another way in.
+            var opening = whyNot is null
+                ? $"   Web UI:   {consoleAt}{Environment.NewLine}"
+                    + "   Open that one in a browser."
+                : $"   Web UI:   did not start ({whyNot}){Environment.NewLine}"
+                    + $"   The broker is still serving. Install it: dotnet tool install --global Parley.WebUi";
+
+            var body =
+                opening + Environment.NewLine
+                + Environment.NewLine
+                + $"   Terminal: parley top{Environment.NewLine}"
+                + "   The same deployment, from here, and no browser needed.";
+
+            // Sized to the widest line between the rules. It was the address plus twelve, which
+            // was right for as long as the address was the widest thing here, and wrong the moment
+            // anything else was -- a rule shorter than what it rules is how a deliberately set-apart
+            // block starts looking like a mistake. The failure line is wider than any address, which
+            // is the case that would have broken a fixed width.
+            var rule = new string(
+                '-', body.Split(Environment.NewLine).Max(line => line.Length));
+
+            await reporting.WriteLineAsync(
+                $"{Environment.NewLine}  {rule}{Environment.NewLine}"
+                + $"{body}{Environment.NewLine}"
+                + $"  {rule}{Environment.NewLine}").ConfigureAwait(false);
+
+            try
+            {
+                // **Not waited on, and not restarted.** A web UI that exits -- because its port was
+                // taken, or because somebody killed it -- is a page that is gone, and a broker that
+                // ended with it would trade a deployment for a web page. Restarting it would be
+                // worse: a port held by something else makes that a loop.
+                //
+                // What is waited on is the broker's own shutdown, which is what this hook is for.
+                return await WaitForShutdown(stopping).ConfigureAwait(false);
+            }
+            finally
+            {
+                // **Ended with the broker, so nothing is orphaned.** A web UI outliving the broker
+                // it was started for is a page serving a deployment that has stopped, holding the
+                // port that the next broker's web UI would want.
+                try
+                {
+                    if (child is { HasExited: false })
+                    {
+                        child.Kill(entireProcessTree: true);
+                        child.WaitForExit(5000);
+                    }
+                }
+                catch (Exception ending) when (ending is InvalidOperationException
+                                                   or Win32Exception
+                                                   or NotSupportedException)
+                {
+                    // Already gone, or not this process's to end. Neither is worth a message on a
+                    // path that runs while the broker is shutting down.
+                }
+
+                child?.Dispose();
+            }
+        }
+
+        // The broker stopping is what this hook waits on. A local function rather than a
+        // line inline, because both the started and the could-not-start paths end here and a
+        // second copy of an infinite wait is a second place to get cancellation wrong.
+        static async Task<int> WaitForShutdown(CancellationToken stopping)
         {
             try
             {
-                // Set apart, because this is the one address on the screen a person is meant to
-                // type into a browser and it used to be the third line of five, in the same
-                // weight as everything else. Ruled rather than coloured: this writer is tee'd
-                // into --log, so escape codes would be written into a file somebody greps.
-                //
-                // ASCII only, for the same reason a supervisor's log is: the section sign in this
-                // process's own warnings already comes out mangled on a console whose code page
-                // nobody chose, and a banner that renders as question marks is worse than a plain
-                // one.
-                // Both surfaces, because this block used to name one. A person reading it is at a
-                // terminal on the machine that runs the broker, and that is frequently not a
-                // machine with a browser on it at all -- which is the whole reason `parley top`
-                // exists. Naming only the console here made the terminal surface something you
-                // found in --help after deciding the deployment had no way in.
-                var body =
-                    $"   Console:  {consoleAt}{Environment.NewLine}"
-                    + $"   Open that one in a browser.{Environment.NewLine}"
-                    + Environment.NewLine
-                    + $"   Terminal: parley top{Environment.NewLine}"
-                    + "   The same deployment, from here, and no browser needed.";
-
-                // Sized to the widest line between the rules. It was the address plus twelve,
-                // which was right for as long as the address was the widest thing here and wrong
-                // the moment anything else was -- a rule shorter than what it rules is how a
-                // deliberately set-apart block starts looking like a mistake.
-                var rule = new string(
-                    '-', body.Split(Environment.NewLine).Max(line => line.Length));
-
-                await reporting.WriteLineAsync(
-                    $"{Environment.NewLine}  {rule}{Environment.NewLine}"
-                    + $"{body}{Environment.NewLine}"
-                    + $"  {rule}{Environment.NewLine}").ConfigureAwait(false);
-
-                // The address the broker actually bound, not the one it was asked for: --listen
-                // may name port 0, and a console pointed at port 0 reaches nothing.
-                await Parley.Web.ConsoleHost
-                    .RunAsync([], consoleAt, reporting, addresses[0], stopping)
-                    .ConfigureAwait(false);
-
-                return 0;
+                await Task.Delay(Timeout.Infinite, stopping).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
-                return 0;
+                // The broker stopping is the ordinary way out of here.
             }
-            // Not OutOfMemoryException, matching the one other catch-all in this tool. The
-            // containment below is for a console that could not bind a port; a process out of
-            // memory is not contained by carrying on without a web page, and swallowing it here
-            // would leave the broker running in a state nothing else in it expects to survive.
-            catch (Exception failure) when (failure is not OutOfMemoryException)
-            {
-                await reporting.WriteLineAsync(
-                    $"The console did not start on {consoleAt}: {failure.Message}. The broker is "
-                    + "still serving and every agent is unaffected; `parley console` starts one by "
-                    + "hand on another address.").ConfigureAwait(false);
 
-                return Unavailable;
-            }
+            return 0;
         }
+
 
         // Passed apart, because they are not the same kind of thing. A node joins one broker and
         // the serve refuses to host one across several projects; a console reads this machine's
@@ -656,7 +770,7 @@ if (verb == "serve" && rest.Length == 0)
                 Console.Out,
                 Console.Error,
                 hostNode ? HostingNodeFor : null,
-                hostConsole ? HostingConsole : null,
+                hostWebUi ? HostingWebUi : null,
                 watching ? RereadManifest : null,
                 token)
             : ServeCommand.RunAsync(
@@ -666,7 +780,7 @@ if (verb == "serve" && rest.Length == 0)
                 Console.Out,
                 Console.Error,
                 hostNode ? HostingNode : null,
-                hostConsole ? HostingConsole : null,
+                hostWebUi ? HostingWebUi : null,
                 token);
     }).ConfigureAwait(false);
 }
@@ -908,6 +1022,38 @@ try
 
                     return 0;
                 }).ConfigureAwait(false);
+
+        // **What is in flight, for the one caller that has to know before it stops a broker.**
+        // §12 says the node stopping tells every agent it started to quit, and a question already
+        // drained into an agent's inbox sits in §4.2's four-hour Working window rather than the
+        // fifteen-minute Delivery one -- so killing the agent that holds it leaves the exchange
+        // open and owed with nothing running to answer, ending in `ghosted`, which §5.3 defines as
+        // "nobody replied". Against an agent that was killed rather than one that ignored anything.
+        //
+        // Both surfaces already read this; the command line could not, so `install.ps1` had no way
+        // to ask. It is the same §10.2 `conversations()` reply filtered to what is open, and it
+        // discloses nothing a surface does not.
+        //
+        // One line per conversation, identifier and participants, because the caller is a script
+        // and the reader is a person about to make a decision.
+        case "open" when rest.Length == 0:
+        {
+            var page = await new BrokerClient(new Wire.Operators.OperatorsClient(channel))
+                .ConversationsAsync(cancellationToken: CancellationToken.None)
+                .ConfigureAwait(false);
+
+            var open = page.Items.Where(c => c.HasOpenExchange).ToList();
+
+            foreach (var conversation in open)
+            {
+                await Console.Out.WriteLineAsync(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{conversation.Id} {string.Join(",", conversation.Participants.Select(p => p.Value))}"))
+                    .ConfigureAwait(false);
+            }
+
+            return 0;
+        }
 
         default:
             await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);

@@ -69,6 +69,74 @@ src/Parley.Client    What a client of a broker needs in order to show a deployme
                     the exchange closed. Two surfaces each writing that themselves is how they
                     come to disagree about what a person has seen.
 
+src/Parley.Setup    What a person does to a machine so Parley can run on it: enrolling a
+                    repository as an agent, naming projects, resolving where the per-machine files
+                    live, and installing or reading the autostart entry. References
+                    Parley.Configuration and Parley.Transport.
+
+                    A project of its own for the reason Parley.Configuration is one: two programs
+                    do this and cannot otherwise share one implementation. `parley` does it from a
+                    shell and `parley-top` from a screen, and the terminal does not reimplement
+                    it — it runs the same commands in process and prints what they said, so a
+                    machine configured from a screen is configured exactly as one configured from
+                    a shell.
+
+                    Not folded into Parley.Configuration, which it otherwise resembles, because
+                    Parley.Mcp references that one: an agent's own server would then carry the
+                    code that writes its launch configuration. Harmless at runtime and wrong as a
+                    surface.
+
+                    The transport is here because destroying or listing a project asks its broker
+                    whether it is reachable, and what it holds, before touching anything. That is
+                    a client of a broker; it is not a route to a store.
+
+                    **There is no store here and there must never be.** GraphTests walks it.
+
+src/Parley.Top      The terminal operator surface, and its own tool — `parley-top` — rather than a
+                    subcommand of the broker's. References Parley.Client, Parley.Configuration,
+                    Parley.Setup and Parley.Transport.
+
+                    **Windows cannot replace a running executable.** While the terminal lived
+                    inside `parley`, every terminal change required stopping the broker, and
+                    SPEC.md §12 says what that costs: the node stops, tells every agent it started
+                    to quit, and the process is what held everything each had learned. The
+                    churniest component in the repository was forcing the most expensive restart —
+                    29 of the source files changed on main since c85a271 were the terminal, 1 was
+                    the broker.
+
+                    `parley top` still works and forwards here, passing the raw command line minus
+                    the verb and parsing nothing. One parser per tool rather than one and an
+                    imitation of it. When the tool is absent it names it and how to install it,
+                    rather than "unknown command", which would be untrue.
+
+                    **There is no store here and there must never be**, checked by the same
+                    transitive walk Parley.Client and Parley.Web are held to. That walk replaced
+                    the one that found the leak: while the terminal had no project of its own,
+                    `GraphTests` could say nothing about it at all, so its store-freedom was an
+                    intention rather than a check.
+
+                    `BuildIdentity` here is its own, not the broker's: this opens no store, so a
+                    schema number would be a claim about somebody else's build — and the type that
+                    reads one references the assembly that owns the store.
+
+src/Parley.WebUi    The web UI as its own tool -- `parley-web-ui` -- and nothing more than a way
+                    to start it. Everything it does lives in Parley.Web's ConsoleHost, because two
+                    callers each building a host is two hosts that differ the first time one of
+                    them is edited.
+
+                    **It takes ASP.NET Core off the broker's tool.** Parley.Cli referenced
+                    Parley.Web so that a broker could host the web UI in its own process, which put
+                    Kestrel and Razor on every machine that installed a broker -- including the
+                    ones that only run agents, which is most of them. The broker starts this as a
+                    child process now and knows one thing about it: its command name.
+
+                    `serve --with-web-ui` starts it, does not wait on it, does not restart it, and
+                    ends it when the broker ends. A web UI that cannot start -- a held port, a tool
+                    not installed -- leaves the broker serving and says so, in a block that still
+                    names `parley top`. Suppressing the block on that path would take the terminal
+                    line with it, on exactly the run where somebody needs to be told there is
+                    another way in.
+
 src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of the broker
                     rather than part of it. References Transport and Configuration and
                     nothing else: there is no SQLite on its graph and there must never be,
@@ -183,6 +251,31 @@ tests/Parley.Client.Tests What both surfaces share: seating's guards, the transc
                           from either this or the console. Deliberately does NOT reference
                           Microsoft.AspNetCore.Mvc.Testing — a web host reachable from here is how
                           a test of client behaviour quietly becomes a test of the console again.
+tests/Parley.Top.Tests    The terminal. Driving, Walking and Drawn moved here with it; Loopback,
+                          LoopbackOperator, ToolProcess and TestMachine are linked from
+                          Parley.Cli.Tests rather than copied, because an executable referencing an
+                          executable is a shape MTP does not run. It references Parley.Cli for the
+                          one test that is genuinely about both tools — a project created from the
+                          terminal whose broker comes up, and destroyed there and gone.
+
+                          **`TopProcess` runs the tool out of its own build directory and must.**
+                          A copy of `parley-top` lands beside these tests, and it does not work:
+                          this project also references Parley.Cli, which brings a framework
+                          reference to ASP.NET Core, so several Microsoft.Extensions.Configuration
+                          assemblies resolve from the shared framework and are left out of the
+                          output — while the terminal's own runtime configuration names only the
+                          base framework, and Terminal.Gui's module initializer scans every loaded
+                          assembly on start-up. The co-located copy dies with a
+                          TypeInitializationException before its first line. Nothing ships that
+                          arrangement; it is written down because the failure looks exactly like a
+                          broken tool.
+
+tests/Parley.WebUi.Tests  The web UI tool. Small, and it exists for one reason: Razor Pages are
+                          found by walking the entry assembly, so the failure worth catching only
+                          happens when the entry assembly is something other than Parley.Web. These
+                          tests lived in Parley.Cli.Tests, which was exactly that until the broker's
+                          tool stopped referencing the web stack at all.
+
 tests/Parley.Web.Tests    The console: the visibility derivation, what it refuses to render
                           raw, and that its project file references nothing that could open
                           a store.
@@ -502,7 +595,156 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/006-three-view-operator/` — three drill-down views (projects, one project,
+- **Active plan**: `specs/007-split-terminal-tool/` — 0.20.1. The terminal and the web UI
+  become their own
+  tool packages, so changing either no longer stops the broker. Today one executable holds
+  everything, an executable cannot be replaced while it runs, and stopping the broker stops the
+  node, which SPEC.md §12 says "tells every agent it started to quit" — where "the process holds
+  everything the agent has learned". Changing a status line ends every conversation on the machine.
+  The terminal is also the most-changed part of the repository: 29 source files last cycle against
+  1 in the broker and 0 in the adapter.
+
+  **The web UI splits too, and is renamed.** "Console" means three things here and only one is a
+  browser surface — `parley console` and `--with-console` become `web-ui`; `OperatorConsole` (§10.2)
+  and `ConsolePicker` (whether a terminal exists) do not change. An earlier draft of the spec said
+  the web UI was unusable on a headless machine; that was wrong and is corrected in place. It is an
+  HTTP server, it needs no display, and an SSH port-forward is what §16 permits — on a headless box
+  it beats the terminal, being a forward you leave up rather than a session you hold open. The
+  argument is that it should be a *choice*.
+
+  **Writing the spec found a live defect, and it ships first, alone.** The terminal reaches SQLite
+  today: `Parley.Cli/Top` uses `NodeCatalogue`, which lives in `Parley.Headless`, which references
+  `Parley.Store`. `GraphTests` could not have caught it — it walks from `Parley.Client` and
+  `Parley.Web`, and the terminal sits inside `Parley.Cli`, which owns the store legitimately. The
+  reader uses only `System.Text.Json` and `Parley.Core`, so it moves to `Parley.Configuration` at no
+  cost. `Parley.Client/Views/AgentStanding.cs` already documents the problem as a workaround it had
+  to code around.
+
+  **Step 1 is done (0.18.12): the leak is closed.** `NodeCatalogue` is in `Parley.Configuration`,
+  which is what it always needed — it uses `System.Text.Json` and `Parley.Core` and referenced
+  nothing else in `Parley.Headless`. `Parley.Headless` keeps `Parley.Store` for `AgentFleet` alone.
+
+  **The failing check came first, and that ordering is the point.**
+  `The_terminal_reaches_no_store_by_any_assembly_it_imports` reads every `using Parley.X` under the
+  terminal's sources and walks X's own references, because the terminal has no project to walk
+  from — it lives inside the one assembly that owns the store legitimately, which is exactly why no
+  existing guard could see it. Run before the move it said
+  `the terminal has a route to a store: Parley.Store (via Parley.Headless)`. It is replaced by an
+  ordinary project walk once `Parley.Top` exists.
+
+  `Parley.Configuration` gains a walk of its own in the same change: it must reach neither a store
+  nor the transport, because every tool is about to reference it and anything acquired there is
+  acquired by all four.
+
+  **Step 2 is done (0.19.0): `parley-top` is its own package, and it cost a project the plan did
+  not foresee.** The terminal does not reimplement enrolling a repository or creating a project —
+  it runs the same commands in process and prints what they said, with a remark saying why. Closing
+  over every `Parley.Cli` type it names in non-comment code is 11 files and 4,153 lines, every one
+  of which imports only `Parley.Configuration`, `Parley.Core` and the BCL. That became
+  `Parley.Setup`; `research.md` R8 carries why not `Parley.Configuration` (Parley.Mcp references
+  it, and an agent's server would then carry the code that writes its launch configuration) and why
+  not left where it was (the leak reopened through a wider route).
+
+  Five things learned building it, each written where it happened:
+
+  - **The terminal's tests lost a module initializer in the move.** `TestMachine` fixes the machine
+    half of every agent name; without it a registry holding `orders@test` no longer matched a seat
+    asking for `orders@<this laptop>`, and two seating guards stopped refusing. The guards were
+    intact and the fixture had gone, which is the more dangerous of the two.
+  - **`DriftTests` named two surfaces and there are three.** It read the whole of `Parley.Cli` as
+    "the terminal", so `PruneAsync` — bound by `parley prune` and deliberately by neither screen —
+    counted as bound by a screen. The command line is named as the third surface rather than the
+    operation exempted.
+  - **Two tools in one output directory break the child.** `Parley.Top.Tests` references both, and
+    `Parley.Cli` brings a framework reference to ASP.NET Core, so several
+    `Microsoft.Extensions.Configuration` assemblies resolve from the shared framework and are left
+    out — while the terminal's runtime configuration names only the base framework and
+    Terminal.Gui's module initializer scans every loaded assembly on start-up. The co-located copy
+    dies before its first line. Nothing ships that arrangement, and `TopProcess` says so.
+  - **SC-001 has two halves and the second is easy to miss.** Not stopping the broker is worthless
+    if the script re-registers the autostart entry afterwards: that replaces the scheduled task,
+    which restarts the process, which ends every resident agent anyway — the stop avoided and the
+    cost paid three hundred lines later. Found by reading the script's tail before running it on a
+    live deployment, which is where it would have been paid for real.
+  - **`install.ps1` read the version from `Parley.Cli`'s package**, which a surface-only run never
+    packs, so it stopped with "nothing was packed" on a run that had just packed exactly what it
+    was asked to. Found by running it.
+
+  **`-Only` is what SC-001 actually rests on, and the plan had not designed it.** `-Surfaces`
+  chooses which surfaces a machine installs; `-Only <command>` installs exactly those tools, and
+  the broker is stopped only when its own binary is among them. Verified on a live deployment
+  rather than asserted: `install.ps1 -Only parley-top` with a broker running left the same pid, the
+  same start time, the task Running, the project reachable and every agent registered.
+
+  **No test was lost in the move**, checked rather than claimed: the method listings before and
+  after differ by exactly two, both additions, both named.
+
+  **Step 3 is done (0.20.0): `parley-web-ui` is its own package, and "console" now means one
+  thing.** The broker starts it as a child process, does not wait on it, does not restart it, and
+  ends it when the broker ends. `Parley.Cli` no longer references `Parley.Web`, checked by a graph
+  walk that failed before the reference was removed and by reading the packed tool — a project file
+  says what is referenced directly, and a package says what lands on a machine.
+
+  **The deprecation has a date rather than being a kindness that becomes permanent.**
+  `parley console`, `--with-console`, `--console` and `--no-console` are the old spellings. They
+  work, warn once naming the new one, and are **removed at 0.21.0**. Two things made that
+  non-negotiable rather than polite: the owner's scheduled task holds `--with-console` right now,
+  and `InstalledEntry` must keep reading `--console` for as long as any machine has an entry
+  written before 0.19.0 — a reader knowing only the new name would report those entries as having
+  no web UI, so `autostart status` would say one thing while the entry did another.
+
+  `OperatorConsole` and `ConsolePicker` do **not** change, and a test says so. "Console" meant
+  three things here: the operator operations of §10.2, whether there is a terminal to draw on, and
+  the web pages. Only the third is a browser surface, and one of the other two is a protocol
+  boundary.
+
+  Four things learned building it, each written where it happened:
+
+  - **SC-005 is narrower than it reads, and it is narrowed in the open.** "A broker-only machine
+    carries no part of the web stack" cannot be literally true: the broker serves gRPC over Kestrel
+    and always has, so `Grpc.AspNetCore.Server` is in its package because `Parley.Server` needs it.
+    What this removes is the web UI's own half — the pages, Razor, and `Parley.Web` — and that is
+    what `PackedToolTests` asserts.
+  - **Suppressing the startup block on a failed web UI would take the terminal line with it.** The
+    first version printed the block only after the child started; a broker whose web UI could not
+    bind then never mentioned `parley top`, on exactly the run where somebody needs telling there
+    is another way in. The failure is a line inside the block now, not instead of it.
+  - **A banner extraction anchored to `var body` broke for the second time**, because the web UI's
+    line moved up one more variable when it gained a second form. Anchored at the first step of the
+    composition now, so it covers however many steps there are.
+  - **The plugin's skill lists `parley console` on purpose.** A test compares the verbs in the
+    tool's source against the skill's, and the deprecation message itself is a verb by that
+    measure. Rather than reword the message, the skill names the old spelling and the version it
+    goes at — which is true, and tells an agent both things.
+
+  **Step 4 is done (0.20.1): an install that must stop the broker says what that will interrupt.**
+  Both scripts ask before stopping, name the conversations with an exchange still open, and warn
+  rather than refuse — `-Force` already means the decision belongs to the person making it.
+
+  **It needed a command the CLI did not have, and `parley waiting` was the wrong one.** That counts
+  messages *queued* for an agent, which is the opposite of the risk: a question already drained
+  into an inbox is marked delivered and no longer queued, so it sits in §4.2's four-hour Working
+  window with nothing running to answer it once the agent is killed. That is exactly the exchange
+  that ends as `ghosted` and exactly the one `waiting` would say nothing about. `parley open` is
+  the §10.2 `conversations()` reply both surfaces already read, filtered to what is open — and a
+  test asserts it prints identifiers and participants and not one word of any payload.
+
+  **A guard that fails open says so.** When the broker cannot be asked, the scripts say they could
+  not ask rather than implying nothing is in flight; the two are indistinguishable from the
+  operator's side and lead somewhere completely different. That path is reached more often than it
+  looks: a `parley` older than 0.20.1 has no `open` command, exits non-zero, and the script
+  correctly degrades to "could not ask" — which is what every upgrade from an earlier version will
+  do once, and is the honest answer.
+
+  Neither script opens the store. §4 gives it to one process, and reading it for a progress message
+  would break the boundary the whole architecture rests on; a test names the ways a script could
+  open one rather than forbidding the word, because both scripts say "SQLite" out loud in prose
+  they print.
+
+  `research.md` carries eight decisions, `contracts/commands.md` the command surface each tool
+  exposes.
+
+- Previous: `specs/006-three-view-operator/` — three drill-down views (projects, one project,
   one conversation) replacing 005's four regions on one screen, on **both** surfaces; and the four
   operator operations the protocol did not have: `archive`, `unarchive` and `destroy` for a
   conversation, and `start` for a catalogued agent. The protocol work landed before the views,

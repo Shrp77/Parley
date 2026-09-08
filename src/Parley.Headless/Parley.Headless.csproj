@@ -12,6 +12,7 @@
     invoke belongs to whatever hosts the sweep, which is the adapter's own concern.
   -->
   <ItemGroup>
+    <ProjectReference Include="..\Parley.Configuration\Parley.Configuration.csproj" />
     <ProjectReference Include="..\Parley.Store\Parley.Store.csproj" />
   </ItemGroup>
 

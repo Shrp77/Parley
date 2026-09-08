@@ -1,3 +1,4 @@
+using Parley.Configuration;
 using Xunit;
 
 namespace Parley.Headless.Tests;
