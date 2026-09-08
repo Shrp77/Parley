@@ -1,4 +1,7 @@
-using Parley.Client;
+﻿using Parley.Client;
+using Parley.Configuration;
+
+
 
 namespace Parley.Web;
 
@@ -26,15 +29,15 @@ namespace Parley.Web;
 /// </remarks>
 public static class ConsoleHost
 {
-    /// <summary>Where the console listens when nothing says otherwise.</summary>
+    /// <summary>Where the web UI listens when nothing says otherwise.</summary>
     /// <remarks>
-    /// Loopback. SPEC.md §16 confines the transport to a trusted path because anything able to
-    /// reach a broker can claim to be any agent, and this console is a second door onto that same
-    /// path — it is not an authentication boundary and must not be mistaken for one. So the safe
-    /// default is the one where the question does not arise, and widening it announces itself
-    /// rather than happening quietly.
+    /// <see cref="WebUiAddress.Loopback"/>, which is where the number lives and where the reason
+    /// for it is written down. Kept here as a name because this is the assembly that binds it, and
+    /// a host that did not state its own default would send every reader to find out elsewhere.
+    /// It moved because four things in three packages now state this address and there was nowhere
+    /// else all four could see.
     /// </remarks>
-    public const string LoopbackAddress = "http://127.0.0.1:5280";
+    public const string LoopbackAddress = WebUiAddress.Loopback;
 
     /// <summary>Builds the console.</summary>
     /// <param name="args">The command line, as a host reads one.</param>

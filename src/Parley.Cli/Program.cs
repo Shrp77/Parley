@@ -37,7 +37,10 @@ const string Help = """
       parley top                                       a deployment from this terminal: the
                                                        projects, who is in each, and their
                                                        conversations as transcripts. Needs a
-                                                       terminal, not a browser
+                                                       terminal, not a browser. Provided by
+                                                       the parley-top tool, installed
+                                                       separately so that changing it does
+                                                       not stop the broker
 
       parley console [<url>]                           the operator's console in a browser:
                                                        every project, the agents in each, and
@@ -400,23 +403,23 @@ if (verb == "console")
 // operator already is. SPEC.md §17 question 15 is why either exists: an agent attached through
 // somebody's editor window was started by nobody, so nothing can hand it a turn, and a person
 // needs somewhere to take part that is not an editor.
+// **This forwards now, and parses nothing on the way.** The terminal is its own tool, because
+// Windows cannot replace a running executable and every terminal change therefore stopped the
+// broker — which §12 makes expensive: the node stops, every agent it started is told to quit, and
+// the process was what held everything each had learned.
+//
+// What is passed on is the raw command line minus the verb, not the options this file has already
+// taken. `--config` and `--broker` mean the same to both tools and there is one parser for them,
+// in the tool that uses them. Anything else is the child's to accept or refuse, including
+// `--project`, which it warns about in the words this branch used to.
 if (verb == "top")
 {
-    if (!string.IsNullOrWhiteSpace(projectName))
-    {
-        await Console.Error.WriteLineAsync(
-            $"parley top is not scoped to one project, so --project {projectName} was not used. "
-            + "Every project this machine knows is on its first screen.").ConfigureAwait(false);
-    }
+    var forwarded = new List<string>(args);
 
-    // The same fallback the console offers, so the two surfaces list the same deployments on a
-    // machine that has named none. A person who can reach a broker from `parley registry` and not
-    // from here would reasonably conclude this surface was broken.
-    var topFallback = ProjectResolution
-        .Endpoint(brokerAddress, Environment.GetEnvironmentVariable, null).Value;
+    forwarded.Remove("top");
 
-    return await Parley.Cli.Top.TopCommand
-        .RunAsync(manifestPath, topFallback)
+    return await Forwarding
+        .RunAsync("parley-top", "Parley.Top", "parley top", forwarded, Console.Error)
         .ConfigureAwait(false);
 }
 

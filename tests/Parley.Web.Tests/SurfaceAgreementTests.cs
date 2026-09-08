@@ -61,7 +61,7 @@ public sealed class SurfaceAgreementTests
         // is doing, what order the conversations are in, and how many are being kept out of sight.
         // A surface that computed any of them itself would be a second answer.
         var console = Sources("src", "Parley.Web");
-        var terminal = Sources("src", "Parley.Cli", "Top");
+        var terminal = Sources("src", "Parley.Top");
 
         Assert.Contains(call, console + terminal, StringComparison.Ordinal);
     }
@@ -74,7 +74,7 @@ public sealed class SurfaceAgreementTests
         foreach (var (where, source) in new[]
                  {
                      ("console", Sources("src", "Parley.Web")),
-                     ("terminal", Sources("src", "Parley.Cli", "Top")),
+                     ("terminal", Sources("src", "Parley.Top")),
                  })
         {
             foreach (var line in source.Split('\n'))
@@ -97,7 +97,7 @@ public sealed class SurfaceAgreementTests
         foreach (var (where, source) in new[]
                  {
                      ("console", Sources("src", "Parley.Web")),
-                     ("terminal", Sources("src", "Parley.Cli", "Top")),
+                     ("terminal", Sources("src", "Parley.Top")),
                  })
         {
             Assert.False(
@@ -113,7 +113,7 @@ public sealed class SurfaceAgreementTests
         // screens, because it is the answer to "why is this not running". Two sources of wording
         // would let them disagree while both were correct.
         var console = Sources("src", "Parley.Web");
-        var terminal = Sources("src", "Parley.Cli", "Top");
+        var terminal = Sources("src", "Parley.Top");
 
         foreach (var phrase in new[]
                  {
@@ -132,6 +132,6 @@ public sealed class SurfaceAgreementTests
         // Every assertion above passes against a path that resolved to nothing, which is the trap
         // the schema extraction had to be guarded against and the same one here.
         Assert.Contains("BrokerClient", Sources("src", "Parley.Web"), StringComparison.Ordinal);
-        Assert.Contains("BrokerClient", Sources("src", "Parley.Cli", "Top"), StringComparison.Ordinal);
+        Assert.Contains("BrokerClient", Sources("src", "Parley.Top"), StringComparison.Ordinal);
     }
 }

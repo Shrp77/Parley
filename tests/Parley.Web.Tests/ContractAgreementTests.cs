@@ -97,7 +97,7 @@ public sealed class ContractAgreementTests
         Assert.Contains("none", doors, StringComparison.OrdinalIgnoreCase);
 
         var destroying = File.ReadAllText(Path.Combine(
-            Root(), "src", "Parley.Cli", "Top", "Destroying.cs"));
+            Root(), "src", "Parley.Top", "Destroying.cs"));
 
         Assert.Contains("Type the conversation's identifier", destroying, StringComparison.Ordinal);
     }
@@ -108,7 +108,7 @@ public sealed class ContractAgreementTests
         Assert.Contains("F8", Views(), StringComparison.Ordinal);
 
         var shell = File.ReadAllText(Path.Combine(
-            Root(), "src", "Parley.Cli", "Top", "Shell.cs"));
+            Root(), "src", "Parley.Top", "Shell.cs"));
 
         Assert.Contains("Key.F8", shell, StringComparison.Ordinal);
     }

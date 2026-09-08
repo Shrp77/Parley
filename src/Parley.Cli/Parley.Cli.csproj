@@ -44,12 +44,4 @@
     <ProjectReference Include="..\Parley.Transport\Parley.Transport.csproj" />
   </ItemGroup>
 
-  <!--
-    `parley top`. Version lives in Directory.Packages.props, as central package management
-    requires — a Version attribute here is a restore error, not a preference.
-  -->
-  <ItemGroup>
-    <PackageReference Include="Terminal.Gui" />
-  </ItemGroup>
-
 </Project>

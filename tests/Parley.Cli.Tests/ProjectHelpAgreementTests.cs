@@ -45,49 +45,6 @@ public sealed partial class ProjectHelpAgreementTests
         Assert.Contains("--destroy", readme, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void The_readme_describes_the_terminal_and_what_its_screens_offer()
-    {
-        // Found by lens 3: the README mentioned `parley top` once, in passing, with the whole
-        // surface undocumented in the one document that has to stand alone. Held to the
-        // surface's own labels, so an action added to a menu is an action the README must say.
-        var readme = RepositoryFile.Read("README.md");
-
-        Assert.Contains("### From a terminal", readme, StringComparison.Ordinal);
-        Assert.Contains("parley top", readme, StringComparison.Ordinal);
-
-        foreach (var offered in new[]
-                 {
-                     ("create a new project", Parley.Cli.Top.Naming.CreateTitle),
-                     ("name the deployment this machine already runs", Parley.Cli.Top.Naming.NameRunningTitle),
-                     ("a project can be removed", Parley.Cli.Top.Removing.Title),
-                     ("typed back", Parley.Cli.Top.Removing.Destroy),
-                     ("a seat", Parley.Cli.Top.AgentsRegion.JoinTitle),
-
-                     // 005 added the two the README had no reason to describe before, and each
-                     // is the half of "who is in a project" the terminal could not touch.
-                     ("add an agent", Parley.Cli.Top.Adding.Title),
-                     ("remove one", Parley.Cli.Top.Withdrawing.Title),
-
-                     // 006 reworded the two states this used to name, because the owner read both
-                     // on screen and could not say what either meant. What the README has to carry
-                     // is the wording a person will actually see.
-                     (Parley.Client.Views.Standing.NeverRun, Parley.Client.Views.Standing.NeverRun),
-                     (Parley.Client.Views.Standing.OnlyWhenOpened,
-                      Parley.Client.Views.Standing.OnlyWhenOpened),
-
-                     // And the three things 006 added to the surface.
-                     ("archive", Parley.Cli.Top.Shell.ArchiveTitle),
-                     ("destroy", Parley.Cli.Top.Destroying.Title),
-                     ("F8", "the browser key"),
-                 })
-        {
-            Assert.True(
-                readme.Contains(offered.Item1, StringComparison.OrdinalIgnoreCase),
-                $"the README does not describe '{offered.Item2}' (looked for '{offered.Item1}').");
-        }
-    }
-
     /// <summary>A list-pattern arm of the dispatch: <c>["list"]</c> or <c>["add", var name]</c>.</summary>
     [GeneratedRegex("""\[\s*"(?<verb>[a-z]+)"(?:\s*,\s*var\s+\w+)?\s*\]\s*=>""")]
     private static partial Regex Dispatch();
