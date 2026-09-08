@@ -1,7 +1,6 @@
 ﻿using System.Collections.ObjectModel;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
-using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -148,17 +147,40 @@ internal sealed class GuardedList : ListView
 
     /// <inheritdoc/>
     /// <remarks>
-    /// <b>The mouse and a direct assignment arrive here, and only here.</b> The key override below
-    /// knows which way the cursor was travelling and carries on that way; a click knows nothing of
-    /// the sort, and a click landing on a heading would leave somebody on a line where every action
-    /// has quietly gone away. Downwards by default, because a heading always has rows under it —
-    /// otherwise it would not have been drawn.
+    /// <para>
+    /// <b>The cursor is moved off a heading after the toolkit has moved it, not instead.</b> Up,
+    /// Down, Home, End and the page keys belong to the toolkit, and a version that reimplemented
+    /// them would be a second definition to keep in step — so this lets the list move wherever it
+    /// was going to and then carries on the same way until the cursor is on something real.
+    /// </para>
+    /// <para>
+    /// <b>The direction comes from the move itself, and every earlier attempt at it was wrong.</b>
+    /// The first settled downwards always, so Up could not leave a group at all: it stepped onto
+    /// the heading, was pushed straight back, and the surface looked frozen — reported by the
+    /// owner, who could not reach the seats. The second tried to take the direction from a key in
+    /// <see cref="View.OnKeyDown"/>, which cannot work either: that is a <i>pre-process</i> hook,
+    /// raised before the commands bound to the key are invoked, so it ran before the cursor had
+    /// moved and compared a position with itself. Neither <c>NewKeyDownEvent</c> nor
+    /// <c>ListView.MoveUp</c> is virtual, so there is no seam around the move.
+    /// </para>
+    /// <para>
+    /// <see cref="ValueChangedEventArgs{T}"/> carries both ends of it, which makes the question
+    /// answerable here and nowhere else: whichever way the cursor just travelled is the way to
+    /// carry on. That covers a key, a click and a direct assignment with one rule rather than
+    /// three, and it needs no list of which keys mean "up" — a list that would have to be kept in
+    /// step with a toolkit that owns the bindings.
+    /// </para>
     /// </remarks>
     protected override void OnValueChanged(ValueChangedEventArgs<int?> args)
     {
+        ArgumentNullException.ThrowIfNull(args);
+
         base.OnValueChanged(args);
 
-        Settle(1);
+        // Downwards unless the cursor demonstrably went up. A first move has no old value to
+        // compare against, and a heading always has rows under it — otherwise it would not have
+        // been drawn — so down is the safe reading of "no idea".
+        Settle(args is { OldValue: { } was, NewValue: { } now } && now < was ? -1 : 1);
     }
 
     /// <summary>Replaces everything the list shows, and what is highlighted in it.</summary>
@@ -211,35 +233,6 @@ internal sealed class GuardedList : ListView
 
     /// <summary>Whether a settle is already running, so the event it raises does not start another.</summary>
     private bool _settling;
-
-    /// <inheritdoc/>
-    /// <remarks>
-    /// <b>The cursor is moved past a heading after the base has moved it, not instead.</b> The
-    /// toolkit owns what Up, Down, Home, End and the page keys mean, and a version that
-    /// reimplemented them would be a second definition to keep in step — so this lets the list
-    /// move and then carries on in the same direction until the cursor is on something real.
-    /// </remarks>
-    protected override bool OnKeyDown(Key key)
-    {
-        if (Skip is null)
-        {
-            return base.OnKeyDown(key);
-        }
-
-        var before = SelectedItem;
-        var handled = base.OnKeyDown(key);
-        var after = SelectedItem;
-
-        if (after != before)
-        {
-            // Up and back mean "away from the end of the list"; everything else means towards it.
-            // A key that jumped rather than stepped is still travelling one way or the other, and
-            // this only has to know which.
-            Settle(after < before ? -1 : 1);
-        }
-
-        return handled;
-    }
 
     /// <summary>Moves the cursor off a skipped row, in the direction it was already going.</summary>
     /// <param name="direction">-1 towards the top, 1 towards the bottom.</param>

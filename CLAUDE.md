@@ -595,7 +595,7 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/007-split-terminal-tool/` — 0.20.2, merged. The terminal and the web UI
+- **Active plan**: `specs/007-split-terminal-tool/` — 0.20.3, merged. The terminal and the web UI
   become their own
   tool packages, so changing either no longer stops the broker. Today one executable holds
   everything, an executable cannot be replaced while it runs, and stopping the broker stops the
@@ -743,6 +743,29 @@ below in the form Spec Kit's checks read; this file remains the authority when t
 
   `research.md` carries eight decisions, `contracts/commands.md` the command surface each tool
   exposes.
+
+  **0.20.3 is the grouping's own cost, reported by the owner: Up did nothing.** A heading is not a
+  row the cursor may rest on, so a move landing on one carries on past it — and it carried on
+  *downwards* whichever way the cursor had been going. Up stepped onto the heading above and was
+  pushed straight back onto the row it left. Every group was a room with no door out of the top,
+  and the seats, which sort first, could not be reached from below at all.
+
+  **Nothing in the suite had ever pressed an arrow key** — 2,552 tests, and the guard on this had
+  been written and checked by assigning `SelectedItem` directly, which is the one route that really
+  does only ever travel one way. `Lists` already records the same shape once, about the letters the
+  status line advertises: *a key tested only in the negative is a key nobody has pressed*. This is
+  the stronger version — a key nobody had pressed at all, guarding the only navigation the surface
+  has.
+
+  **Two fixes were tried and both were wrong, which is worth keeping.** Taking the direction from
+  the key in `OnKeyDown` cannot work: that is a *pre-process* hook, raised before the commands
+  bound to the key are invoked, so it runs before the cursor has moved and compares a position with
+  itself — the probe printed `handled=True selected=3` and the position unchanged. Neither
+  `View.NewKeyDownEvent` nor `ListView.MoveUp` is virtual, so there is no seam around the move
+  either. `ValueChangedEventArgs<T>` carries `OldValue` and `NewValue`, so the direction is in the
+  move itself, and taking it there covers a key, a click and a direct assignment under one rule
+  with no list of which keys mean "up" — a list that would have to be kept in step with a toolkit
+  that owns the bindings.
 
   **0.20.2 is what the owner found on first use, and one of the three was invisible to the whole
   suite.** `Shell.Said` was written in twenty-odd places — seated as somebody, the broker refused
