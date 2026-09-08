@@ -54,6 +54,9 @@ if (arguments.Exists(argument => argument is "--version" or "-v"))
     return 0;
 }
 
+// Set by TakeOption when a flag it knows was given without one.
+string? missingValue = null;
+
 var configPath = TakeOption("--config");
 var brokerAddress = TakeOption("--broker", "-b");
 
@@ -66,6 +69,14 @@ if (TakeOption("--project", "-p") is { } named)
     await Console.Error.WriteLineAsync(
         $"parley-top is not scoped to one project, so --project {named} was not used. "
         + "Every project this machine knows is on its first screen.").ConfigureAwait(false);
+}
+
+if (missingValue is not null)
+{
+    await Console.Error.WriteLineAsync($"{missingValue} needs a value.").ConfigureAwait(false);
+    await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
+
+    return 64;
 }
 
 // Refused rather than ignored. An option this does not have is far more likely to be a typo for
@@ -113,6 +124,11 @@ var fallback = ProjectResolution
 
 return await TopCommand.RunAsync(manifestPath, fallback).ConfigureAwait(false);
 
+// **An option with no value is its own answer, not "no such option".** The first draft returned
+// null and left the flag in the list, so `parley-top --config` was refused with "parley-top does
+// not take --config" -- which is false: it does take it, and what was missing was the path. A
+// refusal that misnames the problem sends somebody to check the spelling of an option that was
+// spelled correctly.
 string? TakeOption(string name, string? shortName = null)
 {
     for (var index = 0; index < arguments.Count; index++)
@@ -124,8 +140,11 @@ string? TakeOption(string name, string? shortName = null)
             continue;
         }
 
-        if (index + 1 >= arguments.Count)
+        if (index + 1 >= arguments.Count || arguments[index + 1].StartsWith('-'))
         {
+            missingValue = argument;
+            arguments.RemoveAt(index);
+
             return null;
         }
 

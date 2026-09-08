@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 using Grpc.Net.Client;
 
@@ -34,6 +34,26 @@ internal static class Loopback
 
         return port;
     }
+
+    /// <summary>An endpoint nothing in this suite can end up listening on.</summary>
+    /// <returns>A loopback address that refuses a connection.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Not <see cref="FreePort"/>, and the difference is a real failure this suite had.</b> That
+    /// one returns a port the kernel just offered, which is fine when something is about to bind it
+    /// and wrong when the test needs it to stay empty: another process can take it in between, and
+    /// then the endpoint a test called dead answers. It surfaced as
+    /// <c>UnreachableProjectTests</c> failing in a full-suite run on Linux and passing six times out
+    /// of six in isolation — the ephemeral range is shared, and splitting the terminal into its own
+    /// host added an eleventh process competing for it.
+    /// </para>
+    /// <para>
+    /// Port 1 instead, which is outside the ephemeral range every helper here draws from, is
+    /// privileged on Unix, and is bound by nothing in this repository. Connecting to it refuses
+    /// immediately rather than hanging, which is what the tests using this are waiting on.
+    /// </para>
+    /// </remarks>
+    public static string NothingListens() => "http://127.0.0.1:1";
 
     /// <summary>Polls until an endpoint accepts a connection, or gives up.</summary>
     /// <param name="endpoint">Where to connect.</param>

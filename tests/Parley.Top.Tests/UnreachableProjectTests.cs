@@ -1,4 +1,4 @@
-using Grpc.Net.Client;
+﻿using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
@@ -23,6 +23,13 @@ namespace Parley.Top.Tests;
 /// stopped broker's port may still be held for a moment and the state being tested is "nothing
 /// there at all".
 /// </para>
+/// <para>
+/// <b>It came from <c>FreePort</c> and could not.</b> That returns a port the kernel has just
+/// offered, which something else may then take — and it did, in a full-suite run on Linux, where
+/// this failed while passing six times out of six in isolation. The ephemeral range is shared
+/// across every test host, and giving the terminal a host of its own added an eleventh process
+/// drawing from it. <see cref="Loopback.NothingListens"/> is outside that range.
+/// </para>
 /// </remarks>
 public sealed class UnreachableProjectTests : IAsyncDisposable
 {
@@ -30,7 +37,7 @@ public sealed class UnreachableProjectTests : IAsyncDisposable
 
     private readonly SqliteConnection _connection;
     private readonly LoopbackOperator _broker;
-    private readonly string _dead = $"http://127.0.0.1:{FreePort()}";
+    private readonly string _dead = NothingListens();
 
     public UnreachableProjectTests()
     {

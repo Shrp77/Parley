@@ -69,7 +69,7 @@ internal static class TopProcess
     /// Located by the configuration and framework this test assembly was itself built for, rather
     /// than by a written-down path, so a Release run does not silently exercise a Debug binary.
     /// </remarks>
-    private static string Executable()
+    public static string Executable()
     {
         var here = new DirectoryInfo(AppContext.BaseDirectory);
         var framework = here.Name;

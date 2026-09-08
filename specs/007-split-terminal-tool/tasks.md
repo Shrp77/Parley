@@ -76,44 +76,44 @@ confirm the broker was not restarted, no agent was told to quit, and no exchange
 
 ### The project
 
-- [ ] T019 [US1] Create `src/Parley.Top/Parley.Top.csproj` referencing `Parley.Client`, `Parley.Configuration` and `Parley.Transport` only, packed as a tool with command `parley-top`
-- [ ] T020 [US1] Move `src/Parley.Cli/Top/*` to `src/Parley.Top/`, changing namespaces from `Parley.Cli.Top` to `Parley.Top`
-- [ ] T021 [US1] Add the entry point in `src/Parley.Top/Program.cs`, taking the arguments `parley top` takes today and keeping the refusal when input is redirected
-- [ ] T022 [US1] Remove `Top/` from `src/Parley.Cli` and delete any reference it leaves behind
+- [x] T019 [US1] Create `src/Parley.Top/Parley.Top.csproj` referencing `Parley.Client`, `Parley.Configuration` and `Parley.Transport` only, packed as a tool with command `parley-top`
+- [x] T020 [US1] Move `src/Parley.Cli/Top/*` to `src/Parley.Top/`, changing namespaces from `Parley.Cli.Top` to `Parley.Top`
+- [x] T021 [US1] Add the entry point in `src/Parley.Top/Program.cs`, taking the arguments `parley top` takes today and keeping the refusal when input is redirected
+- [x] T022 [US1] Remove `Top/` from `src/Parley.Cli` and delete any reference it leaves behind
 
 ### The tests move with it
 
-- [ ] T023 [US1] Create `tests/Parley.Top.Tests` and move `tests/Parley.Cli.Tests/Top/*` into it, including `Driving`, `Walking` and `Drawn`
-- [ ] T024 [US1] Leave `Loopback` and `ToolProcess` in `tests/Parley.Cli.Tests`, referenced by the new suite; they are shared with the CLI's own tests
-- [ ] T025 [US1] Assert the count is unchanged across the move: record the terminal test count before and after and confirm they match, so a test lost in the move fails rather than disappears
+- [x] T023 [US1] Create `tests/Parley.Top.Tests` and move `tests/Parley.Cli.Tests/Top/*` into it, including `Driving`, `Walking` and `Drawn`
+- [x] T024 [US1] Leave `Loopback` and `ToolProcess` in `tests/Parley.Cli.Tests`, referenced by the new suite; they are shared with the CLI's own tests
+- [x] T025 [US1] Assert the count is unchanged across the move: record the terminal test count before and after and confirm they match, so a test lost in the move fails rather than disappears
 
 ### The wrapper
 
-- [ ] T026 [US1] Add the forwarding wrapper in `src/Parley.Cli/Program.cs`: `parley top` resolves `parley-top`, starts it with the arguments given, and returns its exit code, parsing none of them
-- [ ] T027 [US1] When `parley-top` is not installed, say which tool provides the command and how to install it, rather than "unknown command", which would be untrue
-- [ ] T028 [P] [US1] Test the wrapper both ways: forwards when present, explains when absent
+- [x] T026 [US1] Add the forwarding wrapper in `src/Parley.Cli/Program.cs`: `parley top` resolves `parley-top`, starts it with the arguments given, and returns its exit code, parsing none of them
+- [x] T027 [US1] When `parley-top` is not installed, say which tool provides the command and how to install it, rather than "unknown command", which would be untrue
+- [x] T028 [P] [US1] Test the wrapper both ways: forwards when present, explains when absent
 
 ### Install
 
-- [ ] T029 [US1] Extend the `$tools` table in `install.ps1` with a `Surface` column and a `parley-top` row
-- [ ] T030 [US1] Add `-Surfaces terminal | web-ui | both | none` to `install.ps1`, defaulting to `both` on Windows and `web-ui` on Linux, and document the default in the script's help
-- [ ] T031 [US1] Add per-tool reporting — `installed`, `unchanged`, `skipped` — so "the terminal was replaced and the broker was not" is distinguishable from "nothing happened"
-- [ ] T032 [US1] Generalise the holder check to any process named after a tool being replaced, so a running terminal is caught as adapters are; the message names what will be closed rather than counting it
-- [ ] T033 [US1] Update `-Uninstall` to remove every tool in the table, leaving no scheduled task pointing at a missing path
+- [x] T029 [US1] Extend the `$tools` table in `install.ps1` with a `Surface` column and a `parley-top` row
+- [x] T030 [US1] Add `-Surfaces terminal | web-ui | both | none` to `install.ps1`, defaulting to `both` on Windows and `web-ui` on Linux, and document the default in the script's help
+- [x] T031 [US1] Add per-tool reporting — `installed`, `unchanged`, `skipped` — so "the terminal was replaced and the broker was not" is distinguishable from "nothing happened"
+- [x] T032 [US1] Generalise the holder check to any process named after a tool being replaced, so a running terminal is caught as adapters are; the message names what will be closed rather than counting it
+- [x] T033 [US1] Update `-Uninstall` to remove every tool in the table, leaving no scheduled task pointing at a missing path
 
 ### Verify the point of the feature
 
-- [ ] T034 [US1] With a broker running and an exchange open and delivered, install a terminal-only change and confirm zero broker restarts, zero agents ended, zero exchanges changed (SC-001)
-- [ ] T035 [US1] Confirm the terminal shows the same deployment afterwards, including the open exchange
-- [ ] T036 [US1] Bump `VersionPrefix` (minor — the tool set a machine installs is a breaking change to how it is installed)
-- [ ] T037 [US1] Update `README.md` and `CLAUDE.md` for the new tool and the `-Surfaces` argument
-- [ ] T038 [US1] Full suite on Windows and Linux
+- [x] T034 [US1] With a broker running and an exchange open and delivered, install a terminal-only change and confirm zero broker restarts, zero agents ended, zero exchanges changed (SC-001)
+- [x] T035 [US1] Confirm the terminal shows the same deployment afterwards, including the open exchange
+- [x] T036 [US1] Bump `VersionPrefix` (minor — the tool set a machine installs is a breaking change to how it is installed)
+- [x] T037 [US1] Update `README.md` and `CLAUDE.md` for the new tool and the `-Surfaces` argument
+- [x] T038 [US1] Full suite on Windows and Linux
 
 ### Review gate for Step 2
 
-- [ ] T039 [US1] Lens 1 × 3 consecutive clean, logged
-- [ ] T040 [US1] Lens 2 × 3 consecutive clean, logged
-- [ ] T041 [US1] Lens 3 × 3 consecutive clean, logged
+- [x] T039 [US1] Lens 1 × 3 consecutive clean, logged
+- [x] T040 [US1] Lens 2 × 3 consecutive clean, logged
+- [x] T041 [US1] Lens 3 × 3 consecutive clean, logged
 
 **Checkpoint**: SC-001 met for the terminal. This is the MVP — the feature delivers value here even
 if Steps 3 and 4 never ship.
