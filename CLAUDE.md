@@ -502,7 +502,35 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/006-three-view-operator/` — three drill-down views (projects, one project,
+- **Active plan**: `specs/007-split-terminal-tool/` — the terminal and the web UI become their own
+  tool packages, so changing either no longer stops the broker. Today one executable holds
+  everything, an executable cannot be replaced while it runs, and stopping the broker stops the
+  node, which SPEC.md §12 says "tells every agent it started to quit" — where "the process holds
+  everything the agent has learned". Changing a status line ends every conversation on the machine.
+  The terminal is also the most-changed part of the repository: 29 source files last cycle against
+  1 in the broker and 0 in the adapter.
+
+  **The web UI splits too, and is renamed.** "Console" means three things here and only one is a
+  browser surface — `parley console` and `--with-console` become `web-ui`; `OperatorConsole` (§10.2)
+  and `ConsolePicker` (whether a terminal exists) do not change. An earlier draft of the spec said
+  the web UI was unusable on a headless machine; that was wrong and is corrected in place. It is an
+  HTTP server, it needs no display, and an SSH port-forward is what §16 permits — on a headless box
+  it beats the terminal, being a forward you leave up rather than a session you hold open. The
+  argument is that it should be a *choice*.
+
+  **Writing the spec found a live defect, and it ships first, alone.** The terminal reaches SQLite
+  today: `Parley.Cli/Top` uses `NodeCatalogue`, which lives in `Parley.Headless`, which references
+  `Parley.Store`. `GraphTests` could not have caught it — it walks from `Parley.Client` and
+  `Parley.Web`, and the terminal sits inside `Parley.Cli`, which owns the store legitimately. The
+  reader uses only `System.Text.Json` and `Parley.Core`, so it moves to `Parley.Configuration` at no
+  cost. `Parley.Client/Views/AgentStanding.cs` already documents the problem as a workaround it had
+  to code around.
+
+  Four steps, each shippable: the leak; then `Parley.Top`; then `Parley.WebUi` with the rename and
+  the child-process launch; then the open-exchange warning before a broker stop. `research.md`
+  carries seven decisions, `contracts/commands.md` the command surface each tool exposes.
+
+- Previous: `specs/006-three-view-operator/` — three drill-down views (projects, one project,
   one conversation) replacing 005's four regions on one screen, on **both** surfaces; and the four
   operator operations the protocol did not have: `archive`, `unarchive` and `destroy` for a
   conversation, and `start` for a catalogued agent. The protocol work landed before the views,
