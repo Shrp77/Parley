@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Parley.Cli;
+namespace Parley.Setup;
 
 /// <summary>
 /// One repository in an enrollment manifest.

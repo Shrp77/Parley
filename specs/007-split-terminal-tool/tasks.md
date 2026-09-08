@@ -154,7 +154,7 @@ the web UI reaches it after a logout and logon with nobody starting it by hand.
 - [ ] T055 [US3] Keep `parley console` and `--with-console` working, warning once and naming the new spelling; the owner's machine has the old flag in a scheduled task right now
 - [ ] T056 [US3] Record the deprecation in `CLAUDE.md` with the version it is removed at, so it is a decision with a date rather than a kindness that becomes permanent
 - [ ] T057 [P] [US3] Add a test asserting `OperatorConsole` and `ConsolePicker` are **not** renamed; "console" means three things here and only one is a browser surface
-- [ ] T058 [US3] Update `autostart install` in `src/Parley.Cli/AutostartPlan.cs` to register `--with-web-ui`
+- [ ] T058 [US3] Update `autostart install` in `src/Parley.Setup/AutostartPlan.cs` to register `--with-web-ui`
 - [ ] T059 [US3] Confirm the web UI comes up at logon where it is installed (SC-009, FR-018)
 
 ### Every document that names it

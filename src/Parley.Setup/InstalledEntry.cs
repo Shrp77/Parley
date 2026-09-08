@@ -1,4 +1,4 @@
-namespace Parley.Cli;
+namespace Parley.Setup;
 
 /// <summary>
 /// What the supervisor entry on this machine was registered to run, read back from it.

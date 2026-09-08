@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Security;
 
-namespace Parley.Cli;
+namespace Parley.Setup;
 
 /// <summary>
 /// Which supervisor a platform uses to start a broker when somebody logs in.
@@ -232,23 +232,23 @@ public sealed record AutostartPlan(
     private static AutostartPlan Compose(string binary, string arguments, string log) =>
         Detect() switch
         {
-            Cli.Supervisor.ScheduledTask => new AutostartPlan(
-                Cli.Supervisor.ScheduledTask, Name, binary, arguments, log, null),
+            Setup.Supervisor.ScheduledTask => new AutostartPlan(
+                Setup.Supervisor.ScheduledTask, Name, binary, arguments, log, null),
 
-            Cli.Supervisor.SystemdUser => new AutostartPlan(
-                Cli.Supervisor.SystemdUser, Name, binary, arguments, log,
+            Setup.Supervisor.SystemdUser => new AutostartPlan(
+                Setup.Supervisor.SystemdUser, Name, binary, arguments, log,
                 Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                     ".config", "systemd", "user", Name + ".service")),
 
-            Cli.Supervisor.LaunchAgent => new AutostartPlan(
-                Cli.Supervisor.LaunchAgent, Name, binary, arguments, log,
+            Setup.Supervisor.LaunchAgent => new AutostartPlan(
+                Setup.Supervisor.LaunchAgent, Name, binary, arguments, log,
                 Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                     "Library", "LaunchAgents", Name + ".plist")),
 
             _ => new AutostartPlan(
-                Cli.Supervisor.Unsupported, Name, binary, arguments, log, null)
+                Setup.Supervisor.Unsupported, Name, binary, arguments, log, null)
         };
 
     /// <summary>Which supervisor this platform uses.</summary>
@@ -260,10 +260,10 @@ public sealed record AutostartPlan(
     /// enough to matter.
     /// </remarks>
     public static Supervisor Detect() =>
-        OperatingSystem.IsWindows() ? Cli.Supervisor.ScheduledTask
-        : OperatingSystem.IsMacOS() ? Cli.Supervisor.LaunchAgent
-        : OperatingSystem.IsLinux() ? Cli.Supervisor.SystemdUser
-        : Cli.Supervisor.Unsupported;
+        OperatingSystem.IsWindows() ? Setup.Supervisor.ScheduledTask
+        : OperatingSystem.IsMacOS() ? Setup.Supervisor.LaunchAgent
+        : OperatingSystem.IsLinux() ? Setup.Supervisor.SystemdUser
+        : Setup.Supervisor.Unsupported;
 
     /// <summary>
     /// The systemd unit that runs this broker.
@@ -422,7 +422,7 @@ public sealed record AutostartPlan(
     /// <summary>Quotes a value only if it contains something that needs it.</summary>
     /// <param name="value">The value.</param>
     /// <returns>The value, quoted or not.</returns>
-    internal static string Quote(string value) =>
+    public static string Quote(string value) =>
         value.Contains(' ', StringComparison.Ordinal) ? $"\"{value}\"" : value;
 
     /// <summary>Escapes a value for XML content.</summary>

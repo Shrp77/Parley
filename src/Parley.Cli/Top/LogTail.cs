@@ -1,4 +1,5 @@
-using Parley.Core;
+﻿using Parley.Core;
+using Parley.Setup;
 
 namespace Parley.Cli.Top;
 

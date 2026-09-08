@@ -1,6 +1,6 @@
 ﻿using System.Runtime.Versioning;
 
-namespace Parley.Cli;
+namespace Parley.Setup;
 
 /// <summary>
 /// The Windows Task Scheduler, reached through its own API rather than through
@@ -29,7 +29,7 @@ namespace Parley.Cli;
 /// </para>
 /// </remarks>
 [SupportedOSPlatform("windows")]
-internal static class ScheduledTasks
+public static class ScheduledTasks
 {
     /// <summary>Replace a task of the same name rather than refusing.</summary>
     /// <remarks>

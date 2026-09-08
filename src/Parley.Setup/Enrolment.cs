@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Parley.Configuration;
 
-namespace Parley.Cli;
+namespace Parley.Setup;
 
 /// <summary>
 /// Making one repository an agent of a project, and unmaking it.
@@ -37,13 +37,13 @@ namespace Parley.Cli;
 /// whoever is deciding whether this surface is safe to point at a checkout.
 /// </para>
 /// </remarks>
-internal static class Enrolment
+public static class Enrolment
 {
     /// <summary>The launch configuration's name, in every repository.</summary>
-    internal const string LaunchFile = ".mcp.json";
+    public const string LaunchFile = ".mcp.json";
 
     /// <summary>The key the parley server sits under in a launch configuration.</summary>
-    internal const string ServerKey = "parley";
+    public const string ServerKey = "parley";
 
     /// <summary>Text without a byte-order mark.</summary>
     private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
@@ -54,7 +54,7 @@ internal static class Enrolment
     /// <summary>The launch configuration of a repository.</summary>
     /// <param name="workspace">The repository directory.</param>
     /// <returns>The path, whether or not anything is there.</returns>
-    internal static string LaunchPath(string workspace) => Path.Combine(workspace, LaunchFile);
+    public static string LaunchPath(string workspace) => Path.Combine(workspace, LaunchFile);
 
     /// <summary>
     /// Writes what a plan decided, and says which files changed.
@@ -70,7 +70,7 @@ internal static class Enrolment
     /// rewrites every byte of it — a whole-file diff for a twelve-line addition, in the file a
     /// project reads on every turn.
     /// </remarks>
-    internal static async Task<IReadOnlyList<string>> WriteAsync(
+    public static async Task<IReadOnlyList<string>> WriteAsync(
         RepositoryPlan plan,
         string workspace,
         string instructionsPath,
@@ -106,7 +106,7 @@ internal static class Enrolment
     /// <param name="catalogue">The catalogue's <c>agents</c> object.</param>
     /// <param name="agent">The role the node would start.</param>
     /// <param name="workspace">Where it would be started.</param>
-    internal static void List(JsonObject catalogue, string agent, string workspace)
+    public static void List(JsonObject catalogue, string agent, string workspace)
     {
         ArgumentNullException.ThrowIfNull(catalogue);
 
@@ -127,7 +127,7 @@ internal static class Enrolment
     /// other. Reading the name back is the only thing here that can tell them apart: SPEC.md §16
     /// makes the launch environment the whole of who an agent is.
     /// </remarks>
-    internal static string? NamedBy(JsonNode? entry) =>
+    public static string? NamedBy(JsonNode? entry) =>
         entry?["env"]?[EnrollmentPlan.AgentVariable] is JsonValue value
         && value.TryGetValue<string>(out var name)
         && !string.IsNullOrWhiteSpace(name)
@@ -138,7 +138,7 @@ internal static class Enrolment
     /// <param name="catalogue">The catalogue's <c>agents</c> object.</param>
     /// <param name="agent">The role to remove.</param>
     /// <returns>Whether it was there to remove.</returns>
-    internal static bool Unlist(JsonObject catalogue, string agent)
+    public static bool Unlist(JsonObject catalogue, string agent)
     {
         ArgumentNullException.ThrowIfNull(catalogue);
 
@@ -162,7 +162,7 @@ internal static class Enrolment
     /// draws from it continuously and somebody may have edited it by hand between the draw and
     /// the confirmation. Reading it at the moment of writing is what makes the write true.
     /// </remarks>
-    internal static async Task<Outcome> AddAsync(
+    public static async Task<Outcome> AddAsync(
         EnrollmentEntry entry,
         string project,
         string catalogueFile,
@@ -222,7 +222,7 @@ internal static class Enrolment
     /// course of that is a second, unasked-for change.
     /// </para>
     /// </remarks>
-    internal static async Task<Outcome> WithdrawAsync(
+    public static async Task<Outcome> WithdrawAsync(
         string workspace,
         string agent,
         string? catalogueFile,
@@ -340,7 +340,7 @@ internal static class Enrolment
     /// <param name="cancellationToken">Stops the read.</param>
     /// <returns>The catalogue, or an empty one when the file is not there.</returns>
     /// <exception cref="InvalidDataException">It exists and is not readable JSON.</exception>
-    internal static async Task<JsonObject> ReadCatalogueAsync(string path, CancellationToken cancellationToken)
+    public static async Task<JsonObject> ReadCatalogueAsync(string path, CancellationToken cancellationToken)
     {
         if (!File.Exists(path))
         {
@@ -376,7 +376,7 @@ internal static class Enrolment
     /// bug was found three times in this feature's first form, which is why it is refused here
     /// rather than tidied up.
     /// </remarks>
-    internal static JsonObject AgentsOf(JsonObject catalogue, string path)
+    public static JsonObject AgentsOf(JsonObject catalogue, string path)
     {
         ArgumentNullException.ThrowIfNull(catalogue);
 
@@ -401,7 +401,7 @@ internal static class Enrolment
     /// <param name="catalogue">What to write.</param>
     /// <param name="cancellationToken">Stops the write.</param>
     /// <returns>The write.</returns>
-    internal static async Task SaveCatalogueAsync(
+    public static async Task SaveCatalogueAsync(
         string path,
         JsonObject catalogue,
         CancellationToken cancellationToken)
@@ -455,5 +455,5 @@ internal static class Enrolment
     /// the ones that did nothing, and only the paths in <paramref name="Written"/> actually
     /// changed on disk — which is what a surface reporting "exactly what was removed" needs.
     /// </remarks>
-    internal sealed record Outcome(IReadOnlyList<string> Notes, IReadOnlyList<string> Written);
+    public sealed record Outcome(IReadOnlyList<string> Notes, IReadOnlyList<string> Written);
 }

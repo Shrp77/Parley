@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    What a person does to a machine so that Parley can run on it: enrol a repository as an agent,
+    name a project, resolve where the per-machine files live, and install or read the autostart
+    entry.
+
+    Parley.Transport is here because destroying or listing a project asks its broker whether it is
+    reachable, and what it holds, before touching anything. That is a client of a broker, which is
+    what every surface here is; it is not a route to a store.
+
+    A project of its own for the reason Parley.Configuration is one, and in nearly the same words:
+    two programs do this and cannot otherwise share one implementation. `parley` does it from a
+    shell and `parley-top` does it from a screen, and the terminal does not reimplement it: it
+    runs the same commands in process and prints what they said, so a machine configured from a
+    screen is configured exactly as one configured from a shell.
+
+    Not folded into Parley.Configuration, which it otherwise resembles, because Parley.Mcp
+    references that one. An agent's own server would then carry the code that writes its launch
+    configuration, which is harmless at runtime and wrong as a surface.
+
+    **There is no store, no broker and no web stack here and there must never be.** GraphTests
+    walks this project transitively along with the surfaces, because the terminal reaches a store
+    through anything this reaches one through.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Parley.Setup</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Parley.Configuration\Parley.Configuration.csproj" />
+    <ProjectReference Include="..\Parley.Transport\Parley.Transport.csproj" />
+  </ItemGroup>
+
+</Project>

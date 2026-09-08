@@ -1,7 +1,7 @@
 using Parley.Configuration;
 using Parley.Core;
 
-namespace Parley.Cli;
+namespace Parley.Setup;
 
 /// <summary>Where a resolved value came from, so a command can say why it is about to act.</summary>
 public enum ValueSource

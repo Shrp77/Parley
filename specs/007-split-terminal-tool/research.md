@@ -229,3 +229,58 @@ rest incoherent, so it goes where dropping it is cheapest.
 
 Each step bumps `VersionPrefix` — steps 1 and 4 the patch, steps 2 and 3 the minor, since the tool
 set a machine installs is a breaking change to how it is installed.
+
+---
+
+## R8 — The terminal needs the machine-setup half of the CLI, so that becomes `Parley.Setup`
+
+**Found while implementing step 2, not while planning it. R3 said `Parley.Top` would reference
+`Parley.Client`, `Parley.Configuration` and `Parley.Transport` and nothing else. That is not
+achievable, and the reason is a design decision the terminal already made.**
+
+The terminal does not reimplement enrolling a repository or creating a project. It runs the same
+commands a shell runs, in process, and shows what they said — `Onboarding.RunAsync` captures
+`EnrollCommand.RunAsync`'s two writers and prints its words verbatim, with a remark saying why: a
+machine configured by environment or by project gets the same answer here as from a shell.
+
+Measured rather than estimated. Taking every `Parley.Cli` type the terminal names in non-comment
+code and closing over what those name in turn gives **11 files and 4,153 lines**:
+
+```
+AutostartPlan  ConsolePicker  EnrollCommand  EnrollmentEntry  EnrollmentPlan  Enrolment
+InstalledEntry  ProjectCommand  ProjectResolution  RepositorySelection  ScheduledTasks
+```
+
+The closure is clean: every one of them imports `Parley.Configuration`, `Parley.Core` and the BCL,
+and nothing else. None reaches a store, a broker, a server or the web stack. None refers back to
+anything staying in `Parley.Cli`, so there is no cycle to break — this cluster is already a
+separable layer that has never been separated.
+
+**Three homes were possible.**
+
+*Leave it in `Parley.Cli` and have `Parley.Top` reference it.* Rejected: `Parley.Cli` references
+`Parley.Broker`, `Parley.Headless` and `Parley.Server`, so the terminal would reach a store
+transitively — which is precisely the leak step 1 just closed, reopened by a wider route.
+
+*Move it into `Parley.Configuration`.* Rejected, and this is the interesting one. The charter fits
+almost exactly — per-machine configuration that two programs need and cannot otherwise share. But
+`Parley.Mcp` references `Parley.Configuration`, and CLAUDE.md records that the MCP server
+"deliberately pulls in neither" the broker nor the store. Putting 4,153 lines of enrolment and
+scheduled-task code there would hand every agent's server the code that writes its own launch
+configuration. The dependency would be harmless at runtime and wrong as a surface, and this
+repository's position is that a boundary nothing enforces decays.
+
+*A project of its own.* **Chosen.** `src/Parley.Setup` holds what a person does to a machine so
+Parley can run on it: enrol a repository as an agent, name a project, resolve where the per-machine
+files live, and install or read the autostart entry. It references `Parley.Configuration` and
+nothing else. `Parley.Cli` and `Parley.Top` both reference it; `Parley.Mcp` does not.
+
+**What is preserved is the constraint, not the list.** FR-004 asks that the terminal have no route
+to a store, checked transitively. `Parley.Setup` has none, so the walk added in step 1 still holds
+and now covers a fourth root. The enumerated reference list in R3 is amended; the property it was
+protecting is unchanged.
+
+**What this also fixes.** `Parley.Cli` has been two things in one assembly — the operator's commands
+and the machine's setup — and nothing said so. Splitting the terminal out is what forced the
+question, but the answer was overdue independently: the setup half is what `parley`, `parley-top`
+and any future surface all need, and it is the half with no broker in it.

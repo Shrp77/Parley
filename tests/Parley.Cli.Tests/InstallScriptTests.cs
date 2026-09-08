@@ -1,4 +1,5 @@
-﻿using Xunit;
+﻿using Parley.Setup;
+using Xunit;
 
 namespace Parley.Cli.Tests;
 

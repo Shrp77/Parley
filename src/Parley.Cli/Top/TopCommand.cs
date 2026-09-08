@@ -1,5 +1,6 @@
-using Parley.Client;
+﻿using Parley.Client;
 using Parley.Client.Seating;
+using Parley.Setup;
 using Terminal.Gui.App;
 using Terminal.Gui.Time;
 

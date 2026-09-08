@@ -2,7 +2,7 @@
 using Parley.Configuration;
 using Parley.Core;
 
-namespace Parley.Cli;
+namespace Parley.Setup;
 
 /// <summary>
 /// Adds, removes and lists the projects configured on this machine.

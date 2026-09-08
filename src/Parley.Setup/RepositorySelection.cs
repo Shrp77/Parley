@@ -1,4 +1,4 @@
-namespace Parley.Cli;
+namespace Parley.Setup;
 
 /// <summary>
 /// What a repository picker is showing, and what each keystroke does to it.

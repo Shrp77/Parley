@@ -2,7 +2,7 @@
 using Parley.Configuration;
 using Parley.Core;
 
-namespace Parley.Cli;
+namespace Parley.Setup;
 
 /// <summary>
 /// What enrolling one repository would change, decided without touching a file.

@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Nodes;
+﻿using Parley.Setup;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Parley.Cli.Tests;

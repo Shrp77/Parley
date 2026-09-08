@@ -1,4 +1,4 @@
-<Solution>
+﻿<Solution>
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
     <File Path=".gitignore" />
@@ -21,6 +21,7 @@
     <Project Path="src/Parley.Server/Parley.Server.csproj" />
     <Project Path="src/Parley.Headless/Parley.Headless.csproj" />
     <Project Path="src/Parley.Mcp/Parley.Mcp.csproj" />
+    <Project Path="src/Parley.Setup/Parley.Setup.csproj" />
     <Project Path="src/Parley.Cli/Parley.Cli.csproj" />
     <Project Path="src/Parley.Client/Parley.Client.csproj" />
     <Project Path="src/Parley.Web/Parley.Web.csproj" />

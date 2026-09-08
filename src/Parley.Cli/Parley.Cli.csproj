@@ -37,6 +37,7 @@
     <ProjectReference Include="..\Parley.Broker\Parley.Broker.csproj" />
     <ProjectReference Include="..\Parley.Client\Parley.Client.csproj" />
     <ProjectReference Include="..\Parley.Configuration\Parley.Configuration.csproj" />
+    <ProjectReference Include="..\Parley.Setup\Parley.Setup.csproj" />
     <ProjectReference Include="..\Parley.Headless\Parley.Headless.csproj" />
     <ProjectReference Include="..\Parley.Server\Parley.Server.csproj" />
     <ProjectReference Include="..\Parley.Web\Parley.Web.csproj" />

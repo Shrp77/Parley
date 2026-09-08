@@ -17,7 +17,7 @@ public sealed partial class ProjectHelpAgreementTests
     [Fact]
     public void Every_dispatched_project_subcommand_is_in_the_help_the_usage_and_the_readme()
     {
-        var command = RepositoryFile.Read("src/Parley.Cli/ProjectCommand.cs");
+        var command = RepositoryFile.Read("src/Parley.Setup/ProjectCommand.cs");
         var help = RepositoryFile.Read("src/Parley.Cli/Program.cs");
         var readme = RepositoryFile.Read("README.md");
 

@@ -1,4 +1,4 @@
-namespace Parley.Cli;
+namespace Parley.Setup;
 
 /// <summary>
 /// Drives a <see cref="RepositorySelection"/> against a real terminal.

@@ -1,7 +1,8 @@
-using Parley.Cli.Top;
+﻿using Parley.Cli.Top;
 using Parley.Client;
 using Parley.Configuration;
 using Parley.Core;
+using Parley.Setup;
 using Xunit;
 
 namespace Parley.Cli.Tests.Top;

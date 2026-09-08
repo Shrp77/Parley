@@ -2,7 +2,7 @@
 using System.Text.Json.Nodes;
 using Parley.Configuration;
 
-namespace Parley.Cli;
+namespace Parley.Setup;
 
 /// <summary>
 /// Configures several repositories as Parley agents in one pass.

@@ -1,3 +1,4 @@
+﻿using Parley.Setup;
 using Terminal.Gui.App;
 
 namespace Parley.Cli.Top;

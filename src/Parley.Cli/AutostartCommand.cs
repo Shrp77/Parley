@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using Parley.Setup;
+using System.Diagnostics;
 using System.Globalization;
 using Parley.Core;
 

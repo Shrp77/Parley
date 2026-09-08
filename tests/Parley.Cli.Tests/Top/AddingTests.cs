@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Nodes;
+﻿using Parley.Setup;
+using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Top;
 using Parley.Client.Views;

@@ -1,4 +1,5 @@
-﻿using System.Globalization;
+﻿using Parley.Setup;
+using System.Globalization;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Parley.Cli;
