@@ -1,9 +1,9 @@
-# Feature Specification: The terminal is its own tool
+# Feature Specification: The surfaces are their own tools
 
 **Feature Branch**: `007-split-terminal-tool`
 **Created**: 2026-09-08
 **Status**: Draft
-**Input**: User description: "Split the terminal operator surface (`parley top`) out of the `parley` tool into its own tool package, so that changing the terminal does not force the broker to restart."
+**Input**: User description: "Split the terminal operator surface (`parley top`) out of the `parley` tool into its own tool package, so that changing the terminal does not force the broker to restart." Extended by the owner: split the web console out as well — "for a UI-less Linux install, the Web UI component is meaningless."
 
 ## Why this exists
 
@@ -50,6 +50,28 @@ That is reversed here, and the reasoning under it is recorded as no longer holdi
 
 The saving named in the original decision is unchanged and still real: a machine that only runs an
 agent need not carry the surfaces. This feature collects that saving rather than spending it.
+
+## Three tools, not two
+
+The console goes out with the terminal, and the argument is sharper than the terminal's.
+
+**On a machine that only hosts agents, the console is not merely unused — it is unusable.** §16
+confines the transport to a trusted path, and the console listens on loopback; a headless Linux
+agent host has nobody at that loopback and no browser on it. It is the heaviest dependency in the
+tree — the whole ASP.NET Core stack — carried by the machines least able to use it. That is the
+exact saving the original decision named and declined to take.
+
+**And it makes an existing safety property structural rather than careful.** `CLAUDE.md` records
+the console being hosted in the broker's process, and the containment that pays for it: *"a console
+that cannot bind reports it and the broker keeps serving, because a web page must never cost a
+deployment."* Separate processes make that true by construction; there is no longer a way for a
+web page to cost a deployment, and no code that has to remember not to let it.
+
+**What it costs, and must not lose.** `serve --with-console` hosts the console in the broker's
+process, and `autostart install` turns it on by default. The default exists for SPEC.md §17
+question 15: an agent attached through somebody's editor window is the one thing nothing can hand
+a turn to, so a console *remembered separately* is the half of a deployment that works for agents
+and not for people. Moving the console out must not quietly turn that default off — see FR-018.
 
 ## What the split already exposes
 
@@ -110,8 +132,8 @@ exchange is open.
 
 ### User Story 3 - Run a machine that only hosts agents (Priority: P3)
 
-A machine hosts agents and nobody operates it. It installs what a broker and a node need, and
-carries neither surface.
+A headless Linux machine hosts agents and nobody operates it. It installs what a broker and a node
+need, and carries neither surface — no terminal, and no web stack at all.
 
 **Why this priority**: This is the saving the original decision named and chose not to take. It is
 now available at no cost to the single-command experience on machines that do want a surface.
@@ -121,10 +143,12 @@ receive turns and answer, with no terminal present.
 
 **Acceptance Scenarios**
 
-1. **Given** a machine with only the broker-side tools installed, **When** an agent is asked a
+1. **Given** a machine with only the broker-side tool installed, **When** an agent is asked a
    question, **Then** it is started, answers, and the exchange concludes.
-2. **Given** the same machine, **When** somebody looks for the terminal, **Then** its absence is
+2. **Given** the same machine, **When** somebody looks for either surface, **Then** its absence is
    stated plainly rather than failing obscurely.
+3. **Given** the same machine, **When** its installed files are inspected, **Then** no part of the
+   web stack is present.
 
 ---
 
@@ -146,13 +170,13 @@ receive turns and answer, with no terminal present.
 
 ### Functional Requirements
 
-- **FR-001**: The terminal operator surface MUST ship as a tool package separate from the one that
-  contains the broker and the node.
-- **FR-002**: Installing a change confined to the terminal MUST NOT stop, restart, or otherwise
+- **FR-001**: The terminal operator surface and the web console MUST each ship as a tool package
+  separate from the one that contains the broker and the node, and separate from each other.
+- **FR-002**: Installing a change confined to a surface MUST NOT stop, restart, or otherwise
   interrupt a running broker, node, or resident agent.
-- **FR-003**: The terminal MUST remain a client: it opens no store, and reaches every fact about a
+- **FR-003**: Both surfaces MUST remain clients: they open no store, and reach every fact about a
   deployment over the transport.
-- **FR-004**: The terminal's package MUST have no route to a store, checked transitively across the
+- **FR-004**: Each surface's package MUST have no route to a store, checked transitively across the
   project graph, under the same rule `Parley.Client` and `Parley.Web` are held to.
 - **FR-005**: The catalogue reader the terminal needs MUST be available to it without a dependency
   on the store, and the node MUST continue to read the same catalogue by the same rules.
@@ -175,11 +199,26 @@ receive turns and answer, with no terminal present.
   absence MUST be stated plainly if the terminal is then invoked.
 - **FR-014**: Uninstalling MUST remove every tool it installed, leaving no scheduled task pointing
   at a path that no longer exists.
+- **FR-015**: The tool containing the broker MUST NOT carry the web stack. A machine that installs
+  only the broker-side tool MUST NOT acquire ASP.NET Core or its dependencies.
+- **FR-016**: A machine MUST be able to install any combination of the surfaces alongside the
+  broker, including neither, without the absent ones affecting the broker's behaviour.
+- **FR-017**: A surface that cannot start — a port already held, a missing dependency, a
+  terminal that will not draw — MUST NOT stop, delay, or degrade the broker.
+- **FR-018**: On a machine where the console is installed, the console MUST start by default and
+  start again at logon, preserving the behaviour `autostart install` gives today and the reason
+  §17 question 15 gives for it.
+- **FR-019**: The way to start the console MUST be resolved for anything that names the current
+  in-process form, including the flag that requests it, the broker's startup block, `autostart`,
+  the README and the plugin's prose. Nothing may name a way that no longer works.
+- **FR-020**: Each surface MUST be startable and stoppable without reference to the other; neither
+  is a prerequisite for the other.
 
 ### Key Entities
 
 - **Tool package**: a separately installable executable cut from this solution. Today: the
-  broker-and-commands tool and the agent adapter. After this: those two and the terminal.
+  broker-and-commands tool and the agent adapter. After this: those two, the terminal, and the
+  console — four, of which a machine installs the ones it needs.
 - **Catalogue reader**: the component that reads a machine's node catalogue. Needed by the node
   (which starts agents from it) and by the terminal (which shows what a machine could start).
   Currently reachable only through a project that carries the store.
@@ -197,8 +236,12 @@ receive turns and answer, with no terminal present.
   happens, in **100%** of cases where an exchange is open.
 - **SC-004**: The terminal cannot reach a store, and this is established by a check that fails when
   it can, not by inspection.
-- **SC-005**: A machine hosting only agents installs and runs without either operator surface
-  present.
+- **SC-005**: A machine hosting only agents installs and runs with neither surface present, and
+  carries no part of the web stack.
+- **SC-008**: A console that cannot start leaves the broker serving, demonstrated by starting a
+  broker with the console's port already held and confirming agents are unaffected.
+- **SC-009**: On a machine where the console is installed, it is reachable after a logout and
+  logon without anybody starting it by hand.
 - **SC-006**: Everything that names how to start the terminal names the same command, verified
   mechanically rather than by reading.
 - **SC-007**: A terminal pointed at a broker speaking a different §10.2 version reports that fact
@@ -206,12 +249,16 @@ receive turns and answer, with no terminal present.
 
 ## Assumptions
 
-- **The one-command experience is preserved for operators who want it.** How — a forwarding
-  command, an alias, or documentation — is a design decision for the plan, not settled here. The
-  requirement is FR-008: whatever it is, everything names it consistently.
-- **The web console's packaging is settled in the plan, not here.** The console is a client with
-  the same shape of argument and the same original decision behind it, but it is not the thing
-  that hurts today; the terminal is. The plan should state its choice and its reason either way.
+- **The one-command experience is preserved for operators who want it.** Today everything is
+  `parley <something>`: one name on PATH, one thing to install, one help text. With three tools an
+  operator could have to know that two of those subcommands are separate executables. How that is
+  softened — the broker-side tool forwarding to a surface when it is installed, an alias, or simply
+  documenting it — is a design decision for the plan. The requirement is FR-008: whatever it is,
+  everything names the same thing.
+- **The console starts by default where it is installed.** `autostart install` adds
+  `--with-console` today, for the reason §17 question 15 gives, and that reason is unaffected by
+  which process hosts it. How the default survives the move is a plan decision; that it survives
+  is FR-018.
 - **Version matching between terminal and broker is expected to be the common case**, because both
   come from one solution built together and are installed by one path. FR-011 covers the case
   where somebody has done otherwise, which is now possible for the first time.
@@ -227,3 +274,6 @@ receive turns and answer, with no terminal present.
 - Removing the broker restart for changes that genuinely touch the broker. That cost is inherent;
   this feature confines it and makes it visible, and does not pretend to remove it.
 - Hot-reloading, in-place upgrade, or draining a broker without stopping it.
+- Any change to what either surface *shows*. This moves where they live, not what they do.
+- Exposing the console beyond loopback. §16 is unchanged, and a headless machine wanting a console
+  still needs a tunnel it authenticates itself.

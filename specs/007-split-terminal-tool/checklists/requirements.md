@@ -1,4 +1,4 @@
-# Specification Quality Checklist: The terminal is its own tool
+# Specification Quality Checklist: The surfaces are their own tools
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-09-08
@@ -38,10 +38,11 @@ Three things about this spec are deliberate and worth defending at review rather
   abstract would be unable to state *why* a terminal change ends a conversation, which is the
   entire case for the feature. The named things are the subject of the change, not an
   implementation choice smuggled in — the boundary between packages is what is being specified.
-- **Two scope questions are pushed to the plan rather than guessed**: whether the web console moves
-  too, and how the one-command experience is preserved. Both have reasonable defaults and neither
-  changes what the feature is for, so under the three-marker rule they are recorded as assumptions
-  with the decision named, rather than as clarifications that would stall the spec.
+- **One scope question was settled by the owner rather than guessed**: the console moves out too,
+  because on a headless Linux agent host it is not merely unused but unusable — 16 confines the
+  transport to a trusted path and the console listens on loopback — while being the heaviest
+  dependency in the tree. The remaining open question, how the one-command experience is softened
+  across three tools, is recorded as an assumption with the decision named for the plan.
 - **SC-002 is measured by replaying real history** rather than by a forward-looking guess, because
   the repository already holds the evidence: 29 of the changed source files in the last cycle were
   the terminal's.
