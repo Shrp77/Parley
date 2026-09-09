@@ -1101,9 +1101,16 @@ try
                     ? "still running"
                     : instruction.Outcome.ToString().ToLowerInvariant();
 
+                // **Flattened, like the reply below it.** The text is the operator's own words, which
+                // is a reason to worry less and not a reason to skip it: a person pastes what they
+                // were sent, this output is read by scripts, and a newline followed by something
+                // shaped like the line above would present an instruction nobody gave. The terminal
+                // has flattened both since it was written; this had flattened one, which is worse
+                // than either rule applied consistently.
                 await Console.Out.WriteLineAsync(string.Create(
                     CultureInfo.InvariantCulture,
-                    $"{instruction.Id} {instruction.Agent.Value} [{became}] {instruction.Text}"))
+                    $"{instruction.Id} {instruction.Agent.Value} [{became}] "
+                    + $"{instruction.Text.ReplaceLineEndings(" ")}"))
                     .ConfigureAwait(false);
 
                 if (instruction.Reply is { Length: > 0 } said)
