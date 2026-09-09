@@ -431,7 +431,8 @@ public static class Enrolment
                 deployment?.ToDictionary(
                     settings => settings.Name.Value,
                     settings => settings.Endpoint,
-                    StringComparer.Ordinal));
+                    StringComparer.Ordinal),
+                agents[entry.Agent]?["workspace"]?.GetValue<string>());
 
             if (plan.LaunchConfiguration is { } text)
             {

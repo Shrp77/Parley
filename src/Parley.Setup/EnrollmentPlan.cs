@@ -280,6 +280,12 @@ public static class EnrollmentPlan
     /// <param name="launchConfiguration">Its current <c>.mcp.json</c>, or null when it has none.</param>
     /// <param name="instructions">Its current standing instructions, or null when the file is absent.</param>
     /// <param name="nodeAlreadyLists">Whether <c>node.json</c> already names this agent.</param>
+    /// <param name="nodeWorkspace">
+    /// The directory that catalogue records for it, when it names one. A line pointing somewhere
+    /// other than the repository being enrolled is rewritten rather than left: it is the file that
+    /// decides where a node starts a process, so a stale one runs an agent against a checkout that
+    /// is not its own.
+    /// </param>
     /// <param name="project">
     /// The project this repository is being made an agent of, or null to leave it unpinned.
     /// </param>
@@ -334,7 +340,8 @@ public static class EnrollmentPlan
         string? instructions,
         bool nodeAlreadyLists,
         string? project = null,
-        IReadOnlyDictionary<string, string>? endpoints = null)
+        IReadOnlyDictionary<string, string>? endpoints = null,
+        string? nodeWorkspace = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
@@ -523,12 +530,23 @@ public static class EnrollmentPlan
             notes.Add("instructions: append the peers frame");
         }
 
-        var addsNode = entry.Unattended && !nodeAlreadyLists;
+        // **A line that names a different directory is rewritten, and that was not always so.** The
+        // catalogue is the file a node reads to decide *where* to start an agent, and it was left
+        // alone whenever the role was already listed — so a repository that had moved kept its old
+        // directory there while the launch configuration gained the new one. The node then started
+        // the agent against whatever is at the old path now, which is either nothing or somebody
+        // else's checkout, and nothing on the machine said the two files disagreed.
+        var stale = nodeAlreadyLists
+            && nodeWorkspace is { Length: > 0 }
+            && !WorkspacePath.SameRepository(nodeWorkspace, entry.Workspace);
+
+        var addsNode = entry.Unattended && (!nodeAlreadyLists || stale);
 
         if (entry.Unattended)
         {
-            notes.Add(nodeAlreadyLists
-                ? "node.json: already listed"
+            notes.Add(
+                stale ? $"node.json: update, it records {nodeWorkspace}"
+                : nodeAlreadyLists ? "node.json: already listed"
                 : "node.json: add (consent to run unattended)");
         }
 

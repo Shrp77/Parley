@@ -899,7 +899,8 @@ public static class EnrollCommand
                 instructions,
                 listed.ContainsKey(entry.Agent),
                 project?.Name.Value,
-                endpoints);
+                endpoints,
+                listed[entry.Agent]?["workspace"]?.GetValue<string>());
 
             try
             {
