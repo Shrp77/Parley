@@ -628,7 +628,41 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   argument for returning an outcome at all ("a button and no indicator") is the argument for the
   readback. So §10.2 gains an operation and this is a protocol change.
 
-  **No schema change.** The table was already right.
+  **No schema change — until the gate found one.** The table already carried text, outcome, reply
+  and both instants. `005_instruction_reply_cap.sql` was added later, by lens 2, and is the only
+  migration here.
+
+  **What the review gate found is most of what is worth reading about this feature.** Five findings
+  above low, all fixed, all in `REVIEW-LEDGER.md` with the probe that produced each:
+
+  - **A departing node settled its agents' turns, and that destroyed answers.** Built deliberately,
+    with a comment saying "what settles an instruction now is only ever something that knows" — and
+    a node's *stream* ending is not its process dying. A network blip settled the record while the
+    agent worked on, and the real report was refused on arrival. **The defect this whole feature
+    exists to remove, reintroduced through a door nobody had checked, by the person writing that
+    sentence.** The mechanism is gone; a turn whose node has gone stays *still running* until the
+    sweep presumes it dead. The cost of waiting is a delay and the cost of guessing is a loss.
+  - **An agent's reply had no bound at all.** `instructions.text` has carried rule 8.5's cap since
+    003; `reply` carried no CHECK and the reporting path applied none, so anything able to reach the
+    broker and claim to be a node could write an arbitrary blob into the operator's record. Two
+    hundred thousand characters were stored and read back whole. Always possible, not always
+    *reachable*: before the readback a reply came back only on the issuing call and was otherwise
+    write-only.
+  - **`InstructionsRemoved` was computed and shown to nobody.** The pruner counted it, the result
+    carried it, the wire had no field. `parley prune` printed *"Removed 0 message(s)."* after
+    deleting five hundred instructions. **The `Shell.Said` shape, one feature after `Shell.Said`.**
+  - **`parley instructions` flattened the reply and not the instruction**, so a newline in an
+    operator's own words forged a listing line — in output scripts read. The terminal had flattened
+    both since it was written; one rule applied to half the output is worse than either applied
+    whole.
+  - *(low)* The truncation cut split a surrogate pair.
+
+  **Two checks that did not exist were added rather than the findings merely fixed.**
+  `The wire against the document` — SPEC.md was checked against the C# contract and nothing checked
+  `proto/parley.proto`, though it opens by saying the document is the authority and it is not. And
+  `TickAsync` actually calling the sweep, which nothing verified and which, since the disconnect
+  settle was removed, is the whole of the guarantee that nothing stays running for ever.
+
 
   **THE DEPRECATION DATE MOVED, AND THIS IS THE RECORD OF IT.** 007 wrote that `parley console`,
   `--with-console`, `--console` and `--no-console` are *removed at 0.21.0*. This feature is 0.21.0
