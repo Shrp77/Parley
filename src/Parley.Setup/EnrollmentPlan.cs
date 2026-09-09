@@ -386,7 +386,7 @@ public static class EnrollmentPlan
             // deciding, and neither is this.
             throw new InvalidDataException(
                 $"'{key}' names project '{LaunchKey.ProjectOf(key)}' and its environment names "
-                + $"'{landed.Project}'. Make them agree before enrolling.");
+                + $"'{Quoting.Flat(landed.Project)}'. Make them agree before enrolling.");
         }
 
         if (landed is { Ours: false })
@@ -412,15 +412,15 @@ public static class EnrollmentPlan
             if (string.Equals(held, project, StringComparison.Ordinal))
             {
                 throw new InvalidDataException(
-                    $"it is already pinned to the broker at '{pinnedAt}', which is '{project}' itself, "
-                    + "so it is already this project's agent under another spelling");
+                    $"it is already pinned to the broker at '{Quoting.Flat(pinnedAt)}', which is "
+                    + $"'{project}' itself, so it is already this project's agent under another spelling");
             }
 
             if (held is null)
             {
                 throw new InvalidDataException(
-                    $"it is already pinned to the broker at '{pinnedAt}', which no project on this "
-                    + "machine holds");
+                    $"it is already pinned to the broker at '{Quoting.Flat(pinnedAt)}', which no "
+                    + "project on this machine holds");
             }
 
             // It is another project's agent, spelled the old way. Nothing is lost by admitting the

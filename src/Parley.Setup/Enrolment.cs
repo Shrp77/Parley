@@ -320,7 +320,7 @@ public static class Enrolment
     /// project to remove</c> reads as a fault in the tool.
     /// </remarks>
     private static string Where(string? project) =>
-        project is null ? "this repository" : $"'{project}'";
+        project is null ? "this repository" : $"'{Quoting.Flat(project)}'";
 
     /// <summary>Takes an agent out of a catalogue.</summary>
     /// <param name="catalogue">The catalogue's <c>agents</c> object.</param>
@@ -615,7 +615,7 @@ public static class Enrolment
                         // stops being answered.
                         notes.Add(
                             $"{launchPath}: left alone, it answers in "
-                            + $"{string.Join(", ", candidates.Select(found => $"'{found.Project ?? found.Key}'"))}"
+                            + $"{string.Join(", ", candidates.Select(found => $"'{Quoting.Flat(found.Project ?? found.Key)}'"))}"
                             + " — name which one to withdraw from");
                     }
                     else if (candidates.Count == 0)
@@ -629,9 +629,9 @@ public static class Enrolment
                         // through the manifest; this does not have one, and removing an entry that
                         // may be another project's agent is the more expensive way to be wrong.
                         notes.Add(
-                            $"{launchPath}: left alone, its '{addressed.Key}' entry is pinned to the "
-                            + $"broker at '{addressed.Broker}', which this cannot match to "
-                            + $"{Where(project)}");
+                            $"{launchPath}: left alone, its '{Quoting.Flat(addressed.Key)}' entry is "
+                            + $"pinned to the broker at '{Quoting.Flat(addressed.Broker)}', which this "
+                            + $"cannot match to {Where(project)}");
                     }
                     else if (candidates[0] is { Ours: false } stranger)
                     {
@@ -643,7 +643,7 @@ public static class Enrolment
                         // from a project name is one somebody may reasonably have used first, so
                         // naming nobody no longer implies being ours.
                         notes.Add(
-                            $"{launchPath}: left alone, '{stranger.Key}' is not an entry this wrote");
+                            $"{launchPath}: left alone, '{Quoting.Flat(stranger.Key)}' is not an entry this wrote");
                     }
                     else if (named is not null && !string.Equals(named, agent, StringComparison.Ordinal))
                     {
@@ -652,8 +652,8 @@ public static class Enrolment
                         // re-enrolled under a second name has two rows pointing at one file. Taking
                         // this one would unhook an agent nobody named, and would report success.
                         notes.Add(
-                            $"{launchPath}: left alone, its '{candidates[0].Key}' entry is '{named}' "
-                            + $"rather than '{agent}'");
+                            $"{launchPath}: left alone, its '{Quoting.Flat(candidates[0].Key)}' entry is "
+                            + $"'{Quoting.Flat(named)}' rather than '{Quoting.Flat(agent)}'");
                     }
                     else if (servers.Remove(candidates[0].Key))
                     {
@@ -667,7 +667,7 @@ public static class Enrolment
 
                         written.Add(launchPath);
                         notes.Add(
-                            $"{launchPath}: {candidates[0].Key} entry removed, {left} parley "
+                            $"{launchPath}: {Quoting.Flat(candidates[0].Key)} entry removed, {left} parley "
                             + $"entry(s) and {servers.Count - left} other server(s) left");
                     }
                     else
