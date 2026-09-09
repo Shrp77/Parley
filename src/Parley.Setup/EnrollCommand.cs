@@ -115,6 +115,10 @@ public static class EnrollCommand
     /// Every project this machine describes, so an address-pinned entry can be resolved and an
     /// unattended start granted elsewhere can be found.
     /// </param>
+    /// <param name="manifestPath">
+    /// Where that manifest lives, held for the length of the run so that two of them cannot each
+    /// find no other project starting a workspace and then both record that theirs does.
+    /// </param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     public static async Task<int> RunAsync(
@@ -125,7 +129,8 @@ public static class EnrollCommand
         TextWriter error,
         CancellationToken cancellationToken = default,
         ProjectSettings? project = null,
-        IReadOnlyList<ProjectSettings>? deployment = null)
+        IReadOnlyList<ProjectSettings>? deployment = null,
+        string? manifestPath = null)
     {
         ArgumentNullException.ThrowIfNull(arguments);
         ArgumentNullException.ThrowIfNull(nodeConfig);
@@ -138,9 +143,9 @@ public static class EnrollCommand
                 .ConfigureAwait(false),
             ["scan", var root, var into] => await ScanAsync(root, into, selectAll, output, error, cancellationToken)
                 .ConfigureAwait(false),
-            ["plan", var manifest] => await ApplyAsync(manifest, write: false, nodeConfig, output, error, project, deployment, cancellationToken)
+            ["plan", var manifest] => await ApplyAsync(manifest, write: false, nodeConfig, output, error, project, deployment, manifestPath, cancellationToken)
                 .ConfigureAwait(false),
-            ["apply", var manifest] => await ApplyAsync(manifest, write: true, nodeConfig, output, error, project, deployment, cancellationToken)
+            ["apply", var manifest] => await ApplyAsync(manifest, write: true, nodeConfig, output, error, project, deployment, manifestPath, cancellationToken)
                 .ConfigureAwait(false),
             _ => await UsageAsync(error).ConfigureAwait(false),
         };
@@ -721,8 +726,15 @@ public static class EnrollCommand
         TextWriter error,
         ProjectSettings? project,
         IReadOnlyList<ProjectSettings>? deployment,
+        string? projectManifest,
         CancellationToken cancellationToken)
     {
+        // Held for the whole run rather than around the check alone. Validation and writing are far
+        // apart here by design -- everything is refused before anything is written -- so a gate that
+        // spanned only one of them would leave the same window the probe found: two runs each seeing
+        // no other project starting a workspace, and both then recording that theirs does.
+        using var gate = await Catalogues.GateAsync(projectManifest, cancellationToken).ConfigureAwait(false);
+
         EnrollmentManifest? manifest = null;
         string? unreadable = null;
         var unreadableCode = 0;
@@ -793,7 +805,22 @@ public static class EnrollCommand
                 ? $"{entries.Length} repositories to enroll, {skipped} skipped."
                 : $"{entries.Length} repositories to enroll.").ConfigureAwait(false);
 
-        var problems = EnrollmentPlan.Validate(entries, Directory.Exists);
+        var problems = new List<string>(EnrollmentPlan.Validate(entries, Directory.Exists));
+
+        // **FR-013 belongs here and was in the writing loop, which is a different promise.** This
+        // command refuses a half-enrolled set on principle -- everything is validated before
+        // anything is written, because "the repository that missed out is indistinguishable from one
+        // you never meant to enroll". A refusal raised while writing undoes exactly that: the
+        // repositories before it in the list are on disk and the run reports a failure. Found by
+        // probe, in the gate, after the check had been written into the wrong phase.
+        foreach (var entry in entries.Where(row => row.Unattended))
+        {
+            if (Catalogues.Elsewhere(deployment, entry.Workspace, ResolveNodeConfig(manifest?.NodeConfig, nodeConfig.Value))
+                is { } already)
+            {
+                problems.Add($"{entry.Agent}: {Catalogues.Refusal(already)}");
+            }
+        }
 
         if (problems.Count > 0)
         {
@@ -930,20 +957,10 @@ public static class EnrollCommand
 
             if (plan.AddsNodeEntry)
             {
-                // FR-013, refused rather than warned about. A launch entry does nothing until a
-                // person opens the repository; a catalogue entry is consent for a machine to start
-                // a turn with nobody watching, and a node starts one with the repository as its
-                // working directory -- so two projects consenting is two models editing one
-                // checkout. The launch entries written above stand; it is only this that is
-                // singular.
-                if (Catalogues.Elsewhere(deployment, entry.Workspace, nodePath) is { } already)
-                {
-                    await error.WriteLineAsync($"{entry.Agent}: {Catalogues.Refusal(already)}")
-                        .ConfigureAwait(false);
-
-                    return Config;
-                }
-
+                // FR-013 is checked in the validation phase above, with every other reason to refuse
+                // the whole run. Checking it here as well would be a second answer to one question,
+                // and the version that lived here produced the half-applied set this command exists
+                // to prevent.
                 Enrolment.List(listed, entry.Agent, entry.Workspace);
                 nodeChanged = true;
             }

@@ -303,7 +303,8 @@ internal static class Adding
                 file,
                 Path.Combine(workspace, "CLAUDE.md"),
                 cancellationToken,
-                catalogue.Deployment()).ConfigureAwait(false);
+                catalogue.Deployment(),
+                catalogue.ManifestPath).ConfigureAwait(false);
 
             said.Add($"{Added}'{role}'.");
             said.AddRange(outcome.Notes);

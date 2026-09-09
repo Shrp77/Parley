@@ -289,6 +289,11 @@ public static class Enrolment
     /// unattended start already granted elsewhere can be found. Null where there is no manifest,
     /// which refuses the first exactly as it was refused before and says nothing about the second.
     /// </param>
+    /// <param name="manifestPath">
+    /// Where that manifest lives, held for the length of the call so that checking whether another
+    /// project starts this workspace and recording that this one does are one act. Null where there
+    /// is no manifest, which is also where there is nothing to check.
+    /// </param>
     /// <returns>What was decided and what was written.</returns>
     /// <exception cref="InvalidDataException">
     /// A file is in a shape this cannot merge into, or the repository already belongs somewhere.
@@ -304,11 +309,18 @@ public static class Enrolment
         string catalogueFile,
         string instructionsPath,
         CancellationToken cancellationToken,
-        IReadOnlyList<ProjectSettings>? deployment = null)
+        IReadOnlyList<ProjectSettings>? deployment = null,
+        string? manifestPath = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
         ArgumentException.ThrowIfNullOrWhiteSpace(project);
         ArgumentException.ThrowIfNullOrWhiteSpace(catalogueFile);
+
+        // The machine-wide gate first, then this project's catalogue, then the repository's launch
+        // configuration. Three files, one order, everywhere -- the gate is the only thing that can
+        // make "nobody else starts this workspace" and "now I do" one act, because those touch
+        // different files and no hold on either covers the other.
+        using var gate = await Catalogues.GateAsync(manifestPath, cancellationToken).ConfigureAwait(false);
 
         // **The catalogue is held first, and both halves acquire in this order.** It has the same
         // read-modify-write shape as the launch configuration and a commoner collision: six

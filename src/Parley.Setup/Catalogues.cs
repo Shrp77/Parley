@@ -39,6 +39,47 @@ public sealed record Consent(string Project, string Catalogue, string Role);
 /// </remarks>
 public static class Catalogues
 {
+    /// <summary>Takes the machine-wide gate on granting an unattended start.</summary>
+    /// <param name="manifestPath">The machine's project manifest, or null when it has none.</param>
+    /// <param name="cancellationToken">Stops the waiting.</param>
+    /// <returns>The gate, held until it is disposed, or null when there is nothing to gate.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b><see cref="Elsewhere"/> reads every other project's catalogue and its caller then writes a
+    /// different file, so no amount of holding the file being written can make the pair atomic.</b>
+    /// Two runs granting consent at the same moment each looked, saw nothing, and both wrote — found
+    /// by a probe that passed six times in isolation and failed on the third round under the load of
+    /// the full suite, which is the difference between a race being present and a race being visible.
+    /// </para>
+    /// <para>
+    /// <b>The manifest is what is held, because it is the one file every project on the machine
+    /// shares</b> — and it is never written here, only taken. Where there is no manifest there is
+    /// also no <c>deployment</c> to compare against, so the check is a no-op and the gate is nothing
+    /// to hold.
+    /// </para>
+    /// </remarks>
+    public static async Task<IDisposable?> GateAsync(
+        string? manifestPath,
+        CancellationToken cancellationToken)
+    {
+        if (manifestPath is not { Length: > 0 } path || !File.Exists(path))
+        {
+            return null;
+        }
+
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+            }
+            catch (IOException) when (attempt < 40 && File.Exists(path))
+            {
+                await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
     /// <summary>Whether another project on this machine already starts this workspace.</summary>
     /// <param name="deployment">Every project the machine's manifest names.</param>
     /// <param name="workspace">The repository about to be catalogued.</param>

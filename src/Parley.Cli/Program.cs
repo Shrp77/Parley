@@ -897,7 +897,8 @@ if (verb == "enroll")
         Console.Error,
         CancellationToken.None,
         project,
-        configuredProjects).ConfigureAwait(false);
+        configuredProjects,
+        manifestPath).ConfigureAwait(false);
 }
 
 if (databasePath is not null)
