@@ -67,13 +67,22 @@ public static class Catalogues
             return null;
         }
 
+        // **The manifest's own lock file, not the manifest.** The first version held the manifest
+        // itself with `FileShare.None`, which locked out every *reader* for the length of a bulk
+        // enrolment — the terminal, the web UI, the node and every operator command begin by reading
+        // it, and each would have reported it unreadable rather than busy. `ProjectManifest` already
+        // keeps a lock beside it for serialising its own writes, so this takes that one: readers are
+        // untouched, and a grant and a manifest rewrite exclude each other, which they should.
+        var lockPath = ProjectManifest.LockFor(path);
+
         for (var attempt = 0; ; attempt++)
         {
             try
             {
-                return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+                return new FileStream(
+                    lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
             }
-            catch (IOException) when (attempt < 40 && File.Exists(path))
+            catch (IOException) when (attempt < 40)
             {
                 await Task.Delay(50, cancellationToken).ConfigureAwait(false);
             }
