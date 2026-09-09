@@ -42,9 +42,6 @@ public static class Enrolment
     /// <summary>The launch configuration's name, in every repository.</summary>
     public const string LaunchFile = ".mcp.json";
 
-    /// <summary>The key the parley server sits under in a launch configuration.</summary>
-    public const string ServerKey = "parley";
-
     /// <summary>Text without a byte-order mark.</summary>
     private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
@@ -258,7 +255,7 @@ public static class Enrolment
             {
                 if (root["mcpServers"] is JsonObject servers)
                 {
-                    var named = NamedBy(servers[ServerKey]);
+                    var named = NamedBy(servers[LaunchKey.Unnamed]);
 
                     if (named is not null && !string.Equals(named, agent, StringComparison.Ordinal))
                     {
@@ -270,7 +267,7 @@ public static class Enrolment
                             $"{launchPath}: left alone, its parley entry is '{named}' rather than "
                             + $"'{agent}'");
                     }
-                    else if (servers.Remove(ServerKey))
+                    else if (servers.Remove(LaunchKey.Unnamed))
                     {
                         await File.WriteAllTextAsync(
                             launchPath,

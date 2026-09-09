@@ -465,12 +465,12 @@ public static class EnrollCommand
                 return null;
             }
 
-            var env = JsonNode.Parse(text)?["mcpServers"]?["parley"]?["env"];
-            var owns = env?["PARLEY_OWNS"]?.GetValue<string>();
-            var agent = env?["PARLEY_AGENT"]?.GetValue<string>();
+            var entry = LaunchEntries
+                .Read(JsonNode.Parse(text)?["mcpServers"] as JsonObject)
+                .FirstOrDefault(found => found.Owns is { Length: > 0 });
 
-            return owns is { Length: > 0 }
-                ? $"registered before ({commit[..7]}) as `{agent}` — \"{Present(owns)}\""
+            return entry is not null
+                ? $"registered before ({commit[..7]}) as `{entry.Agent}` — \"{Present(entry.Owns!)}\""
                 : null;
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
@@ -587,9 +587,11 @@ public static class EnrollCommand
                 return (null, null);
             }
 
-            var env = JsonNode.Parse(File.ReadAllText(path))?["mcpServers"]?["parley"]?["env"];
+            var entry = LaunchEntries
+                .Read(JsonNode.Parse(File.ReadAllText(path))?["mcpServers"] as JsonObject)
+                .FirstOrDefault();
 
-            return (env?["PARLEY_AGENT"]?.GetValue<string>(), env?["PARLEY_OWNS"]?.GetValue<string>());
+            return (entry?.Agent, entry?.Owns);
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
                                        or UnauthorizedAccessException or FormatException)

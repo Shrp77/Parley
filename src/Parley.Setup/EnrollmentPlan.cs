@@ -75,6 +75,14 @@ public static class EnrollmentPlan
     /// </remarks>
     public const string BrokerVariable = "PARLEY_BROKER";
 
+    /// <summary>The launch variable saying what an agent owns.</summary>
+    /// <remarks>
+    /// A constant for the reason <see cref="AgentVariable"/> is one: it is now read as well as
+    /// written. A scan reports what a repository already tells its peers it owns, and per project,
+    /// since the same repository is worth asking about different things by different rosters.
+    /// </remarks>
+    public const string OwnsVariable = "PARLEY_OWNS";
+
     /// <summary>The heading that marks a peers block already present in a file.</summary>
     public const string PeersHeading = "## Peers";
 
@@ -328,7 +336,7 @@ public static class EnrollmentPlan
             root["mcpServers"] = servers;
         }
 
-        var existingParley = servers["parley"] as JsonObject;
+        var existingParley = servers[LaunchKey.Unnamed] as JsonObject;
         var existingEnv = existingParley?["env"] as JsonObject;
         var pinnedTo = Text(existingEnv, ProjectVariable);
         var pinnedAt = Text(existingEnv, BrokerVariable);
@@ -357,7 +365,7 @@ public static class EnrollmentPlan
 
         if (owns.Length > 0)
         {
-            env["PARLEY_OWNS"] = owns;
+            env[OwnsVariable] = owns;
         }
 
         // The ${VAR:-default} form is environment-variable expansion, which .mcp.json supports.
@@ -366,7 +374,7 @@ public static class EnrollmentPlan
         env["PARLEY_WORKSPACE"] = "${PARLEY_WORKSPACE:-" + entry.Workspace.Replace('\\', '/') + "}";
 
         var desired = new JsonObject { ["command"] = "parley-mcp", ["env"] = env };
-        var existing = servers["parley"];
+        var existing = servers[LaunchKey.Unnamed];
         var already = existing is not null
             && JsonNode.DeepEquals(existing, desired);
 
@@ -378,8 +386,10 @@ public static class EnrollmentPlan
         }
         else
         {
-            var others = servers.Count(pair => !string.Equals(pair.Key, "parley", StringComparison.Ordinal));
-            servers["parley"] = desired;
+            var others = servers.Count(
+                pair => !string.Equals(pair.Key, LaunchKey.Unnamed, StringComparison.Ordinal));
+
+            servers[LaunchKey.Unnamed] = desired;
             launchOutput = root.ToJsonString(SerialisationOptions.Indented) + "\n";
             notes.Add(others > 0
                 ? $".mcp.json: {(existing is null ? "create" : "update")} parley entry, leaving {others} other server(s)"

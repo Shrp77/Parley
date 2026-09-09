@@ -213,8 +213,11 @@ one in three. Each row says what is true of it.
   checkout. A launch entry is inert until a person opens the repository; a catalogue entry is standing
   consent to start without one, which is the half that must stay singular.)*
 - **FR-014**: Every illustration of a launch configuration a person is shown — the README, the plugin's
-  setup instructions, and the console's registration page — MUST show the project-keyed shape and say
-  what the bare `parley` key means.
+  setup instructions, the console's registration page, and **the adapter's own header comment** — MUST
+  show the project-keyed shape and say what the bare `parley` key means. *(The fourth was found by the
+  one-key check rather than by the survey that produced the first three, which is the argument for the
+  check: an illustration that disagrees with the tool is read by exactly the person who has not used
+  the tool yet.)*
 - **FR-015**: A repository already answering in a project MUST be told so plainly when somebody enrols
   it there again, rather than the run reporting a change it did not make.
 

@@ -22,34 +22,49 @@ to pass. A test that passed throughout proves nothing about what was repaired.
 phase still writes `parley` for everything, and the whole suite passes with **no test edited**. That is
 what proves the extraction was faithful rather than a rewrite wearing its name.
 
-- [ ] T001 Add `tests/Parley.Cli.Tests/LaunchKeyTests.cs` covering the grammar of
+- [x] T001 Add `tests/Parley.Cli.Tests/LaunchKeyTests.cs` covering the grammar of
       `data-model.md` § Key: `parley` for no project, `parley-<project>` for one, injectivity, the
       never-collides property, a project called `parley`, and the four things that are **not** ours —
       `parleyx`, `parley-`, `parley-Alpha`, `parley-a_b`. Fails: the type does not exist.
-- [ ] T002 Add `src/Parley.Setup/LaunchKey.cs`: `For(string? project)`, `IsOurs(string key)`,
+- [x] T002 Add `src/Parley.Setup/LaunchKey.cs`: `For(string? project)`, `IsOurs(string key)`,
       `ProjectOf(string key)` returning null for the legacy key. `<remarks>` carries why the prefix was
       chosen over the bare project name — withdrawal is the only path that deletes somebody's
       configuration, so ownership must be decidable from the key alone.
-- [ ] T003 [P] Add `src/Parley.Setup/LaunchEntries.cs`: read an `mcpServers` object into the entries
+- [x] T003 [P] Add `src/Parley.Setup/LaunchEntries.cs`: read an `mcpServers` object into the entries
       this tooling owns, each carrying key, agent, project, owns and broker address. Reading only —
       no precedence yet, no writing.
-- [ ] T004 [P] Add `tests/Parley.Cli.Tests/LaunchEntriesTests.cs` for the reader alone: a legacy entry,
+- [x] T004 [P] Add `tests/Parley.Cli.Tests/LaunchEntriesTests.cs` for the reader alone: a legacy entry,
       a project-keyed entry, both together, a stranger's server ignored, an entry with no
       `PARLEY_AGENT`, and an `mcpServers` that is not an object.
-- [ ] T005 Rewrite `src/Parley.Setup/Enrolment.cs` in terms of `LaunchKey`, removing the `ServerKey`
+- [x] T005 Rewrite `src/Parley.Setup/Enrolment.cs` in terms of `LaunchKey`, removing the `ServerKey`
       constant. Behaviour identical.
-- [ ] T006 Rewrite the four literal-key uses in `src/Parley.Setup/EnrollmentPlan.cs` in terms of
+- [x] T006 Rewrite the four literal-key uses in `src/Parley.Setup/EnrollmentPlan.cs` in terms of
       `LaunchKey`. Behaviour identical.
-- [ ] T007 Rewrite the two readers in `src/Parley.Setup/EnrollCommand.cs` (lines 468 and 590) in terms
+- [x] T007 Rewrite the two readers in `src/Parley.Setup/EnrollCommand.cs` (lines 468 and 590) in terms
       of `LaunchEntries`. Behaviour identical — still the first entry, still one answer.
-- [ ] T008 Add `tests/Parley.Cli.Tests/OneKeyRuleTests.cs`: the literal `"parley"` as a server key
+- [x] T008 Add `tests/Parley.Cli.Tests/OneKeyRuleTests.cs`: the literal `"parley"` as a server key
       appears in exactly one source file under `src/`, and a member merely *named* for it does not
       satisfy the check. The `SurfaceTests` shape, which has already caught a violation of its own rule
       once in this repository.
-- [ ] T009 Run the full suite. **No test file may be edited in this phase.** A failure here is the
+- [x] T009 Run the full suite. **No test file may be edited in this phase.** A failure here is the
       extraction being unfaithful, not a test being stale.
 
-**Checkpoint**: green, 2,678 tests, `.mcp.json` files written byte-for-byte as before.
+**Checkpoint**: met. Twelve hosts green, **2,718** (2,678 + 40 new), `.mcp.json` written byte-for-byte
+as before.
+
+**Three things the phase turned up, each by running rather than by reading:**
+
+- **The project-name grammar admits a trailing hyphen.** `^[a-z][a-z0-9-]{0,31}$` accepts `alpha-`, so
+  `parley-alpha-` really is this tooling's key. T001 asserted it was a stranger and T001 was wrong.
+  Refusing it would have made a repository in a project called `alpha-` unwithdrawable — a key nothing
+  owned. Now a named test, so the surprise is recorded rather than left for somebody else.
+- **There is a fourth illustration.** The survey named the README, the plugin's setup instructions and
+  the Register page; the one-key check found `src/Parley.Mcp/Program.cs`'s header comment showing a
+  `.mcp.json` too. FR-014 was amended to four. This is the argument for the check over the survey.
+- **One test was edited, and it is the one designed to be.** `SetupSurfaceTests` enumerates
+  `Parley.Setup`'s public types on purpose — *"written out rather than counted, so a member added here
+  is a decision somebody makes in this file"*. Three names added. The phase's "no test edited" rule
+  means no test whose *promise* changed, and none did.
 
 ---
 
@@ -61,13 +76,17 @@ into the project it is already in changes its key to nothing.
 **Independent test**: take a repository with a legacy entry, run every read path over it, then enrol it
 again into the project it already answers in and diff the file.
 
-- [ ] T010 [US2] Add `tests/Parley.Cli.Tests/LaunchPrecedenceTests.cs` with the four cases of
-      `data-model.md` § Precedence as separate tests, each named for the case. Fails: `For` does not
-      exist.
-- [ ] T011 [US2] Add `LaunchEntries.For(JsonObject servers, string? project)` implementing the
+- [x] T010 [US2] Add `tests/Parley.Cli.Tests/LaunchPrecedenceTests.cs` with the four cases of
+      `data-model.md` § Precedence as separate tests, each named for the case. Fails: the method does
+      not exist. **Ten cases rather than four**: the two disagreement shapes — a stranger at the derived
+      key, and a key and environment naming different projects — are what the caller has to refuse, and
+      a precedence that hid either would be writing over somebody's entry.
+- [x] T011 [US2] Add `LaunchEntries.Landing(JsonObject servers, string? project)` implementing the
       precedence, with `<remarks>` saying why case 2 precedes case 4 (a rename edits a working agent's
       tool names to achieve nothing) and why case 3 follows case 2 (an unpinned entry must not swallow
-      an enrolment meant to be a second one).
+      an enrolment meant to be a second one). **Named `Landing` rather than `For`**: it answers *where
+      this lands and what is already there*, which is two facts, and the second is the one the refusals
+      are made of.
 - [ ] T012 [US2] Point `EnrollmentPlan.Describe` at `LaunchEntries.For` instead of the literal
       `servers["parley"]`, keeping every existing behaviour: same notes, same "already correct", same
       re-point message.
