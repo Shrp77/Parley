@@ -893,16 +893,16 @@ public static class EnrollCommand
             IReadOnlyList<string> wrote = [];
             IReadOnlyList<string> said = [];
 
-            var instructions = File.Exists(instructionsPath)
-                ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
-                : null;
-
             var endpoints = deployment?.ToDictionary(
                 settings => settings.Name.Value,
                 settings => settings.Endpoint,
                 StringComparer.Ordinal);
 
-            RepositoryPlan Decide(string? launch) => EnrollmentPlan.Describe(
+            // **The instructions are read by whoever holds them, which is no longer here.** Reading
+            // this file at the top of the loop and writing it at the bottom is the lost update the
+            // launch configuration was given a handle for, on the file that is entirely somebody's
+            // own prose. The decision now receives what was read under the hold that writes it.
+            RepositoryPlan Decide(string? launch, string? instructions) => EnrollmentPlan.Describe(
                 entry,
                 launch,
                 instructions,
@@ -925,9 +925,15 @@ public static class EnrollCommand
                 }
                 else
                 {
-                    plan = Decide(File.Exists(launchPath)
-                        ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false)
-                        : null);
+                    // `plan` writes nothing, so both files are read plainly here. Holding them would
+                    // be a lock taken to describe a file and released before anything acted on it.
+                    plan = Decide(
+                        File.Exists(launchPath)
+                            ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false)
+                            : null,
+                        File.Exists(instructionsPath)
+                            ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
+                            : null);
                 }
             }
             catch (Exception ex) when (ex is JsonException or InvalidDataException)

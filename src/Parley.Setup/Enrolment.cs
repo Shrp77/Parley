@@ -58,8 +58,11 @@ public static class Enrolment
     /// Writes what a plan decided, and says which files changed.
     /// </summary>
     /// <param name="decide">
-    /// Given the launch configuration as it stands — null when there is none — says what to write.
-    /// Called while the file is held, so that reading it and replacing it are one act.
+    /// Given the launch configuration and the standing instructions as they stand — each null when
+    /// there is none — says what to write. Called while both are held, so that reading one and
+    /// replacing it are one act. **The instructions used to be read by the caller and passed in**,
+    /// which put the read and the write at opposite ends of the call with the launch configuration's
+    /// two-second acquisition between them.
     /// </param>
     /// <param name="workspace">The repository the plan is for.</param>
     /// <param name="instructionsPath">Where its standing instructions live.</param>
@@ -76,7 +79,7 @@ public static class Enrolment
     /// project reads on every turn.
     /// </remarks>
     public static async Task<(RepositoryPlan Plan, IReadOnlyList<string> Written, IReadOnlyList<string> Said)> WriteAsync(
-        Func<string?, RepositoryPlan> decide,
+        Func<string?, string?, RepositoryPlan> decide,
         string workspace,
         string instructionsPath,
         CancellationToken cancellationToken)
@@ -94,29 +97,82 @@ public static class Enrolment
         // and left it out of the file that makes it startable.
         using (var held = await HoldAsync(LaunchPath(workspace), cancellationToken).ConfigureAwait(false))
         {
-            plan = decide(held is null ? null : await ReadHeldAsync(held, cancellationToken).ConfigureAwait(false));
+            // Launch then instructions, the order AddAsync takes them in after the catalogue. Two
+            // runs acquiring in opposite orders is how each comes to hold the half the other wants.
+            var (notes, declined) = await HoldInstructionsAsync(instructionsPath, cancellationToken)
+                .ConfigureAwait(false);
 
-            if (plan.LaunchConfiguration is { } launch)
+            using (notes)
             {
-                var path = LaunchPath(workspace);
+                var mark = notes is not null && HeldHasByteOrderMark(notes);
 
-                await OverwriteHeldAsync(held, path, launch, cancellationToken).ConfigureAwait(false);
-                written.Add(path);
+                plan = decide(
+                    held is null ? null : await ReadHeldAsync(held, cancellationToken).ConfigureAwait(false),
+                    notes is null
+                        ? await DeclinedTextAsync(declined, instructionsPath, cancellationToken)
+                            .ConfigureAwait(false)
+                        : await ReadHeldAsync(notes, cancellationToken).ConfigureAwait(false));
+
+                if (plan.LaunchConfiguration is { } launch)
+                {
+                    var path = LaunchPath(workspace);
+
+                    await OverwriteHeldAsync(held, path, launch, cancellationToken).ConfigureAwait(false);
+                    written.Add(path);
+                }
+
+                if (plan.Instructions is { } instructions)
+                {
+                    if (declined is not null)
+                    {
+                        said.Add(declined);
+                    }
+                    else
+                    {
+                        await OverwriteHeldAsync(
+                            notes,
+                            instructionsPath,
+                            instructions,
+                            cancellationToken,
+                            mark ? Utf8WithMark : Utf8).ConfigureAwait(false);
+
+                        written.Add(instructionsPath);
+                    }
+                }
             }
         }
 
-        if (plan.Instructions is { } instructions)
-        {
-            await File.WriteAllTextAsync(
-                instructionsPath,
-                instructions,
-                HadByteOrderMark(instructionsPath) ? Utf8WithMark : Utf8,
-                cancellationToken).ConfigureAwait(false);
+        return (plan, written, said);
+    }
 
-            written.Add(instructionsPath);
+    /// <summary>What a declined instructions file currently holds, for the plan's sake.</summary>
+    /// <param name="declined">Why it was declined, or null when it simply is not there.</param>
+    /// <param name="path">Where it lives.</param>
+    /// <param name="cancellationToken">Stops the read.</param>
+    /// <returns>Its text, or null.</returns>
+    /// <remarks>
+    /// Read unheld, and only ever to decide. A declined file is one nothing is going to write, so
+    /// the read is safe where the write is not — and without it the plan would report a *create* for
+    /// a file that plainly exists, which reads as a fault in the tool rather than as a link refused.
+    /// </remarks>
+    private static async Task<string?> DeclinedTextAsync(
+        string? declined,
+        string path,
+        CancellationToken cancellationToken)
+    {
+        if (declined is null || !File.Exists(path))
+        {
+            return null;
         }
 
-        return (plan, written, said);
+        try
+        {
+            return await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Puts an agent in a catalogue, so a node may start it.</summary>
@@ -244,11 +300,71 @@ public static class Enrolment
         return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Takes the standing instructions for the length of a read-modify-write.</summary>
+    /// <param name="path">Where they live.</param>
+    /// <param name="cancellationToken">Stops the waiting.</param>
+    /// <returns>The handle — null when the file is absent or declined — and why it was declined.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The third file, held the way the other two are.</b> It was read at the top of a call and
+    /// written at the bottom, with the launch configuration's acquisition in between — which retries
+    /// for two seconds. What lands in that window is somebody saving in an editor, and their work was
+    /// overwritten by the copy read before they typed it. The create arm was worse than a lost
+    /// append: with no file the plan is <i>create</i>, so a file that appeared in the window was
+    /// replaced wholesale by the frame rather than having the frame added to it.
+    /// </para>
+    /// <para>
+    /// <b>A link is declined rather than thrown, and that is why this exists as a helper.</b>
+    /// <c>HoldAsync</c> refuses one with an exception, which is right for the launch configuration —
+    /// a repository that cannot be merged into stops the run. The frame is the least of the three
+    /// writes and this tooling has always said it does not own this file, so here the same refusal
+    /// becomes a sentence and the enrolment carries on. One helper because both writers need both
+    /// halves, and the last time only one of them got them the other was still following links.
+    /// </para>
+    /// </remarks>
+    private static async Task<(FileStream? Held, string? Declined)> HoldInstructionsAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return (await HoldAsync(path, cancellationToken).ConfigureAwait(false), null);
+        }
+        catch (InvalidDataException linked)
+        {
+            return (null, $"{path}: left alone, {linked.Message}");
+        }
+    }
+
+    /// <summary>Whether a held file starts with a byte-order mark.</summary>
+    /// <param name="stream">The handle.</param>
+    /// <returns>Whether the first three bytes are one.</returns>
+    /// <remarks>
+    /// Asked of the handle rather than of the path, because the handle is exclusive: the by-path
+    /// version opens the file itself, which under this hold fails and is caught as "no mark". A
+    /// silent false there rewrites every byte of a file that had one, which is the whole-file diff
+    /// keeping the mark exists to avoid.
+    /// </remarks>
+    internal static bool HeldHasByteOrderMark(FileStream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
+        stream.Position = 0;
+
+        Span<byte> first = stackalloc byte[3];
+
+        return stream.ReadAtLeast(first, 3, throwOnEndOfStream: false) == 3
+            && first[0] == 0xEF
+            && first[1] == 0xBB
+            && first[2] == 0xBF;
+    }
+
     /// <summary>Replaces what a held file holds, or writes one that was not there.</summary>
     /// <param name="stream">The handle, or null when the file did not exist.</param>
     /// <param name="path">Where it goes when it did not exist.</param>
     /// <param name="text">What it should hold.</param>
     /// <param name="cancellationToken">Stops the write.</param>
+    /// <param name="encoding">How to encode it, or null for UTF-8 with no mark.</param>
     /// <remarks>
     /// <b>The create arm is exclusive too, and has to be.</b> Two runs both finding no file and both
     /// creating one is the same lost update at a different moment; <c>CreateNew</c> means the second
@@ -259,7 +375,8 @@ public static class Enrolment
         FileStream? stream,
         string path,
         string text,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Encoding? encoding = null)
     {
         // **Cancellation is honoured before the write and never during it.** Passing the token into
         // the write left a cancelled run holding an empty `.mcp.json` -- created, truncated, and
@@ -268,7 +385,13 @@ public static class Enrolment
         // a Ctrl+C is a worse outcome than the write finishing.
         cancellationToken.ThrowIfCancellationRequested();
 
-        var bytes = Utf8.GetBytes(text);
+        // **The preamble is written here rather than left to the encoding.** `Encoding.GetBytes`
+        // never emits one — only the `File.WriteAllText` family does — so an encoding chosen to keep
+        // a byte-order mark would have quietly dropped it on the way through this.
+        var chosen = encoding ?? Utf8;
+        var body = chosen.GetBytes(text);
+        var preamble = chosen.GetPreamble();
+        var bytes = preamble.Length == 0 ? body : [.. preamble, .. body];
 
         if (stream is null)
         {
@@ -416,10 +539,6 @@ public static class Enrolment
             }
         }
 
-        var instructions = File.Exists(instructionsPath)
-            ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
-            : null;
-
         // **Read and written under one exclusive handle, because a repository now has more than one
         // writer.** Before this feature a second enrolment of one repository was refused outright, so
         // there was never a legitimate reason for two writers to hold this file at once; setting a
@@ -434,50 +553,59 @@ public static class Enrolment
 
         using (var launch = await HoldAsync(launchPath, cancellationToken).ConfigureAwait(false))
         {
-            plan = EnrollmentPlan.Describe(
-                entry,
-                launch is null ? null : await ReadHeldAsync(launch, cancellationToken).ConfigureAwait(false),
-                instructions,
-                agents.ContainsKey(entry.Agent),
-                project,
-                deployment?.ToDictionary(
-                    settings => settings.Name.Value,
-                    settings => settings.Endpoint,
-                    StringComparer.Ordinal),
-                agents[entry.Agent]?["workspace"]?.GetValue<string>());
+            // **The third file, held from here rather than read at the top of the call.** The frame
+            // replaces this file with its own contents plus the frame, so the read and the write have
+            // to be one act as the other two are — and the acquisition above retries for two seconds,
+            // which is a wide window to lose somebody's editor save in.
+            var (notes, declined) = await HoldInstructionsAsync(instructionsPath, cancellationToken)
+                .ConfigureAwait(false);
 
-            if (plan.LaunchConfiguration is { } text)
+            using (notes)
             {
-                await OverwriteHeldAsync(launch, launchPath, text, cancellationToken).ConfigureAwait(false);
-                written.Add(launchPath);
-            }
-        }
+                var mark = notes is not null && HeldHasByteOrderMark(notes);
 
-        if (plan.Instructions is { } appended)
-        {
-            // **The third file, and 2.3's fix covered the other two.** The peers frame replaces this
-            // file with its own contents plus the frame, so following a link writes into whatever it
-            // points at — `CLAUDE.md` is as tracked as `.mcp.json` and as easy for a repository to
-            // ship as a link.
-            //
-            // Skipped with a note rather than refusing the enrolment. The frame is the least of the
-            // three writes: a repository is an agent without it, and it is the one file here this
-            // tooling has always said it does not own.
-            if (Linked(instructionsPath) is { } target)
-            {
-                said.Add(
-                    $"{instructionsPath}: left alone, it is a link to {Quoting.Flat(target)} and the "
-                    + "peers frame would have been written there");
-            }
-            else
-            {
-                await File.WriteAllTextAsync(
-                    instructionsPath,
-                    appended,
-                    HadByteOrderMark(instructionsPath) ? Utf8WithMark : Utf8,
-                    cancellationToken).ConfigureAwait(false);
+                plan = EnrollmentPlan.Describe(
+                    entry,
+                    launch is null ? null : await ReadHeldAsync(launch, cancellationToken).ConfigureAwait(false),
+                    notes is null
+                        ? await DeclinedTextAsync(declined, instructionsPath, cancellationToken)
+                            .ConfigureAwait(false)
+                        : await ReadHeldAsync(notes, cancellationToken).ConfigureAwait(false),
+                    agents.ContainsKey(entry.Agent),
+                    project,
+                    deployment?.ToDictionary(
+                        settings => settings.Name.Value,
+                        settings => settings.Endpoint,
+                        StringComparer.Ordinal),
+                    agents[entry.Agent]?["workspace"]?.GetValue<string>());
 
-                written.Add(instructionsPath);
+                if (plan.LaunchConfiguration is { } text)
+                {
+                    await OverwriteHeldAsync(launch, launchPath, text, cancellationToken).ConfigureAwait(false);
+                    written.Add(launchPath);
+                }
+
+                if (plan.Instructions is { } appended)
+                {
+                    // Skipped with a note rather than refusing the enrolment. The frame is the least
+                    // of the three writes: a repository is an agent without it, and it is the one
+                    // file here this tooling has always said it does not own.
+                    if (declined is not null)
+                    {
+                        said.Add(declined);
+                    }
+                    else
+                    {
+                        await OverwriteHeldAsync(
+                            notes,
+                            instructionsPath,
+                            appended,
+                            cancellationToken,
+                            mark ? Utf8WithMark : Utf8).ConfigureAwait(false);
+
+                        written.Add(instructionsPath);
+                    }
+                }
             }
         }
 
@@ -875,32 +1003,6 @@ public static class Enrolment
             path,
             catalogue.ToJsonString(SerialisationOptions.Indented) + "\n",
             cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>Whether a file starts with a byte-order mark.</summary>
-    /// <param name="path">The file.</param>
-    /// <returns>Whether it does; false when it cannot be read.</returns>
-    private static bool HadByteOrderMark(string path)
-    {
-        try
-        {
-            if (!File.Exists(path))
-            {
-                return false;
-            }
-
-            using var stream = File.OpenRead(path);
-            Span<byte> first = stackalloc byte[3];
-
-            return stream.ReadAtLeast(first, 3, throwOnEndOfStream: false) == 3
-                && first[0] == 0xEF
-                && first[1] == 0xBB
-                && first[2] == 0xBF;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
     }
 
     /// <summary>What an add or a withdrawal decided, and what it wrote.</summary>
