@@ -190,7 +190,7 @@ public static class Catalogues
     /// <param name="problem">Why it could not be read.</param>
     /// <returns>One sentence, naming the file and what it cost.</returns>
     private static string Unseen(string project, string catalogue, string? problem) =>
-        $"'{Quoting.Flat(project)}' could not be checked: {Quoting.Flat(catalogue)} was not readable"
+        $"{Quoting.Quoted(project)} could not be checked: {Quoting.Flat(catalogue)} was not readable"
         + (problem is { Length: > 0 } ? $" ({Quoting.Flat(problem)})" : string.Empty)
         + ". A repository may be started unattended by only one project, and that cannot be granted "
         + "from a catalogue nobody can open — the two things this run would otherwise be saying, "
@@ -211,8 +211,8 @@ public static class Catalogues
         // value able to move the cursor or reverse the reading direction can imitate the lines around
         // it. That matters more here than in most places: the line around it is a refusal, which is
         // what somebody reads before deciding whether a file is safe to point a tool at.
-        return $"'{Quoting.Flat(consent.Project)}' already starts this workspace unattended, as "
-            + $"'{Quoting.Flat(consent.Role)}' in {Quoting.Flat(consent.Catalogue)}. A repository may "
+        return $"{Quoting.Quoted(consent.Project)} already starts this workspace unattended, as "
+            + $"{Quoting.Quoted(consent.Role)} in {Quoting.Flat(consent.Catalogue)}. A repository may "
             + "answer in several projects and may be started unattended by only one: a node starts an "
             + "agent with its workspace as the working directory, so two of them is two models "
             + "editing one checkout.";

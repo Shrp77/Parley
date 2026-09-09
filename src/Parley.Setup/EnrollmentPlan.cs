@@ -386,7 +386,7 @@ public static class EnrollmentPlan
             // deciding, and neither is this.
             throw new InvalidDataException(
                 $"'{key}' names project '{LaunchKey.ProjectOf(key)}' and its environment names "
-                + $"'{Quoting.Flat(landed.Project)}'. Make them agree before enrolling.");
+                + $"{Quoting.Quoted(landed.Project)}. Make them agree before enrolling.");
         }
 
         if (landed is { Ours: false })
@@ -412,14 +412,14 @@ public static class EnrollmentPlan
             if (string.Equals(held, project, StringComparison.Ordinal))
             {
                 throw new InvalidDataException(
-                    $"it is already pinned to the broker at '{Quoting.Flat(pinnedAt)}', which is "
+                    $"it is already pinned to the broker at {Quoting.Quoted(pinnedAt)}, which is "
                     + $"'{project}' itself, so it is already this project's agent under another spelling");
             }
 
             if (held is null)
             {
                 throw new InvalidDataException(
-                    $"it is already pinned to the broker at '{Quoting.Flat(pinnedAt)}', which no "
+                    $"it is already pinned to the broker at {Quoting.Quoted(pinnedAt)}, which no "
                     + "project on this machine holds");
             }
 
@@ -489,7 +489,7 @@ public static class EnrollmentPlan
             // stops one existing and starts another. The old name stays in the registry with nothing
             // that will ever attach as it again, and the person who edited a manifest row would have
             // no reason to look. The note beneath this one has said less than this for two releases.
-            notes.Add($".mcp.json: it was '{Quoting.Flat(was)}' here; it becomes '{entry.Agent}'");
+            notes.Add($".mcp.json: it was {Quoting.Quoted(was)} here; it becomes {Quoting.Quoted(entry.Agent)}");
         }
 
         if (project is not null && landed is not null && landed.Project is null)

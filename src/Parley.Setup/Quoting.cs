@@ -65,10 +65,51 @@ public static class Quoting
 
             if (kept.Length > Longest)
             {
-                return kept.ToString(0, Longest - 1) + "…";
+                // **The bound is counted in runes and applied in chars, and those are not the same
+                // unit.** A rune outside the basic plane is two chars, so an index taken at the bound
+                // can land between the halves of one — and half a surrogate pair is not a character
+                // at all: it renders as the replacement glyph and can make a well-formed value
+                // unreadable at exactly the moment it is being quoted in a refusal. 008's gate found
+                // this in one message and recorded it as low; here it is every message this feature
+                // builds, because 2.8 made this the single defence.
+                var cut = Longest - 1;
+
+                if (char.IsLowSurrogate(kept[cut]))
+                {
+                    cut--;
+                }
+
+                return kept.ToString(0, cut) + "…";
             }
         }
 
         return kept.ToString();
     }
+
+    /// <summary>One value, delimited, and unable to add delimiters of its own.</summary>
+    /// <param name="value">Whatever was in the file.</param>
+    /// <returns>The value between quotes, carrying none.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The quotes are part of the neutralisation, which is why they are here and not at each
+    /// call site.</b> Fourteen sentences wrote their own, and a value carrying the delimiter reads
+    /// as several quoted values where there is one: a role of
+    /// <c>orders' in /srv/other.json. Project 'beta</c> turns one refusal into what looks like a
+    /// complete and different one, naming a file the value's author chose — and a refusal is what
+    /// somebody reads before deciding which file is safe to point a tool at. That is 006's forged
+    /// transcript header, one layer up.
+    /// </para>
+    /// <para>
+    /// <b>Removed here rather than in <see cref="Flat"/>, because an apostrophe is legitimate in the
+    /// values <see cref="Flat"/> is used for undelimited</b> — a path may contain one and a message
+    /// naming a file has to name the real one. Nothing that is quoted can legitimately carry it:
+    /// project names and keys are checked against a grammar that excludes it, and roles, agent names
+    /// and broker addresses have none either.
+    /// </para>
+    /// </remarks>
+    public static string Quoted(string? value) =>
+        Delimiter + Flat(value).Replace(Delimiter, string.Empty, StringComparison.Ordinal) + Delimiter;
+
+    /// <summary>What a quoted value sits between.</summary>
+    private const string Delimiter = "'";
 }
