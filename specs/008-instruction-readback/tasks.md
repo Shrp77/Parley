@@ -17,10 +17,10 @@ an incomplete task.
 The constitution requires probing rather than reasoning. These are written and watched to fail
 *before* anything is fixed, so that what follows is a repair rather than a claim.
 
-- [ ] T001 **Reframe, do not invert**, `tests/Parley.Store.Tests/InstructionSettlingTests`. Its first case reads as though it pins the loss; at this level it pins *first-come settlement*, which is correct and is not what changes. Renamed to say so, with a remark naming where the defect actually lives — the server calling this on give-up. A test whose name blames the wrong layer sends the next reader to the wrong file.
-- [ ] T002 [P] Add `tests/Parley.Server.Tests/InstructionSurvivesTests` — over a real socket, a joined node that receives `DeliverInstruction`, reports late, and whose reply is then read back. Must fail today for two reasons at once (no readback operation exists; the reply is discarded), and the test names both.
-- [ ] T003 [P] Add `tests/Parley.Core.Tests/TurnBudgetTests` asserting the sweep threshold exceeds the longest permitted turn. This is FR-006's mechanical enforcement and it must fail before `TurnBudget` exists.
-- [ ] T004 [P] Add `tests/Parley.Store.Tests/InstructionRetentionTests` asserting a pending instruction is reachable by the pruner at all. Fails today: nothing prunes instructions, so the assertion has nothing to act on.
+- [x] T001 **Reframe, do not invert**, `tests/Parley.Store.Tests/InstructionSettlingTests`. Its first case reads as though it pins the loss; at this level it pins *first-come settlement*, which is correct and is not what changes. Renamed to say so, with a remark naming where the defect actually lives — the server calling this on give-up. A test whose name blames the wrong layer sends the next reader to the wrong file.
+- [x] T002 [P] Add `tests/Parley.Server.Tests/InstructionSurvivesTests` — over a real socket, a joined node that receives `DeliverInstruction`, reports late, and whose reply is then read back. Must fail today for two reasons at once (no readback operation exists; the reply is discarded), and the test names both.
+- [x] T003 [P] Add `tests/Parley.Core.Tests/TurnBudgetTests` asserting the sweep threshold exceeds the longest permitted turn. This is FR-006's mechanical enforcement and it must fail before `TurnBudget` exists.
+- [x] T004 [P] Add `tests/Parley.Store.Tests/InstructionRetentionTests` asserting a pending instruction is reachable by the pruner at all. Fails today: nothing prunes instructions, so the assertion has nothing to act on.
 
 ---
 
@@ -28,76 +28,76 @@ The constitution requires probing rather than reasoning. These are written and w
 
 ### The domain
 
-- [ ] T005 Add `src/Parley.Core/TurnBudget.cs`: the longest a turn may run, and the sweep threshold derived from it. `<remarks>` carries why it is in Core — the only assembly the broker and the node's invoker can both see, checked before designing around it — and why the two numbers are derived rather than written twice.
-- [ ] T006 [P] Add `InstructionRecord` and `InstructionPage` to `src/Parley.Core/Instruction.cs`, beside the existing `InstructionResult`. Every public member documented.
-- [ ] T007 Give `InstructionResult` the instruction's identifier (FR-012), so a caller told *pending* knows where to come back to.
-- [ ] T008 Derive `InvocationCommand.DefaultTimeout` in `src/Parley.Headless` from `TurnBudget`, so the two cannot drift apart again.
+- [x] T005 Add `src/Parley.Core/TurnBudget.cs`: the longest a turn may run, and the sweep threshold derived from it. `<remarks>` carries why it is in Core — the only assembly the broker and the node's invoker can both see, checked before designing around it — and why the two numbers are derived rather than written twice.
+- [x] T006 [P] Add `InstructionRecord` and `InstructionPage` to `src/Parley.Core/Instruction.cs`, beside the existing `InstructionResult`. Every public member documented.
+- [x] T007 Give `InstructionResult` the instruction's identifier (FR-012), so a caller told *pending* knows where to come back to.
+- [x] T008 Derive `InvocationCommand.DefaultTimeout` in `src/Parley.Headless` from `TurnBudget`, so the two cannot drift apart again.
 
 ### The store
 
-- [ ] T009 Add `InstructionRepository.ListAsync`: optional agent, optional identifier, bounded page, newest first, opaque continuation. Refuses nothing — the name check belongs at the wire edge where a bad name is a caller error.
-- [ ] T010 [P] Add `InstructionRepository.SweepAsync`, settling every pending instruction issued before an instant as failed. `WHERE outcome = 'pending'` carries FR-016 for free; a test says so rather than an inference.
+- [x] T009 Add `InstructionRepository.ListAsync`: optional agent, optional identifier, bounded page, newest first, opaque continuation. Refuses nothing — the name check belongs at the wire edge where a bad name is a caller error.
+- [x] T010 [P] Add `InstructionRepository.SweepAsync`, settling every pending instruction issued before an instant as failed. `WHERE outcome = 'pending'` carries FR-016 for free; a test says so rather than an inference.
 - [x] ~~T011 Add `InstructionRepository.SettleForMachineAsync`~~ — **built, then removed by the review gate (lens 1).** A node's *stream* ending is not its process dying, so settling on it destroyed the agent's answer on every network blip: the record shut, and the real report was refused on arrival. That is the defect this feature exists to remove, reached through a different door. A turn whose node has gone now stays running until T010's sweep presumes it dead.
-- [ ] T012 Add the pruner's own delete statement for instructions in `src/Parley.Store/Pruner.cs`, aged on `issued_utc`. `<remarks>` carries the trap: a pending row has no `settled_utc`, so ageing on settlement would skip exactly the rows that most need a bound.
+- [x] T012 Add the pruner's own delete statement for instructions in `src/Parley.Store/Pruner.cs`, aged on `issued_utc`. `<remarks>` carries the trap: a pending row has no `settled_utc`, so ageing on settlement would skip exactly the rows that most need a bound.
 
 ### The broker
 
-- [ ] T013 Add the readback and the sweep to `src/Parley.Broker/OperatorConsole.cs`. Operator surface only — `Broker` gains nothing, and `SurfaceBoundaryTests` will say so.
-- [ ] T014 Call the sweep from `Broker.TickAsync`, beside §14's ghosting. A second reaper would be a second schedule for a strictly rarer case.
+- [x] T013 Add the readback and the sweep to `src/Parley.Broker/OperatorConsole.cs`. Operator surface only — `Broker` gains nothing, and `SurfaceBoundaryTests` will say so.
+- [x] T014 Call the sweep from `Broker.TickAsync`, beside §14's ghosting. A second reaper would be a second schedule for a strictly rarer case.
 
 ### The wire
 
-- [ ] T015 Add `Instructions` to the `Operators` service in `proto/parley.proto`, with `InstructionsRequest`, `InstructionRecord` and `InstructionsReply` as contracts/operations.md defines them. `Agents` gains nothing.
-- [ ] T016 Add `instruction_id` to `InstructReply` as an additive field.
+- [x] T015 Add `Instructions` to the `Operators` service in `proto/parley.proto`, with `InstructionsRequest`, `InstructionRecord` and `InstructionsReply` as contracts/operations.md defines them. `Agents` gains nothing.
+- [x] T016 Add `instruction_id` to `InstructReply` as an additive field.
 
 ### The server
 
-- [ ] T017 **Stop settling on give-up** in `src/Parley.Server/OperatorsService.cs`. This is the defect. The wait drops to 30 seconds and returns `pending` carrying the identifier; nothing is written because the broker stopped waiting.
-- [ ] T018 Bind `Instructions` in `OperatorsService`, clamping the page the way `ListConversations` clamps its own, and refusing an unparseable agent filter rather than ignoring it (FR-010).
+- [x] T017 **Stop settling on give-up** in `src/Parley.Server/OperatorsService.cs`. This is the defect. The wait drops to 30 seconds and returns `pending` carrying the identifier; nothing is written because the broker stopped waiting.
+- [x] T018 Bind `Instructions` in `OperatorsService`, clamping the page the way `ListConversations` clamps its own, and refusing an unparseable agent filter rather than ignoring it (FR-010).
 - [x] ~~T019 Settle a departed node's running instructions in `BrokerRuntime.ReleaseNodeAsync`~~ — **built, then removed with T011 and for the same reason.** The seam is still the right one and the comment left there says why nothing uses it, because it is the obvious place for somebody to add this back.
 
 ### The client and the command line
 
-- [ ] T020 Add `InstructionsAsync` to `IParleyBrokerClient` and `BrokerClient`.
-- [ ] T021 Add `parley instructions [<agent>] [--limit <n>]` to `src/Parley.Cli/Program.cs`. This is what satisfies `DriftTests` in step 1 with a real binding rather than an exemption.
-- [ ] T022 Assert in a test that `parley instructions` prints the instruction text and the reply, and that this is deliberate where `parley open` prints no payload — the words are the operator's own and their agent's answer to them, not peer traffic.
+- [x] T020 Add `InstructionsAsync` to `IParleyBrokerClient` and `BrokerClient`.
+- [x] T021 Add `parley instructions [<agent>] [--limit <n>]` to `src/Parley.Cli/Program.cs`. This is what satisfies `DriftTests` in step 1 with a real binding rather than an exemption.
+- [x] T022 Assert in a test that `parley instructions` prints the instruction text and the reply, and that this is deliberate where `parley open` prints no payload — the words are the operator's own and their agent's answer to them, not peer traffic.
 
 ### The document
 
-- [ ] T023 SPEC.md §10.2: add the readback to the operations table and the prose explaining why a read-only operation exists at all.
-- [ ] T024 SPEC.md §10.2: four outcomes become five. `pending` is a different fact from `failed`, which claims the turn was attempted and did not complete — a claim nobody may make while it is still being attempted.
-- [ ] T025 [P] SPEC.md §9.2: commentary on the instructions table saying the unsettled state is one a reader will encounter, not a transient. **No DDL change** — the table was already right.
-- [ ] T026 [P] SPEC.md §9.4: instructions come under retention, aged from issue, with the reason.
-- [ ] T027 [P] SPEC.md §14: the sweep, beside the ghosting it already describes. Both are the same shape — a thing left open by something that went away, closed on a bound.
-- [ ] T028 Run `tests/Parley.Spec.Tests` and confirm every schema fragment still executes in order, every new section reference resolves, no table is ragged, and the new operation name does not collide with anything on §10.1.
+- [x] T023 SPEC.md §10.2: add the readback to the operations table and the prose explaining why a read-only operation exists at all.
+- [x] T024 SPEC.md §10.2: four outcomes become five. `pending` is a different fact from `failed`, which claims the turn was attempted and did not complete — a claim nobody may make while it is still being attempted.
+- [x] T025 [P] SPEC.md §9.2: commentary on the instructions table saying the unsettled state is one a reader will encounter, not a transient. **No DDL change** — the table was already right.
+- [x] T026 [P] SPEC.md §9.4: instructions come under retention, aged from issue, with the reason.
+- [x] T027 [P] SPEC.md §14: the sweep, beside the ghosting it already describes. Both are the same shape — a thing left open by something that went away, closed on a bound.
+- [x] T028 Run `tests/Parley.Spec.Tests` and confirm every schema fragment still executes in order, every new section reference resolves, no table is ragged, and the new operation name does not collide with anything on §10.1.
 
 ### Closing step 1
 
-- [ ] T029 Bump `VersionPrefix` to 0.21.0 in `Directory.Build.props`, in this change.
-- [ ] T030 Record in CLAUDE.md that the console deprecation moves to 0.22.0 and why. *(Done ahead of the tasks, when the collision was found.)*
-- [ ] T031 Confirm T001 through T004 now pass, and that each failed before its fix. A test that passed throughout proves nothing about what was repaired.
+- [x] T029 Bump `VersionPrefix` to 0.21.0 in `Directory.Build.props`, in this change.
+- [x] T030 Record in CLAUDE.md that the console deprecation moves to 0.22.0 and why. *(Done ahead of the tasks, when the collision was found.)*
+- [x] T031 Confirm T001 through T004 now pass, and that each failed before its fix. A test that passed throughout proves nothing about what was repaired.
 
 ---
 
 ## Phase 3: Step 2 — the surfaces (0.21.1)
 
-- [ ] T032 `src/Parley.Web/Pages/Projects/Act.cshtml.cs` stops blocking (FR-017). It records, gets the identifier, and returns — *taken* with the reply when the turn beat the wait, *running* otherwise, naming where to look.
-- [ ] T033 [P] `src/Parley.Web/Pages/Conversations/Detail.cshtml.cs` — the same, on the composer's instruction path.
-- [ ] T034 Show an agent's recent instructions on `src/Parley.Web/Pages/Projects/Agent.cshtml`, which already shows that agent. A new page would be a second place to look for a fact about the same thing.
-- [ ] T035 A decline renders as a decline and not a failure (FR-019). §10.2 requires it, and an interface that renders refusal as malfunction teaches whoever reads it to work around the agent.
-- [ ] T036 A reply renders as the agent's words and cannot be mistaken for the console's own (FR-020) — attributed block, not free-standing prose in the page's voice.
-- [ ] T037 The terminal binds the readback in its agents view (FR-021), and a reply is subject to the column-zero rule the transcript already carries.
-- [ ] T038 Bump `VersionPrefix` to 0.21.1.
+- [x] T032 `src/Parley.Web/Pages/Projects/Act.cshtml.cs` stops blocking (FR-017). It records, gets the identifier, and returns — *taken* with the reply when the turn beat the wait, *running* otherwise, naming where to look.
+- [x] T033 [P] `src/Parley.Web/Pages/Conversations/Detail.cshtml.cs` — the same, on the composer's instruction path.
+- [x] T034 Show an agent's recent instructions on `src/Parley.Web/Pages/Projects/Agent.cshtml`, which already shows that agent. A new page would be a second place to look for a fact about the same thing.
+- [x] T035 A decline renders as a decline and not a failure (FR-019). §10.2 requires it, and an interface that renders refusal as malfunction teaches whoever reads it to work around the agent.
+- [x] T036 A reply renders as the agent's words and cannot be mistaken for the console's own (FR-020) — attributed block, not free-standing prose in the page's voice.
+- [x] T037 The terminal binds the readback in its agents view (FR-021), and a reply is subject to the column-zero rule the transcript already carries.
+- [x] T038 Bump `VersionPrefix` to 0.21.1.
 
 ---
 
 ## Phase 4: The gate
 
-- [ ] T039 Review gate, lens 1 (correctness and concurrency) — three consecutive runs with no finding above low, each probing something the previous did not. Logged in `REVIEW-LEDGER.md`, clean runs included.
-- [ ] T040 Review gate, lens 2 (security and data integrity) — three consecutive clean runs.
-- [ ] T041 Review gate, lens 3 (API surface and maintainability) — three consecutive clean runs.
-- [ ] T042 Verify on Linux in a container as well as Windows. CI is unavailable (GitHub billing) and the Linux run has already caught two defects Windows passed.
-- [ ] T043 Hygiene: no trace of the originating private project in anything added. `git grep` sees tracked files only, so check new files by name before relying on it.
+- [x] T039 Review gate, lens 1 (correctness and concurrency) — three consecutive runs with no finding above low, each probing something the previous did not. Logged in `REVIEW-LEDGER.md`, clean runs included.
+- [x] T040 Review gate, lens 2 (security and data integrity) — three consecutive clean runs.
+- [x] T041 Review gate, lens 3 (API surface and maintainability) — three consecutive clean runs.
+- [x] T042 Verify on Linux in a container as well as Windows. CI is unavailable (GitHub billing) and the Linux run has already caught two defects Windows passed.
+- [x] T043 Hygiene: no trace of the originating private project in anything added. `git grep` sees tracked files only, so check new files by name before relying on it.
 
 ---
 
