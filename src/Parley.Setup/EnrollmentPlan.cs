@@ -480,6 +480,18 @@ public static class EnrollmentPlan
                 : $".mcp.json: {(existing is null ? "create" : "update")} {key} entry");
         }
 
+        if (landed?.Agent is { Length: > 0 } was
+            && !string.Equals(was, entry.Agent, StringComparison.Ordinal))
+        {
+            // **A change of identity, said because a change of allegiance already is.** An agent's
+            // name is its identity — it comes from this file and from nowhere else — so re-enrolling
+            // a repository under a different one in the same project does not rename an agent, it
+            // stops one existing and starts another. The old name stays in the registry with nothing
+            // that will ever attach as it again, and the person who edited a manifest row would have
+            // no reason to look. The note beneath this one has said less than this for two releases.
+            notes.Add($".mcp.json: it was '{Quoting.Flat(was)}' here; it becomes '{entry.Agent}'");
+        }
+
         if (project is not null && landed is not null && landed.Project is null)
         {
             // Said because it is a change of allegiance and the file did not previously record
