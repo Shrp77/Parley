@@ -321,6 +321,16 @@ internal static class Adding
             // agent's own act.
             said.Add(await StartAsync(start, role, project, cancellationToken).ConfigureAwait(false));
         }
+        catch (InterruptedEnrolment interrupted)
+        {
+            // **The one failure that arrives with files already changed, and the sentence below was
+            // untrue on it.** The catch under this one said `Nothing was written.` for every failure
+            // alike, so on this path the screen printed the list of changed files and then denied it
+            // on the next line — and a report that asserts the opposite of what happened settles the
+            // question wrongly, where one that merely omits leaves somebody uncertain.
+            said.Add($"{role}: {interrupted.Message}");
+            said.AddRange(interrupted.Written.Select(path => $"wrote {path}"));
+        }
         catch (Exception failure) when (failure is InvalidDataException
                                                or IOException
                                                or UnauthorizedAccessException

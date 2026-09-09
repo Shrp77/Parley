@@ -171,13 +171,14 @@ public static class Enrolment
     /// <see cref="OverwriteHeldAsync"/> is what keeps each of them whole.
     /// </para>
     /// </remarks>
-    private static InvalidDataException Interrupted(Exception cause, IReadOnlyList<string> written) =>
+    private static InterruptedEnrolment Interrupted(Exception cause, IReadOnlyList<string> written) =>
         new(
             $"{cause.Message} This did not finish, and had already changed "
             + $"{string.Join(", ", written.Select(Quoting.Flat))}. Nothing is undone automatically, "
             + "because undoing a write is another write that can fail the same way: re-run once the "
             + "fault is fixed, or withdraw.",
-            cause);
+            cause,
+            [.. written]);
 
     /// <summary>What a declined instructions file currently holds, for the plan's sake.</summary>
     /// <param name="declined">Why it was declined, or null when it simply is not there.</param>

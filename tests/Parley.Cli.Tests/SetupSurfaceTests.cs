@@ -44,6 +44,7 @@ public sealed class SetupSurfaceTests
                 "EnrollmentPlan",
                 "Enrolment",
                 "InstalledEntry",
+                "InterruptedEnrolment",
                 "LaunchEntries",
                 "LaunchEntry",
                 "LaunchKey",
