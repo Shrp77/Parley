@@ -882,6 +882,7 @@ public static class EnrollCommand
 
             RepositoryPlan plan;
             IReadOnlyList<string> wrote = [];
+            IReadOnlyList<string> said = [];
 
             var instructions = File.Exists(instructionsPath)
                 ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
@@ -908,7 +909,7 @@ public static class EnrollCommand
                 // what was done rather than what was going to be.
                 if (write)
                 {
-                    (plan, wrote) = await Enrolment
+                    (plan, wrote, said) = await Enrolment
                         .WriteAsync(Decide, entry.Workspace, instructionsPath, cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -957,7 +958,7 @@ public static class EnrollCommand
                     "    tracked file shared with the checkout it belongs to.").ConfigureAwait(false);
             }
 
-            foreach (var note in plan.Notes)
+            foreach (var note in plan.Notes.Concat(said))
             {
                 await output.WriteLineAsync($"  {note}").ConfigureAwait(false);
             }

@@ -64,14 +64,18 @@ public static class Enrolment
     /// <param name="workspace">The repository the plan is for.</param>
     /// <param name="instructionsPath">Where its standing instructions live.</param>
     /// <param name="cancellationToken">Stops the writes.</param>
-    /// <returns>What was decided, and every path written in the order written.</returns>
+    /// <returns>
+    /// What was decided, every path written in the order written, and anything the writing itself
+    /// had to say — which is only ever a file it declined to touch, since everything else was decided
+    /// before the writing began.
+    /// </returns>
     /// <remarks>
     /// The byte-order mark a file already had is kept. <c>ReadAllText</c> strips one and
     /// <c>WriteAllText</c> does not put it back, so appending a block to a file that had one
     /// rewrites every byte of it — a whole-file diff for a twelve-line addition, in the file a
     /// project reads on every turn.
     /// </remarks>
-    public static async Task<(RepositoryPlan Plan, IReadOnlyList<string> Written)> WriteAsync(
+    public static async Task<(RepositoryPlan Plan, IReadOnlyList<string> Written, IReadOnlyList<string> Said)> WriteAsync(
         Func<string?, RepositoryPlan> decide,
         string workspace,
         string instructionsPath,
@@ -80,6 +84,7 @@ public static class Enrolment
         ArgumentNullException.ThrowIfNull(decide);
 
         var written = new List<string>();
+        var said = new List<string>();
         RepositoryPlan plan;
 
         // The launch configuration is held across the decision and the write, for the reason
@@ -111,7 +116,7 @@ public static class Enrolment
             written.Add(instructionsPath);
         }
 
-        return (plan, written);
+        return (plan, written, said);
     }
 
     /// <summary>Puts an agent in a catalogue, so a node may start it.</summary>
@@ -145,6 +150,26 @@ public static class Enrolment
         && !string.IsNullOrWhiteSpace(name)
             ? name
             : null;
+
+    /// <summary>What a path is a link to, or null when it is an ordinary file.</summary>
+    /// <param name="path">The file.</param>
+    /// <returns>Its target, or null.</returns>
+    /// <remarks>
+    /// <b>Every file this tooling writes inside a checkout asks this first.</b> Both of them are
+    /// tracked, so a repository can ship either as a link — and this tooling is pointed at directories
+    /// of clones somebody else wrote. Following one turns a clone into a write wherever the link says.
+    /// </remarks>
+    private static string? Linked(string path)
+    {
+        try
+        {
+            return new FileInfo(path).LinkTarget;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>Takes the launch configuration for the length of a read-modify-write.</summary>
     /// <param name="path">The launch configuration.</param>
@@ -185,7 +210,7 @@ public static class Enrolment
         //
         // Refused rather than replaced. Replacing it would silently destroy a link somebody may have
         // meant, and this cannot tell the two apart; the person can.
-        if (new FileInfo(path).LinkTarget is { } target)
+        if (Linked(path) is { } target)
         {
             throw new InvalidDataException(
                 $"{path} is a link to {Quoting.Flat(target)}, so writing it would write somewhere "
@@ -393,6 +418,7 @@ public static class Enrolment
         // is not the failure, it is the report.
         RepositoryPlan plan;
         var written = new List<string>();
+        var said = new List<string>();
 
         using (var launch = await HoldAsync(launchPath, cancellationToken).ConfigureAwait(false))
         {
@@ -416,13 +442,30 @@ public static class Enrolment
 
         if (plan.Instructions is { } appended)
         {
-            await File.WriteAllTextAsync(
-                instructionsPath,
-                appended,
-                HadByteOrderMark(instructionsPath) ? Utf8WithMark : Utf8,
-                cancellationToken).ConfigureAwait(false);
+            // **The third file, and 2.3's fix covered the other two.** The peers frame replaces this
+            // file with its own contents plus the frame, so following a link writes into whatever it
+            // points at — `CLAUDE.md` is as tracked as `.mcp.json` and as easy for a repository to
+            // ship as a link.
+            //
+            // Skipped with a note rather than refusing the enrolment. The frame is the least of the
+            // three writes: a repository is an agent without it, and it is the one file here this
+            // tooling has always said it does not own.
+            if (Linked(instructionsPath) is { } target)
+            {
+                said.Add(
+                    $"{instructionsPath}: left alone, it is a link to {Quoting.Flat(target)} and the "
+                    + "peers frame would have been written there");
+            }
+            else
+            {
+                await File.WriteAllTextAsync(
+                    instructionsPath,
+                    appended,
+                    HadByteOrderMark(instructionsPath) ? Utf8WithMark : Utf8,
+                    cancellationToken).ConfigureAwait(false);
 
-            written.Add(instructionsPath);
+                written.Add(instructionsPath);
+            }
         }
 
         if (plan.AddsNodeEntry)
@@ -435,7 +478,7 @@ public static class Enrolment
             written.Add(catalogueFile);
         }
 
-        return new Outcome(plan.Notes, written);
+        return new Outcome([.. plan.Notes, .. said], written);
     }
 
     /// <summary>
@@ -494,7 +537,26 @@ public static class Enrolment
         {
             // Held for the whole read-modify-write, for the reason AddAsync is: a repository may now
             // have more than one writer, and this is the one that deletes.
-            using var held = await HoldAsync(launchPath, cancellationToken).ConfigureAwait(false);
+            //
+            // **A link is a note here rather than an exception**, unlike the adding half. Everything
+            // this cannot act on it leaves alone and reports — an unreadable file, servers of the
+            // wrong shape, an entry belonging to another agent — and a withdrawal that threw for one
+            // of those and reported the rest would be one rule with two spellings. The target is
+            // untouched either way; what changes is whether the person gets a sentence or a trace.
+            FileStream? held;
+
+            try
+            {
+                held = await HoldAsync(launchPath, cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidDataException linked)
+            {
+                notes.Add($"{launchPath}: left alone, {linked.Message}");
+
+                return new Outcome(notes, written);
+            }
+
+            using var holding = held;
 
             var text = held is null
                 ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false)
