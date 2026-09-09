@@ -70,7 +70,8 @@ public sealed class CatalogueUniquenessTests : IDisposable
         var found = Catalogues.Elsewhere(
             [Project("alpha", alpha), Project("beta", CatalogueFor("beta", null))],
             Workspace,
-            CatalogueFor("beta", null));
+            CatalogueFor("beta", null),
+            out _);
 
         Assert.NotNull(found);
         Assert.Equal("alpha", found.Project);
@@ -83,7 +84,7 @@ public sealed class CatalogueUniquenessTests : IDisposable
     {
         var alpha = CatalogueFor("alpha", Workspace);
 
-        var found = Catalogues.Elsewhere([Project("alpha", alpha)], Workspace, null)!;
+        var found = Catalogues.Elsewhere([Project("alpha", alpha)], Workspace, null, out _)!;
         var refusal = Catalogues.Refusal(found);
 
         Assert.Contains("alpha", refusal, StringComparison.Ordinal);
@@ -99,7 +100,8 @@ public sealed class CatalogueUniquenessTests : IDisposable
         // and refusing it would refuse every repair.
         var alpha = CatalogueFor("alpha", Workspace);
 
-        Assert.Null(Catalogues.Elsewhere([Project("alpha", alpha)], Workspace, alpha));
+        Assert.Null(Catalogues.Elsewhere([Project("alpha", alpha)], Workspace, alpha, out var unreadable));
+        Assert.Null(unreadable);
     }
 
     [Fact]
@@ -112,7 +114,8 @@ public sealed class CatalogueUniquenessTests : IDisposable
         Assert.NotNull(Catalogues.Elsewhere(
             [Project("alpha", alpha)],
             Workspace.Replace('/', '\\') + "\\",
-            null));
+            null,
+            out _));
     }
 
     [Fact]
@@ -120,31 +123,40 @@ public sealed class CatalogueUniquenessTests : IDisposable
     {
         var alpha = CatalogueFor("alpha", Path.Combine(_root, "orders").Replace('\\', '/'));
 
-        Assert.Null(Catalogues.Elsewhere([Project("alpha", alpha)], Workspace, null));
+        Assert.Null(Catalogues.Elsewhere([Project("alpha", alpha)], Workspace, null, out var unreadable));
+        Assert.Null(unreadable);
     }
 
     [Fact]
     public void A_project_with_no_catalogue_at_all_is_skipped()
     {
-        Assert.Null(Catalogues.Elsewhere([Project("alpha", null)], Workspace, null));
+        Assert.Null(Catalogues.Elsewhere([Project("alpha", null)], Workspace, null, out var unreadable));
+        Assert.Null(unreadable);
     }
 
     [Fact]
     public void A_catalogue_that_cannot_be_read_says_nothing_rather_than_saying_nothing_is_there()
     {
-        // Skipped rather than treated as empty. Treating it as empty would let a second consent
-        // through on exactly the machine whose configuration nobody can currently see.
+        // **This test was named for a property it did not check, which is worse than no test.** It
+        // asserted only that no consent was found — the same answer the readable-and-empty case
+        // gives — so "we could not look" and "nothing is there" were indistinguishable in exactly
+        // the assertion written to tell them apart. The second half is the whole name.
         var path = Path.Combine(_root, "broken-node.json");
 
         File.WriteAllText(path, "{ this is not json");
 
-        Assert.Null(Catalogues.Elsewhere([Project("alpha", path)], Workspace, null));
+        Assert.Null(Catalogues.Elsewhere([Project("alpha", path)], Workspace, null, out var unreadable));
+
+        Assert.NotNull(unreadable);
+        Assert.Contains("alpha", unreadable, StringComparison.Ordinal);
+        Assert.Contains(path, unreadable, StringComparison.Ordinal);
     }
 
     [Fact]
     public void No_manifest_at_all_is_no_conflict()
     {
-        Assert.Null(Catalogues.Elsewhere(null, Workspace, null));
+        Assert.Null(Catalogues.Elsewhere(null, Workspace, null, out var unreadable));
+        Assert.Null(unreadable);
     }
 
     [Fact]

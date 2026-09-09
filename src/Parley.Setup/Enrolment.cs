@@ -395,13 +395,25 @@ public static class Enrolment
         var agents = AgentsOf(catalogue, catalogueFile);
         var launchPath = LaunchPath(entry.Workspace);
 
-        if (entry.Unattended
-            && Catalogues.Elsewhere(deployment, entry.Workspace, catalogueFile) is { } already)
+        if (entry.Unattended)
         {
+            var already = Catalogues.Elsewhere(
+                deployment, entry.Workspace, catalogueFile, out var unreadable);
+
             // Refused before anything is written, and refused even though the launch entry would
             // have been fine. Enrolling the repository in this project is admitted; starting it here
             // as well is what cannot be.
-            throw new InvalidDataException(Catalogues.Refusal(already));
+            if (already is not null)
+            {
+                throw new InvalidDataException(Catalogues.Refusal(already));
+            }
+
+            // And refused on the same terms when the machine could not be checked at all, which is
+            // not the same fact and used to reach here as the same silence.
+            if (unreadable is not null)
+            {
+                throw new InvalidDataException(unreadable);
+            }
         }
 
         var instructions = File.Exists(instructionsPath)

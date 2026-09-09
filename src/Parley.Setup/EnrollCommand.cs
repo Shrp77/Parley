@@ -796,10 +796,19 @@ public static class EnrollCommand
         // probe, in the gate, after the check had been written into the wrong phase.
         foreach (var entry in entries.Where(row => row.Unattended))
         {
-            if (Catalogues.Elsewhere(deployment, entry.Workspace, ResolveNodeConfig(manifest?.NodeConfig, nodeConfig.Value))
-                is { } already)
+            var already = Catalogues.Elsewhere(
+                deployment,
+                entry.Workspace,
+                ResolveNodeConfig(manifest?.NodeConfig, nodeConfig.Value),
+                out var unseen);
+
+            if (already is not null)
             {
                 problems.Add($"{entry.Agent}: {Catalogues.Refusal(already)}");
+            }
+            else if (unseen is not null)
+            {
+                problems.Add($"{entry.Agent}: {unseen}");
             }
         }
 

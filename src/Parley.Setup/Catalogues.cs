@@ -93,29 +93,64 @@ public static class Catalogues
     /// <param name="deployment">Every project the machine's manifest names.</param>
     /// <param name="workspace">The repository about to be catalogued.</param>
     /// <param name="catalogue">The catalogue about to be written, which is not consulted.</param>
+    /// <param name="unreadable">
+    /// Why the machine could not be checked, or null when every other catalogue was read.
+    /// </param>
     /// <returns>The consent that already exists, or null when there is none.</returns>
     /// <remarks>
-    /// A catalogue that cannot be read is skipped rather than treated as empty. Treating it as empty
-    /// would let a second consent through on exactly the machine whose configuration nobody can
-    /// currently see; skipping it means this says nothing about a file it could not read, which is
-    /// the honest half of the two.
+    /// <para>
+    /// <b>A catalogue that cannot be read comes back in <paramref name="unreadable"/>, and an earlier
+    /// version of this skipped it instead.</b> The remark here argued that skipping "says nothing
+    /// about a file it could not read, which is the honest half of the two" — and the caller has only
+    /// one place to put "nothing", which is the same place it puts "no". Three routes reached it: a
+    /// half-saved file, one another writer is holding with <c>FileShare.None</c> (which is what an
+    /// enrolment or a withdrawal in that project looks like from here), and a path naming a directory.
+    /// Each granted the second unattended start silently, which is the one outcome FR-013 exists to
+    /// prevent.
+    /// </para>
+    /// <para>
+    /// It is an <c>out</c> rather than a second method because the compiler then requires the caller
+    /// to receive both answers. A guard whose "I could not look" is optional to ask for is one that
+    /// fails open the first time somebody writes the obvious two lines.
+    /// </para>
     /// </remarks>
     public static Consent? Elsewhere(
         IReadOnlyList<ProjectSettings>? deployment,
         string workspace,
-        string? catalogue)
+        string? catalogue,
+        out string? unreadable)
     {
+        unreadable = null;
+
         if (deployment is null || string.IsNullOrWhiteSpace(workspace))
         {
             return null;
         }
 
+        var unseen = new List<string>();
+
         foreach (var project in deployment)
         {
-            if (project.NodeConfig is not { Length: > 0 } path
-                || Same(path, catalogue)
-                || !NodeCatalogue.TryReadFrom(path, out var read, out _))
+            if (project.NodeConfig is not { Length: > 0 } path || Same(path, catalogue))
             {
+                continue;
+            }
+
+            // **A directory is not an absent file, and `File.Exists` cannot tell them apart.** It
+            // answers false for both, so `TryReadFrom` reports a path naming a directory as readable
+            // and empty — the one answer that means "nothing else starts this workspace". Asked
+            // before the read, because after it the two are indistinguishable.
+            if (Directory.Exists(path))
+            {
+                unseen.Add(Unseen(project.Name.Value, path, "it names a directory, not a file"));
+
+                continue;
+            }
+
+            if (!NodeCatalogue.TryReadFrom(path, out var read, out var problem))
+            {
+                unseen.Add(Unseen(project.Name.Value, path, problem));
+
                 continue;
             }
 
@@ -141,8 +176,27 @@ public static class Catalogues
             }
         }
 
+        // A consent that was found outranks a catalogue that could not be read: it is the more
+        // specific answer and names a file somebody can act on. The list is only reported where
+        // nothing definite was found, which is the only place it changes the outcome.
+        unreadable = unseen.Count > 0 ? string.Join(" ", unseen) : null;
+
         return null;
     }
+
+    /// <summary>What to tell somebody whose machine cannot currently be checked.</summary>
+    /// <param name="project">The project whose catalogue could not be read.</param>
+    /// <param name="catalogue">That catalogue's path.</param>
+    /// <param name="problem">Why it could not be read.</param>
+    /// <returns>One sentence, naming the file and what it cost.</returns>
+    private static string Unseen(string project, string catalogue, string? problem) =>
+        $"'{Quoting.Flat(project)}' could not be checked: {Quoting.Flat(catalogue)} was not readable"
+        + (problem is { Length: > 0 } ? $" ({Quoting.Flat(problem)})" : string.Empty)
+        + ". A repository may be started unattended by only one project, and that cannot be granted "
+        + "from a catalogue nobody can open — the two things this run would otherwise be saying, "
+        + "'nothing else starts this workspace' and 'nobody can currently see what does', lead "
+        + "somewhere completely different. A file another run of this tool is holding reads a moment "
+        + "later.";
 
     /// <summary>What to tell somebody whose repository is already started elsewhere.</summary>
     /// <param name="consent">The consent that already exists.</param>

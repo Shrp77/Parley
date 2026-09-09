@@ -60,7 +60,7 @@ public sealed class ProbeFourTests : IDisposable
 
         Catalogue("alpha", "inventory", workspace);
 
-        Assert.NotNull(Catalogues.Elsewhere([Project("alpha")], workspace, CatalogueFor("beta")));
+        Assert.NotNull(Catalogues.Elsewhere([Project("alpha")], workspace, CatalogueFor("beta"), out _));
     }
 
     [Theory]
@@ -88,7 +88,10 @@ public sealed class ProbeFourTests : IDisposable
 
         Catalogue("alpha", role, workspace);
 
-        Assert.Null(Catalogues.Elsewhere([Project("alpha")], workspace, CatalogueFor("beta")));
+        Assert.Null(
+            Catalogues.Elsewhere([Project("alpha")], workspace, CatalogueFor("beta"), out var unreadable));
+
+        Assert.Null(unreadable);
     }
 
     [Fact]
