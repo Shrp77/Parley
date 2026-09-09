@@ -967,6 +967,28 @@ public static class EnrollCommand
                     $"{entry.Agent}: {launchPath} cannot be merged into — {ex.Message}.\n" +
                     "Fix or move it first; enrolling would replace what is there.").ConfigureAwait(false);
 
+                // **And say where it stopped, which is the command's own principle.** Validation is
+                // hoisted ahead of every write so that a set is never half applied — "the repository
+                // that missed out is indistinguishable from one you never meant to enroll". This is
+                // the one refusal that cannot be hoisted, because knowing it means reading each
+                // repository's own launch configuration, so it is the one that leaves that exact
+                // state. The rows already done have printed themselves above; the ones never reached
+                // had said nothing at all, and silence is what makes them indistinguishable.
+                var unreached = entries
+                    .SkipWhile(row => !ReferenceEquals(row, entry))
+                    .Skip(1)
+                    .Select(row => row.Agent)
+                    .ToArray();
+
+                if (unreached.Length > 0)
+                {
+                    await error.WriteLineAsync(
+                        $"\nNothing was written for {unreached.Length} repository(s) after it: "
+                        + $"{string.Join(", ", unreached.Select(Quoting.Flat))}. Re-run once the "
+                        + "fault is fixed; enrolling a repository twice changes nothing the second "
+                        + "time.").ConfigureAwait(false);
+                }
+
                 return Config;
             }
 
