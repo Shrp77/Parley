@@ -175,13 +175,14 @@ happened.
 records because it stopped waiting removes the one thing that guaranteed a record eventually
 settled, so the guarantee has to be put back on a footing that is true.
 
-**Independent Test**: Issue an instruction, remove the machine holding the agent, and observe the
-record settle as failed rather than remaining open.
+**Independent Test**: Issue an instruction, leave it unreported past the sweep's threshold, and
+observe the record settle as failed rather than remaining open for ever.
 
 **Acceptance Scenarios**:
 
-1. **Given** an instruction still running, **When** the machine holding that agent disconnects,
-   **Then** the instruction settles as failed, because the turn genuinely did not complete.
+1. **Given** an instruction still running, **When** the machine holding that agent disconnects and
+   comes back, **Then** the agent's answer is still recorded — a lost connection is not evidence
+   that a turn stopped.
 2. **Given** an instruction still running long past any turn a machine will allow, **When** the
    broker next sweeps, **Then** it settles as failed.
 3. **Given** an instruction that settled from a report, **When** a sweep runs afterwards, **Then**
@@ -245,8 +246,13 @@ record settle as failed rather than remaining open.
 
 #### Nothing stays unsettled
 
-- **FR-014**: An instruction still running MUST settle as failed when the machine holding its agent
-  disconnects.
+- **FR-014**: **Amended by the review gate, and the original is kept here because it was wrong in an
+  instructive way.** It read: *"An instruction still running MUST settle as failed when the machine
+  holding its agent disconnects."* Built, then probed: a machine's *connection* ending is not its
+  agent's *process* ending, so a network blip settled the record while the agent worked on, and the
+  real answer was refused when it arrived — the exact loss this feature exists to remove. The
+  requirement is now the opposite: an instruction still running MUST NOT be settled on a
+  disconnection alone. It stays running until FR-015's sweep presumes it dead.
 - **FR-015**: An instruction still running for longer than any turn a machine will permit MUST
   settle as failed on a subsequent sweep.
 - **FR-016**: A sweep MUST NOT alter an instruction that has already settled.

@@ -2410,10 +2410,13 @@ would destroy the reply, permanently, for everyone. The reference implementation
 and the loss was invisible from both ends.
 
 **So what settles an instruction is only ever something that knows.** The machine reports what the
-agent did; or that machine goes away, and every turn it was holding demonstrably stopped with it;
-or the instruction outlives any turn a machine is permitted to run and is presumed dead (§14). An
-undeliverable settles at once, because no turn was begun and there is nothing to be premature
-about.
+agent did, or the instruction outlives any turn a machine is permitted to run and is presumed dead
+(§14). An undeliverable settles at once, because no turn was begun and there is nothing to be
+premature about.
+
+A node's connection ending is deliberately *not* on that list, though it looks as though it belongs
+there. §14 carries the argument: a stream ending is not a process dying, and a broker that settled
+on it would destroy an agent's answer on every network blip.
 
 A decline is not a failure and must not be reported as one. §11.5 says an agent may refuse, because
 the operator is a person rather than a superior process, and an interface that renders refusal as
@@ -3362,21 +3365,32 @@ prevent, so it must not be reachable by a crash between two statements.
 **An instruction nobody comes back for is settled on the same reasoning.** §10.2 forbids a broker
 from recording an outcome because it stopped waiting — but something has to settle an instruction
 whose turn genuinely never finishes, or the record says *still running* for ever and the operator
-is left with the state the outcomes exist to prevent. Two things do, and both are facts rather than
-impatience:
+is left with the state the outcomes exist to prevent.
 
-- **The machine goes.** §11.5 gives delivery to the node and says a turn travels down the channel
-  the node owns, so when a node's connection ends, every turn it was holding stopped with it. Those
-  instructions settle as *failed*, which is exactly what *failed* has always meant.
-- **The instruction outlives any turn.** A node may stay connected while the process behind it
-  dies, which the first rule cannot see. So an instruction still running for longer than the
-  longest turn a machine is permitted to run, plus a margin, is presumed dead and settled *failed*
-  on a subsequent sweep.
+**One thing does, and the obvious second one must not.** An instruction still running for longer
+than the longest turn a machine is permitted to run, plus a margin, is presumed dead and settled
+*failed* on a subsequent sweep.
+
+**A node's connection ending MUST NOT settle the instructions it was holding**, and the argument
+for it is worth stating because it is nearly right. §11.5 gives delivery to the node and says a
+turn travels down the channel the node owns, so when a node goes its turns went with it — which
+would make *failed* exactly true, and available immediately rather than a sweep later.
+
+What that reasoning misses is that a *connection* ending is not a *process* ending. A network blip
+ends the stream while the agent carries on working, and a broker cannot tell the two apart from its
+side. Settling on it therefore destroys the answer when the agent finishes: settlement is
+first-come, so the real report arrives to a closed record. That is the same loss §10.2 forbids,
+reached through a different door — and it gets likelier the moment a deployment is reached over a
+private network rather than loopback, which §16 explicitly permits.
+
+So a turn whose node has gone stays *still running* until the sweep. That is an unknown honestly
+reported rather than a false claim that also destroys evidence, and the asymmetry decides it: the
+cost of waiting is a delay, and the cost of guessing is a loss.
 
 **The margin is not optional and the two clocks are why.** A node measures a turn from when it
 starts the process; a broker measures from when it recorded the instruction, which is earlier by
 however long delivery took. A sweep with no margin would reach turns still inside their own budget
-— which is the defect §10.2 forbids, arriving by a different route.
+— which is the defect §10.2 forbids, arriving by a third route.
 
 **A sweep MUST NOT alter an instruction that has already settled.** Settlement is first-come, and a
 sweep is not evidence about a turn; it is the absence of evidence. This is the same rule that makes

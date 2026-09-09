@@ -137,12 +137,6 @@ public sealed class SurfaceBoundaryTests
             // channel where a person's own words are on the record.
             nameof(OperatorConsole.ListInstructionsAsync),
 
-            // Settling a departed machine's turns. Maintenance rather than an operator's decision,
-            // and it could have gone on the broker beside the reaper — but it writes an outcome
-            // into the instruction log, and everything that writes there is on this side. Keeping
-            // the log's writers together is what makes "who can write a person's words" answerable
-            // by looking at one type.
-            nameof(OperatorConsole.SettleInstructionsForMachineAsync),
             nameof(OperatorConsole.PruneAsync),
             nameof(OperatorConsole.DescribeRefusalsAsync),
 

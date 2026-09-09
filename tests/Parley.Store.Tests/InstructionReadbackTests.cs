@@ -172,45 +172,10 @@ public sealed class InstructionReadbackTests : IDisposable
         Assert.Equal(At(1), read.SettledUtc);
     }
 
-    [Fact]
-    public async Task A_departed_machine_settles_only_its_own_agents_turns()
-    {
-        var mine = await _instructions.RecordAsync(Orders, "on the machine that went", At(0), Ct);
-        var theirs = await _instructions.RecordAsync(Billing, "on a machine still up", At(0), Ct);
-
-        Assert.Equal(1, await _instructions.SettleForMachineAsync("test", At(5), Ct));
-
-        var gone = Assert.Single(await _instructions.ListAsync(id: mine, cancellationToken: Ct));
-        var living = Assert.Single(await _instructions.ListAsync(id: theirs, cancellationToken: Ct));
-
-        Assert.Equal(InstructionOutcome.Failed, gone.Outcome);
-        Assert.True(living.StillRunning);
-    }
-
-    [Fact]
-    public async Task A_machine_whose_name_ends_another_machines_name_sweeps_nothing_of_theirs()
-    {
-        // Probed rather than reasoned, because the obvious implementation is a suffix match and a
-        // suffix match is wrong: `test` ends `bigtest`, so a node called `test` leaving would have
-        // settled every turn on `bigtest` as failed while that machine was working perfectly.
-        using var command = _connection.CreateCommand();
-
-        command.CommandText =
-            "INSERT INTO nodes (machine, connected, first_seen_utc) "
-            + "VALUES ('bigtest', 1, '2026-01-01T00:00:00+00:00') ON CONFLICT DO NOTHING; "
-            + "INSERT INTO agents (name, adapter, tier, status) "
-            + "VALUES ('inventory@bigtest','test','full','active');";
-
-        command.ExecuteNonQuery();
-
-        var neighbour = await _instructions.RecordAsync(
-            AgentName.Create("inventory@bigtest"), "not yours to settle", At(0), Ct);
-
-        _ = await _instructions.SettleForMachineAsync("test", At(5), Ct);
-
-        var read = Assert.Single(
-            await _instructions.ListAsync(id: neighbour, cancellationToken: Ct));
-
-        Assert.True(read.StillRunning, "a neighbouring machine's turn was settled by name overlap");
-    }
+    // **Two probes stood here and the code they guarded is gone.** A departing node used to settle
+    // its agents' running instructions, and one of these caught a real defect in it: a suffix match
+    // let a node called `test` settle every turn on `bigtest`. The mechanism itself was then removed
+    // by a later gate finding — a node's stream ending is not its process dying, so settling on it
+    // destroyed an agent's answer on every network blip, which is the defect this whole feature
+    // exists to remove. `InstructionSurvivesTests` carries that case now.
 }

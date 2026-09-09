@@ -418,24 +418,6 @@ public sealed class OperatorConsole
         await _instructions.ListAsync(agent, id, limit, beforeId, cancellationToken)
             .ConfigureAwait(false);
 
-    /// <summary>Settles every instruction still running for agents on a departed machine.</summary>
-    /// <param name="machine">The machine that has gone.</param>
-    /// <param name="nowUtc">When it went.</param>
-    /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>How many were settled.</returns>
-    /// <remarks>
-    /// The precise half of what replaced the broker settling an instruction because it had stopped
-    /// waiting. §11.5 gives delivery to the node, so when a node goes every turn it was holding
-    /// stopped with it — which is what <c>failed</c> has always claimed and, until now, was
-    /// claimed on much weaker grounds.
-    /// </remarks>
-    public async Task<int> SettleInstructionsForMachineAsync(
-        string machine,
-        DateTimeOffset nowUtc,
-        CancellationToken cancellationToken = default) =>
-        await _instructions.SettleForMachineAsync(machine, nowUtc, cancellationToken)
-            .ConfigureAwait(false);
-
     /// <summary>Records what became of an instruction.</summary>
     /// <param name="id">Which instruction.</param>
     /// <param name="outcome">What became of it.</param>

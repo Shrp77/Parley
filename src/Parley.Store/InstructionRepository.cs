@@ -244,48 +244,6 @@ public sealed class InstructionRepository(SqliteConnection connection)
                 },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-    /// <summary>Settles every instruction still running for agents on one machine.</summary>
-    /// <param name="machine">The machine that has gone.</param>
-    /// <param name="nowUtc">When it went.</param>
-    /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>How many were settled.</returns>
-    /// <remarks>
-    /// <para>
-    /// <b>The honest <c>failed</c>.</b> SPEC.md §11.5 gives delivery to the node and says a turn
-    /// travels down the channel it owns; when that node goes, every turn it was holding stopped,
-    /// so "the turn was attempted and did not complete" is exactly what happened. This is the
-    /// claim the broker used to make on much weaker grounds — that it had stopped waiting.
-    /// </para>
-    /// <para>
-    /// Matched on the machine half of the agent's name rather than through the registry, because
-    /// the name is what routing already uses (§4.1.1) and a second definition of "on this machine"
-    /// is a second thing that can disagree. The separator is anchored to the end of the name, so a
-    /// machine whose name is a suffix of another's cannot sweep its neighbour's turns.
-    /// </para>
-    /// </remarks>
-    public async Task<int> SettleForMachineAsync(
-        string machine,
-        DateTimeOffset nowUtc,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(machine);
-
-        return await _connection.ExecuteAsync(
-            new CommandDefinition(
-                """
-                UPDATE instructions
-                   SET outcome = 'failed', settled_utc = @Now
-                 WHERE outcome = 'pending'
-                   AND agent = substr(agent, 1, instr(agent, '@') - 1) || '@' || @Machine;
-                """,
-                new
-                {
-                    Now = ExchangeRow.FormatTimestamp(nowUtc),
-                    Machine = machine
-                },
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
-    }
-
     /// <summary>Reads an outcome the store holds.</summary>
     /// <param name="stored">The column's value.</param>
     /// <returns>The outcome.</returns>

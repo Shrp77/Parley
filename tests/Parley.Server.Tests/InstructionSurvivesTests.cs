@@ -173,11 +173,18 @@ public sealed class InstructionSurvivesTests
     }
 
     [Fact]
-    public async Task A_departing_node_settles_the_turns_it_was_holding()
+    public async Task A_departing_node_leaves_its_turns_running_rather_than_guessing()
     {
-        // What replaced the broker settling on impatience. The machine that held the turn is gone,
-        // so "attempted and did not complete" is exactly what happened -- claimed now by something
-        // that knows rather than by something that merely stopped waiting.
+        // **The broker does not claim to know, and that is the finding rather than a shortcut.**
+        // A departing node settling its agents' turns looks obviously right -- §11.5 gives delivery
+        // to the node, so its turns went with it -- and it was built that way. Then the flapping
+        // case above was probed: a stream ending is not a process dying, and settling on it
+        // destroyed the answer when the agent finished.
+        //
+        // So a turn whose node has gone stays *still running* until the sweep presumes it dead. An
+        // unknown honestly reported, rather than a false claim that also destroys evidence. The
+        // cost is a row that says "running" for up to TurnBudget.PresumedDead after a machine that
+        // really did die, which is the right way round: one is a delay, the other is a loss.
         var token = TestContext.Current.CancellationToken;
 
         await using var broker = await LoopbackBroker.StartAsync(token);
@@ -211,7 +218,7 @@ public sealed class InstructionSurvivesTests
             new Wire.InstructionsRequest { InstructionId = command.Instruct.InstructionId },
             cancellationToken: token);
 
-        Assert.Equal(Wire.InstructionOutcome.Failed, Assert.Single(read.Instructions).Outcome);
+        Assert.Equal(Wire.InstructionOutcome.Pending, Assert.Single(read.Instructions).Outcome);
     }
 
     [Fact]
@@ -304,6 +311,76 @@ public sealed class InstructionSurvivesTests
 
         Assert.Equal(Wire.InstructionOutcome.Taken, instruction.Outcome);
         Assert.Equal("I changed three files", instruction.Reply);
+    }
+
+    [Fact]
+    public async Task A_node_that_drops_and_rejoins_cannot_report_a_turn_it_was_holding()
+    {
+        // **Lens 1 probe: is the disconnect-settle too eager?** The whole feature rests on nothing
+        // settling an instruction unless it knows the turn ended. A node departing is supposed to
+        // know — §11.5 gives it delivery, so its turns stopped with it. But a *stream* ending is
+        // not the same event as a node process dying: a network blip ends the stream while the
+        // agent process carries on working, and settling then would destroy the answer exactly as
+        // the broker's old impatience did.
+        //
+        // This drives that case deliberately and records what happens, rather than assuming the
+        // disconnect is always the death it stands for.
+        var token = TestContext.Current.CancellationToken;
+
+        await using var broker = await LoopbackBroker.StartAsync(token);
+
+        await RegisterAsync(broker, token);
+
+        var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
+
+        var operators = broker.ConnectAsOperator();
+
+        using var giveUp = new CancellationTokenSource(TimeSpan.FromMilliseconds(400));
+
+        var issuing = operators.InstructAsync(
+            new Wire.InstructRequest { Agent = "orders@alpha", Text = "a long turn" },
+            cancellationToken: giveUp.Token);
+
+        var command = await node.WaitForCommandAsync(Patience);
+
+        try
+        {
+            _ = await issuing;
+        }
+        catch (RpcException)
+        {
+        }
+
+        // The stream ends. The agent process, in the case being probed, did not.
+        await node.DisposeAsync();
+        await broker.WaitUntilNodeGoneAsync("alpha", Patience);
+
+        // It comes straight back, as a flapping connection does.
+        await using var again = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
+
+        // And reports the answer its agent actually produced.
+        _ = await again.Nodes.ReportInstructionAsync(
+            new Wire.InstructionReport
+            {
+                Machine = "alpha",
+                InstructionId = command.Instruct.InstructionId,
+                Outcome = Wire.InstructionOutcome.Taken,
+                Reply = "I did the work"
+            },
+            cancellationToken: token);
+
+        var read = await operators.InstructionsAsync(
+            new Wire.InstructionsRequest { InstructionId = command.Instruct.InstructionId },
+            cancellationToken: token);
+
+        var instruction = Assert.Single(read.Instructions);
+
+        // **The answer survives, and this test is why the disconnect stopped settling.** It was
+        // written expecting to record a loss and it recorded one: the departure settled `failed`
+        // first, and the agent's real report was refused. That is the defect this whole feature
+        // exists to remove, arriving through a door nobody had checked.
+        Assert.Equal(Wire.InstructionOutcome.Taken, instruction.Outcome);
+        Assert.Equal("I did the work", instruction.Reply);
     }
 
     /// <summary>Puts the agent in the registry, which instructing it requires.</summary>

@@ -471,22 +471,24 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 await new NodeRepository(connection).LeaveAsync(joined.Machine, now, ct)
                     .ConfigureAwait(false);
 
-                // **Every turn this machine was holding stopped when it did.**
+                // **A departing node does NOT settle the instructions it was holding, and the
+                // temptation to make it do so is why this comment is here.**
                 //
-                // SPEC.md §11.5 gives delivery to the node — "an agent on a machine whose node is
-                // not connected cannot be instructed" — so when the node goes, so does any turn it
-                // had begun. That is what `failed` has always meant, and it is now claimed only by
-                // something that knows: the broker used to write it merely for having stopped
-                // waiting, which settled the record and made the agent's real answer arrive too
-                // late to be recorded.
+                // It looks obviously right: §11.5 gives delivery to the node, so when the node goes
+                // its turns went with it, and `failed` is exactly "the turn was attempted and did
+                // not complete". It was built that way and then probed, and the probe is in
+                // `InstructionSurvivesTests`.
                 //
-                // In the same unit of work as the departure rather than after it. The two are one
-                // fact about this machine, and a process that died between them would leave turns
-                // pending against a node the registry already showed as gone — reachable only by
-                // the sweep, twenty-five minutes later, for a machine known to be down now.
-                _ = await new Parley.Store.InstructionRepository(connection)
-                    .SettleForMachineAsync(joined.Machine, now, ct)
-                    .ConfigureAwait(false);
+                // A *stream* ending is not a node process dying. A network blip ends the stream
+                // while the agent carries on working, and settling on that destroys the answer when
+                // it arrives — settlement is first-come, so the real report is refused. That is
+                // precisely the defect this feature exists to remove, reintroduced through a
+                // different door, and it gets likelier the moment a deployment is reached over a
+                // private network rather than loopback, which §16 explicitly permits.
+                //
+                // So the broker does not claim to know. A turn whose node has gone stays *still
+                // running* until the sweep presumes it dead past TurnBudget.PresumedDead — an
+                // unknown honestly reported, rather than a false claim that also destroys evidence.
 
                 return true;
             },
