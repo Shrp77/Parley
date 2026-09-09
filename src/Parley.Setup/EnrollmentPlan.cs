@@ -565,9 +565,24 @@ public static class EnrollmentPlan
         if (entry.Unattended)
         {
             notes.Add(
-                stale ? $"node.json: update, it records {nodeWorkspace}"
+                stale ? $"node.json: update, it records {Quoting.Flat(nodeWorkspace)}"
                 : nodeAlreadyLists ? "node.json: already listed"
                 : "node.json: add (consent to run unattended)");
+        }
+        else if (stale)
+        {
+            // **The same collision, and it used to be silent because this run is not writing the
+            // catalogue.** The name lives in the launch configuration rather than in the catalogue, so
+            // a repository nobody ever catalogues still claims it the moment somebody opens the
+            // repository in an editor — and the catalogue goes on starting a different directory under
+            // it. That is two repositories holding one identity, which is the thing the manifest's own
+            // duplicate-name rule refuses in the strongest words this codebase uses; it was enforced
+            // across the rows of one manifest and not across two calls, which is how a machine with
+            // several projects assembles it.
+            notes.Add(
+                $"node.json: still starts '{entry.Agent}' in {Quoting.Flat(nodeWorkspace)}, which is "
+                + "not this repository. Two repositories claiming one name means either may collect "
+                + "the other's mail");
         }
 
         return new RepositoryPlan(notes, launchOutput, instructionsOutput, addsNode);
