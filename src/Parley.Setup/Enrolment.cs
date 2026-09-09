@@ -57,33 +57,47 @@ public static class Enrolment
     /// <summary>
     /// Writes what a plan decided, and says which files changed.
     /// </summary>
-    /// <param name="plan">What <c>EnrollmentPlan.Describe</c> decided.</param>
+    /// <param name="decide">
+    /// Given the launch configuration as it stands — null when there is none — says what to write.
+    /// Called while the file is held, so that reading it and replacing it are one act.
+    /// </param>
     /// <param name="workspace">The repository the plan is for.</param>
     /// <param name="instructionsPath">Where its standing instructions live.</param>
     /// <param name="cancellationToken">Stops the writes.</param>
-    /// <returns>Every path written, in the order written.</returns>
+    /// <returns>What was decided, and every path written in the order written.</returns>
     /// <remarks>
     /// The byte-order mark a file already had is kept. <c>ReadAllText</c> strips one and
     /// <c>WriteAllText</c> does not put it back, so appending a block to a file that had one
     /// rewrites every byte of it — a whole-file diff for a twelve-line addition, in the file a
     /// project reads on every turn.
     /// </remarks>
-    public static async Task<IReadOnlyList<string>> WriteAsync(
-        RepositoryPlan plan,
+    public static async Task<(RepositoryPlan Plan, IReadOnlyList<string> Written)> WriteAsync(
+        Func<string?, RepositoryPlan> decide,
         string workspace,
         string instructionsPath,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(decide);
 
         var written = new List<string>();
+        RepositoryPlan plan;
 
-        if (plan.LaunchConfiguration is { } launch)
+        // The launch configuration is held across the decision and the write, for the reason
+        // AddAsync holds it: reading it, deciding, and writing it back without exclusion is a lost
+        // update, and this is the path `enroll apply` takes. **It was missed when AddAsync was
+        // fixed** -- six bulk runs sharing one catalogue told an agent its enrolment had succeeded
+        // and left it out of the file that makes it startable.
+        using (var held = await HoldAsync(LaunchPath(workspace), cancellationToken).ConfigureAwait(false))
         {
-            var path = LaunchPath(workspace);
+            plan = decide(held is null ? null : await ReadHeldAsync(held, cancellationToken).ConfigureAwait(false));
 
-            await File.WriteAllTextAsync(path, launch, cancellationToken).ConfigureAwait(false);
-            written.Add(path);
+            if (plan.LaunchConfiguration is { } launch)
+            {
+                var path = LaunchPath(workspace);
+
+                await OverwriteHeldAsync(held, path, launch, cancellationToken).ConfigureAwait(false);
+                written.Add(path);
+            }
         }
 
         if (plan.Instructions is { } instructions)
@@ -97,7 +111,7 @@ public static class Enrolment
             written.Add(instructionsPath);
         }
 
-        return written;
+        return (plan, written);
     }
 
     /// <summary>Puts an agent in a catalogue, so a node may start it.</summary>
@@ -156,7 +170,7 @@ public static class Enrolment
     /// reported writing nothing.
     /// </para>
     /// </remarks>
-    private static async Task<FileStream?> HoldAsync(string path, CancellationToken cancellationToken)
+    internal static async Task<FileStream?> HoldAsync(string path, CancellationToken cancellationToken)
     {
         if (!File.Exists(path))
         {
@@ -181,7 +195,7 @@ public static class Enrolment
     /// <param name="stream">The handle.</param>
     /// <param name="cancellationToken">Stops the read.</param>
     /// <returns>Its text.</returns>
-    private static async Task<string> ReadAsync(FileStream stream, CancellationToken cancellationToken)
+    internal static async Task<string> ReadHeldAsync(FileStream stream, CancellationToken cancellationToken)
     {
         stream.Position = 0;
 
@@ -201,7 +215,7 @@ public static class Enrolment
     /// is refused rather than silently overwriting the first — and refused loudly, since a caller
     /// that meant to add a second entry has just been told the file appeared underneath it.
     /// </remarks>
-    private static Task OverwriteAsync(
+    internal static Task OverwriteHeldAsync(
         FileStream? stream,
         string path,
         string text,
@@ -333,7 +347,7 @@ public static class Enrolment
         var catalogue = catalogueHeld is null
             ? await ReadCatalogueAsync(catalogueFile, cancellationToken).ConfigureAwait(false)
             : ParseCatalogue(
-                await ReadAsync(catalogueHeld, cancellationToken).ConfigureAwait(false), catalogueFile);
+                await ReadHeldAsync(catalogueHeld, cancellationToken).ConfigureAwait(false), catalogueFile);
 
         var agents = AgentsOf(catalogue, catalogueFile);
         var launchPath = LaunchPath(entry.Workspace);
@@ -366,7 +380,7 @@ public static class Enrolment
         {
             plan = EnrollmentPlan.Describe(
                 entry,
-                launch is null ? null : await ReadAsync(launch, cancellationToken).ConfigureAwait(false),
+                launch is null ? null : await ReadHeldAsync(launch, cancellationToken).ConfigureAwait(false),
                 instructions,
                 agents.ContainsKey(entry.Agent),
                 project,
@@ -377,7 +391,7 @@ public static class Enrolment
 
             if (plan.LaunchConfiguration is { } text)
             {
-                await OverwriteAsync(launch, launchPath, text, cancellationToken).ConfigureAwait(false);
+                await OverwriteHeldAsync(launch, launchPath, text, cancellationToken).ConfigureAwait(false);
                 written.Add(launchPath);
             }
         }
@@ -466,7 +480,7 @@ public static class Enrolment
 
             var text = held is null
                 ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false)
-                : await ReadAsync(held, cancellationToken).ConfigureAwait(false);
+                : await ReadHeldAsync(held, cancellationToken).ConfigureAwait(false);
 
             JsonNode? parsed;
 
@@ -562,7 +576,7 @@ public static class Enrolment
                     }
                     else if (servers.Remove(candidates[0].Key))
                     {
-                        await OverwriteAsync(
+                        await OverwriteHeldAsync(
                             held,
                             launchPath,
                             root.ToJsonString(SerialisationOptions.Indented) + "\n",
@@ -604,7 +618,7 @@ public static class Enrolment
             var catalogue = catalogueHeld is null
                 ? await ReadCatalogueAsync(catalogueFile, cancellationToken).ConfigureAwait(false)
                 : ParseCatalogue(
-                    await ReadAsync(catalogueHeld, cancellationToken).ConfigureAwait(false), catalogueFile);
+                    await ReadHeldAsync(catalogueHeld, cancellationToken).ConfigureAwait(false), catalogueFile);
 
             if (catalogue["agents"] is JsonObject agents)
             {
@@ -763,7 +777,7 @@ public static class Enrolment
             Directory.CreateDirectory(directory);
         }
 
-        await OverwriteAsync(
+        await OverwriteHeldAsync(
             held,
             path,
             catalogue.ToJsonString(SerialisationOptions.Indented) + "\n",

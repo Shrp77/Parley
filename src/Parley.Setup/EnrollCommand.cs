@@ -516,8 +516,14 @@ public static class EnrollCommand
                 : null;
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
-                                       or FormatException or ArgumentException)
+                                       or FormatException or ArgumentException
+                                       or InvalidDataException)
         {
+            // InvalidDataException is a committed file naming one server twice. It belongs here for
+            // the reason the rest do: this only ever gathers evidence, so a repository it cannot make
+            // sense of produces a shorter list rather than ending the scan. **Missed when the working
+            // tree's reader was fixed** -- a rule applied to half the callers, which this codebase
+            // has met before and which is what run 6 went looking for.
             return null;
         }
     }
@@ -842,7 +848,17 @@ public static class EnrollCommand
         }
 
         var nodePath = ResolveNodeConfig(manifest?.NodeConfig, nodeConfig.Value);
-        var node = ReadNode(nodePath);
+
+        // **Held from the read to the write, which is the whole run.** This reads the catalogue here
+        // and writes it after the last repository, and without a hold two runs sharing one catalogue
+        // each read it, each added their own line, and the later write dropped the earlier one's --
+        // an agent told its enrolment had succeeded and missing from the file that makes it
+        // startable. The single-repository path was given this and the bulk one was not.
+        using var nodeHeld = await Enrolment.HoldAsync(nodePath, cancellationToken).ConfigureAwait(false);
+
+        var node = nodeHeld is null
+            ? ReadNode(nodePath)
+            : ReadNodeText(await Enrolment.ReadHeldAsync(nodeHeld, cancellationToken).ConfigureAwait(false));
 
         if (node is null)
         {
@@ -890,19 +906,43 @@ public static class EnrollCommand
             var launchPath = Path.Combine(entry.Workspace, ".mcp.json");
 
             RepositoryPlan plan;
+            IReadOnlyList<string> wrote = [];
+
+            var instructions = File.Exists(instructionsPath)
+                ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
+                : null;
+
+            var endpoints = deployment?.ToDictionary(
+                settings => settings.Name.Value,
+                settings => settings.Endpoint,
+                StringComparer.Ordinal);
+
+            RepositoryPlan Decide(string? launch) => EnrollmentPlan.Describe(
+                entry,
+                launch,
+                instructions,
+                listed.ContainsKey(entry.Agent),
+                project?.Name.Value,
+                endpoints);
 
             try
             {
-                plan = EnrollmentPlan.Describe(
-                    entry,
-                    File.Exists(launchPath) ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false) : null,
-                    File.Exists(instructionsPath) ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false) : null,
-                    listed.ContainsKey(entry.Agent),
-                    project?.Name.Value,
-                    deployment?.ToDictionary(
-                        settings => settings.Name.Value,
-                        settings => settings.Endpoint,
-                        StringComparer.Ordinal));
+                // **Deciding and writing happen under one hold when this is going to write.** They
+                // were two acts over an unheld file, which is the lost update AddAsync was fixed for
+                // and this path was not. Reporting still happens afterwards, so the notes describe
+                // what was done rather than what was going to be.
+                if (write)
+                {
+                    (plan, wrote) = await Enrolment
+                        .WriteAsync(Decide, entry.Workspace, instructionsPath, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    plan = Decide(File.Exists(launchPath)
+                        ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false)
+                        : null);
+                }
             }
             catch (Exception ex) when (ex is JsonException or InvalidDataException)
             {
@@ -939,21 +979,10 @@ public static class EnrollCommand
                 continue;
             }
 
-            try
-            {
-                // Through Enrolment, the one writer of these two files. This loop wrote them
-                // itself until the terminal needed to write them too, and two copies of a file
-                // write are how a surface and a command come to disagree about what makes a
-                // repository an agent.
-                written += (await Enrolment
-                    .WriteAsync(plan, entry.Workspace, instructionsPath, cancellationToken)
-                    .ConfigureAwait(false)).Count;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                await error.WriteLineAsync($"{entry.Agent}: {ex.Message}").ConfigureAwait(false);
-                return IoError;
-            }
+            // Through Enrolment, the one writer of these two files. This loop wrote them itself
+            // until the terminal needed to write them too, and two copies of a file write are how a
+            // surface and a command come to disagree about what makes a repository an agent.
+            written += wrote.Count;
 
             if (plan.AddsNodeEntry)
             {
@@ -979,7 +1008,8 @@ public static class EnrollCommand
         {
             try
             {
-                await File.WriteAllTextAsync(
+                await Enrolment.OverwriteHeldAsync(
+                    nodeHeld,
                     nodePath,
                     node.ToJsonString(SerialisationOptions.Indented) + "\n",
                     cancellationToken).ConfigureAwait(false);
@@ -1090,6 +1120,30 @@ public static class EnrollCommand
     /// nothing starts automatically. This writes.
     /// </para>
     /// </remarks>
+    /// <summary>The catalogue a held handle holds, or null when it cannot be read.</summary>
+    /// <param name="text">What the file holds.</param>
+    /// <returns>The catalogue, an empty one for an empty file, or null when it is not readable.</returns>
+    /// <remarks>
+    /// Split from <see cref="ReadNode"/> so that a read through an exclusive handle answers exactly
+    /// what a read by path answers. Two parsers agree until one of them is edited.
+    /// </remarks>
+    private static JsonObject? ReadNodeText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonNode.Parse(text)?.AsObject() ?? [];
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
     private static JsonObject? ReadNode(string path)
     {
         if (!File.Exists(path))
