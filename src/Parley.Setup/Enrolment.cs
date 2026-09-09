@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Nodes;
 using Parley.Configuration;
+using Parley.Core;
 
 namespace Parley.Setup;
 
@@ -131,6 +132,17 @@ public static class Enrolment
             ? name
             : null;
 
+    /// <summary>How a note names the project it is talking about.</summary>
+    /// <param name="project">The project, or null when none was named.</param>
+    /// <returns>Words for it.</returns>
+    /// <remarks>
+    /// "this repository" rather than "no project", because a withdrawal that names none is asking
+    /// about the repository rather than about a deployment, and a note reading <c>no entry for no
+    /// project to remove</c> reads as a fault in the tool.
+    /// </remarks>
+    private static string Where(string? project) =>
+        project is null ? "this repository" : $"'{project}'";
+
     /// <summary>Takes an agent out of a catalogue.</summary>
     /// <param name="catalogue">The catalogue's <c>agents</c> object.</param>
     /// <param name="agent">The role to remove.</param>
@@ -150,6 +162,11 @@ public static class Enrolment
     /// <param name="catalogueFile">The project's catalogue.</param>
     /// <param name="instructionsPath">Its standing instructions, read but never written by this.</param>
     /// <param name="cancellationToken">Stops the reads and writes.</param>
+    /// <param name="deployment">
+    /// Every project the machine's manifest names, so an address-pinned entry can be resolved and an
+    /// unattended start already granted elsewhere can be found. Null where there is no manifest,
+    /// which refuses the first exactly as it was refused before and says nothing about the second.
+    /// </param>
     /// <returns>What was decided and what was written.</returns>
     /// <exception cref="InvalidDataException">
     /// A file is in a shape this cannot merge into, or the repository already belongs somewhere.
@@ -164,7 +181,8 @@ public static class Enrolment
         string project,
         string catalogueFile,
         string instructionsPath,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyList<ProjectSettings>? deployment = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
         ArgumentException.ThrowIfNullOrWhiteSpace(project);
@@ -173,6 +191,15 @@ public static class Enrolment
         var catalogue = await ReadCatalogueAsync(catalogueFile, cancellationToken).ConfigureAwait(false);
         var agents = AgentsOf(catalogue, catalogueFile);
         var launchPath = LaunchPath(entry.Workspace);
+
+        if (entry.Unattended
+            && Catalogues.Elsewhere(deployment, entry.Workspace, catalogueFile) is { } already)
+        {
+            // Refused before anything is written, and refused even though the launch entry would
+            // have been fine. Enrolling the repository in this project is admitted; starting it here
+            // as well is what cannot be.
+            throw new InvalidDataException(Catalogues.Refusal(already));
+        }
 
         var plan = EnrollmentPlan.Describe(
             entry,
@@ -183,7 +210,11 @@ public static class Enrolment
                 ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
                 : null,
             agents.ContainsKey(entry.Agent),
-            project);
+            project,
+            deployment?.ToDictionary(
+                settings => settings.Name.Value,
+                settings => settings.Endpoint,
+                StringComparer.Ordinal));
 
         var written = new List<string>(
             await WriteAsync(plan, entry.Workspace, instructionsPath, cancellationToken).ConfigureAwait(false));
@@ -203,6 +234,7 @@ public static class Enrolment
     /// </summary>
     /// <param name="workspace">The repository directory.</param>
     /// <param name="agent">The role being withdrawn.</param>
+    /// <param name="project">The project being withdrawn from, or null when none is named.</param>
     /// <param name="catalogueFile">The project's catalogue, or null when the project has none.</param>
     /// <param name="cancellationToken">Stops the reads and writes.</param>
     /// <returns>What was removed, and what was already gone.</returns>
@@ -218,10 +250,17 @@ public static class Enrolment
     /// an agent should stop being reachable; rewriting a file it does not understand in the
     /// course of that is a second, unasked-for change.
     /// </para>
+    /// <para>
+    /// <b>A repository may now answer in several projects, so a withdrawal that named none would have
+    /// to pick.</b> It does not: one entry is taken when there is exactly one, and several are refused
+    /// with every project named. Guessing here removes a working agent from a roster nobody was
+    /// talking about, and the person finds out when a peer stops being answered.
+    /// </para>
     /// </remarks>
     public static async Task<Outcome> WithdrawAsync(
         string workspace,
         string agent,
+        string? project,
         string? catalogueFile,
         CancellationToken cancellationToken)
     {
@@ -255,31 +294,84 @@ public static class Enrolment
             {
                 if (root["mcpServers"] is JsonObject servers)
                 {
-                    var named = NamedBy(servers[LaunchKey.Unnamed]);
+                    var entries = LaunchEntries.Read(servers);
 
-                    if (named is not null && !string.Equals(named, agent, StringComparison.Ordinal))
+                    // The same precedence enrolling uses, run backwards: a withdrawal removes what
+                    // an enrolment into this project would have written at, and nothing else. Two
+                    // rules would drift, and the direction they drift in leaves a repository still
+                    // announcing itself as an agent of somewhere it was removed from.
+                    var candidates = project is null
+                        ? entries
+                        : LaunchEntries.Landing(servers, project).Existing is { } landed
+                            ? (IReadOnlyList<LaunchEntry>)[landed]
+                            : [];
+
+                    var named = candidates.Count == 1 ? candidates[0].Agent : null;
+
+                    if (candidates.Count > 1)
+                    {
+                        // FR-011. Never a guess: taking either would remove a working agent from a
+                        // roster nobody was talking about, and the person finds out when a peer
+                        // stops being answered.
+                        notes.Add(
+                            $"{launchPath}: left alone, it answers in "
+                            + $"{string.Join(", ", candidates.Select(found => $"'{found.Project ?? found.Key}'"))}"
+                            + " — name which one to withdraw from");
+                    }
+                    else if (candidates.Count == 0)
+                    {
+                        notes.Add($"{launchPath}: no entry for {Where(project)} to remove");
+                    }
+                    else if (candidates[0] is { Broker: not null, Pinned: null } addressed
+                             && project is not null)
+                    {
+                        // Pinned to an address and naming no project. Enrolling resolves that
+                        // through the manifest; this does not have one, and removing an entry that
+                        // may be another project's agent is the more expensive way to be wrong.
+                        notes.Add(
+                            $"{launchPath}: left alone, its '{addressed.Key}' entry is pinned to the "
+                            + $"broker at '{addressed.Broker}', which this cannot match to "
+                            + $"{Where(project)}");
+                    }
+                    else if (candidates[0] is { Ours: false } stranger)
+                    {
+                        // **The rule below used to cover this and stopped being able to.** It read:
+                        // an entry that names nobody cannot be another agent's, because nothing
+                        // identifies it as anybody's and every entry this program writes carries the
+                        // variable. That was sound while the key was fixed — an entry at `parley`
+                        // naming nobody was ours by the only convention there was. A key derived
+                        // from a project name is one somebody may reasonably have used first, so
+                        // naming nobody no longer implies being ours.
+                        notes.Add(
+                            $"{launchPath}: left alone, '{stranger.Key}' is not an entry this wrote");
+                    }
+                    else if (named is not null && !string.Equals(named, agent, StringComparison.Ordinal))
                     {
                         // Somebody else's. The workspace comes from the registry, which is what the
                         // agent said about itself and may be some time old, so a repository
                         // re-enrolled under a second name has two rows pointing at one file. Taking
                         // this one would unhook an agent nobody named, and would report success.
                         notes.Add(
-                            $"{launchPath}: left alone, its parley entry is '{named}' rather than "
-                            + $"'{agent}'");
+                            $"{launchPath}: left alone, its '{candidates[0].Key}' entry is '{named}' "
+                            + $"rather than '{agent}'");
                     }
-                    else if (servers.Remove(LaunchKey.Unnamed))
+                    else if (servers.Remove(candidates[0].Key))
                     {
                         await File.WriteAllTextAsync(
                             launchPath,
                             root.ToJsonString(SerialisationOptions.Indented) + "\n",
                             cancellationToken).ConfigureAwait(false);
 
+                        var left = LaunchEntries.Read(servers).Count;
+
                         written.Add(launchPath);
-                        notes.Add($"{launchPath}: parley entry removed, {servers.Count} other server(s) left");
+                        notes.Add(
+                            $"{launchPath}: {candidates[0].Key} entry removed, {left} parley "
+                            + $"entry(s) and {servers.Count - left} other server(s) left");
                     }
                     else
                     {
-                        notes.Add($"{launchPath}: no parley entry to remove");
+                        notes.Add($"{launchPath}: no entry for {Where(project)} to remove");
                     }
                 }
                 else

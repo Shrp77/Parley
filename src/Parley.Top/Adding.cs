@@ -1,4 +1,5 @@
 ﻿using Parley.Client;
+using Parley.Configuration;
 using Parley.Core;
 using Parley.Setup;
 using Terminal.Gui.App;
@@ -301,7 +302,8 @@ internal static class Adding
                 project.Name.Value,
                 file,
                 Path.Combine(workspace, "CLAUDE.md"),
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                catalogue.Deployment()).ConfigureAwait(false);
 
             said.Add($"{Added}'{role}'.");
             said.AddRange(outcome.Notes);
@@ -348,6 +350,20 @@ internal static class Adding
 /// </remarks>
 internal sealed record Catalogue(string? ManifestPath)
 {
+    /// <summary>Every project on this machine, or none when the manifest cannot be read.</summary>
+    /// <returns>The projects.</returns>
+    /// <remarks>
+    /// Read at the moment of writing rather than kept from the draw, for the reason the catalogue
+    /// itself is: somebody may have added a project between the two, and what this is used for —
+    /// deciding whether another project already starts this workspace unattended — is only true of
+    /// the manifest as it is now. An unreadable manifest gives none, which says nothing rather than
+    /// asserting there is nothing.
+    /// </remarks>
+    internal IReadOnlyList<ProjectSettings> Deployment() =>
+        ManifestPath is { Length: > 0 } path && ProjectManifest.TryRead(path, out var projects, out _)
+            ? projects
+            : [];
+
     /// <summary>Whether the project already names a catalogue.</summary>
     /// <param name="project">The project.</param>
     /// <returns>Whether it does.</returns>

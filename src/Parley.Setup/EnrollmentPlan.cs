@@ -83,6 +83,14 @@ public static class EnrollmentPlan
     /// </remarks>
     public const string OwnsVariable = "PARLEY_OWNS";
 
+    /// <summary>The command every entry this tooling writes runs.</summary>
+    /// <remarks>
+    /// Read as well as written, and read for one narrow purpose: an entry at a key this would write at,
+    /// carrying no parley variable at all, is still ours if it runs the adapter. A person who cleared
+    /// an environment by hand has not handed their entry to somebody else.
+    /// </remarks>
+    public const string AdapterCommand = "parley-mcp";
+
     /// <summary>The heading that marks a peers block already present in a file.</summary>
     public const string PeersHeading = "## Peers";
 
@@ -286,22 +294,39 @@ public static class EnrollmentPlan
     /// <para>
     /// <b>A repository that already belongs somewhere is refused rather than re-pointed.</b>
     /// Naming a second project would move an agent out of one deployment's roster and into
-    /// another's, silently, from a surface whose person may not know the first exists. An entry
-    /// pinned to a broker address is refused for the same reason and with less certainty — this
-    /// cannot tell whether that address is the project it is being asked to join, and guessing
-    /// wrong in the permissive direction is the move that loses an agent.
+    /// another's, silently, from a surface whose person may not know the first exists.
+    /// </para>
+    /// <para>
+    /// <b>That paragraph used to end "so a repository already belonging somewhere is refused", and the
+    /// refusal it justified was wider than the argument.</b> Re-pointing is one identity moving between
+    /// deployments and is still refused; a <i>second</i> entry beside the first moves nothing, and the
+    /// two were one case only because a key could hold one entry. SPEC.md §4.1 has permitted the second
+    /// throughout — the protocol has no concept of a project, and agent names collide freely across
+    /// them. Recorded rather than replaced, because the reasoning is right and the conclusion was too
+    /// broad, which is the harder of the two mistakes to see.
     /// </para>
     /// <para>
     /// An entry carrying neither is unpinned, which is what every repository enrolled before this
     /// existed looks like. Those are re-pointed and the note says so.
     /// </para>
+    /// <para>
+    /// <b><paramref name="endpoints"/> is passed in rather than read.</b> This takes file contents as
+    /// strings and returns file contents as strings, which is why it is the most heavily tested type
+    /// here; reaching a manifest from inside it would hand every one of those tests a filesystem.
+    /// </para>
     /// </remarks>
+    /// <param name="endpoints">
+    /// Each project on this machine and the endpoint it holds, so an entry pinned to an address can be
+    /// resolved rather than guessed at. Null where there is no manifest, which refuses such an entry
+    /// exactly as it was refused before.
+    /// </param>
     public static RepositoryPlan Describe(
         EnrollmentEntry entry,
         string? launchConfiguration,
         string? instructions,
         bool nodeAlreadyLists,
-        string? project = null)
+        string? project = null,
+        IReadOnlyDictionary<string, string>? endpoints = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
@@ -336,24 +361,58 @@ public static class EnrollmentPlan
             root["mcpServers"] = servers;
         }
 
-        var existingParley = servers[LaunchKey.Unnamed] as JsonObject;
-        var existingEnv = existingParley?["env"] as JsonObject;
-        var pinnedTo = Text(existingEnv, ProjectVariable);
-        var pinnedAt = Text(existingEnv, BrokerVariable);
+        var (key, landed) = LaunchEntries.Landing(servers, project);
 
-        if (project is not null)
+        if (landed is { Mismatched: true })
         {
-            if (pinnedTo is not null && !string.Equals(pinnedTo, project, StringComparison.Ordinal))
+            // A hand edit, which is the ordinary state of this file rather than an attack. The key
+            // says one project and the running adapter would reach another, so writing here re-points
+            // somebody else's agent and skipping the key writes over what is there. Both are somebody
+            // deciding, and neither is this.
+            throw new InvalidDataException(
+                $"'{key}' names project '{LaunchKey.ProjectOf(key)}' and its environment names "
+                + $"'{landed.Project}'. Make them agree before enrolling.");
+        }
+
+        if (landed is { Ours: false })
+        {
+            // FR-009. Three silent replacements of somebody's MCP configuration are recorded in this
+            // codebase's comments and none was malice; each was a cast that treated a shape it did not
+            // understand as one it could overwrite, and each reported success.
+            throw new InvalidDataException(
+                $"there is already a server called '{key}' that this did not write. Rename it or "
+                + "remove it first; enrolling would replace it");
+        }
+
+        if (project is not null && landed?.Broker is { } pinnedAt && landed.Project is null)
+        {
+            // The old refusal was right about what it could see. It said this could not tell whether
+            // the address was the project being joined, and guessing permissively is what loses an
+            // agent — true when the address was the only evidence. The manifest knows which project
+            // holds which endpoint, so the question is decidable in each direction rather than a guess.
+            var held = endpoints?
+                .FirstOrDefault(pair => string.Equals(pair.Value, pinnedAt, StringComparison.OrdinalIgnoreCase))
+                .Key;
+
+            if (string.Equals(held, project, StringComparison.Ordinal))
             {
                 throw new InvalidDataException(
-                    $"it is already the agent of project '{pinnedTo}'");
+                    $"it is already pinned to the broker at '{pinnedAt}', which is '{project}' itself, "
+                    + "so it is already this project's agent under another spelling");
             }
 
-            if (pinnedTo is null && pinnedAt is not null)
+            if (held is null)
             {
                 throw new InvalidDataException(
-                    $"it is already pinned to the broker at '{pinnedAt}'");
+                    $"it is already pinned to the broker at '{pinnedAt}', which no project on this "
+                    + "machine holds");
             }
+
+            // It is another project's agent, spelled the old way. Nothing is lost by admitting the
+            // second enrolment — but the entry that is there belongs to that project, so this one goes
+            // beside it rather than through it.
+            key = LaunchKey.For(project);
+            landed = null;
         }
 
         var env = new JsonObject { [AgentVariable] = entry.Agent };
@@ -373,8 +432,8 @@ public static class EnrollmentPlan
         // this machine uses and a teammate overrides it by setting the variable.
         env["PARLEY_WORKSPACE"] = "${PARLEY_WORKSPACE:-" + entry.Workspace.Replace('\\', '/') + "}";
 
-        var desired = new JsonObject { ["command"] = "parley-mcp", ["env"] = env };
-        var existing = servers[LaunchKey.Unnamed];
+        var desired = new JsonObject { ["command"] = AdapterCommand, ["env"] = env };
+        var existing = servers[key];
         var already = existing is not null
             && JsonNode.DeepEquals(existing, desired);
 
@@ -386,17 +445,16 @@ public static class EnrollmentPlan
         }
         else
         {
-            var others = servers.Count(
-                pair => !string.Equals(pair.Key, LaunchKey.Unnamed, StringComparison.Ordinal));
+            var others = servers.Count(pair => !string.Equals(pair.Key, key, StringComparison.Ordinal));
 
-            servers[LaunchKey.Unnamed] = desired;
+            servers[key] = desired;
             launchOutput = root.ToJsonString(SerialisationOptions.Indented) + "\n";
             notes.Add(others > 0
-                ? $".mcp.json: {(existing is null ? "create" : "update")} parley entry, leaving {others} other server(s)"
-                : $".mcp.json: {(existing is null ? "create" : "update")} parley entry");
+                ? $".mcp.json: {(existing is null ? "create" : "update")} {key} entry, leaving {others} other server(s)"
+                : $".mcp.json: {(existing is null ? "create" : "update")} {key} entry");
         }
 
-        if (project is not null && pinnedTo is null && existingParley is not null)
+        if (project is not null && landed is not null && landed.Project is null)
         {
             // Said because it is a change of allegiance and the file did not previously record
             // one. A repository enrolled before projects existed names no project at all, so this

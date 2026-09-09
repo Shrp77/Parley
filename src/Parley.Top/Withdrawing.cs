@@ -132,6 +132,7 @@ internal static class Withdrawing
     /// <param name="row">The agent as the region drew it.</param>
     /// <param name="agent">What the registry says about it, or null.</param>
     /// <param name="owed">Every exchange it is waited on in.</param>
+    /// <param name="project">The project being withdrawn from, or null when none is named.</param>
     /// <param name="catalogueFile">The project's catalogue, or null when it names none.</param>
     /// <param name="queue">Runs the operation, so the caller can wait for it.</param>
     /// <param name="done">Told what to say when it is over.</param>
@@ -142,6 +143,7 @@ internal static class Withdrawing
         AgentRow row,
         AgentRecord? agent,
         IReadOnlyList<WaitingEdge> owed,
+        string? project,
         string? catalogueFile,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done)
@@ -179,16 +181,16 @@ internal static class Withdrawing
             {
                 case Retire:
                     Name(app, row, Retire, done, () =>
-                        queue(t => RetireAsync(client, row, catalogueFile, t, done)));
+                        queue(t => RetireAsync(client, row, project, catalogueFile, t, done)));
                     break;
 
                 case Purge when owed.Count > 0:
-                    Consequence(app, client, row, owed, catalogueFile, queue, done);
+                    Consequence(app, client, row, owed, project, catalogueFile, queue, done);
                     break;
 
                 case Purge:
                     Name(app, row, Purge, done, () =>
-                        queue(t => PurgeAsync(client, row, catalogueFile, t, done)));
+                        queue(t => PurgeAsync(client, row, project, catalogueFile, t, done)));
                     break;
 
                 default:
@@ -273,6 +275,7 @@ internal static class Withdrawing
         BrokerClient client,
         AgentRow row,
         IReadOnlyList<WaitingEdge> owed,
+        string? project,
         string? catalogueFile,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done)
@@ -302,7 +305,7 @@ internal static class Withdrawing
                 return;
             }
 
-            Name(app, row, Purge, done, () => queue(t => PurgeAsync(client, row, catalogueFile, t, done)));
+            Name(app, row, Purge, done, () => queue(t => PurgeAsync(client, row, project, catalogueFile, t, done)));
         };
 
     }
@@ -341,6 +344,7 @@ internal static class Withdrawing
     private static async Task RetireAsync(
         BrokerClient client,
         AgentRow row,
+        string? project,
         string? catalogueFile,
         CancellationToken cancellationToken,
         Func<string, Task> done)
@@ -356,7 +360,7 @@ internal static class Withdrawing
 
         if (changed)
         {
-            await WithdrawAsync(row, catalogueFile, said, cancellationToken).ConfigureAwait(false);
+            await WithdrawAsync(row, project, catalogueFile, said, cancellationToken).ConfigureAwait(false);
         }
 
         await done(string.Join(Environment.NewLine, said)).ConfigureAwait(false);
@@ -366,6 +370,7 @@ internal static class Withdrawing
     private static async Task PurgeAsync(
         BrokerClient client,
         AgentRow row,
+        string? project,
         string? catalogueFile,
         CancellationToken cancellationToken,
         Func<string, Task> done)
@@ -387,7 +392,7 @@ internal static class Withdrawing
 
         if (gone)
         {
-            await WithdrawAsync(row, catalogueFile, said, cancellationToken).ConfigureAwait(false);
+            await WithdrawAsync(row, project, catalogueFile, said, cancellationToken).ConfigureAwait(false);
         }
 
         await done(string.Join(Environment.NewLine, said)).ConfigureAwait(false);
@@ -396,6 +401,7 @@ internal static class Withdrawing
     /// <summary>Takes the launch configuration and the catalogue line away, and lists what went.</summary>
     private static async Task WithdrawAsync(
         AgentRow row,
+        string? project,
         string? catalogueFile,
         List<string> said,
         CancellationToken cancellationToken)
@@ -410,7 +416,7 @@ internal static class Withdrawing
         try
         {
             var outcome = await Enrolment
-                .WithdrawAsync(workspace, row.Name, catalogueFile, cancellationToken)
+                .WithdrawAsync(workspace, row.Name, project, catalogueFile, cancellationToken)
                 .ConfigureAwait(false);
 
             said.AddRange(outcome.Notes);

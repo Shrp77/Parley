@@ -35,6 +35,8 @@ public sealed class SetupSurfaceTests
         Assert.Equal(
             [
                 "AutostartPlan",
+                "Catalogues",
+                "Consent",
                 "ConsolePicker",
                 "EnrollCommand",
                 "EnrollmentEntry",

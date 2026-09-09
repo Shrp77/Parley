@@ -5,9 +5,11 @@ namespace Parley.Setup;
 /// <summary>One parley server in a repository's launch configuration.</summary>
 /// <param name="Key">The name it sits under.</param>
 /// <param name="Project">The project it answers in, or null when it names none.</param>
+/// <param name="Pinned">The project its <i>environment</i> names, or null.</param>
 /// <param name="Agent">The role it speaks for, or null when it names nobody.</param>
 /// <param name="Owns">What it tells peers it owns, or null.</param>
 /// <param name="Broker">The address it is pinned to, or null.</param>
+/// <param name="Command">What it runs, or null when it names nothing.</param>
 /// <param name="Mismatched">Whether its key and its environment name different projects.</param>
 /// <remarks>
 /// <para>
@@ -27,10 +29,42 @@ namespace Parley.Setup;
 public sealed record LaunchEntry(
     string Key,
     string? Project,
+    string? Pinned,
     string? Agent,
     string? Owns,
     string? Broker,
-    bool Mismatched);
+    string? Command,
+    bool Mismatched)
+{
+    /// <summary>Whether this is an entry this tooling wrote, rather than somebody else's server.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Broader than "names an agent", and the breadth is the point.</b> An entry carrying
+    /// <c>PARLEY_PROJECT</c> or <c>PARLEY_BROKER</c> and no <c>PARLEY_AGENT</c> is this tooling's own
+    /// entry with a name cleared out of it — the shape somebody leaves behind editing the file — and
+    /// refusing to write there would refuse the repair.
+    /// </para>
+    /// <para>
+    /// <b>A different question from whether it may be removed.</b> Withdrawing asks
+    /// <c>Enrolment.NamedBy</c>, which requires the name, because deleting the wrong entry is worse
+    /// than declining to write one. This asks only whether writing here would destroy something that
+    /// was never ours.
+    /// </para>
+    /// <para>
+    /// <b>It reads <see cref="Pinned"/> and never <see cref="Project"/>, which is the whole of what
+    /// makes it work.</b> <c>Project</c> falls back to the key, so a stranger's server sitting at
+    /// <c>parley-alpha</c> has a project of <c>alpha</c> merely by being there — and asking that would
+    /// have declared every stranger ours and written straight over them. Caught by
+    /// <c>StrangerKeyTests</c>, which is what it was written for.
+    /// </para>
+    /// </remarks>
+    public bool Ours =>
+        Agent is not null
+        || Pinned is not null
+        || Broker is not null
+        || Owns is not null
+        || string.Equals(Command, EnrollmentPlan.AdapterCommand, StringComparison.Ordinal);
+}
 
 /// <summary>
 /// Reads the parley servers out of a launch configuration, leaving everything else alone.
@@ -75,9 +109,14 @@ public static class LaunchEntries
             found.Add(new LaunchEntry(
                 key,
                 fromEnv ?? fromKey,
+                fromEnv,
                 Text(env, EnrollmentPlan.AgentVariable),
                 Text(env, EnrollmentPlan.OwnsVariable),
                 Text(env, EnrollmentPlan.BrokerVariable),
+                node?["command"] is JsonValue command
+                && command.TryGetValue<string>(out var name)
+                    ? name
+                    : null,
                 fromKey is not null
                     && fromEnv is not null
                     && !string.Equals(fromKey, fromEnv, StringComparison.Ordinal)));

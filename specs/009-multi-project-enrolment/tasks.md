@@ -87,19 +87,31 @@ again into the project it already answers in and diff the file.
       an enrolment meant to be a second one). **Named `Landing` rather than `For`**: it answers *where
       this lands and what is already there*, which is two facts, and the second is the one the refusals
       are made of.
-- [ ] T012 [US2] Point `EnrollmentPlan.Describe` at `LaunchEntries.For` instead of the literal
+- [x] T012 [US2] Point `EnrollmentPlan.Describe` at `LaunchEntries.For` instead of the literal
       `servers["parley"]`, keeping every existing behaviour: same notes, same "already correct", same
       re-point message.
-- [ ] T013 [US2] Add to `tests/Parley.Cli.Tests/EnrollmentPlanTests.cs`: a repository with a legacy
+- [x] T013 [US2] Add to `tests/Parley.Cli.Tests/EnrollmentPlanTests.cs`: a repository with a legacy
       entry pinned to `alpha`, re-enrolled into `alpha`, produces a file whose only key is still
       `parley` — asserted on the key set, not on the contents.
-- [ ] T014 [P] [US2] Add a test that a legacy entry pinned to `alpha`, enrolled into `beta`, leaves the
+- [x] T014 [P] [US2] Add a test that a legacy entry pinned to `alpha`, enrolled into `beta`, leaves the
       `parley` entry **byte-for-byte** unchanged and adds `parley-beta`.
-- [ ] T015 [US2] Confirm every existing case in `EnrollmentPlanTests` and `EnrolmentTests` still passes
+- [x] T015 [US2] Confirm every existing case in `EnrollmentPlanTests` and `EnrolmentTests` still passes
       unedited. Where one had to change, the task list says which and why — an edited assertion is a
       changed promise.
 
 **Checkpoint**: green. A pre-existing deployment is provably untouched.
+
+**T012 folded into T017, and the phase boundary with it.** T012 asked for `Describe` to use the
+precedence while keeping every existing behaviour, and the two cannot both hold: the precedence's whole
+output is *which key to write at*, so using it and writing `parley` regardless is not using it. Kept as
+a record rather than deleted, because the ordering it was trying to buy — prove the switch is faithful
+before changing what it decides — is right in general and only fails here.
+
+**Phase 3 and Phase 4 are one change, and the suite said so.** Writing a project-keyed entry breaks
+withdrawal the moment it lands, because withdrawal knew one key: `Withdrawing_undoes_exactly_what_adding_did`
+failed as soon as T017 did. That failure is the honest failing check for Phase 4 — it was not written
+for it, but it named the defect before the fix — and the two phases were done together so the tree is
+green at the commit rather than between two of them.
 
 ---
 
@@ -110,21 +122,21 @@ without which this is terminal-only.
 
 **Independent test**: `quickstart.md` end to end, on two brokers.
 
-- [ ] T016 [US1] Add `tests/Parley.Cli.Tests/MultiProjectEnrolmentTests.cs` driving User Story 1's
+- [x] T016 [US1] Add `tests/Parley.Cli.Tests/MultiProjectEnrolmentTests.cs` driving User Story 1's
       three acceptance scenarios. Fails: a second enrolment is refused.
-- [ ] T017 [US1] Replace the "already the agent of project X" refusal in
+- [x] T017 [US1] Replace the "already the agent of project X" refusal in
       `src/Parley.Setup/EnrollmentPlan.cs` with the precedence's case 4. Keep the refusal's *reasoning*
       in a `<remarks>`: re-pointing is still refused, multiplicity is what is admitted, and the two were
       one only because a key held one entry.
-- [ ] T018 [US1] Add FR-009's refusal: a key `LaunchKey.IsOurs` would write, held by an entry with no
+- [x] T018 [US1] Add FR-009's refusal: a key `LaunchKey.IsOurs` would write, held by an entry with no
       `PARLEY_AGENT`, is refused and named. Never merged into, never replaced.
-- [ ] T019 [P] [US1] Add `tests/Parley.Cli.Tests/StrangerKeyTests.cs`: a hand-written server called
+- [x] T019 [P] [US1] Add `tests/Parley.Cli.Tests/StrangerKeyTests.cs`: a hand-written server called
       `parley-alpha` survives an enrolment into `alpha`, the run refuses, and the message names the key.
-- [ ] T020 [US1] Add the endpoint map parameter to `EnrollmentPlan.Describe` and implement FR-008's four
+- [x] T020 [US1] Add the endpoint map parameter to `EnrollmentPlan.Describe` and implement FR-008's four
       outcomes as a pure function of an address and that map. `Describe` does no I/O and must not start.
-- [ ] T021 [P] [US1] Add `tests/Parley.Cli.Tests/BrokerPinnedTests.cs`: the address is this project's,
+- [x] T021 [P] [US1] Add `tests/Parley.Cli.Tests/BrokerPinnedTests.cs`: the address is this project's,
       another project's, unknown, and there is no manifest. Four tests, four messages.
-- [ ] T022 [US1] Pass the map from `Enrolment.AddAsync`, which reads the manifest its caller already
+- [x] T022 [US1] Pass the map from `Enrolment.AddAsync`, which reads the manifest its caller already
       resolved.
 - [ ] T023 [US1] Add `project` to `EnrollmentManifest` in `src/Parley.Setup/EnrollmentEntry.cs`.
 - [ ] T024 [US1] Add `--project <name>` to `parley enroll apply` and `plan` in
@@ -149,20 +161,20 @@ without which this is terminal-only.
 
 **Independent test**: enrol in two, withdraw from one, read the file.
 
-- [ ] T028 [US3] Add `tests/Parley.Cli.Tests/WithdrawOneProjectTests.cs` covering User Story 3's four
+- [x] T028 [US3] Add `tests/Parley.Cli.Tests/WithdrawOneProjectTests.cs` covering User Story 3's four
       acceptance scenarios. Fails: `WithdrawAsync` takes no project.
-- [ ] T029 [US3] Add the project to `Enrolment.WithdrawAsync` and remove only that entry, keeping the
+- [x] T029 [US3] Add the project to `Enrolment.WithdrawAsync` and remove only that entry, keeping the
       `NamedBy` guard and extending it to match on project as well as name. `<remarks>` keeps the
       existing paragraph about why the guard exists — a withdrawal once removed a different agent's
       entry and reported success.
-- [ ] T030 [US3] Implement FR-011: no project named and exactly one entry removes it; no project named
+- [x] T030 [US3] Implement FR-011: no project named and exactly one entry removes it; no project named
       and several refuses, naming every project the repository belongs to.
-- [ ] T031 [US3] Report how many parley entries and how many other servers remain, so a person can see
+- [x] T031 [US3] Report how many parley entries and how many other servers remain, so a person can see
       what survived.
-- [ ] T032 [P] [US3] Update `src/Parley.Top/Withdrawing.cs` to name the project it is withdrawing from.
+- [x] T032 [P] [US3] Update `src/Parley.Top/Withdrawing.cs` to name the project it is withdrawing from.
       The screen already knows which project it is in — `Shell.Current`, not another region's selection,
       which is the defect this repository has now recorded four times.
-- [ ] T033 [P] [US3] Add the terminal's half to `tests/Parley.Top.Tests`: withdrawing from one project
+- [x] T033 [P] [US3] Add the terminal's half to `tests/Parley.Top.Tests`: withdrawing from one project
       leaves the other entry standing.
 
 **Checkpoint**: green. Withdrawal is exact.
@@ -173,15 +185,15 @@ without which this is terminal-only.
 
 **Goal**: User Story 4. The scan stops answering with the first thing it finds.
 
-- [ ] T034 [US4] Add `tests/Parley.Cli.Tests/ScanReportsEveryProjectTests.cs`: a repository in three
+- [x] T034 [US4] Add `tests/Parley.Cli.Tests/ScanReportsEveryProjectTests.cs`: a repository in three
       projects, one in none, one unreadable. Three distinct answers, per the contract's rule 3.
-- [ ] T035 [US4] Change the working-tree reader in `src/Parley.Setup/EnrollCommand.cs` (line 590) to
+- [x] T035 [US4] Change the working-tree reader in `src/Parley.Setup/EnrollCommand.cs` (line 590) to
       return every enrolment.
-- [ ] T036 [US4] Change the committed-history reader (line 468, `git show <commit>:.mcp.json`) the same
+- [x] T036 [US4] Change the committed-history reader (line 468, `git show <commit>:.mcp.json`) the same
       way, so "registered before" names every project it was registered in.
-- [ ] T037 [P] [US4] Render the list in the scan's output and in `parley enroll plan`, one line per
+- [x] T037 [P] [US4] Render the list in the scan's output and in `parley enroll plan`, one line per
       project with the name and `owns` line that project knows it by.
-- [ ] T038 [P] [US4] Show the same in the terminal's add view, `src/Parley.Top/Adding.cs`, so the two
+- [x] T038 [P] [US4] Show the same in the terminal's add view, `src/Parley.Top/Adding.cs`, so the two
       surfaces do not disagree about what a repository already is (SC-005).
 
 **Checkpoint**: green. Every surface answers the same question the same way.
@@ -192,17 +204,17 @@ without which this is terminal-only.
 
 **Goal**: the asymmetry of `data-model.md` — many launch entries, at most one catalogue entry.
 
-- [ ] T039 Add `tests/Parley.Cli.Tests/CatalogueUniquenessTests.cs`: a workspace already catalogued in
+- [x] T039 Add `tests/Parley.Cli.Tests/CatalogueUniquenessTests.cs`: a workspace already catalogued in
       `alpha` is refused for `beta`, with both projects, the workspace and the other catalogue's path in
       the message; and the same workspace spelled differently (trailing separator, `/` against `\`) is
       still refused, because `WorkspacePath.SameRepository` says it is the same repository.
-- [ ] T040 Add `src/Parley.Setup/Catalogues.cs`: given the machine's manifest, a workspace and the
+- [x] T040 Add `src/Parley.Setup/Catalogues.cs`: given the machine's manifest, a workspace and the
       catalogue about to be written, find the same workspace in any other project's catalogue.
       `<remarks>` carries why the comparison is `WorkspacePath.SameRepository` and not a second one, and
       why this is not in `ProjectManifest.Validate` — a workspace is not in the manifest.
-- [ ] T041 Call it from `Enrolment.AddAsync` and from `EnrollCommand`'s apply, before anything is
+- [x] T041 Call it from `Enrolment.AddAsync` and from `EnrollCommand`'s apply, before anything is
       written. The launch entries are still written; it is the catalogue entry that is refused.
-- [ ] T042 [P] Add the reasoning to the refusal message: a node starts an agent with its workspace as
+- [x] T042 [P] Add the reasoning to the refusal message: a node starts an agent with its workspace as
       its working directory, so two nodes starting one workspace is two models editing one checkout.
 
 **Checkpoint**: green. SC-006.

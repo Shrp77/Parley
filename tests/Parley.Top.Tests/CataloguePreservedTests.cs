@@ -126,7 +126,7 @@ public sealed class CataloguePreservedTests : IDisposable
             "something-else",
             launch["mcpServers"]!["other"]!["command"]!.GetValue<string>());
 
-        Assert.NotNull(launch["mcpServers"]!["parley"]);
+        Assert.NotNull(launch["mcpServers"]!["parley-acme"]);
     }
 
     [Fact]

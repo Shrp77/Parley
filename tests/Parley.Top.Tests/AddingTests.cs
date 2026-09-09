@@ -77,7 +77,7 @@ public sealed class AddingTests : IAsyncDisposable
         await AddAsync(driving, shell, Workspace, "orders");
 
         var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
-        var env = launch["mcpServers"]!["parley"]!["env"]!;
+        var env = launch["mcpServers"]!["parley-acme"]!["env"]!;
 
         Assert.Equal("orders", env["PARLEY_AGENT"]!.GetValue<string>());
         Assert.Equal("acme", env[EnrollmentPlan.ProjectVariable]!.GetValue<string>());
@@ -213,11 +213,12 @@ public sealed class AddingTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_repository_that_already_belongs_to_another_project_is_refused_and_nothing_is_written()
+    public async Task A_repository_that_already_belongs_to_another_project_keeps_that_entry()
     {
-        // The probe FR-009 exists for. Silently re-pointing would move an agent out of one
+        // **A refusal until 009.** Re-pointing is still refused -- moving an agent out of one
         // deployment's roster and into another's, from a surface whose person may not know the
-        // first one exists.
+        // first exists. A second entry beside the first moves nothing, and this asserts the thing
+        // the old refusal was really protecting: the other project's entry, unchanged.
         await File.WriteAllTextAsync(
             LaunchFile,
             """
@@ -229,17 +230,22 @@ public sealed class AddingTests : IAsyncDisposable
             """,
             TestContext.Current.CancellationToken);
 
-        var before = await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken);
-
         using var driving = Driving.Open();
         using var shell = await OpenAsync(driving, catalogued: true);
 
         await AddAsync(driving, shell, Workspace, "orders");
 
-        Assert.Contains("elsewhere", shell.Said, StringComparison.Ordinal);
-        Assert.Contains(Adding.NothingWritten, shell.Said, StringComparison.Ordinal);
-        Assert.Equal(before, await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken));
-        Assert.DoesNotContain("orders", await CatalogueTextAsync(), StringComparison.Ordinal);
+        var servers = (JsonObject)JsonNode.Parse(
+            await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!["mcpServers"]!;
+
+        Assert.Equal(
+            ["parley", "parley-acme"],
+            servers.Select(pair => pair.Key).OrderBy(key => key, StringComparer.Ordinal));
+
+        Assert.Equal(
+            "elsewhere",
+            servers["parley"]!["env"]![EnrollmentPlan.ProjectVariable]!.GetValue<string>());
+
     }
 
     [Fact]

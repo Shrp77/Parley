@@ -429,6 +429,27 @@ public static class EnrollCommand
         {
         }
 
+        // FR-012. Said before the git history is consulted, because what a repository answers in
+        // *now* outranks what it once answered in — and because a repository already in one project
+        // is the one somebody is most likely to enrol into a second by accident, having seen no sign
+        // of the first.
+        switch (Existing(workspace))
+        {
+            case null:
+                found.Add("its .mcp.json could not be read");
+                break;
+
+            case { Count: > 0 } enrolled:
+                found.Add("answers in: " + string.Join(
+                    ", ",
+                    enrolled.Select(entry =>
+                        $"{entry.Project ?? "no project"} (as `{entry.Agent ?? "unnamed"}`)")));
+                break;
+
+            default:
+                break;
+        }
+
         if (PriorRegistration(workspace) is { } prior)
         {
             found.Add(prior);
@@ -576,20 +597,41 @@ public static class EnrollCommand
         return kept.ToString();
     }
 
-    private static (string? Agent, string? Owns) ReadExisting(string workspace)
+    /// <summary>Every enrolment a repository already has, or null when the file cannot be read.</summary>
+    /// <param name="workspace">The repository.</param>
+    /// <returns>The entries, empty when it is enrolled nowhere, null when nothing could be read.</returns>
+    /// <remarks>
+    /// <b>Three answers, not two.</b> Enrolled nowhere and could-not-be-read look identical to a
+    /// caller that returns an empty list for both, and they lead somewhere completely different: the
+    /// first is a repository to enrol and the second is a file to look at. The same distinction the
+    /// install scripts draw when a broker cannot be asked.
+    /// </remarks>
+    private static IReadOnlyList<LaunchEntry>? Existing(string workspace)
     {
         try
         {
             var path = Path.Combine(workspace, ".mcp.json");
 
-            if (!File.Exists(path))
-            {
-                return (null, null);
-            }
+            return File.Exists(path)
+                ? LaunchEntries.Read(JsonNode.Parse(File.ReadAllText(path))?["mcpServers"] as JsonObject)
+                : [];
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
+                                       or UnauthorizedAccessException or FormatException)
+        {
+            return null;
+        }
+    }
 
-            var entry = LaunchEntries
-                .Read(JsonNode.Parse(File.ReadAllText(path))?["mcpServers"] as JsonObject)
-                .FirstOrDefault();
+    private static (string? Agent, string? Owns) ReadExisting(string workspace)
+    {
+        try
+        {
+            // The first entry, and only as a suggestion to fill a blank row with. Which project it
+            // belongs to does not matter here — the person is being offered a name they already used
+            // for this repository, and a repository in three projects has three of those; the scan
+            // reports all three separately, as evidence rather than as a default.
+            var entry = Existing(workspace)?.FirstOrDefault();
 
             return (entry?.Agent, entry?.Owns);
         }
