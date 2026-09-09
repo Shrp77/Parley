@@ -201,29 +201,57 @@ public static class Enrolment
     /// is refused rather than silently overwriting the first — and refused loudly, since a caller
     /// that meant to add a second entry has just been told the file appeared underneath it.
     /// </remarks>
-    private static async Task OverwriteAsync(
+    private static Task OverwriteAsync(
         FileStream? stream,
         string path,
         string text,
         CancellationToken cancellationToken)
     {
+        // **Cancellation is honoured before the write and never during it.** Passing the token into
+        // the write left a cancelled run holding an empty `.mcp.json` -- created, truncated, and
+        // then abandoned -- which every reader afterwards reports as "not readable JSON". A few
+        // kilobytes is not worth being able to interrupt half way, and the file being destroyed by
+        // a Ctrl+C is a worse outcome than the write finishing.
+        cancellationToken.ThrowIfCancellationRequested();
+
         var bytes = Utf8.GetBytes(text);
 
         if (stream is null)
         {
-            using var created = new FileStream(
-                path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, useAsync: true);
+            var created = new FileStream(
+                path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, useAsync: false);
 
-            await created.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                created.Write(bytes);
+            }
+            catch
+            {
+                // Only ever a file this call created a line ago: CreateNew refuses an existing one.
+                created.Dispose();
 
-            return;
+                try
+                {
+                    File.Delete(path);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                }
+
+                throw;
+            }
+
+            created.Dispose();
+
+            return Task.CompletedTask;
         }
 
         stream.Position = 0;
         stream.SetLength(0);
+        stream.Write(bytes);
+        stream.Flush();
 
-        await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
-        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        return Task.CompletedTask;
     }
 
     /// <summary>How a note names the project it is talking about.</summary>
@@ -282,7 +310,19 @@ public static class Enrolment
         ArgumentException.ThrowIfNullOrWhiteSpace(project);
         ArgumentException.ThrowIfNullOrWhiteSpace(catalogueFile);
 
-        var catalogue = await ReadCatalogueAsync(catalogueFile, cancellationToken).ConfigureAwait(false);
+        // **The catalogue is held first, and both halves acquire in this order.** It has the same
+        // read-modify-write shape as the launch configuration and a commoner collision: six
+        // repositories joining one project is what setting a deployment up looks like, and six
+        // unguarded writers left agents told their enrolment had succeeded and missing from the file
+        // that makes them startable. Catalogue before launch in AddAsync and in WithdrawAsync, so
+        // two runs cannot each hold the half the other is waiting for.
+        using var catalogueHeld = await HoldAsync(catalogueFile, cancellationToken).ConfigureAwait(false);
+
+        var catalogue = catalogueHeld is null
+            ? await ReadCatalogueAsync(catalogueFile, cancellationToken).ConfigureAwait(false)
+            : ParseCatalogue(
+                await ReadAsync(catalogueHeld, cancellationToken).ConfigureAwait(false), catalogueFile);
+
         var agents = AgentsOf(catalogue, catalogueFile);
         var launchPath = LaunchPath(entry.Workspace);
 
@@ -344,7 +384,10 @@ public static class Enrolment
         if (plan.AddsNodeEntry)
         {
             List(agents, entry.Agent, entry.Workspace);
-            await SaveCatalogueAsync(catalogueFile, catalogue, cancellationToken).ConfigureAwait(false);
+
+            await SaveHeldCatalogueAsync(catalogueHeld, catalogueFile, catalogue, cancellationToken)
+                .ConfigureAwait(false);
+
             written.Add(catalogueFile);
         }
 
@@ -392,6 +435,12 @@ public static class Enrolment
         var notes = new List<string>();
         var written = new List<string>();
         var launchPath = LaunchPath(workspace);
+
+        // Catalogue before launch, the same order AddAsync takes them in. Two runs acquiring in
+        // opposite orders is how each comes to hold the half the other is waiting for.
+        using var catalogueHeld = catalogueFile is null
+            ? null
+            : await HoldAsync(catalogueFile, cancellationToken).ConfigureAwait(false);
 
         if (!File.Exists(launchPath))
         {
@@ -540,13 +589,18 @@ public static class Enrolment
         }
         else
         {
-            var catalogue = await ReadCatalogueAsync(catalogueFile, cancellationToken).ConfigureAwait(false);
+            var catalogue = catalogueHeld is null
+                ? await ReadCatalogueAsync(catalogueFile, cancellationToken).ConfigureAwait(false)
+                : ParseCatalogue(
+                    await ReadAsync(catalogueHeld, cancellationToken).ConfigureAwait(false), catalogueFile);
 
             if (catalogue["agents"] is JsonObject agents)
             {
                 if (Unlist(agents, agent))
                 {
-                    await SaveCatalogueAsync(catalogueFile, catalogue, cancellationToken).ConfigureAwait(false);
+                    await SaveHeldCatalogueAsync(catalogueHeld, catalogueFile, catalogue, cancellationToken)
+                        .ConfigureAwait(false);
+
                     written.Add(catalogueFile);
                     notes.Add($"{catalogueFile}: entry for '{agent}' removed");
                 }
@@ -581,7 +635,25 @@ public static class Enrolment
             return [];
         }
 
-        var text = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+        return ParseCatalogue(
+            await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false), path);
+    }
+
+    /// <summary>Reads a catalogue's text, refusing shapes that writing over would destroy.</summary>
+    /// <param name="text">What the file holds.</param>
+    /// <param name="path">Its path, for the message.</param>
+    /// <returns>The catalogue.</returns>
+    /// <exception cref="InvalidDataException">It is not a readable JSON object.</exception>
+    /// <remarks>
+    /// Split out so that a read through an exclusive handle refuses exactly what a read by path
+    /// refuses. Two parsers would agree until one of them was edited.
+    /// </remarks>
+    private static JsonObject ParseCatalogue(string text, string path)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return [];
+        }
 
         try
         {
@@ -650,6 +722,37 @@ public static class Enrolment
         }
 
         await File.WriteAllTextAsync(
+            path,
+            catalogue.ToJsonString(SerialisationOptions.Indented) + "\n",
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Writes a catalogue back through the handle it was read under.</summary>
+    /// <param name="held">The handle, or null when the file did not exist.</param>
+    /// <param name="path">The catalogue file.</param>
+    /// <param name="catalogue">What it should hold.</param>
+    /// <param name="cancellationToken">Stops the write.</param>
+    /// <returns>The write.</returns>
+    /// <remarks>
+    /// The public <see cref="SaveCatalogueAsync"/> stays for callers holding nothing — the terminal
+    /// creates a catalogue for a project that had none, which is a write with no read before it and
+    /// so nothing to be lost between them.
+    /// </remarks>
+    private static async Task SaveHeldCatalogueAsync(
+        FileStream? held,
+        string path,
+        JsonObject catalogue,
+        CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(path);
+
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        await OverwriteAsync(
+            held,
             path,
             catalogue.ToJsonString(SerialisationOptions.Indented) + "\n",
             cancellationToken).ConfigureAwait(false);
