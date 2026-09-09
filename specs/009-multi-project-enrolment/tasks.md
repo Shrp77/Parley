@@ -138,18 +138,28 @@ without which this is terminal-only.
       another project's, unknown, and there is no manifest. Four tests, four messages.
 - [x] T022 [US1] Pass the map from `Enrolment.AddAsync`, which reads the manifest its caller already
       resolved.
-- [ ] T023 [US1] Add `project` to `EnrollmentManifest` in `src/Parley.Setup/EnrollmentEntry.cs`.
-- [ ] T024 [US1] Add `--project <name>` to `parley enroll apply` and `plan` in
+- [~] T023 [US1] ~~Add `project` to `EnrollmentManifest`~~ — **superseded, not done, and the reason is
+      recorded in `EnrollCommand.RunAsync`'s own doc comment.** `ProjectResolution.TrySelect` already
+      refuses to guess when several projects are configured and none is named, so a second place to say
+      which project would be a second answer to a question that is already answered — and the two would
+      disagree first on the machine with more than one deployment, which is the only machine where it
+      matters. The project is taken from the entry point's own `--project` resolution instead.
+- [x] T024 [US1] Add `--project <name>` to `parley enroll apply` and `plan` in
       `src/Parley.Setup/EnrollCommand.cs`, resolved with the precedence `node_config` already documents,
       and **print which input won** — the same line, for the same reason: a run that names one thing and
       does another is worse than one that names none.
-- [ ] T025 [US1] Pass the project through `EnrollCommand`'s `Describe` call at line 803, which passes
+- [x] T025 [US1] Pass the project through `EnrollCommand`'s `Describe` call at line 803, which passes
       none today. This is `research.md` R5 and it is the task that makes User Story 1 performable in a
-      shell.
-- [ ] T026 [P] [US1] Update `src/Parley.Cli/Program.cs` help text for the new flag.
-- [ ] T027 [P] [US1] Add `tests/Parley.Cli.Tests/EnrollProjectFlagTests.cs`: the flag, the manifest
-      field, the flag winning over the field, and neither given — which must write exactly what today
-      writes.
+      shell. **This box was ticked before the work was done, and the gap was caught later while reading
+      flag handling** — the feature would otherwise have shipped enrollable from the terminal only,
+      which is exactly what R5 warned of.
+- [x] T026 [P] [US1] Update `src/Parley.Cli/Program.cs` help text for the new flag.
+- [x] T027 [P] [US1] ~~Add `tests/Parley.Cli.Tests/EnrollProjectFlagTests.cs`~~ — covered where the
+      behaviour lives rather than in a file named after the flag: `ProjectResolutionTests` holds the
+      precedence and which input won, `NoManifestParityTests` holds neither-given writing exactly what
+      today writes, and `EnrollCommandTests.The_same_repository_enrolls_into_two_projects_independently`
+      holds the flag reaching the key. A file added only to match a task name would have been a fourth
+      place keeping the same rules in step.
 
 **Checkpoint**: green. A repository can be enrolled twice from either surface.
 
@@ -223,15 +233,18 @@ without which this is terminal-only.
 
 ## Phase 7: What a person is shown, and what is removed
 
-- [ ] T043 [P] Update the three illustrations for FR-014 — `README.md`, the plugin's
+- [x] T043 [P] Update the three illustrations for FR-014 — `README.md`, the plugin's
       `plugins/parley/commands/setup.md`, and `src/Parley.Web/Pages/Projects/Register.cshtml` — to show
       the project-keyed shape and say what the bare `parley` key means. README must still stand alone.
-- [ ] T044 Remove `parley console`, `--with-console`, `--console` and `--no-console`, which 008 moved to
+      **There are four, not three.** `src/Parley.Mcp/Program.cs` opens with a header comment showing
+      the same file, which is the illustration an agent's own server carries; a task naming three of
+      four is how the fourth comes to be the one that still says `parley`.
+- [x] T044 Remove `parley console`, `--with-console`, `--console` and `--no-console`, which 008 moved to
       this version and called a commitment rather than a second reprieve. **`InstalledEntry` keeps
       reading `--console`**, for entries written before 0.19.0: the removal is stop writing, stop
       accepting, keep reading.
-- [ ] T045 Bump `VersionPrefix` to `0.22.0` in `Directory.Build.props`, in the same change.
-- [ ] T046 [P] Update `plugins/parley/commands/setup.md` and the plugin's skill for the removed verb,
+- [x] T045 Bump `VersionPrefix` to `0.22.0` in `Directory.Build.props`, in the same change.
+- [x] T046 [P] Update `plugins/parley/commands/setup.md` and the plugin's skill for the removed verb,
       remembering that the deprecation message itself counts as a verb to the test that compares them.
 
 ---
@@ -241,7 +254,7 @@ without which this is terminal-only.
 Run **after the last source edit**, not alongside it. This has been caught by the owner three separate
 times, and 008's gate found a defect introduced by the person writing the sentence forbidding it.
 
-- [ ] T047 Lens 1 (correctness and concurrency) — three consecutive runs with no finding above low, each
+- [x] T047 Lens 1 (correctness and concurrency) — three consecutive runs with no finding above low, each
       probing something the previous did not. Logged in `REVIEW-LEDGER.md`, clean runs included.
 - [ ] T048 Lens 2 (security and data integrity) — three consecutive clean runs. **This is the lens that
       matters most here**: every path in this feature edits a file in somebody's repository, and three
