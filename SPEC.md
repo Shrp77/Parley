@@ -1781,6 +1781,12 @@ CREATE TABLE instructions (
   -- mean two arguments the next time evidence says move it.
   CHECK (length(text) <= 8000),
 
+  -- And the agent's half of the same exchange, which had no bound at all until it was looked for.
+  -- An operator's words are typed by a person and an agent's are produced by a model; if either
+  -- needed the cap less it was the one that already had it. §16 settles the rest: anything able to
+  -- reach the broker can claim to be the node reporting, so "the node is ours" bounds nothing.
+  CHECK (reply IS NULL OR length(reply) <= 8000),
+
   -- Settled and unsettled are one fact, so they move together or the row is lying about one of
   -- them. A reply belongs to a settled instruction: an agent that has not been given the turn
   -- yet cannot have said anything, and a row claiming otherwise would be read as an answer.

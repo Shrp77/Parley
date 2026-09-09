@@ -60,4 +60,35 @@ public static class MessageLimits
     /// </para>
     /// </remarks>
     public const int MaxPayloadCharacters = 8000;
+
+    /// <summary>What is put in place of the part of a reply that did not fit.</summary>
+    /// <remarks>
+    /// <para>
+    /// A reply is an agent's answer to an operator's instruction, and until the review gate looked
+    /// it was the one piece of text in the store with no bound at all — the instruction beside it
+    /// has carried the cap since the migration that set it.
+    /// </para>
+    /// <para>
+    /// <b>Truncated rather than refused, and the direction matters.</b> Refusing the report would
+    /// leave the instruction unsettled and lose the answer entirely, which is the failure the whole
+    /// readback exists to remove. A shortened answer is worth more than none, and saying so in the
+    /// text is what stops a reader treating the cut as the agent's own ending.
+    /// </para>
+    /// </remarks>
+    public const string Truncated = " [... the rest was over the cap]";
+
+    /// <summary>Cuts text to the cap, saying so where it was cut.</summary>
+    /// <param name="text">What was said.</param>
+    /// <returns>The text, at most <see cref="MaxPayloadCharacters"/> characters long.</returns>
+    /// <remarks>
+    /// Here rather than at the one caller because the storage schema performs the same cut when it
+    /// carries old rows across, and two implementations of "shorten to the cap" would disagree
+    /// about the boundary the first time either was edited. §9.3's argument, one level out: the
+    /// CHECK is the enforcement, and this is what keeps every writer under it.
+    /// </remarks>
+    public static string Fit(string? text) =>
+        text is null || text.Length <= MaxPayloadCharacters
+            ? text ?? string.Empty
+            : string.Concat(
+                text.AsSpan(0, MaxPayloadCharacters - Truncated.Length), Truncated);
 }
