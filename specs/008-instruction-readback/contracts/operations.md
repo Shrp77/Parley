@@ -131,12 +131,22 @@ always true and invite a later reader to think they matter.
 ## The command line
 
 ```
-parley instructions [<agent>] [--limit <n>]
+parley instructions [<agent>]
 ```
 
 Prints identifier, agent, outcome, when issued, when settled, and the agent's reply. The same shape
 as `parley open` and `parley waiting`, and what somebody diagnosing a deployment over SSH reaches
 for.
+
+**A draft of this document promised `--limit <n>` and the command never had one.** Removed rather
+than implemented, and the reasoning is recorded because the alternative is defensible: the command
+prints one page, bounded by the broker at fifty, newest first, and says nothing about there being
+more. That is a silent subset, which is the shape this repository distrusts.
+
+What settles it is that `parley open` does exactly the same thing and so does every other listing
+here — the broker bounds the page, the command prints it, and none of them pages. A flag on this one
+would be an inconsistency dressed as a fix. The honest repair is paging or a "there are more" line
+across every listing at once, which is somebody's afternoon and not this feature's.
 
 **It prints the instruction text and the reply, unlike `parley open`** which deliberately prints not
 one word of any payload. The difference is whose words they are: `open` lists conversations between
