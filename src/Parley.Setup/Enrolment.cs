@@ -541,6 +541,23 @@ public static class Enrolment
         ArgumentException.ThrowIfNullOrWhiteSpace(project);
         ArgumentException.ThrowIfNullOrWhiteSpace(catalogueFile);
 
+        // **The rules were the bulk command's and are the code's now.** `EnrollmentPlan.Validate`
+        // holds every one of them — a name an `AgentName` can parse, an owns line inside the cap the
+        // broker's schema enforces and free of anything that could break its own roster row, an
+        // approval a person actually gave — and `EnrollCommand` called it before writing anything
+        // while this, the other public way in, called nothing. A name with a newline, `Orders`,
+        // `9orders`, an empty name and a five-thousand character owns line were all written happily.
+        //
+        // Neither failure is visible where it is caused. The launch configuration is the whole of who
+        // an agent is, so a name no `AgentName` parses produces a repository that announces itself and
+        // appears on no roster; an owns line past the cap is refused by a CHECK constraint at
+        // registration, a long way from the person who typed it. One rule applied to half the callers
+        // is worse than either applied whole.
+        if (EnrollmentPlan.Validate([entry], Directory.Exists, _ => "enrolment") is { Count: > 0 } wrong)
+        {
+            throw new InvalidDataException(string.Join("; ", wrong));
+        }
+
         // The machine-wide gate first, then this project's catalogue, then the repository's launch
         // configuration. Three files, one order, everywhere -- the gate is the only thing that can
         // make "nobody else starts this workspace" and "now I do" one act, because those touch

@@ -165,6 +165,13 @@ public static class EnrollmentPlan
     /// </summary>
     /// <param name="entries">The repositories to enroll.</param>
     /// <param name="workspaceExists">Says whether a workspace is a directory that is there.</param>
+    /// <param name="row">
+    /// How to name row <c>i</c> in a problem, or null for the manifest's own <c>agents[i]</c>.
+    /// **Here because these rules stopped being the bulk command's.** <c>Enrolment.AddAsync</c> is the
+    /// other way in and enforced none of them, so a name no agent could hold and an owns line past the
+    /// schema's cap were both written through it. A caller with no manifest needs a way to name the
+    /// thing being refused that does not read as a row number it does not have.
+    /// </param>
     /// <returns>One line per problem, empty when the manifest is usable.</returns>
     /// <remarks>
     /// Whole-manifest rather than per-repository, and before any write, because a half-enrolled
@@ -174,7 +181,8 @@ public static class EnrollmentPlan
     /// <exception cref="ArgumentNullException">An argument is null.</exception>
     public static IReadOnlyList<string> Validate(
         IReadOnlyList<EnrollmentEntry?> entries,
-        Func<string, bool> workspaceExists)
+        Func<string, bool> workspaceExists,
+        Func<int, string>? row = null)
     {
         ArgumentNullException.ThrowIfNull(entries);
         ArgumentNullException.ThrowIfNull(workspaceExists);
@@ -186,7 +194,7 @@ public static class EnrollmentPlan
         for (var i = 0; i < entries.Count; i++)
         {
             var entry = entries[i];
-            var where = $"agents[{i}]";
+            var where = row?.Invoke(i) ?? $"agents[{i}]";
 
             if (entry is null)
             {

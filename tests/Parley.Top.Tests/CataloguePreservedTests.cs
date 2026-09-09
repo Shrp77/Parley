@@ -20,6 +20,15 @@ namespace Parley.Top.Tests;
 /// which somebody may have changed it. Reading it again at the moment of writing is what makes the
 /// write true, and this is the probe that it does.
 /// </para>
+/// <para>
+/// <b>These enrolled <c>orders@test</c> and asserted a catalogue keyed by it, which is a shape no node
+/// can act on.</b> A catalogue is keyed by role — <c>NodeCatalogue.WorkspaceFor</c> looks up
+/// <c>agent.Role</c> and <c>NodesService.RequestStart</c> guards on <c>Startable.Contains(agent.Role)</c>
+/// — so an entry under a qualified name is never found and never started. The adapter accepts either
+/// spelling in <c>PARLEY_AGENT</c>, which is what made the qualified one look admissible here; that is
+/// the adapter's tolerance for a hand-written file, not a licence for this writer to emit either.
+/// Corrected during lens 2 run 20, along with the enrolment that had been willing to write it.
+/// </para>
 /// </remarks>
 public sealed class CataloguePreservedTests : IDisposable
 {
@@ -55,14 +64,14 @@ public sealed class CataloguePreservedTests : IDisposable
     [Fact]
     public async Task An_agent_added_beside_another_leaves_the_other_where_it_was()
     {
-        await WriteCatalogueAsync(("billing@test", "/srv/billing"));
+        await WriteCatalogueAsync(("billing", "/srv/billing"));
 
-        await AddAsync("orders@test");
+        await AddAsync("orders");
 
         var agents = await AgentsAsync();
 
-        Assert.True(agents.ContainsKey("orders@test"));
-        Assert.Equal("/srv/billing", agents["billing@test"]!["workspace"]!.GetValue<string>());
+        Assert.True(agents.ContainsKey("orders"));
+        Assert.Equal("/srv/billing", agents["billing"]!["workspace"]!.GetValue<string>());
     }
 
     [Fact]
@@ -74,12 +83,12 @@ public sealed class CataloguePreservedTests : IDisposable
 
         await WriteCatalogueAsync(("inventory@test", "/srv/inventory"));
 
-        await AddAsync("orders@test");
+        await AddAsync("orders");
 
         var agents = await AgentsAsync();
 
         Assert.True(agents.ContainsKey("inventory@test"));
-        Assert.True(agents.ContainsKey("orders@test"));
+        Assert.True(agents.ContainsKey("orders"));
     }
 
     [Fact]
@@ -98,7 +107,7 @@ public sealed class CataloguePreservedTests : IDisposable
         await File.WriteAllTextAsync(
             CataloguePath, catalogue.ToJsonString(), TestContext.Current.CancellationToken);
 
-        await AddAsync("orders@test");
+        await AddAsync("orders");
 
         var written = JsonNode.Parse(
             await File.ReadAllTextAsync(CataloguePath, TestContext.Current.CancellationToken))!;
@@ -117,7 +126,7 @@ public sealed class CataloguePreservedTests : IDisposable
 
         await WriteCatalogueAsync();
 
-        await AddAsync("orders@test");
+        await AddAsync("orders");
 
         var launch = JsonNode.Parse(
             await File.ReadAllTextAsync(LaunchPath, TestContext.Current.CancellationToken))!;
@@ -143,7 +152,7 @@ public sealed class CataloguePreservedTests : IDisposable
 
         await WriteCatalogueAsync();
 
-        await AddAsync("orders@test");
+        await AddAsync("orders");
 
         Assert.Equal(
             before,
@@ -169,7 +178,7 @@ public sealed class CataloguePreservedTests : IDisposable
 
         await WriteCatalogueAsync();
 
-        await AddAsync("orders@test");
+        await AddAsync("orders");
 
         var after = await File.ReadAllTextAsync(InstructionsPath, TestContext.Current.CancellationToken);
 
