@@ -221,10 +221,6 @@ var logPath = TakeOption("--log", null);
 var webUiOn = TakeOption("--web-ui", null);
 var noWebUi = TakeFlag("--no-web-ui");
 
-// Resolved once. `serve --with-console` and `autostart install` both need the address, and
-// a default written in two places is two answers to one question that agree only until
-// somebody changes one of them -- here, by installing an entry pointing somewhere the
-// running console is not.
 // Resolved once. `serve --with-web-ui` and `autostart install` both need the address, and a
 // default written in two places is two answers to one question that agree only until somebody
 // changes one of them -- here, by installing an entry pointing somewhere the running web UI is not.
