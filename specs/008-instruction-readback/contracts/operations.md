@@ -95,10 +95,33 @@ Task<InstructionPage> InstructionsAsync(
 |---|---|
 | `ListAsync` | The readback: optional agent, optional identifier, bounded page, newest first |
 | `SweepAsync` | Settles every pending instruction issued before an instant as failed |
-| `SettleForMachineAsync` | Settles every pending instruction for agents on one machine as failed |
 
-`GetAsync` stays. Narrowing by identifier is a genuine single-row read and expressing it as a
-one-element list would be worse for both callers.
+**Two entries stood here and the review gate removed both.** They are recorded rather than deleted,
+because each was wrong for a reason worth keeping.
+
+`SettleForMachineAsync` settled a departing node's turns. It looked obviously right — §11.5 gives
+delivery to the node, so its turns went with it — and it was built, then probed: a node's *stream*
+ending is not its process dying, so a network blip settled the record while the agent worked on, and
+the real answer was refused when it arrived. That is the defect this whole feature exists to remove.
+A turn whose node has gone now stays running until `SweepAsync` presumes it dead.
+
+`GetAsync` was kept on the argument that narrowing by identifier is a genuine single-row read and a
+one-element page would be worse. That is a fine argument for a method nothing was using: every
+caller reaches `ListAsync(id:)`, and two ways to read one row is the drift this repository's checks
+exist for.
+
+`PruneReply` gains `instructions_removed`, counted apart from messages and reported even when zero.
+The floors that hold a message back mean nothing for an instruction, so one number would report a
+held count explaining nothing about half of it — and a pass that removed five hundred instructions
+and no messages would otherwise print *"Removed 0 message(s)."*, which reads as nothing having
+happened.
+
+The schema gains `CHECK (reply IS NULL OR length(reply) <= 8000)` in `005_instruction_reply_cap.sql`,
+and `MessageLimits.Fit` keeps the reporting edge under it. An agent's reply had no bound of any kind
+while the instruction beside it had carried rule 8.5's cap for two migrations; §16 says anything
+able to reach the broker can claim to be the node reporting, so "the node is ours" bounded nothing.
+Truncated rather than refused, because refusing would leave the instruction unsettled and lose the
+answer.
 
 `Pruner` gains its own delete statement for instructions — **not** a clause on the messages one,
 because the message delete carries three floors about exchanges, deduplication and undelivered
