@@ -23,6 +23,7 @@ public sealed class TellingActionTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
     private static readonly AgentName Arvind = AgentName.Create("arvind@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 9, 8, 9, 0, 0, TimeSpan.Zero);
 
     private readonly SqliteConnection _connection = ParleyDatabase.OpenInMemory();
@@ -114,6 +115,54 @@ public sealed class TellingActionTests : IAsyncDisposable
 
         Assert.Contains(shown, line => line.Contains("retry policy", StringComparison.Ordinal));
         Assert.Contains(shown, line => line.Contains("three files", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task It_shows_only_the_selected_agents_instructions()
+    {
+        // **Lens 2 probe: disclosure on the surface rather than in the query.** The narrowing is
+        // right at the store and right on the wire; what has not been driven is the surface passing
+        // the *wrong agent* -- reading the name from a URL, a stale field, or another region's
+        // selection. This surface has got the last of those wrong five times.
+        await new AgentRepository(_connection).UpsertAsync(
+            new AgentRecord(Billing, "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active),
+            TestContext.Current.CancellationToken);
+
+        _ = await TellAsync("what orders was told", "orders answered");
+
+        var billing = await new InstructionRepository(_connection).RecordAsync(
+            Billing, "what billing was told", T0, TestContext.Current.CancellationToken);
+
+        _ = await new InstructionRepository(_connection).SettleAsync(
+            billing, InstructionOutcome.Taken, "billing answered", T0.AddMinutes(1),
+            TestContext.Current.CancellationToken);
+
+        using var driving = Driving.Open();
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+        await shell.RefreshAsync(TestContext.Current.CancellationToken);
+        await shell.Settled;
+
+        await Walking.GoAsync(shell, Viewing.Project);
+
+        driving.Row(shell.Agents.List, Orders.Value);
+        await shell.Settled;
+
+        await shell.ShowTold();
+        await shell.Settled;
+
+        Assert.NotNull(shell.Told);
+
+        var shown = string.Join(" | ", shell.Told!.Shown);
+
+        Assert.Contains("what orders was told", shown, StringComparison.Ordinal);
+        Assert.Contains("orders answered", shown, StringComparison.Ordinal);
+
+        // Neither the other agent's words nor its answer.
+        Assert.DoesNotContain("what billing was told", shown, StringComparison.Ordinal);
+        Assert.DoesNotContain("billing answered", shown, StringComparison.Ordinal);
     }
 
     [Fact]

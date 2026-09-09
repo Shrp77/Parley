@@ -37,7 +37,7 @@ The constitution requires probing rather than reasoning. These are written and w
 
 - [ ] T009 Add `InstructionRepository.ListAsync`: optional agent, optional identifier, bounded page, newest first, opaque continuation. Refuses nothing — the name check belongs at the wire edge where a bad name is a caller error.
 - [ ] T010 [P] Add `InstructionRepository.SweepAsync`, settling every pending instruction issued before an instant as failed. `WHERE outcome = 'pending'` carries FR-016 for free; a test says so rather than an inference.
-- [ ] T011 [P] Add `InstructionRepository.SettleForMachineAsync`, settling every pending instruction for agents on one machine as failed.
+- [x] ~~T011 Add `InstructionRepository.SettleForMachineAsync`~~ — **built, then removed by the review gate (lens 1).** A node's *stream* ending is not its process dying, so settling on it destroyed the agent's answer on every network blip: the record shut, and the real report was refused on arrival. That is the defect this feature exists to remove, reached through a different door. A turn whose node has gone now stays running until T010's sweep presumes it dead.
 - [ ] T012 Add the pruner's own delete statement for instructions in `src/Parley.Store/Pruner.cs`, aged on `issued_utc`. `<remarks>` carries the trap: a pending row has no `settled_utc`, so ageing on settlement would skip exactly the rows that most need a bound.
 
 ### The broker
@@ -54,7 +54,7 @@ The constitution requires probing rather than reasoning. These are written and w
 
 - [ ] T017 **Stop settling on give-up** in `src/Parley.Server/OperatorsService.cs`. This is the defect. The wait drops to 30 seconds and returns `pending` carrying the identifier; nothing is written because the broker stopped waiting.
 - [ ] T018 Bind `Instructions` in `OperatorsService`, clamping the page the way `ListConversations` clamps its own, and refusing an unparseable agent filter rather than ignoring it (FR-010).
-- [ ] T019 Settle a departed node's running instructions in `BrokerRuntime.ReleaseNodeAsync`, inside the unit of work that already records the departure.
+- [x] ~~T019 Settle a departed node's running instructions in `BrokerRuntime.ReleaseNodeAsync`~~ — **built, then removed with T011 and for the same reason.** The seam is still the right one and the comment left there says why nothing uses it, because it is the obvious place for somebody to add this back.
 
 ### The client and the command line
 
@@ -120,7 +120,7 @@ T013, T014             broker
 T015, T016             wire  ──► regenerates Parley.Transport
      │
      ▼
-T017, T018, T019       server   ◄── T017 is the defect being fixed
+T017, T018             server   ◄── T017 is the defect being fixed
      │
      ▼
 T020 ──► T021, T022    client, then the command that binds it
@@ -147,3 +147,21 @@ T039..T043             the gate, run after the last edit and not alongside it
   changes a wire contract and breaks a live autostart entry cannot be reverted in halves.
 - **No push, notification or streaming task.** All three are out of scope in the spec and all three
   are the kind of thing that arrives as "while we're here".
+
+## What the review gate changed after the tasks were written
+
+Four findings above low, all fixed, all recorded in `REVIEW-LEDGER.md` with the probe that produced
+them. Two removed work this list had asked for, which is why the entries above are struck through
+rather than deleted:
+
+1. **A departing node must not settle its turns** (T011, T019). A stream ending is not a process
+   dying.
+2. **An agent's reply had no bound at all.** `005_instruction_reply_cap.sql` and `MessageLimits.Fit`
+   — not in this list, because nobody had noticed the column.
+3. **`InstructionsRemoved` was computed and shown to nobody.** The wire carried no field for it, so
+   `parley prune` reported only messages.
+4. **`parley instructions` flattened the reply and not the instruction**, so a newline in an
+   operator's own words forged a line in output that scripts read.
+
+The two-step sequencing held: step 1 shipped at 0.21.0 and step 2 at 0.21.1, and every finding above
+was fixed on top rather than folded back into either.
