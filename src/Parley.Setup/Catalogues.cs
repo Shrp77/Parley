@@ -112,6 +112,14 @@ public static class Catalogues
 
             foreach (var role in read.Roles)
             {
+                // **A role no agent name can hold is skipped, and that is the rule rather than a
+                // gap.** It looks like a blind spot — a hand-edited catalogue hiding its workspace
+                // from this check — and a probe was written expecting exactly that. It is not:
+                // FR-013 exists because two nodes *starting* one working tree is two models editing
+                // it, and such an entry is unstartable by construction, since
+                // `NodesService.RequestStart` compares against `agent.Role` of a parsed `AgentName`.
+                // Refusing a second project on the strength of a line that can never be acted on
+                // would be the wrong answer, not a safer one.
                 if (!AgentName.TryCreate($"{role}@{NodeCatalogue.Machine}", out var agent))
                 {
                     continue;

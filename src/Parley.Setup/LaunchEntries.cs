@@ -112,7 +112,11 @@ public static class LaunchEntries
                 continue;
             }
 
-            var env = node?["env"] as JsonObject;
+            // `node?["env"]` throws when the node is a string or an array: JsonNode's indexer calls
+            // AsObject and refuses. Somebody's hand edit -- `"parley-alpha": "parley-mcp"` is an easy
+            // thing to type -- and the caller's next move is to decide whether it may write there, so
+            // an exception here is a crash where a refusal was needed.
+            var env = (node as JsonObject)?["env"] as JsonObject;
             var fromKey = LaunchKey.ProjectOf(key);
             var fromEnv = Text(env, EnrollmentPlan.ProjectVariable);
 
@@ -123,7 +127,7 @@ public static class LaunchEntries
                 Text(env, EnrollmentPlan.AgentVariable),
                 Text(env, EnrollmentPlan.OwnsVariable),
                 Text(env, EnrollmentPlan.BrokerVariable),
-                node?["command"] is JsonValue command
+                (node as JsonObject)?["command"] is JsonValue command
                 && command.TryGetValue<string>(out var name)
                     ? name
                     : null,
