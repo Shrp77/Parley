@@ -142,11 +142,31 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 outcome.Destroyed.Select(d => $"{d.Rows} from {d.Table}"));
     }
 
+    /// <summary>Puts an instruction's outcome into a sentence.</summary>
+    /// <param name="action">The call in flight.</param>
+    /// <returns>What to tell the operator.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Five outcomes, five sentences, and the fifth used to be unreachable.</b> This method
+    /// ended with <c>_ =&gt; "Still pending."</c> — a branch nothing could produce, because the
+    /// broker turned its own impatience into <c>failed</c> and settled the record with it. So the
+    /// operator was told the turn had not completed while the agent was still working, and the real
+    /// answer was refused when it arrived.
+    /// </para>
+    /// <para>
+    /// <b>The page no longer waits for the turn.</b> It waits for the broker's own short patience
+    /// and then says where the answer will appear. A turn is a model working on a repository and
+    /// can run for as long as the machine hosting it allows; a browser request cannot, and tying
+    /// the two together is how a lost connection came to mean a lost answer.
+    /// </para>
+    /// </remarks>
     private static async Task<string> DescribeInstruction(Task<InstructionResult> action)
     {
         var result = await action.ConfigureAwait(false);
 
-        // Four outcomes, four sentences. Declined is deliberately not phrased as a failure.
+        // Declined is deliberately not phrased as a failure. §10.2 requires the two told apart, and
+        // an interface that renders refusal as malfunction teaches whoever reads it to work around
+        // the agent instead of asking why.
         return result.Outcome switch
         {
             InstructionOutcome.Taken => $"Taken. {result.Reply}",
@@ -154,7 +174,10 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             InstructionOutcome.Undeliverable =>
                 "The machine that holds this agent is not connected, so nothing was delivered.",
             InstructionOutcome.Failed => $"The turn did not complete. {result.Reply}",
-            _ => "Still pending."
+
+            // The ordinary answer for any real piece of work, and it must not read as a fault.
+            _ => "Given to the agent, and the turn is still running. Its answer will appear under "
+                 + "What you have told it on the agent's page — you can close this."
         };
     }
 }

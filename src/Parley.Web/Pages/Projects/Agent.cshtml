@@ -93,4 +93,53 @@ else
     <p>
         <a href="/Projects/Agents?project=@Model.Project&amp;participant=@agent.Name.Value">Conversations this agent is party to</a>
     </p>
+
+    <h2>What you have told it</h2>
+
+    @if (Model.Instructions.Count == 0)
+    {
+        <p>Nothing yet.</p>
+    }
+    else
+    {
+        <p>
+            A turn can take longer than a page will wait, so an instruction still running is an
+            ordinary state rather than a fault. Its answer appears here when the agent finishes.
+        </p>
+
+        <dl>
+            @foreach (var instruction in Model.Instructions)
+            {
+                <dt>
+                    <span>@instruction.IssuedUtc.ToLocalTime().ToString("g")</span>
+                    @if (instruction.StillRunning)
+                    {
+                        <strong>still running</strong>
+                    }
+                    else if (instruction.Outcome == InstructionOutcome.Declined)
+                    {
+                        @* A decline is not a failure and section 10.2 requires them told apart. An
+                           interface rendering refusal as malfunction teaches whoever reads it to
+                           work around the agent instead of asking why. *@
+                        <span>declined, which is its right</span>
+                    }
+                    else
+                    {
+                        <span>@instruction.Outcome.ToString().ToLowerInvariant()</span>
+                    }
+                </dt>
+                <dd>
+                    @* Razor encodes both of these. The reply is the agent's own words and is kept
+                       in its own element so it cannot read as this page speaking. *@
+                    <p>@instruction.Text</p>
+                    @if (instruction.Reply is { Length: > 0 } said)
+                    {
+                        <blockquote>
+                            <p>@said</p>
+                        </blockquote>
+                    }
+                </dd>
+            }
+        </dl>
+    }
 }

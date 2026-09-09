@@ -41,6 +41,22 @@ public sealed class AgentModel(BrokerDirectory directory) : PageModel
     /// <summary>When the broker answered.</summary>
     public DateTimeOffset AsOf { get; private set; }
 
+    /// <summary>What this operator told this agent lately, and what became of each.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Here rather than on a page of its own, because it is a fact about this agent.</b> A
+    /// second page would be a second place to look for it, and somebody who has just instructed an
+    /// agent is already looking at this one.
+    /// </para>
+    /// <para>
+    /// <b>It is what makes the composer safe to make non-blocking.</b> Issuing an instruction used
+    /// to hold the browser's request open for the whole turn, and the reply existed nowhere else —
+    /// so a page that returned immediately without this would have made the answer less reachable
+    /// rather than more.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<InstructionRecord> Instructions { get; private set; } = [];
+
     /// <summary>Reads one agent out of the registry.</summary>
     /// <returns>The page, or a redirect when the project is not one this machine knows.</returns>
     /// <remarks>
@@ -67,6 +83,25 @@ public sealed class AgentModel(BrokerDirectory directory) : PageModel
 
         Problem = read.Problem;
         AsOf = DateTimeOffset.Now;
+
+        // Only for an agent the registry actually holds, and only when the broker answered. A
+        // listing for a name that is not registered would be empty for two different reasons —
+        // nothing was ever said to it, and there is no such agent — which a reader cannot tell
+        // apart from an empty list.
+        if (Record is { } known)
+        {
+            var told = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(directory.ClientFor(project))
+                    .InstructionsAsync(known.Name, cancellationToken: HttpContext.RequestAborted)
+                    .ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            Instructions = told.Value?.Instructions ?? [];
+
+            // Not overwritten if the registry read already failed: the first problem is the one
+            // that explains the page, and the second is a consequence of it.
+            Problem ??= told.Problem;
+        }
 
         return Page();
     }

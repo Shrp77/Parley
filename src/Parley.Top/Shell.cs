@@ -730,6 +730,12 @@ internal sealed class Shell : Window
                 ? new[] { new RegionAction('t', TakeThisSeat + mine.Name, SeatSelected) }
                 : Array.Empty<RegionAction>(),
 
+            // What the operator told this agent, and what it said back. Never for a seat: a seat
+            // is a person, and nobody instructs themselves.
+            .. Agents.Selected is { Seat: false } told
+                ? new[] { new RegionAction('w', ToldTitle + told.Name, ShowTold) }
+                : Array.Empty<RegionAction>(),
+
             .. Seats is null
                 ? Array.Empty<RegionAction>()
                 : Held is null
@@ -1197,6 +1203,58 @@ internal sealed class Shell : Window
 
     /// <summary>What taking the seat under the cursor is called, before the name.</summary>
     internal const string TakeThisSeat = "Take the seat: ";
+
+    /// <summary>What showing an agent's instructions is called, before the name.</summary>
+    internal const string ToldTitle = "What you have told ";
+
+    /// <summary>The instructions dialog, while one is open.</summary>
+    internal Telling? Told { get; private set; }
+
+    /// <summary>Shows what the operator told the agent under the cursor.</summary>
+    /// <returns>When the reading has finished.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Read-only, and this surface issues no instruction.</b> What was missing was never a second
+    /// way to give one — it was any way at all to find out what became of one, because a reply
+    /// reachable only through the call that asked for it survives exactly as long as that
+    /// connection. Somebody at a terminal over SSH is precisely the person who cannot open the
+    /// browser surface instead.
+    /// </para>
+    /// <para>
+    /// The project comes from <see cref="Current"/> and never from the projects region's selection.
+    /// That is the defect that has now appeared five times: a project view gives this region the
+    /// screen, so the projects list is off screen and its selection is null.
+    /// </para>
+    /// </remarks>
+    internal Task ShowTold()
+    {
+        if (App is not { } app
+            || Current is not { } project
+            || Agents.Selected is not { Seat: false } row
+            || !AgentName.TryCreate(row.Name, out var agent))
+        {
+            return Task.CompletedTask;
+        }
+
+        Queue(async cancellationToken =>
+        {
+            var told = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(_directory.ClientFor(project))
+                    .InstructionsAsync(agent, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false)).ConfigureAwait(false);
+
+            if (!told.Reachable)
+            {
+                Said = told.Problem!;
+
+                return;
+            }
+
+            Told = Telling.Open(app, agent, told.Value?.Instructions ?? []).View;
+        });
+
+        return Settled;
+    }
 
     /// <summary>What a retired seat's dialog is called.</summary>
     internal const string RetiredSeatTitle = "That seat is retired";

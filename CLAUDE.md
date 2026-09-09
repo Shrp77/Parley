@@ -595,7 +595,7 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/008-instruction-readback/` — 0.21.0, in progress. An operator instruction
+- **Active plan**: `specs/008-instruction-readback/` — 0.21.1, in progress. An operator instruction
   must survive the turn it asks for. Three defects, all established by probe or by reading rather
   than by reasoning:
 
