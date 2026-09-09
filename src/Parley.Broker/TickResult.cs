@@ -11,6 +11,10 @@ namespace Parley.Broker;
 /// be taken as agreeing.
 /// </param>
 /// <param name="Retention">What the retention policy of §9.4 removed and what the floor held.</param>
+/// <param name="InstructionsAbandoned">
+/// How many operator instructions were settled as failed for having outlived any turn a node is
+/// permitted to run.
+/// </param>
 /// <remarks>
 /// A wrapper rather than three more fields on <see cref="ReapResult"/>, because the two sweeps
 /// answer to different sections and would drift if merged. <see cref="ReapResult"/> is the
@@ -22,4 +26,5 @@ namespace Parley.Broker;
 public sealed record TickResult(
     ReapResult Exchanges,
     int ConversationsConcluded,
-    PruneResult Retention);
+    PruneResult Retention,
+    int InstructionsAbandoned = 0);

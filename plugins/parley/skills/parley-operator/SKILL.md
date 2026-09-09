@@ -145,6 +145,10 @@ parley notifications                  how much Notify carries, and who can judge
 parley waiting <agent>                how many messages and polls await an agent
 parley open                           conversations with an exchange still open, and who is in
                                       them; what stopping the broker would interrupt
+parley instructions [<agent>]         what you told your agents, what became of each, and what
+                                      they said back. A turn can outlast the call that asked for
+                                      it, so "still running" is an ordinary answer and this is
+                                      where the reply turns up afterwards
 parley --help                         the same list, on stdout, exiting zero
 ```
 

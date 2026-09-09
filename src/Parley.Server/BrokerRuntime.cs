@@ -104,6 +104,17 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public TimeProvider Clock { get; }
 
     /// <summary>
+    /// Gets how long <c>Instruct</c> waits for a turn before answering that it is still running.
+    /// </summary>
+    /// <remarks>
+    /// Surfaced from the options rather than written in the service, because it was written in the
+    /// service and that is most of why it was wrong: nothing could compare it against the turn
+    /// budget it silently contradicted, and nothing could shorten it for a test that needed to
+    /// watch the wait elapse.
+    /// </remarks>
+    public TimeSpan InstructionPatience => _options.InstructionPatience;
+
+    /// <summary>
     /// Gets the retention policy this deployment prunes to.
     /// </summary>
     /// <remarks>
@@ -460,6 +471,25 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 await new NodeRepository(connection).LeaveAsync(joined.Machine, now, ct)
                     .ConfigureAwait(false);
 
+                // **A departing node does NOT settle the instructions it was holding, and the
+                // temptation to make it do so is why this comment is here.**
+                //
+                // It looks obviously right: §11.5 gives delivery to the node, so when the node goes
+                // its turns went with it, and `failed` is exactly "the turn was attempted and did
+                // not complete". It was built that way and then probed, and the probe is in
+                // `InstructionSurvivesTests`.
+                //
+                // A *stream* ending is not a node process dying. A network blip ends the stream
+                // while the agent carries on working, and settling on that destroys the answer when
+                // it arrives — settlement is first-come, so the real report is refused. That is
+                // precisely the defect this feature exists to remove, reintroduced through a
+                // different door, and it gets likelier the moment a deployment is reached over a
+                // private network rather than loopback, which §16 explicitly permits.
+                //
+                // So the broker does not claim to know. A turn whose node has gone stays *still
+                // running* until the sweep presumes it dead past TurnBudget.PresumedDead — an
+                // unknown honestly reported, rather than a false claim that also destroys evidence.
+
                 return true;
             },
             cancellationToken).ConfigureAwait(false);
@@ -515,8 +545,19 @@ public sealed class BrokerRuntime : IAsyncDisposable
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(patience);
 
+            // **Pending, not failed, and this is the same defect one layer in.** Removing the
+            // settling write stopped the broker *recording* a verdict it had no grounds for; this
+            // stops it *reporting* one. `Failed` is defined as "the turn was attempted and did not
+            // complete", which is a claim about the turn — and while the patience elapses the turn
+            // is simply still running. An operator told `failed` reissues the instruction, which
+            // §10.2 names as the one response that makes the situation worse.
+            //
+            // Note that the linked token covers the caller giving up as well as the patience
+            // elapsing, and both mean the same thing here: this call is over and the turn is not.
+            // Which of the two happened is a fact about the operator, and neither is a fact about
+            // the agent.
             await using var registration = timeout.Token.Register(
-                () => waiting.TrySetResult(new InstructionResult(InstructionOutcome.Failed, null)))
+                () => waiting.TrySetResult(new InstructionResult(InstructionOutcome.Pending, null)))
                 .ConfigureAwait(false);
 
             return await waiting.Task.ConfigureAwait(false);

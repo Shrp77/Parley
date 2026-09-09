@@ -66,6 +66,39 @@ public sealed record BrokerOptions(
     public static TimeSpan DefaultRetentionInterval { get; } = TimeSpan.FromHours(1);
 
     /// <summary>
+    /// How long <c>instruct</c> waits for a turn before answering that it is still running.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This was a literal inside the transport service, and being unreachable is most of why it
+    /// was wrong.</b> It said five minutes; the machine running a turn allows
+    /// <see cref="Core.TurnBudget.Longest"/>, twenty. Nothing compared them and nothing could
+    /// change either without a rebuild, so every turn between the two was recorded as having failed
+    /// while the agent was still working.
+    /// </para>
+    /// <para>
+    /// <b>It is short now because it no longer decides anything.</b> Running out of patience
+    /// produces <see cref="Core.InstructionOutcome.Pending"/> and writes nothing at all, so the only
+    /// cost of this number is how long a caller is held — and a caller held for minutes is a
+    /// browser that has already given up. Thirty seconds answers a quick turn in one call and hands
+    /// back an identifier for anything longer.
+    /// </para>
+    /// <para>
+    /// Deliberately unrelated to <see cref="Core.TurnBudget"/>. That bounds a turn; this bounds a
+    /// wait. Deriving one from the other would restore the coupling that made a caller's patience
+    /// into a verdict about an agent.
+    /// </para>
+    /// </remarks>
+    public static TimeSpan DefaultInstructionPatience { get; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>How long to wait for a turn before answering that it is still running.</summary>
+    /// <remarks>
+    /// A property rather than a positional parameter so that every existing construction keeps
+    /// working: this is a knob, not a decision a deployment has to make, and most never will.
+    /// </remarks>
+    public TimeSpan InstructionPatience { get; init; } = DefaultInstructionPatience;
+
+    /// <summary>
     /// The configuration applied when a deployment specifies none.
     /// </summary>
     /// <remarks>

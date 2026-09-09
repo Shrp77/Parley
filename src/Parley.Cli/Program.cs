@@ -105,6 +105,9 @@ const string Help = """
 
       parley waiting <agent>                           how many messages and polls await an agent
 
+      parley instructions [<agent>]                    what you told your agents, what became of
+                                                       each, and what they said back
+
       parley --version                                 this build, and the protocol it speaks
 
     autostart installs a scheduled task on Windows, a systemd user unit on Linux, or a launch
@@ -1050,6 +1053,74 @@ try
                     CultureInfo.InvariantCulture,
                     $"{conversation.Id} {string.Join(",", conversation.Participants.Select(p => p.Value))}"))
                     .ConfigureAwait(false);
+            }
+
+            return 0;
+        }
+
+        // What an operator told their agents, and what each said back.
+        //
+        // **The reply was recorded and unreadable until this existed.** SPEC.md §10.2 says an
+        // agent's reply "is kept beside the instruction rather than in the message log" — true, and
+        // reachable only through the return value of the call that issued it, which blocks for the
+        // whole turn. Anything that interrupted that call lost the answer for ever while the broker
+        // still held it.
+        //
+        // **Unlike `parley open`, this prints the words**, and the difference is whose they are.
+        // That command lists conversations *between agents* and deliberately prints not one word of
+        // any payload, because an operator reading peer traffic out of a listing is the disclosure
+        // §10.1 withholds. An instruction is the operator's own words to their own agent, and the
+        // reply is that agent answering the operator directly. There is nobody to withhold it from.
+        case "instructions":
+        {
+            AgentName? only = null;
+
+            if (rest.Length > 0 && !rest[0].StartsWith('-'))
+            {
+                if (!AgentName.TryCreate(rest[0], out var named))
+                {
+                    await Console.Error.WriteLineAsync(
+                        $"'{rest[0]}' is not an agent name. Names are role@machine (SPEC.md §4.1.1).")
+                        .ConfigureAwait(false);
+
+                    return Usage;
+                }
+
+                only = named;
+            }
+
+            var page = await new BrokerClient(new Wire.Operators.OperatorsClient(channel))
+                .InstructionsAsync(only, cancellationToken: CancellationToken.None)
+                .ConfigureAwait(false);
+
+            foreach (var instruction in page.Instructions)
+            {
+                // The outcome first, because it is the thing somebody ran this to find out, and a
+                // running turn is said in words rather than left to be inferred from a blank reply.
+                var became = instruction.StillRunning
+                    ? "still running"
+                    : instruction.Outcome.ToString().ToLowerInvariant();
+
+                // **Flattened, like the reply below it.** The text is the operator's own words, which
+                // is a reason to worry less and not a reason to skip it: a person pastes what they
+                // were sent, this output is read by scripts, and a newline followed by something
+                // shaped like the line above would present an instruction nobody gave. The terminal
+                // has flattened both since it was written; this had flattened one, which is worse
+                // than either rule applied consistently.
+                await Console.Out.WriteLineAsync(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{instruction.Id} {instruction.Agent.Value} [{became}] "
+                    + $"{instruction.Text.ReplaceLineEndings(" ")}"))
+                    .ConfigureAwait(false);
+
+                if (instruction.Reply is { Length: > 0 } said)
+                {
+                    // Indented, so what the agent said cannot be mistaken for another instruction.
+                    // The transcript reaches the same arrangement from the same reasoning: a line
+                    // at column zero is this tool speaking, and nothing else sits there.
+                    await Console.Out.WriteLineAsync("    " + said.ReplaceLineEndings(" "))
+                        .ConfigureAwait(false);
+                }
             }
 
             return 0;

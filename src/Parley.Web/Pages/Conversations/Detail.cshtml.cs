@@ -399,6 +399,13 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     /// <summary>Puts one instruction's outcome into words.</summary>
     /// <param name="result">What the broker reported.</param>
     /// <returns>A sentence.</returns>
+    /// <remarks>
+    /// The last arm was <c>"Still pending."</c> and nothing could reach it: the broker turned its
+    /// own impatience into <c>failed</c>, which told the operator the turn had not completed while
+    /// the agent was still working — and settled the record, so the real answer was refused when it
+    /// arrived. It is now the ordinary outcome for any turn longer than a short wait, and says
+    /// where the answer will be rather than implying something went wrong.
+    /// </remarks>
     private static string Describe(InstructionResult result) => result.Outcome switch
     {
         InstructionOutcome.Taken => $"Taken. {result.Reply}",
@@ -406,7 +413,8 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
         InstructionOutcome.Undeliverable =>
             "Not delivered: nothing is running for that agent to receive it.",
         InstructionOutcome.Failed => $"The turn did not complete. {result.Reply}",
-        _ => "Still pending."
+        _ => "Given to the agent, and the turn is still running. Its answer will appear on that "
+             + "agent's page."
     };
 
     /// <summary>Says the project could not be read, rather than producing an empty export.</summary>

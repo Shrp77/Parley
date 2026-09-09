@@ -53,9 +53,20 @@ public sealed class NodesService : Wire.Nodes.NodesBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
+        // **Fitted to the cap before it is stored, and the schema refuses anything larger.** This
+        // was unbounded: the instruction's own text has carried rule 8.5's cap for two migrations
+        // and the agent's answer carried nothing, so anything able to reach the broker and claim to
+        // be a node — which §16 says is anything on the network — could write an arbitrarily large
+        // blob into the operator's record. Found by the review gate with a 200,000-character reply
+        // that was stored and read back whole.
+        //
+        // Truncated rather than refused. Refusing would leave the instruction unsettled and lose
+        // the answer, which is the failure the readback exists to remove; a shortened answer is
+        // worth more than none, and the marker is what stops a reader taking the cut for the
+        // agent's own ending.
         var result = new InstructionResult(
             Conversions.In(request.Outcome),
-            string.IsNullOrEmpty(request.Reply) ? null : request.Reply);
+            string.IsNullOrEmpty(request.Reply) ? null : MessageLimits.Fit(request.Reply));
 
         // Settled from here as well as from the operator's call, because the two race and either
         // may arrive first. The row must not be left saying pending because whoever asked gave up

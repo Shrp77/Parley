@@ -595,7 +595,86 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/007-split-terminal-tool/` — 0.20.3, merged. The terminal and the web UI
+- **Active plan**: `specs/008-instruction-readback/` — 0.21.1, in progress. An operator instruction
+  must survive the turn it asks for. Three defects, all established by probe or by reading rather
+  than by reasoning:
+
+  **The broker gives up before the agent does and destroys the answer when it arrives.** It waits
+  five minutes; the node will wait twenty. Any turn longer than five minutes is settled `failed`
+  with no reply while the agent is still working, and when the node reports what the agent actually
+  said, `SettleAsync`'s `WHERE outcome = 'pending'` refuses it. The store then asserts two things
+  that are both untrue — the turn did not complete, and the agent said nothing — and there is no
+  other copy of either. Pinned by `tests/Parley.Store.Tests/InstructionSettlingTests`.
+
+  **Patience is punished.** `Instruct` passes the operator's own call token into both the wait and
+  the settling write after it, so an operator who closes the tab cancels the write, the row stays
+  pending, the node's real report lands, and the reply is *kept* — while an operator who waits gets
+  `failed` written first and the reply *destroyed*. Exactly inverted, and neither is told which
+  happened.
+
+  **§10.2 records a reply nothing can read.** The `instructions` table holds text, outcome, reply
+  and both instants; `proto/parley.proto` has `Instruct` and no reader; `InstructionRepository.GetAsync`
+  exists and no operator surface calls it. Every part of an asynchronous design is built and
+  unreachable — the wire enum has `PENDING`, the schema pairs settlement with its timestamp, and
+  `Act.cshtml.cs` renders a `"Still pending."` branch nothing can ever reach.
+
+  **The consuming defect is the one the owner met**: both console pages hold the HTTP request open
+  for the whole turn. That is a defect on every screen, not a mobile one — it was found while
+  discussing a phone, which is how it came to look like one.
+
+  **Which artifact is wrong was decided, not assumed.** The spec and the code do not disagree; the
+  spec is *incomplete* and the code faithfully implements the incomplete thing. §10.2 promises the
+  reply is kept and gives no way to retrieve it, which is storage with no reader — and its own
+  argument for returning an outcome at all ("a button and no indicator") is the argument for the
+  readback. So §10.2 gains an operation and this is a protocol change.
+
+  **No schema change — until the gate found one.** The table already carried text, outcome, reply
+  and both instants. `005_instruction_reply_cap.sql` was added later, by lens 2, and is the only
+  migration here.
+
+  **What the review gate found is most of what is worth reading about this feature.** Five findings
+  above low, all fixed, all in `REVIEW-LEDGER.md` with the probe that produced each:
+
+  - **A departing node settled its agents' turns, and that destroyed answers.** Built deliberately,
+    with a comment saying "what settles an instruction now is only ever something that knows" — and
+    a node's *stream* ending is not its process dying. A network blip settled the record while the
+    agent worked on, and the real report was refused on arrival. **The defect this whole feature
+    exists to remove, reintroduced through a door nobody had checked, by the person writing that
+    sentence.** The mechanism is gone; a turn whose node has gone stays *still running* until the
+    sweep presumes it dead. The cost of waiting is a delay and the cost of guessing is a loss.
+  - **An agent's reply had no bound at all.** `instructions.text` has carried rule 8.5's cap since
+    003; `reply` carried no CHECK and the reporting path applied none, so anything able to reach the
+    broker and claim to be a node could write an arbitrary blob into the operator's record. Two
+    hundred thousand characters were stored and read back whole. Always possible, not always
+    *reachable*: before the readback a reply came back only on the issuing call and was otherwise
+    write-only.
+  - **`InstructionsRemoved` was computed and shown to nobody.** The pruner counted it, the result
+    carried it, the wire had no field. `parley prune` printed *"Removed 0 message(s)."* after
+    deleting five hundred instructions. **The `Shell.Said` shape, one feature after `Shell.Said`.**
+  - **`parley instructions` flattened the reply and not the instruction**, so a newline in an
+    operator's own words forged a listing line — in output scripts read. The terminal had flattened
+    both since it was written; one rule applied to half the output is worse than either applied
+    whole.
+  - *(low)* The truncation cut split a surrogate pair.
+
+  **Two checks that did not exist were added rather than the findings merely fixed.**
+  `The wire against the document` — SPEC.md was checked against the C# contract and nothing checked
+  `proto/parley.proto`, though it opens by saying the document is the authority and it is not. And
+  `TickAsync` actually calling the sweep, which nothing verified and which, since the disconnect
+  settle was removed, is the whole of the guarantee that nothing stays running for ever.
+
+
+  **THE DEPRECATION DATE MOVED, AND THIS IS THE RECORD OF IT.** 007 wrote that `parley console`,
+  `--with-console`, `--console` and `--no-console` are *removed at 0.21.0*. This feature is 0.21.0
+  and **does not remove them; they move to 0.22.0.** The reason is not convenience: one release that
+  both changes a versioned wire contract and removes a flag a live scheduled task depends on cannot
+  be reverted in halves, and an operator whose broker will not start at logon cannot tell which half
+  did it. The wire change is the one that must be revertible alone. `InstalledEntry` must keep
+  *reading* `--console` regardless, for entries written before 0.19.0, so the removal is "stop
+  writing, stop accepting, keep reading" — narrower and more careful than it sounds, and worth its
+  own change. **0.22.0 is a commitment, not a second reprieve.**
+
+- Previous: `specs/007-split-terminal-tool/` — 0.20.3, merged. The terminal and the web UI
   become their own
   tool packages, so changing either no longer stops the broker. Today one executable holds
   everything, an executable cannot be replaced while it runs, and stopping the broker stops the

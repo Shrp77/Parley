@@ -128,6 +128,15 @@ public sealed class SurfaceBoundaryTests
             // entirely and carries no operator operation at all.
             nameof(OperatorConsole.RecordInstructionAsync),
             nameof(OperatorConsole.SettleInstructionAsync),
+
+            // Reading an instruction back, and it belongs here for a stronger reason than the two
+            // above. Writing one is obviously the operator's; *reading* one looks harmless until
+            // you ask who else could. An agent able to read an instruction could learn what the
+            // operator had told a peer to do — which is a disclosure §10.1 withholds even for
+            // ordinary traffic between agents, and this is not ordinary traffic. It is the one
+            // channel where a person's own words are on the record.
+            nameof(OperatorConsole.ListInstructionsAsync),
+
             nameof(OperatorConsole.PruneAsync),
             nameof(OperatorConsole.DescribeRefusalsAsync),
 

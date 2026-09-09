@@ -1,4 +1,5 @@
-using System.Globalization;
+﻿using System.Globalization;
+using Parley.Core;
 
 namespace Parley.Headless;
 
@@ -98,13 +99,23 @@ public sealed record InvocationCommand(
 
     /// <summary>How long to wait for one turn, when nothing says.</summary>
     /// <remarks>
+    /// <para>
     /// Generous, and it can afford to be now. Under the one-shot invoker a timeout killed the
     /// process, so waiting too long held a wedged agent open for an afternoon. A resident agent
     /// survives its own timeouts, so the cost of waiting is small and the cost of giving up early
     /// is real: an abandoned turn leaves a reply owed to nobody, which has to be discarded before
     /// the next turn can trust what it reads.
+    /// </para>
+    /// <para>
+    /// <b>Taken from <see cref="TurnBudget.Longest"/> rather than written here, because it was
+    /// written here and the broker wrote a different one.</b> The broker waited five minutes for an
+    /// instruction and this allowed twenty, so every turn between the two was settled failed while
+    /// the agent was still working and its real answer refused on arrival. Neither number was wrong
+    /// alone; nothing compared them. The value is unchanged — what changed is that there is now one
+    /// of it.
+    /// </para>
     /// </remarks>
-    public static TimeSpan DefaultTimeout { get; } = TimeSpan.FromMinutes(20);
+    public static TimeSpan DefaultTimeout { get; } = TurnBudget.Longest;
 
     /// <summary>
     /// Builds the command from a template written by an operator.

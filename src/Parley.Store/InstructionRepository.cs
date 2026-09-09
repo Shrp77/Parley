@@ -104,44 +104,151 @@ public sealed class InstructionRepository(SqliteConnection connection)
         return rows == 1;
     }
 
-    /// <summary>What one instruction became.</summary>
-    /// <param name="id">Which instruction.</param>
+    /// <summary>Reads back a bounded page of instructions, newest first.</summary>
+    /// <param name="agent">Narrow to one agent, or null for every agent.</param>
+    /// <param name="id">Narrow to exactly one instruction, or null for all that match.</param>
+    /// <param name="limit">How many to return. The caller is expected to have bounded this.</param>
+    /// <param name="beforeId">Resume before this identifier, or null to start at the newest.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>The outcome and reply, or <see langword="null"/> if there is no such instruction.</returns>
-    public async Task<InstructionResult?> GetAsync(
-        long id, CancellationToken cancellationToken = default)
+    /// <returns>The instructions, newest first.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The operation SPEC.md §10.2 promised and did not have.</b> The section says the reply "is
+    /// kept beside the instruction rather than in the message log", and it was — in this table, with
+    /// nothing able to ask for it. The only route to an agent's answer was the return value of the
+    /// call that issued the instruction, so anything that interrupted that call lost the answer for
+    /// ever while the broker still held it.
+    /// </para>
+    /// <para>
+    /// The cursor is an identifier rather than an instant, because these are monotonic and cannot
+    /// tie. The conversation listing needs both for exactly that reason; this does not, and
+    /// borrowing its shape would be carrying a tie-break for ties that cannot happen.
+    /// </para>
+    /// <para>
+    /// Refuses nothing about the agent name. A name that cannot be parsed is a caller error and
+    /// belongs at the wire edge, where the caller can be told; here it would have to be expressed
+    /// as an empty result, which is the shape §10.2 warns about — a narrow question answered with a
+    /// wide result, indistinguishable from an honest empty one.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<InstructionRecord>> ListAsync(
+        AgentName? agent = null,
+        long? id = null,
+        int limit = 50,
+        long? beforeId = null,
+        CancellationToken cancellationToken = default)
     {
-        var row = await _connection.QuerySingleOrDefaultAsync<InstructionRow>(
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        var rows = await _connection.QueryAsync<InstructionListRow>(
             new CommandDefinition(
                 """
-                SELECT outcome AS Outcome, reply AS Reply
+                SELECT id           AS Id,
+                       agent        AS Agent,
+                       text         AS Text,
+                       outcome      AS Outcome,
+                       reply        AS Reply,
+                       issued_utc   AS IssuedUtc,
+                       settled_utc  AS SettledUtc
                   FROM instructions
-                 WHERE id = @Id;
+                 WHERE (@Agent IS NULL OR agent = @Agent)
+                   AND (@Id IS NULL OR id = @Id)
+                   AND (@BeforeId IS NULL OR id < @BeforeId)
+                 ORDER BY id DESC
+                 LIMIT @Limit;
                 """,
-                new { Id = id },
+                new
+                {
+                    Agent = agent?.Value,
+                    Id = id,
+                    BeforeId = beforeId,
+                    Limit = limit
+                },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        return row is null
-            ? null
-            : new InstructionResult(
-                row.Outcome switch
-                {
-                    "pending" => InstructionOutcome.Pending,
-                    "taken" => InstructionOutcome.Taken,
-                    "declined" => InstructionOutcome.Declined,
-                    "undeliverable" => InstructionOutcome.Undeliverable,
-                    "failed" => InstructionOutcome.Failed,
-                    _ => throw new InvalidOperationException(
-                        $"The store holds an outcome this build does not know: {row.Outcome}.")
-                },
-                row.Reply);
+        return [.. rows.Select(row => new InstructionRecord(
+            row.Id,
+            AgentName.Create(row.Agent),
+            row.Text,
+            Read(row.Outcome),
+            row.Reply,
+            ExchangeRow.ParseTimestamp(row.IssuedUtc),
+            row.SettledUtc is null ? null : ExchangeRow.ParseTimestamp(row.SettledUtc)))];
     }
 
-    /// <summary>One instruction, as the store holds it.</summary>
-    private sealed class InstructionRow
+    /// <summary>Settles every instruction still running that was issued before an instant.</summary>
+    /// <param name="issuedBeforeUtc">The instant; anything older is presumed dead.</param>
+    /// <param name="nowUtc">When the sweep ran.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>How many were settled.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The backstop for a machine that vanished without disconnecting.</b> A node leaving settles
+    /// its own agents' instructions precisely, which is the primary mechanism; this exists because a
+    /// node can stay connected while the agent process behind it dies, and nothing else would ever
+    /// close those.
+    /// </para>
+    /// <para>
+    /// <b>Aged from when the instruction was issued, which is the only instant a running one has.</b>
+    /// The schema pairs the settled instant with a settled outcome, so a pending row's is null by
+    /// construction — a sweep measuring from settlement would match nothing at all, and would look
+    /// like a working sweep while being incapable of touching the only rows it exists for.
+    /// </para>
+    /// <para>
+    /// Cannot disturb a settled instruction, and not by being careful: the same
+    /// <c>outcome = 'pending'</c> clause that makes settlement first-come is what bounds this. The
+    /// guarantee is in the statement rather than in the caller.
+    /// </para>
+    /// </remarks>
+    public async Task<int> SweepAsync(
+        DateTimeOffset issuedBeforeUtc,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                UPDATE instructions
+                   SET outcome = 'failed', settled_utc = @Now
+                 WHERE outcome = 'pending'
+                   AND issued_utc < @Before;
+                """,
+                new
+                {
+                    Now = ExchangeRow.FormatTimestamp(nowUtc),
+                    Before = ExchangeRow.FormatTimestamp(issuedBeforeUtc)
+                },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>Reads an outcome the store holds.</summary>
+    /// <param name="stored">The column's value.</param>
+    /// <returns>The outcome.</returns>
+    /// <exception cref="InvalidOperationException">The value is one this build does not know.</exception>
+    private static InstructionOutcome Read(string stored) => stored switch
     {
+        "pending" => InstructionOutcome.Pending,
+        "taken" => InstructionOutcome.Taken,
+        "declined" => InstructionOutcome.Declined,
+        "undeliverable" => InstructionOutcome.Undeliverable,
+        "failed" => InstructionOutcome.Failed,
+        _ => throw new InvalidOperationException(
+            $"The store holds an outcome this build does not know: {stored}.")
+    };
+
+    /// <summary>One instruction read back whole.</summary>
+    private sealed class InstructionListRow
+    {
+        public long Id { get; init; }
+
+        public string Agent { get; init; } = string.Empty;
+
+        public string Text { get; init; } = string.Empty;
+
         public string Outcome { get; init; } = string.Empty;
 
         public string? Reply { get; init; }
+
+        public string IssuedUtc { get; init; } = string.Empty;
+
+        public string? SettledUtc { get; init; }
     }
 }
