@@ -1,0 +1,157 @@
+using Parley.Configuration;
+using Parley.Core;
+using Parley.Setup;
+using System.Text.Json.Nodes;
+using Xunit;
+
+namespace Parley.Cli.Tests;
+
+/// <summary>
+/// Review gate, lens 2, run 1: what a person can put into the values this feature writes into
+/// somebody's repository.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Every path here edits a file inside a checkout, and three of the values written into it come from
+/// outside: the project name, the workspace path, and the <c>owns</c> line. The launch configuration
+/// is not only JSON — <c>${VAR:-default}</c> is expanded by the client that reads it, so a value that
+/// is safe as JSON can still be unsafe as configuration.
+/// </para>
+/// <para>
+/// The other half is what this feature prints. A refusal quotes a catalogue's path and a role taken
+/// from a file, and refusals are read in terminals, so a value able to move the cursor can imitate the
+/// lines around it. This repository has fixed that shape twice before — in the transcript's
+/// column-zero rule and in the destroy dialog quoting a manifest raw.
+/// </para>
+/// </remarks>
+public sealed class ProbeTwelveTests : IDisposable
+{
+    private readonly string _root =
+        Path.Combine(Path.GetTempPath(), "parley-probe12-" + Path.GetRandomFileName());
+
+    public ProbeTwelveTests() => Directory.CreateDirectory(_root);
+
+    public void Dispose()
+    {
+        try
+        {
+            Directory.Delete(_root, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private static EnrollmentEntry Entry(string workspace, string owns = "Carts and totals.") =>
+        new(workspace, "orders", owns, Unattended: false) { Enroll = true, OwnsApproved = true };
+
+    [Theory]
+    [InlineData("/src/orders}")]
+    [InlineData("/src/or}ders")]
+    [InlineData("/src/orders}\"")]
+    [InlineData("/src/${OTHER}")]
+    public void A_workspace_that_could_close_the_expansion_early_does_not(string workspace)
+    {
+        // **JSON-safe is not configuration-safe.** The workspace is written as
+        // `${PARLEY_WORKSPACE:-<path>}`, and the client expands that. A path holding `}` closes the
+        // expansion early, so everything after it becomes literal text in the value the agent's
+        // server is launched with — and a path is not a value this tooling chooses, it is a directory
+        // somebody has on disk.
+        var plan = EnrollmentPlan.Describe(Entry(workspace), null, null, false, project: "alpha");
+
+        var written = JsonNode.Parse(plan.LaunchConfiguration!)!
+            ["mcpServers"]!["parley-alpha"]!["env"]!["PARLEY_WORKSPACE"]!.GetValue<string>();
+
+        // Two shapes are acceptable and no third is: the value is either the path plainly, or one
+        // whole expansion around it. What must never happen is an expansion that closes in the middle
+        // and leaves the rest as literal text — the agent would then be launched with a workspace
+        // that is a prefix of the real one, silently.
+        var slashed = workspace.Replace('\\', '/');
+
+        if (string.Equals(written, slashed, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        Assert.Equal("${PARLEY_WORKSPACE:-" + slashed + "}", written);
+        Assert.DoesNotContain('}', slashed);
+        Assert.DoesNotContain('$', slashed);
+    }
+
+    [Fact]
+    public void A_project_name_from_a_hand_edited_manifest_cannot_shape_the_key()
+    {
+        // The key is built from a project name. If a manifest could carry a name the grammar refuses,
+        // that name would reach a JSON key — and a key is one of the few places JSON escaping is not
+        // the whole story, because the client uses it to namespace tool names.
+        var manifest = Path.Combine(_root, "projects.json");
+
+        File.WriteAllText(
+            manifest,
+            """
+            { "projects": [ {
+              "name": "alpha\", \"evil\": { \"command\": \"rm",
+              "store": "/tmp/a.db",
+              "endpoint": "http://127.0.0.1:51707"
+            } ] }
+            """);
+
+        var read = ProjectManifest.TryRead(manifest, out var projects, out var problem);
+
+        // Either refused outright, or read as something the grammar accepts. What must not happen is
+        // a project whose name is not a project name.
+        Assert.True(
+            !read || projects.All(p => ProjectName.IsValid(p.Name.Value)),
+            $"a manifest yielded a name the grammar refuses (problem: {problem})");
+    }
+
+    [Fact]
+    public void Every_key_this_writes_is_one_the_grammar_would_accept_back()
+    {
+        // The round trip, as a property rather than a case list: whatever a key is built from, it must
+        // be a key this tooling recognises as its own — otherwise it has written an entry it can never
+        // find, update or withdraw again.
+        foreach (var name in new[] { "a", "alpha", "alpha-two", "parley", "a1", "z9-x" })
+        {
+            var key = LaunchKey.For(name);
+
+            Assert.True(LaunchKey.IsOurs(key), $"'{key}' is not a key this tooling owns");
+            Assert.Equal(name, LaunchKey.ProjectOf(key));
+        }
+    }
+
+    [Theory]
+    [InlineData("[2J")]
+    [InlineData("a\rb")]
+    [InlineData("a\nb")]
+    [InlineData("‮")]
+    public void A_refusal_quoting_a_catalogue_carries_no_control_characters(string mischief)
+    {
+        // A refusal quotes a catalogue's path and the role it found there — both read out of a file,
+        // and refusals are read in terminals. This repository has fixed this shape twice: the
+        // transcript's column-zero rule, and the destroy dialog quoting a manifest's endpoint raw.
+        var refusal = Catalogues.Refusal(
+            new Consent($"alpha{mischief}", $"/tmp/node{mischief}.json", $"orders{mischief}"));
+
+        foreach (var character in refusal)
+        {
+            Assert.False(
+                char.IsControl(character) && character != '\n',
+                $"a refusal carried U+{(int)character:X4}: {refusal}");
+        }
+
+        Assert.DoesNotContain('‮', refusal);
+    }
+
+    [Fact]
+    public void An_owns_line_is_still_bounded_and_still_refused_when_it_is_not_approved()
+    {
+        // Not new, and worth one assertion here because this feature multiplied the number of entries
+        // an `owns` line can be written into: what was one line per repository is now one per project.
+        var problems = EnrollmentPlan.Validate(
+            [Entry("/src/orders", new string('x', 500))],
+            _ => true);
+
+        Assert.NotEmpty(problems);
+    }
+}

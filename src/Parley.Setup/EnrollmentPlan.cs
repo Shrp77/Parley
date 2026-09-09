@@ -83,6 +83,14 @@ public static class EnrollmentPlan
     /// </remarks>
     public const string OwnsVariable = "PARLEY_OWNS";
 
+    /// <summary>The launch variable naming the directory an agent works in.</summary>
+    /// <remarks>
+    /// A constant for the reason the others are: it is written into the entry and written again into
+    /// the expansion around it, and two spellings of one variable is an entry whose default never
+    /// applies to the thing it was meant to default.
+    /// </remarks>
+    public const string WorkspaceVariable = "PARLEY_WORKSPACE";
+
     /// <summary>The command every entry this tooling writes runs.</summary>
     /// <remarks>
     /// Read as well as written, and read for one narrow purpose: an entry at a key this would write at,
@@ -430,7 +438,18 @@ public static class EnrollmentPlan
         // The ${VAR:-default} form is environment-variable expansion, which .mcp.json supports.
         // The file is usually committed and the path is machine-specific, so the default is what
         // this machine uses and a teammate overrides it by setting the variable.
-        env["PARLEY_WORKSPACE"] = "${PARLEY_WORKSPACE:-" + entry.Workspace.Replace('\\', '/') + "}";
+        //
+        // **A path holding `}` or `$` is written plainly instead, because JSON-safe is not
+        // configuration-safe.** The mini-syntax has no escape: a directory called `or}ders` — legal
+        // on every platform this runs on — closes the expansion early, and everything after it
+        // becomes literal text in the value the agent's server is launched with. The workspace is
+        // what the registry records and what a node uses as a working directory, so getting it
+        // silently wrong is worse than losing the override, which is a convenience.
+        var workspace = entry.Workspace.Replace('\\', '/');
+
+        env[WorkspaceVariable] = workspace.AsSpan().ContainsAny('}', '$')
+            ? workspace
+            : "${" + WorkspaceVariable + ":-" + workspace + "}";
 
         var desired = new JsonObject { ["command"] = AdapterCommand, ["env"] = env };
         var existing = servers[key];

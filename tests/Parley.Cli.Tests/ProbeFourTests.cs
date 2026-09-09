@@ -227,7 +227,18 @@ public sealed class ProbeFourTests : IDisposable
         await Task.Delay(100, TestContext.Current.CancellationToken);
 
         blocker.Dispose();
-        File.Delete(launch);
+
+        try
+        {
+            File.Delete(launch);
+        }
+        catch (IOException)
+        {
+            // The writer took the file first, which is the ordinary outcome under load and not the
+            // scenario this is about. The assertions below hold either way: whichever happened, it
+            // must end within the bound rather than spin. **The first version deleted
+            // unconditionally and failed in a full-suite sweep** — a probe racing its own subject.
+        }
 
         // Whatever it decides, it must decide within the bound rather than spinning.
         var finished = await Task.WhenAny(enrolling, Task.Delay(10_000, TestContext.Current.CancellationToken));

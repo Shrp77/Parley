@@ -152,10 +152,16 @@ public static class Catalogues
     {
         ArgumentNullException.ThrowIfNull(consent);
 
-        return $"'{consent.Project}' already starts this workspace unattended, as '{consent.Role}' in "
-            + $"{consent.Catalogue}. A repository may answer in several projects and may be started "
-            + "unattended by only one: a node starts an agent with its workspace as the working "
-            + "directory, so two of them is two models editing one checkout.";
+        // **Every one of these three came out of a file.** The project name is from the manifest, the
+        // role and the path are from a catalogue, and this sentence is read in a terminal — so a
+        // value able to move the cursor or reverse the reading direction can imitate the lines around
+        // it. That matters more here than in most places: the line around it is a refusal, which is
+        // what somebody reads before deciding whether a file is safe to point a tool at.
+        return $"'{Quoting.Flat(consent.Project)}' already starts this workspace unattended, as "
+            + $"'{Quoting.Flat(consent.Role)}' in {Quoting.Flat(consent.Catalogue)}. A repository may "
+            + "answer in several projects and may be started unattended by only one: a node starts an "
+            + "agent with its workspace as the working directory, so two of them is two models "
+            + "editing one checkout.";
     }
 
     /// <summary>Whether two catalogue paths are the same file.</summary>

@@ -597,32 +597,7 @@ public static class EnrollCommand
     /// wanted.
     /// </para>
     /// </remarks>
-    private static string Present(string line)
-    {
-        var kept = new System.Text.StringBuilder(line.Length);
-
-        foreach (var rune in line.EnumerateRunes())
-        {
-            var category = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(rune.Value);
-
-            if (category is System.Globalization.UnicodeCategory.Control
-                or System.Globalization.UnicodeCategory.Format
-                or System.Globalization.UnicodeCategory.LineSeparator
-                or System.Globalization.UnicodeCategory.ParagraphSeparator)
-            {
-                continue;
-            }
-
-            kept.Append(rune);
-
-            if (kept.Length > 160)
-            {
-                return kept.ToString(0, 159) + "…";
-            }
-        }
-
-        return kept.ToString();
-    }
+    private static string Present(string line) => Quoting.Flat(line);
 
     /// <summary>Every enrolment a repository already has, or null when the file cannot be read.</summary>
     /// <param name="workspace">The repository.</param>

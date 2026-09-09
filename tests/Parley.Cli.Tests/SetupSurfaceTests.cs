@@ -50,6 +50,7 @@ public sealed class SetupSurfaceTests
                 "ProjectCommand",
                 "ProjectFields",
                 "ProjectResolution",
+                "Quoting",
                 "RepositoryPlan",
                 "RepositorySelection",
                 "Resolved",
