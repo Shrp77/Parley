@@ -760,6 +760,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         return new Wire.PruneReply
         {
             Removed = result.Removed,
+            InstructionsRemoved = result.InstructionsRemoved,
             HeldByFloor = result.HeldByFloor,
             Contended = result.Contended,
             Capped = result.Capped

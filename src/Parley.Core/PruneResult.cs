@@ -65,11 +65,4 @@ public sealed record PruneResult(
     /// </remarks>
     public static PruneResult Nothing { get; } = new(0, 0, 0, Capped: false);
 
-    /// <summary>Whether this pass removed anything at all.</summary>
-    /// <remarks>
-    /// Asks about both logs rather than about the message log alone. A caller that read
-    /// <see cref="Removed"/> as "did anything happen" was right until instructions came under
-    /// retention, and would have been quietly wrong afterwards.
-    /// </remarks>
-    public bool RemovedAnything => Removed > 0 || InstructionsRemoved > 0;
 }

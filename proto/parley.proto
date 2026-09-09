@@ -773,6 +773,17 @@ message PruneReply {
   int32 held_by_floor = 2;
   int32 contended = 3;
   bool capped = 4;
+
+  // Instructions removed for age, counted apart from messages.
+  //
+  // Apart, because the floors differ entirely: a message is held back by an open exchange, a
+  // deduplication window and an unread inbox, and none of those mean anything for an instruction.
+  // Folding them into one number would report a held count that explains nothing about half of it.
+  //
+  // Reported at all because the alternative is a count computed and shown to nobody: a pass that
+  // removed five hundred instructions and no messages would say "0 removed", which reads as
+  // nothing having happened.
+  int32 instructions_removed = 5;
 }
 
 // ===========================================================================================

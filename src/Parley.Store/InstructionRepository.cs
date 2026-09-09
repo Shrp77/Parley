@@ -104,31 +104,6 @@ public sealed class InstructionRepository(SqliteConnection connection)
         return rows == 1;
     }
 
-    /// <summary>What one instruction became.</summary>
-    /// <param name="id">Which instruction.</param>
-    /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>The outcome and reply, or <see langword="null"/> if there is no such instruction.</returns>
-    /// <remarks>
-    /// Kept beside <see cref="ListAsync"/> rather than folded into it. Narrowing by identifier is a
-    /// genuine single-row read, and expressing it as a one-element page would make every caller
-    /// unwrap a list to ask a question that has one answer.
-    /// </remarks>
-    public async Task<InstructionResult?> GetAsync(
-        long id, CancellationToken cancellationToken = default)
-    {
-        var row = await _connection.QuerySingleOrDefaultAsync<InstructionRow>(
-            new CommandDefinition(
-                """
-                SELECT outcome AS Outcome, reply AS Reply
-                  FROM instructions
-                 WHERE id = @Id;
-                """,
-                new { Id = id },
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
-
-        return row is null ? null : new InstructionResult(Read(row.Outcome), row.Reply, id);
-    }
-
     /// <summary>Reads back a bounded page of instructions, newest first.</summary>
     /// <param name="agent">Narrow to one agent, or null for every agent.</param>
     /// <param name="id">Narrow to exactly one instruction, or null for all that match.</param>
@@ -258,14 +233,6 @@ public sealed class InstructionRepository(SqliteConnection connection)
         _ => throw new InvalidOperationException(
             $"The store holds an outcome this build does not know: {stored}.")
     };
-
-    /// <summary>One instruction, as the store holds it.</summary>
-    private sealed class InstructionRow
-    {
-        public string Outcome { get; init; } = string.Empty;
-
-        public string? Reply { get; init; }
-    }
 
     /// <summary>One instruction read back whole.</summary>
     private sealed class InstructionListRow

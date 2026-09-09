@@ -130,7 +130,7 @@ public sealed class InstructionRetentionTests : IDisposable
 
         Assert.Equal(0, result.Removed);
         Assert.Equal(1, result.InstructionsRemoved);
-        Assert.True(result.RemovedAnything);
+        Assert.True(result.Removed > 0 || result.InstructionsRemoved > 0);
     }
 
     [Fact]
@@ -142,6 +142,6 @@ public sealed class InstructionRetentionTests : IDisposable
 
         Assert.Equal(0, result.Removed);
         Assert.Equal(0, result.InstructionsRemoved);
-        Assert.False(result.RemovedAnything);
+        Assert.False(result.Removed > 0 || result.InstructionsRemoved > 0);
     }
 }

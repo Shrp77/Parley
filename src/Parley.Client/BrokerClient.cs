@@ -341,7 +341,9 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         var reply = await _operators
             .PruneAsync(new Wire.Empty(), cancellationToken: cancellationToken);
 
-        return new PruneResult(reply.Removed, reply.HeldByFloor, reply.Contended, reply.Capped);
+        return new PruneResult(
+            reply.Removed, reply.HeldByFloor, reply.Contended, reply.Capped,
+            reply.InstructionsRemoved);
     }
 
     /// <summary>Renders an instant for the wire, where empty means absent.</summary>

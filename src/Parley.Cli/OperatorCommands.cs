@@ -628,6 +628,18 @@ public sealed class OperatorCommands
 
         await _output.WriteLineAsync($"Removed {removed} message(s).").ConfigureAwait(false);
 
+        // Counted apart, and said apart. The floors that hold a message back -- an open exchange,
+        // the deduplication window, an unread inbox -- mean nothing for an instruction, so one
+        // number covering both would report a held count that explains nothing about half of it.
+        //
+        // Said even when it is zero, unlike the held and contended lines below. A pass that removed
+        // five hundred instructions and no messages would otherwise print "Removed 0 message(s)."
+        // and stop, which reads as nothing having happened -- and this is the one log that holds a
+        // person's own words.
+        var instructions = result.InstructionsRemoved.ToString(CultureInfo.InvariantCulture);
+
+        await _output.WriteLineAsync($"Removed {instructions} instruction(s).").ConfigureAwait(false);
+
         if (result.Capped)
         {
             // Only ever seen on a first prune against a log that grew without a policy. Saying

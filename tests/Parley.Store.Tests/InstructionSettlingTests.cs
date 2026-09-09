@@ -82,12 +82,11 @@ public sealed class InstructionSettlingTests : IDisposable
 
         Assert.False(landed, "the late report was accepted, so first-wins is not the rule here");
 
-        var read = await _instructions.GetAsync(id, Ct);
+        var read = Assert.Single(await _instructions.ListAsync(id: id, cancellationToken: Ct));
 
         // The first settlement stands, whole. That is the property; whether the first settlement
         // deserved to happen is a question for whoever made it.
-        Assert.NotNull(read);
-        Assert.Equal(InstructionOutcome.Failed, read!.Outcome);
+        Assert.Equal(InstructionOutcome.Failed, read.Outcome);
         Assert.Null(read.Reply);
     }
 
@@ -107,10 +106,9 @@ public sealed class InstructionSettlingTests : IDisposable
             await _instructions.SettleAsync(id, InstructionOutcome.Failed, null, At(5), Ct),
             "the broker's giving-up overwrote an answer that had already landed");
 
-        var read = await _instructions.GetAsync(id, Ct);
+        var read = Assert.Single(await _instructions.ListAsync(id: id, cancellationToken: Ct));
 
-        Assert.NotNull(read);
-        Assert.Equal(InstructionOutcome.Taken, read!.Outcome);
+        Assert.Equal(InstructionOutcome.Taken, read.Outcome);
         Assert.Equal("I changed three files", read.Reply);
     }
 
@@ -121,10 +119,9 @@ public sealed class InstructionSettlingTests : IDisposable
         // given the turn cannot have said anything, and the schema pairs the two.
         var id = await _instructions.RecordAsync(Orders, "look at the retry policy", At(0), Ct);
 
-        var read = await _instructions.GetAsync(id, Ct);
+        var read = Assert.Single(await _instructions.ListAsync(id: id, cancellationToken: Ct));
 
-        Assert.NotNull(read);
-        Assert.Equal(InstructionOutcome.Pending, read!.Outcome);
+        Assert.Equal(InstructionOutcome.Pending, read.Outcome);
         Assert.Null(read.Reply);
     }
 }
