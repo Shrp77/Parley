@@ -933,6 +933,19 @@ public static class EnrollCommand
 
             await output.WriteLineAsync($"\n{entry.Agent}  ({entry.Workspace})").ConfigureAwait(false);
 
+            if (!Directory.Exists(Path.Combine(entry.Workspace, ".git"))
+                && !File.Exists(Path.Combine(entry.Workspace, ".git")))
+            {
+                // Said rather than refused, on the same terms as the worktree note below: `scan`
+                // only ever offers git repositories, so a directory without one arrived through a
+                // hand-edited manifest, and the person who typed the path may have a reading of it
+                // nobody here thought of. What must not happen is that it passes unremarked -- the
+                // file lands either way, and nothing afterwards makes that visible.
+                await output.WriteLineAsync(
+                    "  ! this is not a git repository. It will still be written into.")
+                    .ConfigureAwait(false);
+            }
+
             if (IsWorktree(entry.Workspace))
             {
                 // Said rather than refused: a worktree is the same repository at another path, so

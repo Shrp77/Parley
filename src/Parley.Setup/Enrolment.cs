@@ -177,6 +177,21 @@ public static class Enrolment
             return null;
         }
 
+        // **A launch configuration that is a link is refused, and this is the one place it can be.**
+        // `.mcp.json` is a tracked file, so a repository can ship one as a symlink — and this tooling
+        // is pointed at directories of clones somebody else wrote (`parley enroll scan /src`) and then
+        // writes into each. Following the link makes a hostile checkout into a write-anywhere-the-user
+        // -can primitive: a link to a shell profile, and the next enrolment overwrites it with JSON.
+        //
+        // Refused rather than replaced. Replacing it would silently destroy a link somebody may have
+        // meant, and this cannot tell the two apart; the person can.
+        if (new FileInfo(path).LinkTarget is { } target)
+        {
+            throw new InvalidDataException(
+                $"{path} is a link to {Quoting.Flat(target)}, so writing it would write somewhere "
+                + "outside this repository. Replace the link with a file, or remove it");
+        }
+
         for (var attempt = 0; ; attempt++)
         {
             try
@@ -232,6 +247,9 @@ public static class Enrolment
 
         if (stream is null)
         {
+            // CreateNew refuses an existing path, so a link cannot be followed here: a link whose
+            // target exists is itself an existing path, and one whose target does not is still a
+            // directory entry this refuses to write over.
             var created = new FileStream(
                 path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, useAsync: false);
 
