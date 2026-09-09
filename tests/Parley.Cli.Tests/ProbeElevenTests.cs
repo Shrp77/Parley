@@ -1,0 +1,230 @@
+using Parley.Configuration;
+using Parley.Core;
+using Parley.Setup;
+using System.Text.Json.Nodes;
+using Xunit;
+
+namespace Parley.Cli.Tests;
+
+/// <summary>
+/// Review gate, lens 1, run 11: whether the two writers agree.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <c>Enrolment</c> exists because two writers of these files "would agree today and differ in six
+/// months" — the terminal adds one repository at a time and <c>enroll apply</c> drives a manifest in
+/// bulk. This feature gave the bulk path its own hold, its own decision function and its own
+/// catalogue handling, which is exactly the drift that argument warns about, and no probe has asked
+/// whether what they write is still the same thing.
+/// </para>
+/// <para>
+/// The failure would not be a crash. It would be a repository enrolled by one surface that the other
+/// cannot see, withdraw, or leave alone — and it would be found by a person, months later, with an
+/// agent that answers in a roster nothing on the machine admits to.
+/// </para>
+/// </remarks>
+public sealed class ProbeElevenTests : IDisposable
+{
+    private readonly string _root =
+        Path.Combine(Path.GetTempPath(), "parley-probe11-" + Path.GetRandomFileName());
+
+    public ProbeElevenTests()
+    {
+        Directory.CreateDirectory(Checkouts);
+
+        foreach (var name in new[] { "byCommand", "byTerminal" })
+        {
+            Directory.CreateDirectory(Workspace(name));
+            Directory.CreateDirectory(Path.Combine(Workspace(name), ".git"));
+        }
+
+        ProjectManifest.Write(ManifestPath, [Project()]);
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            Directory.Delete(_root, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private string Checkouts => Path.Combine(_root, "checkouts");
+
+    private string ManifestPath => Path.Combine(_root, "projects.json");
+
+    private string Catalogue => Path.Combine(_root, "alpha-node.json");
+
+    private string Workspace(string name) => Path.Combine(Checkouts, name);
+
+    private ProjectSettings Project() =>
+        new(ProjectName.Create("alpha"), Path.Combine(_root, "alpha.db"),
+            "http://127.0.0.1:51707", Catalogue, null);
+
+    /// <summary>What the terminal does: one repository, through <c>Enrolment</c>.</summary>
+    private Task<Enrolment.Outcome> TerminalAsync(string name, string agent) =>
+        Enrolment.AddAsync(
+            new EnrollmentEntry(Workspace(name), agent, "What it owns. Not what it does not.", Unattended: false)
+            {
+                Enroll = true,
+                OwnsApproved = true,
+            },
+            "alpha",
+            Catalogue,
+            Path.Combine(Workspace(name), "CLAUDE.md"),
+            TestContext.Current.CancellationToken,
+            [Project()],
+            ManifestPath);
+
+    /// <summary>What the command does: the same repository, through a manifest.</summary>
+    private async Task<int> CommandAsync(string name, string agent)
+    {
+        var manifest = Path.Combine(_root, $"enrol-{name}.json");
+
+        await File.WriteAllTextAsync(
+            manifest,
+            $$"""
+              {
+                "node_config": "{{Catalogue.Replace(Path.DirectorySeparatorChar, '/')}}",
+                "agents": [ {
+                  "workspace": "{{Workspace(name).Replace(Path.DirectorySeparatorChar, '/')}}",
+                  "agent": "{{agent}}",
+                  "owns": "What it owns. Not what it does not.",
+                  "unattended": false,
+                  "enroll": true,
+                  "owns_approved": true
+                } ]
+              }
+              """,
+            TestContext.Current.CancellationToken);
+
+        return await EnrollCommand.RunAsync(
+            ["apply", manifest],
+            selectAll: null,
+            new Resolved(Catalogue, ValueSource.Argument),
+            new StringWriter(),
+            new StringWriter(),
+            TestContext.Current.CancellationToken,
+            Project(),
+            [Project()],
+            ManifestPath);
+    }
+
+    private async Task<JsonNode> EntryAsync(string name) =>
+        JsonNode.Parse(await File.ReadAllTextAsync(
+            Path.Combine(Workspace(name), ".mcp.json"), TestContext.Current.CancellationToken))!
+            ["mcpServers"]!["parley-alpha"]!;
+
+    [Fact]
+    public async Task Both_writers_produce_the_same_entry_for_the_same_repository()
+    {
+        // The claim `Enrolment` was created to make, checked rather than trusted — and checked after
+        // a feature that gave the bulk path its own hold, its own decision function and its own
+        // catalogue handling.
+        await TerminalAsync("byTerminal", "orders");
+
+        Assert.Equal(0, await CommandAsync("byCommand", "orders"));
+
+        // Normalised on the one thing that legitimately differs: they are two repositories, so their
+        // workspaces differ and must. The first version of this probe compared them raw and reported
+        // that as a finding — a probe that has not said what it expects to differ cannot tell drift
+        // from its own fixture.
+        var terminal = (await EntryAsync("byTerminal")).ToJsonString()
+            .Replace("byTerminal", "X", StringComparison.Ordinal);
+
+        var command = (await EntryAsync("byCommand")).ToJsonString()
+            .Replace("byCommand", "X", StringComparison.Ordinal);
+
+        Assert.Equal(terminal, command);
+    }
+
+    [Fact]
+    public async Task Both_writers_produce_the_same_file_and_not_merely_the_same_entry()
+    {
+        // Formatting counts. This file is usually committed, so two writers that differ in
+        // whitespace produce a diff every time a machine is configured by the other surface.
+        await TerminalAsync("byTerminal", "orders");
+
+        Assert.Equal(0, await CommandAsync("byCommand", "orders"));
+
+        var terminal = await File.ReadAllTextAsync(
+            Path.Combine(Workspace("byTerminal"), ".mcp.json"), TestContext.Current.CancellationToken);
+
+        var command = await File.ReadAllTextAsync(
+            Path.Combine(Workspace("byCommand"), ".mcp.json"), TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            terminal.Replace("byTerminal", "X", StringComparison.Ordinal),
+            command.Replace("byCommand", "X", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task What_one_writer_wrote_the_other_reports_as_already_correct()
+    {
+        // The drift that would matter most: each surface thinking the other's entry needs rewriting,
+        // so a machine configured from a screen and then from a shell rewrites every repository.
+        await TerminalAsync("byTerminal", "orders");
+
+        var before = await File.ReadAllBytesAsync(
+            Path.Combine(Workspace("byTerminal"), ".mcp.json"), TestContext.Current.CancellationToken);
+
+        var manifest = Path.Combine(_root, "enrol-again.json");
+
+        await File.WriteAllTextAsync(
+            manifest,
+            $$"""
+              {
+                "node_config": "{{Catalogue.Replace(Path.DirectorySeparatorChar, '/')}}",
+                "agents": [ {
+                  "workspace": "{{Workspace("byTerminal").Replace(Path.DirectorySeparatorChar, '/')}}",
+                  "agent": "orders",
+                  "owns": "What it owns. Not what it does not.",
+                  "unattended": false,
+                  "enroll": true,
+                  "owns_approved": true
+                } ]
+              }
+              """,
+            TestContext.Current.CancellationToken);
+
+        var output = new StringWriter();
+
+        await EnrollCommand.RunAsync(
+            ["apply", manifest],
+            selectAll: null,
+            new Resolved(Catalogue, ValueSource.Argument),
+            output,
+            new StringWriter(),
+            TestContext.Current.CancellationToken,
+            Project(),
+            [Project()],
+            ManifestPath);
+
+        Assert.Contains("already correct", output.ToString(), StringComparison.Ordinal);
+        Assert.Equal(before, await File.ReadAllBytesAsync(
+            Path.Combine(Workspace("byTerminal"), ".mcp.json"), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task What_the_command_wrote_the_terminal_can_withdraw()
+    {
+        // The inverse, and the one with teeth: withdrawal is the path that deletes. A surface that
+        // could not find the other's entry would report success and leave the repository announcing
+        // itself as an agent of a project it had been removed from.
+        Assert.Equal(0, await CommandAsync("byCommand", "orders"));
+
+        var outcome = await Enrolment.WithdrawAsync(
+            Workspace("byCommand"), "orders", "alpha", Catalogue, TestContext.Current.CancellationToken);
+
+        Assert.Contains(Path.Combine(Workspace("byCommand"), ".mcp.json"), outcome.Written);
+
+        var servers = (JsonObject)JsonNode.Parse(await File.ReadAllTextAsync(
+            Path.Combine(Workspace("byCommand"), ".mcp.json"), TestContext.Current.CancellationToken))!
+            ["mcpServers"]!;
+
+        Assert.Empty(servers);
+    }
+}
