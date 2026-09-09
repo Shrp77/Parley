@@ -143,16 +143,18 @@ parley registry
 ## 3. Write the launch configuration
 
 Claude Code reads `.mcp.json` at the repository root. If the file already exists, **merge into
-it** - add a `parley` entry to `mcpServers` and leave every other server alone. Never replace
-the file.
+it** - add one entry to `mcpServers` and leave every other server alone. Never replace the file.
+
+The key is `parley-<project>`, or the bare `parley` when the deployment names no projects:
 
 ```json
 {
   "mcpServers": {
-    "parley": {
+    "parley-<project>": {
       "command": "parley-mcp",
       "env": {
         "PARLEY_AGENT": "<the agent name>",
+        "PARLEY_PROJECT": "<project>",
         "PARLEY_OWNS": "<what this repository owns, and what it does not>",
         "PARLEY_WORKSPACE": "${PARLEY_WORKSPACE:-<absolute path to this repository>}"
       }
@@ -160,6 +162,11 @@ the file.
   }
 }
 ```
+
+A repository may answer in more than one project by holding one entry for each, with a different
+name and a different `owns` line in each - brokers do not federate, so the project it joins is the
+only set of peers it can reach. An entry already there under the bare `parley` key is left exactly
+as it is: renaming it would change every tool name the agent behind it already sees.
 
 Substitute the real values. Four notes on the shape:
 

@@ -309,13 +309,13 @@ different `PARLEY_AGENT`:
 ```jsonc
 {
   "mcpServers": {
-    "parley": {
+    "parley-acme": {                                  // parley-<project>, or `parley` for none
       "command": "parley-mcp",
       "env": {
         "PARLEY_AGENT": "orders",                     // the role; the machine is appended
         "PARLEY_OWNS": "Carts, orders, line totals. No tax, no stock.", // what peers route by
-        "PARLEY_BROKER": "127.0.0.1:51707",           // optional, this is the default
-        "PARLEY_PROJECT": "acme",                     // optional, instead of PARLEY_BROKER
+        "PARLEY_PROJECT": "acme",                     // matches the key, and says where to connect
+        "PARLEY_BROKER": "127.0.0.1:51707",           // optional, instead of PARLEY_PROJECT
         "PARLEY_RESPONDER": "some-model-9",           // optional, which model answers
         "PARLEY_WORKSPACE": "/src/acme-orders",       // optional, for the registry
         "PARLEY_MACHINE": "server-b"                      // optional, detected if unset
@@ -324,6 +324,17 @@ different `PARLEY_AGENT`:
   }
 }
 ```
+
+**One entry per project, and the key says which.** A repository that several deployments need to
+ask holds one entry for each, with its own name and its own `owns` line — brokers do not federate,
+so the alternative is picking one set of peers and being unreachable to the rest. A deployment that
+names no projects writes the bare key `parley`, which is also what every repository enrolled before
+this existed has; those are read exactly as they always were and are never renamed, because the key
+is part of every tool name the agent behind it already sees.
+
+A repository may answer in as many projects as you like and may be *started unattended* by only
+one. A node starts an agent with the repository as its working directory, so two of them would be
+two models editing one checkout.
 
 The same committed file works on every machine: the role is configured and the machine half is
 detected, so `orders` becomes `orders@server-b` on one box and `orders@server-a` on another.

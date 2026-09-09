@@ -44,7 +44,7 @@ public sealed class NonInteractiveTests
     [Theory]
     [InlineData("parley project list")]
     [InlineData("parley registry")]
-    [InlineData("parley console")]
+    [InlineData("parley web-ui")]
     public void The_refusal_names_something_that_does_work_in_a_pipe(string alternative)
     {
         // Each of these answers some part of what `top` shows and all of them work redirected.

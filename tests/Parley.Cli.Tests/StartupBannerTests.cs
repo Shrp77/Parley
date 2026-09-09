@@ -234,8 +234,8 @@ public sealed class StartupBannerTests
             "serve",
             "--db", store,
             "--listen", "http://127.0.0.1:0",
-            "--with-console",
-            "--console", console);
+            "--with-web-ui",
+            "--web-ui", console);
 
         var block = new List<string>();
 

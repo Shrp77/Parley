@@ -109,14 +109,32 @@ public sealed class RenameTests
     }
 
     [Fact]
-    public void The_old_flags_are_honoured_and_say_when_they_stop_being()
+    public void The_old_flags_are_gone_at_the_version_that_was_promised()
     {
-        // A deprecation with no date is a kindness that becomes permanent. The version is in the
-        // message a person sees rather than only in a document, because the person who needs it is
-        // the one who just used the old spelling.
-        var program = RepositoryFile.Read("src/Parley.Cli/Program.cs");
+        // **This test asserted the deprecation until 0.22.0 and now asserts the removal.** A
+        // deprecation with no date is a kindness that becomes permanent; 007 named 0.21.0, 008
+        // moved it here and called it a commitment rather than a second reprieve, and this is what
+        // makes that true of the binary rather than of a document.
+        //
+        // Driven rather than read off the source. The flags were removed by deleting the code that
+        // took them, so a source-text assertion would pass against a build that still accepted them
+        // through some other path -- and what a person meets is the refusal, not the file.
+        var refused = ToolProcess.Run("serve", "--with-console");
 
-        Assert.Contains("--with-console", program, StringComparison.Ordinal);
-        Assert.Contains("removed at 0.21.0", program, StringComparison.Ordinal);
+        Assert.NotEqual(0, refused.ExitCode);
+        Assert.Contains("--with-console", refused.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Every_old_spelling_is_refused_and_not_merely_ignored()
+    {
+        // A flag accepted and ignored is worse than one refused: the person who typed it believes
+        // it did something. That is the same rule --with-console itself was held to when it existed.
+        foreach (var flag in new[] { "--with-console", "--no-console" })
+        {
+            Assert.NotEqual(0, ToolProcess.Run("serve", flag).ExitCode);
+        }
+
+        Assert.NotEqual(0, ToolProcess.Run("serve", "--console", "http://127.0.0.1:5280").ExitCode);
     }
 }

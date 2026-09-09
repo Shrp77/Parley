@@ -166,5 +166,5 @@ public static class TopCommand
         "parley top draws a full-screen terminal, and this one is redirected — nothing here "
         + "would be readable and the frames would fill the log. For the same facts in a pipe, "
         + "use `parley project list`, `parley registry` and `parley export <conversation>`. "
-        + "For a browser instead, `parley console`.";
+        + "For a browser instead, `parley web-ui`.";
 }

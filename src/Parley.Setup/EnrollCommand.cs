@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using Parley.Configuration;
+using Parley.Core;
 
 namespace Parley.Setup;
 
@@ -101,6 +102,19 @@ public static class EnrollCommand
     /// <param name="output">Where to report what happened.</param>
     /// <param name="error">Where to report why it could not.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
+    /// <param name="project">
+    /// The project being enrolled into, or null when the deployment names none. **Taken from the
+    /// entry point's own <c>--project</c> resolution rather than from a field in the enrolment
+    /// manifest**, which the plan had asked for: <c>ProjectResolution.TrySelect</c> already refuses
+    /// to guess when several are configured and none is named, so a second place to say which
+    /// project would be a second answer to a question that is already answered — and the two would
+    /// disagree first on the machine with more than one deployment, which is the only machine where
+    /// it matters.
+    /// </param>
+    /// <param name="deployment">
+    /// Every project this machine describes, so an address-pinned entry can be resolved and an
+    /// unattended start granted elsewhere can be found.
+    /// </param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     public static async Task<int> RunAsync(
@@ -109,7 +123,9 @@ public static class EnrollCommand
         Resolved nodeConfig,
         TextWriter output,
         TextWriter error,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ProjectSettings? project = null,
+        IReadOnlyList<ProjectSettings>? deployment = null)
     {
         ArgumentNullException.ThrowIfNull(arguments);
         ArgumentNullException.ThrowIfNull(nodeConfig);
@@ -122,9 +138,9 @@ public static class EnrollCommand
                 .ConfigureAwait(false),
             ["scan", var root, var into] => await ScanAsync(root, into, selectAll, output, error, cancellationToken)
                 .ConfigureAwait(false),
-            ["plan", var manifest] => await ApplyAsync(manifest, write: false, nodeConfig, output, error, cancellationToken)
+            ["plan", var manifest] => await ApplyAsync(manifest, write: false, nodeConfig, output, error, project, deployment, cancellationToken)
                 .ConfigureAwait(false),
-            ["apply", var manifest] => await ApplyAsync(manifest, write: true, nodeConfig, output, error, cancellationToken)
+            ["apply", var manifest] => await ApplyAsync(manifest, write: true, nodeConfig, output, error, project, deployment, cancellationToken)
                 .ConfigureAwait(false),
             _ => await UsageAsync(error).ConfigureAwait(false),
         };
@@ -617,8 +633,12 @@ public static class EnrollCommand
                 : [];
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
-                                       or UnauthorizedAccessException or FormatException)
+                                       or UnauthorizedAccessException or FormatException
+                                       or InvalidDataException)
         {
+            // InvalidDataException is a file naming one server twice. It belongs with the rest: a
+            // scan gathers evidence and must never be the thing that ends the run, and "could not be
+            // read" is the honest answer for a file this cannot make sense of.
             return null;
         }
     }
@@ -699,6 +719,8 @@ public static class EnrollCommand
         Resolved nodeConfig,
         TextWriter output,
         TextWriter error,
+        ProjectSettings? project,
+        IReadOnlyList<ProjectSettings>? deployment,
         CancellationToken cancellationToken)
     {
         EnrollmentManifest? manifest = null;
@@ -848,7 +870,12 @@ public static class EnrollCommand
                     entry,
                     File.Exists(launchPath) ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false) : null,
                     File.Exists(instructionsPath) ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false) : null,
-                    listed.ContainsKey(entry.Agent));
+                    listed.ContainsKey(entry.Agent),
+                    project?.Name.Value,
+                    deployment?.ToDictionary(
+                        settings => settings.Name.Value,
+                        settings => settings.Endpoint,
+                        StringComparer.Ordinal));
             }
             catch (Exception ex) when (ex is JsonException or InvalidDataException)
             {
@@ -903,6 +930,20 @@ public static class EnrollCommand
 
             if (plan.AddsNodeEntry)
             {
+                // FR-013, refused rather than warned about. A launch entry does nothing until a
+                // person opens the repository; a catalogue entry is consent for a machine to start
+                // a turn with nobody watching, and a node starts one with the repository as its
+                // working directory -- so two projects consenting is two models editing one
+                // checkout. The launch entries written above stand; it is only this that is
+                // singular.
+                if (Catalogues.Elsewhere(deployment, entry.Workspace, nodePath) is { } already)
+                {
+                    await error.WriteLineAsync($"{entry.Agent}: {Catalogues.Refusal(already)}")
+                        .ConfigureAwait(false);
+
+                    return Config;
+                }
+
                 Enrolment.List(listed, entry.Agent, entry.Workspace);
                 nodeChanged = true;
             }

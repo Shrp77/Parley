@@ -19,7 +19,7 @@
 
 <pre><code>{
   "mcpServers": {
-    "parley": {
+    "parley-@Model.Project": {
       "command": "parley-mcp",
       "env": {
         "PARLEY_AGENT": "&lt;a short name, lower case&gt;",
@@ -29,6 +29,14 @@
     }
   }
 }</code></pre>
+
+<p>
+    The key is <code>parley-</code> and this project's name. A repository may answer in more than one
+    project by holding one entry for each, under its own key and with its own <code>owns</code> line;
+    brokers do not federate, so the project an entry names is the only set of peers it can reach. An
+    entry already there under the bare <code>parley</code> key belongs to a deployment that names no
+    projects and should be left as it is.
+</p>
 
 <p>
     The <code>owns</code> line is read by every other agent when it decides who to ask, so it is

@@ -86,6 +86,16 @@ public static class LaunchEntries
     /// <summary>Every parley server in an <c>mcpServers</c> object.</summary>
     /// <param name="servers">The object, or null when the file names no servers.</param>
     /// <returns>The entries this tooling owns, in the order the file holds them.</returns>
+    /// <exception cref="InvalidDataException">Two servers share one name.</exception>
+    /// <remarks>
+    /// <b>A duplicated member is refused here rather than crashing three call sites.</b>
+    /// <c>{"parley-alpha": {…}, "parley-alpha": {…}}</c> is legal JSON and is what a careless merge
+    /// produces; <c>JsonNode.Parse</c> accepts it and throws <c>ArgumentException</c> later, out of
+    /// the enumerator, where nothing was catching it — so a scan crashed, a withdrawal crashed, and
+    /// <c>enroll apply</c> crashed part-way through a run, leaving the half-applied set that command
+    /// refuses by design. Translated to the exception this codebase already means by "somebody's
+    /// file is in a shape I will not merge into", which every caller of that path already handles.
+    /// </remarks>
     public static IReadOnlyList<LaunchEntry> Read(JsonObject? servers)
     {
         if (servers is null)
@@ -95,7 +105,7 @@ public static class LaunchEntries
 
         var found = new List<LaunchEntry>();
 
-        foreach (var (key, node) in servers)
+        foreach (var (key, node) in Members(servers))
         {
             if (!LaunchKey.IsOurs(key))
             {
@@ -177,6 +187,29 @@ public static class LaunchEntries
         }
 
         return (key, null);
+    }
+
+    /// <summary>The object's members, refusing a file that names one server twice.</summary>
+    /// <param name="servers">The object.</param>
+    /// <returns>Every member, once.</returns>
+    /// <exception cref="InvalidDataException">Two servers share one name.</exception>
+    /// <remarks>
+    /// The enumeration is materialised on purpose: the throw happens on the first move, and a lazy
+    /// sequence would carry it into the middle of a caller's loop — which is exactly where an
+    /// unhandled one did the damage this exists to stop.
+    /// </remarks>
+    private static IReadOnlyList<KeyValuePair<string, JsonNode?>> Members(JsonObject servers)
+    {
+        try
+        {
+            return [.. servers];
+        }
+        catch (ArgumentException duplicate)
+        {
+            throw new InvalidDataException(
+                "\"mcpServers\" names one server twice, so this cannot tell which entry is which",
+                duplicate);
+        }
     }
 
     /// <summary>One environment variable, when it holds text.</summary>

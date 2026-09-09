@@ -132,6 +132,100 @@ public static class Enrolment
             ? name
             : null;
 
+    /// <summary>Takes the launch configuration for the length of a read-modify-write.</summary>
+    /// <param name="path">The launch configuration.</param>
+    /// <param name="cancellationToken">Stops the waiting.</param>
+    /// <returns>The handle, or null when there is no file to hold yet.</returns>
+    /// <exception cref="IOException">Somebody else held it throughout.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>An exclusive handle rather than a lock file or a named mutex.</b> A lock file would leave
+    /// something behind in somebody's repository the first time a process died holding it, and a
+    /// named mutex is a second mechanism to reason about on two platforms. <c>FileShare.None</c> is
+    /// what the operating system already offers, and .NET honours it between processes on both.
+    /// </para>
+    /// <para>
+    /// <b>It waits rather than failing at once.</b> A collision here is two ordinary runs passing
+    /// each other, not contention worth reporting — but it waits a bounded time and then throws,
+    /// because a wait with no end is a tool that hangs, and this one is often run from a script.
+    /// </para>
+    /// <para>
+    /// <b>Null when the file does not exist, and it is not created here.</b> Opening
+    /// <c>OpenOrCreate</c> would leave an empty <c>.mcp.json</c> in a repository the run then
+    /// decided to change nothing in — a file written into somebody's checkout by a command that
+    /// reported writing nothing.
+    /// </para>
+    /// </remarks>
+    private static async Task<FileStream?> HoldAsync(string path, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return new FileStream(
+                    path, FileMode.Open, FileAccess.ReadWrite, FileShare.None, 4096, useAsync: true);
+            }
+            catch (IOException) when (attempt < 40 && File.Exists(path))
+            {
+                await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>Reads a held file from the start.</summary>
+    /// <param name="stream">The handle.</param>
+    /// <param name="cancellationToken">Stops the read.</param>
+    /// <returns>Its text.</returns>
+    private static async Task<string> ReadAsync(FileStream stream, CancellationToken cancellationToken)
+    {
+        stream.Position = 0;
+
+        using var reader = new StreamReader(stream, leaveOpen: true);
+
+        return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Replaces what a held file holds, or writes one that was not there.</summary>
+    /// <param name="stream">The handle, or null when the file did not exist.</param>
+    /// <param name="path">Where it goes when it did not exist.</param>
+    /// <param name="text">What it should hold.</param>
+    /// <param name="cancellationToken">Stops the write.</param>
+    /// <remarks>
+    /// <b>The create arm is exclusive too, and has to be.</b> Two runs both finding no file and both
+    /// creating one is the same lost update at a different moment; <c>CreateNew</c> means the second
+    /// is refused rather than silently overwriting the first — and refused loudly, since a caller
+    /// that meant to add a second entry has just been told the file appeared underneath it.
+    /// </remarks>
+    private static async Task OverwriteAsync(
+        FileStream? stream,
+        string path,
+        string text,
+        CancellationToken cancellationToken)
+    {
+        var bytes = Utf8.GetBytes(text);
+
+        if (stream is null)
+        {
+            using var created = new FileStream(
+                path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, useAsync: true);
+
+            await created.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+
+            return;
+        }
+
+        stream.Position = 0;
+        stream.SetLength(0);
+
+        await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>How a note names the project it is talking about.</summary>
     /// <param name="project">The project, or null when none was named.</param>
     /// <returns>Words for it.</returns>
@@ -201,23 +295,51 @@ public static class Enrolment
             throw new InvalidDataException(Catalogues.Refusal(already));
         }
 
-        var plan = EnrollmentPlan.Describe(
-            entry,
-            File.Exists(launchPath)
-                ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false)
-                : null,
-            File.Exists(instructionsPath)
-                ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
-                : null,
-            agents.ContainsKey(entry.Agent),
-            project,
-            deployment?.ToDictionary(
-                settings => settings.Name.Value,
-                settings => settings.Endpoint,
-                StringComparer.Ordinal));
+        var instructions = File.Exists(instructionsPath)
+            ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
+            : null;
 
-        var written = new List<string>(
-            await WriteAsync(plan, entry.Workspace, instructionsPath, cancellationToken).ConfigureAwait(false));
+        // **Read and written under one exclusive handle, because a repository now has more than one
+        // writer.** Before this feature a second enrolment of one repository was refused outright, so
+        // there was never a legitimate reason for two writers to hold this file at once; setting a
+        // machine up for two projects is the ordinary case now. Read-modify-write over the whole file
+        // without exclusion loses the earlier writer's entry *and reports success* -- eight projects
+        // racing left one entry in the file and told two of them it had worked. That is the same
+        // class as the withdrawal that removed another agent's entry and reported success: the damage
+        // is not the failure, it is the report.
+        RepositoryPlan plan;
+        var written = new List<string>();
+
+        using (var launch = await HoldAsync(launchPath, cancellationToken).ConfigureAwait(false))
+        {
+            plan = EnrollmentPlan.Describe(
+                entry,
+                launch is null ? null : await ReadAsync(launch, cancellationToken).ConfigureAwait(false),
+                instructions,
+                agents.ContainsKey(entry.Agent),
+                project,
+                deployment?.ToDictionary(
+                    settings => settings.Name.Value,
+                    settings => settings.Endpoint,
+                    StringComparer.Ordinal));
+
+            if (plan.LaunchConfiguration is { } text)
+            {
+                await OverwriteAsync(launch, launchPath, text, cancellationToken).ConfigureAwait(false);
+                written.Add(launchPath);
+            }
+        }
+
+        if (plan.Instructions is { } appended)
+        {
+            await File.WriteAllTextAsync(
+                instructionsPath,
+                appended,
+                HadByteOrderMark(instructionsPath) ? Utf8WithMark : Utf8,
+                cancellationToken).ConfigureAwait(false);
+
+            written.Add(instructionsPath);
+        }
 
         if (plan.AddsNodeEntry)
         {
@@ -277,7 +399,14 @@ public static class Enrolment
         }
         else
         {
-            var text = await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false);
+            // Held for the whole read-modify-write, for the reason AddAsync is: a repository may now
+            // have more than one writer, and this is the one that deletes.
+            using var held = await HoldAsync(launchPath, cancellationToken).ConfigureAwait(false);
+
+            var text = held is null
+                ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false)
+                : await ReadAsync(held, cancellationToken).ConfigureAwait(false);
+
             JsonNode? parsed;
 
             try
@@ -294,7 +423,22 @@ public static class Enrolment
             {
                 if (root["mcpServers"] is JsonObject servers)
                 {
-                    var entries = LaunchEntries.Read(servers);
+                    IReadOnlyList<LaunchEntry> entries;
+
+                    try
+                    {
+                        entries = LaunchEntries.Read(servers);
+                    }
+                    catch (InvalidDataException duplicated)
+                    {
+                        // A file naming one server twice. Reported and left exactly as it is, like
+                        // every other shape this does not understand -- a withdrawal is somebody
+                        // deciding an agent should stop being reachable, and rewriting a file it
+                        // cannot read in the course of that is a second, unasked-for change.
+                        notes.Add($"{launchPath}: left alone, {duplicated.Message}");
+
+                        return new Outcome(notes, written);
+                    }
 
                     // The same precedence enrolling uses, run backwards: a withdrawal removes what
                     // an enrolment into this project would have written at, and nothing else. Two
@@ -357,7 +501,8 @@ public static class Enrolment
                     }
                     else if (servers.Remove(candidates[0].Key))
                     {
-                        await File.WriteAllTextAsync(
+                        await OverwriteAsync(
+                            held,
                             launchPath,
                             root.ToJsonString(SerialisationOptions.Indented) + "\n",
                             cancellationToken).ConfigureAwait(false);
