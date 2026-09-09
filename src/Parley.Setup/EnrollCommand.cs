@@ -411,6 +411,18 @@ public static class EnrollCommand
                 continue;
             }
 
+            // **Said rather than silently skipped.** The evidence exists so that approving a
+            // suggested line is checkable against something, and a repository whose README points
+            // out of the checkout is a fact about that repository worth putting in front of the
+            // person — where an absent line would just look like a repository that says nothing
+            // about itself.
+            if (Enrolment.Linked(path) is not null)
+            {
+                found.Add($"{name} — not read: it is a link out of the repository");
+
+                break;
+            }
+
             try
             {
                 var line = File.ReadLines(path).FirstOrDefault(l =>
@@ -613,6 +625,16 @@ public static class EnrollCommand
         try
         {
             var path = Path.Combine(workspace, ".mcp.json");
+
+            // **A link is not read, on the same terms the write refuses one.** What comes back from
+            // here becomes a suggested agent name and owns line — an identity — so taking it from a
+            // file the repository merely points at is the write-anywhere defect with the arrow
+            // reversed. Unreadable rather than empty, because "enrolled nowhere" and "there is a file
+            // to look at" are the three-answers distinction this method exists for.
+            if (Enrolment.Linked(path) is not null)
+            {
+                return null;
+            }
 
             return File.Exists(path)
                 ? LaunchEntries.Read(JsonNode.Parse(File.ReadAllText(path))?["mcpServers"] as JsonObject)

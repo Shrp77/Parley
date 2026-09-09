@@ -245,11 +245,21 @@ public static class Enrolment
     /// <param name="path">The file.</param>
     /// <returns>Its target, or null.</returns>
     /// <remarks>
+    /// <para>
     /// <b>Every file this tooling writes inside a checkout asks this first.</b> Both of them are
     /// tracked, so a repository can ship either as a link — and this tooling is pointed at directories
     /// of clones somebody else wrote. Following one turns a clone into a write wherever the link says.
+    /// </para>
+    /// <para>
+    /// <b>And every file it reads out of one, which is the half that was missed.</b> Three findings
+    /// closed the write in three places and none of them asked about the read: <c>enroll scan</c> opens
+    /// a clone's <c>README.md</c> and its <c>.mcp.json</c> and quotes what it finds into a manifest the
+    /// person reads and frequently commits, so a link pointing out of the checkout copies a line of
+    /// somebody else's file into it. Internal rather than private for that reason — the readers are in
+    /// <c>EnrollCommand</c>, and a second implementation of this is how the two rules come to differ.
+    /// </para>
     /// </remarks>
-    private static string? Linked(string path)
+    internal static string? Linked(string path)
     {
         try
         {
