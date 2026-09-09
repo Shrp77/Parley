@@ -145,6 +145,40 @@ public static class Enrolment
         return (plan, written, said);
     }
 
+    /// <summary>Turns a failure arriving after files have changed into one that says which.</summary>
+    /// <param name="cause">What went wrong.</param>
+    /// <param name="written">Everything already changed on disk.</param>
+    /// <returns>The failure to raise instead.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Three files are written in order and the exception carried only the last one's reason.</b>
+    /// A catalogue that cannot be written arrives after the launch configuration has been replaced —
+    /// so the run reports a failure, the person's reasonable reading is that nothing happened, and
+    /// what has actually happened is a repository announcing itself as an agent that no node will
+    /// ever start. *The damage is not the failure, it is the report*, which this repository has now
+    /// written down in three features.
+    /// </para>
+    /// <para>
+    /// <b>Reported rather than rolled back.</b> Undoing a write is another write that can fail the
+    /// same way, on a file whose previous contents this would have to have kept — and the previous
+    /// contents include other people's servers. The state left behind is a working attended agent
+    /// that is not startable unattended, which is an ordinary configuration; being told is what was
+    /// missing.
+    /// </para>
+    /// <para>
+    /// Cancellation is deliberately not wrapped: it is somebody pressing Ctrl+C, and callers and
+    /// tests both distinguish it by type. The files it leaves are the same, and
+    /// <see cref="OverwriteHeldAsync"/> is what keeps each of them whole.
+    /// </para>
+    /// </remarks>
+    private static InvalidDataException Interrupted(Exception cause, IReadOnlyList<string> written) =>
+        new(
+            $"{cause.Message} This did not finish, and had already changed "
+            + $"{string.Join(", ", written.Select(Quoting.Flat))}. Nothing is undone automatically, "
+            + "because undoing a write is another write that can fail the same way: re-run once the "
+            + "fault is fixed, or withdraw.",
+            cause);
+
     /// <summary>What a declined instructions file currently holds, for the plan's sake.</summary>
     /// <param name="declined">Why it was declined, or null when it simply is not there.</param>
     /// <param name="path">Where it lives.</param>
@@ -547,76 +581,83 @@ public static class Enrolment
         // racing left one entry in the file and told two of them it had worked. That is the same
         // class as the withdrawal that removed another agent's entry and reported success: the damage
         // is not the failure, it is the report.
-        RepositoryPlan plan;
+        RepositoryPlan plan = null!;
         var written = new List<string>();
         var said = new List<string>();
 
-        using (var launch = await HoldAsync(launchPath, cancellationToken).ConfigureAwait(false))
+        try
         {
-            // **The third file, held from here rather than read at the top of the call.** The frame
-            // replaces this file with its own contents plus the frame, so the read and the write have
-            // to be one act as the other two are — and the acquisition above retries for two seconds,
-            // which is a wide window to lose somebody's editor save in.
-            var (notes, declined) = await HoldInstructionsAsync(instructionsPath, cancellationToken)
-                .ConfigureAwait(false);
-
-            using (notes)
+            using (var launch = await HoldAsync(launchPath, cancellationToken).ConfigureAwait(false))
             {
-                var mark = notes is not null && HeldHasByteOrderMark(notes);
+                // **The third file, held from here rather than read at the top of the call.** The frame
+                // replaces this file with its own contents plus the frame, so the read and the write have
+                // to be one act as the other two are — and the acquisition above retries for two seconds,
+                // which is a wide window to lose somebody's editor save in.
+                var (notes, declined) = await HoldInstructionsAsync(instructionsPath, cancellationToken)
+                    .ConfigureAwait(false);
 
-                plan = EnrollmentPlan.Describe(
-                    entry,
-                    launch is null ? null : await ReadHeldAsync(launch, cancellationToken).ConfigureAwait(false),
-                    notes is null
-                        ? await DeclinedTextAsync(declined, instructionsPath, cancellationToken)
-                            .ConfigureAwait(false)
-                        : await ReadHeldAsync(notes, cancellationToken).ConfigureAwait(false),
-                    agents.ContainsKey(entry.Agent),
-                    project,
-                    deployment?.ToDictionary(
-                        settings => settings.Name.Value,
-                        settings => settings.Endpoint,
-                        StringComparer.Ordinal),
-                    agents[entry.Agent]?["workspace"]?.GetValue<string>());
-
-                if (plan.LaunchConfiguration is { } text)
+                using (notes)
                 {
-                    await OverwriteHeldAsync(launch, launchPath, text, cancellationToken).ConfigureAwait(false);
-                    written.Add(launchPath);
-                }
+                    var mark = notes is not null && HeldHasByteOrderMark(notes);
 
-                if (plan.Instructions is { } appended)
-                {
-                    // Skipped with a note rather than refusing the enrolment. The frame is the least
-                    // of the three writes: a repository is an agent without it, and it is the one
-                    // file here this tooling has always said it does not own.
-                    if (declined is not null)
+                    plan = EnrollmentPlan.Describe(
+                        entry,
+                        launch is null ? null : await ReadHeldAsync(launch, cancellationToken).ConfigureAwait(false),
+                        notes is null
+                            ? await DeclinedTextAsync(declined, instructionsPath, cancellationToken)
+                                .ConfigureAwait(false)
+                            : await ReadHeldAsync(notes, cancellationToken).ConfigureAwait(false),
+                        agents.ContainsKey(entry.Agent),
+                        project,
+                        deployment?.ToDictionary(
+                            settings => settings.Name.Value,
+                            settings => settings.Endpoint,
+                            StringComparer.Ordinal),
+                        agents[entry.Agent]?["workspace"]?.GetValue<string>());
+
+                    if (plan.LaunchConfiguration is { } text)
                     {
-                        said.Add(declined);
+                        await OverwriteHeldAsync(launch, launchPath, text, cancellationToken).ConfigureAwait(false);
+                        written.Add(launchPath);
                     }
-                    else
-                    {
-                        await OverwriteHeldAsync(
-                            notes,
-                            instructionsPath,
-                            appended,
-                            cancellationToken,
-                            mark ? Utf8WithMark : Utf8).ConfigureAwait(false);
 
-                        written.Add(instructionsPath);
+                    if (plan.Instructions is { } appended)
+                    {
+                        // Skipped with a note rather than refusing the enrolment. The frame is the least
+                        // of the three writes: a repository is an agent without it, and it is the one
+                        // file here this tooling has always said it does not own.
+                        if (declined is not null)
+                        {
+                            said.Add(declined);
+                        }
+                        else
+                        {
+                            await OverwriteHeldAsync(
+                                notes,
+                                instructionsPath,
+                                appended,
+                                cancellationToken,
+                                mark ? Utf8WithMark : Utf8).ConfigureAwait(false);
+
+                            written.Add(instructionsPath);
+                        }
                     }
                 }
             }
+
+            if (plan.AddsNodeEntry)
+            {
+                List(agents, entry.Agent, entry.Workspace);
+
+                await SaveHeldCatalogueAsync(catalogueHeld, catalogueFile, catalogue, cancellationToken)
+                    .ConfigureAwait(false);
+
+                written.Add(catalogueFile);
+            }
         }
-
-        if (plan.AddsNodeEntry)
+        catch (Exception ex) when (written.Count > 0 && ex is not OperationCanceledException)
         {
-            List(agents, entry.Agent, entry.Workspace);
-
-            await SaveHeldCatalogueAsync(catalogueHeld, catalogueFile, catalogue, cancellationToken)
-                .ConfigureAwait(false);
-
-            written.Add(catalogueFile);
+            throw Interrupted(ex, written);
         }
 
         return new Outcome([.. plan.Notes, .. said], written);
@@ -670,202 +711,209 @@ public static class Enrolment
             ? null
             : await HoldAsync(catalogueFile, cancellationToken).ConfigureAwait(false);
 
-        if (!File.Exists(launchPath))
+        try
         {
-            notes.Add($"{launchPath}: already absent");
-        }
-        else
-        {
-            // Held for the whole read-modify-write, for the reason AddAsync is: a repository may now
-            // have more than one writer, and this is the one that deletes.
-            //
-            // **A link is a note here rather than an exception**, unlike the adding half. Everything
-            // this cannot act on it leaves alone and reports — an unreadable file, servers of the
-            // wrong shape, an entry belonging to another agent — and a withdrawal that threw for one
-            // of those and reported the rest would be one rule with two spellings. The target is
-            // untouched either way; what changes is whether the person gets a sentence or a trace.
-            FileStream? held;
-
-            try
+            if (!File.Exists(launchPath))
             {
-                held = await HoldAsync(launchPath, cancellationToken).ConfigureAwait(false);
-            }
-            catch (InvalidDataException linked)
-            {
-                notes.Add($"{launchPath}: left alone, {linked.Message}");
-
-                return new Outcome(notes, written);
-            }
-
-            using var holding = held;
-
-            var text = held is null
-                ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false)
-                : await ReadHeldAsync(held, cancellationToken).ConfigureAwait(false);
-
-            JsonNode? parsed;
-
-            try
-            {
-                parsed = JsonNode.Parse(text);
-            }
-            catch (System.Text.Json.JsonException)
-            {
-                parsed = null;
-                notes.Add($"{launchPath}: left alone, it is not readable JSON");
-            }
-
-            if (parsed is JsonObject root)
-            {
-                if (root["mcpServers"] is JsonObject servers)
-                {
-                    IReadOnlyList<LaunchEntry> entries;
-
-                    try
-                    {
-                        entries = LaunchEntries.Read(servers);
-                    }
-                    catch (InvalidDataException duplicated)
-                    {
-                        // A file naming one server twice. Reported and left exactly as it is, like
-                        // every other shape this does not understand -- a withdrawal is somebody
-                        // deciding an agent should stop being reachable, and rewriting a file it
-                        // cannot read in the course of that is a second, unasked-for change.
-                        notes.Add($"{launchPath}: left alone, {duplicated.Message}");
-
-                        return new Outcome(notes, written);
-                    }
-
-                    // The same precedence enrolling uses, run backwards: a withdrawal removes what
-                    // an enrolment into this project would have written at, and nothing else. Two
-                    // rules would drift, and the direction they drift in leaves a repository still
-                    // announcing itself as an agent of somewhere it was removed from.
-                    var candidates = project is null
-                        ? entries
-                        : LaunchEntries.Landing(servers, project).Existing is { } landed
-                            ? (IReadOnlyList<LaunchEntry>)[landed]
-                            : [];
-
-                    var named = candidates.Count == 1 ? candidates[0].Agent : null;
-
-                    if (candidates.Count > 1)
-                    {
-                        // FR-011. Never a guess: taking either would remove a working agent from a
-                        // roster nobody was talking about, and the person finds out when a peer
-                        // stops being answered.
-                        notes.Add(
-                            $"{launchPath}: left alone, it answers in "
-                            + $"{string.Join(", ", candidates.Select(found => $"{Quoting.Quoted(found.Project ?? found.Key)}"))}"
-                            + " — name which one to withdraw from");
-                    }
-                    else if (candidates.Count == 0)
-                    {
-                        notes.Add($"{launchPath}: no entry for {Where(project)} to remove");
-                    }
-                    else if (candidates[0] is { Broker: not null, Pinned: null } addressed
-                             && project is not null)
-                    {
-                        // Pinned to an address and naming no project. Enrolling resolves that
-                        // through the manifest; this does not have one, and removing an entry that
-                        // may be another project's agent is the more expensive way to be wrong.
-                        notes.Add(
-                            $"{launchPath}: left alone, its {Quoting.Quoted(addressed.Key)} entry is "
-                            + $"pinned to the broker at {Quoting.Quoted(addressed.Broker)}, which this "
-                            + $"cannot match to {Where(project)}");
-                    }
-                    else if (candidates[0] is { Ours: false } stranger)
-                    {
-                        // **The rule below used to cover this and stopped being able to.** It read:
-                        // an entry that names nobody cannot be another agent's, because nothing
-                        // identifies it as anybody's and every entry this program writes carries the
-                        // variable. That was sound while the key was fixed — an entry at `parley`
-                        // naming nobody was ours by the only convention there was. A key derived
-                        // from a project name is one somebody may reasonably have used first, so
-                        // naming nobody no longer implies being ours.
-                        notes.Add(
-                            $"{launchPath}: left alone, {Quoting.Quoted(stranger.Key)} is not an entry this wrote");
-                    }
-                    else if (named is not null && !string.Equals(named, agent, StringComparison.Ordinal))
-                    {
-                        // Somebody else's. The workspace comes from the registry, which is what the
-                        // agent said about itself and may be some time old, so a repository
-                        // re-enrolled under a second name has two rows pointing at one file. Taking
-                        // this one would unhook an agent nobody named, and would report success.
-                        notes.Add(
-                            $"{launchPath}: left alone, its {Quoting.Quoted(candidates[0].Key)} entry is "
-                            + $"{Quoting.Quoted(named)} rather than {Quoting.Quoted(agent)}");
-                    }
-                    else if (servers.Remove(candidates[0].Key))
-                    {
-                        await OverwriteHeldAsync(
-                            held,
-                            launchPath,
-                            root.ToJsonString(SerialisationOptions.Indented) + "\n",
-                            cancellationToken).ConfigureAwait(false);
-
-                        var left = LaunchEntries.Read(servers).Count;
-
-                        written.Add(launchPath);
-                        notes.Add(
-                            $"{launchPath}: {Quoting.Flat(candidates[0].Key)} entry removed, {left} parley "
-                            + $"entry(s) and {servers.Count - left} other server(s) left");
-                    }
-                    else
-                    {
-                        notes.Add($"{launchPath}: no entry for {Where(project)} to remove");
-                    }
-                }
-                else
-                {
-                    notes.Add($"{launchPath}: left alone, it names no servers this understands");
-                }
-            }
-            else if (parsed is not null)
-            {
-                notes.Add($"{launchPath}: left alone, it is not a JSON object");
-            }
-        }
-
-        if (catalogueFile is null)
-        {
-            notes.Add("no catalogue: this project has none");
-        }
-        else if (!File.Exists(catalogueFile))
-        {
-            notes.Add($"{catalogueFile}: already absent");
-        }
-        else
-        {
-            var catalogue = catalogueHeld is null
-                ? await ReadCatalogueAsync(catalogueFile, cancellationToken).ConfigureAwait(false)
-                : ParseCatalogue(
-                    await ReadHeldAsync(catalogueHeld, cancellationToken).ConfigureAwait(false), catalogueFile);
-
-            if (catalogue["agents"] is JsonObject agents)
-            {
-                if (Unlist(agents, agent))
-                {
-                    await SaveHeldCatalogueAsync(catalogueHeld, catalogueFile, catalogue, cancellationToken)
-                        .ConfigureAwait(false);
-
-                    written.Add(catalogueFile);
-                    notes.Add($"{catalogueFile}: entry for '{agent}' removed");
-                }
-                else
-                {
-                    notes.Add($"{catalogueFile}: no entry for '{agent}'");
-                }
+                notes.Add($"{launchPath}: already absent");
             }
             else
             {
-                notes.Add($"{catalogueFile}: left alone, its agents are not an object");
-            }
-        }
+                // Held for the whole read-modify-write, for the reason AddAsync is: a repository may now
+                // have more than one writer, and this is the one that deletes.
+                //
+                // **A link is a note here rather than an exception**, unlike the adding half. Everything
+                // this cannot act on it leaves alone and reports — an unreadable file, servers of the
+                // wrong shape, an entry belonging to another agent — and a withdrawal that threw for one
+                // of those and reported the rest would be one rule with two spellings. The target is
+                // untouched either way; what changes is whether the person gets a sentence or a trace.
+                FileStream? held;
 
-        // Named rather than silently skipped. Somebody withdrawing an agent is entitled to know
-        // that the file describing it to its peers keeps whatever it says about them, because
-        // that is the one thing here that outlives the withdrawal.
-        notes.Add("standing instructions: left untouched");
+                try
+                {
+                    held = await HoldAsync(launchPath, cancellationToken).ConfigureAwait(false);
+                }
+                catch (InvalidDataException linked)
+                {
+                    notes.Add($"{launchPath}: left alone, {linked.Message}");
+
+                    return new Outcome(notes, written);
+                }
+
+                using var holding = held;
+
+                var text = held is null
+                    ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false)
+                    : await ReadHeldAsync(held, cancellationToken).ConfigureAwait(false);
+
+                JsonNode? parsed;
+
+                try
+                {
+                    parsed = JsonNode.Parse(text);
+                }
+                catch (System.Text.Json.JsonException)
+                {
+                    parsed = null;
+                    notes.Add($"{launchPath}: left alone, it is not readable JSON");
+                }
+
+                if (parsed is JsonObject root)
+                {
+                    if (root["mcpServers"] is JsonObject servers)
+                    {
+                        IReadOnlyList<LaunchEntry> entries;
+
+                        try
+                        {
+                            entries = LaunchEntries.Read(servers);
+                        }
+                        catch (InvalidDataException duplicated)
+                        {
+                            // A file naming one server twice. Reported and left exactly as it is, like
+                            // every other shape this does not understand -- a withdrawal is somebody
+                            // deciding an agent should stop being reachable, and rewriting a file it
+                            // cannot read in the course of that is a second, unasked-for change.
+                            notes.Add($"{launchPath}: left alone, {duplicated.Message}");
+
+                            return new Outcome(notes, written);
+                        }
+
+                        // The same precedence enrolling uses, run backwards: a withdrawal removes what
+                        // an enrolment into this project would have written at, and nothing else. Two
+                        // rules would drift, and the direction they drift in leaves a repository still
+                        // announcing itself as an agent of somewhere it was removed from.
+                        var candidates = project is null
+                            ? entries
+                            : LaunchEntries.Landing(servers, project).Existing is { } landed
+                                ? (IReadOnlyList<LaunchEntry>)[landed]
+                                : [];
+
+                        var named = candidates.Count == 1 ? candidates[0].Agent : null;
+
+                        if (candidates.Count > 1)
+                        {
+                            // FR-011. Never a guess: taking either would remove a working agent from a
+                            // roster nobody was talking about, and the person finds out when a peer
+                            // stops being answered.
+                            notes.Add(
+                                $"{launchPath}: left alone, it answers in "
+                                + $"{string.Join(", ", candidates.Select(found => $"{Quoting.Quoted(found.Project ?? found.Key)}"))}"
+                                + " — name which one to withdraw from");
+                        }
+                        else if (candidates.Count == 0)
+                        {
+                            notes.Add($"{launchPath}: no entry for {Where(project)} to remove");
+                        }
+                        else if (candidates[0] is { Broker: not null, Pinned: null } addressed
+                                 && project is not null)
+                        {
+                            // Pinned to an address and naming no project. Enrolling resolves that
+                            // through the manifest; this does not have one, and removing an entry that
+                            // may be another project's agent is the more expensive way to be wrong.
+                            notes.Add(
+                                $"{launchPath}: left alone, its {Quoting.Quoted(addressed.Key)} entry is "
+                                + $"pinned to the broker at {Quoting.Quoted(addressed.Broker)}, which this "
+                                + $"cannot match to {Where(project)}");
+                        }
+                        else if (candidates[0] is { Ours: false } stranger)
+                        {
+                            // **The rule below used to cover this and stopped being able to.** It read:
+                            // an entry that names nobody cannot be another agent's, because nothing
+                            // identifies it as anybody's and every entry this program writes carries the
+                            // variable. That was sound while the key was fixed — an entry at `parley`
+                            // naming nobody was ours by the only convention there was. A key derived
+                            // from a project name is one somebody may reasonably have used first, so
+                            // naming nobody no longer implies being ours.
+                            notes.Add(
+                                $"{launchPath}: left alone, {Quoting.Quoted(stranger.Key)} is not an entry this wrote");
+                        }
+                        else if (named is not null && !string.Equals(named, agent, StringComparison.Ordinal))
+                        {
+                            // Somebody else's. The workspace comes from the registry, which is what the
+                            // agent said about itself and may be some time old, so a repository
+                            // re-enrolled under a second name has two rows pointing at one file. Taking
+                            // this one would unhook an agent nobody named, and would report success.
+                            notes.Add(
+                                $"{launchPath}: left alone, its {Quoting.Quoted(candidates[0].Key)} entry is "
+                                + $"{Quoting.Quoted(named)} rather than {Quoting.Quoted(agent)}");
+                        }
+                        else if (servers.Remove(candidates[0].Key))
+                        {
+                            await OverwriteHeldAsync(
+                                held,
+                                launchPath,
+                                root.ToJsonString(SerialisationOptions.Indented) + "\n",
+                                cancellationToken).ConfigureAwait(false);
+
+                            var left = LaunchEntries.Read(servers).Count;
+
+                            written.Add(launchPath);
+                            notes.Add(
+                                $"{launchPath}: {Quoting.Flat(candidates[0].Key)} entry removed, {left} parley "
+                                + $"entry(s) and {servers.Count - left} other server(s) left");
+                        }
+                        else
+                        {
+                            notes.Add($"{launchPath}: no entry for {Where(project)} to remove");
+                        }
+                    }
+                    else
+                    {
+                        notes.Add($"{launchPath}: left alone, it names no servers this understands");
+                    }
+                }
+                else if (parsed is not null)
+                {
+                    notes.Add($"{launchPath}: left alone, it is not a JSON object");
+                }
+            }
+
+            if (catalogueFile is null)
+            {
+                notes.Add("no catalogue: this project has none");
+            }
+            else if (!File.Exists(catalogueFile))
+            {
+                notes.Add($"{catalogueFile}: already absent");
+            }
+            else
+            {
+                var catalogue = catalogueHeld is null
+                    ? await ReadCatalogueAsync(catalogueFile, cancellationToken).ConfigureAwait(false)
+                    : ParseCatalogue(
+                        await ReadHeldAsync(catalogueHeld, cancellationToken).ConfigureAwait(false), catalogueFile);
+
+                if (catalogue["agents"] is JsonObject agents)
+                {
+                    if (Unlist(agents, agent))
+                    {
+                        await SaveHeldCatalogueAsync(catalogueHeld, catalogueFile, catalogue, cancellationToken)
+                            .ConfigureAwait(false);
+
+                        written.Add(catalogueFile);
+                        notes.Add($"{catalogueFile}: entry for '{agent}' removed");
+                    }
+                    else
+                    {
+                        notes.Add($"{catalogueFile}: no entry for '{agent}'");
+                    }
+                }
+                else
+                {
+                    notes.Add($"{catalogueFile}: left alone, its agents are not an object");
+                }
+            }
+
+            // Named rather than silently skipped. Somebody withdrawing an agent is entitled to know
+            // that the file describing it to its peers keeps whatever it says about them, because
+            // that is the one thing here that outlives the withdrawal.
+            notes.Add("standing instructions: left untouched");
+        }
+        catch (Exception ex) when (written.Count > 0 && ex is not OperationCanceledException)
+        {
+            throw Interrupted(ex, written);
+        }
 
         return new Outcome(notes, written);
     }
