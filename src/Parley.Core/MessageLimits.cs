@@ -79,16 +79,41 @@ public static class MessageLimits
 
     /// <summary>Cuts text to the cap, saying so where it was cut.</summary>
     /// <param name="text">What was said.</param>
-    /// <returns>The text, at most <see cref="MaxPayloadCharacters"/> characters long.</returns>
+    /// <returns>The text, at most <see cref="MaxPayloadCharacters"/> UTF-16 units long.</returns>
     /// <remarks>
+    /// <para>
     /// Here rather than at the one caller because the storage schema performs the same cut when it
     /// carries old rows across, and two implementations of "shorten to the cap" would disagree
     /// about the boundary the first time either was edited. §9.3's argument, one level out: the
     /// CHECK is the enforcement, and this is what keeps every writer under it.
+    /// </para>
+    /// <para>
+    /// <b>Counted in UTF-16 units while the CHECK counts characters, and the inequality is the
+    /// point.</b> SQLite's <c>length()</c> counts one for an astral-plane character where this
+    /// counts two, so this cuts sooner than the schema requires and can never hand the store
+    /// something it will refuse. The reverse would turn every oversized reply into a lost one.
+    /// </para>
     /// </remarks>
-    public static string Fit(string? text) =>
-        text is null || text.Length <= MaxPayloadCharacters
-            ? text ?? string.Empty
-            : string.Concat(
-                text.AsSpan(0, MaxPayloadCharacters - Truncated.Length), Truncated);
+    public static string Fit(string? text)
+    {
+        if (text is null || text.Length <= MaxPayloadCharacters)
+        {
+            return text ?? string.Empty;
+        }
+
+        var cut = MaxPayloadCharacters - Truncated.Length;
+
+        // **Backed off a surrogate, because a fixed offset cuts through one.** Found by probing the
+        // boundary with astral-plane text: the offset landed between the two halves of a pair and
+        // left a lone high surrogate at the end — not a character, not what the agent said, and the
+        // kind of value that breaks whatever reads it next rather than here.
+        //
+        // One step is enough. A pair is exactly two units, so an offset can be inside at most one.
+        if (cut > 0 && char.IsHighSurrogate(text[cut - 1]))
+        {
+            cut--;
+        }
+
+        return string.Concat(text.AsSpan(0, cut), Truncated);
+    }
 }
