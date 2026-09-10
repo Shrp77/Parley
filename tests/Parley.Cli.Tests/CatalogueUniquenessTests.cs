@@ -109,13 +109,20 @@ public sealed class CatalogueUniquenessTests : IDisposable
     {
         // SPEC.md §4.1.1's comparison rather than a second one written here, which would disagree
         // first about exactly this case.
+        //
+        // **"The same directory spelled differently" is a different set of spellings on each
+        // platform, and this asserted the Windows set everywhere.** A backslash is a separator on
+        // Windows and an ordinary filename character on Unix — `WorkspacePath` says so in as many
+        // words — so `\tmp\x\orders\` is not another spelling of `/tmp/x/orders` on Linux, it is a
+        // path that has nothing to do with it, and refusing to match was the comparison being right.
+        // Found by running the suite in a container while CI is unavailable; Windows cannot fail it.
         var alpha = CatalogueFor("alpha", Workspace);
 
-        Assert.NotNull(Catalogues.Elsewhere(
-            [Project("alpha", alpha)],
-            Workspace.Replace('/', '\\') + "\\",
-            null,
-            out _));
+        var spelled = OperatingSystem.IsWindows()
+            ? Workspace.Replace('/', '\\') + "\\"
+            : Workspace + "/";
+
+        Assert.NotNull(Catalogues.Elsewhere([Project("alpha", alpha)], spelled, null, out _));
     }
 
     [Fact]
