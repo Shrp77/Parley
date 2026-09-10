@@ -705,7 +705,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // it is two operations, and the flood this bound exists for is precisely the case where
         // sixty of them interleave: every one would read "nothing pending" and every one would ask.
         // The claim is the atomic step, so exactly one caller proceeds.
-        if (!TryClaimAttention(agent, Clock.GetUtcNow()))
+        var claimed = Clock.GetUtcNow();
+
+        if (!TryClaimAttention(agent, claimed))
         {
             return WakeOutcome.AlreadyComing;
         }
@@ -715,13 +717,33 @@ public sealed class BrokerRuntime : IAsyncDisposable
         if (outcome is WakeOutcome.Unreachable)
         {
             // Nothing is coming after all, so the claim is given back rather than left to expire.
-            // Holding it would suppress every notification for the next two minutes on the
-            // strength of a turn that was never asked for.
-            Collected(agent);
+            // Holding it would suppress every notification for the next two minutes on the strength
+            // of a turn that was never asked for.
+            //
+            // **Given back by key and value, not by key.** A question's wake can land between the
+            // claim above and this line -- a node joining in the gap is all it takes -- and a bare
+            // removal would then throw away a mark for a turn that really is coming, buying a
+            // duplicate. Narrow, and the sort of narrow this bound exists to be exact about.
+            _ = ((ICollection<KeyValuePair<string, DateTimeOffset>>)_pending)
+                .Remove(new KeyValuePair<string, DateTimeOffset>(agent.Value, claimed));
         }
 
         return outcome;
     }
+
+    /// <summary>Whether a mark claimed that long ago still counts.</summary>
+    /// <param name="elapsed">How long since it was claimed, by this broker's clock.</param>
+    /// <returns><see langword="true"/> while it is inside the ceiling.</returns>
+    /// <remarks>
+    /// <b>Negative is expired, not fresh, and this was found by probing rather than by reading.</b>
+    /// A clock does not only move forwards: an NTP correction steps it back, and a machine resuming
+    /// from a snapshot steps it back a long way. The obvious comparison — elapsed under the ceiling
+    /// — answers <em>yes</em> for a mark claimed in what is now the future, so a step back of an
+    /// hour would suspend waking for that agent for an hour. That is this feature's own defect,
+    /// reintroduced by arithmetic that reads as though it handles it.
+    /// </remarks>
+    private static bool Live(TimeSpan elapsed) =>
+        elapsed >= TimeSpan.Zero && elapsed < WakeCeiling;
 
     /// <summary>Takes the pending mark for an agent, if nothing live already holds it.</summary>
     /// <param name="agent">The agent.</param>
@@ -748,7 +770,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 continue;
             }
 
-            if (now - since < WakeCeiling)
+            if (Live(now - since))
             {
                 return false;
             }
@@ -789,7 +811,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return false;
         }
 
-        if (Clock.GetUtcNow() - since < WakeCeiling)
+        if (Live(Clock.GetUtcNow() - since))
         {
             return true;
         }

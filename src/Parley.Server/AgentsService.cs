@@ -357,19 +357,27 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
 
         var agent = Name(request.Agent);
 
+        // **The single place a collection is observable, which is why the wake bound keys on it.**
+        // Keyed here rather than on the attach because the two differ: §4.2 separates waking an
+        // adapter from the model taking a turn, and an agent that attached and has not drained has
+        // read nothing. Clearing on the attach would have bounded nothing at all — the first
+        // notification starts the agent, it attaches within a second, and every one after it buys a
+        // turn.
+        //
+        // **After the read, and a probe that said otherwise was wrong about its own assertion.** The
+        // worry was a message stored between the read and this line having its mark wiped by a
+        // drain that never collected it. It cannot: the claim is taken by the notification *after*
+        // its message is committed, and `Ask` sets the mark again itself once the node has been
+        // told — so a clear landing in that window is followed by the mark being re-set, not by
+        // silence. Clearing first was tried and is worse: a message stored between the clear and
+        // the read is collected here and still leaves a mark set, suppressing the next
+        // notification's turn for nothing.
         var inbox = await Run(
             agent,
             (broker, now, ct) => broker.DrainInboxAsync(
                 agent, now, request.Limit > 0 ? request.Limit : null, ct),
             context).ConfigureAwait(false);
 
-        // **The single place a collection is observable, which is why the wake bound keys on it.**
-        // Everything asked for before now has been seen, so the next notification is free to ask
-        // again. Keyed here rather than on the attach because the two differ: §4.2 separates waking
-        // an adapter from the model taking a turn, and an agent that attached and has not drained
-        // has read nothing. Clearing on the attach would have bounded nothing at all — the first
-        // notification starts the agent, it attaches within a second, and every one after it buys
-        // a turn.
         _runtime.Collected(agent);
 
         var reply = new Wire.InboxReply();

@@ -278,6 +278,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         var unreachable = new List<string>();
         var turnedAway = new List<string>();
         var told = 0;
+        var repeated = 0;
         var stopped = false;
 
         foreach (var peer in peers)
@@ -320,6 +321,18 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
                 continue;
             }
 
+            if (reply.Deduplicated)
+            {
+                // **Not counted as told, because nothing was stored.** §13.1 refuses a
+                // byte-identical repeat within its window, and a person re-sending a broadcast
+                // after a partial failure is exactly who meets it — so reporting "told all
+                // nineteen" here would be the "Sent." defect this feature exists to remove,
+                // rebuilt in the code that removes it.
+                repeated++;
+
+                continue;
+            }
+
             told++;
 
             if (reply.Wake == Wire.WakeOutcome.Unreachable)
@@ -330,12 +343,13 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             counted[reply.Wake] = counted.GetValueOrDefault(reply.Wake) + 1;
         }
 
-        return Everyone(peers.Count, told, stopped, counted, unreachable, turnedAway);
+        return Everyone(peers.Count, told, repeated, stopped, counted, unreachable, turnedAway);
     }
 
     /// <summary>What a broadcast did, in counts rather than in twenty sentences.</summary>
     /// <param name="asked">How many were going to be told.</param>
     /// <param name="told">How many were.</param>
+    /// <param name="repeated">How many were refused as the same notice again.</param>
     /// <param name="stopped">Whether the seat went part way through.</param>
     /// <param name="counted">How many of each outcome.</param>
     /// <param name="unreachable">Those nothing here can start.</param>
@@ -350,6 +364,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     internal static string Everyone(
         int asked,
         int told,
+        int repeated,
         bool stopped,
         IReadOnlyDictionary<Wire.WakeOutcome, int> counted,
         IReadOnlyList<string> unreachable,
@@ -363,6 +378,17 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             .Append(told == asked
                 ? $"Told all {asked}."
                 : $"Told {told} of {asked}.");
+
+        // Said before the outcomes, because it changes what they mean: a broadcast where every
+        // recipient was a repeat stored nothing at all, and the counts below then describe agents
+        // that were woken for mail they already had.
+        if (repeated > 0)
+        {
+            _ = said.Append(
+                repeated == asked
+                    ? " Every one was the same notice again, so nothing was repeated."
+                    : $" {repeated} had already been sent this, so it was not repeated.");
+        }
 
         var parts = new List<string>();
 

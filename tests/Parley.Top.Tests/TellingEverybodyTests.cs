@@ -277,6 +277,97 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
         Assert.Equal(1, Sent());
     }
 
+    [Fact]
+    public async Task A_role_in_the_catalogue_and_a_registration_do_not_become_two_recipients()
+    {
+        // **The 009 shape, probed rather than assumed safe.** A registration is `role@machine` and a
+        // catalogue key is a role, and three suites once fed fixtures keyed the way no caller keys
+        // them — which is how a closely covered method stayed broken. If the roster ever produced
+        // both spellings of one agent, a broadcast would address it twice and the second would come
+        // back deduplicated: reported as a repeat, from one act.
+        using var driving = Driving.Open();
+        using var directory = Directory();
+        using var seats = new SeatBook(directory.AgentsFor);
+        using var shell = await SeatedAsync(driving, directory, seats);
+
+        await Walking.GoAsync(shell, Viewing.Project);
+
+        shell.Agents.Show(
+            [Agent(Orders), Agent(Billing)],
+            Catalogue("orders"),
+            null);
+
+        var form = await Composing.WithAsync(
+            driving,
+            shell.StartByTelling,
+            Participation.TellTitle,
+            Participation.Everyone(2),
+            () => shell.Settled);
+
+        form.Fill(0, "once each, please");
+        form.Finish(taken: true);
+
+        await shell.Settled;
+
+        // Two agents, two messages. Not three, and no repeat reported.
+        Assert.Equal(2, Sent());
+        Assert.DoesNotContain("again", shell.Said, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task A_catalogued_role_nothing_has_registered_is_still_told()
+    {
+        // §12.3 routes spawn-on-demand through the catalogue, so a never-run-but-startable role is
+        // a legitimate thing to tell — and leaving it out would omit exactly the agents somebody
+        // broadcasts in order to wake.
+        using var driving = Driving.Open();
+        using var directory = Directory();
+        using var seats = new SeatBook(directory.AgentsFor);
+        using var shell = await SeatedAsync(driving, directory, seats);
+
+        await Walking.GoAsync(shell, Viewing.Project);
+
+        shell.Agents.Show(
+            [Agent(Orders)],
+            Catalogue("inventory"),
+            null);
+
+        await shell.StartByTelling();
+
+        var picking = (ChoiceDialog)driving.Find(Participation.WhichPeer);
+        var rows = Drawn.Rows(picking.Choices).Select(row => row.Trim()).ToList();
+
+        Assert.Equal(Participation.Everyone(2), rows[0]);
+    }
+
+    /// <summary>A catalogue naming some roles, written where one really lives.</summary>
+    /// <param name="roles">The roles this machine could start.</param>
+    /// <returns>The catalogue.</returns>
+    /// <remarks>
+    /// Through a file rather than a constructed object, because there is no constructor that
+    /// takes roles -- and building one for a test would be a second way to make a catalogue,
+    /// which is how the reader and the writer come to disagree about the shape.
+    /// </remarks>
+    private static NodeCatalogue Catalogue(params string[] roles)
+    {
+        var entries = string.Join(
+            ",",
+            roles.Select(role => $"\"{role}\": {{ \"command\": \"echo hi\" }}"));
+
+        var path = Path.Combine(Path.GetTempPath(), $"parley-catalogue-{Guid.NewGuid():N}.json");
+
+        File.WriteAllText(path, $"{{ \"agents\": {{ {entries} }} }}");
+
+        try
+        {
+            return NodeCatalogue.ReadFrom(path);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     /// <summary>How many notifications reached the store.</summary>
     /// <returns>The count.</returns>
     private int Sent()
