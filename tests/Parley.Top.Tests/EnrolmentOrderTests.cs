@@ -42,13 +42,19 @@ public sealed class EnrolmentOrderTests
     }
 
     [Fact]
-    public void What_is_said_when_the_start_does_not_happen_names_two_other_ways_in()
+    public void What_is_said_when_the_start_does_not_happen_names_only_ways_in_that_work()
     {
         // The honest fallback rather than a failure. The agent is catalogued either way, so the
         // sentence has to leave somebody able to act rather than merely informed that something
         // did not work.
-        Assert.Contains("next question", Adding.NotStarted, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("opening its", Adding.NotStarted, StringComparison.OrdinalIgnoreCase);
+
+        // **This test used to require the opposite, and that is the finding.** The sentence said the
+        // next question would start it, and a question cannot: §14 counts a name nothing has
+        // registered as unroutable, and both `Ask` and `Notify` refuse an unroutable recipient
+        // before any wake — pinned by `NeverRegisteredTests`. So the check that was meant to keep
+        // the message useful was holding a remedy that does not work in place.
+        Assert.DoesNotContain("question", Adding.NotStarted, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
