@@ -77,7 +77,9 @@ public sealed class MessageCapTests : IAsyncDisposable
         var said = await voice.NotifyAsync(
             Recipient, Fill(Room(forText: true)), Conversation, token);
 
-        Assert.Equal("Sent.", said);
+        // `StartsWith`, because a send now also reports what became of the recipient. What this
+        // test is about is the row below: that a payload the surface accepted reached the store.
+        Assert.StartsWith("Sent.", said, StringComparison.Ordinal);
 
         Assert.Equal(1, Rows());
     }

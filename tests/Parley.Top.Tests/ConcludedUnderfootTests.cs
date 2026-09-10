@@ -57,8 +57,12 @@ public sealed class ConcludedUnderfootTests : IAsyncDisposable
         var token = TestContext.Current.CancellationToken;
         var voice = await SeatedAsync(token);
 
-        // Open it, the ordinary way.
-        Assert.Equal("Sent.", await voice.NotifyAsync(Recipient, "first", Conversation, token));
+        // Open it, the ordinary way. `StartsWith` rather than `Equal`, because a send now also
+        // reports what became of the recipient and this test is about the refusal below it.
+        Assert.StartsWith(
+            "Sent.",
+            await voice.NotifyAsync(Recipient, "first", Conversation, token),
+            StringComparison.Ordinal);
 
         // And close it underneath the person, which is what an operator or the other participant
         // does without asking the screen.

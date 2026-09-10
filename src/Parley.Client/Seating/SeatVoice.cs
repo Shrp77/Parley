@@ -197,13 +197,51 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
             return reply.Deduplicated
                 ? "Already sent — this was the same notice again, so it was not repeated."
-                : "Sent.";
+                : "Sent. " + Waking(reply.Wake, to);
         }
         catch (RpcException failure)
         {
             return Failed(failure);
         }
     }
+
+    /// <summary>What became of the recipient, in words.</summary>
+    /// <param name="wake">What the broker did about it.</param>
+    /// <param name="to">Who was told.</param>
+    /// <returns>A sentence to show beside the send.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>"Sent." on its own is what produced the report this exists to answer.</b> It was true —
+    /// the message was stored — and it left somebody believing a peer was reading a notification
+    /// that had reached a closed session and started nothing. A send that delivers and a send that
+    /// lands in an empty room looked identical.
+    /// </para>
+    /// <para>
+    /// <b>None of these is a failure and none of them is worded as one.</b> The message is stored
+    /// before any of it is decided, and SPEC.md §17 question 1 requires that whatever bounds this
+    /// "must not make an event undeliverable" — so <c>Unreachable</c> says the notice is waiting
+    /// rather than that it was not sent.
+    /// </para>
+    /// </remarks>
+    internal static string Waking(Wire.WakeOutcome wake, AgentName to) => wake switch
+    {
+        Wire.WakeOutcome.Started => $"{to.Value} was not running, so it is being started.",
+        Wire.WakeOutcome.AlreadyRunning => $"{to.Value} is running and has been handed it.",
+
+        // Said rather than passed over in silence, because "nothing happened" and "something is
+        // already happening" look the same from here and lead somewhere completely different.
+        Wire.WakeOutcome.AlreadyComing =>
+            $"{to.Value} is already being seen to, and will collect this with the rest.",
+
+        Wire.WakeOutcome.Unreachable =>
+            $"It is waiting for {to.Value}, but nothing here can start it — it will be collected "
+            + "when that agent next runs.",
+
+        // A broker older than this one, which cannot happen while the protocol version is checked
+        // on attach. Said plainly rather than guessed at: claiming a start that may not have been
+        // asked for is the failure this whole sentence exists to remove.
+        _ => $"What became of {to.Value} was not reported.",
+    };
 
     /// <summary>How much is waiting, without taking any of it.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
