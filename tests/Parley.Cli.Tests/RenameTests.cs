@@ -54,23 +54,46 @@ public sealed class RenameTests
     [MemberData(nameof(UserFacing))]
     public void Nothing_a_person_reads_offers_the_old_command(string file)
     {
-        // `parley console` still runs, and is documented in exactly one place as the old spelling
-        // with the version it goes at. Anywhere else it would be an instruction rather than a note,
-        // and an instruction to type a command that is being removed is worse than silence.
+        // **The premise of this test expired and its exemptions outlived it.** It was written while
+        // `parley console` still ran, and let a line through if it said `old spelling`, `still works`
+        // or `0.21.0` — the wording of 007's deprecation note. This release deletes both the verb and
+        // that note, so those three stopped being exemptions for a sentence that exists and became
+        // holes shaped exactly like the false statements this version must not make: a line reading
+        // *run `parley console`, it still works* passed here, in the release where it does not.
+        //
+        // One exemption survives and only one. A note saying the command was **removed** is a fact
+        // somebody upgrading needs; `still works` is a failure now rather than a pass, which is the
+        // whole difference.
         var text = RepositoryFile.Read(file);
         var lines = text.Split('\n');
 
         var offering = lines
             .Where(line => line.Contains("parley console", StringComparison.Ordinal))
-            .Where(line => !line.Contains("old spelling", StringComparison.Ordinal))
-            .Where(line => !line.Contains("still works", StringComparison.Ordinal))
-            .Where(line => !line.Contains("0.21.0", StringComparison.Ordinal))
+            .Where(line => !line.Contains("removed", StringComparison.OrdinalIgnoreCase))
             .Select(line => line.Trim())
             .ToList();
 
         Assert.True(
             offering.Count == 0,
             $"{file} still offers the old command: " + string.Join(" | ", offering));
+    }
+
+    [Fact]
+    public void The_rule_above_would_still_catch_an_offering()
+    {
+        // **The control, and this test needs one more than most.** The verb is gone from all four
+        // files, so the rule above now passes on emptiness — it would go on passing if the matcher
+        // were broken, if the files were renamed, or if somebody widened the exemption again. What it
+        // guards against is reintroduction, and a guard against something that is not there can only
+        // be shown to work against something that is.
+        var offered = "  Run `parley console` to open it.";
+        var noted = "  `parley console` was removed at 0.22.0.";
+
+        Assert.Contains("parley console", offered, StringComparison.Ordinal);
+        Assert.DoesNotContain("removed", offered, StringComparison.OrdinalIgnoreCase);
+
+        // And the one exemption still exempts, so the note an upgrader needs is not forbidden.
+        Assert.Contains("removed", noted, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
