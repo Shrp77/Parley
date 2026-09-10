@@ -225,7 +225,10 @@ var noWebUi = TakeFlag("--no-web-ui");
 // default written in two places is two answers to one question that agree only until somebody
 // changes one of them -- here, by installing an entry pointing somewhere the running web UI is not.
 var webUiAt = webUiOn;
-var consoleAt = webUiAt ?? WebUiAddress.Loopback;
+// Named for the thing rather than for the flag that used to turn it on. `consoleAt` and
+// `consoleFor` outlived `--console` by two releases, in the file that removes it -- and "console"
+// meaning three things is what 007 spent a release separating.
+var webUiAddress = webUiAt ?? WebUiAddress.Loopback;
 
 // Taken here with the rest, and it has to be: everything left starting with a hyphen is refused
 // below as an option this does not have, so a flag consumed by the command it belongs to never
@@ -596,7 +599,7 @@ if (verb == "serve" && rest.Length == 0)
                 var start = new ProcessStartInfo(WebUiTool) { UseShellExecute = false };
 
                 start.ArgumentList.Add("--listen");
-                start.ArgumentList.Add(consoleAt);
+                start.ArgumentList.Add(webUiAddress);
                 start.ArgumentList.Add("--broker");
                 start.ArgumentList.Add(addresses[0]);
 
@@ -624,7 +627,7 @@ if (verb == "serve" && rest.Length == 0)
             // when the web UI could not start would take the terminal line with it, on exactly the
             // run where somebody needs to be told there is another way in.
             var opening = whyNot is null
-                ? $"   Web UI:   {consoleAt}{Environment.NewLine}"
+                ? $"   Web UI:   {webUiAddress}{Environment.NewLine}"
                     + "   Open that one in a browser."
                 : $"   Web UI:   did not start ({whyNot}){Environment.NewLine}"
                     + $"   The broker is still serving. Install it: dotnet tool install --global Parley.WebUi";
@@ -825,14 +828,14 @@ if (verb == "autostart" && rest.Length == 1)
     // web UI that has to be remembered separately is the half of the deployment that works
     // for agents and not for people. `--no-web-ui` is the way out, and it is a flag rather
     // than an absence so that choosing it is visible in the entry `autostart status` prints.
-    var consoleFor = noWebUi ? null : consoleAt;
+    var webUiFor = noWebUi ? null : webUiAddress;
 
     return await AutostartCommand.RunAsync(
         rest[0],
         entryStore,
         listenAddress,
         hostFrom,
-        consoleFor,
+        webUiFor,
         servesManifest ? manifestPath : null,
         Console.Out,
         Console.Error).ConfigureAwait(false);

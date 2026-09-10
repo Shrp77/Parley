@@ -165,7 +165,14 @@ public sealed class StartupBannerTests
         // against a concurrent writer, none split.
         var block = ConsoleAnnouncement(program);
 
-        Assert.Contains("Web UI:   {consoleAt}", block, StringComparison.Ordinal);
+        // **The label and the interpolation, not the variable's name.** This asserted
+        // `{consoleAt}` and broke when that local was renamed to say what it holds rather than which
+        // removed flag used to set it — a rename that changed no behaviour and no output. It is the
+        // third anchor in this file to break on something that was never the point: the other two
+        // are recorded in CLAUDE.md, both `var body`. What the test is about is that the address is
+        // on its own labelled line and is interpolated rather than written in, and both survive a
+        // rename.
+        Assert.Contains("Web UI:   {", block, StringComparison.Ordinal);
         Assert.Contains("Open that one in a browser.", block, StringComparison.Ordinal);
     }
 
