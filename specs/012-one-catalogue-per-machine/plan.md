@@ -115,7 +115,11 @@ With the policy record written last, `entry + policy + no registration` cannot o
 
 The cost is that the owner's wiped-database case recovers by re-running enrolment rather than on the node's next join. One command against nineteen repositories, and it is the honest version: the automatic one was indistinguishable from adopting a file nobody wrote.
 
-**The exemption this creates, and it must be explicit.** Once policy is consent, the node will want to refuse to start anything without a record. Applied to D7 step 4 that deadlocks — no start without policy, no policy without a start — and presents as a broker refusing to enrol. Policy governs *unattended* starts; an operator asking to enrol and start is its own authorisation. The two paths must not be unified, and a test should say so before somebody unifies them.
+**The exemption this creates is a separate command, not a flag.** Once policy is consent, the node will want to refuse to start anything without a record. Applied to D7 step 4 that deadlocks — no start without policy, no policy without a start — and presents as a broker refusing to enrol.
+
+Policy governs *unattended* starts. An operator asking to enrol and start is its own authorisation, and enrolment is its own command, so it carries its own node command too: the policy check is simply not on that path. There is no boolean to get wrong and no shared branch to unify by accident.
+
+§17 question 15 already argues this shape for the pair it created — *"a separate command rather than a flag on the start, because only the node knows which sessions are its own"* — and `Instruct` is separate from `Turn` on identical grounds: two things that look alike and mean different things. A third instance of the same distinction should look like the first two.
 
 ## What must not be assumed
 
