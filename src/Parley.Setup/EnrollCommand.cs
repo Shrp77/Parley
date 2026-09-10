@@ -721,6 +721,73 @@ public static class EnrollCommand
         return name.Length == 0 ? "agent" : name;
     }
 
+    /// <summary>Starts each newly enrolled agent, so that it registers itself.</summary>
+    /// <param name="project">The project just enrolled into, or null when none was resolved.</param>
+    /// <param name="enrolled">The roles written, in the order they were written.</param>
+    /// <param name="output">Where to report.</param>
+    /// <param name="cancellationToken">Stops the starts.</param>
+    /// <returns>How many were seen to register.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Reported per repository and never thrown.</b> The two files are already written for every
+    /// one of them, so an agent that could not be started is enrolled and startable later — losing
+    /// the whole run because the last step did not take would be the worse outcome, which is the
+    /// same reasoning the terminal's enrolment records.
+    /// </para>
+    /// <para>
+    /// Sequentially, because each start is a process launching on this machine and twenty at once
+    /// is a spike nobody asked for. It is a launch and not a turn, so it costs no model tokens —
+    /// which is what makes doing it at all affordable.
+    /// </para>
+    /// </remarks>
+    private static async Task<int> SettleAsync(
+        ProjectSettings? project,
+        IReadOnlyList<string> enrolled,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        if (enrolled.Count == 0)
+        {
+            return 0;
+        }
+
+        if (project is null || string.IsNullOrWhiteSpace(project.Endpoint))
+        {
+            await output.WriteLineAsync(
+                "\nNo broker was named, so nothing was started. These repositories are enrolled and "
+                + "cannot be addressed until each has run once.").ConfigureAwait(false);
+
+            return 0;
+        }
+
+        await output.WriteLineAsync("\nStarting each one so it registers itself:").ConfigureAwait(false);
+
+        var registered = 0;
+
+        foreach (var role in enrolled)
+        {
+            if (!AgentName.TryCreate($"{role}@{MachineName.Current}", out var agent))
+            {
+                await output.WriteLineAsync($"  {role}: written, but is not a name an agent can have.")
+                    .ConfigureAwait(false);
+
+                continue;
+            }
+
+            var outcome = await Registering.StartAsync(
+                project.Endpoint, agent, TimeProvider.System, cancellationToken).ConfigureAwait(false);
+
+            if (outcome.Registered)
+            {
+                registered++;
+            }
+
+            await output.WriteLineAsync($"  {role}: {outcome.Says}").ConfigureAwait(false);
+        }
+
+        return registered;
+    }
+
     private static async Task<int> ApplyAsync(
         string manifestPath,
         bool write,
@@ -904,6 +971,12 @@ public static class EnrollCommand
         var nodeChanged = false;
         var written = 0;
 
+        // Collected so each can be started once the catalogue has been written. **Not started
+        // inside the loop**, because a start asks the broker to launch a role its catalogue does not
+        // yet name -- the same ordering the terminal's enrolment already keeps, and the same one its
+        // tests state: the files first, the start last.
+        var enrolled = new List<string>();
+
         foreach (var entry in entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -1032,6 +1105,7 @@ public static class EnrollCommand
             // until the terminal needed to write them too, and two copies of a file write are how a
             // surface and a command come to disagree about what makes a repository an agent.
             written += wrote.Count;
+            enrolled.Add(entry.Agent);
 
             if (plan.AddsNodeEntry)
             {
@@ -1072,6 +1146,18 @@ public static class EnrollCommand
             }
         }
 
+        // **Enrolment is not finished until each agent has registered**, and it cannot register
+        // itself without running once: §12.3 makes registration the adapter's own act on attach, so
+        // the only honest way to leave one registered is to start it and let it do so. Until then
+        // §14 counts the name unroutable and every message type is refused — a question and a
+        // notification alike — so a repository enrolled and never opened is not a quiet agent but
+        // one nothing can address.
+        //
+        // Last, after both files and the catalogue: a start asks the broker to launch a role, and
+        // the node cannot launch what its catalogue does not yet name.
+        var registered = await SettleAsync(
+            project, enrolled, output, cancellationToken).ConfigureAwait(false);
+
         // Step 1 names the node as well as the broker, and only when this run recorded consent
         // for one. A run that wrote `unattended` into the catalogue and then said "start a
         // broker" has described half a deployment: the repositories it just recorded as
@@ -1086,13 +1172,26 @@ public static class EnrollCommand
               $"       parley autostart install --db <path to the store> --node-config {nodePath}\n"
             : "  1. A broker running:  parley serve --db <path to the store>\n";
 
+        // **This used to have three steps and the middle one was "restart your editor in each
+        // repository".** It existed because enrolment wrote two files and started nothing, so every
+        // repository it touched was unroutable until somebody opened it by hand. Enrolment starts
+        // them now, so the step is gone rather than reworded — and what is left says what is true
+        // for whichever of them did not come up.
+        var unsettled = enrolled.Count - registered;
+
+        var chase = unsettled > 0
+            ? $"  2. {unsettled} of {enrolled.Count} did not register above. Open those repositories,\n"
+              + "     or re-run this — enrolling a repository twice changes nothing the second time.\n"
+            : string.Empty;
+
         await output.WriteLineAsync(
-            $"\nEnrolled {entries.Length} repositories ({written} files written).\n\n" +
+            $"\nEnrolled {entries.Length} repositories ({written} files written, "
+            + $"{registered} registered).\n\n" +
             "Next, in this order:\n" +
             start +
-            "  2. Restart your editor in each repository, and check the parley server connected.\n" +
-            "  3. Only then, /parley:write-peers in each one.\n\n" +
-            "Step 3 is last on purpose. Every agent that registers makes every block already\n" +
+            chase +
+            $"  {(unsettled > 0 ? 3 : 2)}. Last, /parley:write-peers in each one.\n\n" +
+            "That is last on purpose. Every agent that registers makes every block already\n" +
             "written stale, so reading the roster once at the end is the only way each\n" +
             "repository's block is true when it is written — including the repositories that\n" +
             "were already agents before this run.").ConfigureAwait(false);
