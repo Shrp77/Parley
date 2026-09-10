@@ -2166,7 +2166,7 @@ internal sealed class Shell : Window
         // creates no debt, which is what makes the plural case N ordinary messages rather than a
         // new state machine. It is first in the list because it is what somebody scrolling a long
         // roster came for.
-        var everybody = asking ? [] : Everyone();
+        var everybody = asking ? [] : EveryAgent();
 
         var rows = asking || everybody.Count == 0
             ? peers
@@ -2319,7 +2319,7 @@ internal sealed class Shell : Window
     /// silently addressing the wrong agent is worse than telling one fewer.
     /// </para>
     /// </remarks>
-    private IReadOnlyList<AgentName> Everyone() =>
+    private IReadOnlyList<AgentName> EveryAgent() =>
     [
         .. Agents.Standings
             .Where(row => !row.Seat && !row.Retired)

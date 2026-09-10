@@ -165,7 +165,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// it invalidates nothing that exists, and a migration would be ceremony.
     /// </para>
     /// </remarks>
-    public static readonly TimeSpan WakeCeiling = TimeSpan.FromMinutes(2);
+    internal static readonly TimeSpan WakeCeiling = TimeSpan.FromMinutes(2);
 
     /// <summary>Gets the clock every operation is stamped from.</summary>
     public TimeProvider Clock { get; }
@@ -735,15 +735,29 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="elapsed">How long since it was claimed, by this broker's clock.</param>
     /// <returns><see langword="true"/> while it is inside the ceiling.</returns>
     /// <remarks>
-    /// <b>Negative is expired, not fresh, and this was found by probing rather than by reading.</b>
-    /// A clock does not only move forwards: an NTP correction steps it back, and a machine resuming
-    /// from a snapshot steps it back a long way. The obvious comparison — elapsed under the ceiling
-    /// — answers <em>yes</em> for a mark claimed in what is now the future, so a step back of an
-    /// hour would suspend waking for that agent for an hour. That is this feature's own defect,
-    /// reintroduced by arithmetic that reads as though it handles it.
+    /// <para>
+    /// <b>A window either side of now, and the negative half is not symmetry for its own sake.</b> A
+    /// clock does not only move forwards: an NTP correction steps it back and a resumed snapshot
+    /// steps it back a long way, so a mark can be stamped in what is now the future. Comparing only
+    /// against the ceiling answers <em>yes</em> for such a mark, which would suspend waking for that
+    /// agent for the length of the step — this feature's own defect, reintroduced by arithmetic that
+    /// reads as though it handles it.
+    /// </para>
+    /// <para>
+    /// <b>But treating every negative elapsed as expired is worse, and an existing test caught it
+    /// doing so.</b> Each caller reads the clock once and compares its own instant against another
+    /// caller's stamp, so under a flood the callers whose read landed a fraction before the winner's
+    /// write see a negative elapsed — and would each replace the mark and claim. Sixty concurrent
+    /// notices went back to buying up to forty-three turns, which is the bound not holding at all.
+    /// </para>
+    /// <para>
+    /// So the two cases are told apart by <em>how far</em> into the future the stamp is. Slightly
+    /// ahead is a concurrent claim and counts as live; a whole ceiling ahead is a clock that moved
+    /// and does not.
+    /// </para>
     /// </remarks>
     private static bool Live(TimeSpan elapsed) =>
-        elapsed >= TimeSpan.Zero && elapsed < WakeCeiling;
+        elapsed < WakeCeiling && elapsed > -WakeCeiling;
 
     /// <summary>Takes the pending mark for an agent, if nothing live already holds it.</summary>
     /// <param name="agent">The agent.</param>
@@ -804,7 +818,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// a machine with no node, a launch that fails, a process that attaches and dies before
     /// reading anything. Without it the first failed start would be the last one ever attempted.
     /// </remarks>
-    public bool AttentionPending(AgentName agent)
+    internal bool AttentionPending(AgentName agent)
     {
         if (!_pending.TryGetValue(agent.Value, out var since))
         {

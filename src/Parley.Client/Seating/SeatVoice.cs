@@ -343,7 +343,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             counted[reply.Wake] = counted.GetValueOrDefault(reply.Wake) + 1;
         }
 
-        return Everyone(peers.Count, told, repeated, stopped, counted, unreachable, turnedAway);
+        return Reported(peers.Count, told, repeated, stopped, counted, unreachable, turnedAway);
     }
 
     /// <summary>What a broadcast did, in counts rather than in twenty sentences.</summary>
@@ -361,7 +361,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// of nineteen is a different fact from one that reached all nineteen, and the surface saying
     /// nothing about the difference is what produced the report this feature answers.
     /// </remarks>
-    internal static string Everyone(
+    internal static string Reported(
         int asked,
         int told,
         int repeated,

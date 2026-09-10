@@ -30,7 +30,7 @@ public sealed class BroadcastReportTests
         (Wire.WakeOutcome, int)[]? counts = null,
         string[]? unreachable = null,
         string[]? refused = null) =>
-        SeatVoice.Everyone(
+        SeatVoice.Reported(
             asked,
             told,
             repeated,
