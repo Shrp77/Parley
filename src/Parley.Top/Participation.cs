@@ -66,6 +66,40 @@ internal static class Participation
     internal const string NoPeers =
         "There is nobody in this project to speak to yet. Add an agent, or wait for one to register.";
 
+    /// <summary>The row that tells every agent in the project at once.</summary>
+    /// <param name="howMany">How many agents it will reach.</param>
+    /// <returns>The row's label.</returns>
+    /// <remarks>
+    /// <b>The count is in the label because that is the last moment to say it.</b> Telling nineteen
+    /// agents starts up to nineteen of them, each a model taking a turn on somebody's machine, and a
+    /// row reading only "All agents" would hide the difference between three and thirty. Not a
+    /// confirmation dialog: this surface reserves those for destruction, and a broadcast is
+    /// recoverable in the way a purge is not.
+    /// </remarks>
+    /// <remarks>
+    /// <b>Offered when telling and never when asking.</b> A question to everybody would open an
+    /// exchange with each of them, and §7.1 caps open exchanges per pair — so it would saturate a
+    /// small deployment and leave the asker owing answers it cannot conclude. A notification takes
+    /// no slot and creates no debt, which is exactly what makes the plural case N ordinary messages
+    /// rather than a new state machine (§5.5). The absence is not explained on screen, because a
+    /// sentence about a thing that is not offered is noise on every run where nobody wanted it.
+    /// </remarks>
+    internal static string Everyone(int howMany) =>
+        howMany == 1 ? "All agents (1)" : $"All agents ({howMany})";
+
+    /// <summary>Whether a picked row is the everyone row rather than a peer.</summary>
+    /// <param name="chosen">What was picked.</param>
+    /// <param name="howMany">How many agents the row was built for.</param>
+    /// <returns>Whether it means everybody.</returns>
+    /// <remarks>
+    /// Compared against what <see cref="Everyone"/> builds rather than by a prefix, so a project
+    /// holding an agent somebody has named <c>All agents (3)</c> cannot be mistaken for it — and
+    /// so the two cannot drift, which a prefix check would allow the first time the label gains a
+    /// word.
+    /// </remarks>
+    internal static bool IsEveryone(string chosen, int howMany) =>
+        string.Equals(chosen, Everyone(howMany), StringComparison.Ordinal);
+
     internal const string AskTitle = "Ask somebody a question";
 
     /// <summary>Asking from the conversations list, where what is being made is a new conversation.</summary>

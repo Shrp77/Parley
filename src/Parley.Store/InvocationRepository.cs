@@ -101,12 +101,18 @@ public sealed class InvocationRepository(SqliteConnection connection)
     /// <returns>Who owes something, busiest first.</returns>
     /// <remarks>
     /// <para>
-    /// Four conditions, and each excludes a different mistake. The agent must actually owe
-    /// something, or the turn is tokens spent on nothing. It must have opted in through
-    /// <c>invoke_when_idle</c>, because running a repository somebody did not offer is spending
-    /// their tokens on their machine. It must say where it works, and it must say how to be
-    /// started — storage refuses consent without a command, so the last of those is a belt to
-    /// that brace rather than a second rule.
+    /// Two conditions here, and the third is not this query's to apply. The agent must actually
+    /// have something waiting — an exchange it owes, or a message nobody has collected — or the
+    /// turn is tokens spent on nothing. And it must say where it works, because a turn is taken in
+    /// a workspace.
+    /// </para>
+    /// <para>
+    /// <b>Consent is the caller's question and lives in the node catalogue.</b> This remark used to
+    /// claim four conditions and name an <c>invoke_when_idle</c> column as the opt-in. There is no
+    /// such column, in this schema or in SPEC.md — consent moved to the catalogue, and
+    /// <c>AgentFleet</c> applies it by asking whether this machine has a launch command for the
+    /// role. Corrected here rather than deleted, because a reader sent to this method to find out
+    /// what bounds an unattended start was being told to look for a guard that does not exist.
     /// </para>
     /// <para>
     /// A retired agent is excluded by the status filter for the same reason §14 refuses to route

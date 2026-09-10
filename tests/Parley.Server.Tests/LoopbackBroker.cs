@@ -44,12 +44,18 @@ internal sealed class LoopbackBroker : IAsyncDisposable
     /// How long the broker waits for a turn before answering that it is still running, or null for
     /// the shipped default.
     /// </param>
+    /// <param name="clock">The clock to stamp from, or null for the system one.</param>
     /// <returns>The running broker.</returns>
     public static async Task<LoopbackBroker> StartAsync(
         CancellationToken cancellationToken,
-        TimeSpan? instructionPatience = null)
+        TimeSpan? instructionPatience = null,
+        TimeProvider? clock = null)
     {
-        var clock = TimeProvider.System;
+        // **Settable for the same reason the patience above is.** The wake ceiling is two minutes,
+        // and a test that waited it out would be deleted by whoever next ran the suite -- so the
+        // case that matters, a wake that never produced a drain, would be the one nothing could
+        // reach. Defaults to the system clock, so every existing test is unaffected.
+        clock ??= TimeProvider.System;
 
         // **The wait is settable so a test can watch it elapse, which is the path that used to
         // destroy an agent's answer.** An operator who gave up cancelled the settling write and
@@ -518,4 +524,28 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
         _cancellation.Dispose();
         _arrived.Dispose();
     }
+}
+
+/// <summary>
+/// A clock the tests move by hand.
+/// </summary>
+/// <remarks>
+/// A stub rather than <c>FakeTimeProvider</c>, which would mean a package on the test path for two
+/// members -- the same trade <c>Parley.Cli.Tests</c> and <c>Parley.Mcp.Tests</c> each made. It
+/// exists here for the wake ceiling: two minutes is far too long to wait out, so without a movable
+/// clock the case that matters -- a wake that never produced a drain -- is the one nothing could
+/// reach.
+/// </remarks>
+/// <param name="now">The instant to start at.</param>
+internal sealed class StubClock(DateTimeOffset now) : TimeProvider
+{
+    /// <summary>Gets or sets the instant every read returns.</summary>
+    public DateTimeOffset Now { get; set; } = now;
+
+    /// <inheritdoc />
+    public override DateTimeOffset GetUtcNow() => Now;
+
+    /// <summary>Moves the clock forward.</summary>
+    /// <param name="by">How far.</param>
+    public void Advance(TimeSpan by) => Now += by;
 }

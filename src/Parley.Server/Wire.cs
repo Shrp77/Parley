@@ -333,6 +333,25 @@ internal static class Conversions
             nameof(rejection), rejection, "Not a defined rejection.")
     };
 
+    /// <summary>Converts what became of a recipient for the wire.</summary>
+    /// <param name="outcome">What became of it.</param>
+    /// <returns>The wire value.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The outcome is not a defined member.</exception>
+    /// <remarks>
+    /// Here rather than at the call site like every other mapping, and for the reason recorded on
+    /// <c>Conclude</c>: one home per mapping is what lets a reflection test check them all, and a
+    /// mapping written where it is used is one the guard cannot see.
+    /// </remarks>
+    public static Wire.WakeOutcome Out(Core.WakeOutcome outcome) => outcome switch
+    {
+        Core.WakeOutcome.Started => Wire.WakeOutcome.Started,
+        Core.WakeOutcome.AlreadyRunning => Wire.WakeOutcome.AlreadyRunning,
+        Core.WakeOutcome.AlreadyComing => Wire.WakeOutcome.AlreadyComing,
+        Core.WakeOutcome.Unreachable => Wire.WakeOutcome.Unreachable,
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(outcome), outcome, "Not a defined wake outcome.")
+    };
+
     /// <summary>Converts a refused conclusion for the wire.</summary>
     /// <param name="error">The refusal.</param>
     /// <returns>The wire value.</returns>

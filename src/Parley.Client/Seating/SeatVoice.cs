@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json.Nodes;
 using Grpc.Core;
 using Parley.Core;
@@ -197,13 +198,292 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
             return reply.Deduplicated
                 ? "Already sent — this was the same notice again, so it was not repeated."
-                : "Sent.";
+                : "Sent. " + Waking(reply.Wake, to);
         }
         catch (RpcException failure)
         {
             return Failed(failure);
         }
     }
+
+    /// <summary>Tells every agent in a project the same thing.</summary>
+    /// <param name="hold">The seat it is being said from.</param>
+    /// <param name="peers">Who to tell, resolved by the surface from its own roster.</param>
+    /// <param name="text">What they are being told.</param>
+    /// <param name="conversationId">The discussion it belongs to.</param>
+    /// <param name="cancellationToken">Cancels the sends.</param>
+    /// <returns>A sentence saying what happened, in counts.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="peers"/> or the hold is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>N ordinary notifications, and no new protocol.</b> SPEC.md §5.5 settled this shape for
+    /// questions — "not a new kind of message and not a new state machine" — because a one-to-many
+    /// exchange would need its own admission rules, its own cap arithmetic and its own definition
+    /// of concluded. Every one of those costs is <em>absent</em> here, since a notification opens no
+    /// exchange, takes no slot and creates no debt, so the argument for restraint is stronger than
+    /// in the case that already took it.
+    /// </para>
+    /// <para>
+    /// <b>The seat is re-read before every send, not once at the start.</b> A broadcast to twenty
+    /// agents is twenty round trips, and the idle sweep runs throughout — so the rule established in
+    /// 0.18.9 applies with more force here than anywhere: a composer that captured its seat spoke
+    /// under a name the book had already released. Stopping half way and saying so is the honest
+    /// outcome; finishing is not.
+    /// </para>
+    /// <para>
+    /// Sequential rather than concurrent, deliberately. Twenty concurrent notifications would race
+    /// the broker's per-recipient coalescing to no purpose — the recipients differ, so nothing is
+    /// coalesced anyway — and would make the "stopped after n" report above meaningless.
+    /// </para>
+    /// </remarks>
+    public async Task<string> NotifyEveryoneAsync(
+        SeatHold hold,
+        IReadOnlyList<AgentName> peers,
+        string? text,
+        string conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(hold);
+        ArgumentNullException.ThrowIfNull(peers);
+
+        if (peers.Count == 0)
+        {
+            return NobodyToTell;
+        }
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return "Nothing was written, so nothing was sent.";
+        }
+
+        if (BadConversation(conversationId) is { } named)
+        {
+            return named;
+        }
+
+        var payload = new JsonObject { ["text"] = text }.ToJsonString();
+
+        if (TooLong(payload) is { } refused)
+        {
+            // Recorded once rather than once per recipient. §17 question 16 counts refusals as
+            // evidence about the cap, and twenty rows for one over-long message somebody wrote once
+            // would be twenty pieces of evidence about a single act.
+            await RecordAsync(Wire.MessageType.Notify, payload.Length, cancellationToken)
+                .ConfigureAwait(false);
+
+            return refused;
+        }
+
+        var counted = new Dictionary<Wire.WakeOutcome, int>();
+        var unreachable = new List<string>();
+        var turnedAway = new List<string>();
+        var told = 0;
+        var repeated = 0;
+        var stopped = false;
+
+        foreach (var peer in peers)
+        {
+            if (hold.Lost)
+            {
+                stopped = true;
+
+                break;
+            }
+
+            Wire.NotifyReply reply;
+
+            try
+            {
+                reply = await _agents.NotifyAsync(
+                    new Wire.NotifyRequest
+                    {
+                        From = _seat.Name.Value,
+                        To = peer.Value,
+                        ResponderModel = _seat.Responder,
+                        PayloadJson = payload,
+                        ConversationId = conversationId
+                    },
+                    cancellationToken: cancellationToken);
+            }
+            catch (RpcException failure)
+            {
+                // One unreachable peer must not lose the other nineteen sends. The broker being
+                // gone entirely will show up as every one of them failing, which the report says.
+                turnedAway.Add($"{peer.Value} ({failure.Status.Detail})");
+
+                continue;
+            }
+
+            if (!reply.Ok)
+            {
+                turnedAway.Add(peer.Value);
+
+                continue;
+            }
+
+            if (reply.Deduplicated)
+            {
+                // **Not counted as told, because nothing was stored.** §13.1 refuses a
+                // byte-identical repeat within its window, and a person re-sending a broadcast
+                // after a partial failure is exactly who meets it — so reporting "told all
+                // nineteen" here would be the "Sent." defect this feature exists to remove,
+                // rebuilt in the code that removes it.
+                repeated++;
+
+                continue;
+            }
+
+            told++;
+
+            if (reply.Wake == Wire.WakeOutcome.Unreachable)
+            {
+                unreachable.Add(peer.Value);
+            }
+
+            counted[reply.Wake] = counted.GetValueOrDefault(reply.Wake) + 1;
+        }
+
+        return Reported(peers.Count, told, repeated, stopped, counted, unreachable, turnedAway);
+    }
+
+    /// <summary>What a broadcast did, in counts rather than in twenty sentences.</summary>
+    /// <param name="asked">How many were going to be told.</param>
+    /// <param name="told">How many were.</param>
+    /// <param name="repeated">How many were refused as the same notice again.</param>
+    /// <param name="stopped">Whether the seat went part way through.</param>
+    /// <param name="counted">How many of each outcome.</param>
+    /// <param name="unreachable">Those nothing here can start.</param>
+    /// <param name="turnedAway">Those the broker refused.</param>
+    /// <returns>The sentence.</returns>
+    /// <remarks>
+    /// <b>Counts, and then names for the two things a person can act on.</b> Twenty sentences is
+    /// not a report, and a bare "sent" hides the case that matters: a broadcast that reached three
+    /// of nineteen is a different fact from one that reached all nineteen, and the surface saying
+    /// nothing about the difference is what produced the report this feature answers.
+    /// </remarks>
+    internal static string Reported(
+        int asked,
+        int told,
+        int repeated,
+        bool stopped,
+        IReadOnlyDictionary<Wire.WakeOutcome, int> counted,
+        IReadOnlyList<string> unreachable,
+        IReadOnlyList<string> turnedAway)
+    {
+        ArgumentNullException.ThrowIfNull(counted);
+        ArgumentNullException.ThrowIfNull(unreachable);
+        ArgumentNullException.ThrowIfNull(turnedAway);
+
+        var said = new StringBuilder()
+            .Append(told == asked
+                ? $"Told all {asked}."
+                : $"Told {told} of {asked}.");
+
+        // Said before the outcomes, because it changes what they mean: a broadcast where every
+        // recipient was a repeat stored nothing at all, and the counts below then describe agents
+        // that were woken for mail they already had.
+        if (repeated > 0)
+        {
+            _ = said.Append(
+                repeated == asked
+                    ? " Every one was the same notice again, so nothing was repeated."
+                    : $" {repeated} had already been sent this, so it was not repeated.");
+        }
+
+        var parts = new List<string>();
+
+        if (counted.GetValueOrDefault(Wire.WakeOutcome.Started) is > 0 and var starting)
+        {
+            parts.Add($"{starting} being started");
+        }
+
+        if (counted.GetValueOrDefault(Wire.WakeOutcome.AlreadyRunning) is > 0 and var live)
+        {
+            parts.Add($"{live} already running");
+        }
+
+        if (counted.GetValueOrDefault(Wire.WakeOutcome.AlreadyComing) is > 0 and var coming)
+        {
+            parts.Add($"{coming} already being seen to");
+        }
+
+        if (parts.Count > 0)
+        {
+            _ = said.Append(' ').Append(string.Join(", ", parts)).Append('.');
+        }
+
+        // Named rather than counted, because this is the half somebody does something about — and
+        // it is not a failure: the message is stored and each of these collects it whenever that
+        // agent next runs.
+        if (unreachable.Count > 0)
+        {
+            _ = said.Append(" Waiting for ")
+                .Append(string.Join(", ", unreachable))
+                .Append(" — nothing here can start them.");
+        }
+
+        if (turnedAway.Count > 0)
+        {
+            _ = said.Append(" Refused for ").Append(string.Join(", ", turnedAway)).Append('.');
+        }
+
+        if (stopped)
+        {
+            _ = said.Append(' ').Append(Left);
+        }
+
+        return said.ToString();
+    }
+
+    /// <summary>What is said when a project holds nobody to tell.</summary>
+    internal const string NobodyToTell =
+        "There is nobody in this project to tell, so nothing was sent.";
+
+    /// <summary>What is said when the seat went part way through a broadcast.</summary>
+    /// <remarks>
+    /// It names what did go rather than only what did not. A person told merely that their seat
+    /// was released cannot tell whether to send the whole thing again or the remainder.
+    /// </remarks>
+    internal const string Left =
+        "Your seat was released part way through, so the rest were not sent.";
+
+    /// <summary>What became of the recipient, in words.</summary>
+    /// <param name="wake">What the broker did about it.</param>
+    /// <param name="to">Who was told.</param>
+    /// <returns>A sentence to show beside the send.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>"Sent." on its own is what produced the report this exists to answer.</b> It was true —
+    /// the message was stored — and it left somebody believing a peer was reading a notification
+    /// that had reached a closed session and started nothing. A send that delivers and a send that
+    /// lands in an empty room looked identical.
+    /// </para>
+    /// <para>
+    /// <b>None of these is a failure and none of them is worded as one.</b> The message is stored
+    /// before any of it is decided, and SPEC.md §17 question 1 requires that whatever bounds this
+    /// "must not make an event undeliverable" — so <c>Unreachable</c> says the notice is waiting
+    /// rather than that it was not sent.
+    /// </para>
+    /// </remarks>
+    internal static string Waking(Wire.WakeOutcome wake, AgentName to) => wake switch
+    {
+        Wire.WakeOutcome.Started => $"{to.Value} was not running, so it is being started.",
+        Wire.WakeOutcome.AlreadyRunning => $"{to.Value} is running and has been handed it.",
+
+        // Said rather than passed over in silence, because "nothing happened" and "something is
+        // already happening" look the same from here and lead somewhere completely different.
+        Wire.WakeOutcome.AlreadyComing =>
+            $"{to.Value} is already being seen to, and will collect this with the rest.",
+
+        Wire.WakeOutcome.Unreachable =>
+            $"It is waiting for {to.Value}, but nothing here can start it — it will be collected "
+            + "when that agent next runs.",
+
+        // A broker older than this one, which cannot happen while the protocol version is checked
+        // on attach. Said plainly rather than guessed at: claiming a start that may not have been
+        // asked for is the failure this whole sentence exists to remove.
+        _ => $"What became of {to.Value} was not reported.",
+    };
 
     /// <summary>How much is waiting, without taking any of it.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>

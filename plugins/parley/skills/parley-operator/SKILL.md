@@ -267,6 +267,11 @@ notifications an agent may send - deliberately, while there is no evidence for w
 should be - so this reports how many were sent, how big they were, between whom, and over what
 span. Compare the mean against the single-message cap it prints beside it.
 
+Since protocol 0.4 a notification also *starts* its recipient, so this volume now costs turns
+on somebody's machine rather than only context. The turns are bounded and the messages are
+not: a recipient is woken once until it reads its inbox, however many notices arrive. So a
+high count here is still the cue to ask, and what it costs is in `invocations`.
+
 It also totals what each agent has received, and marks the ones past ten. That is the cue to go
 and ask that agent whether any of it was worth having: volume alone cannot tell a useful stream
 of contract changes from noise, and the only participant who knows is the one reading them.

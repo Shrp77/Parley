@@ -598,7 +598,54 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/009-multi-project-enrolment/` — 0.22.2, merged (#86). A repository may answer
+- **Active plan**: `specs/010-waking-notifications/` — 0.23.0, **protocol 0.4**. A
+  notification wakes the agent it is addressed to, and a person can tell every agent in a project at
+  once.
+
+  **This reverses SPEC.md §17 question 15**, which recorded the current behaviour as deliberate —
+  "only a Question, a Clarify and an Answer ask for one — a Notify nudges and never asks" — and
+  warned that wiring Notify to the wake path "would make it unbounded and would be question 1's
+  problem reached by a second route". The objection is **answered rather than overruled**, out of
+  question 1's own evidence: it records sixty notifications accepted in a tenth of a second and
+  records that `inbox` with no limit "collects everything pending", so one turn drains all sixty.
+  Question 15 assumed the wake meant one turn per notification. Coalescing means it does not.
+
+  **The bound counts turns, not processes, and that came from reading rather than reasoning.**
+  `NodeCommand.StartAsync` dispatches a turn when the resident is already alive — deliberately, to
+  close a race — so the node already refuses a duplicate *process* and cannot refuse a duplicate
+  *turn*, and must not learn how: it does not know whether a command came from a notification or a
+  question. **The spec's first draft keyed the marker on the recipient attaching, and that would
+  have bounded nothing**: the first notification starts the agent, it attaches in a second, and the
+  next fifty-nine each buy a turn. It keys on the **drain** instead, which is the event §4.2 already
+  distinguishes from waking an adapter and the only one that proves the mail was read.
+
+  **Every wake marks attention pending; only a notification consults the mark.** A question keeps
+  today's behaviour because §7.1's per-pair cap already bounds questions — which is precisely the
+  bound question 15 identified as holding the line. What changes is that a notification will not
+  stack a turn on top of one a question has already asked for.
+
+  **`parley top` becomes unusable against an un-upgraded broker and that is the intent.** §18 gives
+  a protocol no patch level, and while the major is zero the minor carries breaking changes, so
+  every adapter must be upgraded with the broker or be refused at attach. The bump is caused by the
+  behaviour rather than by the new reply field: an agent that starts where it did not before is
+  observable by a second implementation, which is §18's own test. **So this release carries the wire
+  change and nothing else that might need reverting**, on 008's reasoning that a release changing a
+  versioned wire contract and a live scheduled task's flag "cannot be reverted in halves".
+
+  **All agents is not a protocol operation.** N ordinary notifications from the surface, on §5.5's
+  precedent — and its argument is stronger here, since the costs §5.5 lists for a one-to-many
+  exchange (its own admission rules, its own cap arithmetic, its own definition of concluded) are
+  all absent for a message that opens no exchange at all.
+
+  **Diagnosed while answering the report, and out of scope:** `AgentFleet.TickAsync` is called from
+  exactly one place, `parley fleet`, its own long-running command. The autostart entry runs `serve`
+  and `parley node` never sweeps, so on a deployment configured the documented way **nothing runs
+  the sweep** that would eventually collect an uncollected notification. That is why the reported
+  defect was permanent rather than slow — both doors shut, one by question 15 and one by the sweeper
+  not being installed. This opens the first. Whether `parley fleet` belongs in the autostart entry
+  is a separate decision and is not taken here.
+
+- Previous: `specs/009-multi-project-enrolment/` — 0.22.2, merged (#86). A repository may answer
   in more than one project. SPEC.md §4.1 already permits it — the protocol has no concept of a project,
   membership is which endpoint an agent connects to, and `ProjectManifest` constrains name, store,
   endpoint and catalogue path but never a workspace. What forbade it is one line of deployment tooling:

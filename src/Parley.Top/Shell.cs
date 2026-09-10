@@ -2161,10 +2161,21 @@ internal sealed class Shell : Window
         // Its own title, not the composer's. `ActionShapeTests` requires every dialog to answer to a
         // distinct one -- two sharing it makes every `Find` in the suite ambiguous, and it drove the
         // picker where it meant the form.
+        // **Everybody at once, and only when telling.** A question to each of them would open an
+        // exchange apiece and hold a slot apiece under §7.1; a notification takes no slot and
+        // creates no debt, which is what makes the plural case N ordinary messages rather than a
+        // new state machine. It is first in the list because it is what somebody scrolling a long
+        // roster came for.
+        var everybody = asking ? [] : EveryAgent();
+
+        var rows = asking || everybody.Count == 0
+            ? peers
+            : (IReadOnlyList<string>)[Participation.Everyone(everybody.Count), .. peers];
+
         var picking = Prompting.Choose(
             Participation.WhichPeer,
             asking ? Participation.AskTitle : Participation.TellTitle,
-            peers);
+            rows);
 
         var pick = Prompting.Open(app, picking);
 
@@ -2172,17 +2183,27 @@ internal sealed class Shell : Window
         {
             Prompting.Close(app, pick);
 
-            if (chosen is null || !Resolve(chosen, out var peer))
+            if (chosen is null)
             {
                 return;
             }
 
-            Ask(peer);
+            if (!asking && Participation.IsEveryone(chosen, everybody.Count))
+            {
+                Open(null, everybody);
+
+                return;
+            }
+
+            if (Resolve(chosen, out var peer))
+            {
+                Open(peer, null);
+            }
         };
 
         return Task.CompletedTask;
 
-        void Ask(AgentName peer)
+        void Open(AgentName? peer, IReadOnlyList<AgentName>? all)
         {
         var fields = asking
             ?
@@ -2230,19 +2251,31 @@ internal sealed class Shell : Window
             // reached the broker. A guard that is really a race is not a guard.
             Queue(async cancellationToken =>
             {
-                if (Voice() is not { } speaking)
+                if (Voice() is not { } speaking || Held is not { } holding)
                 {
                     Said = Participation.Gone;
 
                     return;
                 }
 
-                Said = asking
-                    ? await speaking.AskAsync(
-                        peer, values[0], values[1], values[2], values[3], cancellationToken)
-                        .ConfigureAwait(false)
-                    : await speaking.NotifyAsync(peer, values[0], values[1], cancellationToken)
-                        .ConfigureAwait(false);
+                Said = (asking, all, peer) switch
+                {
+                    (true, _, { } one) => await speaking.AskAsync(
+                        one, values[0], values[1], values[2], values[3], cancellationToken)
+                        .ConfigureAwait(false),
+
+                    // The hold goes in rather than only the voice, because a broadcast is one send
+                    // per recipient and the sweep runs throughout: it re-reads the seat before each
+                    // one and stops rather than finishing under a name the book has released.
+                    (false, { } everybody, _) => await speaking.NotifyEveryoneAsync(
+                        holding, everybody, values[0], values[1], cancellationToken)
+                        .ConfigureAwait(false),
+
+                    (false, null, { } one) => await speaking.NotifyAsync(
+                        one, values[0], values[1], cancellationToken).ConfigureAwait(false),
+
+                    _ => Participation.Gone,
+                };
 
                 await SelectAsync(project, cancellationToken).ConfigureAwait(false);
             });
@@ -2264,6 +2297,35 @@ internal sealed class Shell : Window
             .Where(row => !(row.Seat && Mine(row.Name)))
             .Select(row => row.Name)
             .OrderBy(name => name, StringComparer.Ordinal),
+    ];
+
+    /// <summary>Every agent in this project a broadcast reaches.</summary>
+    /// <returns>The agents, in the order the roster shows them.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Agents, not people.</b> Every seat is left out — this person's and everybody else's. A
+    /// seat is somebody at a desk rather than something that can be started, and "tell all the
+    /// agents" addressed to a colleague is a different act from the one somebody chose.
+    /// </para>
+    /// <para>
+    /// <b>A retired agent is not addressed rather than addressed and refused.</b> §14 refuses a
+    /// notification to one, so including them would manufacture a refusal per retired row and
+    /// report it beside the real ones — a broadcast that says "3 refused" about agents somebody
+    /// deliberately retired reads as a fault.
+    /// </para>
+    /// <para>
+    /// A row the roster shows and this cannot resolve is dropped rather than guessed at. Both
+    /// spellings resolve (see <see cref="Resolve"/>), so what reaches here is a roster fault, and
+    /// silently addressing the wrong agent is worse than telling one fewer.
+    /// </para>
+    /// </remarks>
+    private IReadOnlyList<AgentName> EveryAgent() =>
+    [
+        .. Agents.Standings
+            .Where(row => !row.Seat && !row.Retired)
+            .OrderBy(row => row.Name, StringComparer.Ordinal)
+            .Select(row => Resolve(row.Name, out var peer) ? (AgentName?)peer : null)
+            .OfType<AgentName>(),
     ];
 
     /// <summary>Turns a row's name back into the agent it names.</summary>

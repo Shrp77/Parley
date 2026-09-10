@@ -54,7 +54,8 @@ public sealed class TransportEnumTests
             { typeof(Core.InstructionOutcome), typeof(Wire.InstructionOutcome) },
             { typeof(Core.TransitionError), typeof(Wire.TransitionError) },
             { typeof(Broker.NotifyRejection), typeof(Wire.NotifyRejection) },
-            { typeof(Broker.ClosureError), typeof(Wire.ClosureError) }
+            { typeof(Broker.ClosureError), typeof(Wire.ClosureError) },
+            { typeof(Core.WakeOutcome), typeof(Wire.WakeOutcome) }
         };
 
     [Theory]

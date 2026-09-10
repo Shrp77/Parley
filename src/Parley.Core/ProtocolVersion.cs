@@ -18,6 +18,16 @@
 /// about its state.
 /// </para>
 /// <para>
+/// <b>0.4 made a notification wake its recipient.</b> Before it, a <c>notify</c> reached only an
+/// agent that was already attached, so one addressed to a closed session was stored and read
+/// whenever somebody next opened that repository — which for a repository nobody opens is never.
+/// The bump is caused by the behaviour rather than by the field that reports it: an agent that
+/// starts where it previously did not is observable from the other side of the boundary, which is
+/// §18's whole test, and a protocol with no patch level has no slot for a compatible change. It is
+/// bounded by coalescing rather than by a cap — attention is asked for once per recipient until
+/// that recipient drains, because a drain collects everything pending.
+/// </para>
+/// <para>
 /// <b>0.3 raised the message cap to 8,000.</b> A number rather than a mechanism, and it still
 /// moves this: what a peer will accept is exactly the kind of thing a second implementation has
 /// to agree about, and two builds both calling themselves 0.2 while disagreeing about it is what
@@ -40,5 +50,5 @@
 public static class ProtocolVersion
 {
     /// <summary>The protocol version, as SPEC.md declares it.</summary>
-    public const string Current = "0.3";
+    public const string Current = "0.4";
 }
