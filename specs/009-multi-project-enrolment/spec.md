@@ -212,6 +212,16 @@ one in three. Each row says what is true of it.
   its workspace as its working directory, so two nodes starting one workspace is two models writing one
   checkout. A launch entry is inert until a person opens the repository; a catalogue entry is standing
   consent to start without one, which is the half that must stay singular.)*
+- **FR-013a**: An enrolment that grants an unattended start, or that adds an entry beside one already
+  granted, MUST say which other projects' servers that start brings up. *(Added by the review gate,
+  lens 2 run 24, and it is a consequence FR-013 does not cover. A node starts a client with the
+  workspace as its working directory; that client reads the one launch configuration sitting there and
+  starts **every** server in it — which after this feature is one per project the repository answers
+  in. So consent granted in one project also lets a peer in each of the others have the repository
+  answer with nobody watching, in projects whose catalogues say nothing about starting it. Nothing here
+  can change what a client loads, and permitting it is right: refusing would forbid exactly the shared
+  repository this feature exists for. What must not happen is that it is discovered from a transcript,
+  so the person granting the consent is told at the moment they grant it.)*
 - **FR-014**: Every illustration of a launch configuration a person is shown — the README, the plugin's
   setup instructions, the console's registration page, and **the adapter's own header comment** — MUST
   show the project-keyed shape and say what the bare `parley` key means. *(The fourth was found by the

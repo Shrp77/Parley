@@ -580,11 +580,28 @@ public static class Enrolment
         var agents = AgentsOf(catalogue, catalogueFile);
         var launchPath = LaunchPath(entry.Workspace);
 
+        var written = new List<string>();
+        var said = new List<string>();
+
+        // **Asked whether or not this enrolment is about running unattended, and only *refused* when
+        // it is.** An attended entry beside an existing consent is not a second consent — but the
+        // client the other project's node starts reads one launch configuration and brings up every
+        // server in it, so the entry about to be written here will be started by that node too, in a
+        // project that never catalogued this repository. That is worth a sentence at the moment
+        // somebody adds it, which is the only moment anybody looks.
+        var already = Catalogues.Elsewhere(
+            deployment, entry.Workspace, catalogueFile, out var unreadable);
+
+        if (!entry.Unattended && already is not null)
+        {
+            said.Add(
+                $"{Quoting.Quoted(already.Project)} already starts this workspace unattended, so its "
+                + "node will bring this entry up as well: one working directory has one launch "
+                + "configuration and a client starts every server in it");
+        }
+
         if (entry.Unattended)
         {
-            var already = Catalogues.Elsewhere(
-                deployment, entry.Workspace, catalogueFile, out var unreadable);
-
             // Refused before anything is written, and refused even though the launch entry would
             // have been fine. Enrolling the repository in this project is admitted; starting it here
             // as well is what cannot be.
@@ -610,8 +627,6 @@ public static class Enrolment
         // class as the withdrawal that removed another agent's entry and reported success: the damage
         // is not the failure, it is the report.
         RepositoryPlan plan = null!;
-        var written = new List<string>();
-        var said = new List<string>();
 
         try
         {

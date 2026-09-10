@@ -568,6 +568,30 @@ public static class EnrollmentPlan
                 stale ? $"node.json: update, it records {Quoting.Flat(nodeWorkspace)}"
                 : nodeAlreadyLists ? "node.json: already listed"
                 : "node.json: add (consent to run unattended)");
+
+            // **Consent is per project and one start is not.** A node starts the client with this
+            // workspace as its working directory, and that client reads the launch configuration
+            // sitting in it and brings up *every* server there — which, after this feature, is one
+            // per project the repository answers in. So consenting here also lets a peer in each of
+            // the others have this repository answer with nobody watching, in projects whose
+            // catalogues say nothing about starting it.
+            //
+            // Nothing here can change what a client loads. What it can do is put the fact in front
+            // of the person granting the consent, who is the only one able to weigh it, at the
+            // moment they grant it — the alternative is finding out from a transcript.
+            var beside = servers
+                .Where(pair => !string.Equals(pair.Key, key, StringComparison.Ordinal)
+                               && LaunchKey.IsOurs(pair.Key))
+                .Select(pair => LaunchKey.ProjectOf(pair.Key) ?? pair.Key)
+                .ToArray();
+
+            if (beside.Length > 0)
+            {
+                notes.Add(
+                    $"node.json: starting it here also brings up its {string.Join(" and ", beside.Select(Quoting.Quoted))} "
+                    + "server(s), because one working directory has one launch configuration and a "
+                    + "client starts every server in it");
+            }
         }
         else if (stale)
         {
