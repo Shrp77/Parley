@@ -154,5 +154,10 @@ as the `--console` reader of 007, one layer down.
 "launch configuration" twice, neither time giving it a shape. The protocol has no concept of a project
 (§4.1) and none of a file, so nothing in this feature is protocol.
 
-The three places a person is shown a shape — README, the plugin's `setup.md`, and the console's
-`Register` page — are documentation of this implementation and do change, under FR-014.
+The **four** places a person is shown a shape — README, the plugin's `setup.md`, the console's
+`Register` page, and **the adapter's own header comment in `src/Parley.Mcp/Program.cs`** — are
+documentation of this implementation and do change, under FR-014.
+
+*(Written as three. The fourth is the illustration an agent's own server carries, and undercounting it
+here is how T043 came to name three as well — corrected in both places during the review gate, along
+with the illustration itself, which had been updated but by neither list.)*
