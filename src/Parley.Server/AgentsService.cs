@@ -244,16 +244,37 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
                 Blank(request.ConversationId), ct),
             context).ConfigureAwait(false);
 
+        var wake = Core.WakeOutcome.Unreachable;
+
         if (outcome.Succeeded)
         {
             await _runtime.NudgeAsync(to, context.CancellationToken).ConfigureAwait(false);
+
+            // **SPEC.md §5.4, as of protocol 0.4: a notification wakes its recipient.** It did not
+            // until now, and §17 question 15 argued that it should not — on the grounds that Notify
+            // is the uncapped message type and wiring it here would make turns unbounded. That is
+            // answered by the coalescing rather than waved away: attention is asked for once per
+            // recipient until it drains, and a drain collects everything pending, so a hundred
+            // notifications cost one turn.
+            //
+            // Deduplicated traffic is deliberately excluded. §13.1 has already decided the message
+            // carries nothing the recipient has not been sent, so a turn spent on it is a turn
+            // spent on nothing — and it is the one type where that control does the most work.
+            wake = outcome.Stored
+                ? _runtime.RequestAttentionForMail(to, $"{from.Value} told it something")
+                : Core.WakeOutcome.AlreadyComing;
         }
 
         return new Wire.NotifyReply
         {
             Ok = outcome.Succeeded,
             Refusal = Conversions.Out(outcome.Rejection),
-            Deduplicated = outcome.Succeeded && !outcome.Stored
+            Deduplicated = outcome.Succeeded && !outcome.Stored,
+
+            // Reported whatever happened, because a sender told only that the message was stored
+            // cannot tell delivery from silence — which is half of the defect this feature exists
+            // for. It is not a second refusal: `Ok` above is unaffected by any of it.
+            Wake = Conversions.Out(wake)
         };
     }
 
@@ -341,6 +362,15 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
             (broker, now, ct) => broker.DrainInboxAsync(
                 agent, now, request.Limit > 0 ? request.Limit : null, ct),
             context).ConfigureAwait(false);
+
+        // **The single place a collection is observable, which is why the wake bound keys on it.**
+        // Everything asked for before now has been seen, so the next notification is free to ask
+        // again. Keyed here rather than on the attach because the two differ: §4.2 separates waking
+        // an adapter from the model taking a turn, and an agent that attached and has not drained
+        // has read nothing. Clearing on the attach would have bounded nothing at all — the first
+        // notification starts the agent, it attaches within a second, and every one after it buys
+        // a turn.
+        _runtime.Collected(agent);
 
         var reply = new Wire.InboxReply();
 
