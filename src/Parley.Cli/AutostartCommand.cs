@@ -216,6 +216,11 @@ public static class AutostartCommand
                 "  hosts: this machine's agents in each project whose entry names a catalogue.")
                 .ConfigureAwait(false);
 
+            foreach (var line in ServedProjects(manifestToServe))
+            {
+                await output.WriteLineAsync(line).ConfigureAwait(false);
+            }
+
             if (replacing is { ServesManifest: false, NodeConfig: { Length: > 0 } dropped }
                 && !ProjectsNameACatalogue(manifestToServe))
             {
@@ -300,6 +305,57 @@ public static class AutostartCommand
     private static bool ProjectsNameACatalogue(string manifestPath) =>
         Configuration.ProjectManifest.TryRead(manifestPath, out var projects, out _)
         && projects.Any(p => p.NodeConfig is { Length: > 0 });
+
+    /// <summary>Every project this entry serves, with the three files each one is.</summary>
+    /// <param name="manifestPath">The manifest the entry serves.</param>
+    /// <returns>The lines to print, or nothing when the manifest cannot be read.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Both commands read this manifest already and neither said what was in it.</b> `install`
+    /// answered with a rule — <i>each project whose entry names a catalogue</i> — and `status` with a
+    /// file path, so a two-project deployment printed exactly what a one-project deployment prints.
+    /// The owner of a machine running two projects read both and concluded the second was not being
+    /// served; it had been, for hours, with its broker listening and its node able to start three
+    /// agents.
+    /// </para>
+    /// <para>
+    /// <b>Three files, because a deployment is three files per project and they are rarely together.</b>
+    /// The manifest is the one thing a person is told about, and it is the only one of the four that
+    /// the entry itself names: the store and the catalogue are inside it, per project, and on the
+    /// deployment that found this they were in different directories from each other and from the
+    /// manifest. A path a person has to go and look up is a path they cannot check against what they
+    /// meant.
+    /// </para>
+    /// <para>
+    /// Silent when the manifest cannot be read, because the callers have their own words for that and
+    /// two messages about one file is how they come to disagree.
+    /// </para>
+    /// </remarks>
+    internal static IReadOnlyList<string> ServedProjects(string manifestPath)
+    {
+        if (!Configuration.ProjectManifest.TryRead(manifestPath, out var projects, out _))
+        {
+            return [];
+        }
+
+        var lines = new List<string>();
+
+        foreach (var project in projects)
+        {
+            lines.Add($"    {project.Name.Value}  {project.Endpoint}");
+            lines.Add($"      store:     {project.Store}");
+
+            // Named as a fact about this machine rather than as a property of the project: a project
+            // with no catalogue is *served* -- its broker comes up and answers -- and starts nothing
+            // here, which is a different thing from not being served, and the only one of the two
+            // that reads as a fault when it is not one.
+            lines.Add(project.NodeConfig is { Length: > 0 } catalogue
+                ? $"      catalogue: {catalogue}"
+                : "      catalogue: none, so this machine starts no agents for it");
+        }
+
+        return lines;
+    }
 
     /// <summary>The account a scheduled task should run as.</summary>
     /// <returns>The user, qualified by domain where there is one.</returns>
@@ -487,6 +543,14 @@ public static class AutostartCommand
         if (present && InstalledEntry.Installed() is { } entry)
         {
             await output.WriteLineAsync($"  serves: {entry.Serves}").ConfigureAwait(false);
+
+            if (entry.ServesManifest && entry.Manifest is { Length: > 0 } served)
+            {
+                foreach (var line in ServedProjects(served))
+                {
+                    await output.WriteLineAsync(line).ConfigureAwait(false);
+                }
+            }
 
             if (!entry.ServesManifest)
             {

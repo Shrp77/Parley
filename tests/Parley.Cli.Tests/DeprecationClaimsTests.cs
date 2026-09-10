@@ -151,11 +151,14 @@ public sealed class DeprecationClaimsTests
     }
 
     [Fact]
-    public void The_version_the_documents_claim_is_the_version_this_builds()
+    public void Every_paragraph_about_them_names_the_version_they_went_at()
     {
-        // The other direction: a document naming the removal version has to name *this* one, or the
-        // person reading it cannot tell whether their build is before or after.
-        var current = Current();
+        // **The version they went at is a fact and does not move; the version being built does.**
+        // This asserted the paragraph named `Current()`, which was the same number on the day it was
+        // written and stopped being so at the very next patch — 0.22.1 broke it, in a check whose
+        // whole subject is documents naming versions. The removal happened at 0.22.0 and will have
+        // happened at 0.22.0 for ever.
+        const string Removal = "0.22.0";
 
         var claims = CurrentDocuments()
             .SelectMany(document => document.Text.Split("\n\n").Select(part => (document.Path, part)))
@@ -167,8 +170,21 @@ public sealed class DeprecationClaimsTests
         foreach (var (path, paragraph) in claims)
         {
             Assert.True(
-                paragraph.Contains(current, StringComparison.Ordinal),
-                $"{path} discusses the removed flags without naming {current}:\n{paragraph.Trim()}");
+                paragraph.Contains(Removal, StringComparison.Ordinal),
+                $"{path} discusses the removed flags without naming {Removal}:\n{paragraph.Trim()}");
         }
+    }
+
+    [Fact]
+    public void The_build_is_at_or_past_the_version_that_removed_them()
+    {
+        // The half that keeps the constant above honest rather than merely fixed: it is a fact about
+        // a release that has happened, so a build older than it would mean this file is describing a
+        // future rather than a past.
+        var current = Current().Split('.').Select(int.Parse).ToArray();
+
+        Assert.True(
+            current[0] > 0 || current[1] >= 22,
+            $"this builds {Current()}, before the release these notes say removed the flags");
     }
 }

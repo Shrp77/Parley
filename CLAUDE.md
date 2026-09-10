@@ -598,7 +598,7 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/009-multi-project-enrolment/` — 0.22.0, in progress. A repository may answer
+- **Active plan**: `specs/009-multi-project-enrolment/` — 0.22.1, merged (#86). A repository may answer
   in more than one project. SPEC.md §4.1 already permits it — the protocol has no concept of a project,
   membership is which endpoint an agent connects to, and `ProjectManifest` constrains name, store,
   endpoint and catalogue path but never a workspace. What forbade it is one line of deployment tooling:
