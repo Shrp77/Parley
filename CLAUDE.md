@@ -178,17 +178,19 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
                     the machines that only run an agent, and one command is worth more than
                     that saving.
 
-                    **`serve --with-console` hosts it inside the broker's process, and
-                    `autostart install` turns that on by default.** The project boundary is
-                    unchanged — Parley.Web still references no store — but the runtime one
-                    is: Kestrel now shares a process with the thing that owns the database.
-                    That is the trade `--with-node` already made, and it is paid for by
-                    containment: a console that cannot bind reports it and the broker keeps
-                    serving, because a web page must never cost a deployment. On by default
-                    because of SPEC.md §17 question 15 — an agent attached through somebody's
-                    editor window is the one thing nothing can hand a turn to, so a console
-                    remembered separately is the half of a deployment that works for agents
-                    and not for people.
+                    **`serve --with-web-ui` starts it as a child process, and `autostart
+                    install` registers one by default.** This paragraph described
+                    `serve --with-console` hosting it *inside* the broker's process, with
+                    Kestrel sharing a process with the thing that owns the database — which
+                    stopped being true in 007 step 3 and stopped being spellable at 0.22.0,
+                    and is corrected here rather than deleted because the trade it describes
+                    is the one that was reversed. The containment argument survives intact and
+                    is the reason the child process is not waited on: a web UI that cannot
+                    bind reports it and the broker keeps serving, because a web page must
+                    never cost a deployment. On by default because of SPEC.md §17 question
+                    15 — an agent attached through somebody's editor window is the one thing
+                    nothing can hand a turn to, so a surface remembered separately is the half
+                    of a deployment that works for agents and not for people.
 
                     The project stays separate anyway — it is what keeps the
                     store off the console's dependency graph, which is the constraint that
