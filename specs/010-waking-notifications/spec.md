@@ -80,12 +80,15 @@ and count start requests. Exactly one.
    collectable.
 2. **Given** ten different senders each notify one idle agent once, **When** all ten arrive within
    the window, **Then** exactly one start is requested — the bound is per recipient, not per pair.
-3. **Given** an agent was started for a notification and has since attached and collected, **When**
-   a further notification arrives, **Then** it is free to wake the agent again rather than being
+3. **Given** an agent was started for a notification and has since drained its inbox, **When** a
+   further notification arrives, **Then** it is free to wake the agent again rather than being
    suppressed by a timer that has not yet expired.
-4. **Given** a start was requested and the agent never attached — no node, a crashed launch —
-   **When** the ceiling has passed, **Then** a further notification may request a start again, so a
-   failed start does not silence waking permanently.
+4. **Given** a wake was requested and the agent never drained — no node, a crashed launch, a
+   process that attached and died — **When** the ceiling has passed, **Then** a further notification
+   may wake it again, so a failed start does not silence waking permanently.
+5. **Given** an agent that is already running and was just handed a turn for a question, **When**
+   notifications arrive before it drains, **Then** none of them asks for a further turn, because the
+   turn already coming will collect them.
 
 ---
 
@@ -142,9 +145,15 @@ Sending a notification says what happened to the recipient, not only that the me
 
 ### Edge Cases
 
-- **A start is requested and the agent attaches through somebody's editor window instead.** The
-  outstanding request is satisfied by the attach, whatever caused it. Nothing tracks *why* an agent
-  attached and nothing should.
+- **A wake is requested and the agent is opened in somebody's editor window instead.** The pending
+  marker is satisfied by the drain, whatever caused it. Nothing tracks *why* an agent drained and
+  nothing should.
+- **An agent attaches, and dies before draining.** The marker is not satisfied, because nothing has
+  read the message. It expires at the ceiling and the next notification may wake again. This is the
+  case that rules out treating an attachment as sufficient.
+- **A running agent is handed a turn that does not drain.** §4.2 distinguishes waking an adapter
+  from the model taking a turn, and only a drain proves the mail was collected. The marker keys on
+  the drain for the same reason.
 - **A notification is deduplicated (§13.1).** It carries no new information, so it must not wake
   anybody. A byte-identical repeat inside sixty seconds is exactly the case a wake would be spent
   on nothing.
@@ -183,13 +192,19 @@ Sending a notification says what happened to the recipient, not only that the me
 - **FR-005**: Wake requests MUST be coalesced **per recipient, across all senders**. A per-pair
   bound leaves one agent wakeable once per peer, which is the flood shape that matters because the
   recipient is the one that pays.
-- **FR-006**: A wake MUST be suppressed while a start for that recipient is already outstanding and
-  unsatisfied. The primary condition is outstanding-ness rather than elapsed time, because the
-  question being asked is "is one already coming?" and that has an exact answer.
-- **FR-007**: An outstanding start MUST be considered satisfied when the recipient attaches,
-  whatever caused it to attach.
-- **FR-008**: An outstanding start MUST expire after a ceiling, so that a start which never
-  produced an attachment does not suppress waking indefinitely.
+- **FR-006**: A notification MUST NOT ask for attention while attention is already pending for that
+  recipient. The condition is pending-ness rather than elapsed time, because the question being
+  asked is "is a turn already coming that will see this?" and that has an exact answer.
+- **FR-007**: Pending attention MUST be considered satisfied when the recipient **drains its
+  inbox**, not merely when it attaches. An agent that has attached and not yet drained has not seen
+  the message, so treating the attachment as sufficient would suppress the wake that was supposed to
+  deliver it.
+- **FR-008**: Pending attention MUST expire after a ceiling, so that a wake which never produced a
+  drain does not suppress waking indefinitely.
+- **FR-008a**: **Every** wake MUST set the pending marker, including a question's, while only a
+  notification MUST consult it. A question carries a debt and is already bounded by §7.1's per-pair
+  cap, so it keeps today's behaviour; a notification that stacked a turn on top of one a question
+  had just asked for would be buying a second turn to read mail the first will already collect.
 - **FR-009**: The ceiling MUST be a named constant with its reasoning recorded beside it, not a
   schema fact. §13.1's window is in the schema because it changes the meaning of buckets already
   stored; this one governs no stored row and changing it invalidates nothing, so a migration would
@@ -236,10 +251,11 @@ Sending a notification says what happened to the recipient, not only that the me
 
 ### Key Entities
 
-- **Outstanding start**: what the broker remembers per recipient — that a start has been asked for
-  and has not yet produced an attachment. Cleared by an attachment, expired by the ceiling. Held in
-  memory, not stored: a broker restart has no residents to remember, so a remembered request would
-  be a claim about a process that no longer exists.
+- **Pending attention**: what the broker remembers per recipient — that a wake has been asked for
+  and the recipient has not drained since. Set by every wake, consulted only by notifications,
+  cleared by a drain, expired by the ceiling. Held in memory, not stored: a broker restart has no
+  residents to remember, so a remembered request would be a claim about a process that no longer
+  exists.
 - **Wake outcome**: what a notification's reply carries about its recipient — started, already
   running, already starting, or unstartable here.
 - **Broadcast result**: counts and named exceptions for one All-agents send. A surface concern; the
@@ -251,10 +267,14 @@ Sending a notification says what happened to the recipient, not only that the me
 
 - **SC-001**: A notification to a catalogued, idle, non-attended agent results in that agent
   running and collecting the message with no human action.
-- **SC-002**: Sixty notifications to one idle agent within the window produce exactly one start,
-  and all sixty are collected on the turn that follows.
+- **SC-002**: Sixty notifications to one idle agent within the window produce exactly one start
+  **and exactly one turn**, and all sixty are collected on that turn. The turn count is the one that
+  matters: a node gives a turn to a resident it already holds, so bounding processes alone would
+  have bounded nothing.
 - **SC-003**: Ten distinct senders notifying one idle agent within the window produce exactly one
-  start.
+  turn.
+- **SC-003a**: Notifications arriving while a question's turn is already pending add no further
+  turn.
 - **SC-004**: Every notification sent is stored and collectable regardless of whether the wake
   succeeded — zero messages lost to the bound.
 - **SC-005**: A person sending a notification can tell, from the sentence shown, whether anything
