@@ -256,11 +256,11 @@ times, and 008's gate found a defect introduced by the person writing the senten
 
 - [x] T047 Lens 1 (correctness and concurrency) — three consecutive runs with no finding above low, each
       probing something the previous did not. Logged in `REVIEW-LEDGER.md`, clean runs included.
-- [ ] T048 Lens 2 (security and data integrity) — three consecutive clean runs. **This is the lens that
+- [x] T048 Lens 2 (security and data integrity) — three consecutive clean runs. **This is the lens that
       matters most here**: every path in this feature edits a file in somebody's repository, and three
       silent replacements of an MCP configuration are already recorded in this codebase's comments.
-- [ ] T049 Lens 3 (API surface and maintainability) — three consecutive clean runs.
-- [ ] T050 Verify on Linux in a container as well as Windows. CI is unavailable until renewal, and the
+- [x] T049 Lens 3 (API surface and maintainability) — three consecutive clean runs.
+- [x] T050 Verify on Linux in a container as well as Windows. CI is unavailable until renewal, and the
       Linux leg has already caught two defects Windows passed.
 - [ ] T051 Verify on a live deployment: `quickstart.md` end to end, including that a repository enrolled
       before this change is untouched (SC-002) and that withdrawing from one project leaves the other
