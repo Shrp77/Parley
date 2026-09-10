@@ -81,7 +81,9 @@ Each leaves the tree green.
 
 **2.1 — SPEC.md first.** §4.1, §12 and §12.3 describe a per-project catalogue. The document changes before the code, and §18 gains 0.5.
 
-**2.2 — the policy table.** `006_agent_policy.sql`. **A table, not a column on `agents`**, and the reason is an ordering fact: D7 writes policy at step 4 and the agent registers at step 5, so no `agents` row exists yet — and `agents.machine REFERENCES nodes(machine)` means one cannot be conjured. Keyed by agent name, carrying autostart and the removed/missing state D8 and D9 need.
+**2.2 — the policy table.** `006_agent_policy.sql`, keyed by agent name, carrying autostart and the removed/missing state D8 and D9 need.
+
+**A table rather than a column on `agents`, and the reason survived the sequence being flipped.** With policy written last the agent *has* registered by then, so a column would now be writable — but the record must also describe an agent whose catalogue entry has gone (D8's soft delete) and one whose workspace is missing (D9), neither of which is a fact about a live registration. And `agents` is the registry: what an adapter said about itself. Policy is what the deployment decided about it. Two different authorities, and 005's gate already found what happens when one field serves two.
 
 **2.3 — policy on the wire, and both surfaces.** The node learns consent from the broker instead of inferring it from a file's contents. This is the half that makes turning autostart off work for an agent on another machine — impossible today.
 
@@ -103,15 +105,17 @@ Each leaves the tree green.
 
 **2.12 — the review gate.** Three consecutive clean runs per lens.
 
-## Reconciliation, and what it must not do
+## There is no reconciliation, and that is the point
 
-The spec was corrected once here and the correction is worth carrying into the code.
+An earlier draft of this plan had the node complete unfinished enrolments on join. **Flipping D7's steps 4 and 5 removed the need**, and removing it is worth more than the mechanism was.
 
-**What reconciliation does**: an entry with a policy record whose agent has never registered is an **enrolment that did not finish**. Consent exists; the start did not happen or did not stick. The node completes it. That is what makes the owner's wiped-database case recover in one join instead of nineteen manual steps.
+With the policy record written last, `entry + policy + no registration` cannot occur. Two states remain: **no record** — enrolment did not complete, so the entry is inert and reported — and **a record** — it did. Nothing has to decide which kind of incomplete it is looking at, because they are all the same kind.
 
-**What it must not do**: create a policy record for an entry that has none. That entry did not come through enrolment — hand-edit, restored backup, or a crash between the node's write and the broker's — and adopting it silently hands autostart to a file nobody authorised. Report it; leave it inert.
+**Nothing is ever adopted automatically. Enrolment is the only thing that grants consent.** One rule, no exception, and the rule it replaces was the one that would have handed autostart to a hand-edited file.
 
-The two are one line apart in any implementation, and the wrong one reads as the helpful one.
+The cost is that the owner's wiped-database case recovers by re-running enrolment rather than on the node's next join. One command against nineteen repositories, and it is the honest version: the automatic one was indistinguishable from adopting a file nobody wrote.
+
+**The exemption this creates, and it must be explicit.** Once policy is consent, the node will want to refuse to start anything without a record. Applied to D7 step 4 that deadlocks — no start without policy, no policy without a start — and presents as a broker refusing to enrol. Policy governs *unattended* starts; an operator asking to enrol and start is its own authorisation. The two paths must not be unified, and a test should say so before somebody unifies them.
 
 ## What must not be assumed
 

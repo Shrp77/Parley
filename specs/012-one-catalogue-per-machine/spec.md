@@ -108,10 +108,18 @@ Technically possible today with no structural change: `Parley.Cli` already refer
 1. an operator asks to enrol workspace **W** as **A** in project **P**
 2. broker → node: write the entry, having validated it — folder exists, `.mcp.json` claims A in P, no other path claims A in P
 3. node writes and reports success
-4. **gated on step 3**: the broker writes the policy record
-5. broker → node: start A; it launches, the adapter attaches, and **the adapter registers A**
+4. **gated on step 3**: broker → node: start A; it launches, the adapter attaches, and **the adapter registers A**
+5. **gated on step 4**: the broker writes the policy record
 
-Registration arrives at step 5 under A's own identity. Nothing fabricates one.
+Registration arrives at step 4 under A's own identity. Nothing fabricates one.
+
+**The policy record is written last, and that is what makes the state space small.** Written before the start, `entry + policy + no registration` is reachable and needs a reconciliation rule to complete it. Written last, that state cannot occur: a policy record exists only if the whole sequence finished, so it means *this agent exists, has registered, and may autostart* rather than *consent was recorded, hopefully the rest worked*.
+
+What remains is two states, and FR-007a already covers the first: **no record** means enrolment did not complete — inert and reported — and **a record** means it did.
+
+**The hazard this introduces, stated because it fails closed and looks like something else.** Once policy is consent, the natural next step is for the node to refuse to start anything without a record. Applied to step 4 that is a deadlock — no start without policy, no policy without a start — presenting as a broker that refuses to enrol. **Policy governs *unattended* starts.** An operator asking to enrol and start is its own authorisation, exactly as an operator `start` is today, and the two paths must not be unified.
+
+**The window it leaves**: step 4 succeeds and step 5 fails, leaving a registered agent with no consent. Safe — nothing auto-starts — reported, and remedied by re-running enrolment, which is idempotent.
 
 **It belongs on `Operators`, not `Agents`.** Changing what a machine will launch must not be reachable from the tool set an adapter binds. Easy to get wrong, because enrolment feels like something a repository does to itself.
 
