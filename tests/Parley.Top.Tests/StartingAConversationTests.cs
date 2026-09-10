@@ -2,6 +2,7 @@ using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
+using Parley.Configuration;
 using Parley.Client.Seating;
 using Parley.Client.Views;
 using Parley.Core;
@@ -39,6 +40,13 @@ public sealed class StartingAConversationTests : IAsyncDisposable
     public StartingAConversationTests()
     {
         _connection = ParleyDatabase.OpenInMemory();
+
+        // Somebody to speak to. Without one the picker has nothing to offer and says so, which is
+        // its own case below rather than the shape these two are about.
+        new AgentRepository(_connection).UpsertAsync(
+            new AgentRecord(Orders, "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active),
+            TestContext.Current.CancellationToken).GetAwaiter().GetResult();
+
         _broker = LoopbackOperator.Start(_connection);
     }
 
@@ -114,11 +122,11 @@ public sealed class StartingAConversationTests : IAsyncDisposable
 
         await Walking.GoAsync(shell, Viewing.Project);
 
-        await shell.Start();
+        var form = await Composing.WithAsync(
+            driving, shell.Start, Participation.AskTitle, Orders.Value, () => shell.Settled);
 
-        var form = (FormDialog)driving.Find(Participation.AskTitle);
-
-        Assert.NotEqual(string.Empty, form.Values[4]);
+        // The conversation name is the last field, and it arrives suggested rather than empty.
+        Assert.NotEqual(string.Empty, form.Values[^1]);
 
         form.Finish(taken: false);
         await shell.Settled;
@@ -134,14 +142,33 @@ public sealed class StartingAConversationTests : IAsyncDisposable
 
         await Walking.GoAsync(shell, Viewing.Project);
 
-        await shell.StartByTelling();
+        var form = await Composing.WithAsync(
+            driving, shell.StartByTelling, Participation.TellTitle, Orders.Value, () => shell.Settled);
 
-        var form = (FormDialog)driving.Find(Participation.TellTitle);
-
-        Assert.NotEqual(string.Empty, form.Values[2]);
+        Assert.NotEqual(string.Empty, form.Values[^1]);
 
         form.Finish(taken: false);
         await shell.Settled;
+    }
+
+    [Fact]
+    public async Task A_project_with_nobody_in_it_says_so_rather_than_opening_an_empty_picker()
+    {
+        // A list with nothing in it is a surface that looks broken; a sentence naming what is
+        // missing is one somebody can act on.
+        using var driving = Driving.Open();
+        using var directory = Directory();
+        using var seats = new SeatBook(directory.AgentsFor);
+        using var shell = await SeatedAsync(driving, directory, seats);
+
+        await Walking.GoAsync(shell, Viewing.Project);
+
+        shell.Agents.Show([], NodeCatalogue.Empty, null);
+
+        await shell.Start();
+        await shell.Settled;
+
+        Assert.Equal(Participation.NoPeers, shell.Said);
     }
 
     [Fact]

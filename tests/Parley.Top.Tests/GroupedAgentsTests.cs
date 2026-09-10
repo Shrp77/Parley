@@ -142,7 +142,8 @@ public sealed class GroupedAgentsTests
             Standing.Join(
                 [Agent("live@test"), Agent("gone@test", status: AgentStatus.Retired)],
                 new HashSet<string>(StringComparer.Ordinal),
-                Client.Seating.Seat.Adapter));
+                Client.Seating.Seat.Adapter,
+                MachineName.Current));
 
         Assert.Equal(2, groups.Count);
         Assert.Contains(groups, group => group.Heading == Standing.Retired);

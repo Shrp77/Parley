@@ -84,15 +84,12 @@ public sealed class VerbatimTests : IAsyncDisposable
         using var seats = new SeatBook(directory.AgentsFor);
         using var shell = await SeatedAsync(driving, directory, seats);
 
-        await shell.Ask();
-
-        var form = (FormDialog)driving.Find(Participation.AskTitle);
-
-        form.Fill(0, Orders.Value);
-        form.Fill(1, "deciding whether " + Hostile);
-        form.Fill(2, "is " + Hostile + " true?");
-        form.Fill(3, "if yes I will do one thing and if no another, given " + Hostile);
-        form.Fill(4, "verbatim");
+        var form = await Composing.WithAsync(
+            driving, shell.Ask, Participation.AskTitle, Orders.Value, () => shell.Settled);
+        form.Fill(0, "deciding whether " + Hostile);
+        form.Fill(1, "is " + Hostile + " true?");
+        form.Fill(2, "if yes I will do one thing and if no another, given " + Hostile);
+        form.Fill(3, "verbatim");
         form.Finish(taken: true);
 
         await shell.Settled;
@@ -144,13 +141,10 @@ public sealed class VerbatimTests : IAsyncDisposable
         using var seats = new SeatBook(directory.AgentsFor);
         using var shell = await SeatedAsync(driving, directory, seats);
 
-        await shell.Tell();
-
-        var form = (FormDialog)driving.Find(Participation.TellTitle);
-
-        form.Fill(0, Orders.Value);
-        form.Fill(1, "   ");
-        form.Fill(2, "verbatim");
+        var form = await Composing.WithAsync(
+            driving, shell.Tell, Participation.TellTitle, Orders.Value, () => shell.Settled);
+        form.Fill(0, "   ");
+        form.Fill(1, "verbatim");
 
         Assert.NotNull(Participation.RequiredProblem("   "));
 
@@ -163,13 +157,10 @@ public sealed class VerbatimTests : IAsyncDisposable
 
     private async Task TellAsync(Driving.Session driving, Shell shell, string words)
     {
-        await shell.Tell();
-
-        var form = (FormDialog)driving.Find(Participation.TellTitle);
-
-        form.Fill(0, Orders.Value);
-        form.Fill(1, words);
-        form.Fill(2, "verbatim");
+        var form = await Composing.WithAsync(
+            driving, shell.Tell, Participation.TellTitle, Orders.Value, () => shell.Settled);
+        form.Fill(0, words);
+        form.Fill(1, "verbatim");
         form.Finish(taken: true);
 
         await shell.Settled;

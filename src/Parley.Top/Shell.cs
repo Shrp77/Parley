@@ -2140,10 +2140,53 @@ internal sealed class Shell : Window
             return Task.CompletedTask;
         }
 
+        // **The peer is chosen from the roster rather than typed, and that is what settles the
+        // naming question rather than working around it.** A row is spelled by whichever source
+        // knows it — a registration is `role@machine`, a catalogue key is a role — and asking
+        // somebody to retype either was how the composer came to refuse the name the list in front
+        // of them had just printed. Choosing carries the identity; the label only has to read well.
+        //
+        // Everything the project has, minus this person's own seat: nobody asks themselves, and an
+        // agent that has never run is a legitimate thing to ask — §12.3 routes spawn-on-demand
+        // through the catalogue, which is exactly what a never-run-but-startable row is.
+        var peers = Peers();
+
+        if (peers.Count == 0)
+        {
+            Said = Participation.NoPeers;
+
+            return Task.CompletedTask;
+        }
+
+        // Its own title, not the composer's. `ActionShapeTests` requires every dialog to answer to a
+        // distinct one -- two sharing it makes every `Find` in the suite ambiguous, and it drove the
+        // picker where it meant the form.
+        var picking = Prompting.Choose(
+            Participation.WhichPeer,
+            asking ? Participation.AskTitle : Participation.TellTitle,
+            peers);
+
+        var pick = Prompting.Open(app, picking);
+
+        picking.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, pick);
+
+            if (chosen is null || !Resolve(chosen, out var peer))
+            {
+                return;
+            }
+
+            Ask(peer);
+        };
+
+        return Task.CompletedTask;
+
+        void Ask(AgentName peer)
+        {
         var fields = asking
             ?
             [
-                new FormField("Peer:", string.Empty, Participation.RequiredProblem),
                 new FormField("What are you trying to decide?", string.Empty, Participation.RequiredProblem),
                 new FormField("The question:", string.Empty, Participation.RequiredProblem),
                 new FormField("What turns on the answer?", string.Empty, Participation.ConsequencesProblem),
@@ -2154,7 +2197,6 @@ internal sealed class Shell : Window
             ]
             : new List<FormField>
             {
-                new("Peer:", string.Empty, Participation.RequiredProblem),
                 new("What are you telling them?", string.Empty, Participation.RequiredProblem),
                 new(
                     "Conversation name:",
@@ -2169,9 +2211,9 @@ internal sealed class Shell : Window
         {
             Prompting.Close(app, token);
 
-            if (values is null || !AgentName.TryCreate(values[0].Trim(), out var peer))
+            if (values is null)
             {
-                Said = values is null ? string.Empty : $"'{values[0]}' is not an agent name.";
+                Said = string.Empty;
 
                 return;
             }
@@ -2197,17 +2239,45 @@ internal sealed class Shell : Window
 
                 Said = asking
                     ? await speaking.AskAsync(
-                        peer, values[1], values[2], values[3], values[4], cancellationToken)
+                        peer, values[0], values[1], values[2], values[3], cancellationToken)
                         .ConfigureAwait(false)
-                    : await speaking.NotifyAsync(peer, values[1], values[2], cancellationToken)
+                    : await speaking.NotifyAsync(peer, values[0], values[1], cancellationToken)
                         .ConfigureAwait(false);
 
                 await SelectAsync(project, cancellationToken).ConfigureAwait(false);
             });
         };
-
-        return Task.CompletedTask;
+        }
     }
+
+    /// <summary>Everyone in this project a person could speak to.</summary>
+    /// <returns>Their rows' names, in the order the roster shows them.</returns>
+    /// <remarks>
+    /// Their own seat is left out because nobody asks themselves; every other row is offered,
+    /// including one that has never run — §12.3 routes spawn-on-demand through the catalogue, so a
+    /// never-run-but-startable row is a legitimate thing to ask, and leaving it out would hide the
+    /// agents a person most needs to wake.
+    /// </remarks>
+    private IReadOnlyList<string> Peers() =>
+    [
+        .. Agents.Standings
+            .Where(row => !(row.Seat && Mine(row.Name)))
+            .Select(row => row.Name)
+            .OrderBy(name => name, StringComparer.Ordinal),
+    ];
+
+    /// <summary>Turns a row's name back into the agent it names.</summary>
+    /// <param name="chosen">The row's name, as the roster spelled it.</param>
+    /// <param name="peer">The agent.</param>
+    /// <returns>Whether it named one.</returns>
+    /// <remarks>
+    /// A registration is spelled <c>role@machine</c> and a catalogue key is a role, so a row carries
+    /// whichever its source knew. Both are accepted here, which is the one place that has to know —
+    /// and because the value came from a list rather than from a person, a row this cannot resolve
+    /// is a fault in the roster rather than a typing mistake.
+    /// </remarks>
+    private static bool Resolve(string chosen, out AgentName peer) =>
+        AgentName.TryCreate(chosen, out peer) || MachineName.TryNameHere(chosen, out peer);
 
     /// <inheritdoc/>
     protected override void Dispose(bool disposing)

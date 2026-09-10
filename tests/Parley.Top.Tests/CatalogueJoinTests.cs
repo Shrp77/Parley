@@ -52,7 +52,7 @@ public sealed class CatalogueJoinTests
     [Fact]
     public void An_agent_in_both_reads_as_the_registry_says()
     {
-        var rows = AgentsRegion.Join([Agent("orders@test")], Catalogue("orders@test"));
+        var rows = AgentsRegion.Join([Agent("orders@test")], Catalogue("orders"));
 
         Assert.Equal("running", Assert.Single(rows).State);
     }
@@ -63,7 +63,7 @@ public sealed class CatalogueJoinTests
         // What adding an agent from this surface produces, and the state SC-003 promises within
         // ten seconds. It cannot say `startable`: §14 defines that for an agent the registry
         // holds, and nothing here may register on a repository's behalf.
-        var rows = AgentsRegion.Join([], Catalogue("orders@test"));
+        var rows = AgentsRegion.Join([], Catalogue("orders"));
 
         Assert.Equal(AgentsRegion.CataloguedOnly, Assert.Single(rows).State);
     }
@@ -75,7 +75,7 @@ public sealed class CatalogueJoinTests
         // this machine's node was never told it could start it, so nothing ever will.
         var rows = AgentsRegion.Join(
             [Agent("orders@test", presence: AgentPresence.Startable)],
-            Catalogue("billing@test"));
+            Catalogue("billing"));
 
         var orders = Assert.Single(rows, row => row.Name == "orders@test");
 
@@ -91,7 +91,7 @@ public sealed class CatalogueJoinTests
         // that is always correct.
         var rows = AgentsRegion.Join(
             [Agent("arvind@test", adapter: Seat.Adapter)],
-            Catalogue("orders@test"));
+            Catalogue("orders"));
 
         var seat = Assert.Single(rows, row => row.Name == "arvind@test");
 
@@ -108,7 +108,7 @@ public sealed class CatalogueJoinTests
         // one thing it certainly is not from the protocol's point of view.
         var rows = AgentsRegion.Join(
             [Agent("orders@test", status: AgentStatus.Retired)],
-            Catalogue("orders@test"));
+            Catalogue("orders"));
 
         Assert.Equal("retired", Assert.Single(rows).State);
     }
@@ -143,10 +143,14 @@ public sealed class CatalogueJoinTests
         // So that a refresh cannot reorder the list under somebody's hand as agents register.
         var rows = AgentsRegion.Join(
             [Agent("orders@test"), Agent("alpha@test")],
-            Catalogue("billing@test"));
+            Catalogue("billing"));
 
+        // A registration is `role@machine` and a catalogue key is a role, so the two sources spell a
+        // row differently — which is the inconsistency the owner met when the composer refused the
+        // bare name this list had just printed. Recorded rather than papered over: the list still
+        // shows each source as it holds it, and the composer accepts either spelling now.
         Assert.Equal(
-            ["alpha@test", "billing@test", "orders@test"],
+            ["alpha@test", "billing", "orders@test"],
             rows.Select(row => row.Name));
     }
 }

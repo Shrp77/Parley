@@ -60,8 +60,9 @@ public sealed class EnrolmentOrderTests
         // against a screen.
         var startable = Standing.Join(
             registry: [],
-            catalogued: new HashSet<string>(["orders@test"]),
-            seatAdapter: "parley-console");
+            catalogued: new HashSet<string>(["orders"]),
+            seatAdapter: "parley-console",
+            machine: Parley.Core.MachineName.Current);
 
         var row = Assert.Single(startable);
 
@@ -77,13 +78,15 @@ public sealed class EnrolmentOrderTests
         // because the opposite -- requiring a registration -- is the reading 005 acted on.
         var withRegistration = Standing.Join(
             registry: [],
-            catalogued: new HashSet<string>(["orders@test"]),
-            seatAdapter: "parley-console");
+            catalogued: new HashSet<string>(["orders"]),
+            seatAdapter: "parley-console",
+            machine: Parley.Core.MachineName.Current);
 
         var withoutCatalogue = Standing.Join(
             registry: [],
             catalogued: new HashSet<string>(),
-            seatAdapter: "parley-console");
+            seatAdapter: "parley-console",
+            machine: Parley.Core.MachineName.Current);
 
         Assert.True(Assert.Single(withRegistration).StartableHere);
         Assert.Empty(withoutCatalogue);

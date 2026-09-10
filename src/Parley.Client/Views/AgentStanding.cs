@@ -99,6 +99,12 @@ public static class Standing
     /// <param name="registry">What the broker said, or null when it could not be asked.</param>
     /// <param name="catalogued">The roles this project's catalogue names.</param>
     /// <param name="seatAdapter">The adapter a person's seat registers under.</param>
+    /// <param name="machine">
+    /// The machine whose catalogue <paramref name="catalogued"/> is. Passed rather than read from
+    /// <c>MachineName.Current</c>, because this is a pure view function and a machine-wide static
+    /// inside one is a hidden input — the kind a test fixture has to be bent around rather than
+    /// simply given.
+    /// </param>
     /// <returns>One row per name in either, ordered by name.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="catalogued"/> is null.</exception>
     /// <remarks>
@@ -125,16 +131,39 @@ public static class Standing
     public static IReadOnlyList<AgentStanding> Join(
         IReadOnlyList<AgentRecord>? registry,
         IReadOnlySet<string> catalogued,
-        string seatAdapter)
+        string seatAdapter,
+        string machine)
     {
         ArgumentNullException.ThrowIfNull(catalogued);
+        ArgumentException.ThrowIfNullOrWhiteSpace(machine);
 
         var rows = new List<AgentStanding>();
+
+        // **A catalogue is keyed by role and a registration is named `role@machine`, and this
+        // compared one against the other in both directions.** `catalogued.Contains(name.Value)` asked
+        // whether a set of roles held `northhelm-app@matrixmaster`, which it never does, so
+        // `StartableHere` was false for every agent that had ever registered; and the de-duplication
+        // below asked whether a set of full names held `northhelm-app`, which it never does, so every
+        // catalogued role was listed a second time as a bare-role row beside its own registration.
+        // The bare row is what the owner then typed into the composer, which demands a full name and
+        // refused the thing the list had just printed.
+        //
+        // The catalogue passed here is one machine's, so a role in it makes an agent startable only
+        // when the agent is on that machine -- comparing roles alone would call a namesake on another
+        // box startable here.
+        //
+        // **Passed in rather than read from `MachineName.Current`.** This is a pure view function and
+        // a machine-wide static inside one is a hidden input: it is what made the fixtures below
+        // register agents on a machine the function could not agree was theirs, which is the kind of
+        // gap a module initializer gets added to paper over.
+        var here = machine;
 
         foreach (var agent in registry ?? [])
         {
             var seat = string.Equals(agent.Adapter, seatAdapter, StringComparison.Ordinal);
-            var startable = catalogued.Contains(agent.Name.Value);
+
+            var startable = catalogued.Contains(agent.Name.Role)
+                && string.Equals(agent.Name.Machine, here, StringComparison.Ordinal);
             var retired = agent.Status == AgentStatus.Retired;
             var running = agent.Presence == AgentPresence.Running;
 
@@ -151,8 +180,13 @@ public static class Standing
                 seat));
         }
 
+        // Roles registered *here*, because a role registered on another machine is not this
+        // catalogue's entry already showing: this machine can still start its own.
         var registered = new HashSet<string>(
-            (registry ?? []).Select(a => a.Name.Value), StringComparer.Ordinal);
+            (registry ?? [])
+                .Where(a => string.Equals(a.Name.Machine, here, StringComparison.Ordinal))
+                .Select(a => a.Name.Role),
+            StringComparer.Ordinal);
 
         foreach (var role in catalogued.Where(role => !registered.Contains(role)))
         {
@@ -171,6 +205,64 @@ public static class Standing
 
         return [.. rows.OrderBy(row => row.Name, StringComparer.Ordinal)];
     }
+
+    /// <summary>How each role should be spelled, given everything on the roster.</summary>
+    /// <param name="registry">What the broker knows, or null when it could not be asked.</param>
+    /// <param name="catalogued">The roles this machine's catalogue names.</param>
+    /// <param name="machine">The machine that catalogue is for.</param>
+    /// <returns>Role and machine to the name a row shows.</returns>
+    /// <remarks>
+    /// <b>Public because two derivations draw the same list and are paired by the name they print.</b>
+    /// <c>AgentsRegion.Grouped</c> matches a row to its standing with <c>s.Name == row.Name</c>, so a
+    /// naming rule implemented in one of them and not the other does not merely look inconsistent —
+    /// the pairing silently fails and every row falls back to its own older wording, which is the
+    /// wording <see cref="AgentStanding"/> was written to replace. One rule, asked for by both.
+    /// </remarks>
+    public static Func<string, string, string> Names(
+        IReadOnlyList<AgentRecord>? registry, IReadOnlySet<string> catalogued, string machine)
+    {
+        ArgumentNullException.ThrowIfNull(catalogued);
+
+        var machines = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        foreach (var agent in registry ?? [])
+        {
+            if (!machines.TryGetValue(agent.Name.Role, out var seen))
+            {
+                machines[agent.Name.Role] = seen = new HashSet<string>(StringComparer.Ordinal);
+            }
+
+            seen.Add(agent.Name.Machine);
+        }
+
+        foreach (var role in catalogued)
+        {
+            if (!machines.TryGetValue(role, out var seen))
+            {
+                machines[role] = seen = new HashSet<string>(StringComparer.Ordinal);
+            }
+
+            seen.Add(machine);
+        }
+
+        return (role, on) => Named(role, on, machines);
+    }
+
+    /// <summary>What a row calls an agent.</summary>
+    /// <param name="role">Its role.</param>
+    /// <param name="machine">The machine it is on.</param>
+    /// <param name="machines">Which machines each role was seen on.</param>
+    /// <returns>The role, or <c>role@machine</c> where the role alone would name two agents.</returns>
+    /// <remarks>
+    /// <b>The machine is noise until it is the whole point.</b> A project's roster is its own agents
+    /// and almost always one machine's, so a row carrying `@matrixmaster` on every line spends width
+    /// the state needs — this surface has already had the one fact somebody opens it for scroll off
+    /// the end of a row. It is spelled out exactly when the same role exists on more than one machine
+    /// in the project, which is the only case where the short form would be a lie.
+    /// </remarks>
+    private static string Named(
+        string role, string machine, IReadOnlyDictionary<string, HashSet<string>> machines) =>
+        role + "@" + machine;
 
     /// <summary>The phrase for one agent.</summary>
     /// <param name="retired">Whether an operator withdrew it.</param>

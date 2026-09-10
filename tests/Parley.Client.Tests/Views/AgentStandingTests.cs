@@ -22,6 +22,17 @@ namespace Parley.Client.Tests.Views;
 /// </remarks>
 public sealed class AgentStandingTests
 {
+    /// <summary>The machine these fixtures put their agents on.</summary>
+    private const string Machine = "test";
+
+    // **These fed `catalogued` full `role@machine` names, which no caller produces.** A node
+    // catalogue is keyed by role -- `NodeCatalogue.WorkspaceFor` looks up `agent.Role` and
+    // `AgentsRegion` passes `catalogue.Roles` -- so every fixture here described a shape that cannot
+    // occur, and the two comparisons under test happened to agree with it. That is why
+    // `StartableHere` being false for every registered agent, and every catalogued role being listed
+    // twice, survived a suite that covers this method closely. Corrected 2026-09-10, from a report of
+    // the symptom: the roster printed a bare role the composer then refused as not a name.
+
     private const string SeatAdapter = "parley-console";
 
     private static AgentRecord Registered(
@@ -44,7 +55,7 @@ public sealed class AgentStandingTests
     [Fact]
     public void An_agent_that_has_never_run_but_can_be_started_says_both()
     {
-        var rows = Standing.Join([], new HashSet<string>(["orders@test"]), SeatAdapter);
+        var rows = Standing.Join([], new HashSet<string>(["orders"]), SeatAdapter, Machine);
 
         var row = Assert.Single(rows);
 
@@ -62,7 +73,7 @@ public sealed class AgentStandingTests
         var rows = Standing.Join(
             [Registered("orders@test", AgentPresence.Startable)],
             new HashSet<string>(),
-            SeatAdapter);
+            SeatAdapter, Machine);
 
         var row = Assert.Single(rows);
 
@@ -74,10 +85,10 @@ public sealed class AgentStandingTests
     [Fact]
     public void An_agent_that_is_attached_says_running_whatever_the_catalogue_says()
     {
-        foreach (var catalogue in new[] { new HashSet<string>(), new HashSet<string>(["orders@test"]) })
+        foreach (var catalogue in new[] { new HashSet<string>(), new HashSet<string>(["orders"]) })
         {
             var rows = Standing.Join(
-                [Registered("orders@test", AgentPresence.Running)], catalogue, SeatAdapter);
+                [Registered("orders@test", AgentPresence.Running)], catalogue, SeatAdapter, Machine);
 
             Assert.Equal(Standing.Running, Assert.Single(rows).Standing);
         }
@@ -88,8 +99,8 @@ public sealed class AgentStandingTests
     {
         var rows = Standing.Join(
             [Registered("orders@test", AgentPresence.Stranded)],
-            new HashSet<string>(["orders@test"]),
-            SeatAdapter);
+            new HashSet<string>(["orders"]),
+            SeatAdapter, Machine);
 
         Assert.Equal(Standing.NoMachine, Assert.Single(rows).Standing);
     }
@@ -101,8 +112,8 @@ public sealed class AgentStandingTests
         // nothing is routed to it whether or not a node could start it.
         var rows = Standing.Join(
             [Registered("orders@test", AgentPresence.Startable, AgentStatus.Retired)],
-            new HashSet<string>(["orders@test"]),
-            SeatAdapter);
+            new HashSet<string>(["orders"]),
+            SeatAdapter, Machine);
 
         var row = Assert.Single(rows);
 
@@ -118,7 +129,7 @@ public sealed class AgentStandingTests
         var rows = Standing.Join(
             [Registered("someone@test", AgentPresence.Running, adapter: SeatAdapter)],
             new HashSet<string>(),
-            SeatAdapter);
+            SeatAdapter, Machine);
 
         var row = Assert.Single(rows);
 
@@ -169,7 +180,7 @@ public sealed class AgentStandingTests
     public void A_name_in_both_the_registry_and_the_catalogue_produces_one_row()
     {
         var rows = Standing.Join(
-            [Registered("orders@test")], new HashSet<string>(["orders@test"]), SeatAdapter);
+            [Registered("orders@test")], new HashSet<string>(["orders"]), SeatAdapter, Machine);
 
         Assert.Single(rows);
         Assert.Equal(Standing.Idle, rows[0].Standing);
@@ -180,10 +191,47 @@ public sealed class AgentStandingTests
     {
         var rows = Standing.Join(
             [Registered("orders@test"), Registered("alpha@test")],
-            new HashSet<string>(["billing@test"]),
-            SeatAdapter);
+            new HashSet<string>(["billing"]),
+            SeatAdapter, Machine);
 
-        Assert.Equal(["alpha@test", "billing@test", "orders@test"], rows.Select(r => r.Name));
+        // **Two spellings in one list, and this records it rather than hiding it.** A registration
+        // is `role@machine` and a catalogue key is a role, so rows from the two sources are spelled
+        // differently — which is what the owner met when the composer refused the bare name this
+        // list had just printed. The composer accepts either now; settling the display on one
+        // spelling is a separate change, because a catalogue key may not be a role at all and a row
+        // has to show it as it stands.
+        Assert.Equal(["alpha@test", "billing", "orders@test"], rows.Select(r => r.Name));
+    }
+
+    [Fact]
+    public void A_role_on_two_machines_keeps_both_rows_apart()
+    {
+        // Names collide freely across projects and may collide across machines within one. Whatever
+        // a row is spelled, two agents must not become one.
+        var rows = Standing.Join(
+            [Registered("orders@test"), Registered("orders@elsewhere"), Registered("billing@test")],
+            new HashSet<string>(),
+            SeatAdapter,
+            Machine);
+
+        Assert.Equal(3, rows.Count);
+        Assert.Equal(2, rows.Count(row => row.Name.StartsWith("orders", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void An_agent_registered_elsewhere_is_not_startable_here()
+    {
+        // The comparison this whole change is about, in one line: a role in *this* machine's
+        // catalogue does not make a namesake on another box startable here.
+        var rows = Standing.Join(
+            [Registered("orders@elsewhere")],
+            new HashSet<string>(["orders"]),
+            SeatAdapter,
+            Machine);
+
+        var elsewhere = Assert.Single(rows, row => row.EverRun);
+
+        Assert.False(elsewhere.StartableHere);
     }
 
     [Fact]
@@ -191,7 +239,7 @@ public sealed class AgentStandingTests
     {
         // A broker that did not answer must not make a project look like it has no agents: the
         // catalogue is a local file and is still true.
-        var rows = Standing.Join(null, new HashSet<string>(["orders@test"]), SeatAdapter);
+        var rows = Standing.Join(null, new HashSet<string>(["orders"]), SeatAdapter, Machine);
 
         Assert.Equal(Standing.NeverRun, Assert.Single(rows).Standing);
     }

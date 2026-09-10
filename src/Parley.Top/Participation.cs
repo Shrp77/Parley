@@ -55,6 +55,17 @@ internal static class Participation
     internal const string DeliveryTitle = "Take delivery";
 
     /// <summary>What the dialog asking a peer a question is called.</summary>
+    /// <summary>What the peer picker asks.</summary>
+    internal const string WhichPeer = "Who are you speaking to?";
+
+    /// <summary>When a project holds nobody to speak to.</summary>
+    /// <remarks>
+    /// Said rather than opening an empty picker. A list with nothing in it is a surface that looks
+    /// broken; a sentence naming what is missing is one somebody can act on.
+    /// </remarks>
+    internal const string NoPeers =
+        "There is nobody in this project to speak to yet. Add an agent, or wait for one to register.";
+
     internal const string AskTitle = "Ask somebody a question";
 
     /// <summary>Asking from the conversations list, where what is being made is a new conversation.</summary>

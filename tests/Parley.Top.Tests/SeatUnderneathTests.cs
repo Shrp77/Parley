@@ -61,17 +61,14 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         using var seats = new SeatBook(directory.AgentsFor);
         using var shell = await SeatedAsync(driving, directory, seats);
 
-        await shell.Tell();
-
-        var form = (FormDialog)driving.Find(Participation.TellTitle);
+        var form = await Composing.WithAsync(
+            driving, shell.Tell, Participation.TellTitle, Orders.Value, () => shell.Settled);
 
         Sweep(shell);
 
         Assert.Null(shell.Held);
-
-        form.Fill(0, Orders.Value);
-        form.Fill(1, "still typing when the sweep came");
-        form.Fill(2, "underneath");
+        form.Fill(0, "still typing when the sweep came");
+        form.Fill(1, "underneath");
         form.Finish(taken: true);
 
         await shell.Settled;
@@ -94,15 +91,12 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         using var seats = new SeatBook(directory.AgentsFor);
         using var shell = await SeatedAsync(driving, directory, seats);
 
-        await shell.Tell();
-
-        var form = (FormDialog)driving.Find(Participation.TellTitle);
+        var form = await Composing.WithAsync(
+            driving, shell.Tell, Participation.TellTitle, Orders.Value, () => shell.Settled);
 
         Sweep(shell);
-
-        form.Fill(0, Orders.Value);
-        form.Fill(1, "still typing when the sweep came");
-        form.Fill(2, "underneath");
+        form.Fill(0, "still typing when the sweep came");
+        form.Fill(1, "underneath");
         form.Finish(taken: true);
 
         await shell.Settled;

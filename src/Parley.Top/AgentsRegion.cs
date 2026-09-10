@@ -189,7 +189,11 @@ internal sealed class AgentsRegion : FrameView
             var seat = string.Equals(agent.Adapter, Seat.Adapter, StringComparison.Ordinal);
             var state = seat ? Seated : Roster.State(agent);
 
-            if (!seat && !catalogued.Contains(agent.Name.Value))
+            // A catalogue is keyed by role; this asked whether a set of roles held `role@machine`,
+            // which it never does, so every registered agent was told it was not in the catalogue.
+            if (!seat
+                && !(catalogued.Contains(agent.Name.Role)
+                     && string.Equals(agent.Name.Machine, NodeCatalogue.Machine, StringComparison.Ordinal)))
             {
                 state = $"{state}, {NotCatalogued}";
             }
@@ -207,13 +211,22 @@ internal sealed class AgentsRegion : FrameView
                 seat));
         }
 
+        // Roles registered *here*, compared as roles. This built a set of `role@machine` and asked
+        // whether it held a bare role, which it never does, so every catalogued role was listed a
+        // second time beside its own registration.
         var registered = new HashSet<string>(
-            (registry ?? []).Select(a => a.Name.Value), StringComparer.Ordinal);
+            (registry ?? [])
+                .Where(a => string.Equals(a.Name.Machine, NodeCatalogue.Machine, StringComparison.Ordinal))
+                .Select(a => a.Name.Role),
+            StringComparer.Ordinal);
 
         foreach (var role in catalogued.Where(role => !registered.Contains(role)))
         {
-            var workspace = AgentName.TryCreate(role, out var name)
-                ? catalogue.WorkspaceFor(name)
+            // A catalogue holds roles, so the machine has to be put back before this is a name.
+            // Parsing the role alone never succeeded, which is why every catalogued agent showed no
+            // workspace at all -- the one column saying where it would actually run.
+            var workspace = AgentName.TryCreate($"{role}@{NodeCatalogue.Machine}", out var qualified)
+                ? catalogue.WorkspaceFor(qualified)
                 : null;
 
             rows.Add(new AgentRow(
@@ -245,7 +258,10 @@ internal sealed class AgentsRegion : FrameView
         // belonging to the previous read, which in this region is what a purge acts on.
         var rows = Join(registry, catalogue);
         var standing = Standing.Join(
-            registry, new HashSet<string>(catalogue.Roles, StringComparer.Ordinal), Seat.Adapter);
+            registry,
+            new HashSet<string>(catalogue.Roles, StringComparer.Ordinal),
+            Seat.Adapter,
+            NodeCatalogue.Machine);
 
         var lines = new List<string>();
         var map = new List<AgentRow?>();
