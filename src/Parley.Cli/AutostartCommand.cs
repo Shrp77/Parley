@@ -495,6 +495,21 @@ public static class AutostartCommand
                     "Re-run\n  `parley autostart install` with no --db to have it serve every " +
                     "project in the manifest.").ConfigureAwait(false);
             }
+
+            // **The one place an operator can be told, and otherwise they are told nothing.** This
+            // version removes these spellings; the broker still starts, because every verb ignores
+            // options it has no use for, so the entry goes on working and quietly stops starting a
+            // web UI. What is left is an absence — a page that no longer answers — with nothing
+            // anywhere connecting it to an upgrade. This command's whole job is to say what is
+            // installed, so it says this too.
+            if (entry.Removed.Count > 0)
+            {
+                await output.WriteLineAsync(
+                    $"  This entry names {string.Join(" and ", entry.Removed)}, which this version "
+                    + "no longer accepts.\n  It still starts, and it no longer starts a web UI. Re-run "
+                    + "`parley autostart install`\n  to write an entry this version understands.")
+                    .ConfigureAwait(false);
+            }
         }
 
         return present ? 0 : 1;

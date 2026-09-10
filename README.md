@@ -237,8 +237,10 @@ tool of its own. If the address is already taken, or the tool is not installed o
 the broker says so and carries on serving: a web page that cannot bind must never cost you a
 deployment, and it names `parley top` in the same breath so you are never told there is no way in.
 
-`--with-console`, `--console` and `--no-console` are the old spellings. They still work and are
-removed at 0.21.0.
+`--with-console`, `--console` and `--no-console` were the old spellings. They are **removed** as of
+0.22.0: a broker given one starts anyway and ignores it, so an autostart entry written before this
+version keeps working and quietly stops starting a web UI — `parley autostart status` says so and
+names what to re-run. `parley autostart install` writes an entry this version understands.
 
 **`parley top` is the same deployment without a browser**, and the broker names both when it
 starts. The machine running a broker is frequently not the machine you have a browser open on —
@@ -309,13 +311,13 @@ different `PARLEY_AGENT`:
 ```jsonc
 {
   "mcpServers": {
-    "parley": {
+    "parley-acme": {                                  // parley-<project>, or `parley` for none
       "command": "parley-mcp",
       "env": {
         "PARLEY_AGENT": "orders",                     // the role; the machine is appended
         "PARLEY_OWNS": "Carts, orders, line totals. No tax, no stock.", // what peers route by
-        "PARLEY_BROKER": "127.0.0.1:51707",           // optional, this is the default
-        "PARLEY_PROJECT": "acme",                     // optional, instead of PARLEY_BROKER
+        "PARLEY_PROJECT": "acme",                     // matches the key, and says where to connect
+        "PARLEY_BROKER": "127.0.0.1:51707",           // optional, instead of PARLEY_PROJECT
         "PARLEY_RESPONDER": "some-model-9",           // optional, which model answers
         "PARLEY_WORKSPACE": "/src/acme-orders",       // optional, for the registry
         "PARLEY_MACHINE": "server-b"                      // optional, detected if unset
@@ -324,6 +326,17 @@ different `PARLEY_AGENT`:
   }
 }
 ```
+
+**One entry per project, and the key says which.** A repository that several deployments need to
+ask holds one entry for each, with its own name and its own `owns` line — brokers do not federate,
+so the alternative is picking one set of peers and being unreachable to the rest. A deployment that
+names no projects writes the bare key `parley`, which is also what every repository enrolled before
+this existed has; those are read exactly as they always were and are never renamed, because the key
+is part of every tool name the agent behind it already sees.
+
+A repository may answer in as many projects as you like and may be *started unattended* by only
+one. A node starts an agent with the repository as its working directory, so two of them would be
+two models editing one checkout.
 
 The same committed file works on every machine: the role is configured and the machine half is
 detected, so `orders` becomes `orders@server-b` on one box and `orders@server-a` on another.

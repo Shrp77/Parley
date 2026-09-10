@@ -143,8 +143,9 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
                     because §4 gives the store to one process. Not inside Parley.Server for
                     the same reason.
 
-                    `parley console` starts it, so Parley.Cli references this and the tool
-                    carries Kestrel. `parley top` shows the same deployment in a terminal, built
+                    `parley-web-ui` starts it, as a child process the broker launches and does not
+                    wait on -- Parley.Cli stopped referencing this in 007 step 3, which is what took
+                    Kestrel's page-serving half off the machines that only run agents. `parley top` shows the same deployment in a terminal, built
                     on Parley.Client and **Terminal.Gui v2**, and needs no browser -- the machine
                     running a broker is frequently not the one somebody has one open on. Four
                     regions on one screen, Tab between them, and the toolkit's cost is recorded
@@ -177,22 +178,24 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
                     the machines that only run an agent, and one command is worth more than
                     that saving.
 
-                    **`serve --with-console` hosts it inside the broker's process, and
-                    `autostart install` turns that on by default.** The project boundary is
-                    unchanged — Parley.Web still references no store — but the runtime one
-                    is: Kestrel now shares a process with the thing that owns the database.
-                    That is the trade `--with-node` already made, and it is paid for by
-                    containment: a console that cannot bind reports it and the broker keeps
-                    serving, because a web page must never cost a deployment. On by default
-                    because of SPEC.md §17 question 15 — an agent attached through somebody's
-                    editor window is the one thing nothing can hand a turn to, so a console
-                    remembered separately is the half of a deployment that works for agents
-                    and not for people.
+                    **`serve --with-web-ui` starts it as a child process, and `autostart
+                    install` registers one by default.** This paragraph described
+                    `serve --with-console` hosting it *inside* the broker's process, with
+                    Kestrel sharing a process with the thing that owns the database — which
+                    stopped being true in 007 step 3 and stopped being spellable at 0.22.0,
+                    and is corrected here rather than deleted because the trade it describes
+                    is the one that was reversed. The containment argument survives intact and
+                    is the reason the child process is not waited on: a web UI that cannot
+                    bind reports it and the broker keeps serving, because a web page must
+                    never cost a deployment. On by default because of SPEC.md §17 question
+                    15 — an agent attached through somebody's editor window is the one thing
+                    nothing can hand a turn to, so a surface remembered separately is the half
+                    of a deployment that works for agents and not for people.
 
                     The project stays separate anyway — it is what keeps the
                     store off the console's dependency graph, which is the constraint that
                     actually matters, and `ConsoleHost` is the single place the host is
-                    built so `parley console` and `dotnet run` cannot drift apart.
+                    built so `parley-web-ui` and `dotnet run` cannot drift apart.
 
                     Razor Pages are found by walking the entry assembly, which is `parley`
                     when the subcommand starts it, so `ConsoleHost` names its own assembly
@@ -595,7 +598,40 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/008-instruction-readback/` — 0.21.1, in progress. An operator instruction
+- **Active plan**: `specs/009-multi-project-enrolment/` — 0.22.0, in progress. A repository may answer
+  in more than one project. SPEC.md §4.1 already permits it — the protocol has no concept of a project,
+  membership is which endpoint an agent connects to, and `ProjectManifest` constrains name, store,
+  endpoint and catalogue path but never a workspace. What forbade it is one line of deployment tooling:
+  the fixed `parley` key in `.mcp.json`, and a refusal written against *re-pointing* that catches
+  multiplicity only because one key can hold one entry. Brokers do not federate, so a repository several
+  product lines depend on must pick one set of peers and be unreachable to the rest.
+
+  **The key becomes `parley-<project>`.** The owner chose the prefix over the bare project name because
+  ownership of an entry must be decidable from the key alone: withdrawal is the only path that deletes
+  somebody's configuration.
+
+  **A legacy `parley` entry is read and never renamed.** 007's rule with the middle third dropped —
+  *stop writing, stop accepting, keep reading* becomes *keep writing it when no project is named, keep
+  reading it always* — because the key is a component of every tool name a working agent sees
+  (`mcp__parley__parley_ask`), so a rename edits an agent's vocabulary to change nothing.
+
+  **Three things `research.md` found by reading rather than reasoning.** The six surfaces are two
+  writers and four illustrations: the web console never opens a launch configuration at all, so one
+  implementation of the key rule is achievable by construction rather than by discipline.
+  `EnrollCommand.cs:803` calls `Describe` with no project, so today only `parley-top` can enrol into a
+  named project and the feature would have shipped terminal-only. And `ResidentAgent.cs:157` sets
+  `WorkingDirectory = workspace`, which is why one workspace may hold many launch entries and at most
+  one catalogue entry — the launch entry is inert until a person opens the repository; the catalogue
+  entry is standing consent to start without one.
+
+  **SPEC.md does not change, and that was checked rather than assumed**: it contains no occurrence of
+  `mcp.json`, `mcpServers` or "server key", and two of "launch configuration", neither giving a shape.
+
+  0.22.0 because this is the release that also removes `parley console`, `--with-console`, `--console`
+  and `--no-console`, which 008 committed to and called "a commitment, not a second reprieve".
+  `InstalledEntry` keeps *reading* `--console`.
+
+- Previous: `specs/008-instruction-readback/` — 0.21.1, merged (#85). An operator instruction
   must survive the turn it asks for. Three defects, all established by probe or by reading rather
   than by reasoning:
 

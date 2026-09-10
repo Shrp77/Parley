@@ -42,6 +42,7 @@ public sealed class SetupSurfaceTests
                 "EnrollmentPlan",
                 "Enrolment",
                 "InstalledEntry",
+                "InterruptedEnrolment",
                 "ProjectCommand",
                 "ProjectFields",
                 "ProjectResolution",

@@ -115,7 +115,6 @@ parley autostart status               say whether it is set up, and what it serv
 parley up                             run this machine's node, so its agents can be started
 parley web-ui [<url>]                 the operator's web UI in a browser; loopback by default
                                       (its own tool: parley-web-ui, installed separately)
-parley console [<url>]                the old spelling of web-ui; works until 0.21.0
 parley top                            the same deployment in this terminal; needs a real one
                                       (its own tool: parley-top, installed separately)
 

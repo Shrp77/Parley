@@ -19,16 +19,36 @@
 
 <pre><code>{
   "mcpServers": {
-    "parley": {
+    "parley-@Model.Project": {
       "command": "parley-mcp",
       "env": {
         "PARLEY_AGENT": "&lt;a short name, lower case&gt;",
         "PARLEY_OWNS": "&lt;one sentence: what this repository owns, and what it does not&gt;",
-        "PARLEY_BROKER": "@Model.Endpoint"
+        "PARLEY_PROJECT": "@Model.Project"
       }
     }
   }
 }</code></pre>
+
+<p>
+    The key is <code>parley-</code> and this project's name. A repository may answer in more than one
+    project by holding one entry for each, under its own key and with its own <code>owns</code> line;
+    brokers do not federate, so the project an entry names is the only set of peers it can reach. An
+    entry already there under the bare <code>parley</code> key belongs to a deployment that names no
+    projects and should be left as it is.
+</p>
+
+<p>
+    <code>PARLEY_PROJECT</code> names the project and the machine's own manifest turns that into an
+    address, which is why it survives the project moving to another port. <b>This page used to show
+    <code>PARLEY_BROKER</code> here instead</b>, and an address is the right answer in exactly one
+    case: the repository is on a machine whose manifest does not name this project, so there is
+    nothing to resolve the name against. Use <code>"PARLEY_BROKER": "@Model.Endpoint"</code> in place
+    of <code>PARLEY_PROJECT</code> there — and note that enrolling such a repository later, with
+    <code>parley enroll</code> or from the terminal, treats an address-pinned entry as belonging to
+    whichever project holds that address and writes this project's entry beside it rather than
+    through it.
+</p>
 
 <p>
     The <code>owns</code> line is read by every other agent when it decides who to ask, so it is

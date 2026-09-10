@@ -99,8 +99,8 @@ public sealed class AutostartConsoleTests
     [Fact]
     public void A_flag_that_would_do_nothing_is_refused_rather_than_ignored()
     {
-        // --with-console on `autostart install` reads as switching something on and would change
-        // nothing, because the console is already the default there. A flag accepted and ignored
+        // --with-web-ui on `autostart install` reads as switching something on and would change
+        // nothing, because the web UI is already the default there. A flag accepted and ignored
         // is worse than one refused: the person who typed it believes it did something.
         //
         // Asserted against the source because the guard is in top-level statements with no seam
@@ -112,7 +112,7 @@ public sealed class AutostartConsoleTests
             "if (hostWebUi && verb != \"serve\")", program, StringComparison.Ordinal);
 
         Assert.Contains(
-            "--console and --no-console are for `parley serve`", program,
+            "--web-ui and --no-web-ui are for `parley serve`", program,
             StringComparison.Ordinal);
     }
 
@@ -189,8 +189,8 @@ public sealed class AutostartConsoleTests
         // a surprise rather than a convenience.
         var help = RepositoryFile.Read("src/Parley.Cli/Program.cs");
 
-        Assert.Contains("--no-console", help, StringComparison.Ordinal);
+        Assert.Contains("--no-web-ui", help, StringComparison.Ordinal);
         Assert.Contains(
-            "The console is installed by default", help, StringComparison.Ordinal);
+            "The web UI is installed by default", help, StringComparison.Ordinal);
     }
 }

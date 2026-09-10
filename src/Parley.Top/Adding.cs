@@ -1,4 +1,5 @@
 ﻿using Parley.Client;
+using Parley.Configuration;
 using Parley.Core;
 using Parley.Setup;
 using Terminal.Gui.App;
@@ -301,7 +302,9 @@ internal static class Adding
                 project.Name.Value,
                 file,
                 Path.Combine(workspace, "CLAUDE.md"),
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                catalogue.Deployment(),
+                catalogue.ManifestPath).ConfigureAwait(false);
 
             said.Add($"{Added}'{role}'.");
             said.AddRange(outcome.Notes);
@@ -317,6 +320,16 @@ internal static class Adding
             // Nothing here claims to be anybody. The start is a request; the registration is the
             // agent's own act.
             said.Add(await StartAsync(start, role, project, cancellationToken).ConfigureAwait(false));
+        }
+        catch (InterruptedEnrolment interrupted)
+        {
+            // **The one failure that arrives with files already changed, and the sentence below was
+            // untrue on it.** The catch under this one said `Nothing was written.` for every failure
+            // alike, so on this path the screen printed the list of changed files and then denied it
+            // on the next line — and a report that asserts the opposite of what happened settles the
+            // question wrongly, where one that merely omits leaves somebody uncertain.
+            said.Add($"{role}: {interrupted.Message}");
+            said.AddRange(interrupted.Written.Select(path => $"wrote {path}"));
         }
         catch (Exception failure) when (failure is InvalidDataException
                                                or IOException
@@ -348,6 +361,20 @@ internal static class Adding
 /// </remarks>
 internal sealed record Catalogue(string? ManifestPath)
 {
+    /// <summary>Every project on this machine, or none when the manifest cannot be read.</summary>
+    /// <returns>The projects.</returns>
+    /// <remarks>
+    /// Read at the moment of writing rather than kept from the draw, for the reason the catalogue
+    /// itself is: somebody may have added a project between the two, and what this is used for —
+    /// deciding whether another project already starts this workspace unattended — is only true of
+    /// the manifest as it is now. An unreadable manifest gives none, which says nothing rather than
+    /// asserting there is nothing.
+    /// </remarks>
+    internal IReadOnlyList<ProjectSettings> Deployment() =>
+        ManifestPath is { Length: > 0 } path && ProjectManifest.TryRead(path, out var projects, out _)
+            ? projects
+            : [];
+
     /// <summary>Whether the project already names a catalogue.</summary>
     /// <param name="project">The project.</param>
     /// <returns>Whether it does.</returns>

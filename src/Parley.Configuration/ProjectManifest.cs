@@ -490,12 +490,21 @@ public static class ProjectManifest
     /// <param name="path">The manifest being changed.</param>
     /// <returns>The path of its lock file.</returns>
     /// <remarks>
+    /// <para>
     /// A sibling rather than something under the temporary directory, so two writers agree about
     /// it for the same reason they agree about the manifest: it is the same path, with the same
     /// permissions, on the same volume. A per-user temporary directory would exclude two commands
     /// run by one person and let two people editing one <c>--config</c> straight through.
+    /// </para>
+    /// <para>
+    /// <b>Public because a second thing now needs the same gate.</b> Granting a repository an
+    /// unattended start reads every project's catalogue and then writes one of them, and those two
+    /// must be one act — the same machine-wide exclusion this file already needed for its own
+    /// writes. A second lock over the same deployment would be two answers to one question, and the
+    /// pair that disagreed would be the pair nobody thought to test together.
+    /// </para>
     /// </remarks>
-    private static string LockFor(string path) => path + ".lock";
+    public static string LockFor(string path) => path + ".lock";
 
     /// <summary>
     /// Changes the manifest under a lock, so a read and the write that depends on it are one act.

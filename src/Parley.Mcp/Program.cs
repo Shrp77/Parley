@@ -9,12 +9,18 @@ using Parley.Mcp;
 //
 //   {
 //     "mcpServers": {
-//       "parley": {
+//       "parley-acme": {
 //         "command": "parley-mcp",
-//         "env": { "PARLEY_AGENT": "orders" }
+//         "env": { "PARLEY_AGENT": "orders", "PARLEY_PROJECT": "acme" }
 //       }
 //     }
 //   }
+//
+// The key is parley-<project>, or the bare "parley" when the deployment names no projects. One
+// repository may hold an entry per project it answers in; this process is launched once per entry
+// and speaks for exactly one of them. Nothing here reads the key — the identity is the
+// environment — but an illustration that disagreed with the tool would be read by the person who
+// has not run the tool yet.
 //
 // No database path. This process opens no store and could not if it were told to: SPEC.md §4
 // gives the file to one broker process, and everything else reaches it over the transport. The

@@ -145,11 +145,11 @@ const string Help = """
     project, or node.json in the working directory, in that order — the broker never holds a
     command line for a machine it is not on. Ctrl+C stops the node and every agent it started.
 
-    The console is installed by default, because that is how a person takes part rather than only
+    The web UI is installed by default, because that is how a person takes part rather than only
     watches: an agent attached through somebody's own editor window is the one thing nothing can
-    hand a turn to, so a console remembered separately is the half of a deployment that works for
-    agents and not for people. It listens on 127.0.0.1:5280 unless --console says otherwise, and
-    if that address is taken the broker says so and keeps serving.
+    hand a turn to, so a web UI remembered separately is the half of a deployment that works for
+    agents and not for people. It listens on 127.0.0.1:5280 unless --web-ui says otherwise, and
+    if that address is taken the broker says so and keeps serving. --no-web-ui leaves it out.
 
     A broker and a node are two processes and one deployment, so `serve --with-node` runs both in
     one, and that is what `autostart install` installs: one entry that brings a machine all the
@@ -205,58 +205,30 @@ if (arguments.Exists(a => a is "--version" or "-v"))
 var selectAllRepositories = TakeFlag("--all");
 var selectNoRepositories = TakeFlag("--none");
 var hostNode = TakeFlag("--with-node");
-// **Two spellings for one flag, and the old one lives for one minor version.** `--with-console`
-// is what the owner's scheduled task holds right now, and an install that silently stopped
-// honouring it would take the web UI off a machine at the next logon with nothing said. It warns
-// once, names the new spelling, and is removed at 0.21.0 -- a date rather than a kindness that
-// becomes permanent.
+// **The old spellings are gone, at the version 007 named and 008 moved them to.** `--with-console`,
+// `--console` and `--no-console` warned for two minor versions and are removed here. What is *not*
+// removed is `InstalledEntry` reading `--console`: every machine with an autostart entry written
+// before 0.19.0 still has it, and a reader knowing only the new name would report those entries as
+// having no web UI, so `autostart status` would say one thing while the entry did another. The
+// removal is stop writing, stop accepting, keep reading -- narrower than it sounds and the whole of
+// what makes it safe.
 var hostWebUi = TakeFlag("--with-web-ui");
-var hostConsole = TakeFlag("--with-console");
-
-if (hostConsole)
-{
-    hostWebUi = true;
-}
-var noConsole = TakeFlag("--no-console");
 var destroy = TakeFlag("--destroy");
 var databasePath = TakeOption("--db", "-d");
 var listenOn = TakeOption("--listen", "-l");
 var brokerAddress = TakeOption("--broker", "-b");
 var logPath = TakeOption("--log", null);
 var webUiOn = TakeOption("--web-ui", null);
-var consoleOn = TakeOption("--console", null);
 var noWebUi = TakeFlag("--no-web-ui");
 
-// Resolved once. `serve --with-console` and `autostart install` both need the address, and
-// a default written in two places is two answers to one question that agree only until
-// somebody changes one of them -- here, by installing an entry pointing somewhere the
-// running console is not.
-// **Either spelling, resolved once.** `--console` and `--with-console` are the old names and work
-// for one minor version: the owner's scheduled task holds `--with-console` right now, and an
-// install that silently stopped honouring it would take the web UI off a machine at the next
-// logon with nothing said. Removed at 0.20.0, which is a date rather than a kindness that becomes
-// permanent -- CLAUDE.md carries it.
-var webUiAt = webUiOn ?? consoleOn;
-var consoleAt = webUiAt ?? WebUiAddress.Loopback;
-
-// Said once, on standard error, and only when an old spelling was actually used. A warning on
-// every run would train somebody to stop reading this stream, which is where the broker reports
-// the things that matter.
-var oldSpelling = new List<string>();
-
-if (hostConsole) { oldSpelling.Add("--with-console"); }
-
-if (consoleOn is not null) { oldSpelling.Add("--console"); }
-
-if (noConsole) { oldSpelling.Add("--no-console"); }
-
-if (oldSpelling.Count > 0)
-{
-    await Console.Error.WriteLineAsync(
-        $"{string.Join(", ", oldSpelling)} still works and is removed at 0.21.0. The web UI is a"
-        + " tool of its own now, so the flags name it: --with-web-ui, --web-ui <url>,"
-        + " --no-web-ui.").ConfigureAwait(false);
-}
+// Resolved once. `serve --with-web-ui` and `autostart install` both need the address, and a
+// default written in two places is two answers to one question that agree only until somebody
+// changes one of them -- here, by installing an entry pointing somewhere the running web UI is not.
+var webUiAt = webUiOn;
+// Named for the thing rather than for the flag that used to turn it on. `consoleAt` and
+// `consoleFor` outlived `--console` by two releases, in the file that removes it -- and "console"
+// meaning three things is what 007 spent a release separating.
+var webUiAddress = webUiAt ?? WebUiAddress.Loopback;
 
 // Taken here with the rest, and it has to be: everything left starting with a hyphen is refused
 // below as an option this does not have, so a flag consumed by the command it belongs to never
@@ -327,10 +299,10 @@ if (hostWebUi && verb != "serve")
     return Usage;
 }
 
-if ((webUiAt is not null || noWebUi || noConsole) && verb != "serve" && verb != "autostart")
+if ((webUiAt is not null || noWebUi) && verb != "serve" && verb != "autostart")
 {
     await Console.Error.WriteLineAsync(
-        $"--console and --no-console are for `parley serve` and `parley autostart install`, "
+        $"--web-ui and --no-web-ui are for `parley serve` and `parley autostart install`, "
         + $"which are the commands that host a console or install one. `parley {verb}` does "
         + "neither.").ConfigureAwait(false);
 
@@ -405,16 +377,8 @@ if (verb == "project")
 //
 // The raw command line minus the verb is passed on and nothing is parsed here, for the reason
 // `top` gives: one parser per tool rather than one and an imitation of it.
-if (verb is "web-ui" or "console")
+if (verb == "web-ui")
 {
-    if (verb == "console")
-    {
-        await Console.Error.WriteLineAsync(
-            "`parley console` still works and is removed at 0.21.0. It is `parley web-ui` now: the"
-            + " web UI is a tool of its own, and console already meant three things here.")
-            .ConfigureAwait(false);
-    }
-
     // Said rather than ignored. Every other command here acts on one deployment, so naming one is
     // the habit; the web UI's first page is the list of them, and silently dropping the name would
     // answer a narrower question than was asked without saying so.
@@ -635,7 +599,7 @@ if (verb == "serve" && rest.Length == 0)
                 var start = new ProcessStartInfo(WebUiTool) { UseShellExecute = false };
 
                 start.ArgumentList.Add("--listen");
-                start.ArgumentList.Add(consoleAt);
+                start.ArgumentList.Add(webUiAddress);
                 start.ArgumentList.Add("--broker");
                 start.ArgumentList.Add(addresses[0]);
 
@@ -663,7 +627,7 @@ if (verb == "serve" && rest.Length == 0)
             // when the web UI could not start would take the terminal line with it, on exactly the
             // run where somebody needs to be told there is another way in.
             var opening = whyNot is null
-                ? $"   Web UI:   {consoleAt}{Environment.NewLine}"
+                ? $"   Web UI:   {webUiAddress}{Environment.NewLine}"
                     + "   Open that one in a browser."
                 : $"   Web UI:   did not start ({whyNot}){Environment.NewLine}"
                     + $"   The broker is still serving. Install it: dotnet tool install --global Parley.WebUi";
@@ -859,19 +823,19 @@ if (verb == "autostart" && rest.Length == 1)
             : entryCatalogue.Value;
 
     // On by default, which is the whole point of it being here. A person taking part in a
-    // deployment does it through the console: SPEC.md §17 question 15 records that an agent
+    // deployment does it through the web UI: SPEC.md §17 question 15 records that an agent
     // attached through somebody's window is the one thing nothing can give a turn to, so a
-    // console that has to be remembered separately is the half of the deployment that works
-    // for agents and not for people. `--no-console` is the way out, and it is a flag rather
+    // web UI that has to be remembered separately is the half of the deployment that works
+    // for agents and not for people. `--no-web-ui` is the way out, and it is a flag rather
     // than an absence so that choosing it is visible in the entry `autostart status` prints.
-    var consoleFor = noConsole ? null : consoleAt;
+    var webUiFor = noWebUi ? null : webUiAddress;
 
     return await AutostartCommand.RunAsync(
         rest[0],
         entryStore,
         listenAddress,
         hostFrom,
-        consoleFor,
+        webUiFor,
         servesManifest ? manifestPath : null,
         Console.Out,
         Console.Error).ConfigureAwait(false);
@@ -918,12 +882,22 @@ if (verb == "enroll")
     // `node.json` and write somewhere else entirely — a report of the wrong file being worse than
     // no report, because it is believed. Everything the original line argued for still holds; it
     // simply belongs where the answer is known.
+    // The project and the deployment travel with it. `--project` is already resolved above for
+    // every command that acts on one deployment, and enrolling is one — a repository becomes an
+    // agent *of* something. A second way to say which project, in the enrolment manifest, was
+    // planned and dropped: `ProjectResolution.TrySelect` already refuses to guess when several are
+    // configured and none is named, and two places to answer one question disagree first on the
+    // machine with more than one deployment, which is the only machine where it matters.
     return await EnrollCommand.RunAsync(
         rest,
         selectAll,
         resolvedNodeConfig,
         Console.Out,
-        Console.Error).ConfigureAwait(false);
+        Console.Error,
+        CancellationToken.None,
+        project,
+        configuredProjects,
+        manifestPath).ConfigureAwait(false);
 }
 
 if (databasePath is not null)

@@ -392,7 +392,7 @@ public sealed class EnrollmentPlanTests
         // `parley project set` moves a port and the name does not. The adapter already resolves
         // this variable through the manifest and refuses to guess when it does not know the name.
         var plan = EnrollmentPlan.Describe(Entry(), null, null, false, project: "acme");
-        var env = JsonNode.Parse(plan.LaunchConfiguration!)!["mcpServers"]!["parley"]!["env"]!;
+        var env = JsonNode.Parse(plan.LaunchConfiguration!)!["mcpServers"]!["parley-acme"]!["env"]!;
 
         Assert.Equal("acme", env[EnrollmentPlan.ProjectVariable]!.GetValue<string>());
     }
@@ -410,11 +410,14 @@ public sealed class EnrollmentPlanTests
     }
 
     [Fact]
-    public void A_repository_that_is_already_another_project_s_agent_is_refused_by_name()
+    public void A_repository_that_is_already_another_project_s_agent_gains_a_second_entry()
     {
-        // The refusal names the project it belongs to, because that is the only thing the person
-        // meeting it can act on. Silently re-pointing would move an agent out of one deployment's
-        // roster and into another's, from a surface whose person may not know the first exists.
+        // **This test asserted a refusal until 009, and the promise changed deliberately.** The
+        // refusal's reasoning was about *re-pointing* — one identity moving between deployments,
+        // which does lose an agent from a roster — and it caught a second entry beside the first
+        // only because one key could hold one entry. SPEC.md §4.1 has permitted the second
+        // throughout: the protocol has no concept of a project, and names collide freely across
+        // them. What is still refused is the move; what is admitted is the addition.
         var existing = """
             {
               "mcpServers": {
@@ -423,10 +426,18 @@ public sealed class EnrollmentPlanTests
             }
             """;
 
-        var refusal = Assert.Throws<InvalidDataException>(
-            () => EnrollmentPlan.Describe(Entry(), existing, null, false, project: "acme"));
+        var plan = EnrollmentPlan.Describe(Entry(), existing, null, false, project: "acme");
+        var servers = (JsonObject)JsonNode.Parse(plan.LaunchConfiguration!)!["mcpServers"]!;
 
-        Assert.Contains("elsewhere", refusal.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            ["parley", "parley-acme"],
+            servers.Select(pair => pair.Key).OrderBy(key => key, StringComparer.Ordinal));
+
+        // The other deployment's entry is untouched, which is the half the old refusal protected
+        // and the half that still matters.
+        Assert.Equal(
+            "elsewhere",
+            servers["parley"]!["env"]![EnrollmentPlan.ProjectVariable]!.GetValue<string>());
     }
 
     [Fact]

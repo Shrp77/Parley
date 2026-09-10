@@ -35,6 +35,24 @@ public sealed record InstalledEntry(
     string? Console,
     string? Manifest)
 {
+    /// <summary>The spellings this version no longer accepts, in the order they were written.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is the release that removes them, and a live scheduled task holds one right now.</b>
+    /// The broker still starts — every verb ignores options it has no use for — so the entry keeps
+    /// working and quietly loses its web UI, which is the safer of the two failures and is still a
+    /// change nothing announces. What an operator gets otherwise is an absence: the web UI stops
+    /// appearing and nothing connects that to an upgrade.
+    /// </para>
+    /// <para>
+    /// Recorded here because this type already exists to read an entry back, which makes it the one
+    /// place that can notice. It does not change what is read: <c>--console</c> is still where the web
+    /// UI's address comes from, for ever, which is the half of the deprecation that keeps
+    /// <c>autostart status</c> honest about entries written before 0.19.0.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> Removed { get; init; } = [];
+
     /// <summary>Whether this entry serves the manifest rather than one explicit store.</summary>
     public bool ServesManifest => Store is null;
 
@@ -66,6 +84,7 @@ public sealed record InstalledEntry(
         string? node = null;
         string? console = null;
         string? manifest = null;
+        var removed = new List<string>();
 
         for (var i = 1; i < parts.Count; i++)
         {
@@ -110,14 +129,22 @@ public sealed record InstalledEntry(
                     i++;
                     break;
 
+                case "--with-console":
+                case "--no-console":
+                    // **Read precisely because they are gone.** They carry nothing this needs, and
+                    // an entry naming one was written by a build older than this and will behave
+                    // differently under it.
+                    removed.Add(parts[i]);
+                    break;
+
                 default:
-                    // --with-node, --with-console, and anything a later build adds: flags carry
+                    // --with-node, --with-web-ui, and anything a later build adds: flags carry
                     // nothing this needs to read back.
                     break;
             }
         }
 
-        return new InstalledEntry(store, listen, node, console, manifest);
+        return new InstalledEntry(store, listen, node, console, manifest) { Removed = removed };
     }
 
     /// <summary>Reads the entry this machine's supervisor holds, if there is one.</summary>

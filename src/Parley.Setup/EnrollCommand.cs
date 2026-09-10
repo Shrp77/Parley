@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using Parley.Configuration;
+using Parley.Core;
 
 namespace Parley.Setup;
 
@@ -101,6 +102,23 @@ public static class EnrollCommand
     /// <param name="output">Where to report what happened.</param>
     /// <param name="error">Where to report why it could not.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
+    /// <param name="project">
+    /// The project being enrolled into, or null when the deployment names none. **Taken from the
+    /// entry point's own <c>--project</c> resolution rather than from a field in the enrolment
+    /// manifest**, which the plan had asked for: <c>ProjectResolution.TrySelect</c> already refuses
+    /// to guess when several are configured and none is named, so a second place to say which
+    /// project would be a second answer to a question that is already answered — and the two would
+    /// disagree first on the machine with more than one deployment, which is the only machine where
+    /// it matters.
+    /// </param>
+    /// <param name="deployment">
+    /// Every project this machine describes, so an address-pinned entry can be resolved and an
+    /// unattended start granted elsewhere can be found.
+    /// </param>
+    /// <param name="manifestPath">
+    /// Where that manifest lives, held for the length of the run so that two of them cannot each
+    /// find no other project starting a workspace and then both record that theirs does.
+    /// </param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     public static async Task<int> RunAsync(
@@ -109,7 +127,10 @@ public static class EnrollCommand
         Resolved nodeConfig,
         TextWriter output,
         TextWriter error,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ProjectSettings? project = null,
+        IReadOnlyList<ProjectSettings>? deployment = null,
+        string? manifestPath = null)
     {
         ArgumentNullException.ThrowIfNull(arguments);
         ArgumentNullException.ThrowIfNull(nodeConfig);
@@ -122,9 +143,9 @@ public static class EnrollCommand
                 .ConfigureAwait(false),
             ["scan", var root, var into] => await ScanAsync(root, into, selectAll, output, error, cancellationToken)
                 .ConfigureAwait(false),
-            ["plan", var manifest] => await ApplyAsync(manifest, write: false, nodeConfig, output, error, cancellationToken)
+            ["plan", var manifest] => await ApplyAsync(manifest, write: false, nodeConfig, output, error, project, deployment, manifestPath, cancellationToken)
                 .ConfigureAwait(false),
-            ["apply", var manifest] => await ApplyAsync(manifest, write: true, nodeConfig, output, error, cancellationToken)
+            ["apply", var manifest] => await ApplyAsync(manifest, write: true, nodeConfig, output, error, project, deployment, manifestPath, cancellationToken)
                 .ConfigureAwait(false),
             _ => await UsageAsync(error).ConfigureAwait(false),
         };
@@ -390,6 +411,18 @@ public static class EnrollCommand
                 continue;
             }
 
+            // **Said rather than silently skipped.** The evidence exists so that approving a
+            // suggested line is checkable against something, and a repository whose README points
+            // out of the checkout is a fact about that repository worth putting in front of the
+            // person — where an absent line would just look like a repository that says nothing
+            // about itself.
+            if (Enrolment.Linked(path) is not null)
+            {
+                found.Add($"{name} — not read: it is a link out of the repository");
+
+                break;
+            }
+
             try
             {
                 var line = File.ReadLines(path).FirstOrDefault(l =>
@@ -429,6 +462,27 @@ public static class EnrollCommand
         {
         }
 
+        // FR-012. Said before the git history is consulted, because what a repository answers in
+        // *now* outranks what it once answered in — and because a repository already in one project
+        // is the one somebody is most likely to enrol into a second by accident, having seen no sign
+        // of the first.
+        switch (Existing(workspace))
+        {
+            case null:
+                found.Add("its .mcp.json could not be read");
+                break;
+
+            case { Count: > 0 } enrolled:
+                found.Add("answers in: " + string.Join(
+                    ", ",
+                    enrolled.Select(entry =>
+                        $"{entry.Project ?? "no project"} (as `{entry.Agent ?? "unnamed"}`)")));
+                break;
+
+            default:
+                break;
+        }
+
         if (PriorRegistration(workspace) is { } prior)
         {
             found.Add(prior);
@@ -465,17 +519,23 @@ public static class EnrollCommand
                 return null;
             }
 
-            var env = JsonNode.Parse(text)?["mcpServers"]?["parley"]?["env"];
-            var owns = env?["PARLEY_OWNS"]?.GetValue<string>();
-            var agent = env?["PARLEY_AGENT"]?.GetValue<string>();
+            var entry = LaunchEntries
+                .Read(JsonNode.Parse(text)?["mcpServers"] as JsonObject)
+                .FirstOrDefault(found => found.Owns is { Length: > 0 });
 
-            return owns is { Length: > 0 }
-                ? $"registered before ({commit[..7]}) as `{agent}` — \"{Present(owns)}\""
+            return entry is not null
+                ? $"registered before ({commit[..7]}) as `{entry.Agent}` — \"{Present(entry.Owns!)}\""
                 : null;
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
-                                       or FormatException or ArgumentException)
+                                       or FormatException or ArgumentException
+                                       or InvalidDataException)
         {
+            // InvalidDataException is a committed file naming one server twice. It belongs here for
+            // the reason the rest do: this only ever gathers evidence, so a repository it cannot make
+            // sense of produces a shorter list rather than ending the scan. **Missed when the working
+            // tree's reader was fixed** -- a rule applied to half the callers, which this codebase
+            // has met before and which is what run 6 went looking for.
             return null;
         }
     }
@@ -549,47 +609,59 @@ public static class EnrollCommand
     /// wanted.
     /// </para>
     /// </remarks>
-    private static string Present(string line)
+    private static string Present(string line) => Quoting.Flat(line);
+
+    /// <summary>Every enrolment a repository already has, or null when the file cannot be read.</summary>
+    /// <param name="workspace">The repository.</param>
+    /// <returns>The entries, empty when it is enrolled nowhere, null when nothing could be read.</returns>
+    /// <remarks>
+    /// <b>Three answers, not two.</b> Enrolled nowhere and could-not-be-read look identical to a
+    /// caller that returns an empty list for both, and they lead somewhere completely different: the
+    /// first is a repository to enrol and the second is a file to look at. The same distinction the
+    /// install scripts draw when a broker cannot be asked.
+    /// </remarks>
+    private static IReadOnlyList<LaunchEntry>? Existing(string workspace)
     {
-        var kept = new System.Text.StringBuilder(line.Length);
-
-        foreach (var rune in line.EnumerateRunes())
+        try
         {
-            var category = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(rune.Value);
+            var path = Path.Combine(workspace, ".mcp.json");
 
-            if (category is System.Globalization.UnicodeCategory.Control
-                or System.Globalization.UnicodeCategory.Format
-                or System.Globalization.UnicodeCategory.LineSeparator
-                or System.Globalization.UnicodeCategory.ParagraphSeparator)
+            // **A link is not read, on the same terms the write refuses one.** What comes back from
+            // here becomes a suggested agent name and owns line — an identity — so taking it from a
+            // file the repository merely points at is the write-anywhere defect with the arrow
+            // reversed. Unreadable rather than empty, because "enrolled nowhere" and "there is a file
+            // to look at" are the three-answers distinction this method exists for.
+            if (Enrolment.Linked(path) is not null)
             {
-                continue;
+                return null;
             }
 
-            kept.Append(rune);
-
-            if (kept.Length > 160)
-            {
-                return kept.ToString(0, 159) + "…";
-            }
+            return File.Exists(path)
+                ? LaunchEntries.Read(JsonNode.Parse(File.ReadAllText(path))?["mcpServers"] as JsonObject)
+                : [];
         }
-
-        return kept.ToString();
+        catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
+                                       or UnauthorizedAccessException or FormatException
+                                       or InvalidDataException)
+        {
+            // InvalidDataException is a file naming one server twice. It belongs with the rest: a
+            // scan gathers evidence and must never be the thing that ends the run, and "could not be
+            // read" is the honest answer for a file this cannot make sense of.
+            return null;
+        }
     }
 
     private static (string? Agent, string? Owns) ReadExisting(string workspace)
     {
         try
         {
-            var path = Path.Combine(workspace, ".mcp.json");
+            // The first entry, and only as a suggestion to fill a blank row with. Which project it
+            // belongs to does not matter here — the person is being offered a name they already used
+            // for this repository, and a repository in three projects has three of those; the scan
+            // reports all three separately, as evidence rather than as a default.
+            var entry = Existing(workspace)?.FirstOrDefault();
 
-            if (!File.Exists(path))
-            {
-                return (null, null);
-            }
-
-            var env = JsonNode.Parse(File.ReadAllText(path))?["mcpServers"]?["parley"]?["env"];
-
-            return (env?["PARLEY_AGENT"]?.GetValue<string>(), env?["PARLEY_OWNS"]?.GetValue<string>());
+            return (entry?.Agent, entry?.Owns);
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
                                        or UnauthorizedAccessException or FormatException)
@@ -655,8 +727,17 @@ public static class EnrollCommand
         Resolved nodeConfig,
         TextWriter output,
         TextWriter error,
+        ProjectSettings? project,
+        IReadOnlyList<ProjectSettings>? deployment,
+        string? projectManifest,
         CancellationToken cancellationToken)
     {
+        // Held for the whole run rather than around the check alone. Validation and writing are far
+        // apart here by design -- everything is refused before anything is written -- so a gate that
+        // spanned only one of them would leave the same window the probe found: two runs each seeing
+        // no other project starting a workspace, and both then recording that theirs does.
+        using var gate = await Catalogues.GateAsync(projectManifest, cancellationToken).ConfigureAwait(false);
+
         EnrollmentManifest? manifest = null;
         string? unreadable = null;
         var unreadableCode = 0;
@@ -727,7 +808,31 @@ public static class EnrollCommand
                 ? $"{entries.Length} repositories to enroll, {skipped} skipped."
                 : $"{entries.Length} repositories to enroll.").ConfigureAwait(false);
 
-        var problems = EnrollmentPlan.Validate(entries, Directory.Exists);
+        var problems = new List<string>(EnrollmentPlan.Validate(entries, Directory.Exists));
+
+        // **FR-013 belongs here and was in the writing loop, which is a different promise.** This
+        // command refuses a half-enrolled set on principle -- everything is validated before
+        // anything is written, because "the repository that missed out is indistinguishable from one
+        // you never meant to enroll". A refusal raised while writing undoes exactly that: the
+        // repositories before it in the list are on disk and the run reports a failure. Found by
+        // probe, in the gate, after the check had been written into the wrong phase.
+        foreach (var entry in entries.Where(row => row.Unattended))
+        {
+            var already = Catalogues.Elsewhere(
+                deployment,
+                entry.Workspace,
+                ResolveNodeConfig(manifest?.NodeConfig, nodeConfig.Value),
+                out var unseen);
+
+            if (already is not null)
+            {
+                problems.Add($"{entry.Agent}: {Catalogues.Refusal(already)}");
+            }
+            else if (unseen is not null)
+            {
+                problems.Add($"{entry.Agent}: {unseen}");
+            }
+        }
 
         if (problems.Count > 0)
         {
@@ -749,7 +854,17 @@ public static class EnrollCommand
         }
 
         var nodePath = ResolveNodeConfig(manifest?.NodeConfig, nodeConfig.Value);
-        var node = ReadNode(nodePath);
+
+        // **Held from the read to the write, which is the whole run.** This reads the catalogue here
+        // and writes it after the last repository, and without a hold two runs sharing one catalogue
+        // each read it, each added their own line, and the later write dropped the earlier one's --
+        // an agent told its enrolment had succeeded and missing from the file that makes it
+        // startable. The single-repository path was given this and the bulk one was not.
+        using var nodeHeld = await Enrolment.HoldAsync(nodePath, cancellationToken).ConfigureAwait(false);
+
+        var node = nodeHeld is null
+            ? ReadNode(nodePath)
+            : ReadNodeText(await Enrolment.ReadHeldAsync(nodeHeld, cancellationToken).ConfigureAwait(false));
 
         if (node is null)
         {
@@ -797,14 +912,51 @@ public static class EnrollCommand
             var launchPath = Path.Combine(entry.Workspace, ".mcp.json");
 
             RepositoryPlan plan;
+            IReadOnlyList<string> wrote = [];
+            IReadOnlyList<string> said = [];
+
+            var endpoints = deployment?.ToDictionary(
+                settings => settings.Name.Value,
+                settings => settings.Endpoint,
+                StringComparer.Ordinal);
+
+            // **The instructions are read by whoever holds them, which is no longer here.** Reading
+            // this file at the top of the loop and writing it at the bottom is the lost update the
+            // launch configuration was given a handle for, on the file that is entirely somebody's
+            // own prose. The decision now receives what was read under the hold that writes it.
+            RepositoryPlan Decide(string? launch, string? instructions) => EnrollmentPlan.Describe(
+                entry,
+                launch,
+                instructions,
+                listed.ContainsKey(entry.Agent),
+                project?.Name.Value,
+                endpoints,
+                listed[entry.Agent]?["workspace"]?.GetValue<string>());
 
             try
             {
-                plan = EnrollmentPlan.Describe(
-                    entry,
-                    File.Exists(launchPath) ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false) : null,
-                    File.Exists(instructionsPath) ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false) : null,
-                    listed.ContainsKey(entry.Agent));
+                // **Deciding and writing happen under one hold when this is going to write.** They
+                // were two acts over an unheld file, which is the lost update AddAsync was fixed for
+                // and this path was not. Reporting still happens afterwards, so the notes describe
+                // what was done rather than what was going to be.
+                if (write)
+                {
+                    (plan, wrote, said) = await Enrolment
+                        .WriteAsync(Decide, entry.Workspace, instructionsPath, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    // `plan` writes nothing, so both files are read plainly here. Holding them would
+                    // be a lock taken to describe a file and released before anything acted on it.
+                    plan = Decide(
+                        File.Exists(launchPath)
+                            ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false)
+                            : null,
+                        File.Exists(instructionsPath)
+                            ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
+                            : null);
+                }
             }
             catch (Exception ex) when (ex is JsonException or InvalidDataException)
             {
@@ -815,10 +967,45 @@ public static class EnrollCommand
                     $"{entry.Agent}: {launchPath} cannot be merged into — {ex.Message}.\n" +
                     "Fix or move it first; enrolling would replace what is there.").ConfigureAwait(false);
 
+                // **And say where it stopped, which is the command's own principle.** Validation is
+                // hoisted ahead of every write so that a set is never half applied — "the repository
+                // that missed out is indistinguishable from one you never meant to enroll". This is
+                // the one refusal that cannot be hoisted, because knowing it means reading each
+                // repository's own launch configuration, so it is the one that leaves that exact
+                // state. The rows already done have printed themselves above; the ones never reached
+                // had said nothing at all, and silence is what makes them indistinguishable.
+                var unreached = entries
+                    .SkipWhile(row => !ReferenceEquals(row, entry))
+                    .Skip(1)
+                    .Select(row => row.Agent)
+                    .ToArray();
+
+                if (unreached.Length > 0)
+                {
+                    await error.WriteLineAsync(
+                        $"\nNothing was written for {unreached.Length} repository(s) after it: "
+                        + $"{string.Join(", ", unreached.Select(Quoting.Flat))}. Re-run once the "
+                        + "fault is fixed; enrolling a repository twice changes nothing the second "
+                        + "time.").ConfigureAwait(false);
+                }
+
                 return Config;
             }
 
             await output.WriteLineAsync($"\n{entry.Agent}  ({entry.Workspace})").ConfigureAwait(false);
+
+            if (!Directory.Exists(Path.Combine(entry.Workspace, ".git"))
+                && !File.Exists(Path.Combine(entry.Workspace, ".git")))
+            {
+                // Said rather than refused, on the same terms as the worktree note below: `scan`
+                // only ever offers git repositories, so a directory without one arrived through a
+                // hand-edited manifest, and the person who typed the path may have a reading of it
+                // nobody here thought of. What must not happen is that it passes unremarked -- the
+                // file lands either way, and nothing afterwards makes that visible.
+                await output.WriteLineAsync(
+                    "  ! this is not a git repository. It will still be written into.")
+                    .ConfigureAwait(false);
+            }
 
             if (IsWorktree(entry.Workspace))
             {
@@ -831,7 +1018,7 @@ public static class EnrollCommand
                     "    tracked file shared with the checkout it belongs to.").ConfigureAwait(false);
             }
 
-            foreach (var note in plan.Notes)
+            foreach (var note in plan.Notes.Concat(said))
             {
                 await output.WriteLineAsync($"  {note}").ConfigureAwait(false);
             }
@@ -841,24 +1028,17 @@ public static class EnrollCommand
                 continue;
             }
 
-            try
-            {
-                // Through Enrolment, the one writer of these two files. This loop wrote them
-                // itself until the terminal needed to write them too, and two copies of a file
-                // write are how a surface and a command come to disagree about what makes a
-                // repository an agent.
-                written += (await Enrolment
-                    .WriteAsync(plan, entry.Workspace, instructionsPath, cancellationToken)
-                    .ConfigureAwait(false)).Count;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                await error.WriteLineAsync($"{entry.Agent}: {ex.Message}").ConfigureAwait(false);
-                return IoError;
-            }
+            // Through Enrolment, the one writer of these two files. This loop wrote them itself
+            // until the terminal needed to write them too, and two copies of a file write are how a
+            // surface and a command come to disagree about what makes a repository an agent.
+            written += wrote.Count;
 
             if (plan.AddsNodeEntry)
             {
+                // FR-013 is checked in the validation phase above, with every other reason to refuse
+                // the whole run. Checking it here as well would be a second answer to one question,
+                // and the version that lived here produced the half-applied set this command exists
+                // to prevent.
                 Enrolment.List(listed, entry.Agent, entry.Workspace);
                 nodeChanged = true;
             }
@@ -877,7 +1057,8 @@ public static class EnrollCommand
         {
             try
             {
-                await File.WriteAllTextAsync(
+                await Enrolment.OverwriteHeldAsync(
+                    nodeHeld,
                     nodePath,
                     node.ToJsonString(SerialisationOptions.Indented) + "\n",
                     cancellationToken).ConfigureAwait(false);
@@ -988,6 +1169,30 @@ public static class EnrollCommand
     /// nothing starts automatically. This writes.
     /// </para>
     /// </remarks>
+    /// <summary>The catalogue a held handle holds, or null when it cannot be read.</summary>
+    /// <param name="text">What the file holds.</param>
+    /// <returns>The catalogue, an empty one for an empty file, or null when it is not readable.</returns>
+    /// <remarks>
+    /// Split from <see cref="ReadNode"/> so that a read through an exclusive handle answers exactly
+    /// what a read by path answers. Two parsers agree until one of them is edited.
+    /// </remarks>
+    private static JsonObject? ReadNodeText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonNode.Parse(text)?.AsObject() ?? [];
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
     private static JsonObject? ReadNode(string path)
     {
         if (!File.Exists(path))

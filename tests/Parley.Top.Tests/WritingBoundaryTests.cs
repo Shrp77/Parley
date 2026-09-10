@@ -94,7 +94,7 @@ public sealed class WritingBoundaryTests : IDisposable
             Path.Combine(Other, ".mcp.json"), TestContext.Current.CancellationToken);
 
         await Enrolment.WithdrawAsync(
-            Workspace, "orders", CataloguePath, TestContext.Current.CancellationToken);
+            Workspace, "orders", "acme", CataloguePath, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             untouched,
@@ -126,7 +126,7 @@ public sealed class WritingBoundaryTests : IDisposable
             CataloguePath, catalogue.ToJsonString(), TestContext.Current.CancellationToken);
 
         var outcome = await Enrolment.WithdrawAsync(
-            Workspace, "orders", CataloguePath, TestContext.Current.CancellationToken);
+            Workspace, "orders", "acme", CataloguePath, TestContext.Current.CancellationToken);
 
         // It is removed, because the name is what identifies an agent to the broker and to the
         // node -- but the report says which workspace the line named, so a person can see that it
@@ -140,7 +140,7 @@ public sealed class WritingBoundaryTests : IDisposable
         await AddAsync(Workspace, "orders");
 
         var outcome = await Enrolment.WithdrawAsync(
-            Workspace, "orders", null, TestContext.Current.CancellationToken);
+            Workspace, "orders", "acme", null, TestContext.Current.CancellationToken);
 
         var launch = JsonNode.Parse(await File.ReadAllTextAsync(
             Path.Combine(Workspace, ".mcp.json"), TestContext.Current.CancellationToken))!;

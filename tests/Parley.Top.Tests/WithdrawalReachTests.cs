@@ -56,7 +56,7 @@ public sealed class WithdrawalReachTests : IDisposable
         await WriteCatalogueAsync("orders@test", "billing@test");
 
         var outcome = await Enrolment.WithdrawAsync(
-            Workspace, "orders@test", CataloguePath, TestContext.Current.CancellationToken);
+            Workspace, "orders@test", "acme", CataloguePath, TestContext.Current.CancellationToken);
 
         Assert.Equal("billing@test", await NamedAsync());
         Assert.Contains(
@@ -73,7 +73,7 @@ public sealed class WithdrawalReachTests : IDisposable
         await WriteCatalogueAsync("orders@test", "billing@test");
 
         await Enrolment.WithdrawAsync(
-            Workspace, "orders@test", CataloguePath, TestContext.Current.CancellationToken);
+            Workspace, "orders@test", "acme", CataloguePath, TestContext.Current.CancellationToken);
 
         var catalogue = await File.ReadAllTextAsync(CataloguePath, TestContext.Current.CancellationToken);
 
@@ -88,7 +88,7 @@ public sealed class WithdrawalReachTests : IDisposable
         await WriteCatalogueAsync("orders@test");
 
         var outcome = await Enrolment.WithdrawAsync(
-            Workspace, "orders@test", CataloguePath, TestContext.Current.CancellationToken);
+            Workspace, "orders@test", "acme", CataloguePath, TestContext.Current.CancellationToken);
 
         Assert.Null(await NamedAsync());
         Assert.Contains(LaunchPath, outcome.Written);
@@ -107,7 +107,7 @@ public sealed class WithdrawalReachTests : IDisposable
         await WriteCatalogueAsync("orders@test");
 
         var outcome = await Enrolment.WithdrawAsync(
-            Workspace, "orders@test", CataloguePath, TestContext.Current.CancellationToken);
+            Workspace, "orders@test", "acme", CataloguePath, TestContext.Current.CancellationToken);
 
         Assert.Contains(LaunchPath, outcome.Written);
     }
@@ -122,7 +122,7 @@ public sealed class WithdrawalReachTests : IDisposable
         var before = await File.ReadAllTextAsync(LaunchPath, TestContext.Current.CancellationToken);
 
         await Enrolment.WithdrawAsync(
-            Workspace, "orders@test", null, TestContext.Current.CancellationToken);
+            Workspace, "orders@test", "acme", null, TestContext.Current.CancellationToken);
 
         Assert.Equal(before, await File.ReadAllTextAsync(LaunchPath, TestContext.Current.CancellationToken));
     }

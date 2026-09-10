@@ -1124,8 +1124,15 @@ internal sealed class Shell : Window
 
     /// <summary>Opens the dialog that makes a repository an agent of this project.</summary>
     /// <returns>When the dialog is open.</returns>
+    /// <remarks>
+    /// <b><see cref="Current"/> rather than the projects region's selection, for the reason
+    /// <see cref="Withdraw"/> says at more length.</b> Both were found in one sweep and both are the
+    /// same defect: a project view gives this region the screen, so the projects list is off screen
+    /// and may never have been filled, and the action returned having done nothing while the status
+    /// line went on offering it.
+    /// </remarks>
     internal Task Add() =>
-        App is { } app && Projects.Selected is { } project
+        App is { } app && Current is { } project
             ? Adding.OpenAsync(
                 app,
                 project,
@@ -1146,13 +1153,27 @@ internal sealed class Shell : Window
     /// <summary>Opens the dialog that withdraws the selected agent.</summary>
     /// <returns>When the dialog is open.</returns>
     /// <remarks>
+    /// <para>
     /// The description is read before it is shown, and both reads already exist: the registry for
     /// what the agent is, and the waiting graph for what it owes. Asked here rather than kept from
     /// the last draw, because a debt is exactly the fact most likely to have changed since.
+    /// </para>
+    /// <para>
+    /// <b>The project comes from <see cref="Current"/>, and this is the sixth time that distinction
+    /// has had to be made.</b> It read the projects region's selection — which a project view leaves
+    /// off screen, and which a terminal opened straight into a project may never have filled at all,
+    /// so the whole action returned having done nothing while the status line went on offering it.
+    /// A withdrawal that silently does nothing is the one failure this dialog cannot afford, because
+    /// the person believes the agent is gone.
+    /// </para>
+    /// <para>
+    /// It also has to be the project rather than the selection now that it is passed on: a repository
+    /// may answer in several, and the entry removed is the one for the project being looked at.
+    /// </para>
     /// </remarks>
     internal Task Withdraw()
     {
-        if (App is not { } app || Projects.Selected is not { } project
+        if (App is not { } app || Current is not { } project
             || Agents.Selected is not { } row)
         {
             return Task.CompletedTask;
@@ -1182,7 +1203,8 @@ internal sealed class Shell : Window
                 .ToList();
 
             await Withdrawing.OpenAsync(
-                app, client, row, agent, owed, project.NodeConfig, Queue, Reported(project))
+                app, client, row, agent, owed, project.Name.Value, project.NodeConfig, Queue,
+                Reported(project))
                 .ConfigureAwait(false);
         });
 

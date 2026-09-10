@@ -70,7 +70,7 @@ public sealed class EnrolmentTests : IDisposable
             TestContext.Current.CancellationToken);
 
         var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
-        var env = launch["mcpServers"]!["parley"]!["env"]!;
+        var env = launch["mcpServers"]!["parley-acme"]!["env"]!;
 
         Assert.Equal("orders", env["PARLEY_AGENT"]!.GetValue<string>());
         Assert.Equal("acme", env["PARLEY_PROJECT"]!.GetValue<string>());
@@ -101,7 +101,7 @@ public sealed class EnrolmentTests : IDisposable
             TestContext.Current.CancellationToken);
 
         await Enrolment.WithdrawAsync(
-            Workspace, "orders", CatalogueFile, TestContext.Current.CancellationToken);
+            Workspace, "orders", "acme", CatalogueFile, TestContext.Current.CancellationToken);
 
         var after = await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken);
         var catalogue = JsonNode.Parse(await File.ReadAllTextAsync(CatalogueFile, TestContext.Current.CancellationToken))!;
@@ -129,7 +129,7 @@ public sealed class EnrolmentTests : IDisposable
             TestContext.Current.CancellationToken);
 
         await Enrolment.WithdrawAsync(
-            Workspace, "orders", CatalogueFile, TestContext.Current.CancellationToken);
+            Workspace, "orders", "acme", CatalogueFile, TestContext.Current.CancellationToken);
 
         var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
         var servers = (JsonObject)launch["mcpServers"]!;
@@ -150,7 +150,7 @@ public sealed class EnrolmentTests : IDisposable
         await File.WriteAllTextAsync(InstructionsFile, Instructions, TestContext.Current.CancellationToken);
 
         var outcome = await Enrolment.WithdrawAsync(
-            Workspace, "orders", CatalogueFile, TestContext.Current.CancellationToken);
+            Workspace, "orders", "acme", CatalogueFile, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             Instructions,
@@ -164,7 +164,7 @@ public sealed class EnrolmentTests : IDisposable
     public async Task Withdrawing_what_was_never_there_says_so_and_writes_nothing()
     {
         var outcome = await Enrolment.WithdrawAsync(
-            Workspace, "orders", CatalogueFile, TestContext.Current.CancellationToken);
+            Workspace, "orders", "acme", CatalogueFile, TestContext.Current.CancellationToken);
 
         Assert.Empty(outcome.Written);
         Assert.Contains(outcome.Notes, note => note.Contains("already absent", StringComparison.Ordinal));
@@ -182,7 +182,7 @@ public sealed class EnrolmentTests : IDisposable
         await File.WriteAllTextAsync(LaunchFile, Hostile, TestContext.Current.CancellationToken);
 
         var outcome = await Enrolment.WithdrawAsync(
-            Workspace, "orders", CatalogueFile, TestContext.Current.CancellationToken);
+            Workspace, "orders", "acme", CatalogueFile, TestContext.Current.CancellationToken);
 
         Assert.Equal(Hostile, await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken));
         Assert.DoesNotContain(LaunchFile, outcome.Written);
@@ -197,7 +197,7 @@ public sealed class EnrolmentTests : IDisposable
         await File.WriteAllTextAsync(LaunchFile, Broken, TestContext.Current.CancellationToken);
 
         var outcome = await Enrolment.WithdrawAsync(
-            Workspace, "orders", CatalogueFile, TestContext.Current.CancellationToken);
+            Workspace, "orders", "acme", CatalogueFile, TestContext.Current.CancellationToken);
 
         Assert.Equal(Broken, await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken));
         Assert.DoesNotContain(LaunchFile, outcome.Written);
@@ -238,7 +238,7 @@ public sealed class EnrolmentTests : IDisposable
             TestContext.Current.CancellationToken);
 
         await Enrolment.WithdrawAsync(
-            Workspace, "orders", CatalogueFile, TestContext.Current.CancellationToken);
+            Workspace, "orders", "acme", CatalogueFile, TestContext.Current.CancellationToken);
 
         var agents = (JsonObject)JsonNode.Parse(
             await File.ReadAllTextAsync(CatalogueFile, TestContext.Current.CancellationToken))!["agents"]!;
@@ -248,20 +248,34 @@ public sealed class EnrolmentTests : IDisposable
     }
 
     [Fact]
-    public async Task Adding_a_repository_that_belongs_to_another_project_is_refused()
+    public async Task Adding_a_repository_that_belongs_to_another_project_leaves_that_entry_alone()
     {
+        // **A refusal until 009, changed deliberately.** A repository several product lines depend
+        // on had to pick one set of peers, because brokers do not federate and the project it
+        // joined was the only roster it could answer in. What the old refusal was really about --
+        // one identity moved out of a deployment silently -- is still refused; a second entry
+        // beside the first moves nothing, and this asserts exactly that.
         await Enrolment.AddAsync(
             Entry("orders", Workspace), "acme", CatalogueFile, InstructionsFile,
             TestContext.Current.CancellationToken);
 
-        var before = await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken);
+        var before = (JsonObject)JsonNode.Parse(
+            await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!["mcpServers"]!;
 
-        var refusal = await Assert.ThrowsAsync<InvalidDataException>(() => Enrolment.AddAsync(
+        await Enrolment.AddAsync(
             Entry("orders", Workspace), "other", Path.Combine(_root, "other-node.json"), InstructionsFile,
-            TestContext.Current.CancellationToken));
+            TestContext.Current.CancellationToken);
 
-        Assert.Contains("acme", refusal.Message, StringComparison.Ordinal);
-        Assert.Equal(before, await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken));
+        var after = (JsonObject)JsonNode.Parse(
+            await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!["mcpServers"]!;
+
+        Assert.Equal(
+            ["parley-acme", "parley-other"],
+            after.Select(pair => pair.Key).OrderBy(key => key, StringComparer.Ordinal));
+
+        Assert.True(
+            JsonNode.DeepEquals(before["parley-acme"], after["parley-acme"]),
+            "the first project's entry changed when the second was added");
     }
 
     [Fact]
