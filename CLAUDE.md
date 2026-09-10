@@ -598,7 +598,7 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/010-waking-notifications/` — ships as 0.23.0, **protocol 0.4**. A
+- **Active plan**: `specs/010-waking-notifications/` — 0.23.0, **protocol 0.4**. A
   notification wakes the agent it is addressed to, and a person can tell every agent in a project at
   once.
 

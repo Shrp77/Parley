@@ -48,7 +48,8 @@ what language they are written in.
 ## Design in one screen
 
 **Four message types.** Question, Clarify, Answer, Notify. Agents don't make small
-talk, so there is nothing else to model.
+talk, so there is nothing else to model. Any of the four reaches an agent that is not
+running: its machine is asked to start it, and the message is waiting when it does.
 
 **Deadlock-free by construction.** Traffic between any two agents is serialised on an
 unordered pair key, and new questions are rejected if they would close a cycle in the
@@ -179,6 +180,23 @@ that otherwise reports success:
 - **Whether the broker answers**, which is a different claim from whether it was registered.
   Installing the tools is not the same as having Parley working, and the gap between the two
   shows up as agents failing to attach — in an editor, days later, a long way from here.
+
+**A protocol change upgrades the whole deployment at once, and 0.23.0 is one.** The protocol has
+no patch level: a change is either visible across the boundary or is not a protocol change, and
+while the major is zero the minor carries breaking changes. So a broker and an adapter whose
+protocol versions differ **do not interoperate**, and the broker refuses the attach rather than
+letting it fail later as questions nobody answers.
+
+What that means in practice, when the protocol number moves:
+
+- Install on the machine running the broker **and** on every machine running agents, before
+  expecting anything to work. One machine left behind is one set of agents that silently stop
+  attaching.
+- Sessions already attached keep their old connection until they end. Close and reopen the
+  editor windows that have Parley configured; nothing else forces it.
+- The failure is diagnosable but only from the broker's log, which names the version it speaks
+  and the one it was offered. An agent that has quietly stopped answering looks like a broken
+  agent from every other angle.
 
 The script refuses to replace a file something is holding, and names what to close: an editor
 session with Parley configured, a terminal somebody has open, or a broker somebody started by
@@ -465,7 +483,7 @@ Seven tools, and no way to say who it is:
 | `parley_ask` | Open an exchange. Returns an identifier or a refusal — never an answer. |
 | `parley_clarify` | Ask for detail inside an exchange you owe, or supply detail you were asked for. |
 | `parley_answer` | Resolve each sub-question and close the exchange. |
-| `parley_notify` | Fire-and-forget event. No reply expected. |
+| `parley_notify` | Fire-and-forget event. No reply expected. Starts the recipient if nothing is running it. |
 | `parley_inbox` | Drain pending messages, work you owe first. |
 | `parley_agents` | List the agents that exist and whether they are reachable. |
 | `parley_conclude` | Say whether you are finished with a discussion. |
@@ -794,7 +812,9 @@ by the code that calls them.
 **Next.** Per-sender rate limits. Volume between a pair is already bounded by the state
 machine — one open exchange per pair, a cap on clarification rounds — so what remains is
 `Notify`, which has no such guard: an agent can post into a discussion indefinitely, and
-today only the retention age cap bounds it.
+today only the retention age cap bounds it. The *turns* that traffic causes are bounded —
+a recipient is woken once until it reads its inbox, however many notices arrive — but the
+volume reaching its context is not, and that is the part still open.
 
 **Before the first release.** `Parley.Mcp` and `Parley.Cli` go to NuGet, so installing either
 is `dotnet tool install -g` rather than a clone and a build, and the plugin's first step
