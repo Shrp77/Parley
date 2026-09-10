@@ -373,17 +373,25 @@ public sealed class AdversarialTests
     }
 
     // A version behind, a version ahead, a major ahead, and one that says nothing. "0.3" was in
-    // this list until it became the version this build speaks — which is the right way for it to
-    // fail: a theory naming a specific foreign version has to be revisited when the number moves,
-    // and the alternative is a case that quietly starts asserting the opposite of its name.
+    // this list until it became the version this build speaks, and then "0.4" was — which is the
+    // right way for it to fail: a theory naming a specific foreign version has to be revisited when
+    // the number moves, and the alternative is a case that quietly starts asserting the opposite of
+    // its name.
+    //
+    // It has now failed that way twice, so the guard below turns the second symptom into the first.
+    // Left alone, a case naming the current version fails as "no exception was thrown", which reads
+    // as the refusal being broken rather than as the theory being out of date.
     [Theory]
     [InlineData("0.1")]
     [InlineData("0.2")]
-    [InlineData("0.4")]
+    [InlineData("0.3")]
+    [InlineData("0.5")]
     [InlineData("1.0")]
     [InlineData("")]
     public async Task An_adapter_speaking_another_protocol_is_refused(string announced)
     {
+        Assert.NotEqual(Parley.Core.ProtocolVersion.Current, announced);
+
         var token = TestContext.Current.CancellationToken;
 
         await using var broker = await LoopbackBroker.StartAsync(token);

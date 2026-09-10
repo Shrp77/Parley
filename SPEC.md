@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.3 (draft)
+**Version:** 0.4 (draft)
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -4192,6 +4192,31 @@ The version is `major.minor` and has no patch level, because a protocol change i
 across the boundary or is not a protocol change at all. **While the major is zero, the minor
 carries breaking changes.** Two implementations whose minors differ do not interoperate, and
 §4.0's `Attach` refuses the pairing rather than discovering it later.
+
+### 0.4 — a notification wakes its recipient
+
+**A `notify` now causes its recipient to be started, as a Question does.** 0.3 and earlier
+delivered one only to an agent that was already attached, so a notification to a closed session was
+stored and collected whenever somebody next opened that repository — which, for a repository nobody
+opens, is never. §5.4 carries the rule; §17 question 15 carries the reversal and the argument that
+was made against it.
+
+**Bounded by coalescing rather than by a cap.** Attention is asked for once per recipient until that
+recipient drains, so a hundred notifications cost one turn. That is the correct number rather than a
+rationed one: draining an inbox collects everything pending, so the second ask would buy nothing.
+The bound is per recipient across every sender, because the recipient is the party whose machine
+pays.
+
+**The mark is cleared by a drain and not by an attachment.** They differ, and the difference is
+load-bearing: §4.2 already separates waking an adapter from the model taking a turn, and only the
+second reads anything. An implementation clearing on attachment would bound nothing — the first
+notification starts the agent, it attaches, and every notification after it buys a turn apiece.
+
+**`NotifyReply` gains `wake`**, saying what became of the recipient: started, already running,
+already coming, or unreachable from here. **None of them is a refusal.** The message is stored
+before any of it is decided, and §17 question 1 requires that whatever bounds this must not make an
+event undeliverable. A sender told only that its message was stored cannot tell delivery from
+silence, which is the half of this that is not about waking at all.
 
 ### 0.3 — the message cap
 

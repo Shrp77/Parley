@@ -211,6 +211,10 @@ message NotifyReply {
   bool ok = 1;
   NotifyRejection refusal = 2;
   bool deduplicated = 3;
+
+  // What became of the recipient. Additional to `ok` rather than part of it: a message that could
+  // not wake anybody is still stored and still collected whenever that agent next runs.
+  WakeOutcome wake = 4;
 }
 
 message ConcludeRequest {
@@ -848,6 +852,24 @@ enum NotifyRejection {
   NOTIFY_REJECTION_RECIPIENT_UNROUTABLE = 2;
   NOTIFY_REJECTION_SENDER_RETIRED = 3;
   NOTIFY_REJECTION_CONVERSATION_CLOSED = 4;
+}
+
+// What became of the attempt to put a message in front of its recipient.
+//
+// None of these is a refusal, which is the distinction the type exists for: the message is stored
+// before any of this is decided, so every member describes the recipient rather than the send.
+// SPEC.md section 17 question 1 requires that whatever bounds notification traffic must not make an
+// event undeliverable, so a surface rendering UNREACHABLE as a failure would report a message as
+// not sent when it was.
+//
+// An enum rather than a sentence: everything crossing between agents is charged against the working
+// memory of whoever receives it, and a field that can hold a paragraph eventually holds one.
+enum WakeOutcome {
+  WAKE_OUTCOME_UNSPECIFIED = 0;
+  WAKE_OUTCOME_STARTED = 1;
+  WAKE_OUTCOME_ALREADY_RUNNING = 2;
+  WAKE_OUTCOME_ALREADY_COMING = 3;
+  WAKE_OUTCOME_UNREACHABLE = 4;
 }
 
 enum ClosureError {
