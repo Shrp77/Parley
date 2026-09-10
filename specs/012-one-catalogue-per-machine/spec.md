@@ -70,11 +70,14 @@ Presence in `node.json` is currently the consent to auto-start. That is the wron
 
 **Split capability from consent.** The catalogue says *this machine knows how to launch it*. The store says *and it may be launched unattended here*. **Consent is the store's, and the store wins.**
 
-- a policy record is **always** written, and defaults to **autostart on** — the owner's reversal of today's opt-in
-- the node's join reconciles: an entry with no record gets one, so "always" survives a crash between the two writes rather than depending on nothing failing
-- absence of a record is not consent; it is an unreconciled entry
+- **enrolment always writes a policy record**, defaulting to **autostart on** — the owner's reversal of today's opt-in
+- **absence of a record is not consent.** An entry with no record is reported and not started
 
-**The cost, accepted deliberately**: a restored backup or hand-edited catalogue now yields autostart-enabled agents with no human decision. That follows from flipping the default and is recorded rather than discovered.
+**An earlier draft of this section had the node's join create a record for any entry lacking one, defaulting to on. That was wrong and is corrected here rather than deleted, because the reasoning matters.** The owner's rule — always write a record, default on — was given about *enrolment*, where somebody ran the operation and consent plainly exists. Extending it to entries nobody enrolled hands autostart to a hand-edited file or a restored backup with no human decision, and the first draft then wrote that up as an accepted cost. It was not a decision; it was an over-application.
+
+**D6 supplies the fix for free.** If the node is the only writer, an entry with no policy record did not come through enrolment — a hand-edit, a restored backup, or an enrolment interrupted between the node's write and the broker's. All three get the same treatment: surfaced, inert, resolved by an operator adopting it or re-running enrolment, which is idempotent.
+
+That covers the crash case without provenance tracking. After a restart the node cannot tell an interrupted enrolment from a hand-edit — both are an entry with no record — and it does not need to, because both fail closed.
 
 ### D5 — One node per machine, and it is a supervisor
 
@@ -144,7 +147,8 @@ Nothing watches the filesystem and nothing should. Instead:
 - **FR-004**: There MUST be exactly one catalogue per machine, keyed by workspace.
 - **FR-005**: The catalogue MUST NOT record project membership; that is read from each workspace's `.mcp.json`.
 - **FR-006**: The node MUST refuse to announce a project in which two workspaces claim the same agent name, naming both paths.
-- **FR-007**: A policy record MUST always exist for a catalogued agent, defaulting to autostart on, reconciled at the node's join.
+- **FR-007**: Enrolment MUST write a policy record, defaulting to autostart on.
+- **FR-007a**: A catalogue entry with no policy record MUST be reported and MUST NOT be started. Absence of a record is not consent.
 - **FR-008**: Consent MUST be the store's answer; a catalogue entry is capability only.
 - **FR-009**: There MUST be one node per machine, holding one broker connection per project it serves.
 - **FR-010**: The node MUST be the only writer of the catalogue.
