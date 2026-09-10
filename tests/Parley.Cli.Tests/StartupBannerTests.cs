@@ -120,7 +120,15 @@ public sealed class StartupBannerTests
         // is read on a terminal, and a hash that wraps it is the reason `git log` abbreviates.
         if (BuildIdentity.Commit is null)
         {
-            Assert.DoesNotContain('(', BuildIdentity.Line);
+            // **Only the version's own parenthesis, not any parenthesis.** The line always ends
+            // with the runtime identifier in brackets, so asserting the whole line has none was a
+            // check that could not pass in the state it describes — and it only ever runs on a tree
+            // with no `.git`, which is why every Windows run took the other branch and this stood.
+            // Found by running the suite in a container from `git archive`, which is exactly that
+            // tree.
+            var version = BuildIdentity.Line[..BuildIdentity.Line.IndexOf(',', StringComparison.Ordinal)];
+
+            Assert.DoesNotContain('(', version);
 
             return;
         }
