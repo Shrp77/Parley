@@ -69,6 +69,39 @@ public sealed class BrokerRuntime : IAsyncDisposable
     private readonly ConcurrentDictionary<string, JoinedNode> _nodes =
         new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// When attention was last asked for on an agent's behalf, until that agent drains.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The bound that makes waking a notification's recipient affordable.</b> SPEC.md §17
+    /// question 15 refused the wake on the grounds that it would be unbounded, and the answer is
+    /// in question 1's own evidence: <c>inbox</c> collects everything pending, so one turn drains
+    /// sixty notifications. Asking a second time buys nothing.
+    /// </para>
+    /// <para>
+    /// <b>Keyed on the drain, not on the attach, and that distinction is the whole of it.</b>
+    /// <c>NodeCommand.StartAsync</c> dispatches a turn when the resident is already alive — so the
+    /// node already refuses a duplicate <em>process</em> and cannot refuse a duplicate
+    /// <em>turn</em>. A marker cleared by the attach would clear a second after the first
+    /// notification, leaving the other fifty-nine to buy a turn apiece. §4.2 already draws this
+    /// line: waking an adapter is not the model taking a turn, and only a drain proves the mail
+    /// was read.
+    /// </para>
+    /// <para>
+    /// Per recipient across all senders, because the recipient is the party that pays. A per-pair
+    /// key would leave one agent wakeable once per peer, so a deployment of twenty could hand it
+    /// twenty turns for what a single turn collects together.
+    /// </para>
+    /// <para>
+    /// In memory rather than stored, deliberately. A broker that has just started holds no
+    /// residents, so a remembered wake would be a claim about a process that no longer exists —
+    /// the same reasoning that clears <c>connected</c> on startup.
+    /// </para>
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _pending =
+        new(StringComparer.Ordinal);
+
     private readonly SqliteConnection _connection;
     private readonly Parley.Broker.Broker _house;
     private readonly Parley.Broker.BrokerOptions _options;
@@ -99,6 +132,40 @@ public sealed class BrokerRuntime : IAsyncDisposable
         _ = new NodeRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
         _ = new AgentRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
     }
+
+    /// <summary>
+    /// How long a wake stays pending before another may be asked for.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A failure valve, not the mechanism.</b> What ordinarily clears a pending wake is the
+    /// recipient draining. This exists only for the wake that never produces one — a machine whose
+    /// node has gone, a launch that fails, a process that attaches and dies before reading
+    /// anything — so that the first failed start does not silence waking permanently.
+    /// </para>
+    /// <para>
+    /// <b>Two minutes, because the error is asymmetric and this errs long.</b> It has to
+    /// comfortably exceed cold-start-to-drain on a slow machine: a process launching, a server
+    /// connecting, an adapter attaching, a model taking its first turn. Too long only delays a
+    /// retry of something that has already failed once. Too short reintroduces exactly the
+    /// duplicate turns this exists to prevent, on the machines slowest to start — the ones least
+    /// able to afford them.
+    /// </para>
+    /// <para>
+    /// <b>Provisional, and on a record rather than on judgement alone.</b> Rule 8.5's cap was set
+    /// from <c>refusals</c> rather than argued in advance, and the same route exists here:
+    /// <c>invocations</c> records when starts happened and how long turns took, so
+    /// start-to-first-drain is measurable on a real deployment. It moves on that, not because a
+    /// case felt slow.
+    /// </para>
+    /// <para>
+    /// A constant rather than a schema fact, and the contrast is the argument. §13.1's
+    /// deduplication window is in the schema because it decides the meaning of buckets already
+    /// stored, so changing it changes what stored rows mean. This governs no stored row; changing
+    /// it invalidates nothing that exists, and a migration would be ceremony.
+    /// </para>
+    /// </remarks>
+    public static readonly TimeSpan WakeCeiling = TimeSpan.FromMinutes(2);
 
     /// <summary>Gets the clock every operation is stamped from.</summary>
     public TimeProvider Clock { get; }
@@ -608,11 +675,148 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// an answer nobody noticed was missing.
     /// </para>
     /// </remarks>
-    public bool RequestAttention(AgentName agent, string because)
+    public bool RequestAttention(AgentName agent, string because) =>
+        Ask(agent, because) is WakeOutcome.Started or WakeOutcome.AlreadyRunning;
+
+    /// <summary>
+    /// Asks an agent's machine to see to its mail, unless something already has.
+    /// </summary>
+    /// <param name="agent">The agent a notification is waiting for.</param>
+    /// <param name="because">Why, for the operator's benefit.</param>
+    /// <returns>What became of the asking.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The only caller that consults the pending mark, and that asymmetry is deliberate.</b>
+    /// A question keeps <see cref="RequestAttention"/>'s behaviour because §7.1's per-pair cap
+    /// already bounds questions — which is exactly the bound SPEC.md §17 question 15 identified as
+    /// holding the line today. What changes is that a notification will not stack a turn on top of
+    /// one a question has already asked for: that turn will collect it.
+    /// </para>
+    /// <para>
+    /// Returns an outcome rather than a flag because a sender told only that its message was
+    /// stored cannot tell delivery from silence, which is the half of the reported defect that was
+    /// not about waking at all. None of the outcomes is a refusal — see
+    /// <see cref="WakeOutcome"/>.
+    /// </para>
+    /// </remarks>
+    public WakeOutcome RequestAttentionForMail(AgentName agent, string because)
+    {
+        // **Claimed before asking, not checked before asking.** Reading the mark and then acting on
+        // it is two operations, and the flood this bound exists for is precisely the case where
+        // sixty of them interleave: every one would read "nothing pending" and every one would ask.
+        // The claim is the atomic step, so exactly one caller proceeds.
+        if (!TryClaimAttention(agent, Clock.GetUtcNow()))
+        {
+            return WakeOutcome.AlreadyComing;
+        }
+
+        var outcome = Ask(agent, because);
+
+        if (outcome is WakeOutcome.Unreachable)
+        {
+            // Nothing is coming after all, so the claim is given back rather than left to expire.
+            // Holding it would suppress every notification for the next two minutes on the
+            // strength of a turn that was never asked for.
+            Collected(agent);
+        }
+
+        return outcome;
+    }
+
+    /// <summary>Takes the pending mark for an agent, if nothing live already holds it.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="now">The instant to stamp the claim with.</param>
+    /// <returns><see langword="true"/> if this caller took it.</returns>
+    /// <remarks>
+    /// A compare-and-set loop rather than <c>AddOrUpdate</c>, because that method's update delegate
+    /// may be invoked more than once under contention and only one of those invocations wins — so a
+    /// flag set inside it would report a claim to a caller that did not get one, which is the exact
+    /// failure this method exists to prevent.
+    /// </remarks>
+    private bool TryClaimAttention(AgentName agent, DateTimeOffset now)
+    {
+        while (true)
+        {
+            if (_pending.TryAdd(agent.Value, now))
+            {
+                return true;
+            }
+
+            if (!_pending.TryGetValue(agent.Value, out var since))
+            {
+                // Removed between the two calls -- a drain landing right here. Try again.
+                continue;
+            }
+
+            if (now - since < WakeCeiling)
+            {
+                return false;
+            }
+
+            if (_pending.TryUpdate(agent.Value, now, since))
+            {
+                return true;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Records that an agent has collected what was waiting for it.
+    /// </summary>
+    /// <param name="agent">The agent that drained.</param>
+    /// <remarks>
+    /// Called from the drain and from nowhere else, because the drain is the single place a
+    /// collection is observable. Everything asked for before it has now been seen, so the next
+    /// notification is free to ask again.
+    /// </remarks>
+    public void Collected(AgentName agent) => _ = _pending.TryRemove(agent.Value, out _);
+
+    /// <summary>
+    /// Whether a turn has been asked for on an agent's behalf that it has not yet answered by
+    /// draining.
+    /// </summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns><see langword="true"/> while one is outstanding and inside the ceiling.</returns>
+    /// <remarks>
+    /// The ceiling is what keeps a wake that never produced a drain from silencing this for ever —
+    /// a machine with no node, a launch that fails, a process that attaches and dies before
+    /// reading anything. Without it the first failed start would be the last one ever attempted.
+    /// </remarks>
+    public bool AttentionPending(AgentName agent)
+    {
+        if (!_pending.TryGetValue(agent.Value, out var since))
+        {
+            return false;
+        }
+
+        if (Clock.GetUtcNow() - since < WakeCeiling)
+        {
+            return true;
+        }
+
+        // Dropped on the way past rather than left to be re-read on every later notification.
+        // Removed by key and value together, so a wake that landed between the read above and
+        // here is not thrown away by this one.
+        _ = ((ICollection<KeyValuePair<string, DateTimeOffset>>)_pending)
+            .Remove(new KeyValuePair<string, DateTimeOffset>(agent.Value, since));
+
+        return false;
+    }
+
+    /// <summary>Asks the agent's machine for whatever it needs, and marks attention pending.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for the operator's benefit.</param>
+    /// <returns>What became of the asking.</returns>
+    /// <remarks>
+    /// <b>Every wake marks, whatever asked for it.</b> A notification arriving while a question's
+    /// turn is already coming must find the mark set, or the common case — ask a peer, then tell it
+    /// something — costs two turns for one reading.
+    /// </remarks>
+    private WakeOutcome Ask(AgentName agent, string because)
     {
         if (!_nodes.TryGetValue(agent.Machine, out var node))
         {
-            return false;
+            return WakeOutcome.Unreachable;
         }
 
         // Attached already, so a start would duplicate a process. What the traffic needs is not a
@@ -620,9 +824,19 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // nobody: written, never collected, ghosted on the ordinary schedule while the registry
         // reported the agent live. The node gives the turn only to a resident of its own, so an
         // agent attached through somebody's editor window is left alone rather than duplicated.
-        return _attached.TryGetValue(agent.Value, out var sessions) && !sessions.IsEmpty
-            ? node.RequestTurn(agent, because)
-            : node.RequestStart(agent, because);
+        var running = _attached.TryGetValue(agent.Value, out var sessions) && !sessions.IsEmpty;
+
+        if (!(running ? node.RequestTurn(agent, because) : node.RequestStart(agent, because)))
+        {
+            // The node holds this machine but does not name the role among what it can launch, so
+            // nothing here will run it. Not marked pending: nothing is coming, and marking would
+            // suppress the next notification on the strength of a turn that was never asked for.
+            return WakeOutcome.Unreachable;
+        }
+
+        _pending[agent.Value] = Clock.GetUtcNow();
+
+        return running ? WakeOutcome.AlreadyRunning : WakeOutcome.Started;
     }
 
     /// <summary>
