@@ -67,6 +67,16 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     [BindProperty]
     public IList<string> Targets { get; set; } = [];
 
+    /// <summary>Whether to write to everybody in this conversation instead of a chosen few.</summary>
+    /// <remarks>
+    /// It expands to <see cref="Participants"/> — this conversation's, not the project's. The
+    /// terminal's equivalent is project-wide because that is where it is offered, from the list of
+    /// conversations rather than from inside one. The two surfaces are not disagreeing: each offers
+    /// everybody in the thing it is looking at.
+    /// </remarks>
+    [BindProperty]
+    public bool Everyone { get; set; }
+
     /// <summary>What the operator wrote.</summary>
     [BindProperty]
     public string? Says { get; set; }
@@ -307,6 +317,21 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
         if (project is null || string.IsNullOrWhiteSpace(Id))
         {
             return RedirectToPage("/Index");
+        }
+
+        // **Everybody, resolved here rather than by checking boxes in a browser.** The alternative
+        // is script that ticks them, which this console does not use anywhere and would make the
+        // one composer that sends to several agents the only page that stops working without it.
+        //
+        // It is read after the page is loaded because the roster it expands to has to be the one
+        // the server holds now, not the one the form was rendered from: a participant who joined
+        // between the render and the post is in this conversation, and "everybody" that quietly
+        // meant "everybody a minute ago" is the kind of thing nobody notices until it matters.
+        if (Everyone)
+        {
+            await OnGetAsync().ConfigureAwait(false);
+
+            Targets = [.. Participants.Select(who => who.Value)];
         }
 
         if (Targets.Count == 0 || string.IsNullOrWhiteSpace(Says))

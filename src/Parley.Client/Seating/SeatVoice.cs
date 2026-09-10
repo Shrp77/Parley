@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json.Nodes;
 using Grpc.Core;
 using Parley.Core;
@@ -204,6 +205,221 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             return Failed(failure);
         }
     }
+
+    /// <summary>Tells every agent in a project the same thing.</summary>
+    /// <param name="hold">The seat it is being said from.</param>
+    /// <param name="peers">Who to tell, resolved by the surface from its own roster.</param>
+    /// <param name="text">What they are being told.</param>
+    /// <param name="conversationId">The discussion it belongs to.</param>
+    /// <param name="cancellationToken">Cancels the sends.</param>
+    /// <returns>A sentence saying what happened, in counts.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="peers"/> or the hold is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>N ordinary notifications, and no new protocol.</b> SPEC.md §5.5 settled this shape for
+    /// questions — "not a new kind of message and not a new state machine" — because a one-to-many
+    /// exchange would need its own admission rules, its own cap arithmetic and its own definition
+    /// of concluded. Every one of those costs is <em>absent</em> here, since a notification opens no
+    /// exchange, takes no slot and creates no debt, so the argument for restraint is stronger than
+    /// in the case that already took it.
+    /// </para>
+    /// <para>
+    /// <b>The seat is re-read before every send, not once at the start.</b> A broadcast to twenty
+    /// agents is twenty round trips, and the idle sweep runs throughout — so the rule established in
+    /// 0.18.9 applies with more force here than anywhere: a composer that captured its seat spoke
+    /// under a name the book had already released. Stopping half way and saying so is the honest
+    /// outcome; finishing is not.
+    /// </para>
+    /// <para>
+    /// Sequential rather than concurrent, deliberately. Twenty concurrent notifications would race
+    /// the broker's per-recipient coalescing to no purpose — the recipients differ, so nothing is
+    /// coalesced anyway — and would make the "stopped after n" report above meaningless.
+    /// </para>
+    /// </remarks>
+    public async Task<string> NotifyEveryoneAsync(
+        SeatHold hold,
+        IReadOnlyList<AgentName> peers,
+        string? text,
+        string conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(hold);
+        ArgumentNullException.ThrowIfNull(peers);
+
+        if (peers.Count == 0)
+        {
+            return NobodyToTell;
+        }
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return "Nothing was written, so nothing was sent.";
+        }
+
+        if (BadConversation(conversationId) is { } named)
+        {
+            return named;
+        }
+
+        var payload = new JsonObject { ["text"] = text }.ToJsonString();
+
+        if (TooLong(payload) is { } refused)
+        {
+            // Recorded once rather than once per recipient. §17 question 16 counts refusals as
+            // evidence about the cap, and twenty rows for one over-long message somebody wrote once
+            // would be twenty pieces of evidence about a single act.
+            await RecordAsync(Wire.MessageType.Notify, payload.Length, cancellationToken)
+                .ConfigureAwait(false);
+
+            return refused;
+        }
+
+        var counted = new Dictionary<Wire.WakeOutcome, int>();
+        var unreachable = new List<string>();
+        var turnedAway = new List<string>();
+        var told = 0;
+        var stopped = false;
+
+        foreach (var peer in peers)
+        {
+            if (hold.Lost)
+            {
+                stopped = true;
+
+                break;
+            }
+
+            Wire.NotifyReply reply;
+
+            try
+            {
+                reply = await _agents.NotifyAsync(
+                    new Wire.NotifyRequest
+                    {
+                        From = _seat.Name.Value,
+                        To = peer.Value,
+                        ResponderModel = _seat.Responder,
+                        PayloadJson = payload,
+                        ConversationId = conversationId
+                    },
+                    cancellationToken: cancellationToken);
+            }
+            catch (RpcException failure)
+            {
+                // One unreachable peer must not lose the other nineteen sends. The broker being
+                // gone entirely will show up as every one of them failing, which the report says.
+                turnedAway.Add($"{peer.Value} ({failure.Status.Detail})");
+
+                continue;
+            }
+
+            if (!reply.Ok)
+            {
+                turnedAway.Add(peer.Value);
+
+                continue;
+            }
+
+            told++;
+
+            if (reply.Wake == Wire.WakeOutcome.Unreachable)
+            {
+                unreachable.Add(peer.Value);
+            }
+
+            counted[reply.Wake] = counted.GetValueOrDefault(reply.Wake) + 1;
+        }
+
+        return Everyone(peers.Count, told, stopped, counted, unreachable, turnedAway);
+    }
+
+    /// <summary>What a broadcast did, in counts rather than in twenty sentences.</summary>
+    /// <param name="asked">How many were going to be told.</param>
+    /// <param name="told">How many were.</param>
+    /// <param name="stopped">Whether the seat went part way through.</param>
+    /// <param name="counted">How many of each outcome.</param>
+    /// <param name="unreachable">Those nothing here can start.</param>
+    /// <param name="turnedAway">Those the broker refused.</param>
+    /// <returns>The sentence.</returns>
+    /// <remarks>
+    /// <b>Counts, and then names for the two things a person can act on.</b> Twenty sentences is
+    /// not a report, and a bare "sent" hides the case that matters: a broadcast that reached three
+    /// of nineteen is a different fact from one that reached all nineteen, and the surface saying
+    /// nothing about the difference is what produced the report this feature answers.
+    /// </remarks>
+    internal static string Everyone(
+        int asked,
+        int told,
+        bool stopped,
+        IReadOnlyDictionary<Wire.WakeOutcome, int> counted,
+        IReadOnlyList<string> unreachable,
+        IReadOnlyList<string> turnedAway)
+    {
+        ArgumentNullException.ThrowIfNull(counted);
+        ArgumentNullException.ThrowIfNull(unreachable);
+        ArgumentNullException.ThrowIfNull(turnedAway);
+
+        var said = new StringBuilder()
+            .Append(told == asked
+                ? $"Told all {asked}."
+                : $"Told {told} of {asked}.");
+
+        var parts = new List<string>();
+
+        if (counted.GetValueOrDefault(Wire.WakeOutcome.Started) is > 0 and var starting)
+        {
+            parts.Add($"{starting} being started");
+        }
+
+        if (counted.GetValueOrDefault(Wire.WakeOutcome.AlreadyRunning) is > 0 and var live)
+        {
+            parts.Add($"{live} already running");
+        }
+
+        if (counted.GetValueOrDefault(Wire.WakeOutcome.AlreadyComing) is > 0 and var coming)
+        {
+            parts.Add($"{coming} already being seen to");
+        }
+
+        if (parts.Count > 0)
+        {
+            _ = said.Append(' ').Append(string.Join(", ", parts)).Append('.');
+        }
+
+        // Named rather than counted, because this is the half somebody does something about — and
+        // it is not a failure: the message is stored and each of these collects it whenever that
+        // agent next runs.
+        if (unreachable.Count > 0)
+        {
+            _ = said.Append(" Waiting for ")
+                .Append(string.Join(", ", unreachable))
+                .Append(" — nothing here can start them.");
+        }
+
+        if (turnedAway.Count > 0)
+        {
+            _ = said.Append(" Refused for ").Append(string.Join(", ", turnedAway)).Append('.');
+        }
+
+        if (stopped)
+        {
+            _ = said.Append(' ').Append(Left);
+        }
+
+        return said.ToString();
+    }
+
+    /// <summary>What is said when a project holds nobody to tell.</summary>
+    internal const string NobodyToTell =
+        "There is nobody in this project to tell, so nothing was sent.";
+
+    /// <summary>What is said when the seat went part way through a broadcast.</summary>
+    /// <remarks>
+    /// It names what did go rather than only what did not. A person told merely that their seat
+    /// was released cannot tell whether to send the whole thing again or the remainder.
+    /// </remarks>
+    internal const string Left =
+        "Your seat was released part way through, so the rest were not sent.";
 
     /// <summary>What became of the recipient, in words.</summary>
     /// <param name="wake">What the broker did about it.</param>

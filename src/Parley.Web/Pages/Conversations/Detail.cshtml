@@ -296,6 +296,14 @@ else
                 <span>@who.Value</span>
             </label>
         }
+
+        @if (Model.Participants.Count > 1)
+        {
+            <label class="target everyone">
+                <input type="checkbox" name="Everyone" value="true" />
+                <span>Everyone in this conversation (@Model.Participants.Count)</span>
+            </label>
+        }
     </fieldset>
 
     <textarea name="Says" rows="3" required
