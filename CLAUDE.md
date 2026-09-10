@@ -143,8 +143,9 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
                     because §4 gives the store to one process. Not inside Parley.Server for
                     the same reason.
 
-                    `parley console` starts it, so Parley.Cli references this and the tool
-                    carries Kestrel. `parley top` shows the same deployment in a terminal, built
+                    `parley-web-ui` starts it, as a child process the broker launches and does not
+                    wait on -- Parley.Cli stopped referencing this in 007 step 3, which is what took
+                    Kestrel's page-serving half off the machines that only run agents. `parley top` shows the same deployment in a terminal, built
                     on Parley.Client and **Terminal.Gui v2**, and needs no browser -- the machine
                     running a broker is frequently not the one somebody has one open on. Four
                     regions on one screen, Tab between them, and the toolkit's cost is recorded
@@ -192,7 +193,7 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
                     The project stays separate anyway — it is what keeps the
                     store off the console's dependency graph, which is the constraint that
                     actually matters, and `ConsoleHost` is the single place the host is
-                    built so `parley console` and `dotnet run` cannot drift apart.
+                    built so `parley-web-ui` and `dotnet run` cannot drift apart.
 
                     Razor Pages are found by walking the entry assembly, which is `parley`
                     when the subcommand starts it, so `ConsoleHost` names its own assembly

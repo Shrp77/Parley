@@ -237,8 +237,10 @@ tool of its own. If the address is already taken, or the tool is not installed o
 the broker says so and carries on serving: a web page that cannot bind must never cost you a
 deployment, and it names `parley top` in the same breath so you are never told there is no way in.
 
-`--with-console`, `--console` and `--no-console` are the old spellings. They still work and are
-removed at 0.21.0.
+`--with-console`, `--console` and `--no-console` were the old spellings. They are **removed** as of
+0.22.0: a broker given one starts anyway and ignores it, so an autostart entry written before this
+version keeps working and quietly stops starting a web UI — `parley autostart status` says so and
+names what to re-run. `parley autostart install` writes an entry this version understands.
 
 **`parley top` is the same deployment without a browser**, and the broker names both when it
 starts. The machine running a broker is frequently not the machine you have a browser open on —
