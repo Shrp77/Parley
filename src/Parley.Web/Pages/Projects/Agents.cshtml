@@ -35,6 +35,18 @@
             <button type="submit">Search this project</button>
         </form>
 
+        @* **Starting one belongs beside the list of them.** The composer has always been able to open
+           a conversation that does not exist yet -- naming one is what creates it -- and nothing led
+           anybody to it: every route in was a link to a conversation already there, so a project with
+           none had no way in at all and the first was the hardest to start. Reported by the owner
+           against the terminal, which had the same gap in the same shape. *@
+        <form method="get" action="/Conversations/Detail">
+            <input type="hidden" name="project" value="@Model.Project" />
+            <label for="new-conversation">Start a conversation called</label>
+            <input id="new-conversation" name="id" placeholder="what it is about" required />
+            <button type="submit">Start</button>
+        </form>
+
         @if (Model.FilterProblem is { Length: > 0 } filter)
         {
             <p class="unreachable" role="alert">@filter</p>

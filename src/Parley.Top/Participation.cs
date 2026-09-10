@@ -57,6 +57,18 @@ internal static class Participation
     /// <summary>What the dialog asking a peer a question is called.</summary>
     internal const string AskTitle = "Ask somebody a question";
 
+    /// <summary>Asking from the conversations list, where what is being made is a new conversation.</summary>
+    /// <remarks>
+    /// **The same action, named for where it is offered.** From a transcript it continues the
+    /// conversation on screen; from the list it starts one, and the list is where somebody looks for
+    /// that — the region's own rule is that actions belong where the thing acted on is shown, and a
+    /// conversation that does not exist yet is not shown in a transcript of one that does.
+    /// </remarks>
+    internal const string StartTitle = "Start a conversation with a question";
+
+    /// <summary>Telling somebody, from the conversations list rather than inside one.</summary>
+    internal const string StartTellTitle = "Start a conversation by telling somebody something";
+
     /// <summary>What the dialog telling a peer something is called.</summary>
     internal const string TellTitle = "Tell somebody something";
 

@@ -750,6 +750,17 @@ internal sealed class Shell : Window
             new RegionAction('s', SortTitle, SortConversations),
             new RegionAction('v', _showArchived ? HideArchivedTitle : ShowArchivedTitle, ToggleArchived),
 
+            // Starting one belongs here rather than in a transcript of a different one, which is
+            // this method's own rule read straight. Needs a seat for the reason every other way of
+            // speaking does: without one there is no identity to speak as.
+            .. Held is not null
+                ? new[]
+                {
+                    new RegionAction('k', Participation.StartTitle, Start),
+                    new RegionAction('t', Participation.StartTellTitle, StartByTelling),
+                }
+                : Array.Empty<RegionAction>(),
+
             .. Conversations.Selected is { } chosen
                 ? new[]
                 {
@@ -1571,13 +1582,35 @@ internal sealed class Shell : Window
         return Task.CompletedTask;
     }
 
-    /// <summary>Asks a peer a question, opening a conversation.</summary>
+    /// <summary>Asks a peer a question, in the conversation on screen.</summary>
     /// <returns>When the dialog has been opened.</returns>
-    internal Task Ask() => Compose(asking: true);
+    internal Task Ask() => Compose(asking: true, Transcript.Open);
 
-    /// <summary>Tells a peer something, expecting no answer.</summary>
+    /// <summary>Tells a peer something, in the conversation on screen.</summary>
     /// <returns>When the dialog has been opened.</returns>
-    internal Task Tell() => Compose(asking: false);
+    internal Task Tell() => Compose(asking: false, Transcript.Open);
+
+    /// <summary>Asks a peer a question, opening a new conversation.</summary>
+    /// <returns>When the dialog has been opened.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Offered from the conversations list, which is where somebody looks for it, and the surface's
+    /// own rule said so all along</b> — actions belong to the region that shows the thing acted on,
+    /// and a conversation that does not exist yet is not shown in a transcript of one that does. Both
+    /// surfaces could only compose from inside an existing conversation, so a project with none had no
+    /// standing place to begin: the first conversation was the hardest one to start.
+    /// </para>
+    /// <para>
+    /// The same form either way. What differs is the name it suggests — a new one here, the open one
+    /// from a transcript — which is the whole of the difference between starting and continuing, and
+    /// was already what `Ask` did before it had anywhere sensible to be offered from.
+    /// </para>
+    /// </remarks>
+    internal Task Start() => Compose(asking: true, inConversation: null);
+
+    /// <summary>Tells a peer something, opening a new conversation.</summary>
+    /// <returns>When the dialog has been opened.</returns>
+    internal Task StartByTelling() => Compose(asking: false, inConversation: null);
 
     /// <summary>Releases this person's seat, in every project at once.</summary>
     /// <returns>When it has been released.</returns>
@@ -2088,13 +2121,19 @@ internal sealed class Shell : Window
 
     /// <summary>Opens the form that asks a peer a question, or tells them something.</summary>
     /// <param name="asking">Whether an answer is expected.</param>
+    /// <param name="inConversation">
+    /// The conversation to continue, or null to suggest a new one. **This is the whole difference
+    /// between starting and continuing**, and it used to be decided here — asking always suggested a
+    /// new name and telling always took the open one — which left no way to ask inside the
+    /// conversation on screen, and no way to start one from the list where a person looks for that.
+    /// </param>
     /// <returns>When the dialog has been opened.</returns>
     /// <remarks>
     /// The fields are collected in the order rule 8.1 puts them — what is being decided, then the
     /// question, then what turns on the answer. Asking for the question first invites somebody to
     /// write it and stop.
     /// </remarks>
-    private Task Compose(bool asking)
+    private Task Compose(bool asking, string? inConversation)
     {
         if (App is not { } app || Voice() is not { } voice || Projects.Selected is not { } project)
         {
@@ -2108,7 +2147,10 @@ internal sealed class Shell : Window
                 new FormField("What are you trying to decide?", string.Empty, Participation.RequiredProblem),
                 new FormField("The question:", string.Empty, Participation.RequiredProblem),
                 new FormField("What turns on the answer?", string.Empty, Participation.ConsequencesProblem),
-                new FormField("Conversation name:", Participation.Suggested(), Participation.RequiredProblem),
+                new FormField(
+                    "Conversation name:",
+                    inConversation ?? Participation.Suggested(),
+                    Participation.RequiredProblem),
             ]
             : new List<FormField>
             {
@@ -2116,7 +2158,7 @@ internal sealed class Shell : Window
                 new("What are you telling them?", string.Empty, Participation.RequiredProblem),
                 new(
                     "Conversation name:",
-                    Transcript.Open ?? Participation.Suggested(),
+                    inConversation ?? Participation.Suggested(),
                     Participation.RequiredProblem),
             };
 
