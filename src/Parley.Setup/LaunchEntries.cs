@@ -26,7 +26,7 @@ namespace Parley.Setup;
 /// configuration gets deleted.
 /// </para>
 /// </remarks>
-public sealed record LaunchEntry(
+internal sealed record LaunchEntry(
     string Key,
     string? Project,
     string? Pinned,
@@ -81,7 +81,7 @@ public sealed record LaunchEntry(
 /// run any number of other MCP servers, and none of them is this program's business.
 /// </para>
 /// </remarks>
-public static class LaunchEntries
+internal static class LaunchEntries
 {
     /// <summary>Every parley server in an <c>mcpServers</c> object.</summary>
     /// <param name="servers">The object, or null when the file names no servers.</param>

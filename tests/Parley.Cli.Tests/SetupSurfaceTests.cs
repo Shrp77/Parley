@@ -35,8 +35,6 @@ public sealed class SetupSurfaceTests
         Assert.Equal(
             [
                 "AutostartPlan",
-                "Catalogues",
-                "Consent",
                 "ConsolePicker",
                 "EnrollCommand",
                 "EnrollmentEntry",
@@ -45,13 +43,9 @@ public sealed class SetupSurfaceTests
                 "Enrolment",
                 "InstalledEntry",
                 "InterruptedEnrolment",
-                "LaunchEntries",
-                "LaunchEntry",
-                "LaunchKey",
                 "ProjectCommand",
                 "ProjectFields",
                 "ProjectResolution",
-                "Quoting",
                 "RepositoryPlan",
                 "RepositorySelection",
                 "Resolved",

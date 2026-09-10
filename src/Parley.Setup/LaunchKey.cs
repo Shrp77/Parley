@@ -32,7 +32,7 @@ namespace Parley.Setup;
 /// of every tool name the agent behind it already sees.
 /// </para>
 /// </remarks>
-public static class LaunchKey
+internal static class LaunchKey
 {
     /// <summary>The key an enrolment that names no project writes.</summary>
     public const string Unnamed = "parley";

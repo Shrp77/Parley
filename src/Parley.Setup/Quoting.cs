@@ -28,7 +28,7 @@ namespace Parley.Setup;
 /// long, and a refusal that scrolls its own reason off the screen has not refused anything.
 /// </para>
 /// </remarks>
-public static class Quoting
+internal static class Quoting
 {
     /// <summary>How much of one value a line will carry.</summary>
     public const int Longest = 160;

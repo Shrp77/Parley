@@ -7,7 +7,7 @@ namespace Parley.Setup;
 /// <param name="Project">The project whose catalogue names it.</param>
 /// <param name="Catalogue">That catalogue's path.</param>
 /// <param name="Role">The role it is catalogued under there.</param>
-public sealed record Consent(string Project, string Catalogue, string Role);
+internal sealed record Consent(string Project, string Catalogue, string Role);
 
 /// <summary>
 /// The one asymmetry of this feature: many launch entries, at most one unattended start.
@@ -37,7 +37,7 @@ public sealed record Consent(string Project, string Catalogue, string Role);
 /// disagree first about the case that matters — the same checkout spelled two ways.
 /// </para>
 /// </remarks>
-public static class Catalogues
+internal static class Catalogues
 {
     /// <summary>Takes the machine-wide gate on granting an unattended start.</summary>
     /// <param name="manifestPath">The machine's project manifest, or null when it has none.</param>
