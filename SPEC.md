@@ -724,6 +724,40 @@ agent is refused, and one *from* a retired agent is too. Neither costs anybody a
 exactly why it would otherwise go unnoticed — a sender whose announcements silently succeed into
 a peer that no longer exists never learns to stop.
 
+**A Notify wakes its recipient (protocol 0.4).** It did not until then, and the broker MUST now
+treat a notification the way it treats a Question: an agent that is not running is started, and one
+that is running is given a turn. The rule it replaces was deliberate, and §17 question 15 carries
+the argument that was made for it — that Notify is the uncapped type and waking on it would make
+turns unbounded. What answers that is not a cap but the coalescing below.
+
+**Attention is asked for once per recipient until that recipient drains.** A broker MUST NOT ask
+again while an earlier asking is outstanding, and the asking is satisfied by the recipient
+*draining its inbox* — not by its attaching, which are different events: §4.2 separates waking an
+adapter from the model taking a turn, and only the second reads anything. So a hundred
+notifications cost one turn, which is the correct number rather than a rationed one, because a
+drain collects everything pending and the second asking would buy nothing.
+
+Three consequences, each of which a naive implementation gets wrong:
+
+- **The bound is per recipient across every sender**, because the recipient's machine is what pays.
+  A per-pair bound leaves one agent wakeable once per peer, so a deployment of twenty can hand it
+  twenty turns for what one turn collects together.
+- **Every asking marks, and only a Notify consults the mark.** A Question keeps its own behaviour,
+  since §7.1's per-pair cap already bounds questions. What this prevents is a notification buying a
+  turn on top of one a Question has already asked for — the same turn will collect it.
+- **An outstanding asking MUST expire.** A wake that never produces a drain — a machine whose node
+  has gone, a launch that fails, a process that attaches and dies — would otherwise silence waking
+  for that agent permanently.
+
+**A deduplicated Notify (§13.1) wakes nobody**, since it carries nothing the recipient has not
+already been sent.
+
+**What the sender is told.** A Notify returns what became of its recipient: started, already
+running, already being seen to, or unreachable from here. **None of these is a refusal.** The
+message is stored before any of it is decided, and an implementation reporting the last as a failed
+send would tell somebody a contract change had not gone when it is sitting in an inbox. A sender
+told only that its message was stored cannot tell delivery from silence.
+
 ### 5.5 Asking a role
 
 A question addressed to a bare role — `infra` rather than `infra@server-b` — opens **one ordinary
@@ -3575,6 +3609,24 @@ Cheap to collect, disproportionately useful:
    channel. And whatever bounds it must not make an event undeliverable: §5.4 calls this the
    highest-value traffic there is, and a limit that silently drops a contract change is worse
    than the flood.
+
+   **A notification now costs a turn on the recipient's machine (protocol 0.4), and this question
+   was not counting that.** Question 15 is answered: a Notify wakes its recipient. The *turns* that
+   causes are bounded by coalescing — once per recipient until it drains, so the sixty above are
+   one turn — but the *volume* is not, and this question is about volume. Nothing here is resolved
+   by that change.
+
+   What it does add is evidence this question could not previously have. The cost of a notification
+   is now measurable rather than only arguable: `invocations` records every turn with its duration
+   and what it cost, so "what did notification traffic spend on the recipient's machine" has an
+   answer in the same place as every other turn's. `notify_volume` is unchanged and still counts
+   messages; the two together are the numbers this question needs.
+
+   **And the counter-argument has sharpened.** Before 0.4 the flood was a context cost and no more —
+   sixty notices sat in an inbox until somebody read them. They now cause a turn to be taken, which
+   is a model running on somebody else's machine at somebody else's expense. One turn rather than
+   sixty is a large mitigation and not the same as none, so a per-sender bound is worth more than it
+   was, not less.
 2. Should the human be a first-class Headless agent, or a distinct escalation path?
 
    **Being answered in the affirmative, from use rather than from argument.** §11.2 already
@@ -4070,6 +4122,28 @@ Cheap to collect, disproportionately useful:
 
     So: the mechanism is a small change and the policy is not. Decide the policy first, and record
     what a turn costs when somebody has measured one.
+
+    **Answered at protocol 0.4, and the policy came first as this asked.** A Notify now asks for a
+    turn like everything else (§5.4). The objection above is met rather than overruled, and it is
+    met out of question 1's own evidence: that question records sixty notifications accepted in a
+    tenth of a second, and records that `inbox` with no limit "collects everything pending". One
+    turn therefore drains all sixty. **The paragraph above assumed that wiring Notify here meant one
+    turn per notification. It does not have to, and that assumption was the whole of the
+    objection.**
+
+    So the policy is coalescing rather than a cap: attention is asked for once per recipient until
+    that recipient drains. A hundred notifications cost one turn, which is not a rationed number but
+    the right one. The bound is at least as strict as §11.1's, which this asked for — that rule
+    withholds a further turn from an agent whose last one collected nothing, and this withholds one
+    from an agent whose last asking has not been answered at all.
+
+    **Two things were established by reading an implementation rather than by reasoning, and both
+    would have been got wrong.** A node asked to start an agent it already holds gives that resident
+    a turn — so bounding *processes* bounds nothing, and the count that matters is turns. And the
+    asking must be cleared by the recipient *draining*, not by its attaching: the first notification
+    starts the agent, it attaches within a second, and every notification after that would find it
+    attached and buy a turn apiece. An implementation clearing on the attach satisfies the letter of
+    the bound and has no effect.
 
     **Evidence, 2026-09-01, and it is the editor-window case rather than the seam above.** An
     agent asked a peer, went idle, and never learned that the answer had arrived. The wake path
