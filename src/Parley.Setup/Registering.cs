@@ -51,6 +51,14 @@ internal static class Registering
     /// <summary>How often to look while waiting.</summary>
     private static readonly TimeSpan Glance = TimeSpan.FromMilliseconds(500);
 
+    /// <summary>How long any one call to the broker may take.</summary>
+    /// <remarks>
+    /// <b>Without this, enrolment hangs.</b> A gRPC call with no deadline against an endpoint
+    /// nothing is listening on does not fail — it waits, and the command waits with it, having
+    /// already written every file. Found by a test that ran for ten minutes instead of failing.
+    /// </remarks>
+    private static readonly TimeSpan Reach = TimeSpan.FromSeconds(5);
+
     /// <summary>What is said when the wait ran out.</summary>
     /// <remarks>
     /// <b>"I do not know", never "it did not happen".</b> 008 exists because a broker stopped
@@ -86,6 +94,7 @@ internal static class Registering
         {
             var asked = await operators.StartAsync(
                 new Wire.StartRequest { Agent = agent.Value, Because = "it was just enrolled" },
+                deadline: DateTime.UtcNow.Add(Reach),
                 cancellationToken: cancellationToken);
 
             if (!asked.Changed)
@@ -131,7 +140,9 @@ internal static class Registering
             try
             {
                 var registry = await operators.DescribeRegistryAsync(
-                    new Wire.Empty(), cancellationToken: cancellationToken);
+                    new Wire.Empty(),
+                    deadline: DateTime.UtcNow.Add(Reach),
+                    cancellationToken: cancellationToken);
 
                 if (registry.Rows.Any(row =>
                     string.Equals(row.Name, agent.Value, StringComparison.Ordinal)))
