@@ -598,7 +598,36 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/010-waking-notifications/` — 0.23.1, merged (#87), **protocol 0.4**. A
+- **Active plan**: `specs/012-one-catalogue-per-machine/` — 0.24.0, step 1 of two. **Adding an agent
+  now leaves it registered.** `parley enroll apply` wrote two files and started nothing, and said so
+  in its own success message — *"Restart your editor in each repository"* — a step that existed only
+  to compensate. The terminal's enrolment already started what it wrote; the CLI did not.
+
+  **A never-registered agent can receive no message at all.** §14 counts an unregistered name
+  unroutable and both `Ask` and `Notify` refuse an unroutable recipient before any wake, so such an
+  agent is not quiet — it is unaddressable. Only an operator `start` reaches it. `NeverRegisteredTests`
+  pins all three answers over a real socket, because two of the three were reasoned about and got
+  wrong.
+
+  **Nothing writes a registration and nothing may.** §12.3 makes it the adapter's own act on attach,
+  so the only honest way to leave an agent registered is to start it and let it register itself —
+  which costs a process launch and no model tokens, because the node's start and the turn it
+  dispatches are separate calls.
+
+  **A timeout says "I do not know", never "it did not happen".** 008 exists because a broker stopped
+  waiting before a node had finished and recorded the opposite of what occurred.
+
+  **Step 2 is the architecture and is not built**: one catalogue per machine keyed by workspace,
+  project membership read from each repository's `.mcp.json`, consent moved into the store, one node
+  per machine owning the catalogue as sole writer, and enrolment as an operator operation. Protocol
+  0.5, one coordinated upgrade. The spec carries nine decisions with the argument for each; the plan
+  carries why the two steps ship apart.
+
+  **Deferred, and it needs the owner's eyes**: enrolment refusing when it cannot reach a broker. It
+  was written and reverted — it fails ten existing probes that enrol into a resolved project with no
+  broker running, and those are tests about file writing.
+
+- Previous: `specs/010-waking-notifications/` — 0.23.1, merged (#87), **protocol 0.4**. A
   notification wakes the agent it is addressed to, and a person can tell every agent in a project at
   once.
 
