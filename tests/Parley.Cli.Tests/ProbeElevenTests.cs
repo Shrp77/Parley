@@ -23,14 +23,19 @@ namespace Parley.Cli.Tests;
 /// agent that answers in a roster nothing on the machine admits to.
 /// </para>
 /// </remarks>
-public sealed class ProbeElevenTests : IDisposable
+public sealed class ProbeElevenTests : IAsyncDisposable
 {
     private readonly string _root =
         Path.Combine(Path.GetTempPath(), "parley-probe11-" + Path.GetRandomFileName());
 
+    // Listening, because enrolment refuses a project whose broker does not answer.
+    private readonly ServedProject _alpha;
+
     public ProbeElevenTests()
     {
         Directory.CreateDirectory(Checkouts);
+
+        _alpha = ServedProject.Start("alpha", Path.Combine(_root, "alpha.db"), Catalogue);
 
         foreach (var name in new[] { "byCommand", "byTerminal" })
         {
@@ -41,8 +46,10 @@ public sealed class ProbeElevenTests : IDisposable
         ProjectManifest.Write(ManifestPath, [Project()]);
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
+        await _alpha.DisposeAsync();
+
         try
         {
             Directory.Delete(_root, recursive: true);
@@ -60,9 +67,7 @@ public sealed class ProbeElevenTests : IDisposable
 
     private string Workspace(string name) => Path.Combine(Checkouts, name);
 
-    private ProjectSettings Project() =>
-        new(ProjectName.Create("alpha"), Path.Combine(_root, "alpha.db"),
-            "http://127.0.0.1:51707", Catalogue, null);
+    private ProjectSettings Project() => _alpha.Settings;
 
     /// <summary>What the terminal does: one repository, through <c>Enrolment</c>.</summary>
     private Task<Enrolment.Outcome> TerminalAsync(string name, string agent) =>

@@ -22,15 +22,25 @@ namespace Parley.Cli.Tests;
 /// thing being written.
 /// </para>
 /// </remarks>
-public sealed class ProbeThreeTests : IDisposable
+public sealed class ProbeThreeTests : IAsyncDisposable
 {
     private readonly string _root =
         Path.Combine(Path.GetTempPath(), "parley-probe3-" + Path.GetRandomFileName());
 
+    // **Named per project and started on demand**, because this probe enrols into several and each
+    // has to have a broker answering: enrolment refuses a project whose does not. Its endpoint used
+    // to read `127.0.0.1:51707` with no scheme at all, which nothing could have connected to.
+    private readonly Dictionary<string, ServedProject> _served = new(StringComparer.Ordinal);
+
     public ProbeThreeTests() => Directory.CreateDirectory(_root);
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
+        foreach (var served in _served.Values)
+        {
+            await served.DisposeAsync();
+        }
+
         try
         {
             Directory.Delete(_root, recursive: true);
@@ -52,9 +62,16 @@ public sealed class ProbeThreeTests : IDisposable
 
     private string CatalogueFor(string project) => Path.Combine(_root, $"{project}-node.json");
 
-    private ProjectSettings Project(string name) =>
-        new(ProjectName.Create(name), Path.Combine(_root, $"{name}.db"), "127.0.0.1:51707",
-            CatalogueFor(name), null);
+    private ProjectSettings Project(string name)
+    {
+        if (!_served.TryGetValue(name, out var served))
+        {
+            served = ServedProject.Start(name, Path.Combine(_root, $"{name}.db"), CatalogueFor(name));
+            _served[name] = served;
+        }
+
+        return served.Settings;
+    }
 
     private static EnrollmentEntry Entry(string workspace, string agent, bool unattended) =>
         new(workspace, agent, "What it owns. Not what it does not.", unattended)

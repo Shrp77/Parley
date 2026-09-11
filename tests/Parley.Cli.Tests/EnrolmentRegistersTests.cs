@@ -152,6 +152,47 @@ public sealed class EnrolmentRegistersTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_broker_that_answers_is_not_a_reason_to_refuse()
+    {
+        var token = TestContext.Current.CancellationToken;
+
+        Assert.Null(await Registering.UnreachableAsync(_broker.Address, "alpha", token));
+    }
+
+    [Fact]
+    public async Task A_broker_that_does_not_answer_is_a_reason_to_refuse()
+    {
+        // The rule: adding an agent has to leave it registered, registering is the agent attaching,
+        // and attaching needs a broker. So a run that cannot reach one cannot finish the job, and
+        // writing the files anyway leaves the state the whole feature exists to remove.
+        var token = TestContext.Current.CancellationToken;
+
+        var why = await Registering.UnreachableAsync("http://127.0.0.1:1", "alpha", token);
+
+        Assert.NotNull(why);
+        Assert.Contains("alpha", why, StringComparison.Ordinal);
+
+        // Actionable rather than merely true. Somebody reading this has to know what to do next,
+        // and the order it names is the one this change inverted.
+        Assert.Contains("Start it first", why, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_endpoint_that_is_not_an_address_is_reported_rather_than_thrown()
+    {
+        // **Found by the fixtures rather than by thinking.** One probe recorded its endpoint as
+        // `127.0.0.1:51707`, with no scheme — which `GrpcChannel.ForAddress` refuses by throwing.
+        // This runs among the manifest's other refusals, and one of them throwing would take the
+        // whole run down where every other says what is wrong with it.
+        var token = TestContext.Current.CancellationToken;
+
+        var why = await Registering.UnreachableAsync("127.0.0.1:51707", "alpha", token);
+
+        Assert.NotNull(why);
+        Assert.Contains("not an address", why, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_wait_running_out_never_reads_as_a_failure()
     {
         // Asserted against the constant rather than against a run, so a rewording is caught even

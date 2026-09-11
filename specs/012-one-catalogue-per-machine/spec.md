@@ -188,7 +188,11 @@ Worth counting, because the change earns its cost here rather than in new capabi
 ## Open
 
 - **When a catalogue entry disappears**, the proposal is that the policy record becomes the soft-deleted state — marked removed, history intact, and reinstating means re-cataloguing. Not yet confirmed.
-- **Whether 0.5 ships alone or batches** with whatever else is pending.
+- **Whether 0.5 ships alone or batches** with whatever else is pending. Step 2 is 0.26.0 now, step
+  one having taken both 0.24.0 and 0.25.0.
+- **A machine that names no project enrols without a broker**, because there is no endpoint to
+  ask. Under a strict reading of the owner's rule that is the same hole FR-003 closes, and
+  closing it changes first-run setup for a deployment that has no projects yet.
 - **Hostname collisions.** The machine half of every identity is `MachineName.Current`. Two machines sharing a hostname produce colliding identities, either able to collect the other's mail. Out of scope here, recorded because it is the one genuine hole in the identity model.
 
 ## Not in scope

@@ -22,10 +22,16 @@ namespace Parley.Cli.Tests;
 /// functions that produced it.
 /// </para>
 /// </remarks>
-public sealed class ProbeTenTests : IDisposable
+public sealed class ProbeTenTests : IAsyncDisposable
 {
     private readonly string _root =
         Path.Combine(Path.GetTempPath(), "parley-probe10-" + Path.GetRandomFileName());
+
+    // **Both brokers actually listen.** Enrolment refuses a project whose broker does not answer,
+    // because adding an agent has to leave it registered — so a fixture naming an endpoint nothing
+    // serves stopped describing a deployment this command will write into.
+    private readonly ServedProject _alpha;
+    private readonly ServedProject _beta;
 
     public ProbeTenTests()
     {
@@ -33,11 +39,17 @@ public sealed class ProbeTenTests : IDisposable
         Directory.CreateDirectory(Workspace);
         Directory.CreateDirectory(Path.Combine(Workspace, ".git"));
 
+        _alpha = ServedProject.Start("alpha", Path.Combine(_root, "alpha.db"), CatalogueFor("alpha"));
+        _beta = ServedProject.Start("beta", Path.Combine(_root, "beta.db"), CatalogueFor("beta"));
+
         ProjectManifest.Write(ManifestPath, [Project("alpha"), Project("beta")]);
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
+        await _alpha.DisposeAsync();
+        await _beta.DisposeAsync();
+
         try
         {
             Directory.Delete(_root, recursive: true);
@@ -58,8 +70,7 @@ public sealed class ProbeTenTests : IDisposable
     private string CatalogueFor(string project) => Path.Combine(_root, $"{project}-node.json");
 
     private ProjectSettings Project(string name) =>
-        new(ProjectName.Create(name), Path.Combine(_root, $"{name}.db"),
-            $"http://127.0.0.1:5170{(name == "alpha" ? "7" : "8")}", CatalogueFor(name), null);
+        name == "alpha" ? _alpha.Settings : _beta.Settings;
 
     private async Task<string> ManifestForAsync(string project, string agent, string owns)
     {

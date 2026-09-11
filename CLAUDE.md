@@ -598,7 +598,7 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/012-one-catalogue-per-machine/` — 0.24.0, step 1 of two. **Adding an agent
+- **Active plan**: `specs/012-one-catalogue-per-machine/` — 0.25.0, step 1 of two. **Adding an agent
   now leaves it registered.** `parley enroll apply` wrote two files and started nothing, and said so
   in its own success message — *"Restart your editor in each repository"* — a step that existed only
   to compensate. The terminal's enrolment already started what it wrote; the CLI did not.
@@ -623,9 +623,20 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   0.5, one coordinated upgrade. The spec carries nine decisions with the argument for each; the plan
   carries why the two steps ship apart.
 
-  **Deferred, and it needs the owner's eyes**: enrolment refusing when it cannot reach a broker. It
-  was written and reverted — it fails ten existing probes that enrol into a resolved project with no
-  broker running, and those are tests about file writing.
+  **Enrolment now refuses a project whose broker does not answer** (0.25.0). It was written, reverted
+  once, and taken on the owner's call. It cost ten probes in `ProbeThree`, `ProbeTen` and
+  `ProbeEleven` that enrolled into a resolved project with nothing listening — a state the command
+  now declines to be in, so the fixtures were describing a deployment it will not write into. Each
+  has a broker that actually listens, through one `ServedProject` helper rather than three copies.
+
+  That also retired three hardcoded `51707`s, which is the shape of the flake already recorded
+  against `FreePort`, and found a fourth thing: one of those endpoints was `127.0.0.1:51707` with no
+  scheme, which nothing could ever have connected to and which made the probe *throw* rather than
+  refuse. It reports now, because this runs among the manifest's other refusals and one of them
+  throwing would take down a run where every other says what is wrong with it.
+
+  **Still open**: a machine that names no project at all enrols freely, because there is no endpoint
+  to ask. Closing that changes first-run setup and is recorded in 012's spec rather than decided.
 
 - Previous: `specs/010-waking-notifications/` — 0.23.1, merged (#87), **protocol 0.4**. A
   notification wakes the agent it is addressed to, and a person can tell every agent in a project at
