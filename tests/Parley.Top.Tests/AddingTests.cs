@@ -187,6 +187,55 @@ public sealed class AddingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task The_field_outranks_what_was_picked()
+    {
+        // **The picker fills the field in; it does not replace it.** Somebody who knows the path
+        // should not have to walk to it, and somebody who walked to the wrong folder should be
+        // able to correct it without starting again — so what is written has to follow the field,
+        // not the walk. Probed rather than reasoned because the two are one keystroke apart in the
+        // code and the wrong one would only show up as an agent enrolled in the wrong directory.
+        var elsewhere = Path.Combine(_root, "billing");
+
+        Directory.CreateDirectory(elsewhere);
+        Directory.CreateDirectory(Path.Combine(elsewhere, ".git"));
+
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving, catalogued: true);
+
+        await shell.Add();
+
+        // Walked to one repository.
+        ((Browsing)driving.Find(Browsing.Name)).Choose(Workspace);
+
+        var form = (FormDialog)driving.Find(Adding.Title);
+
+        Assert.Equal(Workspace, form.Values[0]);
+
+        // And then typed over with another.
+        form.Fill(0, elsewhere);
+        form.Fill(1, "billing");
+        form.Finish(taken: true);
+
+        var asking = (ChoiceDialog)driving.Find(Adding.ConfirmTitle);
+
+        Assert.Contains(elsewhere, asking.Described, StringComparison.Ordinal);
+        Assert.DoesNotContain(Workspace, asking.Described, StringComparison.Ordinal);
+
+        driving.Row(asking.Choices, Adding.Write);
+        driving.Enter();
+
+        await shell.Settled;
+
+        Assert.True(
+            File.Exists(Path.Combine(elsewhere, ".mcp.json")),
+            "the repository typed into the field was not the one enrolled");
+
+        Assert.False(
+            File.Exists(LaunchFile),
+            "the repository walked to was enrolled instead of the one typed");
+    }
+
+    [Fact]
     public void A_directory_with_no_git_is_refused_and_a_repository_is_not()
     {
         var bare = Path.Combine(_root, "not-a-repository");

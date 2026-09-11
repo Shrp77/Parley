@@ -93,10 +93,15 @@ purging. A purge that would leave an asker waiting names them and what they will
 acceptance before the name. `force-conclude`, `instruct` and `prune` remain command-line only, and a
 test fails the build if one appears on that surface.
 
-The terminal can also add an agent: it names a repository directory and writes the same two files
-`parley enroll apply` writes for one repository. The agent then reads as *catalogued, not yet
-registered* until its own server attaches once — nothing on an operator's surface may register on a
-repository's behalf.
+The terminal can also add an agent: a repository is picked by walking to it, and the same files
+`parley enroll apply` writes for one repository are written — the launch configuration, the
+repository's own instructions file, and a line in the project's catalogue. It then asks the machine
+to start the agent once, and the agent registers itself as it attaches: nothing on an operator's
+surface may register on a repository's behalf, so the start is a request and the registration is the
+agent's own act.
+
+A repository already started unattended by another project gets no catalogue line in the second one,
+and is started through the project that does start it.
 
 **With projects named, `parley autostart install` needs no `--db`.** The entry then serves every
 project in the manifest from one process, hosts this machine's node in each project whose entry

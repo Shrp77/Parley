@@ -11,23 +11,34 @@ namespace Parley.Top;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Two files, both of which a person can read and revert: the repository's launch configuration,
-/// naming the project and the role, and a line in the project's catalogue so a node may start it
-/// when a question arrives. Both are written by <see cref="Enrolment"/>, which is the same code
-/// <c>parley enroll apply</c> runs — FR-008 asks for one writer, and two would agree today and
+/// Three files, every one of which a person can read and revert: the repository's launch
+/// configuration, naming the project and the role; its own instructions file, which gains the
+/// section telling the agent how to use Parley; and a line in the project's catalogue so a node may
+/// start it when a question arrives. All are written by <see cref="Enrolment"/>, which is the same
+/// code <c>parley enroll apply</c> runs — FR-008 asks for one writer, and two would agree today and
 /// differ in six months.
 /// </para>
 /// <para>
-/// <b>What it does not do is register the agent</b>, and it cannot. SPEC.md §12.3 makes
-/// registration the adapter's own act on attach, and a surface that inserted a registry row on a
-/// repository's behalf would be a caller-supplied identity by another name. So the promise is the
-/// honest one: the agent appears as <c>catalogued, not yet registered</c>, and reads as startable
-/// the first time its own server attaches. `plan.md` "Q1 settled" carries the argument.
+/// <b>The catalogue line is the one that comes and goes.</b> A repository another project already
+/// starts unattended gets the other two and no catalogue entry: FR-013 admits it into as many
+/// projects as it likes and lets only one of them start it, because a node starts a client with the
+/// repository as its working directory and two of those is two models editing one checkout.
+/// </para>
+/// <para>
+/// <b>It does not write the registration, and it cannot.</b> SPEC.md §12.3 makes registration the
+/// adapter's own act on attach, and a surface that inserted a registry row on a repository's behalf
+/// would be a caller-supplied identity by another name. What it does instead is ask the machine to
+/// start the agent once and let it register itself — which is what §12.3's own closing paragraph
+/// routes through the catalogue. <b>An earlier version of this paragraph said the agent was left
+/// <c>catalogued, not yet registered</c> and that nothing could be done about it</b>; that was true
+/// of 005 and stopped being true at 0.24.0, and it is corrected here rather than deleted because
+/// the half of it that still holds — nothing here may claim to be anybody — is the reason the start
+/// is a request rather than a write.
 /// </para>
 /// <para>
 /// <b>Nothing is written until the person has seen what would be.</b> The paths are shown and
 /// confirmed, because this writes into a repository that is not the one they are looking at, and
-/// the two files are the whole of what makes an agent an agent.
+/// those files are the whole of what makes an agent an agent.
 /// </para>
 /// </remarks>
 internal static class Adding
@@ -123,11 +134,11 @@ internal static class Adding
     /// </param>
     /// <returns>The paths, and what each would gain.</returns>
     /// <remarks>
-    /// <b>One file rather than two when another project already starts this repository</b>, and
-    /// that is the whole of what FR-013 costs. A repository may answer in several projects and may
-    /// be started unattended by only one, because a node starts an agent with its workspace as the
+    /// <b>No catalogue line when another project already starts this repository</b>, and that is
+    /// the whole of what FR-013 costs. A repository may answer in several projects and may be
+    /// started unattended by only one, because a node starts an agent with its workspace as the
     /// working directory and two of them is two models editing one checkout. So the second project
-    /// gets the launch entry and no catalogue line.
+    /// gets the launch entry and the instructions section, and nothing in its catalogue.
     /// </remarks>
     internal static string Describe(
         string workspace, string catalogueFile, string project, Enrolment.Shared? already) =>
@@ -197,7 +208,7 @@ internal static class Adding
         + "That runs the repository's own server on this machine.";
 
     /// <summary>
-    /// Opens the dialog that adds an agent, and writes the two files when it is confirmed.
+    /// Opens the dialog that adds an agent, and writes the files when it is confirmed.
     /// </summary>
     /// <param name="app">The application the dialogs open in.</param>
     /// <param name="project">The project the repository would join.</param>
@@ -212,7 +223,7 @@ internal static class Adding
     /// <param name="lastAdded">
     /// The repository this session last added, so the search starts beside it.
     /// </param>
-    /// <param name="remember">Told which repository was added, once both files are written.</param>
+    /// <param name="remember">Told which repository was added, once the files are written.</param>
     /// <returns>When the first dialog is open.</returns>
     /// <remarks>
     /// <b>The folder is found before it is named.</b> The owner was typing an absolute path per

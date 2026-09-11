@@ -29,7 +29,7 @@ public sealed class BroadcastReportTests
         bool stopped = false,
         (Wire.WakeOutcome, int)[]? counts = null,
         string[]? unreachable = null,
-        Refusal[]? refused = null) =>
+        TurnedAway[]? refused = null) =>
         SeatVoice.Reported(
             asked,
             told,
@@ -40,7 +40,7 @@ public sealed class BroadcastReportTests
             refused ?? []);
 
     /// <summary>One refusal, for a reason the caller does not care about.</summary>
-    private static Refusal Turned(string agent) =>
+    private static TurnedAway Turned(string agent) =>
         new(agent, SeatVoice.Because(Wire.NotifyRejection.RecipientUnroutable));
 
     [Fact]
@@ -206,7 +206,7 @@ public sealed class BroadcastReportTests
             refused:
             [
                 Turned("a@b"),
-                new Refusal("c@d", SeatVoice.Because(Wire.NotifyRejection.ConversationClosed)),
+                new TurnedAway("c@d", SeatVoice.Because(Wire.NotifyRejection.ConversationClosed)),
             ]);
 
         Assert.Contains("nothing has registered under that name", said, StringComparison.Ordinal);
@@ -253,7 +253,7 @@ public sealed class BroadcastReportTests
             refused:
             [
                 .. Enumerable.Range(1, 19).Select(at =>
-                    new Refusal($"a{at}@b", SeatVoice.Because(Wire.NotifyRejection.SenderRetired)))
+                    new TurnedAway($"a{at}@b", SeatVoice.Because(Wire.NotifyRejection.SenderRetired)))
             ]);
 
         Assert.Contains("your seat has been retired", said, StringComparison.Ordinal);
@@ -272,8 +272,8 @@ public sealed class BroadcastReportTests
             0,
             refused:
             [
-                new Refusal("a@b", "unavailable\nTold all 2."),
-                new Refusal("c@d", "unavailable"),
+                new TurnedAway("a@b", "unavailable\nTold all 2."),
+                new TurnedAway("c@d", "unavailable"),
             ]);
 
         Assert.DoesNotContain('\n', said);
@@ -295,7 +295,7 @@ public sealed class BroadcastReportTests
             19,
             0,
             refused: [.. Enumerable.Range(1, 19).Select(at =>
-                new Refusal($"agent-{at:00}@here", $"no route to agent-{at:00}@here"))]);
+                new TurnedAway($"agent-{at:00}@here", $"no route to agent-{at:00}@here"))]);
 
         Assert.True(said.Length < 320, $"the report is {said.Length} characters: {said}");
 
@@ -309,7 +309,7 @@ public sealed class BroadcastReportTests
         // A gRPC status may carry an empty detail, and "Refused for a@b:" followed by nothing
         // reads as the report having been cut off — which is exactly what this change is about not
         // doing.
-        var said = Say(1, 0, refused: [new Refusal("a@b", string.Empty)]);
+        var said = Say(1, 0, refused: [new TurnedAway("a@b", string.Empty)]);
 
         Assert.Contains("did not say why.", said, StringComparison.Ordinal);
         Assert.DoesNotContain(":  ", said, StringComparison.Ordinal);

@@ -646,9 +646,52 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   test can drive — and which browses files where the question being asked is *which of these is a
   repository*. The field is still typed into.
 
-  **Hygiene**: `northhelm-app@matrixmaster` had appeared in a comment in `src/Parley.Client` since
-  012 step 1 and is replaced with placeholders. The pre-existing `TimeTracker` and `north-helm`
-  occurrences recorded in `REVIEW-LEDGER.md` are still there and still the owner's decision.
+  **What the review gate found is most of what is worth reading about this change.** Fourteen
+  findings, every one reproduced by probe before it was fixed:
+
+  - **A broker could forge a second line of the broadcast report.** The reason on the failure path is
+    `Status.Detail` — whatever came back from the far end of a gRPC call — and the report is
+    contracted to be one line, so a newline in it produced a second line reading *"Told all 2."*,
+    which is this report's own success sentence in somebody else's hand. **0.18.6's transcript
+    forgery in a new place.**
+  - **Adding writes three files behind a dialog that named two.** The third is the repository's own
+    `CLAUDE.md`, which enrolment creates or appends a `## Peers` section to. Pre-existing, and the
+    one thing this dialog exists to prevent. Naming it then made the description long enough to
+    squeeze the confirmation's own choices off the screen — **a dialog asking a question with no
+    visible answers** — which is how the second half turned up.
+  - **A folder could claim to be a repository.** The marker was a suffix and a folder name is
+    somebody else's text. It is a prefix inside an indent now, and only the dialog's own rows sit at
+    column zero: the rule `ColumnZeroTests` holds the transcript to, in the other place this surface
+    draws somebody else's text in a list.
+  - **The add confirmation quoted manifest values raw.** 0.18.9 fixed exactly this in
+    `Removing.Describe` and gave `Withdrawing` the same treatment; `Adding` was the one left out.
+  - **The grouped refusal report grew back to a thousand characters** when the reasons do not repeat
+    — a broker whose detail names the recipient gives one group each. The owner's own defect,
+    through the door grouping opened.
+  - **The actionable half of the report came after the names.** A terminal shows one row, so what
+    comes first is what survives, and *"Refused for"* plus nineteen names is what they actually saw.
+    Counts, then the reason, then the names.
+  - **The message cap was enforced only after the form closed**, losing what somebody wrote. Nobody
+    met it while every field was one row tall; this change made it reachable.
+  - **`SetupSurfaceTests` could not see a nested public type.** `Type.IsPublic` is false for one, so
+    `Enrolment.Outcome` — public since the split — was never on its list, and neither was the type
+    added beside it here. The guard's claim is that a member appearing there is a decision somebody
+    makes in that file, and it could not keep it.
+  - Plus: a form taller than the screen and clipped at the top; a description measured by character
+    count rather than by the lines it already had; a picker that dead-ended on an unreadable folder;
+    an empty refusal reason printing a dangling colon; a type made public that nothing outside its
+    assembly could use; and a record and a method sharing one name in one file.
+
+  **Two probes were wrong before the code was.** One reported that the second-project re-check never
+  fires — its catalogue fixture had a workspace and no command, which is not a role anything can
+  start. One reported the picker not scrolling by reading the drawn screen, which the harness never
+  redraws. Both are written down where they happened.
+
+  **Hygiene**: a real deployment's agent name had appeared in a comment in `src/Parley.Client` since
+  012 step 1 and is replaced with placeholders. **The name is not repeated here**, because this file
+  is committed and writing it down would be the leak again in the record of closing it — which a
+  first draft of this paragraph did. The two pre-existing terms recorded in `REVIEW-LEDGER.md` are
+  still there and still the owner's decision.
 
 - **Previous plan**: `specs/012-one-catalogue-per-machine/` — 0.25.0, step 1 of two. **Adding an agent
   now leaves it registered.** `parley enroll apply` wrote two files and started nothing, and said so

@@ -11,12 +11,20 @@ namespace Parley.Client.Seating;
 /// <param name="Agent">Who it was for.</param>
 /// <param name="Because">Why the broker would not take it, as a sentence.</param>
 /// <remarks>
+/// <para>
 /// <b>The reason used to be dropped and the name kept, which is exactly the wrong half.</b> The
 /// wire carries a rejection on every refusal and the single-recipient path already turns it into a
 /// sentence; a broadcast, where one cause can refuse the whole roster, reported nineteen names and
 /// no cause at all. A person reading that knows who did not get it and has no idea what to do.
+/// </para>
+/// <para>
+/// <b>Internal, because nothing outside this assembly has to live with it.</b> It appears in the
+/// signature of <see cref="SeatVoice.Reported"/>, which is internal, and in the body of the
+/// broadcast; a first version was public, which is the assembly's surface widened for a type
+/// nobody outside it can reach a use for. Lens 3.
+/// </para>
 /// </remarks>
-public sealed record Refusal(string Agent, string Because);
+internal sealed record TurnedAway(string Agent, string Because);
 
 /// <summary>What became of an answer.</summary>
 /// <param name="Closed">Whether the exchange is now settled.</param>
@@ -287,7 +295,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
         var counted = new Dictionary<Wire.WakeOutcome, int>();
         var unreachable = new List<string>();
-        var turnedAway = new List<Refusal>();
+        var turnedAway = new List<TurnedAway>();
         var told = 0;
         var repeated = 0;
         var stopped = false;
@@ -320,7 +328,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             {
                 // One unreachable peer must not lose the other nineteen sends. The broker being
                 // gone entirely will show up as every one of them failing, which the report says.
-                turnedAway.Add(new Refusal(peer.Value, failure.Status.Detail));
+                turnedAway.Add(new TurnedAway(peer.Value, failure.Status.Detail));
 
                 continue;
             }
@@ -332,7 +340,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
                 // cannot be acted on: the wire already carries why, the single-recipient path
                 // already says it, and this — the path where every recipient can be refused for
                 // one cause — was the one that said least.
-                turnedAway.Add(new Refusal(peer.Value, Because(reply.Refusal)));
+                turnedAway.Add(new TurnedAway(peer.Value, Because(reply.Refusal)));
 
                 continue;
             }
@@ -384,7 +392,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         bool stopped,
         IReadOnlyDictionary<Wire.WakeOutcome, int> counted,
         IReadOnlyList<string> unreachable,
-        IReadOnlyList<Refusal> turnedAway)
+        IReadOnlyList<TurnedAway> turnedAway)
     {
         ArgumentNullException.ThrowIfNull(counted);
         ArgumentNullException.ThrowIfNull(unreachable);
@@ -547,7 +555,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// <summary>Some of a list of names, and a count of whatever is left.</summary>
     /// <param name="names">The names.</param>
     /// <returns>The phrase.</returns>
-    internal static string Some(IReadOnlyList<string> names)
+    private static string Some(IReadOnlyList<string> names)
     {
         ArgumentNullException.ThrowIfNull(names);
 

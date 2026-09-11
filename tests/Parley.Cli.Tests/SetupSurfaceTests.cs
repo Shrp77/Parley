@@ -23,12 +23,33 @@ public sealed class SetupSurfaceTests
 {
     private static readonly Assembly Setup = typeof(Enrolment).Assembly;
 
+    /// <summary>Whether a type is reachable from outside this assembly.</summary>
+    /// <param name="type">The type.</param>
+    /// <returns>Whether somebody outside can name it.</returns>
+    /// <remarks>
+    /// <b>Found by lens 3, and the guard had the hole from the day it was written.</b>
+    /// <see cref="Type.IsPublic"/> is true only of a <em>top-level</em> public type; a public type
+    /// nested inside a public one answers <see cref="Type.IsNestedPublic"/> instead. So
+    /// <c>Enrolment.Outcome</c> — public since the split, and returned by every write this
+    /// assembly performs — was never on the list, and neither was the type added beside it in this
+    /// branch. The check's own claim is that a member appearing here is a decision somebody makes
+    /// in this file, and it could not keep that promise for the shape a nested record has.
+    /// </remarks>
+    private static bool Reachable(Type type) =>
+        type.IsPublic || (type.IsNestedPublic && Reachable(type.DeclaringType!));
+
+    /// <summary>What to call a type, so a nested one reads as what it is.</summary>
+    /// <param name="type">The type.</param>
+    /// <returns>Its name, qualified by whatever it is nested in.</returns>
+    private static string Named(Type type) =>
+        type.IsNested ? $"{Named(type.DeclaringType!)}.{type.Name}" : type.Name;
+
     [Fact]
     public void The_setup_assembly_exposes_exactly_these_types()
     {
         var public_ = Setup.GetTypes()
-            .Where(type => type.IsPublic)
-            .Select(type => type.Name)
+            .Where(Reachable)
+            .Select(Named)
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
 
@@ -41,6 +62,13 @@ public sealed class SetupSurfaceTests
                 "EnrollmentManifest",
                 "EnrollmentPlan",
                 "Enrolment",
+
+                // Nested, and invisible to this check until lens 3 widened it. `Outcome` is what
+                // every write here returns and has been public since the split; `Shared` says which
+                // project already starts a repository, so a surface can describe what it is about
+                // to write before it writes it rather than finding out by being refused.
+                "Enrolment.Outcome",
+                "Enrolment.Shared",
                 "InstalledEntry",
                 "InterruptedEnrolment",
                 "ProjectCommand",

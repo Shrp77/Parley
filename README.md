@@ -711,11 +711,20 @@ registry holds that this catalogue does not name reads
 *not running, and only runs when somebody opens it* — which is the state that looks startable to a
 peer and can never be started here.
 
-From there you can also **add an agent**: name a repository directory on this machine and it is
-made an agent of this project — its launch configuration naming the project, a line added to the
-project's catalogue, and then the agent started once so that it registers itself. All three are
-shown before any of them happens, because the third runs a process on your machine. It is startable
-from then on without anybody opening that repository by hand. And **remove one**: the agent is
+From there you can also **add an agent**: walk to a repository on this machine — the search opens
+beside the last one you added, and marks which folders are repositories — and it is made an agent of
+this project. Its launch configuration names the project, its own `CLAUDE.md` gains the section
+telling the agent how to use Parley, a line is added to the project's catalogue, and then the agent
+is started once so that it registers itself. All of it is shown before any of it happens, because
+the last step runs a process on your machine. It is startable from then on without anybody opening
+that repository by hand.
+
+A repository may answer in **several projects** and be started unattended by only one: add it to a
+second project and it gets the launch entry and no catalogue line, because a node starts a client
+with the repository as its working directory and two of those is two models editing one checkout. It
+is still started once, through the project that does start it, so it registers in both.
+
+And **remove one**: the agent is
 described — what it is, where it runs, what it owns, and any answer it owes right now — and then
 keeping is offered first, retiring second, purging last. Retiring and purging each take the agent's
 own name typed back, and a purge that would leave somebody waiting names them and what they will

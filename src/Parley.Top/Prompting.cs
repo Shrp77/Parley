@@ -250,7 +250,7 @@ internal sealed class ChoiceDialog : Dialog
         // built: it is evaluated at layout time, by which point the dialog is running in
         // something.
         Height = Dim.Func(
-            view => Math.Min(wants + choices.Count + Around, Room(view)), this);
+            view => Math.Min(wants + choices.Count + Edges, Room(view)), this);
 
         var said = new Label
         {
@@ -307,7 +307,12 @@ internal sealed class ChoiceDialog : Dialog
     }
 
     /// <summary>The rows a choice dialog needs besides its description and its choices.</summary>
-    private const int Around = 3;
+    /// <remarks>
+    /// Named apart from <see cref="FormDialog"/>'s, which counts a different set of rows for a
+    /// different dialog. Two constants sharing a name in one file, meaning two numbers, is how a
+    /// reader comes to believe one of them is the other.
+    /// </remarks>
+    private const int Edges = 3;
 
     /// <summary>How tall this dialog is allowed to be.</summary>
     /// <param name="view">The dialog.</param>

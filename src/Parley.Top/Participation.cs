@@ -287,9 +287,9 @@ internal static class Participation
     /// </para>
     /// </remarks>
     private static string? ProseProblem(string said) =>
-        (said ?? string.Empty).Length <= MessageLimits.MaxPayloadCharacters
+        said.Length <= MessageLimits.MaxPayloadCharacters
             ? null
-            : $"That is {said!.Length} characters and the limit is "
+            : $"That is {said.Length} characters and the limit is "
               + $"{MessageLimits.MaxPayloadCharacters}. The cap is a defence rather than a "
               + "formatting rule: say the short version, and link to the long one.";
 

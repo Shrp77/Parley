@@ -253,6 +253,51 @@ public sealed class TwoProjectsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Four_projects_adding_one_repository_at_once_all_land()
+    {
+        // **The contention this branch makes reachable.** Before it, one repository could be
+        // enrolled in one project, so its launch configuration had one writer; now four projects
+        // may write into one file. `Enrolment` records what that costs when it goes wrong — eight
+        // racing writers left one entry in the file and told two of them it had worked — which is
+        // the shape where the damage is not the loss but the report.
+        //
+        // All attended, so none of them races another for the unattended consent: what is being
+        // probed is the file they share, not the rule about who may start it.
+        var token = TestContext.Current.CancellationToken;
+
+        var deployment = new[] { "alpha", "beta", "gamma", "delta" }
+            .Select((name, at) => new ProjectSettings(
+                ProjectName.Create(name), Path.Combine(_root, name + ".db"),
+                $"http://127.0.0.1:{9100 + at}", CatalogueFor(name), null))
+            .ToList();
+
+        ProjectManifest.Write(ManifestPath, deployment);
+
+        foreach (var project in deployment)
+        {
+            await File.WriteAllTextAsync(project.NodeConfig!, """{ "agents": {} }""", token);
+        }
+
+        await Task.WhenAll(deployment.Select(project => Task.Run(
+            async () => await Enrolment.AddAsync(
+                new EnrollmentEntry(Workspace, "orders", null, Unattended: false) { Enroll = true },
+                project.Name.Value,
+                project.NodeConfig!,
+                Path.Combine(Workspace, Adding.Instructions),
+                token,
+                deployment,
+                ManifestPath),
+            token)));
+
+        var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, token))!;
+
+        foreach (var project in deployment)
+        {
+            Assert.NotNull(launch["mcpServers"]![$"parley-{project.Name.Value}"]);
+        }
+    }
+
+    [Fact]
     public void Nothing_else_starting_it_is_not_a_shared_workspace()
     {
         // The non-vacuous half. If `StartedElsewhere` answered null for everything, every test
