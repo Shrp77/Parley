@@ -901,6 +901,25 @@ public static class EnrollCommand
             }
         }
 
+        // **Asked here, among every other reason to refuse the whole run**, because enrolment now
+        // depends on the answer: it must leave each agent registered, registering is the agent
+        // attaching, and attaching needs a broker. Writing the files and discovering it afterwards
+        // leaves precisely the state this feature exists to remove — and the refusal below already
+        // promises that a half-enrolled set is worse than none.
+        //
+        // Only when a project was resolved. A machine naming none has no endpoint to ask; that hole
+        // is recorded as open in 012's spec rather than closed here, because closing it changes
+        // first-run setup for a deployment that has no projects yet.
+        if (write
+            && project is { } target
+            && !string.IsNullOrWhiteSpace(target.Endpoint)
+            && await Registering.UnreachableAsync(
+                target.Endpoint, target.Name.Value, cancellationToken).ConfigureAwait(false)
+                is { } unreachableBroker)
+        {
+            problems.Add(unreachableBroker);
+        }
+
         if (problems.Count > 0)
         {
             await error.WriteLineAsync("This manifest is not usable yet:\n").ConfigureAwait(false);

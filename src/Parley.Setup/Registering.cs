@@ -71,6 +71,71 @@ internal static class Registering
         "started, but it had not registered before this stopped waiting. Check it shortly; "
         + "re-running enrolment changes nothing if it did.";
 
+    /// <summary>Why a project's broker cannot be enrolled into, or null when it can.</summary>
+    /// <param name="endpoint">The project's broker.</param>
+    /// <param name="project">The project's name, for the sentence.</param>
+    /// <param name="cancellationToken">Stops the probe.</param>
+    /// <returns>The reason, or null.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Asked before anything is written, because enrolment now depends on the answer.</b> Adding
+    /// an agent has to leave it registered, registering is the agent attaching, and attaching needs
+    /// a broker — so a run that cannot reach one cannot finish the job, and writing the files anyway
+    /// leaves exactly the state this exists to remove.
+    /// </para>
+    /// <para>
+    /// <b>It inverts what the command used to advise</b>, which was to enrol and then start a
+    /// broker. That order was only ever possible because enrolment stopped half way.
+    /// </para>
+    /// <para>
+    /// Only asked when a project was resolved. A machine that names none has no endpoint to ask, and
+    /// closing that hole too is a first-run change recorded as open in 012's spec rather than made
+    /// here.
+    /// </para>
+    /// </remarks>
+    internal static async Task<string?> UnreachableAsync(
+        string endpoint, string project, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
+
+        GrpcChannel channel;
+
+        try
+        {
+            channel = GrpcChannel.ForAddress(endpoint);
+        }
+        catch (Exception malformed) when (malformed is ArgumentException or UriFormatException)
+        {
+            // An address with no scheme, or one that is not an address at all. Reported rather than
+            // thrown: this runs among the manifest's other refusals, and one of them throwing would
+            // take the whole run down where every other says what is wrong with it.
+            return $"the broker for '{project}' is recorded as '{endpoint}', which is not an "
+                + $"address this can reach: {malformed.Message}";
+        }
+
+        try
+        {
+            _ = await operatorsOf(channel).DescribeRegistryAsync(
+                new Wire.Empty(),
+                deadline: DateTime.UtcNow.Add(Reach),
+                cancellationToken: cancellationToken);
+
+            return null;
+        }
+        catch (RpcException failure)
+        {
+            return $"the broker for '{project}' at {endpoint} did not answer ({failure.StatusCode}). "
+                + "Start it first: enrolling leaves each agent registered, and that cannot be done "
+                + "without one.";
+        }
+        finally
+        {
+            channel.Dispose();
+        }
+
+        static Wire.Operators.OperatorsClient operatorsOf(GrpcChannel channel) => new(channel);
+    }
+
     /// <summary>Starts an agent and waits for it to register itself.</summary>
     /// <param name="endpoint">The project's broker.</param>
     /// <param name="agent">The agent to start.</param>
