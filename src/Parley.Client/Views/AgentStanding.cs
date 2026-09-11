@@ -141,9 +141,9 @@ public static class Standing
 
         // **A catalogue is keyed by role and a registration is named `role@machine`, and this
         // compared one against the other in both directions.** `catalogued.Contains(name.Value)` asked
-        // whether a set of roles held `northhelm-app@matrixmaster`, which it never does, so
+        // whether a set of roles held `orders@somemachine`, which it never does, so
         // `StartableHere` was false for every agent that had ever registered; and the de-duplication
-        // below asked whether a set of full names held `northhelm-app`, which it never does, so every
+        // below asked whether a set of full names held `orders`, which it never does, so every
         // catalogued role was listed a second time as a bare-role row beside its own registration.
         // The bare row is what the owner then typed into the composer, which demands a full name and
         // refused the thing the list had just printed.

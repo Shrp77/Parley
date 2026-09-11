@@ -64,6 +64,26 @@ internal static class Prompting
         IReadOnlyList<string> choices) =>
         new(title, description, choices);
 
+    /// <summary>How many rows a sentence needs when it is wrapped.</summary>
+    /// <param name="text">The sentence.</param>
+    /// <returns>The row count, at least one.</returns>
+    /// <remarks>
+    /// <para>
+    /// Estimated against a width this cannot know yet — a dialog is a percentage of a screen that
+    /// has not been laid out. Sixty is the narrow end of what most of an ordinary terminal gives,
+    /// so the estimate errs towards more rows than are needed: a label with a spare row below it
+    /// looks like spacing, and one row short is a sentence cut in half.
+    /// </para>
+    /// <para>
+    /// <b>One copy.</b> <see cref="FormDialog"/> grew this first, for the form the owner met
+    /// running off the screen; <see cref="ChoiceDialog"/> then met the same defect from the other
+    /// direction, its description squeezed to nothing by the list below it. Two dialogs measuring
+    /// text two ways is how they come to disagree about what fits.
+    /// </para>
+    /// </remarks>
+    internal static int Rows(string text) =>
+        Math.Max(1, (int)Math.Ceiling((text ?? string.Empty).Length / 60.0));
+
     /// <summary>Opens a dialog and returns the session it is running in.</summary>
     /// <param name="app">The application to open it in.</param>
     /// <param name="dialog">The dialog.</param>
@@ -207,7 +227,11 @@ internal sealed class ChoiceDialog : Dialog
 
         Title = title;
         Width = Dim.Percent(70);
-        Height = Dim.Percent(60);
+
+        // **Taller when there is more to show, and never taller than the screen.** A percentage
+        // fixed at sixty was the whole dialog's height however many choices it held, which is what
+        // put twenty agents into a box with room for fourteen of them.
+        Height = Dim.Percent(choices.Count > 6 ? 85 : 60);
 
         var said = new Label
         {
@@ -215,15 +239,31 @@ internal sealed class ChoiceDialog : Dialog
             X = 1,
             Y = 0,
             Width = Dim.Fill(2),
-            Height = Dim.Fill(choices.Count + 2),
+
+            // **Its own words, not what is left after the choices.** This was
+            // `Dim.Fill(choices.Count + 2)`, which gives the description whatever the list does not
+            // want — so a picker with twenty rows in it drew no description at all. The rule this
+            // surface is held to is that a choice sits behind a description of it, and a
+            // description nobody can read is the same as none. `DoorsAreReadableTests` did not
+            // catch it because every dialog it drives offers two or three choices.
+            Height = Prompting.Rows(description),
         };
+
+        said.TextFormatter.WordWrap = true;
 
         _choices = new ListView
         {
             X = 1,
             Y = Pos.Bottom(said),
             Width = Dim.Fill(2),
-            Height = choices.Count,
+
+            // **Whatever is left, rather than one row per choice.** A list told it is twenty rows
+            // tall inside an eighteen-row dialog believes every row is visible, so it never
+            // scrolls: the cursor walks off the bottom edge and the highlight — the only mark
+            // saying which row a key is about to act on — goes with it. Reported by the owner
+            // against a project with nineteen agents. Filling the space is what makes the
+            // viewport true, and the toolkit scrolls on its own once it is.
+            Height = Dim.Fill(),
         };
 
         _choices.SetSource(new System.Collections.ObjectModel.ObservableCollection<string>([.. choices]));
@@ -288,6 +328,10 @@ internal sealed class ChoiceDialog : Dialog
 /// what somebody typed is worse than one that refuses it: they are left believing they typed
 /// something they did not.
 /// </param>
+/// <param name="Long">
+/// Whether what goes in it can run past one line. A long field is several rows deep, wraps, takes
+/// a line break, and grows and shrinks as it is written into.
+/// </param>
 /// <remarks>
 /// <b>Correcting and reporting are both here, and neither replaces the other.</b> A rule that can
 /// be applied should be — the owner typed <c>TimeTracker</c> into the project name and met no
@@ -301,7 +345,8 @@ internal sealed record FormField(
     string Proposal = "",
     Func<string, string?>? Problem = null,
     Func<string, string>? Correct = null,
-    string? Corrected = null);
+    string? Corrected = null,
+    bool Long = false);
 
 /// <summary>A dialog collecting several lines at once, each checked as it is typed.</summary>
 /// <remarks>
@@ -318,9 +363,27 @@ internal sealed record FormField(
 /// </remarks>
 internal sealed class FormDialog : Dialog
 {
+    /// <summary>How many rows a long field may grow to before it scrolls instead.</summary>
+    /// <remarks>
+    /// A bound rather than no bound: a form is several fields and a screen is one screen, so a
+    /// field free to grow without limit pushes the button that sends off the bottom of it. Eight
+    /// rows is a paragraph, which is what these fields are for; past that the field scrolls and
+    /// the rest of the form stays where it is.
+    /// </remarks>
+    internal const int Deepest = 8;
+
+    /// <summary>How many rows a long field starts at.</summary>
+    /// <remarks>
+    /// Three rather than one, so a field meant for a paragraph looks like one before anything is
+    /// typed. A field that only grows once somebody has overflowed it teaches them it is a line.
+    /// </remarks>
+    internal const int Opening = 3;
+
     private readonly IReadOnlyList<FormField> _fields;
-    private readonly List<TextField> _entries = [];
+    private readonly List<Entry> _entries = [];
+    private readonly List<Label> _asked = [];
     private readonly List<Label> _problems = [];
+    private readonly List<int> _tall = [];
 
     /// <summary>What each field last said about correcting what was typed into it.</summary>
     /// <remarks>
@@ -329,6 +392,7 @@ internal sealed class FormDialog : Dialog
     /// </remarks>
     private readonly List<string> _corrections = [];
     private readonly Button _ok;
+    private readonly Button _cancel;
 
     internal FormDialog(string title, IReadOnlyList<FormField> fields)
     {
@@ -348,77 +412,123 @@ internal sealed class FormDialog : Dialog
         //
         // Measured per field rather than assumed, because the height of the dialog is the sum of
         // them and a fixed three-per-field is what made this wrong.
-        var rows = fields.Select(field => Lines(field.Label)).ToList();
+        _tall.AddRange(fields.Select(field => Prompting.Rows(field.Label)));
 
-        Height = rows.Sum() + (fields.Count * 2) + 6;
-
-        var y = 0;
-
-        for (var at = 0; at < fields.Count; at++)
+        foreach (var field in fields)
         {
-            var field = fields[at];
-            var tall = rows[at];
-
-            var asked = new Label
-            {
-                Text = field.Label,
-                X = 1,
-                Y = y,
-                Width = Dim.Fill(2),
-                Height = tall,
-            };
+            var asked = new Label { Text = field.Label, X = 1, Width = Dim.Fill(2) };
 
             asked.TextFormatter.WordWrap = true;
 
-            var entry = new TextField
-            {
-                X = 1,
-                Y = y + tall,
-                Width = Dim.Fill(2),
-                Text = field.Correct is { } correct ? correct(field.Proposal) : field.Proposal,
-            };
+            var entry = Entry.For(field);
+            var why = new Label { X = 1, Width = Dim.Fill(2), Text = string.Empty };
 
-            var why = new Label { X = 1, Y = y + tall + 1, Width = Dim.Fill(2), Text = string.Empty };
-
-            entry.TextChanged += (_, _) =>
+            entry.Changed += () =>
             {
-                Fix(entry, field);
+                if (entry.Short is { } line)
+                {
+                    Fix(line, field);
+                }
+
                 Check();
+                Regrow();
             };
 
+            _asked.Add(asked);
             _entries.Add(entry);
             _problems.Add(why);
             _corrections.Add(string.Empty);
 
-            Add(asked, entry, why);
-
-            y += tall + 2;
+            Add(asked, entry.View, why);
         }
 
-        _ok = new Button { Title = Prompting.Confirm, X = 1, Y = y + 1, IsDefault = true };
-
-        var cancel = new Button { Title = Prompting.Cancel, X = Pos.Right(_ok) + 1, Y = y + 1 };
+        _ok = new Button { Title = Prompting.Confirm, X = 1, IsDefault = true };
+        _cancel = new Button { Title = Prompting.Cancel, X = Pos.Right(_ok) + 1 };
 
         _ok.Accepting += (_, args) => { args.Handled = true; Finish(taken: true); };
-        cancel.Accepting += (_, args) => { args.Handled = true; Finish(taken: false); };
+        _cancel.Accepting += (_, args) => { args.Handled = true; Finish(taken: false); };
 
-        Add(_ok, cancel);
+        Add(_ok, _cancel);
+        Lay();
         Check();
     }
 
     /// <summary>
-    /// How many rows a label needs.
+    /// Puts every row where it goes, given how deep each field currently is.
     /// </summary>
-    /// <param name="label">The label.</param>
-    /// <returns>The row count, at least one.</returns>
     /// <remarks>
-    /// Estimated against a width this cannot know yet — the dialog is a percentage of a screen
-    /// that has not been laid out. Sixty is the narrow end of what eighty per cent of an ordinary
-    /// terminal gives, so the estimate errs towards more rows than are needed: a label with a
-    /// spare row below it looks like spacing, and one row short is the defect this replaces.
+    /// <para>
+    /// <b>Run again whenever a field changes depth</b>, which is what makes a long field grow and
+    /// shrink under what is being written into it rather than staying whatever size it was built
+    /// at. The positions are absolute rather than relative for the plain reason that this is the
+    /// one place they are decided: a chain of <c>Pos.Bottom</c> would put the same arithmetic in
+    /// the toolkit's hands and leave nothing here to read.
+    /// </para>
+    /// <para>
+    /// A form of ordinary one-line fields lands exactly where it did before long fields existed —
+    /// label, field, a row for what is wrong with it — which is what keeps every screen built on
+    /// this one looking as it did.
+    /// </para>
     /// </remarks>
-    private static int Lines(string label) =>
-        Math.Max(1, (int)Math.Ceiling((label ?? string.Empty).Length / 60.0));
+    private void Lay()
+    {
+        var y = 0;
+
+        for (var at = 0; at < _entries.Count; at++)
+        {
+            var tall = _tall[at];
+            var deep = _entries[at].Rows;
+
+            _asked[at].Y = y;
+            _asked[at].Height = tall;
+
+            _entries[at].View.Y = y + tall;
+            _entries[at].View.Height = deep;
+
+            _problems[at].Y = y + tall + deep;
+
+            y += tall + deep + 1;
+        }
+
+        _ok.Y = y + 1;
+        _cancel.Y = y + 1;
+
+        Height = y + 6;
+
+        _laid.Clear();
+        _laid.AddRange(_entries.Select(entry => entry.Rows));
+
+        SetNeedsLayout();
+
+        // **Laid out here rather than left for the next iteration, and that is not only for the
+        // tests.** A field that grows under a keystroke has to be the right size before the
+        // keystroke after it, because the next thing this does is measure itself again — so a
+        // deferred layout means every measurement is one keystroke behind and the field settles a
+        // row short. The harness never pumps the loop at all, which is where it showed up.
+        if (IsInitialized)
+        {
+            Layout();
+        }
+    }
+
+    /// <summary>Re-lays the form when a field has changed how deep it is.</summary>
+    /// <remarks>
+    /// Compared before laying rather than laying on every keystroke: a form that re-arranged itself
+    /// on each character would move the cursor's row under somebody typing into the field above.
+    /// </remarks>
+    private void Regrow()
+    {
+        if (_laid.Count == _entries.Count
+            && _entries.Zip(_laid, (entry, was) => entry.Rows == was).All(same => same))
+        {
+            return;
+        }
+
+        Lay();
+    }
+
+    /// <summary>How deep each field was when the form was last laid out.</summary>
+    private readonly List<int> _laid = [];
 
     /// <summary>Raised when the person has filled it in or declined to.</summary>
     internal event EventHandler<IReadOnlyList<string>?>? Done;
@@ -436,7 +546,13 @@ internal sealed class FormDialog : Dialog
     {
         _entries[at].Text = text;
         Check();
+        Regrow();
     }
+
+    /// <summary>The field somebody types into, so a test can drive it.</summary>
+    /// <param name="at">Which field.</param>
+    /// <returns>The view.</returns>
+    internal View Field(int at) => _entries[at].View;
 
     /// <summary>Answers as if the person had pressed the button.</summary>
     /// <param name="taken">Whether they went ahead.</param>

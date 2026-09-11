@@ -129,6 +129,8 @@ public sealed class AddingTests : IAsyncDisposable
 
         await shell.Add();
 
+        ((Browsing)driving.Find(Browsing.Name)).Choose(Workspace);
+
         var form = (FormDialog)driving.Find(Adding.Title);
 
         form.Fill(0, Workspace);
@@ -258,6 +260,8 @@ public sealed class AddingTests : IAsyncDisposable
 
         await shell.Add();
 
+        ((Browsing)driving.Find(Browsing.Name)).Choose(Workspace);
+
         var form = (FormDialog)driving.Find(Adding.Title);
 
         form.Fill(0, Workspace);
@@ -298,7 +302,7 @@ public sealed class AddingTests : IAsyncDisposable
     {
         // Shown before anything is written, because this writes into a repository that is not the
         // one the person is looking at.
-        var said = Adding.Describe(Workspace, CataloguePath, "acme");
+        var said = Adding.Describe(Workspace, CataloguePath, "acme", already: null);
 
         Assert.Contains(Enrolment.LaunchPath(Workspace), said, StringComparison.Ordinal);
         Assert.Contains(CataloguePath, said, StringComparison.Ordinal);
@@ -349,6 +353,14 @@ public sealed class AddingTests : IAsyncDisposable
         Driving.Session driving, Shell shell, string workspace, string role)
     {
         await shell.Add();
+
+        // **The walk comes first now.** Adding opens a folder picker before it asks for a name,
+        // because the owner was typing an absolute path per agent. These tests know the path, so
+        // they take the folder the picker opens on and let the form's first field be filled in —
+        // which is exactly what somebody who knows the path does, since the field stays typed into.
+        var browsing = (Browsing)driving.Find(Browsing.Name);
+
+        browsing.Choose(workspace);
 
         var form = (FormDialog)driving.Find(Adding.Title);
 

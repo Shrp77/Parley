@@ -89,6 +89,8 @@ public sealed class ProbeTwentyNineTests : IAsyncDisposable
     {
         await shell.Add();
 
+        ((Browsing)driving.Find(Browsing.Name)).Choose(workspace);
+
         var form = (FormDialog)driving.Find(Adding.Title);
 
         form.Fill(0, workspace);

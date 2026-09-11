@@ -115,7 +115,10 @@ public sealed class ProbeFiveTests : IAsyncDisposable
         await shell.Add();
         await shell.Settled;
 
-        Assert.NotNull(driving.Find(Adding.Title));
+        // The first dialog adding opens is the folder picker now. What this probe is about is
+        // unchanged: the action does something rather than returning silently because the projects
+        // list off screen was never filled.
+        Assert.NotNull(driving.Find(Browsing.Name));
     }
 
     [Fact]

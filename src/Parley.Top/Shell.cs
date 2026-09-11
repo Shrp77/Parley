@@ -1148,8 +1148,11 @@ internal sealed class Shell : Window
                 app,
                 project,
                 new Catalogue(ManifestPath),
-                async (agent, token) => await BrokerDirectory.ReadAsync(async () =>
-                    await new BrokerClient(_directory.ClientFor(project))
+                // **The project is a parameter rather than the one on screen**, because the start
+                // does not always go to it: a repository another project already starts unattended
+                // is started through that one, which is the only node that names it.
+                async (asked, agent, token) => await BrokerDirectory.ReadAsync(async () =>
+                    await new BrokerClient(_directory.ClientFor(asked))
                         .StartAsync(agent, "it was just added", token).ConfigureAwait(false))
                     .ConfigureAwait(false),
                 Queue,
@@ -1158,8 +1161,19 @@ internal sealed class Shell : Window
                 Said = said;
 
                 await SelectAsync(project, _reading.Token).ConfigureAwait(false);
-            })
+            },
+                _lastAdded,
+                workspace => _lastAdded = workspace)
             : Task.CompletedTask;
+
+    /// <summary>The repository this session last added, or null when it has added none.</summary>
+    /// <remarks>
+    /// <b>The session, not the machine.</b> Somebody enrolling a set of repositories does them one
+    /// after another out of one folder, and that is the run this shortens. Writing it down between
+    /// runs would be a second place a deployment's shape is recorded, for a convenience worth one
+    /// keystroke.
+    /// </remarks>
+    private string? _lastAdded;
 
     /// <summary>Opens the dialog that withdraws the selected agent.</summary>
     /// <returns>When the dialog is open.</returns>
@@ -2205,12 +2219,22 @@ internal sealed class Shell : Window
 
         void Open(AgentName? peer, IReadOnlyList<AgentName>? all)
         {
+        // **Everything that is prose is a long field, and the name is not.** Rule 8.1's three parts
+        // are sentences and a notification's text may run to the whole of rule 8.5's cap — the
+        // owner wrote a long one into a field one row tall and could see about sixty characters of
+        // it. A conversation name stays one line: it is a token that has to survive being written
+        // down and read back, and Enter in it is how every form on this surface is finished.
         var fields = asking
             ?
             [
-                new FormField("What are you trying to decide?", string.Empty, Participation.RequiredProblem),
-                new FormField("The question:", string.Empty, Participation.RequiredProblem),
-                new FormField("What turns on the answer?", string.Empty, Participation.ConsequencesProblem),
+                new FormField(
+                    "What are you trying to decide?", string.Empty, Participation.RequiredProblem,
+                    Long: true),
+                new FormField(
+                    "The question:", string.Empty, Participation.RequiredProblem, Long: true),
+                new FormField(
+                    "What turns on the answer?", string.Empty, Participation.ConsequencesProblem,
+                    Long: true),
                 new FormField(
                     "Conversation name:",
                     inConversation ?? Participation.Suggested(),
@@ -2218,7 +2242,9 @@ internal sealed class Shell : Window
             ]
             : new List<FormField>
             {
-                new("What are you telling them?", string.Empty, Participation.RequiredProblem),
+                new(
+                    "What are you telling them?", string.Empty, Participation.RequiredProblem,
+                    Long: true),
                 new(
                     "Conversation name:",
                     inConversation ?? Participation.Suggested(),

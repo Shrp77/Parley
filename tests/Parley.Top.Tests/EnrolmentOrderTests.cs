@@ -25,7 +25,7 @@ public sealed class EnrolmentOrderTests
     {
         // A process appearing on somebody's machine is not something a surface may do without its
         // description covering it. Two paths and a sentence, and the sentence is the new one.
-        var described = Adding.Describe("C:/repo", "C:/store/node.json", "alpha");
+        var described = Adding.Describe("C:/repo", "C:/store/node.json", "alpha", already: null);
 
         Assert.Contains(".mcp.json", described, StringComparison.Ordinal);
         Assert.Contains("node.json", described, StringComparison.Ordinal);

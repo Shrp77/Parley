@@ -40,6 +40,16 @@ namespace Parley.Setup;
 /// </remarks>
 public static class Enrolment
 {
+    /// <summary>A repository another project already starts unattended.</summary>
+    /// <param name="Project">The project that starts it.</param>
+    /// <param name="Role">The role it is catalogued under there.</param>
+    /// <remarks>
+    /// Two of <see cref="Consent"/>'s three fields, and the path is the one left out: a surface
+    /// describing why a second project gets no catalogue line has no use for the first project's
+    /// catalogue path, and putting a file path on a screen invites somebody to go and edit it.
+    /// </remarks>
+    public sealed record Shared(string Project, string Role);
+
     /// <summary>The launch configuration's name, in every repository.</summary>
     public const string LaunchFile = ".mcp.json";
 
@@ -53,6 +63,32 @@ public static class Enrolment
     /// <param name="workspace">The repository directory.</param>
     /// <returns>The path, whether or not anything is there.</returns>
     public static string LaunchPath(string workspace) => Path.Combine(workspace, LaunchFile);
+
+    /// <summary>Which project already starts a repository unattended, or null when none does.</summary>
+    /// <param name="deployment">Every project the machine's manifest names.</param>
+    /// <param name="workspace">The repository about to be enrolled.</param>
+    /// <param name="catalogue">The catalogue about to be written, which is not consulted.</param>
+    /// <returns>The project and the role it catalogues the repository under, or null.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A public way to ask what <see cref="Catalogues"/> answers internally</b>, because a
+    /// surface has to know the answer <em>before</em> it describes what it is about to write.
+    /// <c>AddAsync</c> refuses a second unattended start on its own and that is the guarantee; a
+    /// screen that could only find out by being refused would have to offer a repository already
+    /// held elsewhere and then apologise, which is what the terminal did until this existed.
+    /// </para>
+    /// <para>
+    /// It says nothing about a machine it could not check. <c>Elsewhere</c>'s second answer — that a
+    /// catalogue could not be read — is deliberately not surfaced here, because the decision it
+    /// governs is whether to <em>write</em> an unattended entry, and that decision stays inside
+    /// <see cref="AddAsync"/> where it cannot be routed around.
+    /// </para>
+    /// </remarks>
+    public static Shared? StartedElsewhere(
+        IReadOnlyList<ProjectSettings>? deployment, string workspace, string? catalogue) =>
+        Catalogues.Elsewhere(deployment, workspace, catalogue, out _) is { } consent
+            ? new Shared(consent.Project, consent.Role)
+            : null;
 
     /// <summary>
     /// Writes what a plan decided, and says which files changed.

@@ -112,13 +112,50 @@ internal static class Adding
     /// <param name="workspace">The repository.</param>
     /// <param name="catalogueFile">The project's catalogue.</param>
     /// <param name="project">The project it would join.</param>
-    /// <returns>The two paths, and what each would gain.</returns>
-    internal static string Describe(string workspace, string catalogueFile, string project) =>
+    /// <param name="already">
+    /// The project that already starts this workspace unattended, or null when none does.
+    /// </param>
+    /// <returns>The paths, and what each would gain.</returns>
+    /// <remarks>
+    /// <b>One file rather than two when another project already starts this repository</b>, and
+    /// that is the whole of what FR-013 costs. A repository may answer in several projects and may
+    /// be started unattended by only one, because a node starts an agent with its workspace as the
+    /// working directory and two of them is two models editing one checkout. So the second project
+    /// gets the launch entry and no catalogue line.
+    /// </remarks>
+    internal static string Describe(
+        string workspace, string catalogueFile, string project, Enrolment.Shared? already) =>
         $"{Enrolment.LaunchPath(workspace)}{Environment.NewLine}"
         + $"    a parley server naming this repository, and the project '{project}'"
-        + $"{Environment.NewLine}{catalogueFile}{Environment.NewLine}"
-        + $"    a line saying this machine may start it when a question arrives for it"
-        + $"{Environment.NewLine}{Environment.NewLine}{Starts}";
+        + (already is null
+            ? $"{Environment.NewLine}{catalogueFile}{Environment.NewLine}"
+              + "    a line saying this machine may start it when a question arrives for it"
+              + $"{Environment.NewLine}{Environment.NewLine}{Starts}"
+            : $"{Environment.NewLine}{Environment.NewLine}{Shared(already, project)}");
+
+    /// <summary>What is said when another project already starts this repository.</summary>
+    /// <param name="already">The consent that exists.</param>
+    /// <param name="project">The project being joined.</param>
+    /// <returns>The sentences.</returns>
+    /// <remarks>
+    /// <b>This used to be a refusal with no way past it.</b> The terminal always enrolled for
+    /// unattended start, so a repository already catalogued by one project could not be added to a
+    /// second at all — reported by the owner, who tried a different name for it and met the same
+    /// wall, because the rule is keyed on the workspace and has to be: the hazard is two nodes
+    /// running one working directory, and renaming the agent does not make it two directories.
+    /// </remarks>
+    internal static string Shared(Enrolment.Shared already, string project)
+    {
+        ArgumentNullException.ThrowIfNull(already);
+
+        return $"'{already.Project}' already starts this repository unattended, so nothing is "
+            + $"added to '{project}'s catalogue: a repository may answer in several projects and "
+            + "may be started unattended by only one."
+            + $"{Environment.NewLine}{Environment.NewLine}"
+            + $"It is still started once, through '{already.Project}', so that it registers here "
+            + "as well. One working directory has one launch configuration and a client brings up "
+            + "every server in it, so the entry about to be written is one of them.";
+    }
 
     /// <summary>What is said about the process this is about to start.</summary>
     /// <remarks>
@@ -145,14 +182,26 @@ internal static class Adding
     /// </param>
     /// <param name="queue">Runs the writes, so the caller can wait for them.</param>
     /// <param name="done">Told what to say when it is over.</param>
+    /// <param name="lastAdded">
+    /// The repository this session last added, so the search starts beside it.
+    /// </param>
+    /// <param name="remember">Told which repository was added, once both files are written.</param>
     /// <returns>When the first dialog is open.</returns>
+    /// <remarks>
+    /// <b>The folder is found before it is named.</b> The owner was typing an absolute path per
+    /// agent, into a field that could only report afterwards that one of them was not a directory —
+    /// nineteen repositories is nineteen chances to mistype one. What is chosen fills the field in,
+    /// and the field is still typed into: somebody who knows the path should not have to walk to it.
+    /// </remarks>
     internal static Task OpenAsync(
         IApplication app,
         ProjectSettings project,
         Catalogue catalogue,
-        Func<AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
+        Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
         Action<Func<CancellationToken, Task>> queue,
-        Func<string, Task> done)
+        Func<string, Task> done,
+        string? lastAdded = null,
+        Action<string>? remember = null)
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(project);
@@ -160,15 +209,47 @@ internal static class Adding
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(done);
 
+        var browsing = new Browsing(Browsing.Opening(lastAdded));
+        var walk = Prompting.Open(app, browsing);
+
+        browsing.Done += (_, folder) =>
+        {
+            Prompting.Close(app, walk);
+
+            if (folder is null)
+            {
+                _ = done(string.Empty);
+
+                return;
+            }
+
+            Ask(app, project, catalogue, folder, start, queue, done, remember);
+        };
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Asks for the name and the ownership line, with the repository already known.</summary>
+    private static void Ask(
+        IApplication app,
+        ProjectSettings project,
+        Catalogue catalogue,
+        string workspace,
+        Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
+        Action<Func<CancellationToken, Task>> queue,
+        Func<string, Task> done,
+        Action<string>? remember)
+    {
         var form = new FormDialog(
             Title,
             [
-                new FormField("Repository directory on this machine:", string.Empty, WorkspaceProblem),
+                new FormField("Repository directory on this machine:", workspace, WorkspaceProblem),
                 new FormField("The role peers will address it by:", string.Empty, RoleProblem),
                 new FormField(
                     "What it owns, and what it does not (optional, and never invented for you):",
                     string.Empty,
-                    OwnsProblem),
+                    OwnsProblem,
+                    Long: true),
             ]);
 
         var token = Prompting.Open(app, form);
@@ -184,10 +265,8 @@ internal static class Adding
                 return;
             }
 
-            Confirm(app, project, catalogue, values, start, queue, done);
+            Confirm(app, project, catalogue, values, start, queue, done, remember);
         };
-
-        return Task.CompletedTask;
     }
 
     /// <summary>Shows the two paths and writes them only if the person says so.</summary>
@@ -196,19 +275,28 @@ internal static class Adding
         ProjectSettings project,
         Catalogue catalogue,
         IReadOnlyList<string> values,
-        Func<AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
+        Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
         Action<Func<CancellationToken, Task>> queue,
-        Func<string, Task> done)
+        Func<string, Task> done,
+        Action<string>? remember)
     {
         var workspace = Path.GetFullPath(values[0].Trim());
         var role = values[1].Trim();
 
+        // **Asked here, before the description is written**, because it changes what the
+        // description says: a repository another project already starts gets one file rather than
+        // two. Read now rather than at the moment of writing for the reason the deployment itself
+        // is read now — a catalogue is a file, and what it says a second ago is what somebody is
+        // being asked to agree to.
+        var already = Enrolment.StartedElsewhere(
+            catalogue.Deployment(), workspace, Catalogue.Proposed(project));
+
         var asking = Prompting.Choose(
             ConfirmTitle,
-            Describe(workspace, Catalogue.Proposed(project), project.Name.Value)
+            Describe(workspace, Catalogue.Proposed(project), project.Name.Value, already)
             + Environment.NewLine
             + Environment.NewLine
-            + (Catalogue.Exists(project)
+            + (Catalogue.Exists(project) || already is not null
                 ? string.Empty
                 : $"This project names no catalogue, so one is created at "
                   + $"{Catalogue.Proposed(project)} and recorded on it. Its broker restarts to "
@@ -229,39 +317,70 @@ internal static class Adding
             }
 
             queue(token2 => WriteAsync(
-                project, catalogue, workspace, role, values[2].Trim(), start, token2, done));
+                project, catalogue, workspace, role, values[2].Trim(), start, token2, done,
+                remember, already));
         };
     }
 
-    /// <summary>Asks the broker to start the agent that was just added.</summary>
-    /// <param name="start">Asks the broker, or null when there is none to ask.</param>
+    /// <summary>Asks a broker to start the agent that was just added.</summary>
+    /// <param name="start">Asks a project's broker, or null when there is none to ask.</param>
     /// <param name="role">The role that was added.</param>
     /// <param name="project">The project it joined.</param>
+    /// <param name="already">
+    /// The project that starts this repository unattended, or null when this one does.
+    /// </param>
+    /// <param name="deployment">Every project on the machine, so that one can be found.</param>
     /// <param name="cancellationToken">Stops the call.</param>
     /// <returns>What to say about it.</returns>
     /// <remarks>
-    /// <b>A failure here is reported and never thrown.</b> The two files are already written and
-    /// the agent is already catalogued, so a broker that did not answer leaves an agent somebody
-    /// can still start later -- exactly the state 005 shipped. Losing the whole enrolment because
-    /// the last of three steps could not be taken would be the worse outcome.
+    /// <para>
+    /// <b>A failure here is reported and never thrown.</b> The files are already written and the
+    /// agent is already catalogued, so a broker that did not answer leaves an agent somebody can
+    /// still start later -- exactly the state 005 shipped. Losing the whole enrolment because the
+    /// last of three steps could not be taken would be the worse outcome.
+    /// </para>
+    /// <para>
+    /// <b>The start goes to whichever project can actually take it, which is not always this
+    /// one.</b> When another project holds the unattended consent, this project's node does not
+    /// name the role and would refuse — so the request goes to the one that does. That is not a
+    /// detour: the node starts a client in the repository's own directory, the client brings up
+    /// every parley server in its launch configuration, and the entry just written is one of them.
+    /// One start, two registrations.
+    /// </para>
     /// </remarks>
     private static async Task<string> StartAsync(
-        Func<AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
+        Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
         string role,
         ProjectSettings project,
+        Enrolment.Shared? already,
+        IReadOnlyList<ProjectSettings> deployment,
         CancellationToken cancellationToken)
     {
-        if (start is null || !AgentName.TryCreate($"{role}@{MachineName.Current}", out var agent))
+        if (start is null)
         {
             return NotStarted;
         }
 
-        var asked = await start(agent, cancellationToken).ConfigureAwait(false);
+        var (asking, named) = already is null
+            ? (project, role)
+            : (deployment.FirstOrDefault(one =>
+                string.Equals(one.Name.Value, already.Project, StringComparison.Ordinal)),
+                already.Role);
+
+        if (asking is null || !AgentName.TryCreate($"{named}@{MachineName.Current}", out var agent))
+        {
+            return NotStarted;
+        }
+
+        var asked = await start(asking, agent, cancellationToken).ConfigureAwait(false);
 
         return !asked.Reachable
             ? $"{asked.Problem} {NotStarted}"
             : asked.Value
-                ? $"Started '{role}'. It registers itself as it attaches."
+                ? already is null
+                    ? $"Started '{role}'. It registers itself as it attaches."
+                    : $"Started it through '{already.Project}', which is what starts this "
+                      + $"repository. It registers as '{role}' here as it attaches."
                 : NotStarted;
     }
 
@@ -291,24 +410,32 @@ internal static class Adding
         + "this screen. Until something has, it cannot be asked or told: a name nothing has "
         + "registered is not one messages can be addressed to.";
 
-    /// <summary>Writes the two files, creating the catalogue first when there is none.</summary>
+    /// <summary>Writes the files, creating the catalogue first when there is none.</summary>
     private static async Task WriteAsync(
         ProjectSettings project,
         Catalogue catalogue,
         string workspace,
         string role,
         string owns,
-        Func<AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
+        Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
         CancellationToken cancellationToken,
-        Func<string, Task> done)
+        Func<string, Task> done,
+        Action<string>? remember,
+        Enrolment.Shared? already)
     {
         var said = new List<string>();
+        var deployment = catalogue.Deployment();
 
         try
         {
             var file = await catalogue.EnsureAsync(project, said, cancellationToken).ConfigureAwait(false);
 
-            var entry = new EnrollmentEntry(workspace, role, owns.Length == 0 ? null : owns, Unattended: true)
+            // **Unattended only when nothing else starts this repository.** FR-013 admits the
+            // repository into a second project and refuses it a second unattended start, and this
+            // is where the difference is made: asking for one here is what used to make the whole
+            // enrolment throw, with no way past it from this screen.
+            var entry = new EnrollmentEntry(
+                workspace, role, owns.Length == 0 ? null : owns, Unattended: already is null)
             {
                 Enroll = true,
                 OwnsApproved = owns.Length > 0,
@@ -320,8 +447,12 @@ internal static class Adding
                 file,
                 Path.Combine(workspace, "CLAUDE.md"),
                 cancellationToken,
-                catalogue.Deployment(),
+                deployment,
                 catalogue.ManifestPath).ConfigureAwait(false);
+
+            // Remembered only once the files are on disk, so the next search opens beside a
+            // repository that really is one of this project's agents.
+            remember?.Invoke(workspace);
 
             said.Add($"{Added}'{role}'.");
             said.AddRange(outcome.Notes);
@@ -336,7 +467,8 @@ internal static class Adding
             //
             // Nothing here claims to be anybody. The start is a request; the registration is the
             // agent's own act.
-            said.Add(await StartAsync(start, role, project, cancellationToken).ConfigureAwait(false));
+            said.Add(await StartAsync(start, role, project, already, deployment, cancellationToken)
+                .ConfigureAwait(false));
         }
         catch (InterruptedEnrolment interrupted)
         {

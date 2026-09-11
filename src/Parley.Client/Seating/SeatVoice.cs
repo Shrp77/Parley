@@ -7,6 +7,17 @@ using Wire = Parley.Transport;
 
 namespace Parley.Client.Seating;
 
+/// <summary>One recipient a broadcast could not be sent to, and why not.</summary>
+/// <param name="Agent">Who it was for.</param>
+/// <param name="Because">Why the broker would not take it, as a sentence.</param>
+/// <remarks>
+/// <b>The reason used to be dropped and the name kept, which is exactly the wrong half.</b> The
+/// wire carries a rejection on every refusal and the single-recipient path already turns it into a
+/// sentence; a broadcast, where one cause can refuse the whole roster, reported nineteen names and
+/// no cause at all. A person reading that knows who did not get it and has no idea what to do.
+/// </remarks>
+public sealed record Refusal(string Agent, string Because);
+
 /// <summary>What became of an answer.</summary>
 /// <param name="Closed">Whether the exchange is now settled.</param>
 /// <param name="Says">A sentence for the person who wrote it.</param>
@@ -276,7 +287,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
         var counted = new Dictionary<Wire.WakeOutcome, int>();
         var unreachable = new List<string>();
-        var turnedAway = new List<string>();
+        var turnedAway = new List<Refusal>();
         var told = 0;
         var repeated = 0;
         var stopped = false;
@@ -309,14 +320,19 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             {
                 // One unreachable peer must not lose the other nineteen sends. The broker being
                 // gone entirely will show up as every one of them failing, which the report says.
-                turnedAway.Add($"{peer.Value} ({failure.Status.Detail})");
+                turnedAway.Add(new Refusal(peer.Value, failure.Status.Detail));
 
                 continue;
             }
 
             if (!reply.Ok)
             {
-                turnedAway.Add(peer.Value);
+                // **The reason travels with the name, and it used to be thrown away here.** The
+                // report then read "Refused for" and nineteen names, which is the one shape that
+                // cannot be acted on: the wire already carries why, the single-recipient path
+                // already says it, and this — the path where every recipient can be refused for
+                // one cause — was the one that said least.
+                turnedAway.Add(new Refusal(peer.Value, Because(reply.Refusal)));
 
                 continue;
             }
@@ -368,7 +384,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         bool stopped,
         IReadOnlyDictionary<Wire.WakeOutcome, int> counted,
         IReadOnlyList<string> unreachable,
-        IReadOnlyList<string> turnedAway)
+        IReadOnlyList<Refusal> turnedAway)
     {
         ArgumentNullException.ThrowIfNull(counted);
         ArgumentNullException.ThrowIfNull(unreachable);
@@ -417,14 +433,26 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         // agent next runs.
         if (unreachable.Count > 0)
         {
+            // Abbreviated for the reason the refusals are: nineteen names on one line is a line
+            // that runs off the screen, and this is the half that is not even a failure.
             _ = said.Append(" Waiting for ")
-                .Append(string.Join(", ", unreachable))
+                .Append(Some(unreachable))
                 .Append(" — nothing here can start them.");
         }
 
-        if (turnedAway.Count > 0)
+        foreach (var group in turnedAway
+            .GroupBy(refusal => refusal.Because, StringComparer.Ordinal)
+            .OrderByDescending(group => group.Count()))
         {
-            _ = said.Append(" Refused for ").Append(string.Join(", ", turnedAway)).Append('.');
+            // **Grouped by why, and the names abbreviated.** "Refused for" followed by nineteen
+            // names is a line that runs off the screen and says nothing a person can act on —
+            // reported by the owner, whose whole roster was refused for one cause and whose
+            // message was cut off before the end of the list. The reason is the actionable half,
+            // so it comes first and is said once.
+            _ = said.Append(" Refused for ")
+                .Append(Some([.. group.Select(refusal => refusal.Agent)]))
+                .Append(": ")
+                .Append(group.Key);
         }
 
         if (stopped)
@@ -433,6 +461,54 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         }
 
         return said.ToString();
+    }
+
+    /// <summary>Why the broker would not take a notification, as a sentence.</summary>
+    /// <param name="rejection">What it said.</param>
+    /// <returns>The sentence, ending in a full stop.</returns>
+    /// <remarks>
+    /// The same four answers <see cref="NotifyAsync"/> gives for one recipient, worded for a group
+    /// rather than for a name. One source for both would be better still and is not reachable: the
+    /// single-recipient wording names the agent inside the sentence, which is what makes it read
+    /// well there and useless here.
+    /// </remarks>
+    internal static string Because(Wire.NotifyRejection rejection) => rejection switch
+    {
+        // **The one a fresh deployment meets, and the one worth being specific about.** §14 counts
+        // a name nothing has registered as unroutable, and every message type is refused for one —
+        // so this is not a quiet agent but an unaddressable one, and the remedy is a start rather
+        // than a retry.
+        Wire.NotifyRejection.RecipientUnroutable =>
+            "nothing has registered under that name yet, so nothing can be addressed to it. "
+            + "Starting it once is what registers it.",
+
+        Wire.NotifyRejection.SenderRetired =>
+            "your seat has been retired, so nothing was sent. Take a seat again to send it.",
+
+        Wire.NotifyRejection.ConversationClosed =>
+            "that conversation is closed, so nothing was added to it.",
+
+        _ => "the broker refused it and did not say why.",
+    };
+
+    /// <summary>How many names to print before counting the rest.</summary>
+    /// <remarks>
+    /// Four fits a status line beside the sentence that carries them. The number matters less than
+    /// there being one: the report this replaces printed every name it had, and the owner's screen
+    /// cut the line off part way through the list.
+    /// </remarks>
+    private const int Named = 4;
+
+    /// <summary>Some of a list of names, and a count of whatever is left.</summary>
+    /// <param name="names">The names.</param>
+    /// <returns>The phrase.</returns>
+    internal static string Some(IReadOnlyList<string> names)
+    {
+        ArgumentNullException.ThrowIfNull(names);
+
+        return names.Count <= Named
+            ? string.Join(", ", names)
+            : string.Join(", ", names.Take(Named)) + $" and {names.Count - Named} more";
     }
 
     /// <summary>What is said when a project holds nobody to tell.</summary>

@@ -598,7 +598,59 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Active plan**: `specs/012-one-catalogue-per-machine/` — 0.25.0, step 1 of two. **Adding an agent
+- **First use of the rebuilt deployment** — 0.25.1, no protocol change. Five defects the owner met
+  within an hour of running the terminal against nineteen real agents, and none of them was visible
+  from inside the suite.
+
+  **The peer picker did not scroll, and it ate its own description.** `ChoiceDialog` gave its list
+  `Height = choices.Count`, so twenty rows inside an eighteen-row dialog believed every row was
+  visible and had nothing to scroll: the cursor walked off the bottom and the highlight — the only
+  mark saying which row a key acts on — went with it. The same arithmetic gave the label
+  `Dim.Fill(choices.Count + 2)`, so a long roster squeezed the description to nothing. The list fills
+  the space now and the label is sized from its own words. **`DoorsAreReadableTests` could not see
+  either**, because every dialog it drives offers two or three choices.
+
+  **Read the list's viewport, never the screen, and that was learned here.** The harness never pumps
+  the main loop, so `Driving.Text()` returns whatever was last drawn — a screen assertion passes or
+  fails on when a redraw happened. The first probe written for this reported a bug in the toolkit
+  that was not there.
+
+  **A broadcast named who was refused and dropped why.** `NotifyReply` has carried a rejection since
+  the operation existed and the single-recipient path turns it into a sentence; the broadcast — the
+  one path where a single cause can refuse the whole roster — threw it away and printed nineteen
+  names. The owner's screen cut the line off part way through them. Grouped by reason now, names
+  abbreviated after four, and the same abbreviation applied to the *waiting for* list beside it,
+  which had the identical problem and no report yet.
+
+  **Every field was one row tall, and rule 8.5's cap is eight thousand characters.** Fields that hold
+  prose are several rows deep and grow and shrink under what is written into them; a name, a path or
+  a project stays one line, because Enter in those is how every form here is finished and a line
+  break in a project name is a value that will not survive a manifest. `TextView` is deprecated in
+  Terminal.Gui 2.4.17 in favour of a package this repository does not have — the suppression is one
+  file, one type, and says why taking the replacement is the owner's call.
+
+  **A repository could not be added to a second project at all.** SPEC.md §4.1 permits it and 009
+  built the tooling; what stopped it was one word on this surface — the terminal enrolled with
+  `Unattended: true` always, and FR-013 refuses a second unattended start for one workspace. So a
+  rule that was never about the second project refused it, and a different name did not help
+  **and must not**: the rule is keyed on the workspace because the hazard is two nodes running one
+  working directory. The second project gets the launch entry, no catalogue line, and a start
+  through the project that does hold the consent — one node starts a client in the repository's own
+  directory, the client brings up every parley server in its launch configuration, and the entry just
+  written is one of them. One start, two registrations.
+
+  **Adding opens a folder picker first.** Nineteen repositories was nineteen absolute paths typed
+  into a field that could only report afterwards that one was not a directory. It starts beside the
+  last repository added this session, and at the home directory before that. Built on this surface's
+  own list rather than `OpenDialog`, which runs itself modally — every dialog here is a session a
+  test can drive — and which browses files where the question being asked is *which of these is a
+  repository*. The field is still typed into.
+
+  **Hygiene**: `northhelm-app@matrixmaster` had appeared in a comment in `src/Parley.Client` since
+  012 step 1 and is replaced with placeholders. The pre-existing `TimeTracker` and `north-helm`
+  occurrences recorded in `REVIEW-LEDGER.md` are still there and still the owner's decision.
+
+- **Previous plan**: `specs/012-one-catalogue-per-machine/` — 0.25.0, step 1 of two. **Adding an agent
   now leaves it registered.** `parley enroll apply` wrote two files and started nothing, and said so
   in its own success message — *"Restart your editor in each repository"* — a step that existed only
   to compensate. The terminal's enrolment already started what it wrote; the CLI did not.

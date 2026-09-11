@@ -29,7 +29,7 @@ public sealed class BroadcastReportTests
         bool stopped = false,
         (Wire.WakeOutcome, int)[]? counts = null,
         string[]? unreachable = null,
-        string[]? refused = null) =>
+        Refusal[]? refused = null) =>
         SeatVoice.Reported(
             asked,
             told,
@@ -38,6 +38,10 @@ public sealed class BroadcastReportTests
             (counts ?? []).ToDictionary(one => one.Item1, one => one.Item2),
             unreachable ?? [],
             refused ?? []);
+
+    /// <summary>One refusal, for a reason the caller does not care about.</summary>
+    private static Refusal Turned(string agent) =>
+        new(agent, SeatVoice.Because(Wire.NotifyRejection.RecipientUnroutable));
 
     [Fact]
     public void Reaching_everybody_says_so_without_arithmetic()
@@ -52,7 +56,7 @@ public sealed class BroadcastReportTests
     public void Reaching_some_of_them_says_both_numbers()
     {
         // The whole point. "Told 3" beside nothing else reads as success on a roster of nineteen.
-        var said = Say(19, 3, counts: [(Wire.WakeOutcome.Started, 3)], refused: ["a@b"]);
+        var said = Say(19, 3, counts: [(Wire.WakeOutcome.Started, 3)], refused: [Turned("a@b")]);
 
         Assert.Contains("Told 3 of 19", said, StringComparison.Ordinal);
     }
@@ -116,7 +120,7 @@ public sealed class BroadcastReportTests
                 (Wire.WakeOutcome.Unreachable, 1),
             ],
             unreachable: ["docs@far"],
-            refused: ["gone@here"]);
+            refused: [Turned("gone@here")]);
 
         Assert.Contains("Told 9 of 10", said, StringComparison.Ordinal);
         Assert.Contains("4 being started", said, StringComparison.Ordinal);
@@ -168,9 +172,98 @@ public sealed class BroadcastReportTests
     }
 
     [Fact]
+    public void A_refusal_says_why_and_not_only_who()
+    {
+        // **The owner's report.** A whole roster refused, and the line read "Told 0 of 19. Refused
+        // for" and then nineteen names — which is the one shape nobody can act on. The wire has
+        // carried the reason since the operation existed and this path threw it away.
+        var said = Say(19, 0, refused: [.. Enumerable.Range(1, 19).Select(at => Turned($"a{at}@b"))]);
+
+        Assert.Contains("Told 0 of 19", said, StringComparison.Ordinal);
+        Assert.Contains("nothing has registered under that name", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void One_cause_for_the_whole_roster_is_said_once()
+    {
+        var said = Say(19, 0, refused: [.. Enumerable.Range(1, 19).Select(at => Turned($"a{at}@b"))]);
+        var times = said.Split("Refused for", StringSplitOptions.None).Length - 1;
+
+        // Grouped by why rather than listed by whom. Nineteen copies of one sentence is the same
+        // unreadable line the names were.
+        Assert.Equal(1, times);
+    }
+
+    [Fact]
+    public void Two_causes_are_told_apart()
+    {
+        // The mixed case, which is the one grouping exists for: some names nothing has registered,
+        // and one conversation that closed underneath the send.
+        var said = Say(
+            4,
+            2,
+            counts: [(Wire.WakeOutcome.Started, 2)],
+            refused:
+            [
+                Turned("a@b"),
+                new Refusal("c@d", SeatVoice.Because(Wire.NotifyRejection.ConversationClosed)),
+            ]);
+
+        Assert.Contains("nothing has registered under that name", said, StringComparison.Ordinal);
+        Assert.Contains("that conversation is closed", said, StringComparison.Ordinal);
+        Assert.Contains("a@b", said, StringComparison.Ordinal);
+        Assert.Contains("c@d", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_long_list_of_names_is_cut_short_rather_than_running_off_the_line()
+    {
+        // The other half of the owner's report: the message was cut off part way through the
+        // names. A status row shows one line, so the report has to fit in one.
+        var said = Say(19, 0, refused: [.. Enumerable.Range(1, 19).Select(at => Turned($"agent-{at:00}@here"))]);
+
+        Assert.Contains("and 15 more", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("agent-19@here", said, StringComparison.Ordinal);
+
+        // Short enough that a terminal shows the reason, which is the part that matters.
+        Assert.True(said.Length < 320, $"the report is {said.Length} characters: {said}");
+    }
+
+    [Fact]
+    public void Those_nothing_can_start_are_cut_short_the_same_way()
+    {
+        var said = Say(
+            19,
+            19,
+            counts: [(Wire.WakeOutcome.Unreachable, 19)],
+            unreachable: [.. Enumerable.Range(1, 19).Select(at => $"agent-{at:00}@far")]);
+
+        Assert.Contains("and 15 more", said, StringComparison.Ordinal);
+        Assert.Contains("nothing here can start them", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_retired_seat_refusing_everything_says_that_rather_than_naming_everybody()
+    {
+        // The realistic uniform refusal, and the one where naming the recipients is actively
+        // misleading: nothing is wrong with any of them.
+        var said = Say(
+            19,
+            0,
+            refused:
+            [
+                .. Enumerable.Range(1, 19).Select(at =>
+                    new Refusal($"a{at}@b", SeatVoice.Because(Wire.NotifyRejection.SenderRetired)))
+            ]);
+
+        Assert.Contains("your seat has been retired", said, StringComparison.Ordinal);
+        Assert.Contains("Take a seat again", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Nobody_told_is_not_reported_as_success()
     {
-        var said = Say(4, 0, refused: ["a@b", "c@d", "e@f", "g@h"]);
+        var said = Say(4, 0, refused: [Turned("a@b"), Turned("c@d"), Turned("e@f"), Turned("g@h")]);
 
         Assert.Contains("Told 0 of 4", said, StringComparison.Ordinal);
         Assert.DoesNotContain("Told all", said, StringComparison.Ordinal);
