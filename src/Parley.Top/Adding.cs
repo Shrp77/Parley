@@ -36,7 +36,13 @@ internal static class Adding
     internal const string Title = "Add an agent to this project";
 
     /// <summary>What the confirmation is called.</summary>
-    internal const string ConfirmTitle = "Write these two files?";
+    /// <remarks>
+    /// It said <c>Write these two files?</c> and three were written. The count is gone rather than
+    /// corrected, because it is two or three depending on whether another project already starts
+    /// the repository — and a title that has to be kept in step with a branch in the description
+    /// is a title that will fall out of step with it.
+    /// </remarks>
+    internal const string ConfirmTitle = "Write these files?";
 
     /// <summary>The choice that goes ahead.</summary>
     internal const string Write = "Write them";
@@ -125,13 +131,27 @@ internal static class Adding
     /// </remarks>
     internal static string Describe(
         string workspace, string catalogueFile, string project, Enrolment.Shared? already) =>
-        $"{Enrolment.LaunchPath(workspace)}{Environment.NewLine}"
-        + $"    a parley server naming this repository, and the project '{project}'"
+        $"{Safe.Text(Enrolment.LaunchPath(workspace))}{Environment.NewLine}"
+        + $"    a parley server naming this repository, and the project '{Safe.Text(project)}'"
+        + $"{Environment.NewLine}{Safe.Text(Path.Combine(workspace, Instructions))}{Environment.NewLine}"
+        + $"    a '{EnrollmentPlan.PeersHeading}' section, if it has none, telling the agent how to "
+        + "use Parley"
         + (already is null
-            ? $"{Environment.NewLine}{catalogueFile}{Environment.NewLine}"
+            ? $"{Environment.NewLine}{Safe.Text(catalogueFile)}{Environment.NewLine}"
               + "    a line saying this machine may start it when a question arrives for it"
               + $"{Environment.NewLine}{Environment.NewLine}{Starts}"
             : $"{Environment.NewLine}{Environment.NewLine}{Shared(already, project)}");
+
+    /// <summary>The file in a repository that tells its agent how to work.</summary>
+    /// <remarks>
+    /// <b>Found by lens 2: this was written and never described.</b> Enrolment creates or appends
+    /// to it, and the confirmation named two files — the launch configuration and the catalogue —
+    /// under a title that said "these two files". Three were written. A surface that writes a file
+    /// in somebody's repository without its description covering it is doing something its
+    /// description did not cover, which is the rule this whole dialog exists for, and the
+    /// repository is not the one the person is looking at.
+    /// </remarks>
+    internal const string Instructions = "CLAUDE.md";
 
     /// <summary>What is said when another project already starts this repository.</summary>
     /// <param name="already">The consent that exists.</param>
@@ -148,11 +168,18 @@ internal static class Adding
     {
         ArgumentNullException.ThrowIfNull(already);
 
-        return $"'{already.Project}' already starts this repository unattended, so nothing is "
-            + $"added to '{project}'s catalogue: a repository may answer in several projects and "
-            + "may be started unattended by only one."
+        // **Neutralised like everything else this surface draws, and it was not.** The project name
+        // comes from the manifest and the role from a catalogue — two files a person edits — and
+        // this sentence stands between somebody and a write into a repository. 0.18.9 found exactly
+        // this in `Removing.Describe`, which quoted a manifest's endpoint, store and catalogue path
+        // raw; `Withdrawing` was given the same treatment, and this dialog was the one left out.
+        var starts = Safe.Text(already.Project);
+
+        return $"'{starts}' already starts this repository unattended, so nothing is "
+            + $"added to '{Safe.Text(project)}'s catalogue: a repository may answer in several "
+            + "projects and may be started unattended by only one."
             + $"{Environment.NewLine}{Environment.NewLine}"
-            + $"It is still started once, through '{already.Project}', so that it registers here "
+            + $"It is still started once, through '{starts}', so that it registers here "
             + "as well. One working directory has one launch configuration and a client brings up "
             + "every server in it, so the entry about to be written is one of them.";
     }
@@ -445,7 +472,7 @@ internal static class Adding
                 entry,
                 project.Name.Value,
                 file,
-                Path.Combine(workspace, "CLAUDE.md"),
+                Path.Combine(workspace, Instructions),
                 cancellationToken,
                 deployment,
                 catalogue.ManifestPath).ConfigureAwait(false);

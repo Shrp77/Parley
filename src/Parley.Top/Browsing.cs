@@ -40,7 +40,27 @@ internal sealed class Browsing : Dialog
     internal const string Up = "[ up one folder ]";
 
     /// <summary>What marks a folder that is a repository.</summary>
-    internal const string Repository = "  — a repository";
+    /// <remarks>
+    /// <b>A prefix inside the indent, and it was a suffix.</b> A folder name is somebody else's
+    /// text — on most filesystems it may hold nearly anything — so a name ending in <c>— a
+    /// repository</c> read as one, and the row said something about the folder that was not true.
+    /// The same structural answer the transcript reached in 0.18.6: what a row means is decided by
+    /// where it sits, not by what it happens to end with.
+    /// </remarks>
+    internal const string Repository = "* ";
+
+    /// <summary>What a folder row that is not a repository is indented with instead.</summary>
+    internal const string Plain = "  ";
+
+    /// <summary>What every folder row starts with, and no action row does.</summary>
+    /// <remarks>
+    /// <b>Only an action sits at column zero.</b> <see cref="Use"/> and <see cref="Up"/> are this
+    /// dialog's own words; every other row is a name off the filesystem. Indenting the names is
+    /// what stops a folder called <c>[ add this repository ]</c> from reading as the row that adds
+    /// one — the rule <c>ColumnZeroTests</c> holds the transcript to, in the other place this
+    /// surface draws somebody else's text in a list.
+    /// </remarks>
+    internal const string Indent = "  ";
 
     /// <summary>What is said when a folder cannot be listed.</summary>
     internal const string Unreadable = "This folder cannot be read from here.";
@@ -77,7 +97,23 @@ internal sealed class Browsing : Dialog
 
         Add(_where, _said, _list);
 
-        Show(opening);
+        // **A folder that cannot be opened leaves this with nowhere to go**, which the review gate
+        // found by pointing it at one that does not exist: no path, no rows, one sentence, and no
+        // row to press to get anywhere else. The home directory is the answer for the same reason
+        // it is the answer on a first run, and the machine's root after that — somewhere always
+        // opens, and being somewhere is what makes the rest of the dialog work.
+        foreach (var folder in new[] { opening, Opening(null), Path.GetPathRoot(opening) })
+        {
+            if (folder is { Length: > 0 })
+            {
+                Show(folder);
+            }
+
+            if (At.Length > 0)
+            {
+                return;
+            }
+        }
     }
 
     /// <summary>Raised with the repository chosen, or null when nothing was.</summary>
@@ -190,7 +226,7 @@ internal sealed class Browsing : Dialog
             var name = Path.GetFileName(child);
 
             _steps.Add(new Step(
-                Safe.Text(name) + (IsRepository(child) ? Repository : string.Empty), child));
+                Indent + (IsRepository(child) ? Repository : Plain) + Safe.Text(name), child));
         }
 
         _list.Replace([.. _steps.Select(step => step.Row)], _steps.Count > 0 ? 0 : null);

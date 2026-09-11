@@ -81,8 +81,17 @@ internal static class Prompting
     /// text two ways is how they come to disagree about what fits.
     /// </para>
     /// </remarks>
-    internal static int Rows(string text) =>
-        Math.Max(1, (int)Math.Ceiling((text ?? string.Empty).Length / 60.0));
+    internal static int Rows(string text)
+    {
+        // **The breaks the text already has, and then the ones wrapping will add.** This counted
+        // characters alone, so a description of eight short lines was measured as two rows and the
+        // other six were drawn off the bottom of the label. `ChoiceDialog`'s descriptions are
+        // written with line breaks in them — the add confirmation names two file paths on lines of
+        // their own — which is exactly the shape it got wrong.
+        var lines = (text ?? string.Empty).ReplaceLineEndings("\n").Split('\n');
+
+        return Math.Max(1, lines.Sum(line => Math.Max(1, (int)Math.Ceiling(line.Length / 60.0))));
+    }
 
     /// <summary>Opens a dialog and returns the session it is running in.</summary>
     /// <param name="app">The application to open it in.</param>
@@ -228,10 +237,20 @@ internal sealed class ChoiceDialog : Dialog
         Title = title;
         Width = Dim.Percent(70);
 
-        // **Taller when there is more to show, and never taller than the screen.** A percentage
-        // fixed at sixty was the whole dialog's height however many choices it held, which is what
-        // put twenty agents into a box with room for fourteen of them.
-        Height = Dim.Percent(choices.Count > 6 ? 85 : 60);
+        var wants = Prompting.Rows(description);
+
+        // **As tall as it needs and never taller than the screen.** A percentage fixed at sixty was
+        // the whole dialog's height however much it had to show, which is what put twenty agents
+        // into a box with room for fourteen of them — and then, once the description was sized to
+        // its own words, squeezed the choices out altogether: the add confirmation drew its three
+        // file paths and none of its two buttons. A dialog asking a question with no visible
+        // answers is worse than either.
+        //
+        // `Dim.Func` rather than a number, because the screen is not known while this is being
+        // built: it is evaluated at layout time, by which point the dialog is running in
+        // something.
+        Height = Dim.Func(
+            view => Math.Min(wants + choices.Count + Around, Room(view)), this);
 
         var said = new Label
         {
@@ -246,7 +265,15 @@ internal sealed class ChoiceDialog : Dialog
             // surface is held to is that a choice sits behind a description of it, and a
             // description nobody can read is the same as none. `DoorsAreReadableTests` did not
             // catch it because every dialog it drives offers two or three choices.
-            Height = Prompting.Rows(description),
+            //
+            // Capped at what is left once the choices have their rows, so a description too long
+            // for the screen loses its tail rather than taking the answers with it. Both halves
+            // readable is the ideal; only one of them can be guaranteed.
+            // `view` here is the dialog, so its own viewport is the content area the label and the
+            // list share — not the screen, which is what `SuperView` would have given and what a
+            // first version asked for: it read twenty-four where the room was sixteen, and the
+            // label was sized past the space it had.
+            Height = Dim.Func(view => Math.Max(1, Math.Min(wants, Content(view) - 1)), this),
         };
 
         said.TextFormatter.WordWrap = true;
@@ -278,6 +305,20 @@ internal sealed class ChoiceDialog : Dialog
 
         Add(said, _choices);
     }
+
+    /// <summary>The rows a choice dialog needs besides its description and its choices.</summary>
+    private const int Around = 3;
+
+    /// <summary>How tall this dialog is allowed to be.</summary>
+    /// <param name="view">The dialog.</param>
+    /// <returns>The screen's height, or something generous when it is not running yet.</returns>
+    private static int Room(View? view) => view?.App?.Screen.Height ?? int.MaxValue;
+
+    /// <summary>How many rows the description and the choices have between them.</summary>
+    /// <param name="view">The dialog.</param>
+    /// <returns>Its content area's height, or something generous before it has one.</returns>
+    private static int Content(View? view) =>
+        view?.Viewport.Height is > 0 and var rows ? rows : int.MaxValue;
 
     /// <summary>Raised when the person has chosen, or declined to.</summary>
     internal event EventHandler<string?>? Done;
@@ -472,31 +513,34 @@ internal sealed class FormDialog : Dialog
     /// </remarks>
     private void Lay()
     {
+        var wanted = _entries.Select(entry => entry.Rows).ToList();
+        var deep = Trimmed(wanted);
         var y = 0;
 
         for (var at = 0; at < _entries.Count; at++)
         {
             var tall = _tall[at];
-            var deep = _entries[at].Rows;
 
             _asked[at].Y = y;
             _asked[at].Height = tall;
 
             _entries[at].View.Y = y + tall;
-            _entries[at].View.Height = deep;
+            _entries[at].View.Height = deep[at];
 
-            _problems[at].Y = y + tall + deep;
+            _problems[at].Y = y + tall + deep[at];
 
-            y += tall + deep + 1;
+            y += tall + deep[at] + 1;
         }
 
         _ok.Y = y + 1;
         _cancel.Y = y + 1;
 
-        Height = y + 6;
+        Height = y + Around;
 
+        // **What each field wanted, not what it was given.** A form trimmed to fit the screen would
+        // otherwise look changed on every keystroke, and re-lay itself for nothing.
         _laid.Clear();
-        _laid.AddRange(_entries.Select(entry => entry.Rows));
+        _laid.AddRange(wanted);
 
         SetNeedsLayout();
 
@@ -509,6 +553,72 @@ internal sealed class FormDialog : Dialog
         {
             Layout();
         }
+    }
+
+    /// <summary>The rows a form needs besides its fields: its border, its buttons and the gap.</summary>
+    private const int Around = 6;
+
+    /// <summary>
+    /// How deep each field may actually be, given how tall the screen is.
+    /// </summary>
+    /// <param name="wanted">What each field asked for.</param>
+    /// <returns>What each field gets.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Found by the review gate, on a thirty by ten terminal.</b> A form taller than the screen is
+    /// centred and clipped at the top, so the dialog sat at <c>Y=-4</c> with its first label and its
+    /// first field off the screen entirely — and a field somebody cannot see is one they cannot tell
+    /// is there. The buttons and the last field were all that showed.
+    /// </para>
+    /// <para>
+    /// <b>Pre-existing and made worse here.</b> A four-field form was already eighteen rows before a
+    /// long field existed; opening each of the ask form's three prose fields at three rows added six
+    /// more, which is the difference between fitting a twenty-four row terminal and not. So this
+    /// gives the rows back in the order they were taken: the deepest long field first, down to one
+    /// row each, until the form fits.
+    /// </para>
+    /// <para>
+    /// Nothing is trimmed when the screen is not known — the form is laid out once in its
+    /// constructor, before it is running in anything, and guessing a screen size there would be
+    /// worse than laying out for the size it will be given a moment later.
+    /// </para>
+    /// </remarks>
+    private List<int> Trimmed(IReadOnlyList<int> wanted)
+    {
+        var deep = wanted.ToList();
+
+        if (App?.Screen.Height is not { } room)
+        {
+            return deep;
+        }
+
+        var needed = _tall.Zip(deep, (label, field) => label + field + 1).Sum() + Around;
+
+        while (needed > room)
+        {
+            var deepest = -1;
+
+            for (var at = 0; at < deep.Count; at++)
+            {
+                if (deep[at] > 1 && (deepest < 0 || deep[at] > deep[deepest]))
+                {
+                    deepest = at;
+                }
+            }
+
+            if (deepest < 0)
+            {
+                // Every field is down to one row and it still does not fit. Nothing here can help:
+                // the labels alone are over the height, which is a screen too small for the form
+                // rather than a form laid out wrongly.
+                break;
+            }
+
+            deep[deepest]--;
+            needed--;
+        }
+
+        return deep;
     }
 
     /// <summary>Re-lays the form when a field has changed how deep it is.</summary>

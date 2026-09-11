@@ -57,13 +57,11 @@ public sealed class BrowsingTests : IDisposable
 
         var rows = Drawn.Rows(browsing.List);
 
-        Assert.Contains(rows, row => row.StartsWith("orders", StringComparison.Ordinal)
-            && row.Contains(Browsing.Repository, StringComparison.Ordinal));
+        Assert.Contains(rows, row => row == Browsing.Indent + Browsing.Repository + "orders");
 
         // The one thing a general file browser cannot say, and the whole question somebody adding
         // an agent is asking.
-        Assert.Contains(rows, row => row.StartsWith("notes", StringComparison.Ordinal)
-            && !row.Contains(Browsing.Repository, StringComparison.Ordinal));
+        Assert.Contains(rows, row => row == Browsing.Indent + Browsing.Plain + "notes");
     }
 
     [Fact]
@@ -119,11 +117,11 @@ public sealed class BrowsingTests : IDisposable
         var browsing = new Browsing(_root);
 
         driving.Show(browsing);
-        driving.Row(browsing.List, "orders" + Browsing.Repository);
+        driving.Row(browsing.List, Browsing.Indent + Browsing.Repository + "orders");
         browsing.List.NewKeyDownEvent(Key.Enter);
 
         Assert.Equal(orders, browsing.At);
-        Assert.Contains(Drawn.Rows(browsing.List), row => row.StartsWith("docs", StringComparison.Ordinal));
+        Assert.Contains(Drawn.Rows(browsing.List), row => row.EndsWith("docs", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -226,6 +224,70 @@ public sealed class BrowsingTests : IDisposable
 
         Assert.Equal(Browsing.Unreadable, browsing.Said);
         Assert.Equal(was, browsing.At);
+    }
+
+    [Fact]
+    public void Opening_on_a_folder_that_is_not_there_still_lands_somewhere()
+    {
+        // **Found by the review gate.** A folder that cannot be opened left this with no path, no
+        // rows and one sentence — and no row to press to get anywhere else, which is a dialog
+        // somebody can only escape from. It reaches this when a remembered folder has been deleted
+        // since, or a home directory is not readable.
+        using var driving = Driving.Open();
+
+        var browsing = new Browsing(Path.Combine(_root, "deleted-since-" + Guid.NewGuid()));
+
+        driving.Show(browsing);
+
+        Assert.NotEqual(string.Empty, browsing.At);
+        Assert.NotEmpty(Drawn.Rows(browsing.List));
+    }
+
+    [Fact]
+    public void A_folder_name_cannot_claim_to_be_a_repository()
+    {
+        // **Found by lens 2.** The marker was a suffix, and a folder name is somebody else's text —
+        // on most filesystems it may hold nearly anything. A folder called `notes — a repository`
+        // read as one, so the row said something about the folder that was not true. It is a prefix
+        // inside the indent now, which a name cannot reach.
+        _ = Folder("notes  — a repository");
+
+        using var driving = Driving.Open();
+
+        var browsing = new Browsing(_root);
+
+        driving.Show(browsing);
+
+        var row = Assert.Single(
+            Drawn.Rows(browsing.List),
+            line => line.Contains("notes", StringComparison.Ordinal));
+
+        Assert.StartsWith(Browsing.Indent + Browsing.Plain, row, StringComparison.Ordinal);
+        Assert.DoesNotContain(Browsing.Indent + Browsing.Repository, row, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Only_this_dialogs_own_rows_sit_at_column_zero()
+    {
+        // The rule `ColumnZeroTests` holds the transcript to, in the other place this surface draws
+        // somebody else's text in a list. A folder called `[ add this repository ]` must not read
+        // as the row that adds one — and it cannot, because every name is indented.
+        _ = Folder(Browsing.Use);
+        _ = Folder(Browsing.Up);
+        _ = Folder("ordinary", repository: true);
+
+        using var driving = Driving.Open();
+
+        var browsing = new Browsing(_root);
+
+        driving.Show(browsing);
+
+        foreach (var row in Drawn.Rows(browsing.List).Where(line => !line.StartsWith(' ')))
+        {
+            Assert.True(
+                row == Browsing.Use || row == Browsing.Up,
+                $"a row off the filesystem reached column zero: '{row}'");
+        }
     }
 
     [Fact]

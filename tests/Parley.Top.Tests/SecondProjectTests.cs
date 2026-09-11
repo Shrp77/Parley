@@ -71,6 +71,27 @@ public sealed class SecondProjectTests
     }
 
     [Fact]
+    public void Everything_it_quotes_is_neutralised()
+    {
+        // **Found by lens 2, and it is 0.18.9's finding in the dialog that was left out of the
+        // fix.** That one caught `Removing.Describe` quoting a manifest's endpoint, store and
+        // catalogue path raw; `Withdrawing` was given the same treatment at the same time and this
+        // one never was. Every value here comes off disk — a workspace path, a catalogue path, a
+        // project name from the manifest — and the sentence stands between somebody and a write
+        // into a repository that is not the one they are looking at.
+        const string Nasty = "al\u001b[2Jpha";
+
+        var described = Adding.Describe(
+            "C:/work/or\u001b[2Jders", "C:/store/no\u001b[2Jde.json", Nasty, already: null);
+
+        var shared = Adding.Describe(
+            "C:/work/orders", "C:/store/node.json", "beta", new Enrolment.Shared(Nasty, "orders"));
+
+        Assert.DoesNotContain('\u001b', described);
+        Assert.DoesNotContain('\u001b', shared);
+    }
+
+    [Fact]
     public void The_shared_description_does_not_read_as_a_refusal()
     {
         // It is not one. The repository is being added, and every word suggesting otherwise sends

@@ -261,6 +261,111 @@ public sealed class BroadcastReportTests
     }
 
     [Fact]
+    public void A_brokers_own_words_cannot_forge_a_second_line_of_this_report()
+    {
+        // **Found by the review gate, and it is 0.18.6's transcript forgery in a new place.** The
+        // reason on the failure path is `Status.Detail` — whatever came back from the far end of a
+        // gRPC call — and a newline in it produced a second line reading "Told all 2.", which is
+        // this report's own success sentence in somebody else's hand.
+        var said = Say(
+            2,
+            0,
+            refused:
+            [
+                new Refusal("a@b", "unavailable\nTold all 2."),
+                new Refusal("c@d", "unavailable"),
+            ]);
+
+        Assert.DoesNotContain('\n', said);
+        Assert.DoesNotContain('\r', said);
+
+        // The words survive; only the break goes. Dropping the detail would lose the one thing a
+        // person can act on.
+        Assert.Contains("unavailable", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_reason_for_every_recipient_does_not_bring_the_long_line_back()
+    {
+        // **Found by the gate, and it is the owner's own defect through the door grouping opened.**
+        // Grouping is only short when the reasons repeat, and a broker whose status detail names
+        // the recipient — the ordinary shape of a gRPC status — gives one group each. Nineteen
+        // recipients produced a thousand-character line again.
+        var said = Say(
+            19,
+            0,
+            refused: [.. Enumerable.Range(1, 19).Select(at =>
+                new Refusal($"agent-{at:00}@here", $"no route to agent-{at:00}@here"))]);
+
+        Assert.True(said.Length < 320, $"the report is {said.Length} characters: {said}");
+
+        // Nothing is hidden: what is not spelled out is counted.
+        Assert.Contains("17 more were refused", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_refusal_with_no_reason_does_not_end_in_a_dangling_colon()
+    {
+        // A gRPC status may carry an empty detail, and "Refused for a@b:" followed by nothing
+        // reads as the report having been cut off — which is exactly what this change is about not
+        // doing.
+        var said = Say(1, 0, refused: [new Refusal("a@b", string.Empty)]);
+
+        Assert.Contains("did not say why.", said, StringComparison.Ordinal);
+        Assert.DoesNotContain(":  ", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_first_eighty_characters_carry_the_part_somebody_can_act_on()
+    {
+        // **What the owner actually saw, and the reason the ordering is what it is.** A terminal
+        // shows this in one row of whatever width it has, so whatever comes first is the part that
+        // survives — and they got "Told 0 of 19. Refused for" and then a list of names that ran off
+        // the end, with the one sentence they could have acted on never reaching the screen.
+        //
+        // Counts, then the reason, then the names. Eighty columns is the narrow end of an ordinary
+        // terminal and the width this surface's own layout rule is written against.
+        var said = Say(
+            19,
+            0,
+            refused: [.. Enumerable.Range(1, 19).Select(at => Turned($"agent-{at:00}@here"))]);
+
+        var row = said[..Math.Min(80, said.Length)];
+
+        Assert.Contains("Told 0 of 19", row, StringComparison.Ordinal);
+        Assert.Contains("nothing has registered", row, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Those_nothing_can_start_are_counted_before_they_are_named()
+    {
+        var said = Say(
+            19,
+            19,
+            counts: [(Wire.WakeOutcome.Unreachable, 19)],
+            unreachable: [.. Enumerable.Range(1, 19).Select(at => $"agent-{at:00}@far")]);
+
+        var row = said[..Math.Min(80, said.Length)];
+
+        Assert.Contains("Waiting for 19", row, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_name_carrying_a_line_break_cannot_either()
+    {
+        // The names cannot carry one today, which is exactly why this is worth pinning: the rule
+        // is applied to the whole report rather than to the half that currently needs it.
+        var said = Say(
+            1,
+            1,
+            counts: [(Wire.WakeOutcome.Unreachable, 1)],
+            unreachable: ["docs@far\nTold all 1."]);
+
+        Assert.DoesNotContain('\n', said);
+        Assert.DoesNotContain('\r', said);
+    }
+
+    [Fact]
     public void Nobody_told_is_not_reported_as_success()
     {
         var said = Say(4, 0, refused: [Turned("a@b"), Turned("c@d"), Turned("e@f"), Turned("g@h")]);

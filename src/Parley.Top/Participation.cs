@@ -1,6 +1,7 @@
 using System.Text;
 using Parley.Client.Rendering;
 using Parley.Client.Seating;
+using Parley.Core;
 
 namespace Parley.Top;
 
@@ -259,13 +260,38 @@ internal static class Participation
     internal static string? ConsequencesProblem(string said) =>
         (said ?? string.Empty).Trim().Length < SeatVoice.MinimumConsequences
             ? $"At least {SeatVoice.MinimumConsequences} characters: say what turns on the answer."
-            : null;
+            : ProseProblem(said ?? string.Empty);
 
     /// <summary>What is wrong with a line that simply has to be there.</summary>
     /// <param name="said">What is in the field.</param>
     /// <returns>The reason, or null when there is none.</returns>
     internal static string? RequiredProblem(string said) =>
-        string.IsNullOrWhiteSpace(said) ? "This cannot be empty." : null;
+        string.IsNullOrWhiteSpace(said) ? "This cannot be empty." : ProseProblem(said);
+
+    /// <summary>What is wrong with a field of prose, beyond being empty.</summary>
+    /// <param name="said">What is in the field.</param>
+    /// <returns>The reason, or null when there is none.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Found by lens 2, and it is this branch's own change that made it reachable.</b> The cap is
+    /// enforced at the send, by which time the form has closed and what somebody wrote is gone —
+    /// they get a sentence about the limit and no way back to their text. Nobody met that while
+    /// every field was one row tall; a field that invites a paragraph invites a pasted document.
+    /// </para>
+    /// <para>
+    /// <b>It checks one field against the whole cap, which is deliberately loose.</b> The cap is on
+    /// the framed payload — rule 8.1's three parts plus the framing — so the exact arithmetic
+    /// belongs at the send and stays there. What this catches is the case that actually loses
+    /// somebody's work: a single field already past the limit on its own, which no framing can
+    /// rescue.
+    /// </para>
+    /// </remarks>
+    private static string? ProseProblem(string said) =>
+        (said ?? string.Empty).Length <= MessageLimits.MaxPayloadCharacters
+            ? null
+            : $"That is {said!.Length} characters and the limit is "
+              + $"{MessageLimits.MaxPayloadCharacters}. The cap is a defence rather than a "
+              + "formatting rule: say the short version, and link to the long one.";
 
     /// <summary>A conversation name nobody has to think of.</summary>
     /// <returns>Something short and unlikely to collide.</returns>

@@ -436,23 +436,48 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             // Abbreviated for the reason the refusals are: nineteen names on one line is a line
             // that runs off the screen, and this is the half that is not even a failure.
             _ = said.Append(" Waiting for ")
+                .Append(unreachable.Count)
+                .Append(" — nothing here can start them (")
                 .Append(Some(unreachable))
-                .Append(" — nothing here can start them.");
+                .Append(").");
         }
 
-        foreach (var group in turnedAway
-            .GroupBy(refusal => refusal.Because, StringComparer.Ordinal)
-            .OrderByDescending(group => group.Count()))
+        // **Grouped by why, the names abbreviated, and the groups themselves bounded.** "Refused
+        // for" followed by nineteen names is a line that runs off the screen and says nothing a
+        // person can act on — reported by the owner, whose whole roster was refused for one cause
+        // and whose message was cut off before the end of the list. The reason is the actionable
+        // half, so it comes first and is said once per cause.
+        //
+        // **The bound on the groups was found by the gate, and it is the owner's own defect coming
+        // back through the door the grouping opened.** Grouping is only short when the reasons
+        // repeat, and a broker whose status detail names the recipient — the ordinary shape of a
+        // gRPC status — gives one group each: nineteen recipients produced a thousand-character
+        // line again.
+        var groups = turnedAway
+            .GroupBy(refusal => Reason(refusal.Because), StringComparer.Ordinal)
+            .OrderByDescending(group => group.Count())
+            .ToList();
+
+        // **The count first, the reason next, the names last, and that ordering is the report the
+        // owner actually saw.** A terminal shows this in one row of whatever width it has, so
+        // whatever comes first is the part that survives — and what they got was
+        // *"Told 0 of 19. Refused for"* and then a list of names that ran off the end, with the
+        // one sentence they could have acted on never reaching the screen at all.
+        foreach (var group in groups.Take(Causes))
         {
-            // **Grouped by why, and the names abbreviated.** "Refused for" followed by nineteen
-            // names is a line that runs off the screen and says nothing a person can act on —
-            // reported by the owner, whose whole roster was refused for one cause and whose
-            // message was cut off before the end of the list. The reason is the actionable half,
-            // so it comes first and is said once.
             _ = said.Append(" Refused for ")
-                .Append(Some([.. group.Select(refusal => refusal.Agent)]))
+                .Append(group.Count())
                 .Append(": ")
-                .Append(group.Key);
+                .Append(group.Key)
+                .Append(" (")
+                .Append(Some([.. group.Select(refusal => refusal.Agent)]))
+                .Append(')');
+        }
+
+        if (groups.Count > Causes)
+        {
+            _ = said.Append($" {groups.Skip(Causes).Sum(group => group.Count())} more were refused, "
+                + "each for a different reason.");
         }
 
         if (stopped)
@@ -499,6 +524,26 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// </remarks>
     private const int Named = 4;
 
+    /// <summary>How many distinct reasons to spell out before counting the rest.</summary>
+    /// <remarks>
+    /// Two, because the realistic mixed broadcast has one dominant cause and one other — and
+    /// because the point of the bound is that a status row shows one line. Everything past it is
+    /// counted, so nothing is hidden: a person who needs the detail has <c>parley notifications</c>
+    /// and the broker's own log.
+    /// </remarks>
+    private const int Causes = 2;
+
+    /// <summary>A refusal's reason, or a sentence saying there was not one.</summary>
+    /// <param name="because">What the broker said.</param>
+    /// <returns>Something to print.</returns>
+    /// <remarks>
+    /// A gRPC status may carry an empty detail, which printed as <c>Refused for a@b:</c> and then
+    /// nothing — a dangling colon reads as the report having been cut off, which is exactly the
+    /// thing this whole change is about not doing.
+    /// </remarks>
+    private static string Reason(string because) =>
+        Flat(because) is { Length: > 0 } said ? said : Because(Wire.NotifyRejection.Unspecified);
+
     /// <summary>Some of a list of names, and a count of whatever is left.</summary>
     /// <param name="names">The names.</param>
     /// <returns>The phrase.</returns>
@@ -507,9 +552,30 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         ArgumentNullException.ThrowIfNull(names);
 
         return names.Count <= Named
-            ? string.Join(", ", names)
-            : string.Join(", ", names.Take(Named)) + $" and {names.Count - Named} more";
+            ? string.Join(", ", names.Select(Flat))
+            : string.Join(", ", names.Take(Named).Select(Flat)) + $" and {names.Count - Named} more";
     }
+
+    /// <summary>Puts a piece of somebody else's text on one line.</summary>
+    /// <param name="text">The text.</param>
+    /// <returns>One line of it.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Found by the review gate, and it is 0.18.6's forgery in a new place.</b> A refusal on the
+    /// failure path carries <c>Status.Detail</c> — whatever came back from the far end of a gRPC
+    /// call — and this report is contracted to be one line, which the surfaces rely on: a terminal
+    /// shows it in a status row. A newline in that detail produced a second line reading
+    /// <c>Told all 2.</c>, which is this report's own success sentence, written by somebody else.
+    /// </para>
+    /// <para>
+    /// <b>Applied to the names as well as to the reasons, and that is deliberate rather than
+    /// thorough.</b> An agent name cannot carry a line break today, so flattening it changes
+    /// nothing — and <c>parley instructions</c> is on record here for flattening the reply and not
+    /// the operator's own words, where one rule applied to half the output was worse than either
+    /// applied whole.
+    /// </para>
+    /// </remarks>
+    private static string Flat(string text) => text.ReplaceLineEndings(" ");
 
     /// <summary>What is said when a project holds nobody to tell.</summary>
     internal const string NobodyToTell =

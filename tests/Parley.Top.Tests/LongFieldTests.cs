@@ -1,3 +1,4 @@
+using Parley.Core;
 using Terminal.Gui.Input;
 using Terminal.Gui.Views;
 using Xunit;
@@ -180,6 +181,105 @@ public sealed class LongFieldTests
         // The whole point: the cap is eight thousand characters and this used to be collected in
         // a field showing sixty of them.
         Assert.Equal(written, form.Values[0]);
+    }
+
+    [Theory]
+    [InlineData(24)]
+    [InlineData(30)]
+    [InlineData(40)]
+    public void The_form_never_grows_taller_than_the_screen(int height)
+    {
+        // **Found by the review gate, on a small terminal, and it was pre-existing and made
+        // worse.** A form taller than the screen is centred and clipped at the top, so its first
+        // label and first field were off the screen entirely and the buttons were all that showed.
+        // A four-field form was already eighteen rows; opening three prose fields at three rows
+        // each added six more, which is the difference between fitting a twenty-four row terminal
+        // and not.
+        using var driving = Driving.Open(width: 120, height: height);
+
+        var form = new FormDialog(
+            "Ask somebody a question",
+            [
+                new FormField("What are you trying to decide?", string.Empty, Long: true),
+                new FormField("The question:", string.Empty, Long: true),
+                new FormField("What turns on the answer?", string.Empty, Long: true),
+                new FormField("Conversation name:", "planning"),
+            ]);
+
+        driving.Show(form);
+
+        // Written into until the first field would want every row it is allowed.
+        form.Fill(0, new string('x', 4000));
+
+        Assert.True(
+            form.Frame.Height <= height,
+            $"the form is {form.Frame.Height} rows on a {height}-row screen");
+
+        // And it is on the screen rather than hanging off the top of it, which is the failure the
+        // height on its own does not catch.
+        Assert.True(form.Frame.Y >= 0, $"the form starts at row {form.Frame.Y}");
+    }
+
+    [Fact]
+    public void Trimming_takes_the_rows_from_the_deepest_field_first()
+    {
+        // The rows are given back in the order they were taken, so a form under pressure loses
+        // depth from the field that has most of it rather than from whichever comes first.
+        using var driving = Driving.Open(width: 120, height: 24);
+
+        var form = new FormDialog(
+            "Ask somebody a question",
+            [
+                new FormField("What are you trying to decide?", string.Empty, Long: true),
+                new FormField("The question:", string.Empty, Long: true),
+                new FormField("What turns on the answer?", string.Empty, Long: true),
+                new FormField("Conversation name:", "planning"),
+            ]);
+
+        driving.Show(form);
+        form.Fill(0, new string('x', 4000));
+
+        var depths = Enumerable.Range(0, 3).Select(at => form.Field(at).Frame.Height).ToList();
+
+        Assert.All(depths, deep => Assert.True(deep >= 1, "a field was trimmed out of existence"));
+        Assert.True(
+            depths.Max() - depths.Min() <= 1,
+            $"the trim left the fields uneven: {string.Join(",", depths)}");
+    }
+
+    [Fact]
+    public void Writing_past_the_cap_is_refused_while_it_is_being_written()
+    {
+        // **Found by lens 2, and this branch is what made it reachable.** The cap is enforced at
+        // the send, by which time the form has closed and what somebody wrote is gone — a sentence
+        // about the limit and no way back to their text. Nobody met that while every field was one
+        // row tall; a field that invites a paragraph invites a pasted document.
+        using var driving = Driving.Open();
+
+        var form = new FormDialog(
+            "Tell somebody something",
+            [
+                new FormField(
+                    "What are you telling them?", string.Empty, Participation.RequiredProblem,
+                    Long: true),
+                new FormField("Conversation name:", "planning"),
+            ]);
+
+        driving.Show(form);
+
+        form.Fill(0, new string('x', MessageLimits.MaxPayloadCharacters + 1));
+
+        Assert.Contains(
+            MessageLimits.MaxPayloadCharacters.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            form.Problems[0],
+            StringComparison.Ordinal);
+
+        // And the button that would have sent it is refused, so nothing is lost by pressing it.
+        form.Finish(taken: true);
+
+        form.Fill(0, "short enough");
+
+        Assert.Equal(string.Empty, form.Problems[0]);
     }
 
     [Fact]
