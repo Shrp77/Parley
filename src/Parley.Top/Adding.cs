@@ -267,12 +267,29 @@ internal static class Adding
 
     /// <summary>What is said when the start did not happen.</summary>
     /// <remarks>
-    /// The honest fallback rather than a failure: the agent is catalogued, so the next question
-    /// addressed to it starts it, and opening its repository starts it too.
+    /// <para>
+    /// <b>This said the next question would start it, and that cannot happen.</b> A question and a
+    /// notification are both refused for an unroutable recipient, and §14 counts a name nothing has
+    /// registered as unroutable — so until something has attached under this name, no message
+    /// reaches it and none of them starts it. The sentence sent a person to the one remedy that
+    /// does not work.
+    /// </para>
+    /// <para>
+    /// What does work is what §12.3 permits: an operator asking its machine to start it, which is
+    /// what this screen just tried, and opening the repository so its own server attaches. Both end
+    /// the same way — the adapter registers the agent, and from then on it can be asked and told
+    /// like any other.
+    /// </para>
+    /// <para>
+    /// The equivalent line in <c>parley node</c> is about an agent whose process has died and is
+    /// correct: that one is registered, so a question does reach it and does start it. The two
+    /// cases read alike and are not the same.
+    /// </para>
     /// </remarks>
     internal const string NotStarted =
-        "It was not started now; the next question for it will start it, and so will opening its "
-        + "repository.";
+        "It was not started now. Opening its repository starts it, and so does starting it from "
+        + "this screen. Until something has, it cannot be asked or told: a name nothing has "
+        + "registered is not one messages can be addressed to.";
 
     /// <summary>Writes the two files, creating the catalogue first when there is none.</summary>
     private static async Task WriteAsync(
