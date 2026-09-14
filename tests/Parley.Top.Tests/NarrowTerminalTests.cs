@@ -95,12 +95,12 @@ public sealed class NarrowTerminalTests
         var message = new Message(
             1,
             7,
-            MessageType.Question,
+            MessageType.Request,
             AgentName.Create("orders@alpha"),
             AgentName.Create("billing@alpha"),
             "test",
-            "{\"intent\":\"why\",\"sub_questions\":[{\"id\":\"q1\",\"text\":\"which one\"}],"
-            + "\"consequences\":\"the answer decides which of two paths is taken here\"}",
+            "{\"intent\":\"why\",\"items\":[{\"id\":\"q1\",\"kind\":\"question\",\"text\":\"which one\"}],"
+            + "\"done_when\":\"the answer decides which of two paths is taken here\"}",
             "conv",
             DateTimeOffset.UnixEpoch,
             null);

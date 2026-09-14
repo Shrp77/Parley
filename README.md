@@ -47,25 +47,27 @@ what language they are written in.
 
 ## Design in one screen
 
-**Four message types.** Question, Clarify, Answer, Notify. Agents don't make small
-talk, so there is nothing else to model. Any of the four reaches an agent that is not
-running: its machine is asked to start it, and the message is waiting when it does.
+**Work gets done across repositories.** An agent that needs something from another
+repository sends that repository's agent a **Request** — work to do there, or something it
+knows — and gets back a **Result** saying what each item came to. The receiver may ask its
+requester for what only it can give with a **Clarify**. Any agent or person may request work,
+each owner changes only its own repository, and a request is declined only for a concrete
+blocker it could not resolve. Every message is answered, even if only "acknowledged".
 
-**Deadlock-free by construction.** Traffic between any two agents is serialised on an
-unordered pair key, and new questions are rejected if they would close a cycle in the
-wait-for graph. Pairwise locking alone doesn't catch a three-way cycle; cycle
-detection on insert does.
+**Any of them reaches an agent that is not running.** Its machine is asked to start it, and
+the message is waiting when it does.
 
-**Refusal returns work, not a retry instruction.** If you owe someone an answer, the
-broker hands you their question instead of telling you to try again later. Telling a
-language model to "retry in a bit" produces either a token-burning loop or silent
-abandonment.
+**Nothing times out.** Work that stops moving is shown to the person running the deployment
+rather than ended: a request nobody collected, or one collected and left, is flagged, and so
+is a conversation waiting only on somebody's vote. A conversation ends when everyone asked whether it is finished agrees — including anyone that has
+already sent its Result — or when that person closes it.
 
-**Durable.** Exchanges live in SQLite. Agents are keyed on logical name, not session
-ID, so a reboot orphans exchanges rather than losing them. Whether they're then replayed
-is your call, not ours: killing the process is how you stop two agents burning a quota,
-and a forced update at the weekend is how you lose one you wanted to keep. The broker
-cannot tell those apart, so resumption is configured rather than assumed.
+**Refusal returns work, not a retry instruction.** If you owe someone a Result, the broker
+hands you their request instead of telling you to try again later. Telling a language model
+to "retry in a bit" produces either a token-burning loop or silent abandonment.
+
+**Durable.** Exchanges live in SQLite. Agents are keyed on logical name, not session ID, so a
+restart loses nothing: an agent that comes back is handed the work it had collected again.
 
 **Terseness is enforced, not requested.** Message size caps are a poisoning defence.
 An unbounded channel between agents recreates the shared-docs problem in a new medium.
@@ -82,7 +84,7 @@ Agents attach through adapters, classified by capability rather than vendor:
 
 The headless tier is the interesting one: a responder needn't be an agent at all. A
 plain model API call, a local model, a script that greps a contracts directory, or a
-human with a notification — anything that takes a bounded question and returns text
+human with a notification — anything that takes a bounded request and returns text
 can participate.
 
 Most agents need no credential from Parley: the CLI behind them authenticates once, out
@@ -316,10 +318,10 @@ PARLEY_TICK_SECONDS=5                   # how often deadlines are swept
 Each of these used to be set per repository, which meant one store could be swept on three
 cadences and pruned to two floors with nothing anywhere to say which was in force.
 
-The clarify cap moved here too, and is not configurable yet: an exchange admits 200
-clarifications before the broker forces an `unknown`. That number is a measurement rather than
-a considered limit — a cap censors the evidence that would justify it, so it is set far above
-any plausible need until `parley clarifications` says where depth actually settles.
+Clarifications are not capped: an exchange can go back and forth for as long as its two sides
+need to converge, because cutting that off before they are finished leaves the work undone.
+`parley clarifications` reports how deep exchanges actually go, which is the evidence a
+deployment would set a cap from.
 
 ### 3. Point each agent at the broker
 
@@ -388,8 +390,8 @@ their own location for the same JSON.
 It is usually a tracked file, so **which branch is checked out decides whether an agent
 exists**. Add the entry on a feature branch and the agent is registered while that branch is
 out and absent on every branch that predates it — silently, because nothing errors: the
-session starts, the tools are not there, and a peer's question waits out its window and is
-ghosted. A session also reads the file once, at startup, so fixing it or switching branches
+session starts, the tools are not there, and a peer's request waits, flagged as never
+collected. A session also reads the file once, at startup, so fixing it or switching branches
 does nothing for a session already open. `claude mcp list` will say the server is connected
 while that session still has no Parley tools, because the two are different processes reading
 at different times. Get the entry onto the branch everything else is cut from, then restart.
@@ -443,9 +445,9 @@ the same file that fixes the agent's name, it is a statement a peer can act on. 
 every peer sees the new one the next time that agent's server starts; delete it and the claim
 is withdrawn.
 
-It is optional. An agent without one is listed without one, and askers fall back to the name —
-which usually works, because a wrong guess costs one message: the answerer refers the question
-to whoever does own it rather than answering badly. `parley registry` shows you which of your
+It is optional. An agent without one is listed without one, and requesters fall back to the
+name — which usually works, because a wrong guess costs one message: a receiver that does not own
+part of the work asks the agent that does, in the same conversation, rather than doing it badly. `parley registry` shows you which of your
 agents have not set it.
 
 ### 5. Name the peers and the boundary
@@ -476,21 +478,23 @@ exists to prevent — the tools being bound is not enough on its own.
 
 ### What the agent can do
 
-Seven tools, and no way to say who it is:
+Six tools, and no way to say who it is:
 
 | Tool | What it does |
 |---|---|
-| `parley_ask` | Open an exchange. Returns an identifier or a refusal — never an answer. |
-| `parley_clarify` | Ask for detail inside an exchange you owe, or supply detail you were asked for. |
-| `parley_answer` | Resolve each sub-question and close the exchange. |
-| `parley_notify` | Fire-and-forget event. No reply expected. Starts the recipient if nothing is running it. |
-| `parley_inbox` | Drain pending messages, work you owe first. |
-| `parley_agents` | List the agents that exist and whether they are reachable. |
-| `parley_conclude` | Say whether you are finished with a discussion. |
+| `parley_request` | Ask another repository's agent to do work there, or for information it holds. Returns an identifier or a refusal — never the Result. Starts the receiver if nothing is running it. |
+| `parley_clarify` | Ask your requester for something only it can give, or answer what it asked you. |
+| `parley_result` | Report what each item came to — done, answered, acknowledged, or blocked with the blocker named — and close the exchange. |
+| `parley_inbox` | Collect what is waiting, work you owe first. |
+| `parley_agents` | List the agents that exist, what each owns, and whether it is running. |
+| `parley_conclude` | Say whether you are finished with a conversation. |
 
-A question must carry its **consequences** — what the asker will do with each possible
-answer. The broker refuses one that does not, because an answerer who knows what turns
-on the reply gives a different and better answer. Messages are capped at 8,000
+Every message is answered: a Request is always closed by a Result, even if all it says is
+"acknowledged". A Request carries its **intent** and what **done** looks like, because a
+receiver who knows why the work is wanted and when it is finished does the right work rather
+than the literal one. Nothing times out; a conversation ends when everyone asked whether it is
+finished agrees, including anyone that has already sent its Result, or when the person running
+the deployment closes it. Messages are capped at 8,000
 characters, which is a context-poisoning defence rather than a buffer size: what you
 send lands in somebody else's working memory.
 
@@ -507,25 +511,27 @@ Two repositories, one database. `orders` sums line prices and adds no tax, assum
 billing applies it. `billing` multiplies the incoming total by 1.20, assuming orders did
 not. Neither can settle it alone and both are one edit away from being wrong.
 
-With the setup above, `orders` opens one exchange:
+With the setup above, `orders` sends one request:
 
-> **intent** — deciding whether the total handed to billing must be net or
-> VAT-inclusive, so tax is applied exactly once across the two repositories
+> **intent** — tax must be applied exactly once across the two repositories, and orders
+> hands billing a net total
 >
-> **q1** — does billing apply VAT to the total it receives, or expect it included?
+> **q1** (question) — does billing apply VAT to the total it receives, or expect it included?
 >
-> **consequences** — if billing applies it, I keep the net total and record the
-> contract; no code change. If it expects the total to include VAT, every invoice is
-> short by the VAT and I report that before shipping.
+> **w1** (work) — if billing expects it included, apply VAT to the incoming total instead
+>
+> **done when** — billing says which it does, and invoices for a net order total include VAT
+> exactly once
 
-`billing` collects it, answers from what its own code actually does, and the exchange
-closes. Neither agent read the other's files, and the answer is recorded where an
-operator can read it back later with `parley export`.
+`billing` collects it, answers q1 from what its own code actually does, makes the change in its
+own repository if w1 applies, and sends the Result. Neither agent read or edited the other's
+files, and the whole exchange is recorded where an operator can read it back with
+`parley export`.
 
 ### Retention
 
-The message log is a channel, not an archive. It holds the full text of every question
-and answer, so left unbounded it becomes the shared context store Parley exists to
+The message log is a channel, not an archive. It holds the full text of every request
+and result, so left unbounded it becomes the shared context store Parley exists to
 avoid — and grows the blast radius of a leaked file for ever.
 
 So it forgets by default: a discussion whose exchanges have all closed is removed once
@@ -538,8 +544,9 @@ them in one place and not the other and your agents quietly enforce the default 
 `parley prune` reports the numbers you meant.
 
 A floor bounds the dial in the other direction, and is not configurable. Tightening
-retention can never delete a message nobody has collected yet, the question of an
-exchange that is still open, or the recent rows deduplication is still reading.
+retention can never delete a message nobody has collected yet, anything on an exchange
+that is still open, the request a result nobody has collected yet carries back, or the recent
+rows deduplication is still reading.
 
 Anything worth keeping beyond the policy, export — the export is a file you own.
 
@@ -581,19 +588,17 @@ is also told to quit when you `retire` it, or when you remove the variable and o
 repository once — a withdrawal has to reach a process that is already running, or the
 register says one thing while the deployment does another.
 
-**It answers; it does not initiate.** The fleet starts agents that have something *waiting*
-— an answer they owe, or a message they have not collected — so with nothing waiting it
-starts nobody. The first question still comes from an agent that has a reason to ask, and
-reasons come from work; an idle agent inventing questions would be worse than useless.
-After that first question the loop needs no one: the answerer is started to answer, a
-clarification puts the asker in debt, and it is started in its turn.
+**It responds; it does not initiate.** The fleet starts agents that have something *waiting*
+— a Result they owe, or a message they have not collected — so with nothing waiting it starts
+nobody. The first request still comes from an agent or a person with a reason to ask, and
+reasons come from work; an idle agent inventing work would be worse than useless. After that
+first request the loop needs no one: the receiver is started to do the work, a clarification
+hands the turn back to the requester, and it is started in its turn.
 
-The rule used to be narrower — an open exchange you owed, and nothing else — and that
-excluded the one participant with the strongest claim to a turn. An answer closes the
-exchange it resolves, so the agent that asked the question ends up owing nothing and was
-never started to read the reply it was waiting for. A ghost, which is the notice that
-nobody answered, arrived the same way. So an unattended fleet could produce answers that
-nothing ever collected. Anything uncollected now counts, whatever its type.
+The rule used to be narrower — an open exchange you owed, and nothing else — and that excluded
+the one participant with the strongest claim to a turn. A Result closes the exchange it
+reports on, so the agent that sent the request ends up owing nothing and was never started to
+read the Result it was waiting for. Anything uncollected now counts, whatever its type.
 
 **It spends money while nobody is watching.** That is the feature and the risk in one
 sentence. Every turn is a real session on your account, so `parley up` prints what each
@@ -791,25 +796,22 @@ Early. The spec is stabilising; the implementation is not.
 **Built.** The exchange state machine, pair serialisation and wait-for cycle detection,
 over a SQLite store with migrations, the trust envelope and message deduplication.
 
-- Two agents on one database hold a question and an answer between them, over MCP, with
-  all seven tools working.
-- Expired exchanges are reaped, releasing the pair slot and the wait-for edge a vanished
-  agent would otherwise hold for ever.
-- An agent whose repository has been deleted is marked unreachable and questions to it
-  are refused at admission, rather than each one waiting out a full window to learn
-  nothing.
-- A question asked while the recipient's session is closed waits for that agent rather
-  than being released when it opens one.
-- A question nobody ever answers ends by telling the asker so, carrying the asker's own
-  stated consequences back — so "ask and do not block" holds in the case an agent most
-  needs to hear about.
-- A discussion closes when its participants agree, or when one of them says nothing for
-  long enough, so a silent peer cannot hold one open indefinitely.
+- Two agents in different repositories send requests and results between them over MCP,
+  with all six tools working, and the receiver does the work in its own repository.
+- An agent whose repository has been deleted is marked unreachable and requests to it are
+  refused at admission.
+- A request sent while the receiver's session is closed waits for that agent, and an agent
+  that comes back is handed the work it had collected again.
+- Nothing times out. Work nobody collected, or collected and left, is flagged to the person
+  running the deployment, and so is a conversation waiting only on a vote; that person can start
+  the agent or close the conversation with a reason.
+- A conversation closes when every participant asked whether it is finished agrees — one that
+  has already sent its Result included — or when a person closes it.
 - The message log is bounded in both directions: it forgets on a schedule even when
   nobody configures it, and a floor stops an aggressive setting deleting mail nobody has
   read.
-- All five operator commands are reachable through a second binary agents are never
-  given.
+- Every operator operation is reachable from the command line, the terminal and the web UI,
+  through binaries agents are never given.
 - Claude Code installs it as a plugin: this repository is the marketplace, a setup command
   writes a repository's launch configuration, and the operator commands ship as a skill.
 
@@ -818,12 +820,11 @@ the storage assembly — the absent dependency is checked by the build rather th
 a convention. The protocol's invariants are enforced by database constraints rather than
 by the code that calls them.
 
-**Next.** Per-sender rate limits. Volume between a pair is already bounded by the state
-machine — one open exchange per pair, a cap on clarification rounds — so what remains is
-`Notify`, which has no such guard: an agent can post into a discussion indefinitely, and
-today only the retention age cap bounds it. The *turns* that traffic causes are bounded —
-a recipient is woken once until it reads its inbox, however many notices arrive — but the
-volume reaching its context is not, and that is the part still open.
+**Next.** Per-sender rate limits. The request and clarification caps are off by default,
+because a cap ended work before its participants had finished, so nothing bounds how many
+requests one agent sends another. The *turns* that traffic causes are bounded — a receiver
+is woken once until it reads its inbox, however many requests arrive — but the volume
+reaching its context is not, and that is the part still open.
 
 **Before the first release.** `Parley.Mcp` and `Parley.Cli` go to NuGet, so installing either
 is `dotnet tool install -g` rather than a clone and a build, and the plugin's first step

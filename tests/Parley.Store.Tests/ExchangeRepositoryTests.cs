@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Xunit;
 
@@ -10,21 +10,6 @@ public sealed class ExchangeRepositoryTests : IDisposable
     private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly AgentName Inventory = AgentName.Create("inventory@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan Delivery = TimeSpan.FromMinutes(15);
-    private static readonly TimeSpan Working = TimeSpan.FromHours(4);
-    private static readonly TimeSpan Grace = TimeSpan.FromHours(3);
-
-    private static readonly ExchangePolicy Policy = ExchangePolicy.Default with
-    {
-        DeliveryWindow = Delivery,
-        WorkingWindow = Working,
-        GracePeriod = Grace
-    };
-
-    // Distinctness is keyed on question content, so a test opening two exchanges on one pair
-    // has to say they are different questions. Naming them here keeps that visible at each
-    // call rather than hidden in a helper: "q1" and "q2" reading differently is the point.
-    private static string Q(string text) => text;
 
     private readonly SqliteConnection _connection;
     private readonly ExchangeRepository _exchanges;
@@ -32,486 +17,447 @@ public sealed class ExchangeRepositoryTests : IDisposable
     public ExchangeRepositoryTests()
     {
         _connection = ParleyDatabase.OpenInMemory();
-
-        var agents = new AgentRepository(_connection);
-        foreach (var name in new[] { Orders, Billing, Inventory })
-        {
-            agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Full, null, null, null, false, AgentStatus.Active),
-                TestContext.Current.CancellationToken)
-                .GetAwaiter().GetResult();
-        }
-
+        Work.Register(_connection, Orders, Billing, Inventory);
         _exchanges = new ExchangeRepository(_connection);
     }
 
     public void Dispose() => _connection.Dispose();
 
+    private static CancellationToken Token => TestContext.Current.CancellationToken;
+
+    // Distinctness is keyed on the Request's content, so a test opening two exchanges on one pair has
+    // to say they are different Requests. The hash is computed from the text at each call, so "q1" and
+    // "q2" reading differently is visible where it matters.
+    private Task<OpenOutcome> Open(
+        AgentName from,
+        AgentName to,
+        string text = "q1",
+        ExchangePolicy? policy = null,
+        string conversation = Work.Conversation,
+        DateTimeOffset? at = null) =>
+        _exchanges.TryOpenAsync(
+            from, to, at ?? T0, MessageIdentity.ComputeRequest(from, to, Work.Request(text)), conversation,
+            policy, cancellationToken: Token);
+
     [Fact]
     public async Task Opening_persists_and_round_trips()
     {
-        var outcome = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+        var outcome = await Open(Orders, Billing);
         Assert.True(outcome.Succeeded);
 
-        var loaded = await _exchanges.GetAsync(
-            outcome.Exchange!.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var loaded = await _exchanges.GetAsync(outcome.Exchange!.Id, cancellationToken: Token);
 
         Assert.NotNull(loaded);
-        Assert.Equal(Orders, loaded.Asker);
-        Assert.Equal(Billing, loaded.Answerer);
+        Assert.Equal(Orders, loaded.Requester);
+        Assert.Equal(Billing, loaded.Receiver);
         Assert.Equal(Billing, loaded.OwedBy);
         Assert.Equal(ExchangeState.Open, loaded.State);
         Assert.Equal(T0, loaded.OpenedUtc);
-        // The delivery window runs first: nothing has collected the question yet.
-        Assert.Equal(T0 + Delivery, loaded.ExpiresUtc);
-        Assert.Equal(Delivery, loaded.DeliveryWindow);
-        Assert.Equal(Working, loaded.WorkingWindow);
-        Assert.Equal(Grace, loaded.GracePeriod);
+        Assert.Equal(ExchangePolicy.Default.UncollectedAfter, loaded.UncollectedAfter);
+        Assert.Equal(ExchangePolicy.Default.StalledAfter, loaded.StalledAfter);
         Assert.Null(loaded.DeliveredUtc);
-        Assert.Null(loaded.Resolution);
+        Assert.Null(loaded.Outcome);
         Assert.Equal(0L, loaded.Version);
     }
 
     [Fact]
-    public async Task Sub_second_windows_survive_the_round_trip()
+    public async Task Sub_second_thresholds_survive_the_round_trip()
     {
-        // Milliseconds rather than seconds in storage. Seconds truncated the window while
-        // expires_utc kept full precision, leaving a rehydrated exchange unable to reproduce
-        // its own deadline.
-        var odd = TimeSpan.FromMilliseconds(1500);
-        var oddWorking = TimeSpan.FromMilliseconds(2500);
+        // Milliseconds in storage, so a threshold a deployment set precisely comes back as set.
+        var uncollected = TimeSpan.FromMilliseconds(1500);
+        var stalled = TimeSpan.FromMilliseconds(2500);
 
-        var outcome = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("q1"),
-            Policy with { DeliveryWindow = odd, WorkingWindow = oddWorking },
-            cancellationToken: TestContext.Current.CancellationToken);
+        var outcome = await Open(
+            Orders, Billing,
+            policy: ExchangePolicy.Default with { UncollectedAfter = uncollected, StalledAfter = stalled });
 
-        var loaded = await _exchanges.GetAsync(
-            outcome.Exchange!.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var loaded = await _exchanges.GetAsync(outcome.Exchange!.Id, cancellationToken: Token);
 
-        Assert.NotNull(loaded);
-        Assert.Equal(odd, loaded.DeliveryWindow);
-        Assert.Equal(oddWorking, loaded.WorkingWindow);
-        // The stored deadline and the stored window must agree with each other.
-        Assert.Equal(loaded.OpenedUtc + loaded.DeliveryWindow, loaded.ExpiresUtc);
+        Assert.Equal(uncollected, loaded!.UncollectedAfter);
+        Assert.Equal(stalled, loaded.StalledAfter);
     }
 
     [Fact]
     public async Task A_policy_outside_what_storage_accepts_is_rejected()
     {
-        // Checked here as well as in the schema, so a misconfigured deployment fails naming the
-        // field rather than on the first question with a constraint violation raised several
-        // layers below the mistake.
+        // Checked here as well as in the schema, so a misconfigured deployment fails naming the field
+        // rather than on its first Request with a constraint violation several layers below the mistake.
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => _exchanges.TryOpenAsync(
-                Orders, Billing, T0, Q("q1"),
-                Policy with { DeliveryWindow = TimeSpan.Zero },
-                cancellationToken: TestContext.Current.CancellationToken));
+            () => Open(Orders, Billing, policy: ExchangePolicy.Default with { UncollectedAfter = TimeSpan.Zero }));
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => _exchanges.TryOpenAsync(
-                Orders, Billing, T0, Q("q1"),
-                Policy with { GracePeriod = TimeSpan.FromMilliseconds(1) },
-                cancellationToken: TestContext.Current.CancellationToken));
+            () => Open(Orders, Billing, policy: ExchangePolicy.Default with { OpenPairCap = 0 }));
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => _exchanges.TryOpenAsync(
-                Orders, Billing, T0, Q("q1"),
-                Policy with { OpenPairCap = 0 },
-                cancellationToken: TestContext.Current.CancellationToken));
+            () => Open(Orders, Billing,
+                policy: ExchangePolicy.Default with { OpenPairCap = ExchangePolicy.MaximumOpenPairCap + 1 }));
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => _exchanges.TryOpenAsync(
-                Orders, Billing, T0, Q("q1"),
-                Policy with { OpenPairCap = ExchangePolicy.MaximumOpenPairCap + 1 },
-                cancellationToken: TestContext.Current.CancellationToken));
+            () => Open(Orders, Billing, policy: ExchangePolicy.Default with { ClarifyDepthCap = -1 }));
     }
 
     [Fact]
-    public async Task A_question_must_carry_its_content_identity()
+    public async Task A_request_must_carry_its_content_identity_and_its_conversation()
     {
-        // Distinctness is keyed on it, so an empty hash would make every question identical.
+        // Distinctness is keyed on the hash, so an empty one would make every Request identical; and every
+        // exchange belongs to a conversation (§5.0), so there is no exchange without one.
         await Assert.ThrowsAsync<ArgumentException>(
-            () => _exchanges.TryOpenAsync(
-                Orders, Billing, T0, "  ",
-                cancellationToken: TestContext.Current.CancellationToken));
+            () => _exchanges.TryOpenAsync(Orders, Billing, T0, "  ", Work.Conversation, cancellationToken: Token));
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _exchanges.TryOpenAsync(Orders, Billing, T0, "hash", " ", cancellationToken: Token));
     }
 
     [Fact]
-    public async Task Negative_clarify_depth_cap_is_rejected_as_an_argument()
+    public async Task A_request_to_oneself_is_rejected()
     {
-        // Without the up-front check this reached the schema and surfaced as a
-        // SqliteException, leaking the storage layer through an API whose documented
-        // failures are argument exceptions. The caller cannot act differently on the two,
-        // and only one of them names the parameter at fault.
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => _exchanges.TryOpenAsync(
-                Orders, Billing, T0, Q("q1"), Policy with { ClarifyDepthCap = -1 },
-                cancellationToken: TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => Open(Orders, Orders));
     }
 
     [Fact]
-    public async Task A_reverse_question_is_refused_as_a_cycle_rather_than_as_a_busy_pair()
+    public async Task A_reverse_request_is_admitted_and_its_cycle_recorded()
     {
-        // Under pair serialisation this was the two-party case: billing asking orders back was
-        // refused because the pair already held an exchange. Nothing serialises now, so it is
-        // refused for the reason it was always really wrong — the two questions depend on each
-        // other and neither can be answered. The 2-cycle is no longer a special case; the same
-        // walk that catches three agents catches two.
-        await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("q1"),
-            cancellationToken: TestContext.Current.CancellationToken);
+        // Refused in 0.4 as a deadlock. Nothing waits synchronously, and billing asking orders for
+        // something while orders waits on billing is ordinary cross-repository work, so it is admitted —
+        // and the loop is written down, where a loop that has stopped moving is visible to the person.
+        await Open(Orders, Billing);
 
-        var outcome = await _exchanges.TryOpenAsync(
-            Billing, Orders, T0, Q("q2"),
-            cancellationToken: TestContext.Current.CancellationToken);
+        var outcome = await Open(Billing, Orders, "q2");
 
-        Assert.Equal(OpenRejection.WouldDeadlock, outcome.Rejection);
+        Assert.True(outcome.Succeeded);
         Assert.Equal([Billing, Orders], outcome.CyclePath);
+        Assert.Equal("billing@test -> orders@test", Scalar<string>(
+            "SELECT path FROM conversation_cycles WHERE exchange_id = @Id;", outcome.Exchange!.Id));
     }
 
     [Fact]
-    public async Task A_second_different_question_to_the_same_peer_is_admitted()
+    public async Task A_three_cycle_is_admitted_with_its_path()
     {
-        // The behaviour the pair rule used to forbid, and the reason for removing it. Answering
-        // across a repository boundary can take hours, and an asker unable to raise anything
-        // else with that peer meanwhile has only Notify left.
-        await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("where does price live"),
-            cancellationToken: TestContext.Current.CancellationToken);
+        await Open(Orders, Billing);
+        await Open(Billing, Inventory);
 
-        var outcome = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("who owns the discount ladder"),
-            cancellationToken: TestContext.Current.CancellationToken);
+        var outcome = await Open(Inventory, Orders);
+
+        Assert.True(outcome.Succeeded);
+        Assert.Equal([Inventory, Orders, Billing], outcome.CyclePath);
+    }
+
+    [Fact]
+    public async Task A_request_that_closes_no_cycle_records_none()
+    {
+        var outcome = await Open(Orders, Billing);
+
+        Assert.Empty(outcome.CyclePath);
+        Assert.Equal(0L, Scalar<long>("SELECT count(*) FROM conversation_cycles WHERE exchange_id = @Id;", outcome.Exchange!.Id));
+    }
+
+    [Fact]
+    public async Task A_second_different_request_to_the_same_receiver_is_admitted()
+    {
+        await Open(Orders, Billing, "where does price live");
+
+        var outcome = await Open(Orders, Billing, "who owns the discount ladder");
 
         Assert.True(outcome.Succeeded, $"expected admission, got {outcome.Rejection}");
     }
 
     [Fact]
-    public async Task Repeating_a_live_question_is_refused_and_returns_the_exchange_carrying_it()
+    public async Task Repeating_a_live_request_is_refused_and_returns_the_exchange_carrying_it()
     {
-        // Distinctness. Repetition used to be impossible because a pair held one exchange, so
-        // removing that rule removed a guard nobody had written down as one.
-        var first = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("where does price live"),
-            cancellationToken: TestContext.Current.CancellationToken);
+        var first = await Open(Orders, Billing, "where does price live");
 
-        var repeat = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0.AddMinutes(1), Q("where does price live"),
-            cancellationToken: TestContext.Current.CancellationToken);
+        var repeat = await Open(Orders, Billing, "where does price live", at: T0.AddMinutes(1));
 
-        Assert.Equal(OpenRejection.DuplicateQuestion, repeat.Rejection);
+        Assert.Equal(RequestRejection.Duplicate, repeat.Rejection);
         Assert.Equal(first.Exchange!.Id, Assert.Single(repeat.Outstanding).Id);
     }
 
     [Fact]
-    public async Task The_open_pair_cap_bounds_how_much_one_asker_may_have_in_flight()
+    public async Task A_request_repeated_after_its_exchange_closed_is_admitted()
     {
+        // Distinctness holds only while the first is open. Asking again for work already reported on is a
+        // new piece of work — the first answer may have been blocked on something since resolved.
+        var first = await Open(Orders, Billing, "where does price live");
+        await Work.CloseAsync(_connection, first.Exchange!, T0.AddMinutes(1), cancellationToken: Token);
+
+        var again = await Open(Orders, Billing, "where does price live", at: T0.AddMinutes(2));
+
+        Assert.True(again.Succeeded, $"expected admission, got {again.Rejection}");
+    }
+
+    [Fact]
+    public async Task A_set_open_pair_cap_bounds_how_much_one_requester_may_have_in_flight()
+    {
+        var capped = ExchangePolicy.Default with { OpenPairCap = 3 };
+
         for (var i = 0; i < 3; i++)
         {
-            var admitted = await _exchanges.TryOpenAsync(
-                Orders, Billing, T0, Q($"question {i}"),
-                policy: Policy with { OpenPairCap = 3 }, cancellationToken: TestContext.Current.CancellationToken);
-            Assert.True(admitted.Succeeded, $"question {i} should have been admitted");
+            Assert.True((await Open(Orders, Billing, $"request {i}", capped)).Succeeded);
         }
 
-        var refused = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("one too many"),
-            policy: Policy with { OpenPairCap = 3 }, cancellationToken: TestContext.Current.CancellationToken);
+        var refused = await Open(Orders, Billing, "one too many", capped);
 
-        Assert.Equal(OpenRejection.PairSaturated, refused.Rejection);
+        Assert.Equal(RequestRejection.Saturated, refused.Rejection);
 
-        // The refusal hands back work rather than a retry instruction: an asker shown what it
-        // is already waiting on can often see that this question is covered by one of them.
+        // The refusal hands back work rather than a retry instruction: a requester shown what it is already
+        // waiting on can often see that this Request is covered by one of them.
         Assert.Equal(3, refused.Outstanding.Count);
     }
 
     [Fact]
     public async Task The_cap_is_directional()
     {
-        // orders filling its allowance with billing must not stop billing asking orders. The
-        // two flows are unrelated lines of enquiry, and coupling them would refuse one agent
-        // for the sins of another.
-        var saturate = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("only question"),
-            policy: Policy with { OpenPairCap = 1 }, cancellationToken: TestContext.Current.CancellationToken);
-        Assert.True(saturate.Succeeded);
+        var capped = ExchangePolicy.Default with { OpenPairCap = 1 };
 
-        // Answered, so it no longer holds a wait-for edge and the reverse question is not a
-        // cycle. The cap is what is under test here, not cycle detection.
-        Assert.True(saturate.Exchange!.Answer(Billing, T0.AddMinutes(1)).Succeeded);
-        Assert.True(await _exchanges.SaveAsync(
-            saturate.Exchange, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.True((await Open(Orders, Billing, "only request", capped)).Succeeded);
 
-        var reverse = await _exchanges.TryOpenAsync(
-            Billing, Orders, T0.AddMinutes(2), Q("a different question"),
-            policy: Policy with { OpenPairCap = 1 }, cancellationToken: TestContext.Current.CancellationToken);
+        var reverse = await Open(Billing, Orders, "a different request", capped);
 
         Assert.True(reverse.Succeeded, $"expected admission, got {reverse.Rejection}");
     }
 
     [Fact]
-    public async Task A_question_to_a_silent_agent_is_admitted_because_that_is_how_it_is_woken()
+    public async Task A_request_to_a_silent_agent_is_admitted_because_that_is_how_it_is_woken()
     {
-        // The failure this exists for: a repository is deleted while its agent is still
-        // registered. The agent row survives, so the foreign key is satisfied and the pair slot
-        // is free — every other admission check passes. Without this the question is accepted,
-        // waits a full inactivity window, orphans unanswered, and costs the same again on the
-        // next attempt, forever, while nobody learns why.
-        var agents = new AgentRepository(_connection);
+        // Silence means only that nobody has that repository open, which is where most agents are most of
+        // the time — and a Request is what gives a node a reason to start one.
         GoSilent(Billing);
 
-        var outcome = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+        var outcome = await Open(Orders, Billing);
 
-        // Reversed deliberately. Silence now means only that nobody has that repository open,
-        // which is where most agents are most of the time -- and a question is precisely what
-        // gives a supervisor a reason to start one. Refusing here would make the wake path
-        // unreachable: no debt could be created, so none could ever be acted on.
         Assert.True(outcome.Succeeded);
-
-        // And it hands back a real exchange, which is the debt a supervisor acts on.
-        Assert.NotNull(outcome.Exchange);
         Assert.Equal(Billing, outcome.Exchange!.OwedBy);
-
-        // And it is on the open list, which is the list a supervisor reads to decide who to
-        // start. That is the whole path this reversal exists to keep open.
-        Assert.Single(await _exchanges.GetOpenAsync(
-            cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Single(await _exchanges.GetOpenAsync(cancellationToken: Token));
     }
 
     [Fact]
     public async Task An_offline_agent_is_still_routable()
     {
-        // Offline is the ordinary resting state of a lazily spawned agent, not a fault.
-        // Refusing here would refuse the very traffic meant to wake it.
-        var agents = new AgentRepository(_connection);
-        Assert.Equal(1, await agents.MarkOfflineAsync(Billing, TestContext.Current.CancellationToken));
+        Assert.Equal(1, await new AgentRepository(_connection).MarkOfflineAsync(Billing, Token));
 
-        var outcome = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.True(outcome.Succeeded);
+        Assert.True((await Open(Orders, Billing)).Succeeded);
     }
 
     [Fact]
-    public async Task An_agent_that_comes_back_is_routable_again()
-    {
-        var agents = new AgentRepository(_connection);
-        GoSilent(Billing);
-        await agents.MarkLiveAsync(Billing, null, T0, TestContext.Current.CancellationToken);
-
-        var outcome = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.True(outcome.Succeeded);
-    }
-
-    [Fact]
-    public async Task An_unreachable_asker_may_still_ask()
+    public async Task An_unreachable_requester_may_still_send()
     {
         // The state describes whether the broker can reach an agent, not whether it may speak.
-        // An agent running well enough to ask is evidently reachable, and refusing it here
-        // would strand it on a stale mark until something else cleared it.
-        var agents = new AgentRepository(_connection);
         GoSilent(Orders);
 
-        var outcome = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.True(outcome.Succeeded);
+        Assert.True((await Open(Orders, Billing)).Succeeded);
     }
 
     [Fact]
-    public async Task Three_cycle_is_rejected_with_a_path()
+    public async Task A_receiver_nothing_has_registered_is_refused()
     {
-        await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
-        await _exchanges.TryOpenAsync(
-            Billing, Inventory, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+        var outcome = await Open(Orders, AgentName.Create("shipping@test"));
 
-        var outcome = await _exchanges.TryOpenAsync(
-            Inventory, Orders, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.Equal(OpenRejection.WouldDeadlock, outcome.Rejection);
-        Assert.Equal([Inventory, Orders, Billing], outcome.CyclePath);
+        Assert.Equal(RequestRejection.ReceiverNotRegistered, outcome.Rejection);
     }
 
     [Fact]
-    public async Task Closing_frees_the_pair_and_the_cycle()
+    public async Task Retirement_refuses_on_either_side()
     {
-        await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
-        await _exchanges.TryOpenAsync(
-            Billing, Inventory, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
+        // The one statement about a participant that refuses a Request (§14): the person has said this
+        // agent is withdrawn, so neither work for it nor work from it is admitted.
+        Retire(Billing);
 
-        var open = await _exchanges.GetOpenAsync(
-            cancellationToken: TestContext.Current.CancellationToken);
-        var first = open.Single(e => e.Asker == Orders);
-
-        Assert.True(first.Answer(Billing, T0.AddMinutes(1)).Succeeded);
-        Assert.True(await _exchanges.SaveAsync(
-            first, cancellationToken: TestContext.Current.CancellationToken));
-
-        var outcome = await _exchanges.TryOpenAsync(
-            Inventory, Orders, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.True(outcome.Succeeded);
+        Assert.Equal(RequestRejection.ReceiverRetired, (await Open(Orders, Billing)).Rejection);
+        Assert.Equal(RequestRejection.SenderRetired, (await Open(Billing, Orders)).Rejection);
     }
 
     [Fact]
-    public async Task Clarify_is_persisted_and_reverses_admission()
+    public async Task A_closed_conversation_admits_nothing_and_says_who_closed_it()
     {
-        var opened = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
-        var exchange = opened.Exchange!;
+        var conversations = new ConversationRepository(_connection);
+        await conversations.EnsureOpenAsync("pricing-boundary", T0, cancellationToken: Token);
+        Assert.True(await conversations.ForceConcludeAsync("pricing-boundary", "superseded", T0, cancellationToken: Token));
+
+        var outcome = await Open(Orders, Billing, conversation: "pricing-boundary");
+
+        Assert.Equal(RequestRejection.ConversationClosed, outcome.Rejection);
+        Assert.Equal(ConversationCloser.Person, outcome.ClosedBy);
+    }
+
+    [Fact]
+    public async Task Clarify_is_persisted()
+    {
+        var exchange = (await Open(Orders, Billing)).Exchange!;
 
         Assert.True(exchange.Clarify(Billing, T0.AddMinutes(2)).Succeeded);
-        Assert.True(await _exchanges.SaveAsync(
-            exchange, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.True(await _exchanges.SaveAsync(exchange, cancellationToken: Token));
 
-        var loaded = await _exchanges.GetAsync(exchange.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var loaded = await _exchanges.GetAsync(exchange.Id, cancellationToken: Token);
 
-        Assert.NotNull(loaded);
-        Assert.Equal(Orders, loaded.OwedBy);
+        Assert.Equal(Orders, loaded!.OwedBy);
         Assert.Equal(1, loaded.ClarifyDepth);
-        // A clarification proves the answerer holds the question, so the working window runs.
-        Assert.Equal(T0.AddMinutes(2) + Working, loaded.ExpiresUtc);
     }
 
     [Fact]
     public async Task Save_advances_the_version_stamp()
     {
-        var opened = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
-        var exchange = opened.Exchange!;
+        var exchange = (await Open(Orders, Billing)).Exchange!;
         Assert.Equal(0L, exchange.Version);
 
         exchange.Clarify(Billing, T0);
-        Assert.True(await _exchanges.SaveAsync(
-            exchange, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.True(await _exchanges.SaveAsync(exchange, cancellationToken: Token));
         Assert.Equal(1L, exchange.Version);
 
         // The instance must remain usable for a second save without reloading.
         exchange.Clarify(Orders, T0);
-        Assert.True(await _exchanges.SaveAsync(
-            exchange, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.True(await _exchanges.SaveAsync(exchange, cancellationToken: Token));
         Assert.Equal(2L, exchange.Version);
     }
 
     [Fact]
-    public async Task Stale_save_is_rejected_and_loses_no_clarify_depth()
+    public async Task A_stale_save_is_rejected_and_loses_no_clarify_depth()
     {
-        var opened = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
-        var id = opened.Exchange!.Id;
+        var id = (await Open(Orders, Billing)).Exchange!.Id;
 
         // Two independent instances of the same row, as two broker code paths would hold.
-        var a = await _exchanges.GetAsync(id, cancellationToken: TestContext.Current.CancellationToken);
-        var b = await _exchanges.GetAsync(id, cancellationToken: TestContext.Current.CancellationToken);
+        var a = await _exchanges.GetAsync(id, cancellationToken: Token);
+        var b = await _exchanges.GetAsync(id, cancellationToken: Token);
 
         a!.Clarify(Billing, T0);
-        Assert.True(await _exchanges.SaveAsync(
-            a, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.True(await _exchanges.SaveAsync(a, cancellationToken: Token));
 
-        // b was loaded before a's write, so its transition must not be applied.
         b!.Clarify(Billing, T0);
-        Assert.False(await _exchanges.SaveAsync(
-            b, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.False(await _exchanges.SaveAsync(b, cancellationToken: Token));
 
-        var reloaded = await _exchanges.GetAsync(id, cancellationToken: TestContext.Current.CancellationToken);
+        var reloaded = await _exchanges.GetAsync(id, cancellationToken: Token);
         Assert.Equal(1, reloaded!.ClarifyDepth);
         Assert.Equal(1L, reloaded.Version);
     }
 
     [Fact]
-    public async Task Save_of_a_missing_row_reports_failure()
+    public async Task Saving_a_missing_row_reports_failure()
     {
-        var orphanInstance = Exchange.Open(999_999, Orders, Billing, T0, Policy);
-
-        Assert.False(await _exchanges.SaveAsync(
-            orphanInstance, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.False(await _exchanges.SaveAsync(Exchange.Open(999_999, Orders, Billing, T0), cancellationToken: Token));
     }
 
     [Fact]
-    public async Task Orphaned_exchanges_are_findable_by_the_owing_agent()
+    public async Task Storage_refuses_an_outcome_nobody_sent_a_result_for()
     {
-        var opened = await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
-        var exchange = opened.Exchange!;
+        // The aggregate would close it; storage is what says a Result must exist first, so a code path
+        // that forgot to write one cannot tell a requester its work is settled.
+        var exchange = (await Open(Orders, Billing)).Exchange!;
+        Assert.True(exchange.Close(Billing, T0, ExchangeOutcome.Complete).Succeeded);
 
-        exchange.Orphan(T0.AddMinutes(20));
-        Assert.True(await _exchanges.SaveAsync(
-            exchange, cancellationToken: TestContext.Current.CancellationToken));
+        var refused = await Assert.ThrowsAsync<SqliteException>(() => _exchanges.SaveAsync(exchange, cancellationToken: Token));
 
-        Assert.Single(await _exchanges.GetOrphanedOwedByAsync(
-            Billing, TestContext.Current.CancellationToken));
-        Assert.Empty(await _exchanges.GetOrphanedOwedByAsync(
-            Orders, TestContext.Current.CancellationToken));
-
-        // An orphan holds no pair slot, so a new question on that pair is admitted.
-        var reopened = await _exchanges.TryOpenAsync(
-            Billing, Orders, T0.AddHours(1), Q("q1"),
-            cancellationToken: TestContext.Current.CancellationToken);
-        Assert.True(reopened.Succeeded);
+        Assert.Contains("closes on a result", refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Resuming_a_second_orphan_for_the_same_pair_is_refused()
+    public async Task Storage_keeps_a_closed_exchange_closed()
     {
-        // ux_open_pair is a partial index over open rows only, so a pair can accumulate more
-        // than one orphan: orphan the first, open a second on the freed slot, orphan that
-        // too. Both are then returned by GetOrphanedOwedByAsync, and replaying the inbox on
-        // re-registration would try to resume both.
-        var first = (await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("q1"),
-            cancellationToken: TestContext.Current.CancellationToken)).Exchange!;
-        first.Orphan(T0.AddMinutes(20));
-        Assert.True(await _exchanges.SaveAsync(
-            first, cancellationToken: TestContext.Current.CancellationToken));
+        var (exchange, _) = await Work.OpenAsync(_connection, Orders, Billing, T0, cancellationToken: Token);
+        await Work.CloseAsync(_connection, exchange, T0.AddMinutes(1), cancellationToken: Token);
 
-        var second = (await _exchanges.TryOpenAsync(
-            Orders, Billing, T0.AddHours(1), Q("q1"),
-            cancellationToken: TestContext.Current.CancellationToken)).Exchange!;
-        second.Orphan(T0.AddHours(2));
-        Assert.True(await _exchanges.SaveAsync(
-            second, cancellationToken: TestContext.Current.CancellationToken));
+        var reopened = Exchange.Rehydrate(
+            exchange.Id, Orders, Billing, Billing, ExchangeState.Open, 0, exchange.ClarifyDepthCap,
+            exchange.UncollectedAfter, exchange.StalledAfter, T0, null, null, null, exchange.Version);
 
-        Assert.Equal(2, (await _exchanges.GetOrphanedOwedByAsync(
-            Billing, TestContext.Current.CancellationToken)).Count);
+        await Assert.ThrowsAsync<SqliteException>(() => _exchanges.SaveAsync(reopened, cancellationToken: Token));
+    }
 
-        // The first resume takes the pair slot back.
-        first.Resume(T0.AddHours(3));
-        Assert.True(await _exchanges.SaveAsync(
-            first, cancellationToken: TestContext.Current.CancellationToken));
+    // ---- which conversation a Request goes into (§5.0) ----
 
-        // The second cannot, and the schema is what stops it. This surfaces as an exception
-        // rather than a false return: false means "you are stale, reload and decide again",
-        // which would send a caller that retried into a loop, since reloading changes
-        // nothing about the pair already being held.
-        second.Resume(T0.AddHours(3));
-        var ex = await Assert.ThrowsAsync<SqliteException>(
-            () => _exchanges.SaveAsync(
-                second, cancellationToken: TestContext.Current.CancellationToken));
+    [Fact]
+    public async Task A_sender_holding_nothing_and_naming_nothing_starts_a_new_conversation()
+    {
+        var assigned = await _exchanges.AssignConversationAsync(Orders, null, senderIsPerson: false, cancellationToken: Token);
 
-        Assert.Contains("UNIQUE", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(assigned.Succeeded);
+        Assert.True(assigned.Starts);
+        Assert.StartsWith("c-", assigned.ConversationId, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Expiry_scan_finds_only_overdue_open_exchanges()
+    public async Task A_sender_holding_one_conversation_is_kept_in_it()
     {
-        await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, Q("q1"), cancellationToken: TestContext.Current.CancellationToken);
-        await _exchanges.TryOpenAsync(
-            Billing, Inventory, T0.AddHours(1), Q("q1"),
-            cancellationToken: TestContext.Current.CancellationToken);
+        // The rule the whole assignment exists for: an agent working on a Request and asking somebody else
+        // for part of it cannot split the line of work by naming nothing.
+        await Open(Orders, Billing, conversation: "pricing-boundary");
 
-        var expired = await _exchanges.GetExpiredAsync(
-            T0.AddMinutes(30), TestContext.Current.CancellationToken);
+        var assigned = await _exchanges.AssignConversationAsync(Billing, null, senderIsPerson: false, cancellationToken: Token);
 
-        Assert.Single(expired);
-        Assert.Equal(Orders, expired[0].Asker);
+        Assert.Equal("pricing-boundary", assigned.ConversationId);
+        Assert.False(assigned.Starts);
+    }
+
+    [Fact]
+    public async Task A_sender_holding_several_must_name_one_and_is_told_which()
+    {
+        await Open(Orders, Billing, conversation: "pricing-boundary");
+        await Open(Inventory, Billing, conversation: "stock-levels");
+
+        var assigned = await _exchanges.AssignConversationAsync(Billing, null, senderIsPerson: false, cancellationToken: Token);
+
+        Assert.False(assigned.Succeeded);
+        Assert.Equal(RequestRejection.ConversationNotAssignable, assigned.Refusal!.Rejection);
+        Assert.Equal(["pricing-boundary", "stock-levels"], assigned.Refusal.Assignable);
+    }
+
+    [Fact]
+    public async Task A_sender_holding_requests_cannot_start_a_new_conversation_by_naming_one()
+    {
+        await Open(Orders, Billing, conversation: "pricing-boundary");
+
+        var assigned = await _exchanges.AssignConversationAsync(Billing, "somewhere-new", senderIsPerson: false, cancellationToken: Token);
+
+        Assert.Equal(RequestRejection.ConversationNotAssignable, assigned.Refusal!.Rejection);
+        Assert.Equal(["pricing-boundary"], assigned.Refusal.Assignable);
+    }
+
+    [Fact]
+    public async Task Waiting_on_a_request_is_not_holding_one()
+    {
+        // Held means received. Orders waits on billing, and what orders does meanwhile is its own work.
+        await Open(Orders, Billing, conversation: "pricing-boundary");
+
+        var assigned = await _exchanges.AssignConversationAsync(Orders, "somewhere-new", senderIsPerson: false, cancellationToken: Token);
+
+        Assert.Equal("somewhere-new", assigned.ConversationId);
+        Assert.True(assigned.Starts);
+    }
+
+    [Fact]
+    public async Task A_participant_holding_nothing_may_continue_its_conversation_and_a_stranger_may_not()
+    {
+        await Open(Orders, Billing, conversation: "pricing-boundary");
+
+        var participant = await _exchanges.AssignConversationAsync(Orders, "pricing-boundary", senderIsPerson: false, cancellationToken: Token);
+        var stranger = await _exchanges.AssignConversationAsync(Inventory, "pricing-boundary", senderIsPerson: false, cancellationToken: Token);
+
+        Assert.True(participant.Succeeded);
+        Assert.False(participant.Starts);
+        Assert.Equal(RequestRejection.ConversationNotAssignable, stranger.Refusal!.Rejection);
+    }
+
+    [Fact]
+    public async Task A_person_may_start_or_join_any_open_conversation()
+    {
+        // A person is where lines of work begin (principle 2.10), and the person running the deployment
+        // may take part in any of them.
+        await Open(Orders, Billing, conversation: "pricing-boundary");
+
+        var joining = await _exchanges.AssignConversationAsync(Inventory, "pricing-boundary", senderIsPerson: true, cancellationToken: Token);
+
+        Assert.Equal("pricing-boundary", joining.ConversationId);
+    }
+
+    [Fact]
+    public async Task Naming_a_closed_conversation_is_refused_with_who_closed_it()
+    {
+        var conversations = new ConversationRepository(_connection);
+        await conversations.EnsureOpenAsync("pricing-boundary", T0, cancellationToken: Token);
+        await conversations.ForceConcludeAsync("pricing-boundary", null, T0, cancellationToken: Token);
+
+        var assigned = await _exchanges.AssignConversationAsync(Orders, "pricing-boundary", senderIsPerson: true, cancellationToken: Token);
+
+        Assert.Equal(RequestRejection.ConversationClosed, assigned.Refusal!.Rejection);
+        Assert.Equal(ConversationCloser.Person, assigned.Refusal.ClosedBy);
     }
 
     [Fact]
@@ -520,18 +466,27 @@ public sealed class ExchangeRepositoryTests : IDisposable
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => _exchanges.GetOpenAsync(cancellationToken: cts.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => _exchanges.GetOpenAsync(cancellationToken: cts.Token));
+    }
+
+    private T Scalar<T>(string sql, long id)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("@Id", id);
+        return (T)command.ExecuteScalar()!;
+    }
+
+    private void Retire(AgentName agent)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "UPDATE agents SET status = 'retired' WHERE name = @Name;";
+        command.Parameters.AddWithValue("@Name", agent.Value);
+        command.ExecuteNonQuery();
     }
 
     /// <summary>Takes an agent's machine off the air, the way a lost node does.</summary>
     /// <param name="agent">The agent to strand.</param>
-    /// <remarks>
-    /// This used to age a heartbeat into the past, because unreachability was arithmetic on a
-    /// timestamp and there was no other way to produce one. It is now an observation with a
-    /// writer -- the node's connection closed -- so the test performs the same write the broker
-    /// does, and there is nothing left to simulate.
-    /// </remarks>
     private void GoSilent(AgentName agent)
     {
         using var command = _connection.CreateCommand();
@@ -544,5 +499,4 @@ public sealed class ExchangeRepositoryTests : IDisposable
         command.Parameters.AddWithValue("@Name", agent.Value);
         command.ExecuteNonQuery();
     }
-
 }

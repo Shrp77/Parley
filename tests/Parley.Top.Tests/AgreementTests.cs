@@ -119,12 +119,14 @@ public sealed class AgreementTests : IAsyncDisposable
         await broker.StartAsync(Billing, T0, ct);
         await broker.StartAsync(Inventory, T0, ct);
 
-        await broker.NotifyAsync(
-            Orders, Billing, "model-a", """{"text":"to billing only"}""",
+        await broker.RequestAsync(
+            Orders, Billing, "model-a",
+            """{"intent":"telling","items":[{"id":"r1","kind":"question","text":"to billing only"}],"done_when":"billing has acknowledged it"}""",
             T0.AddMinutes(1), "threeway", ct);
 
-        await broker.NotifyAsync(
-            Orders, Inventory, "model-a", """{"text":"to inventory only"}""",
+        await broker.RequestAsync(
+            Orders, Inventory, "model-a",
+            """{"intent":"telling","items":[{"id":"r1","kind":"question","text":"to inventory only"}],"done_when":"inventory has acknowledged it"}""",
             T0.AddMinutes(2), "threeway", ct);
 
         var read = await BrokerDirectory.ReadAsync(async () =>

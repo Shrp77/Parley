@@ -140,12 +140,18 @@ parley retire <agent>                 withdraw a registration
 parley reinstate <agent>              the only thing that clears a retirement
 parley purge <agent>                  DESTROY an agent and everything it was party to
 parley export <conversation>          every message in a discussion, across agents
-parley force-conclude <conv>          close a discussion over its participants' votes
+parley force-conclude <conv> [<reason>]  close a conversation now, over its participants' votes
 parley prune                          apply the retention policy now
+parley instruct <agent> <words>       give an agent a person's words as a turn; it may decline
+parley start <agent>                  ask the machine that holds an agent to start it
+parley archive <conversation>         take a conversation off the list; deletes nothing
+parley unarchive <conversation>       put an archived conversation back
+parley destroy <conversation>         DESTROY a conversation and every message in it
 parley refusals                       what the message size cap refused
-parley clarifications                 how deep clarification went, and whether the cap binds
-parley referrals                      where questions are sent onward, and to whom
-parley notifications                  how much Notify carries, and who can judge it
+parley clarifications                 how deep clarification went, and whether a cap binds
+parley results                        what Results reported: outcomes, and what blocked
+parley flags                          open work nobody collected or nobody is moving, and
+                                      conversations waiting only on somebody's vote
 parley waiting <agent>                how many messages and polls await an agent
 parley open                           conversations with an exchange still open, and who is in
                                       them; what stopping the broker would interrupt
@@ -229,8 +235,9 @@ shell's, not the deployment's, and the agents have been quietly enforcing someth
 a file the person owns, and it is the only copy that outlives the policy.
 
 A floor bounds it in the other direction and is not configurable: no amount of tightening
-deletes a message nobody has collected yet, the question of an exchange that is still open, or
-the recent rows deduplication is still reading.
+deletes a message nobody has collected yet, anything on an exchange that is still open, the
+request a result nobody has collected yet carries back, or the recent rows deduplication is still
+reading.
 
 ## The caps, and the evidence for them
 
@@ -244,9 +251,8 @@ that was refused for being too long would retain exactly what the cap exists to 
 somebody wants the cap raised, this is what the argument should be made from.
 
 `clarifications` is the same idea for the other cap, and it reads a question the spec has left
-open rather than settling one. It reports how deep clarification actually goes, how often an
-exchange reached its limit, whether the broker had to force an `unknown`, and whether answers
-ever resolve sub-questions differently from one another.
+open rather than settling one. It reports how deep clarification actually goes and how often an
+exchange reached its limit.
 
 Read the caps it prints beside the distribution, because a cap censors its own evidence: depths
 pile up at whatever limit was in force, whether the true need was one more or forty more. A
@@ -254,36 +260,23 @@ distribution with a heap at the top is a truncated measurement, not a finding. R
 far above any plausible need and watching where depth actually settles is the only way to learn
 what it should be - and if depth is almost always zero, the cap was never what kept it low.
 
-`referrals` is the third of these and the only one that points at something a person can fix. It
-reports, per pair, how many closed exchanges the answerer resolved as `out_of_scope` and who it
-named instead. A high rate is not an agent behaving badly - it is two repositories that disagree
-about where a boundary runs, or one holding a stale idea of what the other owns.
+`results` is the one that points at something a person can fix. It reports what Results said,
+item by item: how much was done, answered or acknowledged, and how much came back blocked -
+and on what, `missing_information`, `conflict` or `permission`. A blocker is not an agent
+behaving badly. It is the protocol handing a person the one thing no agent could resolve, and
+the Result's text says exactly what is needed. Read the blocked ones first.
 
-The two halves come from different places and have different reach. The rate is counted from
-exchanges, which retention never touches, so it covers the whole life of the deployment. The
-names come from a record kept beside the messages, because `redirect_to` used to live only in a
-payload that `prune` deletes. Neither half keeps any text.
-
-When it points somewhere, the fix is in whatever the project uses to record ownership, and in the
-`PARLEY_OWNS` line of the agent being asked wrongly. Not here.
-
-`notifications` is a measurement rather than a check on anything. Nothing limits how many
-notifications an agent may send - deliberately, while there is no evidence for what a limit
-should be - so this reports how many were sent, how big they were, between whom, and over what
-span. Compare the mean against the single-message cap it prints beside it.
-
-Since protocol 0.4 a notification also *starts* its recipient, so this volume now costs turns
-on somebody's machine rather than only context. The turns are bounded and the messages are
-not: a recipient is woken once until it reads its inbox, however many notices arrive. So a
-high count here is still the cue to ask, and what it costs is in `invocations`.
-
-It also totals what each agent has received, and marks the ones past ten. That is the cue to go
-and ask that agent whether any of it was worth having: volume alone cannot tell a useful stream
-of contract changes from noise, and the only participant who knows is the one reading them.
+`flags` is what needs a person *now*. Nothing in Parley times out, so work that has stopped
+moving is not closed for you - it is flagged: a message its recipient has not collected past its
+threshold, an open exchange where nobody has sent anything for too long, work owed by an agent
+that has been retired, or a conversation whose work is all closed and which is waiting only on a
+participant saying whether it is finished. A flag on work names the exchange and who holds the
+next move; a flag on a vote names the conversation and who has not answered. Starting the agent,
+answering what it is waiting on, or `force-conclude` with a reason are the remedies.
 
 The cap is set per agent, by `PARLEY_CLARIFY_CAP` in that repository's `.mcp.json`, and it is the
-**asker's** cap that governs an exchange. Raising it in one repository widens only the questions
-that repository asks. To measure across a project, raise it everywhere - and check the range this
+**requester's** cap that governs an exchange. Unset, there is no cap. Raising it in one repository widens only the requests
+that repository sends. To measure across a project, raise it everywhere - and check the range this
 command prints, because a half-applied change shows up there as two different caps in force.
 
 ## Reporting back

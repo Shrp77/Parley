@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -6,142 +6,97 @@ using Xunit;
 namespace Parley.Broker.Tests;
 
 /// <summary>
-/// The deployment §1 describes: many repositories, an agent apiece, sessions opening and closing
-/// independently.
+/// The deployment §1 describes: many repositories, an agent apiece, sessions opening and closing independently.
 /// </summary>
 /// <remarks>
-/// This is the case that forced the attach sequence to be scoped. Under the broker-wide version
-/// the second session to open orphaned the first's live work, the third orphaned both, and
-/// nothing said so — the damage scaled with how many colleagues were working and was invisible
-/// to all of them. A machine rebooting and everyone coming back is exactly when it would have
-/// been worst, and exactly when nobody would have suspected the messaging layer.
+/// This is the case that forced the attach sequence to be scoped to the attaching agent. A sequence reaching
+/// every agent's work would have one session's arrival act on colleagues' work, with the damage scaling with how
+/// many were working and invisible to all of them.
 /// </remarks>
 public sealed class ManyAgentsTests : IDisposable
 {
     private const int Repositories = 22;
-    private const string Model = "claude-opus-5";
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private static readonly AgentName[] Agents =
         [.. Enumerable.Range(1, Repositories).Select(i => AgentName.Create($"repo-{i}@test"))];
 
     private readonly SqliteConnection _connection;
-    private readonly ExchangeRepository _exchanges;
+    private readonly MessageRepository _messages;
 
     public ManyAgentsTests()
     {
         _connection = ParleyDatabase.OpenInMemory();
-        var registry = new AgentRepository(_connection);
-
-        foreach (var agent in Agents)
-        {
-            registry.UpsertAsync(
-                new AgentRecord(agent, "mcp", AgentTier.Full, null, null, null, false, AgentStatus.Active),
-                TestContext.Current.CancellationToken).GetAwaiter().GetResult();
-        }
-
-        _exchanges = new ExchangeRepository(_connection);
+        Requests.Register(_connection, Agents);
+        _messages = new MessageRepository(_connection);
     }
 
     public void Dispose() => _connection.Dispose();
 
-    private static string Question(int i) =>
-        $$"""{"text":"who owns field {{i}}?","consequences":"If you do I read it; if not I define my own."}""";
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private Broker Attach(AgentName agent, DateTimeOffset at)
+    /// <summary>A ring of Requests, each collected and none finished, as a day of work would leave it.</summary>
+    private async Task<List<long>> RingCollectedAsync()
     {
-        var broker = new Broker(_connection, BrokerOptions.Default);
-        broker.StartAsync(agent, at, TestContext.Current.CancellationToken).GetAwaiter().GetResult();
-        return broker;
-    }
+        var host = new Broker(_connection);
+        await host.StartAsync(Agents[0], T0, Ct);
 
-    [Fact]
-    public async Task Sessions_opening_one_by_one_leave_each_others_work_alone()
-    {
-        var ct = TestContext.Current.CancellationToken;
-
-        // Every repository asks the next one something. A ring, so each agent owes exactly one
-        // answer and is waiting on exactly one — and no pair carries two questions, so nothing
-        // trips the cycle check.
         var opened = new List<long>();
-        var host = Attach(Agents[0], T0);
 
         for (var i = 0; i < Repositories - 1; i++)
         {
-            var asked = await host.AskAsync(
-                Agents[i], Agents[i + 1], Model, Question(i), T0.AddMinutes(1), cancellationToken: ct);
-            Assert.True(asked.Succeeded, $"expected admission for {i}, got {asked.Rejection}");
-            opened.Add(asked.Exchange!.Id);
+            // Naming nothing: each agent past the first holds the Request before it and asks onward for part of
+            // it, so the whole ring is one line of work and the broker keeps it in one conversation (§5.0).
+            var sent = await host.RequestAsync(
+                Agents[i], Agents[i + 1], Requests.Model, Requests.Request($"who owns field {i}?"), T0.AddMinutes(1), cancellationToken: Ct);
+            Assert.True(sent.Succeeded, $"expected admission for {i}, got {sent.Rejection}");
+            opened.Add(sent.Exchange!.Id);
         }
 
-        // Everybody reads their question during the day and answers none of it. The reading
-        // matters: §14 releases a debt the agent was carrying, and a question still sitting
-        // uncollected has not been handed to anybody yet — orphaning it on attach would destroy
-        // it in the moment before its recipient could read it.
         foreach (var agent in Agents)
         {
-            await host.DrainInboxAsync(agent, T0.AddMinutes(90), cancellationToken: ct);
+            await host.DrainInboxAsync(agent, T0.AddMinutes(90), cancellationToken: Ct);
         }
 
-        // Now everybody's session opens again, one after another, as people come back to work.
+        await host.DetachAsync(Ct);
+
+        return opened;
+    }
+
+    [Fact]
+    public async Task Sessions_opening_one_by_one_each_get_back_exactly_their_own_work()
+    {
+        await RingCollectedAsync();
+
+        var redelivered = new List<int>();
+
         for (var i = 0; i < Repositories; i++)
         {
-            Attach(Agents[i], T0.AddMinutes(2 + i));
+            redelivered.Add((await new Broker(_connection).StartAsync(Agents[i], T0.AddHours(2 + i), Ct)).ExchangesRedelivered);
         }
 
-        // Each agent released exactly the one answer it owed, and nothing else. Under the
-        // broker-wide sequence the first attach would have orphaned all twenty-one at once.
-        var states = new List<ExchangeState>();
-
-        foreach (var id in opened)
-        {
-            states.Add((await _exchanges.GetAsync(id, cancellationToken: ct))!.State);
-        }
-
-        Assert.All(states, state => Assert.Equal(ExchangeState.Orphaned, state));
+        // The first repository owes nothing in the ring; every other owes exactly one.
+        Assert.Equal([0, .. Enumerable.Repeat(1, Repositories - 1)], redelivered);
     }
 
     [Fact]
-    public async Task One_session_opening_orphans_one_debt_and_no_more()
+    public async Task One_session_opening_hands_back_one_piece_of_work_and_no_more()
     {
-        var ct = TestContext.Current.CancellationToken;
+        await RingCollectedAsync();
 
-        var host = Attach(Agents[0], T0);
-        var opened = new List<long>();
+        var attach = await new Broker(_connection).StartAsync(Agents[5], T0.AddHours(2), Ct);
 
-        for (var i = 0; i < Repositories - 1; i++)
-        {
-            var asked = await host.AskAsync(
-                Agents[i], Agents[i + 1], Model, Question(i), T0.AddMinutes(1), cancellationToken: ct);
-            opened.Add(asked.Exchange!.Id);
-        }
+        Assert.Equal(1, attach.ExchangesRedelivered);
 
-        // Everybody reads their question during the day and answers none of it. The reading
-        // matters: §14 releases a debt the agent was carrying, and a question still sitting
-        // uncollected has not been handed to anybody yet — orphaning it on attach would destroy
-        // it in the moment before its recipient could read it.
+        var waiting = 0;
+
         foreach (var agent in Agents)
         {
-            await host.DrainInboxAsync(agent, T0.AddMinutes(90), cancellationToken: ct);
+            waiting += await _messages.CountPendingAsync(agent, Ct);
         }
 
-        // One person comes back and opens one repository.
-        var broker = new Broker(_connection, BrokerOptions.Default);
-        var attach = await broker.StartAsync(Agents[5], T0.AddMinutes(2), ct);
-
-        Assert.Equal(1, attach.ExchangesOrphaned);
-
-        var orphaned = 0;
-
-        foreach (var id in opened)
-        {
-            if ((await _exchanges.GetAsync(id, cancellationToken: ct))!.State == ExchangeState.Orphaned)
-            {
-                orphaned++;
-            }
-        }
-
-        // Exactly the one debt repo-5 was carrying. Twenty other conversations untouched.
-        Assert.Equal(1, orphaned);
+        // Exactly the one piece of work repo-6 was carrying. Twenty other lines of work untouched.
+        Assert.Equal(1, waiting);
+        Assert.Equal(1, await _messages.CountPendingAsync(Agents[5], Ct));
     }
 }

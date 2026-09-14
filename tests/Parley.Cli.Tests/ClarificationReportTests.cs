@@ -37,7 +37,8 @@ public sealed class ClarificationReportTests : IAsyncDisposable
         _commands = new OperatorCommands(_broker.Operators, _output);
 
         Execute("INSERT INTO nodes (machine, connected, first_seen_utc) VALUES ('test', 1, '2026-01-01T00:00:00+00:00') ON CONFLICT DO NOTHING; INSERT INTO agents (name, adapter, tier, status) VALUES "
-              + "('orders@test','test','full','active'),('billing@test','test','full','active');");
+              + "('orders@test','test','full','active'),('billing@test','test','full','active');"
+              + "INSERT INTO conversations (id, state, opened_utc) VALUES ('c1', 'OPEN', '" + Stamp + "');");
     }
 
     public async ValueTask DisposeAsync()
@@ -60,12 +61,12 @@ public sealed class ClarificationReportTests : IAsyncDisposable
         command.ExecuteNonQuery();
     }
 
-    private void Exchange(string question, int depth, int cap) => Execute(
-        "INSERT INTO exchanges (pair_key, asker, answerer, owed_by, state, clarify_depth, "
-      + "clarify_depth_cap, open_pair_cap, delivery_window_ms, working_window_ms, "
-      + "grace_period_ms, opened_utc, expires_utc, question_hash) VALUES "
+    private void Exchange(string request, int depth, int cap) => Execute(
+        "INSERT INTO exchanges (pair_key, requester, receiver, owed_by, state, clarify_depth, "
+      + "clarify_depth_cap, open_pair_cap, uncollected_flag_ms, stalled_flag_ms, "
+      + "opened_utc, request_hash, conversation_id) VALUES "
       + "('billing@test' || char(31) || 'orders@test','orders@test','billing@test','billing@test','OPEN'," + depth + ","
-      + cap + ",5,900000,14400000,86400000,'" + Stamp + "','" + Stamp + "','" + question + "');");
+      + cap + ",5,900000,14400000,'" + Stamp + "','" + request + "','c1');");
 
     [Fact]
     public async Task An_empty_deployment_says_there_is_no_evidence_rather_than_printing_a_table()
@@ -91,6 +92,23 @@ public sealed class ClarificationReportTests : IAsyncDisposable
 
         Assert.Contains("Nothing has clarified even once", Printed, StringComparison.Ordinal);
         Assert.Contains("nothing here to tune", Printed, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Uncapped_exchanges_are_reported_as_having_no_cap_rather_than_a_huge_one()
+    {
+        // The default is no clarification cap, stored as the largest integer. Printed as a number,
+        // the report would tell somebody deciding whether to set a cap that one was already set, at
+        // a value nobody chose. Depth past the old storage band is included so the "real one"
+        // reading is exercised at the default rather than only under a small cap.
+        Exchange("a", depth: 0, cap: int.MaxValue);
+        Exchange("b", depth: 5000, cap: int.MaxValue);
+
+        Assert.Equal(0, await _commands.ClarificationsAsync(Ct));
+
+        Assert.Contains("Caps in force: none.", Printed, StringComparison.Ordinal);
+        Assert.DoesNotContain("2147483647", Printed, StringComparison.Ordinal);
+        Assert.DoesNotContain("censored", Printed, StringComparison.Ordinal);
     }
 
     [Fact]

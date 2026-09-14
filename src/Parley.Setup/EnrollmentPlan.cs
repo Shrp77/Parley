@@ -127,14 +127,15 @@ public static class EnrollmentPlan
         ## Peers
 
         Other repositories have their own agents, reachable through Parley. They cannot see this
-        repository and this repository cannot see theirs: only the text of a question and its answer
+        repository and this repository cannot see theirs: only the text of a request and its result
         crosses between them. `parley_inbox` is pull rather than push - call it when you start work,
-        and again when you are waiting on a reply.
+        and again when you are waiting on a result.
 
         - The roster has not been read yet. Run `/parley:write-peers` to fill this in.
 
-        **Do not guess at what these repositories do, and do not edit them. Ask.** A question must say
-        what you will do with each possible answer.
+        **Do not guess at what these repositories do, and do not edit them.** When you need work done
+        in one, or something it knows, send its agent a `parley_request` saying why and what done
+        looks like. Do the work other agents request of this repository.
 
         """;
 
@@ -159,6 +160,28 @@ public static class EnrollmentPlan
         name is { Length: > 0 and <= NameLimit }
         && char.IsAsciiLetterLower(name[0])
         && name.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-');
+
+    /// <summary>What a field says when <see cref="CorrectName"/> changed what was typed.</summary>
+    public const string NameWasCorrected = NameCorrection.WasCorrected;
+
+    /// <summary>
+    /// Turns what somebody typed into something <see cref="IsWellFormedName"/> can accept.
+    /// </summary>
+    /// <param name="typed">What is in the field.</param>
+    /// <returns>What the field should hold instead.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Named here rather than called directly by the form.</b> What the enrolment form is
+    /// holding somebody to is <see cref="IsWellFormedName"/>, and a surface reaching past it to the
+    /// correction would be depending on the two staying the same rule by coincidence.
+    /// </para>
+    /// <para>
+    /// <b>It corrects and never completes:</b> an empty name and a first character that is a digit
+    /// are left for the message to refuse, because inventing a leading letter would put a name
+    /// somebody did not choose into a manifest and into every peer's roster.
+    /// </para>
+    /// </remarks>
+    public static string CorrectName(string? typed) => NameCorrection.Correct(typed);
 
     /// <summary>
     /// Finds everything wrong with a manifest, before any of it is written.

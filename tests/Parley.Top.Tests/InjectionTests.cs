@@ -87,8 +87,8 @@ public sealed class InjectionTests
 
         var message = new Message(
             1,
-            null,
-            MessageType.Notify,
+            1,
+            MessageType.Request,
             AgentName.Create("orders@test"),
             AgentName.Create("billing@test"),
             "test",
@@ -135,6 +135,44 @@ public sealed class InjectionTests
 
         Assert.All(lines, line => Assert.DoesNotContain(Hostile, line, StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void A_peers_request_cannot_repaint_the_form_it_is_answered_from()
+    {
+        // Found by the review gate, lens 2 run 2.9. A Request's intent, items, done_when and item ids are the
+        // requester's words, and they are quoted into the Result and clarification forms' titles, the chooser of
+        // owed messages and the Result form's labels — none of which went through Safe.
+        var owed = new Parley.Client.Seating.Delivered(new Message(
+            1,
+            1,
+            MessageType.Request,
+            AgentName.Create("orders@test"),
+            AgentName.Create("arvind@test"),
+            "test",
+            "{\"intent\":\"before" + HostileInJson + "after\","
+            + "\"items\":[{\"id\":\"r1" + HostileInJson + "\",\"kind\":\"work\",\"text\":\"item" + HostileInJson + "\"}],"
+            + "\"done_when\":\"done" + HostileInJson + " when the field is moved\"}",
+            "conv",
+            DateTimeOffset.UnixEpoch,
+            null));
+
+        var asked = Participation.Asked(owed);
+        var id = Assert.Single(owed.Items());
+
+        Assert.Contains(Hostile, id, StringComparison.Ordinal);
+
+        Assert.DoesNotContain(Hostile, asked, StringComparison.Ordinal);
+        Assert.DoesNotContain(Hostile, Participation.Label(owed), StringComparison.Ordinal);
+        Assert.DoesNotContain(Hostile, Participation.OutcomeLabel(id), StringComparison.Ordinal);
+        Assert.DoesNotContain(Hostile, Participation.SaidLabel(id), StringComparison.Ordinal);
+
+        Assert.Contains("before", asked, StringComparison.Ordinal);
+        Assert.Contains("after", asked, StringComparison.Ordinal);
+        Assert.Contains(Environment.NewLine, asked, StringComparison.Ordinal);
+    }
+
+    /// <summary>The same sequence as JSON escapes it inside a string, which is how a peer's payload carries it.</summary>
+    private const string HostileInJson = "\\u001b[2J";
 
     [Fact]
     public void The_check_is_looking_at_something()

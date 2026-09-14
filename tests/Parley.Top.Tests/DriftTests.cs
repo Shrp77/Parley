@@ -20,6 +20,12 @@ namespace Parley.Top.Tests;
 /// deliberately absent — which is exactly the argument that file asks for before an operation is
 /// admitted, applied in the other direction.
 /// </para>
+/// <para>
+/// <b>Since 0.26.0 that excuse no longer passes the file.</b> The owner decided every surface offers every operator
+/// operation, and <c>Every_operation_is_bound_by_both_surfaces</c> asserts it with no exemption, so an operation named
+/// in the contract as absent from one surface still fails there. The contract check stays because it names what the
+/// document says, which is the better message while somebody is deciding.
+/// </para>
 /// </remarks>
 public sealed class DriftTests
 {
@@ -69,11 +75,11 @@ public sealed class DriftTests
         //
         // **There are three surfaces, and this test named two of them until the terminal moved.**
         // It read `src/Parley.Cli` as "the terminal", which was the whole tool -- so an operation
-        // bound only by a one-shot command counted as bound by a screen. `PruneAsync` is exactly
-        // that: `parley prune` binds it and neither screen does, deliberately, since SurfaceTests
-        // requires `Prune` to appear in neither surface tree. The check passed for a reason that
-        // stopped being true, and the honest repair is to name the command line as the third
-        // surface rather than to exempt the operation.
+        // bound only by a one-shot command counted as bound by a screen. `PruneAsync` was exactly
+        // that until 0.26.0: `parley prune` bound it and neither screen did, deliberately. The check
+        // passed for a reason that had stopped being true, and the honest repair was to name the
+        // command line as the third surface rather than to exempt the operation. Both screens bind
+        // it now, and `Every_operation_is_bound_by_both_surfaces` holds them to that.
         var console = Text("src", "Parley.Web");
         var terminal = Text("src", "Parley.Top");
         var commands = Text("src", "Parley.Cli");
@@ -176,16 +182,24 @@ public sealed class DriftTests
     }
 
     [Fact]
-    public void The_three_the_contract_excludes_are_still_excluded_from_the_terminal()
+    public void Every_operation_is_bound_by_both_surfaces()
     {
-        // Asserted from the terminal's own source rather than from the contract, so the pair is a
-        // real comparison rather than a document agreeing with itself.
+        // **The owner's parity decision, asserted without exclusions.** The check above lets the contract
+        // excuse an operation one surface binds; this one excuses nothing. Asserted from the two trees'
+        // own source rather than from the contract, so it is a real comparison rather than a document
+        // agreeing with itself.
+        var console = Text("src", "Parley.Web");
         var terminal = Text("src", "Parley.Top");
 
-        foreach (var excluded in new[] { "ForceConcludeAsync", "InstructAsync", "PruneAsync" })
-        {
-            Assert.DoesNotContain(excluded, terminal, StringComparison.Ordinal);
-        }
+        var unbound = Operations()
+            .Where(name => !console.Contains(name, StringComparison.Ordinal)
+                        || !terminal.Contains(name, StringComparison.Ordinal))
+            .ToList();
+
+        Assert.True(
+            unbound.Count == 0,
+            "Every surface offers every operator operation, and these are missing from one: "
+            + string.Join(", ", unbound));
     }
 
     [Fact]

@@ -73,8 +73,8 @@ public sealed class DestroyedNavigationTests
         shell.Transcript.Show(
             "a-discussion", "alpha", new ConversationExport([], [], Record()), null);
 
-        Assert.DoesNotContain(shell.Actions(), a => a.Label == Participation.AnswerTitle);
-        Assert.DoesNotContain(shell.Actions(), a => a.Label == Participation.AskTitle);
+        Assert.DoesNotContain(shell.Actions(), a => a.Label == Participation.ResultTitle);
+        Assert.DoesNotContain(shell.Actions(), a => a.Label == Participation.RequestTitle);
     }
 
     [Fact]

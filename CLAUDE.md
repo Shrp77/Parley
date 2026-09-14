@@ -65,7 +65,7 @@ src/Parley.Client    What a client of a broker needs in order to show a deployme
                     this one.
 
                     The drive belongs here too. SeatVoice.TakeDeliveryAsync drains and records in
-                    one act, and its AnswerAsync overload settles the seat when the broker says
+                    one act, and its ResultAsync overload settles the seat when the broker says
                     the exchange closed. Two surfaces each writing that themselves is how they
                     come to disagree about what a person has seen.
 
@@ -170,7 +170,9 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
                     **SurfaceTests is what makes both properties of the code rather than habits.**
                     `Retire`, `Reinstate` and `Purge` may appear in exactly one file, which must
                     contain the typed-name prompt; the `destroy` argument in exactly one other;
-                    and `ForceConclude`, `Instruct` and `Prune` in none. A helper whose *name*
+                    and, since 0.26.0 made every operator operation available on every surface,
+                    `ForceConclude`, `Prune` and `Instruct` each in exactly one file carrying its
+                    door. A helper whose *name*
                     merely contains one of those words fails it, which has already happened once
                     and is the point.
  That was decided deliberately and against the argument
@@ -523,35 +525,33 @@ evidence about this build rather than about the protocol, and the asker cannot t
 difference from the other side of a message.
 
 If the two disagree, that is a defect in one of them and which one is a decision, not an
-assumption. Say so in the answer rather than picking the convenient half: a peer acting on
+assumption. Say so in the Result rather than picking the convenient half: a peer acting on
 "the code does X" when the spec says Y will be wrong the moment the defect is fixed the other
-way. `unknown` is a legitimate answer and a cheap one; a confident wrong ruling about the
-protocol propagates into every repository that asked.
+way. When the spec does not settle it, report the item `blocked` with `missing_information`
+and say exactly what is unsettled; a confident wrong ruling about the protocol propagates into
+every repository that asked.
 
 ## Surveying the peers
 
-SPEC.md §17 question 1 leaves Notify uncapped on purpose and decides the question from evidence.
-Half that evidence is counted — `parley notifications` reports volume, size and what each agent
-has received, marking anyone past ten. The other half cannot be counted at all: whether any of it
-was worth reading. Only the agent receiving it knows, so somebody has to ask.
+SPEC.md §17 question 1 leaves request volume unbounded on purpose and decides the question from
+evidence. Half that evidence is counted — inbox depth and `invocations` record what each agent
+receives and what its turns cost. The other half cannot be counted at all: whether the requests
+were worth the work. Only the agent receiving them knows, so somebody has to ask.
 
-**The person runs the report; this agent does the asking.** That division is not ceremony. The
-report reads across every pair in the deployment, which is exactly the disclosure §10.1 withholds
-from an agent — so this agent must not run `parley notifications`, `parley referrals` or any
-other operator command, and does not need to. It is told which peers are due and asks them
-through Parley like any other question.
+**The person runs the reports; this agent does the asking.** That division is not ceremony. The
+reports read across every pair in the deployment, which is exactly the disclosure §10.1 withholds
+from an agent — so this agent must not run `parley results`, `parley flags` or any other operator
+command, and does not need to. It is told which peers are due and sends them a request through
+Parley like any other.
 
-Ask it as a real question, because it is one, and rule 8.1 applies here as much as anywhere:
+Send it as a real request, because it is one, and rule 8.1 applies here as much as anywhere:
 
-> *Intent:* deciding whether Parley should bound how many notifications one agent may send.
-> *q1:* Of the notifications you have received, roughly how many were worth reading?
-> *Consequences:* if most were useful I will argue against a cap and record that; if most were
-> noise I will propose a per-sender limit and cite your answer; if you cannot tell, that is
-> evidence the volume is already past what is readable, and I will say so.
+> *Intent:* deciding whether Parley should bound how many requests one agent may send another.
+> *q1 (question):* Of the requests you have received, roughly how many were worth the work?
+> *Done when:* you have said how many were worth it and, if any were not, what made them so.
 
-Ask at ten, then again at twenty and thirty. The same agent's answer changing as the count rises
-is the finding — a stream that was useful at ten and noise at thirty says the limit is somewhere
-between, which no counter can tell you.
+Ask again as the volume grows. The same agent's answer changing as the count rises is the finding,
+which no counter can tell you.
 
 Record what comes back in §17 question 1 rather than acting on it. One agent's opinion is not a
 protocol change, and the question is the durable place for evidence to accumulate.
@@ -597,6 +597,336 @@ Design work for a protocol change runs through Spec Kit: `/speckit-specify` writ
 writes `tasks.md`. Read the plan for the feature being worked on before implementing it.
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
+
+- **Current plan**: `specs/014-work-across-repositories/` — 0.26.0, **protocol 0.5**, schema 8. Parley
+  exists to get work done across repositories, and 0.4 said otherwise: every delivery told an agent a
+  peer's message could not direct its work, and `out_of_scope` told it to refer rather than do. Agents
+  followed that and declined the work they were asked for. SPEC.md was rewritten top down against the
+  owner's charter first, and the code followed in one change.
+
+  **Question, Answer and Notify became Request, Clarify and Result**, and every message is answered — an
+  announcement is a Request answered `acknowledged`. A Request carries items of work or questions and a
+  `done_when` of at least twenty characters; a Result gives each item `done`, `answered`,
+  `acknowledged` or `blocked` with a blocker of `missing_information`, `conflict` or `permission`, and
+  names its `sources`. `closed` is the broker's alone.
+
+  **Nothing times out.** `ORPHANED`, `ghosted` and the delivery and working windows are gone; an exchange
+  that stops moving is *flagged* to the person (`parley flags`), and a returning agent is handed the work
+  it had collected again. A conversation ends by consensus of the participants asked — those holding work when closure
+  was proposed, including any that have since sent their Result — or by a
+  person — `force-conclude` now takes a reason, and each holder is told it.
+
+  **The broker assigns the conversation.** A sender holding requests from one conversation names nothing;
+  holding several, it names one; only a sender holding none, or a person, starts a new one.
+
+  **Migration 008 rebuilds `exchanges` and `messages` on a real store**, not only an empty one: an orphan
+  becomes open again, a ghosted exchange becomes `closed`, work 0.4 left open in a conversation a person had
+  closed is closed with it, a standalone notification is dropped, and size refusals are merged under their
+  new types. That third clause was found by the review gate: 0.4's `force_conclude` closed only the
+  conversation row, and carried across open, that work locked its receiver out of sending any Request while
+  no person could close it. It was proved against a schema-7 store built from the
+  embedded migrations, including sequence continuity and the integrity check.
+
+  **Every surface offers every operator operation, and that reverses 005's exclusions on the owner's
+  call.** The terminal gained a Health dialog (flags, waits, results, refusals, clarifications),
+  force-conclude behind the identifier typed back, prune behind the project's name, instruct, and a
+  clarification action for a seat; the web gained prune; the CLI gained `instruct`, `start`, `archive`,
+  `unarchive` and `destroy`. `SurfaceTests` holds each terminal call to one file carrying its door, and
+  `DriftTests` now asserts both surfaces bind every `BrokerClient` operation with no exemption.
+
+  **The terminal composer's labels lost their examples** where the console keeps them: five fields at one
+  row each already fill a twenty-four row terminal, and the examples took five more rows, which opened the
+  form with its first field off the screen. done_when kept its reason.
+
+  **The review gate was met on the final code on all three lenses**, and what it found is most of what is worth
+  reading about this change. Each finding below was reproduced by probe before it was fixed; the ledger is
+  `REVIEW-LEDGER.md`.
+
+  - **A question 0.4 carried forward could never be finished.** 0.4 held sub-question ids only to being distinct,
+    migration carries an open question as an open Request, and a Result's recorded item is capped at 64 characters.
+    Echoing a longer id was refused by storage and leaving it out was refused for not matching, and nothing in 0.5
+    times out. `PayloadShape.ItemIds` now leaves out ids a Result cannot carry, `MessageLimits.LongestItemId` states
+    the bound once and `ItemIdBoundTests` pins the schema to it, and a Request left with none is answered under
+    `request` — which the broker *requires* and names in its refusal, because the first version merely allowed it
+    and an agent was then told a storage constraint rather than what to send.
+  - **A message stored while its receiver was collecting lost its wake.** The drain ran, then cleared the bound as a
+    separate step, so a Request landing between the two found the bound held, asked for nothing, and lost it to a
+    collection that never read it. An attached adapter only records a notice; a turn is what makes it collect.
+    `BrokerRuntime.CollectAsync` frees the bound before the drain reads.
+  - **A collection its caller limited left the rest with no turn coming.** `parley_inbox` offers a limit, and a drain
+    that took one of two freed the bound for both. The drain now asks again when it filled its limit and mail remains.
+    `WakeLifecycleTests` had asserted the bound was clear after a partial drain, standing in for its own comment's claim
+    that the agent would be woken again; it asserts the wake now.
+  - Earlier, before the final-code runs: a silent voter nothing asked again, then two ways to spend another agent's
+    turns through the fix for it, bounded in the end to once per poll; the broker's own notice wrapped as the peer's
+    words; retention deleting the Request an away requester's Result carries back; a peer's Request text reaching the
+    terminal's forms unescaped; work 0.4 left open in a person-closed conversation; and text across the surfaces,
+    README, skill, SPEC §18 and the proto that still described 0.4.
+
+  Two tests were added for guards that held but that nothing checked: two turns asked of one resident are taken one
+  after the other (`OverlappingTurnsTests`, with a mutation check), and a Request refused for an overlong id leaves no
+  half-open exchange behind (`OverlongItemIdTests`). **Spec Kit was not run for this plan**: there is no `spec.md` or
+  `tasks.md` beside it.
+
+- **Clarifications are uncapped by default** — 0.25.8, schema 7, no wire change. The owner's call,
+  made while SPEC.md was being rewritten: the new §5.2 says depth is not capped unless a deployment
+  caps it, and `DocumentedDefaultTests` caught the code still applying 200. The spec leads the rewrite,
+  so the code followed rather than the test being loosened.
+
+  **Spelled as the largest integer, and forced the way the pair cap's 50 was.** `exchanges` holds
+  `CHECK (clarify_depth <= clarify_depth_cap)`, which SQLite cannot alter and this migrator cannot
+  rebuild. The range of caps is held by two triggers instead, and `007_unbounded_clarifications.sql`
+  replaces them to admit exactly `2147483647` beyond 0..1000 — at which the CHECK never binds. Zero was
+  not available: it already means no clarification at all. `ExchangePolicy.UnboundedClarifications`
+  and `BoundsClarifications` name the value; `Validate` rejects anything past 1,000 that is not it.
+
+  **A test was asserting the opposite on purpose.** `ClarifyCapBoundsTests` wrote `int.MaxValue` and
+  expected a refusal — "a value that switches the cap off while every constraint still passes". It
+  is now split: that one value is admitted and lets depth run past the band, and one short of it is
+  still refused. `parley clarifications` prints "Caps in force: none" rather than the number that
+  spells it, which would have told somebody a cap was set at a value nobody chose.
+
+- **An open transcript in the terminal follows its conversation** — 0.25.7, no protocol change.
+  Reported by the owner on the first question asked after 0.25.6: the answer arrived in forty-seven
+  seconds and was not on screen until they closed the transcript and opened it again. `OpenAsync` read
+  a conversation once and nothing read it again.
+
+  **Polled every `Shell.FollowEvery` (3s), not driven by the seat's stream.** The stream speaks only to
+  a seat about its own mail, and a transcript is as often an operator with no seat reading two agents.
+  One read waiting in the queue at a time, so a slow broker does not stack a read per tick in front of
+  every action. It stops when the view leaves the conversation or another is opened.
+
+  **The web console recorded the opposite decision, and it is answered rather than overruled.**
+  `_Layout.cshtml` says a transcript never refreshes because "a page that changed under a reader
+  mid-sentence would be worse than one that is briefly out of date". `TranscriptRegion.Follow` does not
+  move a reader: a transcript grows only at the end, so the row under the cursor is the same row after,
+  a reader on the last row is kept on the last row, and one who never moved the cursor is left at the
+  top. It redraws only when the written text differs, so most ticks draw nothing. **The console is not
+  changed** and keeps its "fallen behind" notice; whether it should follow too is the owner's call.
+
+  **A failed read keeps the transcript and says so once** — "may be out of date" — and takes its own
+  words back on recovery only if nothing else has been said since. `FollowEvery` is a seam for the
+  reason `Opener` is: `Driving.Show` turns it off, because a surface queueing reads on its own schedule
+  would make `Settled` meaningless across the suite.
+
+- **A store has one broker, and a second launcher says so and exits** — 0.25.6, no protocol change, SPEC.md §4
+  amended to say how its existing rule is made true. Reported by the owner as seventeen agents
+  "not running, and its machine is not connected" on the machine running them.
+
+  **The terminal was right to say it; the broker's record was wrong.** At logon a scheduled task and a
+  Windows Terminal restoring its last session both ran `parley serve` with identical arguments. Every
+  broker clears `nodes.connected` and `agents.connected` when it opens a store, because a broker that
+  has just started holds no connections — and it did that *before* binding its port. The loser cleared
+  the winner's live node, failed to bind, and exited 69. The winner's node stream never ended, so it
+  never rejoined, and nothing set the flag back. Asks still woke agents — waking reads the in-memory
+  join, admission reads only retirement — so it was every listing that lied, including the roster
+  peers read.
+
+  **Nothing recorded it.** The log was held open for writing, so the loser could not open it and its
+  "No broker started" went to a console nobody could see. Found from the task scheduler's history, the
+  running broker's parent process (`WindowsTerminal.exe`) and Terminal's `state.json`, then reproduced:
+  `Startable` before a second `BrokerRuntime.Open` on the same file, `Stranded` after, with the live
+  join still held.
+
+  **`StoreLock` is taken before anything touches the store**, as the first act of `BrokerRuntime.Open`:
+  `<store>.lock` opened with no sharing, released by the operating system when the process goes, so
+  there is no stale lock and no heartbeat. The holder writes `<store>.owner` (pid, start time, build)
+  and a refused broker believes it only after confirming that process is alive and started when it
+  says. **The lock file is never deleted on release** — on Linux an exclusive `flock` belongs to an
+  open file, so unlinking it would let the next two starters each lock a different file of one name.
+  Only `project remove --destroy` deletes it, first, and a lock it cannot delete means a broker it did
+  not stop is still serving — so it stops before touching anything else.
+
+  **A second launcher exits, and a standby was built and taken out on the owner's call.** The first
+  version waited on a held store and took it over when released, on the argument that the winner at
+  logon is arbitrary — that day the terminal tab won — so closing the winning window would leave
+  nothing serving until the next logon. The owner judged that over-engineering and counter-intuitive:
+  an idle second broker is a process nobody expects. So a held store is `Start.Held`, said once with
+  the holder's process, and not a failure. `serve --db` exits 0; a manifest whose every project is
+  held exits 0; held projects in a manifest with free ones are skipped while the rest are served, and
+  a held project named later is not retried until its entry changes. **The cost is recorded rather than
+  hidden:** whichever launcher wins is the one the deployment now depends on staying open.
+
+  **The log is shared.** Each line is appended by open, write, close — a held .NET writer keeps its own
+  position and would write its next line over whatever the other process appended.
+
+- **§7.1's open-question cap is off by default, and a question can go to every agent** — 0.25.5,
+  schema 6, no wire change. Both the owner's decisions, after the terminal offered *All agents* when
+  announcing and not when asking.
+
+  **The asymmetry rested on a misreading.** `Participation.Everyone` said a question to everybody
+  "would saturate a small deployment" because §7.1 caps open exchanges per pair. The cap is per
+  *peer*, so N questions to N different agents hold one slot each; and "the asker owing answers"
+  had the debt backwards. §5.5 already defines the plural ask as N ordinary exchanges and calls
+  that "the whole design", so `SeatVoice.AskEveryoneAsync` is that, from a roster instead of a
+  role. **The console never had the asymmetry**: its *Everyone in this conversation* box already
+  asked or announced, so this was terminal-only.
+
+  **The cap was not doing what its rationale said.** It refuses a *further simultaneous* question
+  to one peer and never shortens a conversation — one exchange plus clarifies, and a Clarify takes
+  no slot. The two things that end a conversation before consensus are `ClarifyDepthCap` and §6's
+  window into §14's ghost sweep. The owner removed it anyway, on the clarify cap's own reasoning: a
+  cap censors the evidence that would justify it.
+
+  **Unbounded is `open_pair_cap = 50`, and 0 was impossible — probed, not reasoned.** The band is a
+  `CHECK` on `exchanges`, SQLite cannot alter one, and `exchanges` cannot be rebuilt the way 003
+  rebuilt `messages`: it is a parent of `messages` and `message_referrals`, `SchemaMigrator` runs
+  each migration in a transaction where `PRAGMA foreign_keys` is a no-op, and `DROP TABLE` under an
+  enabled key fails on the first child row. **That rebuild passes on every empty fixture and fails
+  on every real store.** `006_unbounded_pair_cap.sql` makes both triggers stand down at the ceiling
+  and keeps them for 1..49, so a deployment that reinstates a cap still has §9.3's storage guard.
+  `ExchangePolicy.Unbounded` and `BoundsOpenQuestions` name the sentinel so nothing compares 50.
+
+  **Three existing tests went vacuous and still passed.** `A_refused_question_does_not_consume_a_pair_slot`,
+  `Notifying_takes_no_pair_slot` and `A_dead_peers_slots_are_reclaimed_by_the_sweep_not_by_attaching`
+  all used the default cap as their instrument; with no cap there was nothing for them to fail
+  against. Each now sets one. The two new storage tests were vacuous in their first draft for the
+  same reason — ten rows never reach fifty — and were confirmed to fail with 006 removed.
+
+  **Still open, and a spec rather than a patch:** the owner wants Notify and Ask merged so that
+  every message requires an answer, even "received". That changes §5.0's non-membership of an
+  announcer, §5.4, §13.1, §15's resolution signals, the message-type enum and a §18 protocol bump,
+  so it runs through Spec Kit. Recorded against it: 0.25.3's `collected` mark already says whether
+  a message was received, at no model cost; what an answer adds is whether it was understood.
+
+- **The composer's two actions are told apart by what they cost** — 0.25.4, no protocol change.
+  Reported as confusion rather than as a defect, which is what made it one: the owner read "Ask
+  somebody a question" and "Tell somebody something" and proposed **Tell → "fire and forget"**,
+  **Ask → "start a conversation"**.
+
+  **Both of those name a property the two share, and the spec says so in as many words.** §5.4:
+  "Every message type is fire-and-forget in the sense that the sender does not wait (§4.2); what
+  distinguishes Notify is that *nothing is owed in return*." And §5.0: "A Notify **declares** a
+  conversation rather than joining one" — which is why nineteen announcements had produced a
+  conversation in the first place. **What separates them is debt**, so that is what the labels say:
+  `Owing.Asking` is *opens an exchange they must answer*, `Owing.Announcing` is *no exchange, no
+  answer owed*, and both surfaces read those two constants.
+
+  **"Tell" became "Announce", on the owner's call**, because §5.4 calls a Notify "an event. Not
+  chit-chat" and an announcer gets no vote in the conversation it declares. The cost is recorded
+  rather than hidden: the wire type is `Notify` and the agent's tool is `parley_notify`, so this
+  surface now says a third word for one operation — bought by the word being the true one.
+
+  **"Start a conversation by telling somebody something" is gone outright.** A Notify does declare
+  a conversation, but §5.0 gives its sender no membership and no vote, so that label promised a
+  seat at a table the protocol does not set.
+
+  **The clause is in the menu and never on the status line.** Two of them is fifty columns, which
+  would push every action behind `?` at any ordinary width — so `RegionAction` grew a `Costs` the
+  menu renders and the status line does not. A menu is a list somebody reads; a status line is a
+  reminder of what they already know.
+
+  **The console's checkbox said "I would like a reply"**, which is a preference rather than what it
+  decides. It says `Ask a question — opens an exchange they must answer` now, from the same
+  constant, with the announcement case under it.
+
+- **A transcript says who could see a message and whether it was collected** — 0.25.3, no protocol
+  change. Everything here came out of one broadcast to nineteen agents.
+
+  **The visibility note was longer than the messages it annotated.** §5.0 makes a conversation a
+  set of pairwise exchanges, so a broadcast is nineteen pairwise notifications in one conversation
+  — and every one carried the other eighteen participants by name, four hundred characters, under
+  a header that had already said who the message was for. The owner read it as the recipients
+  having missed the message. It names four and counts the rest now, the shape every other list here
+  settled on; `ExportTests`'s point survives, because naming *some* is what makes the note
+  actionable and the export's header lists every participant.
+
+  **The fact they actually wanted was on no line at all.** Who *could* see a message is fixed when
+  it is written and is a statement about the protocol; whether the recipient has *collected* it is
+  a fact about the deployment now — §4.2's inbox drain, `delivered_utc`. Two different questions,
+  one of them unanswerable from the screen, and the wall of names was standing where the answer
+  should have been. `Delivery` puts it in the header of every message, on both surfaces and in the
+  export: `collected 14:03` or `not collected yet`. **"Collected", never "seen"** — delivery is the
+  broker handing it over, and no row here records what the agent did next.
+
+  **A conversation can be copied to the clipboard** (`c` in the transcript), which is what somebody
+  reading one over SSH needs and what `parley export` cannot give them without a shell on the other
+  machine. What is copied is what is on screen rather than what the export writes: the export
+  flattens payloads because a text file has no defence against one shaped like an annotation, and
+  this surface has the indent instead, so the readable form is also the safe one. `Shell.Copier` is
+  a seam for the reason `Opener` is one — a suite run in a loop would otherwise replace whatever
+  the person at the keyboard had on their clipboard.
+
+  **Copying is the first transcript action that does not need a seat**, so that arm is no longer
+  gated as a whole: reading a conversation and taking a copy of what you read are one act, and an
+  operator without a seat is the one most likely to be quoting a transcript somewhere else.
+
+- **Fields apply their own rule, and the message line is a paragraph** — 0.25.2, no protocol
+  change. Three defects from one session, all met while telling nineteen agents one thing.
+
+  **A field with a rule about characters now applies it as it is typed, on both surfaces.** The
+  owner named a conversation `tell everybody test`, wrote the message, sent it, and got the rule
+  back with the form closed and their words gone. `Naming.NameCorrection` had made exactly this
+  argument for a project's name in 0.18.11 and three fields were left out: the conversation name on
+  the composer, the role an enrolled repository answers to, and the name somebody joins under —
+  plus the console's own *Start a conversation called*, whose placeholder ("what it is about")
+  invited the sentence that cannot fit.
+
+  **A space becomes a hyphen rather than being dropped, which is the owner's call and a departure
+  from the field beside it.** Dropping gives `telleverybodytest`, which nobody reads back;
+  `tell-everybody-test` keeps the words. So the project-name correction stopped swallowing spaces
+  too — one grammar, one correction: `ProjectName` and the role half of `AgentName` are the same
+  expression, and `Parley.Core.NameCorrection` is now the only place it is applied. The
+  conversation name has its own character set and lives in `Parley.Client.ConversationName`, which
+  `SeatVoice` reads as well, so what a field offers and what the send refuses cannot disagree.
+
+  **The console applies the same rules in the browser and states them without scripts.** One
+  implementation in the frame, walking whatever a field declares in `data-correct`; `pattern` and
+  `maxlength` come from the same constants and are what a browser with no scripts enforces; the
+  server refuses regardless. A rule with three spellings would be a console that admitted what the
+  terminal refused.
+
+  **`Label` eats `_`, and the owner read a rule with one of its own characters missing.** The
+  toolkit takes an underscore as the hotkey marker, so the sentence naming `'.', '_' and '-'`
+  reached the screen as `'.', '' and '-'`. That is the same class of defect `Safe` exists for, read
+  the other way: almost every label here draws text this program did not write — a path in the
+  picker, a project's description before it is destroyed, a conversation identifier on the status
+  line — and an underscore is legal in all of them. `Plain` is a label with hotkeys off, and
+  `UnderscoresSurviveTests` walks the view tree so the next label somebody adds is held to it.
+
+  **The message line grows to a paragraph and can be cleared.** It was one row, and a broadcast
+  report is a count, a cause and the names: what the owner saw was *"Refused for 19: nothing has
+  registered under that name yet, so nothing can be addressed to it. Stating it once is what"* —
+  cut off inside the half that says what to do. It is as many rows as it needs now, up to eight,
+  bounded by a floor the regions keep; past that the last row names the key that shows it whole,
+  because nothing here is silently cut. `x` clears it and gives the rows back. Nothing clears it on
+  a timer: a line that faded would take the only record of what happened with it.
+
+  **The status line names `?` at every width.** The rung that lists everything named no menu, so on
+  a wide terminal — where everything fits — the one route a pointer has to any action was on no
+  screen at all.
+
+  **What was reported as a third defect is §14 working, and what stands behind it is not.** "All
+  agents" does fan out — *Told 0 of 19* is nineteen sends — and every one was refused because none
+  of those agents has ever registered: §12.3 says "§14 has the broker refuse an unregistered agent
+  every operation", and `IsUnroutableAsync` counts an unknown name unroutable. That much is the
+  protocol. **Why nineteen enrolled agents were unregistered is a defect on this surface, and the
+  owner was right to refuse the answer "start each of them".**
+
+  **The add screen predicted a registration instead of checking it.** It said *"Started 'x'. It
+  registers itself as it attaches"* — a sentence about the next few seconds, printed as a result. A
+  node reports that it launched something; whether the adapter attached, reached this broker and
+  registered is a different question, and the registry is the only thing that answers it.
+  `parley enroll apply` has looked since 012 step 1 and waits thirty seconds for each; this screen,
+  which is where the owner actually enrolled nineteen repositories, never looked at all. It now
+  gives three answers where it gave one: nothing started, started and registered, started and not
+  seen — the third worded as "I do not know", per 008.
+
+  **And the terminal can now start every agent that has never registered, in one act.** That is
+  what 012 step 1 exists to remove — nobody should open nineteen repositories by hand — and the
+  remedies left on this screen were exactly that or nineteen separate keystrokes. `u` in the agents
+  pane, offered only while there is something to start, and named with the count because it
+  launches one process per agent.
+
+  **Every start is asked for before anything is waited on.** Thirty seconds each is nine and a half
+  minutes for nineteen, on a surface whose work queue is serialised; one wait for the set is one
+  window however many there are. `Every_start_is_asked_for_before_anything_is_waited_on` pins it by
+  ordering rather than by timing. It says what it is doing while it does it, because a screen that
+  goes quiet for a minute is one somebody assumes has hung.
+
+  Not changed: the picker still offers a never-registered agent, because judging routability from a
+  roster this surface holds would be the client second-guessing the broker, and `Peers()`'s own
+  remark about spawn-on-demand is now out of date — recorded, not acted on.
 
 - **First use of the rebuilt deployment** — 0.25.1, no protocol change. Five defects the owner met
   within an hour of running the terminal against nineteen real agents, and none of them was visible

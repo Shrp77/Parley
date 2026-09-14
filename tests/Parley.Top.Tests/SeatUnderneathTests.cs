@@ -62,13 +62,12 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         using var shell = await SeatedAsync(driving, directory, seats);
 
         var form = await Composing.WithAsync(
-            driving, shell.Tell, Participation.TellTitle, Orders.Value, () => shell.Settled);
+            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
 
         Sweep(shell);
 
         Assert.Null(shell.Held);
-        form.Fill(0, "still typing when the sweep came");
-        form.Fill(1, "underneath");
+        Written(form);
         form.Finish(taken: true);
 
         await shell.Settled;
@@ -92,11 +91,10 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         using var shell = await SeatedAsync(driving, directory, seats);
 
         var form = await Composing.WithAsync(
-            driving, shell.Tell, Participation.TellTitle, Orders.Value, () => shell.Settled);
+            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
 
         Sweep(shell);
-        form.Fill(0, "still typing when the sweep came");
-        form.Fill(1, "underneath");
+        Written(form);
         form.Finish(taken: true);
 
         await shell.Settled;
@@ -108,11 +106,11 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task An_answer_is_not_recorded_under_a_name_that_was_released_either()
+    public async Task A_result_is_not_recorded_under_a_name_that_was_released_either()
     {
-        // **The same defect as the test above, one dialog along, and worse.** Answering settles
+        // **The same defect as the test above, one dialog along, and worse.** A Result closes
         // somebody else's exchange, so a stale seat here does not merely attribute words to a
-        // person who had left — it closes a question on their behalf.
+        // person who had left — it closes a request on their behalf.
         //
         // Both composers captured the seat when the dialog opened and never asked again;
         // `TakeDelivery` re-checked, which is what made it a pattern applied unevenly rather than
@@ -123,7 +121,7 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         using var seats = new SeatBook(directory.AgentsFor);
         using var shell = await SeatedAsync(driving, directory, seats);
 
-        await shell.Answer();
+        await shell.SendResult();
 
         Sweep(shell);
 
@@ -147,12 +145,22 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         // The transcript, which is its own view now rather than the fourth region of one.
         await Walking.GoAsync(shell, Viewing.Conversation);
 
-        Assert.Contains(shell.Actions(), action => action.Label == Participation.TellTitle);
+        Assert.Contains(shell.Actions(), action => action.Label == Participation.RequestTitle);
 
         Sweep(shell);
 
-        Assert.DoesNotContain(shell.Actions(), action => action.Label == Participation.TellTitle);
+        Assert.DoesNotContain(shell.Actions(), action => action.Label == Participation.RequestTitle);
         Assert.Equal(Shell.Released, shell.Said);
+    }
+
+    /// <summary>Fills every field of the composer with something it accepts, naming the conversation.</summary>
+    /// <param name="form">The composer.</param>
+    private static void Written(FormDialog form)
+    {
+        form.Fill(0, "still typing when the sweep came");
+        form.Fill(1, "whatever was being asked for");
+        form.Fill(3, "they have acknowledged the message");
+        form.Fill(4, "underneath");
     }
 
     [Fact]

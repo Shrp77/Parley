@@ -27,7 +27,7 @@ namespace Parley.Top;
 /// holding one is finished from the button rather than from the field.
 /// </para>
 /// <para>
-/// <b>The owner asked for this against the composer.</b> A notification's text may be eight
+/// <b>The owner asked for this against the composer.</b> A request's text may be eight
 /// thousand characters — SPEC.md rule 8.5's cap, and the one this surface is most used for — and
 /// it was collected in a field one row tall, which shows about sixty of them at a time. Somebody
 /// writing a paragraph could not see the paragraph.

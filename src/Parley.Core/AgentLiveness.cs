@@ -73,17 +73,16 @@ public static class AgentLiveness
     /// <remarks>
     /// <para>
     /// Presence is deliberately not a parameter, and that is the whole content of this method.
-    /// A question to a <see cref="AgentPresence.Startable"/> agent is what causes it to be
+    /// A Request to a <see cref="AgentPresence.Startable"/> agent is what causes it to be
     /// started, so refusing on the grounds that nothing is running would refuse the very traffic
-    /// that would fix it. A question to a <see cref="AgentPresence.Stranded"/> one is admitted,
-    /// orphans on the ordinary schedule, and is ghosted — which tells the asker something, where
-    /// a refusal at the door would tell it only about a moment that may have passed by the time
-    /// the answer mattered.
+    /// that would fix it. A Request to a <see cref="AgentPresence.Stranded"/> one is admitted,
+    /// waits, and is flagged to the person — where a refusal at the door would report only a
+    /// moment that may have passed by the time the work mattered.
     /// </para>
     /// <para>
-    /// SPEC.md §5.5 depends on the second of those: a role question reaches agents on machines
-    /// that are switched off precisely so a missing answer arrives as an orphan rather than as
-    /// silence.
+    /// SPEC.md §5.5 depends on the second of those: a Request to a role reaches agents on machines
+    /// that are switched off precisely so the missing part of the work is flagged rather than
+    /// silently absent.
     /// </para>
     /// </remarks>
     public static bool Routable(AgentStatus status) => status != AgentStatus.Retired;

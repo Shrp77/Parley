@@ -339,8 +339,8 @@ public static class NodeCommand
     /// <para>
     /// The reconciliation is the useful part: an agent registered to this machine that the
     /// catalogue cannot launch is a repository that moved, was renamed, or was never listed —
-    /// and saying so at startup beats discovering it when a question to it goes unanswered for a
-    /// window and is then ghosted.
+    /// and saying so at startup beats discovering it when a request to it sits uncollected and is
+    /// flagged.
     /// </para>
     /// <para>
     /// <b>"nothing" names the file it read.</b> An absent catalogue and an empty one are both
@@ -374,7 +374,7 @@ public static class NodeCommand
         {
             await output.WriteLineAsync(
                 $"  Registered here but not in the catalogue: {string.Join(", ", unstartable)}. " +
-                "A question to one of those will wait and then be ghosted.").ConfigureAwait(false);
+                "A request to one of those waits, flagged, until somebody opens that repository.").ConfigureAwait(false);
         }
     }
 
@@ -388,15 +388,15 @@ public static class NodeCommand
     /// <remarks>
     /// <para>
     /// The turn is what makes starting worth anything. A process that launched and sat there
-    /// would have attached, drained nothing, and answered nothing — SPEC.md §4.2 is clear that
+    /// would have attached, drained nothing, and done nothing — SPEC.md §4.2 is clear that
     /// waking an adapter is not the same as the model taking a turn, and the model is what
-    /// answers.
+    /// does the work.
     /// </para>
     /// <para>
     /// Failures are reported and swallowed. A repository that has moved, a command that is not
     /// installed, an agent that dies on startup: none of them is a reason to take the whole
-    /// machine off the air, and the question that prompted this will orphan and be ghosted on
-    /// its ordinary schedule, which is how the asker finds out.
+    /// machine off the air, and the Request that prompted this stays open and is flagged as not
+    /// collected, which is how the person finds out.
     /// </para>
     /// </remarks>
     private static async Task StartAsync(

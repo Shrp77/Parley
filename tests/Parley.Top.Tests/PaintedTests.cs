@@ -297,8 +297,8 @@ public sealed class PaintedTests
     private static Message Message(string from, string to, long id) =>
         new(
             id,
-            ExchangeId: null,
-            MessageType.Question,
+            ExchangeId: 1,
+            MessageType.Request,
             AgentName.Create(from),
             AgentName.Create(to),
             "test",

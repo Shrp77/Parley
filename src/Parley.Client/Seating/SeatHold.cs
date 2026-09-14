@@ -159,11 +159,12 @@ public sealed class SeatHold : IDisposable
     /// <returns>How many were dropped.</returns>
     /// <remarks>
     /// <para>
-    /// A debt cannot be dismissed, which is the whole of the rule. An answer or a notice is
-    /// finished the moment it has been read, and leaving it there buries the one thing on the
-    /// page that still needs doing; a question is settled by answering it, and a button that
+    /// A debt cannot be dismissed, which is the whole of the rule. What owes nothing back — a
+    /// Result, a reply that handed the turn back — is finished the moment it has been read, and
+    /// leaving it there buries the one thing on the page that still needs doing; a Request, or a
+    /// clarification the person must answer, is settled by sending the move, and a button that
     /// made it disappear instead would let somebody clear a list while the exchange behind it
-    /// ran on to be ghosted by §14.
+    /// stayed open, owed and flagged.
     /// </para>
     /// <para>
     /// Public, unlike the two members either side of it, and the difference is the rule above.

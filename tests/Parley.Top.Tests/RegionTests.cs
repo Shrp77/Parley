@@ -353,8 +353,9 @@ public sealed class RegionTests : IAsyncDisposable
         await broker.StartAsync(Orders, T0, ct);
         await broker.StartAsync(Billing, T0, ct);
 
-        await broker.NotifyAsync(
-            Orders, Billing, "model-a", """{"text":"a question for billing"}""",
+        await broker.RequestAsync(
+            Orders, Billing, "model-a",
+            """{"intent":"asking","items":[{"id":"q1","kind":"question","text":"a question for billing"}],"done_when":"billing has answered it"}""",
             T0.AddMinutes(1), "chat", ct);
     }
 

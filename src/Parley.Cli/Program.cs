@@ -93,12 +93,20 @@ const string Help = """
       parley reinstate <agent>                         withdraw a retirement
       parley purge <agent>                             DESTROY an agent and its conversations
       parley export <conversation>                     emit every message in a discussion
-      parley force-conclude <conv>                     close a discussion over its votes
+      parley force-conclude <conv> [<reason>]          close a conversation now; every open request
+                                                       in it is closed and its holders are told why
       parley prune                                     apply the retention policy now
+      parley instruct <agent> <words>                  give an agent your words as a turn; it may decline
+      parley start <agent>                             ask the machine that holds an agent to start it
+      parley archive <conversation>                    take a conversation off the list; deletes nothing
+      parley unarchive <conversation>                  put an archived conversation back
+      parley destroy <conversation>                    DESTROY a conversation and every message in it
       parley refusals                                  what the message size cap refused
       parley clarifications                            the clarify depth distribution, and whether the cap binds
-      parley referrals                                 where questions are sent onward, and to whom
-      parley notifications                             how much Notify carries, and who has had enough to judge
+      parley results                                   what results reported: outcomes, blockers,
+                                                       who was relied on, how conversations ended
+      parley flags                                     open work nobody collected or nobody is
+                                                       moving, and requests that went in a circle
       parley open                                      every conversation with an exchange
                                                        still open, and who is in it. What a
                                                        broker restart would interrupt
@@ -959,13 +967,38 @@ try
                 rest[0], id => commands.ExportAsync(id, CancellationToken.None))
                 .ConfigureAwait(false);
 
-        case "force-conclude" when rest.Length == 1:
+        // Everything after the conversation is the reason, so it can be typed without quoting.
+        case "force-conclude" when rest.Length >= 1:
             return await WithConversation(
-                rest[0], id => commands.ForceConcludeAsync(id, CancellationToken.None))
+                rest[0],
+                id => commands.ForceConcludeAsync(
+                    id, rest.Length == 1 ? null : string.Join(' ', rest[1..]), CancellationToken.None))
                 .ConfigureAwait(false);
 
         case "prune" when rest.Length == 0:
             return await commands.PruneAsync(CancellationToken.None).ConfigureAwait(false);
+
+        // Everything after the agent is the instruction, so it can be typed without quoting.
+        case "instruct" when rest.Length >= 2:
+            return await WithAgent(
+                rest[0], a => commands.InstructAsync(a, string.Join(' ', rest[1..]), CancellationToken.None))
+                .ConfigureAwait(false);
+
+        case "start" when rest.Length == 1:
+            return await WithAgent(rest[0], a => commands.StartAgentAsync(a, CancellationToken.None))
+                .ConfigureAwait(false);
+
+        case "archive" when rest.Length == 1:
+            return await WithConversation(rest[0], id => commands.ArchiveAsync(id, CancellationToken.None))
+                .ConfigureAwait(false);
+
+        case "unarchive" when rest.Length == 1:
+            return await WithConversation(rest[0], id => commands.UnarchiveAsync(id, CancellationToken.None))
+                .ConfigureAwait(false);
+
+        case "destroy" when rest.Length == 1:
+            return await WithConversation(rest[0], id => commands.DestroyAsync(id, CancellationToken.None))
+                .ConfigureAwait(false);
 
         case "refusals" when rest.Length == 0:
             return await commands.RefusalsAsync(CancellationToken.None).ConfigureAwait(false);
@@ -973,11 +1006,11 @@ try
         case "clarifications" when rest.Length == 0:
             return await commands.ClarificationsAsync(CancellationToken.None).ConfigureAwait(false);
 
-        case "referrals" when rest.Length == 0:
-            return await commands.ReferralsAsync(CancellationToken.None).ConfigureAwait(false);
+        case "results" when rest.Length == 0:
+            return await commands.ResultsAsync(CancellationToken.None).ConfigureAwait(false);
 
-        case "notifications" when rest.Length == 0:
-            return await commands.NotificationsAsync(CancellationToken.None).ConfigureAwait(false);
+        case "flags" when rest.Length == 0:
+            return await commands.FlagsAsync(CancellationToken.None).ConfigureAwait(false);
 
         // Not an operator operation, and it is here because a caller that is not an agent needs
         // it: an editor hook that wants to say "two answers are waiting" before a turn used to
@@ -1001,11 +1034,11 @@ try
                 }).ConfigureAwait(false);
 
         // **What is in flight, for the one caller that has to know before it stops a broker.**
-        // §12 says the node stopping tells every agent it started to quit, and a question already
-        // drained into an agent's inbox sits in §4.2's four-hour Working window rather than the
-        // fifteen-minute Delivery one -- so killing the agent that holds it leaves the exchange
-        // open and owed with nothing running to answer, ending in `ghosted`, which §5.3 defines as
-        // "nobody replied". Against an agent that was killed rather than one that ignored anything.
+        // §12 says the node stopping tells every agent it started to quit, and a Request already
+        // drained into an agent's inbox is marked delivered -- so killing the agent that holds it
+        // leaves the exchange open and owed with nothing running to do the work, flagged as
+        // collected and left (§6) against an agent that was killed rather than one that ignored
+        // anything.
         //
         // Both surfaces already read this; the command line could not, so `install.ps1` had no way
         // to ask. It is the same §10.2 `conversations()` reply filtered to what is open, and it
@@ -1204,9 +1237,8 @@ async Task<int> WithConversation(string conversationId, Func<string, Task<int>> 
     if (string.IsNullOrWhiteSpace(conversationId))
     {
         await Console.Error.WriteLineAsync(
-            "A conversation identifier is required, and blank is not one. Identifiers are chosen " +
-            "by the agents that name them on a question or an event; `parley export <id>` is how " +
-            "you read one back.").ConfigureAwait(false);
+            "A conversation identifier is required, and blank is not one. `parley open` lists the " +
+            "conversations with work in them, and `parley export <id>` reads one back.").ConfigureAwait(false);
 
         return Usage;
     }

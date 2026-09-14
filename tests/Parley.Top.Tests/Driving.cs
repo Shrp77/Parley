@@ -89,7 +89,12 @@ internal static class Driving
     /// </remarks>
     internal static Session Open(int width = DefaultWidth, int height = DefaultHeight)
     {
-        OneAtATime.Wait(TimeSpan.FromMinutes(2));
+        // No deadline, only the run's cancellation. This wait is a queue: every class waiting behind
+        // the gate waits out every test ahead of it, so a bound measures how many tests are queued
+        // rather than whether one hung. It was two minutes and its result was discarded, so a wait
+        // that expired ran ungated and its Dispose released a slot it never took — a semaphore
+        // overflow in some other test. Honouring the expiry instead failed 134 tests that were fine.
+        OneAtATime.Wait(TestContext.Current.CancellationToken);
 
         try
         {
@@ -175,6 +180,13 @@ internal static class Driving
         /// </remarks>
         internal List<string> Opened { get; } = [];
 
+        /// <summary>Everything the surface put on the clipboard, in order.</summary>
+        /// <remarks>
+        /// The machine's clipboard is never touched by a driven surface; this is where the text
+        /// goes instead, so a test can assert on what would have been copied.
+        /// </remarks>
+        internal List<string> Copied { get; } = [];
+
         /// <summary>Begins a session on a view and draws it.</summary>
         /// <param name="runnable">The view to run.</param>
         /// <remarks>
@@ -212,6 +224,23 @@ internal static class Driving
 
                     return true;
                 };
+
+                // **And the clipboard, for the same reason and before it costs anything.** The
+                // copy action writes to the machine's own clipboard, so a suite run in a loop
+                // would replace whatever the person at the keyboard had on theirs — the browser
+                // defect above, in a place where what is destroyed is somebody's own text.
+                shell.Copier = (_, text) =>
+                {
+                    Copied.Add(text);
+
+                    return true;
+                };
+
+                // Off, so a transcript opened by any test does not queue a read every few seconds for
+                // the rest of it. `Settled` is what makes a driven journey deterministic, and a surface
+                // adding work to the queue on its own schedule would make assertions race it. The tests
+                // of following turn it back on.
+                shell.FollowEvery = null;
             }
 
             var token = App.Begin((IRunnable)runnable);

@@ -1,64 +1,46 @@
 namespace Parley.Core;
 
 /// <summary>
-/// The reason a state transition was refused.
+/// Why a move on an exchange was refused.
 /// </summary>
 /// <remarks>
-/// Refusals are ordinary control flow, not exceptional conditions. Two agents racing for the
-/// same pair slot, or an agent speaking out of turn, are expected events in a concurrent
-/// system and are reported as values rather than thrown.
+/// Refusals are ordinary control flow, not exceptional conditions. Two participants racing, or one
+/// speaking out of turn, are expected events in a concurrent system and are reported as values.
 /// </remarks>
 public enum TransitionError
 {
-    /// <summary>No error; the transition succeeded.</summary>
+    /// <summary>No error; the move succeeded.</summary>
     None = 0,
 
-    /// <summary>
-    /// The exchange is closed or orphaned and accepts no further messages.
-    /// </summary>
+    /// <summary>The exchange is closed and accepts no further moves.</summary>
     ExchangeNotOpen,
 
-    /// <summary>
-    /// The sending agent is neither the asker nor the answerer of this exchange.
-    /// </summary>
+    /// <summary>The sender is neither the requester nor the receiver of this exchange.</summary>
     NotAParticipant,
 
-    /// <summary>
-    /// The sending agent is a participant, but does not currently owe a response.
-    /// </summary>
+    /// <summary>The sender is a participant, but the other party holds the next move.</summary>
     NotYourTurn,
 
-    /// <summary>
-    /// A closing answer was attempted by the asker. Only the original answerer may close an
-    /// exchange, regardless of who holds the turn.
-    /// </summary>
-    OnlyAnswererMayAnswer,
+    /// <summary>The requester tried to send the Result. Only the receiver reports on its own work.</summary>
+    OnlyReceiverSendsResult,
 
-    /// <summary>
-    /// The clarification depth cap was reached.
-    /// </summary>
+    /// <summary>A clarification cap the deployment set has been reached.</summary>
     /// <remarks>
-    /// Nothing else follows from it. The exchange stays open, the broker writes no answer, and
-    /// the answerer is told to answer with what it has. A broker-written
-    /// <see cref="Resolution.Unknown"/> was once specified here and is not produced: it means
-    /// "I own this and I do not know", which only the answerer can say. Left unbounded, two
-    /// models will refine a question toward mutual precision indefinitely and never produce a
-    /// decision -- the cap bounds that and does no more.
+    /// Nothing else follows from it: the exchange stays open, and the receiver sends a Result with
+    /// what it has — <c>blocked</c>, naming what it still needs, where that is the truth (§5.2).
     /// </remarks>
     ClarifyDepthExceeded,
 
     /// <summary>
-    /// Resumption was attempted on an exchange that is not orphaned.
-    /// </summary>
-    ExchangeNotOrphaned,
-
-    /// <summary>
-    /// An answer was attempted with <see cref="Resolution.Ghosted"/>.
+    /// The Result does not give exactly one outcome for each item the Request carried.
     /// </summary>
     /// <remarks>
-    /// A ghost asserts that nobody answered, so it cannot arrive on an answer. The schema
-    /// refuses this as well; refusing it here means the caller learns what it did wrong rather
-    /// than meeting a constraint violation raised three layers further down.
+    /// Checked by the broker against the stored Request, because an answer to some items closes an
+    /// exchange just as firmly as an answer to all of them, and the rest would be gone with no record
+    /// that they were skipped.
     /// </remarks>
-    GhostIsNotAnAnswer
+    OutcomesDoNotMatchItems,
+
+    /// <summary>A participant tried to record <c>closed</c>, which only the broker writes.</summary>
+    ClosedIsTheBrokers
 }

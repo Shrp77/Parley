@@ -45,12 +45,12 @@ public sealed class ClarifyCapBoundsTests : IDisposable
     }
 
     private void Write(string question, int clarifyDepthCap) => Execute(
-        "INSERT INTO exchanges (pair_key, asker, answerer, owed_by, state, clarify_depth, "
-      + "clarify_depth_cap, open_pair_cap, delivery_window_ms, working_window_ms, "
-      + "grace_period_ms, opened_utc, expires_utc, question_hash) VALUES "
+        "INSERT INTO conversations (id, state, opened_utc) VALUES ('pricing','OPEN','" + Stamp + "') ON CONFLICT DO NOTHING; "
+      + "INSERT INTO exchanges (pair_key, requester, receiver, owed_by, state, clarify_depth, "
+      + "clarify_depth_cap, uncollected_flag_ms, stalled_flag_ms, opened_utc, request_hash, conversation_id) VALUES "
       + "('billing@test' || char(31) || 'orders@test','orders@test','billing@test','billing@test','OPEN',0,"
       + clarifyDepthCap.ToString(System.Globalization.CultureInfo.InvariantCulture)
-      + ",5,900000,14400000,86400000,'" + Stamp + "','" + Stamp + "','" + question + "');");
+      + ",900000,14400000,'" + Stamp + "','" + question + "','pricing');");
 
     [Fact]
     public void The_default_the_domain_ships_is_inside_the_band()
@@ -64,7 +64,7 @@ public sealed class ClarifyCapBoundsTests : IDisposable
     [Fact]
     public void A_cap_of_zero_is_admitted_because_it_is_a_policy_and_not_a_mistake()
     {
-        // Zero means the answerer must answer with what it has. Somebody may want that, and the
+        // Zero means the receiver sends a Result with what it has. Somebody may want that, and the
         // domain permits it, so storage refusing it would make the strictest available setting
         // the one value that cannot be deployed.
         Write("q", 0);
@@ -98,11 +98,24 @@ public sealed class ClarifyCapBoundsTests : IDisposable
     }
 
     [Fact]
-    public void An_enormous_cap_is_refused_rather_than_silently_disabling_the_rule()
+    public void The_no_cap_value_is_admitted_and_lets_depth_run_past_the_band()
+    {
+        // SPEC.md §5.2: no clarification cap by default, spelled as the largest integer. At it the
+        // CHECK clarify_depth <= clarify_depth_cap never binds, so an exchange can go back and
+        // forth past any number a real cap is allowed to be. Before 007 this insert was refused.
+        Write("off", ExchangePolicy.UnboundedClarifications);
+
+        Execute("UPDATE exchanges SET clarify_depth = 5000 WHERE request_hash = 'off';");
+    }
+
+    [Fact]
+    public void An_enormous_cap_that_is_not_the_no_cap_value_is_still_refused()
     {
         // The failure §9.3 describes, written out: a value that switches the cap off while every
-        // constraint still passes. Before the bound this insert succeeded.
-        Assert.Throws<SqliteException>(() => Write("huge", int.MaxValue));
+        // constraint still passes. Only the one value that means "off" may do that, and it has to
+        // be written on purpose — one short of it is a bug, and is refused like one.
+        Assert.Throws<SqliteException>(() => Write("huge", int.MaxValue - 1));
+        Assert.Throws<SqliteException>(() => Write("large", 100000));
     }
 
     [Fact]
@@ -114,7 +127,7 @@ public sealed class ClarifyCapBoundsTests : IDisposable
         Write("q", 3);
 
         Assert.Throws<SqliteException>(() => Execute(
-            "UPDATE exchanges SET clarify_depth_cap = 100000 WHERE question_hash = 'q';"));
+            "UPDATE exchanges SET clarify_depth_cap = 100000 WHERE request_hash = 'q';"));
     }
 
     [Fact]
@@ -124,10 +137,10 @@ public sealed class ClarifyCapBoundsTests : IDisposable
         // refusing legitimate writes and the previous test would pass for the wrong reason.
         Write("q", 3);
 
-        Execute("UPDATE exchanges SET clarify_depth_cap = 200 WHERE question_hash = 'q';");
+        Execute("UPDATE exchanges SET clarify_depth_cap = 200 WHERE request_hash = 'q';");
 
         using var command = _connection.CreateCommand();
-        command.CommandText = "SELECT clarify_depth_cap FROM exchanges WHERE question_hash = 'q';";
+        command.CommandText = "SELECT clarify_depth_cap FROM exchanges WHERE request_hash = 'q';";
 
         Assert.Equal(200L, (long)command.ExecuteScalar()!);
     }

@@ -10,24 +10,19 @@ namespace Parley.Server;
 /// <remarks>
 /// <para>
 /// One direction only for most types. The broker's vocabulary is richer than the wire's — an
-/// <see cref="Exchange"/> carries a version and three windows that no client has any use for —
-/// and translating outward while refusing to translate back keeps it that way. A round trip
-/// would invite a client to send an exchange, and an exchange a client can author is an
-/// exchange a client can lie about.
+/// <see cref="Exchange"/> carries a version and two thresholds no client has any use for — and
+/// translating outward while refusing to translate back keeps it that way: an exchange a client can
+/// author is an exchange a client can lie about.
 /// </para>
 /// <para>
-/// <b>Every enum is converted by an explicit arm that throws on anything unrecognised.</b> The
-/// obvious alternative is arithmetic: each proto member is its domain counterpart plus one,
-/// because of the zero-valued <c>UNSPECIFIED</c> proto3 requires. That relationship is true
-/// today, is not guaranteed by anything, and would convert a member added in the middle of one
-/// enum into a different member of the other — silently, and in whichever direction was less
-/// tested. The switches are longer and they fail loudly, which is the trade being made.
+/// <b>Every enum is converted by an explicit arm that throws on anything unrecognised.</b> The obvious
+/// alternative is arithmetic, because each proto member is its domain counterpart plus one; that is true
+/// today, guaranteed by nothing, and would silently turn a member added in the middle of one enum into a
+/// different member of the other.
 /// </para>
 /// <para>
-/// Timestamps go through <see cref="ExchangeRow.FormatTimestamp"/> rather than a format string
-/// declared here. The store's representation is the canonical one and the wire carries exactly
-/// it; a second formatter would be a second definition of the same thing, agreeing until one of
-/// them was changed.
+/// Timestamps go through <see cref="ExchangeRow.FormatTimestamp"/>: the store's representation is the
+/// canonical one and the wire carries exactly it.
 /// </para>
 /// </remarks>
 internal static class Conversions
@@ -35,12 +30,6 @@ internal static class Conversions
     /// <summary>Formats an instant for the wire, or the empty string for none.</summary>
     /// <param name="value">The instant, or <see langword="null"/>.</param>
     /// <returns>The round-trip representation, or an empty string.</returns>
-    /// <remarks>
-    /// Absence is the empty string because proto3 has no null for a scalar. That is a real loss
-    /// of fidelity for a string that could legitimately be empty, and a timestamp cannot be:
-    /// there is no instant whose round-trip form has no characters in it, so the encoding is
-    /// unambiguous here even though it would not be everywhere.
-    /// </remarks>
     public static string Stamp(DateTimeOffset? value) =>
         value is { } present ? ExchangeRow.FormatTimestamp(present) : string.Empty;
 
@@ -59,10 +48,7 @@ internal static class Conversions
     /// <summary>Reads a tier from the wire.</summary>
     /// <param name="tier">The wire value.</param>
     /// <returns>The tier.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// The value is unspecified or unknown, which is what a client built against a newer
-    /// contract sends and what a client that set nothing at all sends.
-    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">The value is unspecified or unknown.</exception>
     public static AgentTier In(Wire.AgentTier tier) => tier switch
     {
         Wire.AgentTier.Full => AgentTier.Full,
@@ -91,8 +77,7 @@ internal static class Conversions
         AgentPresence.Stranded => Wire.AgentPresence.Stranded,
         AgentPresence.Startable => Wire.AgentPresence.Startable,
         AgentPresence.Running => Wire.AgentPresence.Running,
-        _ => throw new ArgumentOutOfRangeException(
-            nameof(presence), presence, "Not a defined presence.")
+        _ => throw new ArgumentOutOfRangeException(nameof(presence), presence, "Not a defined presence.")
     };
 
     /// <summary>Converts a message type for the wire.</summary>
@@ -101,11 +86,9 @@ internal static class Conversions
     /// <exception cref="ArgumentOutOfRangeException">The type is not a defined member.</exception>
     public static Wire.MessageType Out(MessageType type) => type switch
     {
-        MessageType.Question => Wire.MessageType.Question,
+        MessageType.Request => Wire.MessageType.Request,
         MessageType.Clarify => Wire.MessageType.Clarify,
-        MessageType.Answer => Wire.MessageType.Answer,
-        MessageType.Notify => Wire.MessageType.Notify,
-        MessageType.Ghost => Wire.MessageType.Ghost,
+        MessageType.Result => Wire.MessageType.Result,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a defined type.")
     };
 
@@ -115,11 +98,9 @@ internal static class Conversions
     /// <exception cref="ArgumentOutOfRangeException">The value is unspecified or unknown.</exception>
     public static MessageType In(Wire.MessageType type) => type switch
     {
-        Wire.MessageType.Question => MessageType.Question,
+        Wire.MessageType.Request => MessageType.Request,
         Wire.MessageType.Clarify => MessageType.Clarify,
-        Wire.MessageType.Answer => MessageType.Answer,
-        Wire.MessageType.Notify => MessageType.Notify,
-        Wire.MessageType.Ghost => MessageType.Ghost,
+        Wire.MessageType.Result => MessageType.Result,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a defined type.")
     };
 
@@ -131,47 +112,75 @@ internal static class Conversions
     {
         ExchangeState.Open => Wire.ExchangeState.Open,
         ExchangeState.Closed => Wire.ExchangeState.Closed,
-        ExchangeState.Orphaned => Wire.ExchangeState.Orphaned,
         _ => throw new ArgumentOutOfRangeException(nameof(state), state, "Not a defined state.")
     };
 
-    /// <summary>Converts a resolution for the wire.</summary>
-    /// <param name="resolution">The resolution, or <see langword="null"/> for an open exchange.</param>
+    /// <summary>Converts an exchange's rolled-up outcome for the wire.</summary>
+    /// <param name="outcome">The outcome, or <see langword="null"/> for an open exchange.</param>
     /// <returns>The wire value, or <c>Unspecified</c> when there is none.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">The resolution is not a defined member.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The outcome is not a defined member.</exception>
     /// <remarks>
-    /// This is the one place <c>UNSPECIFIED</c> is a legitimate value rather than a refusal: an
-    /// open exchange genuinely has no resolution, and proto3 offers no other way to say so for
-    /// an enum field.
+    /// One of the few places <c>UNSPECIFIED</c> is a legitimate value rather than a refusal: an open
+    /// exchange genuinely has no outcome, and proto3 offers no other way to say so for an enum.
     /// </remarks>
-    public static Wire.Resolution Out(Resolution? resolution) => resolution switch
+    public static Wire.ExchangeOutcome Out(ExchangeOutcome? outcome) => outcome switch
     {
-        null => Wire.Resolution.Unspecified,
-        Resolution.Answered => Wire.Resolution.Answered,
-        Resolution.OutOfScope => Wire.Resolution.OutOfScope,
-        Resolution.Unknown => Wire.Resolution.Unknown,
-        Resolution.Ghosted => Wire.Resolution.Ghosted,
-        _ => throw new ArgumentOutOfRangeException(
-            nameof(resolution), resolution, "Not a defined resolution.")
+        null => Wire.ExchangeOutcome.Unspecified,
+        ExchangeOutcome.Complete => Wire.ExchangeOutcome.Complete,
+        ExchangeOutcome.Blocked => Wire.ExchangeOutcome.Blocked,
+        ExchangeOutcome.Closed => Wire.ExchangeOutcome.Closed,
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined outcome.")
     };
 
-    /// <summary>Reads a resolution from the wire.</summary>
-    /// <param name="resolution">The wire value.</param>
-    /// <returns>The resolution.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">The value is unspecified or unknown.</exception>
-    /// <remarks>
-    /// Unspecified is refused rather than defaulted to <see cref="Resolution.Answered"/>. That
-    /// default would be a claim on the answerer's behalf that it had answered — the most
-    /// consequential of the four, and the one an unset field is least likely to have meant.
-    /// </remarks>
-    public static Resolution In(Wire.Resolution resolution) => resolution switch
+    /// <summary>Converts an item outcome for the wire.</summary>
+    /// <param name="outcome">The outcome.</param>
+    /// <returns>The wire value.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The outcome is not a defined member.</exception>
+    public static Wire.Outcome Out(Outcome outcome) => outcome switch
     {
-        Wire.Resolution.Answered => Resolution.Answered,
-        Wire.Resolution.OutOfScope => Resolution.OutOfScope,
-        Wire.Resolution.Unknown => Resolution.Unknown,
-        Wire.Resolution.Ghosted => Resolution.Ghosted,
-        _ => throw new ArgumentOutOfRangeException(
-            nameof(resolution), resolution, "Not a defined resolution.")
+        Outcome.Done => Wire.Outcome.Done,
+        Outcome.Answered => Wire.Outcome.Answered,
+        Outcome.Acknowledged => Wire.Outcome.Acknowledged,
+        Outcome.Blocked => Wire.Outcome.Blocked,
+        Outcome.Closed => Wire.Outcome.Closed,
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined outcome.")
+    };
+
+    /// <summary>Converts a blocker kind for the wire.</summary>
+    /// <param name="kind">The kind.</param>
+    /// <returns>The wire value.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The kind is not a defined member.</exception>
+    public static Wire.BlockerKind Out(BlockerKind kind) => kind switch
+    {
+        BlockerKind.MissingInformation => Wire.BlockerKind.MissingInformation,
+        BlockerKind.Conflict => Wire.BlockerKind.Conflict,
+        BlockerKind.Permission => Wire.BlockerKind.Permission,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a defined blocker.")
+    };
+
+    /// <summary>Converts who closed a conversation for the wire.</summary>
+    /// <param name="closer">Who closed it, or <see langword="null"/> where nothing recorded it.</param>
+    /// <returns>The wire value, or <c>Unspecified</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The value is not a defined member.</exception>
+    public static Wire.ConversationCloser Out(ConversationCloser? closer) => closer switch
+    {
+        null => Wire.ConversationCloser.Unspecified,
+        ConversationCloser.Consensus => Wire.ConversationCloser.Consensus,
+        ConversationCloser.Person => Wire.ConversationCloser.Person,
+        _ => throw new ArgumentOutOfRangeException(nameof(closer), closer, "Not a defined closer.")
+    };
+
+    /// <summary>Converts a flag kind for the wire.</summary>
+    /// <param name="kind">The kind.</param>
+    /// <returns>The wire value.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The kind is not a defined member.</exception>
+    public static Wire.FlagKind Out(FlagKind kind) => kind switch
+    {
+        FlagKind.NotCollected => Wire.FlagKind.NotCollected,
+        FlagKind.NoProgress => Wire.FlagKind.NoProgress,
+        FlagKind.Retired => Wire.FlagKind.Retired,
+        FlagKind.NotVoted => Wire.FlagKind.NotVoted,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a defined flag.")
     };
 
     /// <summary>Converts a closure vote for the wire.</summary>
@@ -190,10 +199,8 @@ internal static class Conversions
     /// <returns>The vote.</returns>
     /// <exception cref="ArgumentOutOfRangeException">The value is unspecified or unknown.</exception>
     /// <remarks>
-    /// An unset vote is refused rather than read as an abstention. SPEC.md §8 has silence lapse
-    /// into consent on its own schedule, so a call that said nothing would conclude a
-    /// conversation without anybody having decided to — and the caller would have no way to know
-    /// it had, because the field it failed to set is the one that says so.
+    /// An unset vote is refused rather than read as either answer: a call that said nothing must not be
+    /// recorded as a participant having said something.
     /// </remarks>
     public static Vote In(Wire.Vote vote) => vote switch
     {
@@ -202,21 +209,22 @@ internal static class Conversions
         _ => throw new ArgumentOutOfRangeException(nameof(vote), vote, "Not a defined vote.")
     };
 
-    /// <summary>Converts an admission refusal for the wire.</summary>
+    /// <summary>Converts a Request refusal for the wire.</summary>
     /// <param name="rejection">The refusal.</param>
     /// <returns>The wire value.</returns>
     /// <exception cref="ArgumentOutOfRangeException">The refusal is not a defined member.</exception>
-    public static Wire.OpenRejection Out(OpenRejection rejection) => rejection switch
+    public static Wire.RequestRejection Out(RequestRejection rejection) => rejection switch
     {
-        OpenRejection.None => Wire.OpenRejection.None,
-        OpenRejection.PairSaturated => Wire.OpenRejection.PairSaturated,
-        OpenRejection.DuplicateQuestion => Wire.OpenRejection.DuplicateQuestion,
-        OpenRejection.WouldDeadlock => Wire.OpenRejection.WouldDeadlock,
-        OpenRejection.AnswererUnreachable => Wire.OpenRejection.AnswererUnreachable,
-        OpenRejection.ConversationClosed => Wire.OpenRejection.ConversationClosed,
-        OpenRejection.AskerRetired => Wire.OpenRejection.AskerRetired,
-        _ => throw new ArgumentOutOfRangeException(
-            nameof(rejection), rejection, "Not a defined rejection.")
+        RequestRejection.None => Wire.RequestRejection.None,
+        RequestRejection.Saturated => Wire.RequestRejection.Saturated,
+        RequestRejection.Duplicate => Wire.RequestRejection.Duplicate,
+        RequestRejection.ReceiverNotRegistered => Wire.RequestRejection.ReceiverNotRegistered,
+        RequestRejection.ReceiverRetired => Wire.RequestRejection.ReceiverRetired,
+        RequestRejection.SenderRetired => Wire.RequestRejection.SenderRetired,
+        RequestRejection.ConversationClosed => Wire.RequestRejection.ConversationClosed,
+        RequestRejection.ConversationNotAssignable => Wire.RequestRejection.ConversationNotAssignable,
+        RequestRejection.NoSuchRole => Wire.RequestRejection.NoSuchRole,
+        _ => throw new ArgumentOutOfRangeException(nameof(rejection), rejection, "Not a defined rejection.")
     };
 
     /// <summary>Converts a purge verdict for the wire.</summary>
@@ -227,26 +235,18 @@ internal static class Conversions
     {
         PurgeVerdict.NotRegistered => Wire.PurgeVerdict.NotRegistered,
         PurgeVerdict.Gone => Wire.PurgeVerdict.Gone,
-        _ => throw new ArgumentOutOfRangeException(
-            nameof(verdict), verdict, "Not a defined verdict.")
+        _ => throw new ArgumentOutOfRangeException(nameof(verdict), verdict, "Not a defined verdict.")
     };
 
     /// <summary>Writes a destroy's verdict to the wire.</summary>
     /// <param name="verdict">The domain value.</param>
     /// <returns>The wire value.</returns>
     /// <exception cref="ArgumentOutOfRangeException">The value is not one this build knows.</exception>
-    /// <remarks>
-    /// A separate mapping from the purge one rather than a shared enum, because the two verdicts
-    /// name what was looked for: <see cref="PurgeVerdict.NotRegistered"/> is about an agent and
-    /// means nothing about a conversation. Sharing them would have a caller destroying a
-    /// conversation read back <i>not registered</i>, which is true of nothing here.
-    /// </remarks>
     public static Wire.DestroyVerdict Out(DestroyVerdict verdict) => verdict switch
     {
         DestroyVerdict.NoSuchConversation => Wire.DestroyVerdict.NoSuchConversation,
         DestroyVerdict.Gone => Wire.DestroyVerdict.Gone,
-        _ => throw new ArgumentOutOfRangeException(
-            nameof(verdict), verdict, "Not a defined verdict.")
+        _ => throw new ArgumentOutOfRangeException(nameof(verdict), verdict, "Not a defined verdict.")
     };
 
     /// <summary>Reads a destroy's verdict from the wire.</summary>
@@ -257,8 +257,7 @@ internal static class Conversions
     {
         Wire.DestroyVerdict.NoSuchConversation => DestroyVerdict.NoSuchConversation,
         Wire.DestroyVerdict.Gone => DestroyVerdict.Gone,
-        _ => throw new ArgumentOutOfRangeException(
-            nameof(verdict), verdict, "Not a defined verdict.")
+        _ => throw new ArgumentOutOfRangeException(nameof(verdict), verdict, "Not a defined verdict.")
     };
 
     /// <summary>Reads an instruction's outcome from the wire.</summary>
@@ -266,9 +265,8 @@ internal static class Conversions
     /// <returns>The domain value.</returns>
     /// <exception cref="ArgumentOutOfRangeException">The value is unspecified or unknown.</exception>
     /// <remarks>
-    /// Unspecified is refused rather than mapped. A node reporting a value this build has never
-    /// heard of is a node from a different version, and quietly reading that as `failed` would
-    /// tell an operator their agent broke when what broke was the deployment.
+    /// A node reporting a value this build has never heard of is a node from a different version, and
+    /// reading that as failed would tell a person their agent broke when the deployment did.
     /// </remarks>
     public static InstructionOutcome In(Wire.InstructionOutcome outcome) => outcome switch
     {
@@ -277,20 +275,13 @@ internal static class Conversions
         Wire.InstructionOutcome.Declined => InstructionOutcome.Declined,
         Wire.InstructionOutcome.Undeliverable => InstructionOutcome.Undeliverable,
         Wire.InstructionOutcome.Failed => InstructionOutcome.Failed,
-        _ => throw new ArgumentOutOfRangeException(
-            nameof(outcome), outcome, "Not a defined outcome.")
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined outcome.")
     };
 
     /// <summary>Converts an instruction's outcome for the wire.</summary>
     /// <param name="outcome">The outcome.</param>
     /// <returns>The wire value.</returns>
     /// <exception cref="ArgumentOutOfRangeException">The outcome is not a defined member.</exception>
-    /// <remarks>
-    /// Every member is listed rather than cast, like every other conversion here. The four
-    /// outcomes of SPEC.md §10.2 are four different facts and a cast would make them one
-    /// arithmetic accident away from each other — with `declined` arriving as `failed` being the
-    /// one that matters, because §11.5 says a refusal is an agent behaving correctly.
-    /// </remarks>
     public static Wire.InstructionOutcome Out(InstructionOutcome outcome) => outcome switch
     {
         InstructionOutcome.Pending => Wire.InstructionOutcome.Pending,
@@ -298,8 +289,7 @@ internal static class Conversions
         InstructionOutcome.Declined => Wire.InstructionOutcome.Declined,
         InstructionOutcome.Undeliverable => Wire.InstructionOutcome.Undeliverable,
         InstructionOutcome.Failed => Wire.InstructionOutcome.Failed,
-        _ => throw new ArgumentOutOfRangeException(
-            nameof(outcome), outcome, "Not a defined outcome.")
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined outcome.")
     };
 
     /// <summary>Converts a refused move for the wire.</summary>
@@ -312,44 +302,24 @@ internal static class Conversions
         TransitionError.ExchangeNotOpen => Wire.TransitionError.ExchangeNotOpen,
         TransitionError.NotAParticipant => Wire.TransitionError.NotAParticipant,
         TransitionError.NotYourTurn => Wire.TransitionError.NotYourTurn,
-        TransitionError.OnlyAnswererMayAnswer => Wire.TransitionError.OnlyAnswererMayAnswer,
+        TransitionError.OnlyReceiverSendsResult => Wire.TransitionError.OnlyReceiverSendsResult,
         TransitionError.ClarifyDepthExceeded => Wire.TransitionError.ClarifyDepthExceeded,
-        TransitionError.ExchangeNotOrphaned => Wire.TransitionError.ExchangeNotOrphaned,
-        TransitionError.GhostIsNotAnAnswer => Wire.TransitionError.GhostIsNotAnAnswer,
+        TransitionError.OutcomesDoNotMatchItems => Wire.TransitionError.OutcomesDoNotMatchItems,
+        TransitionError.ClosedIsTheBrokers => Wire.TransitionError.ClosedIsTheBrokers,
         _ => throw new ArgumentOutOfRangeException(nameof(error), error, "Not a defined error.")
     };
 
-    /// <summary>Converts a refused notification for the wire.</summary>
-    /// <param name="rejection">The refusal.</param>
-    /// <returns>The wire value.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">The refusal is not a defined member.</exception>
-    public static Wire.NotifyRejection Out(Parley.Broker.NotifyRejection rejection) => rejection switch
-    {
-        Parley.Broker.NotifyRejection.None => Wire.NotifyRejection.None,
-        Parley.Broker.NotifyRejection.RecipientUnroutable => Wire.NotifyRejection.RecipientUnroutable,
-        Parley.Broker.NotifyRejection.SenderRetired => Wire.NotifyRejection.SenderRetired,
-        Parley.Broker.NotifyRejection.ConversationClosed => Wire.NotifyRejection.ConversationClosed,
-        _ => throw new ArgumentOutOfRangeException(
-            nameof(rejection), rejection, "Not a defined rejection.")
-    };
-
-    /// <summary>Converts what became of a recipient for the wire.</summary>
+    /// <summary>Converts what became of a receiver for the wire.</summary>
     /// <param name="outcome">What became of it.</param>
     /// <returns>The wire value.</returns>
     /// <exception cref="ArgumentOutOfRangeException">The outcome is not a defined member.</exception>
-    /// <remarks>
-    /// Here rather than at the call site like every other mapping, and for the reason recorded on
-    /// <c>Conclude</c>: one home per mapping is what lets a reflection test check them all, and a
-    /// mapping written where it is used is one the guard cannot see.
-    /// </remarks>
     public static Wire.WakeOutcome Out(Core.WakeOutcome outcome) => outcome switch
     {
         Core.WakeOutcome.Started => Wire.WakeOutcome.Started,
         Core.WakeOutcome.AlreadyRunning => Wire.WakeOutcome.AlreadyRunning,
         Core.WakeOutcome.AlreadyComing => Wire.WakeOutcome.AlreadyComing,
         Core.WakeOutcome.Unreachable => Wire.WakeOutcome.Unreachable,
-        _ => throw new ArgumentOutOfRangeException(
-            nameof(outcome), outcome, "Not a defined wake outcome.")
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined wake outcome.")
     };
 
     /// <summary>Converts a refused conclusion for the wire.</summary>
@@ -363,6 +333,38 @@ internal static class Conversions
         _ => throw new ArgumentOutOfRangeException(nameof(error), error, "Not a defined error.")
     };
 
+    /// <summary>Converts what became of one Request for the wire.</summary>
+    /// <param name="outcome">The outcome.</param>
+    /// <param name="wake">What became of the receiver, when the Request was admitted.</param>
+    /// <returns>The wire outcome.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="outcome"/> is null.</exception>
+    public static Wire.RequestOutcome Out(Parley.Broker.RequestOutcome outcome, Core.WakeOutcome? wake)
+    {
+        ArgumentNullException.ThrowIfNull(outcome);
+
+        var reply = new Wire.RequestOutcome
+        {
+            Ok = outcome.Succeeded,
+            Rejection = Out(outcome.Rejection),
+            ExchangeId = outcome.Exchange?.Id ?? 0,
+            Receiver = outcome.Exchange?.Receiver.Value ?? string.Empty,
+            RequestGroup = outcome.RequestGroup ?? string.Empty,
+            ConversationId = outcome.Request?.ConversationId ?? string.Empty,
+            ClosedBy = Out(outcome.Admission.ClosedBy)
+        };
+
+        reply.OpenExchanges.AddRange(outcome.Admission.Outstanding.Select(e => e.Id));
+        reply.AssignableConversations.AddRange(outcome.Admission.Assignable);
+        reply.Cycle.AddRange(outcome.Admission.CyclePath.Select(a => a.Value));
+
+        if (wake is { } woken)
+        {
+            reply.Wake = Out(woken);
+        }
+
+        return reply;
+    }
+
     /// <summary>Converts a stored message for the wire.</summary>
     /// <param name="message">The message.</param>
     /// <returns>The wire message.</returns>
@@ -374,16 +376,13 @@ internal static class Conversions
         return new Wire.Message
         {
             Id = message.Id,
-
-            // Zero for none. An identifier is issued by SQLite's rowid, which starts at one, so
-            // no real exchange can collide with the sentinel.
-            ExchangeId = message.ExchangeId ?? 0,
+            ExchangeId = message.ExchangeId,
             Type = Out(message.Type),
             From = message.From.Value,
             To = message.To.Value,
             ResponderModel = message.ResponderModel,
             PayloadJson = message.PayloadJson,
-            ConversationId = message.ConversationId ?? string.Empty,
+            ConversationId = message.ConversationId,
             CreatedUtc = Stamp(message.CreatedUtc),
             DeliveredUtc = Stamp(message.DeliveredUtc)
         };
@@ -397,11 +396,7 @@ internal static class Conversions
     {
         ArgumentNullException.ThrowIfNull(delivered);
 
-        return new Wire.DeliveredMessage
-        {
-            Message = Out(delivered.Message),
-            Envelope = delivered.Envelope
-        };
+        return new Wire.DeliveredMessage { Message = Out(delivered.Message), Envelope = delivered.Envelope };
     }
 
     /// <summary>Converts a closure poll for the wire.</summary>
@@ -412,43 +407,7 @@ internal static class Conversions
     {
         ArgumentNullException.ThrowIfNull(poll);
 
-        return new Wire.ClosurePoll
-        {
-            ConversationId = poll.ConversationId,
-            PolledUtc = Stamp(poll.PolledUtc),
-            ExpiresUtc = Stamp(poll.ExpiresUtc)
-        };
-    }
-
-    /// <summary>Converts an exchange for the wire.</summary>
-    /// <param name="exchange">The exchange.</param>
-    /// <returns>The wire view of it.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="exchange"/> is null.</exception>
-    /// <remarks>
-    /// A view rather than the exchange. The three windows and the optimistic-concurrency version
-    /// are the broker's own business: a client cannot act on them, and publishing them would
-    /// make them part of the contract and so a thing that could not be changed without a wire
-    /// revision.
-    /// </remarks>
-    public static Wire.ExchangeView Out(Exchange exchange)
-    {
-        ArgumentNullException.ThrowIfNull(exchange);
-
-        return new Wire.ExchangeView
-        {
-            Id = exchange.Id,
-            Asker = exchange.Asker.Value,
-            Answerer = exchange.Answerer.Value,
-            OwedBy = exchange.OwedBy.Value,
-            State = Out(exchange.State),
-            ClarifyDepth = exchange.ClarifyDepth,
-            ClarifyDepthCap = exchange.ClarifyDepthCap,
-            OpenedUtc = Stamp(exchange.OpenedUtc),
-            ExpiresUtc = Stamp(exchange.ExpiresUtc),
-            ClosedUtc = Stamp(exchange.ClosedUtc),
-            Resolution = Out(exchange.Resolution),
-            IsDecision = exchange.IsDecision
-        };
+        return new Wire.ClosurePoll { ConversationId = poll.ConversationId, PolledUtc = Stamp(poll.PolledUtc) };
     }
 
     /// <summary>Converts an agent summary for the wire.</summary>
@@ -474,10 +433,8 @@ internal static class Conversions
     /// <returns>The wire row.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="record"/> is null.</exception>
     /// <remarks>
-    /// This one carries the workspace and the session handle, which
-    /// <see cref="Out(AgentSummary)"/> deliberately does not. It is reached through the operator
-    /// service, and SPEC.md §10.2 is where an operator is allowed to see across the deployment;
-    /// §10.1 is where an agent is not.
+    /// This one carries the workspace and the session handle, which <see cref="Out(AgentSummary)"/>
+    /// deliberately does not: it is reached through the operator service only.
     /// </remarks>
     public static Wire.RegistryRow Out(AgentRecord record)
     {

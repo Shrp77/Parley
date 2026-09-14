@@ -7,18 +7,19 @@
 /// <param name="State">Where it stands in the machine of SPEC.md §6.</param>
 /// <param name="OpenedUtc">When it opened.</param>
 /// <param name="ClosedUtc">When it closed, or <see langword="null"/> while it is open.</param>
+/// <param name="Outcome">How it closed, or <see langword="null"/> while it is open.</param>
 /// <remarks>
-/// State is read rather than inferred, and the difference is the whole reason this exists.
-/// Deducing it from the messages present cannot tell an orphaned exchange from an open one, and
-/// cannot see a ghost at all — and an operator opens a conversation precisely because something
-/// went wrong, which makes rendering an abandoned question identically to an answered one the
-/// most misleading thing a console could do.
+/// State and outcome are read rather than inferred from the messages present, and the difference is
+/// the whole reason this exists. A person opens a conversation because something went wrong, and a
+/// transcript that could not tell work ended by the person from work its receiver finished would be
+/// the most misleading thing a surface could show.
 /// </remarks>
 public sealed record ExchangeSnapshot(
     long ExchangeId,
     ExchangeState State,
     DateTimeOffset OpenedUtc,
-    DateTimeOffset? ClosedUtc);
+    DateTimeOffset? ClosedUtc,
+    ExchangeOutcome? Outcome = null);
 
 /// <summary>
 /// Everything one conversation holds: its messages, and where each exchange stands.

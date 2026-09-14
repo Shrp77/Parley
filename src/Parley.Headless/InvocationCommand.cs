@@ -11,18 +11,15 @@ namespace Parley.Headless;
 /// <param name="Timeout">How long to wait for one turn before giving up on it.</param>
 /// <remarks>
 /// <para>
-/// The command carries no question. That is the whole design and it is worth stating plainly,
-/// because the obvious implementation is the wrong one: a fleet that passed the question in
-/// would be relaying, and §8's rule 9 — refer, do not relay — exists because a relayed question
-/// arrives under the relayer's identity with consequences that were not written for it. It would
-/// also have to choose which of several owed questions to pass, and be wrong whenever there were
-/// two.
+/// The command carries no Request. The supervisor delegates a turn, never a judgement (SPEC.md §11.1):
+/// a fleet that passed the work in would put it under the supervisor's identity instead of the
+/// requester's, and would have to choose which of several waiting Requests to pass.
 /// </para>
 /// <para>
 /// So the fleet's only job is to give the agent a turn. The agent then calls <c>parley_inbox</c>
-/// through its own server, under its own identity, and sees exactly what it would have seen had
-/// a person opened the session — which is what makes an unattended answer indistinguishable from
-/// an attended one, and what keeps §13's trust boundary intact.
+/// through its own server, under its own identity, and sees exactly what it would have seen had a
+/// person opened the session — which is what makes unattended work indistinguishable from attended
+/// work, and what keeps §13's trust boundary intact.
 /// </para>
 /// </remarks>
 public sealed record InvocationCommand(
@@ -33,21 +30,22 @@ public sealed record InvocationCommand(
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Deliberately short, and deliberately not a description of the work. It names the tool to
-    /// call and stops: the messages carry their own instructions, wrapped in the envelope of §13
-    /// that marks them as a peer's words rather than the operator's. A prompt that summarised the
-    /// waiting questions would be the operator paraphrasing one agent to another, outside that
-    /// envelope and above it in authority.
+    /// <b>A turn is for doing the work</b> (§11.1). The prompt this replaced told the agent to deal with
+    /// its mail, end its turn and not start unrelated work — and an agent handed a request for work in its
+    /// repository read that as licence to collect it and stop. A runner that tells an agent to collect and
+    /// stop contradicts principle 2.1 and is a defect in the runner.
     /// </para>
     /// <para>
-    /// "End your turn" rather than "stop", because the agent is resident now and stopping is a
-    /// different instruction with a process attached to it. What ends is the turn; the session,
-    /// and everything the agent has learned in it, continues.
+    /// It still does not describe the work: the messages carry their own, inside the envelope of §13 that
+    /// marks them as another participant's words. A prompt that summarised them would be the operator
+    /// paraphrasing one agent to another, outside that envelope and above it in authority.
     /// </para>
     /// </remarks>
     public const string Prompt =
-        "You have Parley messages waiting. Call parley_inbox, deal with what is there, and end " +
-        "your turn. Do not start unrelated work.";
+        "Parley work is waiting for you. Call parley_inbox and act on what is there: do the work you " +
+        "are asked for in this repository, or resolve what stops it, and send a parley_result for each " +
+        "request. Pursue what you need from other agents with parley_request. When nothing you were " +
+        "asked for is left to do this turn, end it.";
 
     /// <summary>
     /// The arguments that make a runner speak the fleet's turn protocol.

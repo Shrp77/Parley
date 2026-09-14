@@ -8,11 +8,10 @@ namespace Parley.Cli.Tests;
 /// <remarks>
 /// <para>
 /// SC-003 and FR-012. SPEC.md §12 says the node stopping tells every agent it started to quit, and
-/// the process is what held everything each had learned. A question already drained into an
-/// agent's inbox is marked delivered, so it sits in §4.2's four-hour Working window rather than
-/// the fifteen-minute Delivery one — killing the agent that holds it leaves the exchange open and
-/// owed with nothing running to answer, ending as <c>ghosted</c>, which §5.3 defines as "nobody
-/// replied", recorded against an agent that was killed rather than one that ignored anything.
+/// the process is what held everything each had learned. A Request already drained into an
+/// agent's inbox is marked delivered, so killing the agent that holds it leaves the exchange open
+/// and owed with nothing running to do the work — flagged as collected and left (§6), against an
+/// agent that was killed rather than one that ignored anything.
 /// </para>
 /// <para>
 /// <b>The most important assertion here is the negative one.</b> Only the broker opens the store

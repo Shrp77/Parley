@@ -5,20 +5,15 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// The five reads a console's health page makes, over a real socket, against a fresh store.
+/// The reads a console's health page makes, over a real socket, against a fresh store.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every one of these was implemented, unit-tested against a repository, and bound to the wire —
-/// and the page that asks for them failed on a deployment two minutes old, because nothing had
-/// ever asked for them through the transport. A fresh store is the case: no refusals, no
-/// clarifications, no referrals, nothing sent, nobody waiting. Empty is what a broker answers
-/// with most of its life and the state least likely to have been tried.
-/// </para>
-/// <para>
-/// Found by starting the console and opening the page rather than by reading anything. That is
-/// the argument for walking a quickstart: a suite that passes and a program that runs are
-/// different claims.
+/// Every one of these was once implemented, unit-tested against a repository, and bound to the wire — and the
+/// page that asks for them failed on a deployment two minutes old, because nothing had ever asked for them
+/// through the transport. A fresh store is the case: no refusals, no clarifications, no results, nothing
+/// flagged, nobody waiting. Empty is what a broker answers with most of its life and the state least likely to
+/// have been tried.
 /// </para>
 /// </remarks>
 public sealed class HealthReadTests
@@ -33,30 +28,16 @@ public sealed class HealthReadTests
         var operators = broker.ConnectAsOperator();
         var failures = new List<string>();
 
-        await Attempt("refusals", async () =>
-            await operators.DescribeRefusalsAsync(new Wire.Empty(), cancellationToken: token));
+        await Attempt("flags", async () => await operators.DescribeFlagsAsync(new Wire.Empty(), cancellationToken: token));
+        await Attempt("refusals", async () => await operators.DescribeRefusalsAsync(new Wire.Empty(), cancellationToken: token));
+        await Attempt("clarifications", async () => await operators.DescribeClarificationsAsync(new Wire.Empty(), cancellationToken: token));
+        await Attempt("results", async () => await operators.DescribeResultsAsync(new Wire.Empty(), cancellationToken: token));
+        await Attempt("waiting", async () => await operators.DescribeWaitingAsync(new Wire.Empty(), cancellationToken: token));
 
-        await Attempt("clarifications", async () =>
-            await operators.DescribeClarificationsAsync(
-                new Wire.Empty(), cancellationToken: token));
+        // Reported together rather than one assertion each, so a run says which are broken instead of stopping at
+        // the first.
+        Assert.True(failures.Count == 0, "a health read the console makes does not answer on an empty deployment: " + string.Join("; ", failures));
 
-        await Attempt("referrals", async () =>
-            await operators.DescribeReferralsAsync(new Wire.Empty(), cancellationToken: token));
-
-        await Attempt("notifications", async () =>
-            await operators.DescribeNotificationsAsync(
-                new Wire.Empty(), cancellationToken: token));
-
-        await Attempt("waiting", async () =>
-            await operators.DescribeWaitingAsync(new Wire.Empty(), cancellationToken: token));
-
-        Assert.True(
-            failures.Count == 0,
-            "a health read the console makes does not answer on an empty deployment: "
-            + string.Join("; ", failures));
-
-        // Reported together rather than one assertion each, so a run says which of the five are
-        // broken instead of stopping at the first.
         async Task Attempt(string named, Func<Task> read)
         {
             try
@@ -65,8 +46,7 @@ public sealed class HealthReadTests
             }
             catch (RpcException failure)
             {
-                failures.Add(
-                    $"{named} -> {failure.StatusCode} {failure.Status.Detail}".Trim());
+                failures.Add($"{named} -> {failure.StatusCode} {failure.Status.Detail}".Trim());
             }
         }
     }
@@ -74,22 +54,14 @@ public sealed class HealthReadTests
     [Fact]
     public async Task The_registry_and_the_conversation_list_answer_on_an_empty_store_too()
     {
-        // The two reads a console makes before anything else. An empty registry is what every
-        // deployment has for its first few minutes, and it is what an operator is looking at
-        // while they follow the registration instructions.
+        // The two reads a console makes before anything else.
         var token = TestContext.Current.CancellationToken;
 
         await using var broker = await LoopbackBroker.StartAsync(token);
 
         var operators = broker.ConnectAsOperator();
 
-        var registry = await operators.DescribeRegistryAsync(
-            new Wire.Empty(), cancellationToken: token);
-
-        var conversations = await operators.ListConversationsAsync(
-            new Wire.ListConversationsRequest(), cancellationToken: token);
-
-        Assert.Empty(registry.Rows);
-        Assert.Empty(conversations.Conversations);
+        Assert.Empty((await operators.DescribeRegistryAsync(new Wire.Empty(), cancellationToken: token)).Rows);
+        Assert.Empty((await operators.ListConversationsAsync(new Wire.ListConversationsRequest(), cancellationToken: token)).Conversations);
     }
 }

@@ -157,10 +157,10 @@ public sealed class AgentFleet : IAsyncDisposable
             // entirely -- the first version of this guard sat inside the start and did nothing
             // from the second pass onward, which is precisely when it was needed.
             //
-            // The trigger it guards does not expire on its own: an owed exchange ages out
-            // through §14 whether or not the agent cooperates, but an uncollected message is
-            // held against retention by §9.4's floor, so without this one unread notification
-            // would buy a real session every pass for as long as the fleet ran. One wasted turn
+            // The trigger it guards does not expire on its own: nothing times an owed exchange out
+            // (§6), and an uncollected message is held against retention by §9.4's floor, so
+            // without this one unread message would buy a real session every pass for as long as
+            // the fleet ran. One wasted turn
             // per new message is the bound -- a fresh message raises the count above what was
             // still waiting last time, which re-arms it.
             if (candidate.StuckAt is { } stuck && candidate.Waiting <= stuck)

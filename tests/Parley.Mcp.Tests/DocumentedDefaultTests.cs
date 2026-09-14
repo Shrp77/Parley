@@ -1,4 +1,3 @@
-﻿using System.Globalization;
 using Parley.Core;
 using Xunit;
 
@@ -9,72 +8,56 @@ namespace Parley.Mcp.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This exists because the number is expected to move. It is 200 as a measurement rather than as
-/// a considered limit — SPEC.md §17 question 4 says to lower it once <c>clarifications()</c>
-/// reports where depth actually settles — and whoever does that will change one constant and a
-/// test, then ship documents still telling operators the default is 200. The rot is silent,
-/// because prose has nothing checking it.
+/// This exists because the number moves, and it has: the default was 200 as a measurement, and the
+/// owner took it off on the reasoning of SPEC.md principle 2.8 — nothing cuts a line of work off
+/// before its participants are finished. Whoever changes the default changes a constant and a test,
+/// and would otherwise ship documents still telling operators the old number. Prose has nothing
+/// checking it but this.
 /// </para>
 /// <para>
 /// It lives here rather than in <c>Parley.Spec.Tests</c> deliberately. That project references
-/// neither Core nor Store, so that a check on the document cannot drift into asserting what this
-/// build happens to do — a boundary worth keeping, and this assertion is exactly the kind that
-/// would breach it. Here the reference is ordinary.
+/// neither Core nor Store, so a check on the document cannot drift into asserting what this build
+/// happens to do. Here the reference is ordinary.
 /// </para>
 /// <para>
-/// The assertion is a substring rather than a parse. What is being defended is that a reader of
-/// either document is told the number the broker will apply; recovering the value from prose is
-/// not worth the fragility, and a phrase that no longer appears at all fails just as loudly.
+/// The assertions are substrings rather than a parse. What is defended is that a reader of either
+/// document is told what the broker will do; recovering that from prose is not worth the fragility,
+/// and a phrase that no longer appears at all fails just as loudly.
 /// </para>
 /// </remarks>
 public sealed class DocumentedDefaultTests
 {
-    private static string Cap =>
-        ExchangePolicy.Default.ClarifyDepthCap.ToString(CultureInfo.InvariantCulture);
-
     [Fact]
-    public void The_specification_states_the_default_the_domain_applies()
+    public void The_specification_says_clarifications_are_uncapped_and_the_domain_agrees()
     {
+        Assert.False(ExchangePolicy.Default.BoundsClarifications);
+
         Assert.Contains(
-            $"Clarify depth is capped (default {Cap})",
+            "Depth is not capped unless a deployment caps it",
             RepositoryFile.Read("SPEC.md"),
             StringComparison.Ordinal);
     }
 
     [Fact]
-    public void The_worst_case_in_the_specification_is_computed_from_that_default()
+    public void The_specification_says_what_an_uncapped_exchange_can_carry()
     {
-        // §5.3 multiplies the cap by the message cap to say what one exchange can place in a
-        // peer's context. Lowering the cap without redoing that arithmetic leaves the section
-        // that exists to gather this consequence in one place stating the wrong figure — which
-        // is worse than not stating it, because it reads as having been checked.
-        var worstCase = (ExchangePolicy.Default.ClarifyDepthCap + 1) * MessageLimits.MaxPayloadCharacters;
-
+        // With no clarification cap, the message cap bounds a message and nothing bounds an
+        // exchange. Rule 5 says so rather than leaving a reader to work it out, and it is the
+        // sentence a later decision to set a cap would have to argue with.
         Assert.Contains(
-            $"`({Cap} + 1) × {MessageLimits.MaxPayloadCharacters:N0}`",
-            RepositoryFile.Read("SPEC.md"),
-            StringComparison.Ordinal);
-
-        Assert.Contains(
-            $"about {worstCase:N0} characters",
+            "It bounds one message, not an exchange",
             RepositoryFile.Read("SPEC.md"),
             StringComparison.Ordinal);
     }
 
     [Fact]
-    public void The_readme_states_the_default_it_applies()
+    public void The_readme_states_the_default_the_domain_applies()
     {
-        // The number, not the variable. It used to be shown as a launch-configuration line
-        // because every repository set its own; the broker holds it now, so what the README owes
-        // a reader is what the cap is when nobody has changed it.
         var readme = RepositoryFile.Read("README.md");
 
-        Assert.Contains(
-            Cap.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            readme,
-            StringComparison.Ordinal);
-
-        Assert.Contains("clarif", readme, StringComparison.OrdinalIgnoreCase);
+        Assert.False(ExchangePolicy.Default.BoundsClarifications);
+        Assert.Contains("Clarifications are not capped", readme, StringComparison.Ordinal);
+        Assert.DoesNotContain("admits 200", readme, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -17,10 +17,10 @@ namespace Parley.Top;
 /// surface's part of that bargain is that nobody reaches it by accident.
 /// </para>
 /// <para>
-/// <b>The waiting asker is named before the identifier is asked for, not after.</b> An open
-/// exchange in a destroyed conversation does not orphan and is not ghosted -- it ceases to exist,
-/// so the agent waiting on it is never told anything at all, not even the ghost §7 guarantees for a
-/// question nobody answers. That is a different outcome from every other way an exchange can end
+/// <b>Whoever is waiting is named before the identifier is asked for, not after.</b> An open
+/// exchange in a destroyed conversation is not closed -- it ceases to exist, so the agent waiting
+/// on it is never told anything at all, not even the <c>closed</c> Result a person closing the
+/// conversation would have sent (§5.0). That is a different outcome from every other way an exchange can end
 /// and the one an operator is least likely to predict, so it is put in front of them while they
 /// can still decline.
 /// </para>
@@ -48,8 +48,8 @@ internal static class Destroying
 
     /// <summary>What is said before the identifier is asked for, when something is waiting.</summary>
     internal const string Waiting =
-        "An exchange in this conversation is still open. Destroying it does not orphan that "
-        + "exchange and does not ghost it: the exchange stops existing, so whoever is waiting is "
+        "An exchange in this conversation is still open. Destroying it does not close that "
+        + "exchange: the exchange stops existing, so whoever is waiting is "
         + "never told anything at all.";
 
     /// <summary>What the confirmation of that consequence is called.</summary>

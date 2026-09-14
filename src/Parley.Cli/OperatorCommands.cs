@@ -139,152 +139,155 @@ public sealed class OperatorCommands
     }
 
     /// <summary>
-    /// Reports where the ownership map is being argued about, per SPEC.md §10.2.
+    /// Reports what Results said, per SPEC.md §10.2.
     /// </summary>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>Zero. The report is the output.</returns>
     /// <remarks>
     /// <para>
-    /// Two halves from two tables, and the report says which is which because they have different
-    /// reach. The rate comes from <c>exchanges</c>, which retention never touches, so it covers
-    /// the whole life of the deployment. The targets come from the referral record, which exists
-    /// because the names used to live in a message payload that §9.4 deletes.
+    /// Four tables, because they answer four questions somebody running a deployment asks: what came of the
+    /// work, what stopped it, whose word it rested on, and how conversations ended.
     /// </para>
     /// <para>
-    /// Written so a high number reads as a question rather than a verdict. A pair referring
-    /// constantly is not an agent behaving badly; it is two repositories that disagree about a
-    /// boundary, which is a thing people fix and not a thing an operator should read as a fault.
+    /// Blockers are written so a high number reads as a question rather than a verdict. An agent blocked on
+    /// permission again and again is a boundary people should redraw, not an agent behaving badly.
     /// </para>
     /// </remarks>
-    public async Task<int> ReferralsAsync(CancellationToken cancellationToken)
+    public async Task<int> ResultsAsync(CancellationToken cancellationToken)
     {
-        var report = await _console.DescribeReferralsAsync(
-            new Wire.Empty(), cancellationToken: cancellationToken);
+        var report = await _console.DescribeResultsAsync(new Wire.Empty(), cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
 
-        if (IsEmpty(report))
+        if (report.Outcomes.Count == 0 && report.Closures.Count == 0)
         {
             await _output.WriteLineAsync(
-                "Nothing has been referred. Either every question has found its owner first " +
-                "time, or too little has been asked to tell.").ConfigureAwait(false);
+                "No results have been sent and no conversation has closed yet.").ConfigureAwait(false);
 
             return 0;
         }
 
-        await _output.WriteLineAsync(
-            "asker                answerer             closed  out of scope   rate")
+        await _output.WriteLineAsync("agent                responder              outcome        items")
             .ConfigureAwait(false);
 
-        foreach (var pair in report.Pairs)
+        foreach (var row in report.Outcomes)
         {
             await _output.WriteLineAsync(string.Create(
                 CultureInfo.InvariantCulture,
-                $"{pair.Asker,-20} {pair.Answerer,-20} {pair.Closed,6}  {pair.OutOfScope,12}  " +
-                $"{Rate(pair),5:0.0%}")).ConfigureAwait(false);
+                $"{row.Agent,-20} {row.ResponderModel,-22} {Snake(row.Outcome),-14} {row.Items,5}"))
+                .ConfigureAwait(false);
         }
 
-        if (report.Targets.Count > 0)
+        if (report.Blockers.Count > 0)
         {
             await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
-            await _output.WriteLineAsync(
-                "and where they were sent instead").ConfigureAwait(false);
+            await _output.WriteLineAsync("blocked                by                     items").ConfigureAwait(false);
 
-            foreach (var target in report.Targets)
+            foreach (var row in report.Blockers)
             {
                 await _output.WriteLineAsync(string.Create(
                     CultureInfo.InvariantCulture,
-                    $"{target.Asker,-20} {target.Answerer,-20} -> {target.RedirectedTo,-20} " +
-                    $"{target.Referrals,5}  {Readable(target.LastUtc)}")).ConfigureAwait(false);
+                    $"{row.Agent,-22} {Snake(row.Kind),-22} {row.Items,5}")).ConfigureAwait(false);
             }
         }
 
-        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+        if (report.Sources.Count > 0)
+        {
+            await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+            await _output.WriteLineAsync("agent                relied on            items").ConfigureAwait(false);
 
-        // The reading. §15 calls this the signal that the ownership map is wrong somewhere, and
-        // an operator looking at a table of counts should not have to reconstruct that.
-        await _output.WriteLineAsync(
-            "A high rate is a boundary two repositories disagree about, not an agent behaving " +
-            "badly. Fix it where ownership is written down, not here.").ConfigureAwait(false);
+            foreach (var row in report.Sources)
+            {
+                await _output.WriteLineAsync(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{row.Agent,-20} {row.Source,-20} {row.Items,5}")).ConfigureAwait(false);
+            }
+        }
+
+        if (report.Closures.Count > 0)
+        {
+            await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+            await _output.WriteLineAsync("agent                by agreement  by a person").ConfigureAwait(false);
+
+            foreach (var row in report.Closures)
+            {
+                await _output.WriteLineAsync(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{row.Agent,-20} {row.ByConsensus,12}  {row.ByPerson,11}")).ConfigureAwait(false);
+            }
+        }
 
         return 0;
     }
 
     /// <summary>
-    /// Reports what Notify has carried, per SPEC.md §10.2.
+    /// Reports open work that needs a person, per SPEC.md §10.2.
     /// </summary>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>Zero. The report is the output.</returns>
     /// <remarks>
-    /// §17 question 1 records that nothing bounds Notify and that the answer is to measure rather
-    /// than pick a limit. This prints the two numbers that decide it — how many and how big — and
-    /// the per-recipient totals a survey reads, because asking an agent whether notifications are
-    /// worth having is only meaningful once it has had enough of them to judge.
+    /// Nothing in the protocol times out, so this is how work nobody collected, or collected and left, comes
+    /// to anybody's attention. Each line names the conversation, because closing it is the remedy.
     /// </remarks>
-    public async Task<int> NotificationsAsync(CancellationToken cancellationToken)
+    public async Task<int> FlagsAsync(CancellationToken cancellationToken)
     {
-        var report = await _console.DescribeNotificationsAsync(new Wire.Empty(), cancellationToken: cancellationToken)
+        var report = await _console.DescribeFlagsAsync(new Wire.Empty(), cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        if (IsEmpty(report))
+        if (report.Flags.Count == 0 && report.Cycles.Count == 0)
         {
             await _output.WriteLineAsync(
-                "No notifications have been sent. Nothing bounds them by design, so this is the " +
-                "evidence for whether anything should — and there is none yet.")
-                .ConfigureAwait(false);
+                "Nothing is flagged. All open work has been collected and is moving.").ConfigureAwait(false);
 
             return 0;
         }
 
-        await _output.WriteLineAsync(string.Create(
-            CultureInfo.InvariantCulture,
-            $"{Sent(report)} notifications, mean {Mean(report)} characters. The cap on a single " +
-            $"message is {MessageLimits.MaxPayloadCharacters}.")).ConfigureAwait(false);
+        foreach (var flag in report.Flags)
+        {
+            if (flag.Kind == Wire.FlagKind.NotVoted)
+            {
+                // No exchange to name: the work is all closed, and the conversation waits on a vote.
+                await _output.WriteLineAsync(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{Readable(flag.SinceUtc)}  {flag.ConversationId}: its work is all closed and {flag.Waiting} " +
+                    $"is finished; closing it is waiting on {flag.WaitingOn} to say whether it is too")).ConfigureAwait(false);
+
+                continue;
+            }
+
+            var what = flag.Kind switch
+            {
+                Wire.FlagKind.NotCollected => "has not collected it",
+                Wire.FlagKind.NoProgress => "collected it and has done nothing since",
+                _ => "is retired and still holds it"
+            };
+
+            await _output.WriteLineAsync(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{Readable(flag.SinceUtc)}  {flag.ConversationId}  exchange {flag.ExchangeId}: " +
+                $"{flag.Waiting} is waiting on {flag.WaitingOn}, which {what}")).ConfigureAwait(false);
+        }
+
+        if (report.Cycles.Count > 0)
+        {
+            await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
+            await _output.WriteLineAsync("requests that went round in a circle").ConfigureAwait(false);
+
+            foreach (var cycle in report.Cycles)
+            {
+                await _output.WriteLineAsync(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{Readable(cycle.RecordedUtc)}  {cycle.ConversationId}  {string.Join(" -> ", cycle.Path)}"))
+                    .ConfigureAwait(false);
+            }
+        }
 
         await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
         await _output.WriteLineAsync(
-            "from                 to                    sent    mean  largest  first        last")
+            "Ask the agent why, or close the conversation with `parley force-conclude <conversation> <reason>`.")
             .ConfigureAwait(false);
-
-        foreach (var flow in report.Flows)
-        {
-            await _output.WriteLineAsync(string.Create(
-                CultureInfo.InvariantCulture,
-                $"{flow.From,-20} {flow.To,-20} {flow.Sent,6}  {Mean(flow),6} {flow.Largest,8}  " +
-                $"{Day(flow.FirstUtc)}  {Day(flow.LastUtc)}")).ConfigureAwait(false);
-        }
-
-        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
-        await _output.WriteLineAsync("received in total").ConfigureAwait(false);
-
-        foreach (var (agent, received) in Received(report))
-        {
-            // The thresholds are where somebody goes and asks that agent whether any of it was
-            // worth having. Marked rather than left to be counted off a column, because the whole
-            // point of the survey is that it happens at all.
-            var due = received >= 10
-                ? string.Create(CultureInfo.InvariantCulture, $"  <- ask it, past {received / 10 * 10}")
-                : string.Empty;
-
-            await _output.WriteLineAsync(string.Create(
-                CultureInfo.InvariantCulture,
-                $"{agent,-20} {received,6}{due}")).ConfigureAwait(false);
-        }
-
-        await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
-        await _output.WriteLineAsync(
-            "Nothing refuses a notification, deliberately. What to do with these numbers is in " +
-            "SPEC.md section 17, question 1.").ConfigureAwait(false);
 
         return 0;
     }
-
-    /// <summary>Renders a stored timestamp as a date, for a column that spans days.</summary>
-    /// <param name="stored">The value as the database holds it.</param>
-    /// <returns>The date, or the raw value if it cannot be read as one.</returns>
-    private static string Day(string stored) =>
-        DateTimeOffset.TryParse(
-            stored, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var moment)
-            ? moment.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
-            : stored;
 
     /// <summary>Renders a stored timestamp the way the other reports do.</summary>
     /// <param name="stored">The value as the database holds it.</param>
@@ -334,10 +337,16 @@ public sealed class OperatorCommands
             return 0;
         }
 
+        // "none" rather than the number that spells it. The default is no cap, stored as the largest
+        // integer (ExchangePolicy.UnboundedClarifications), and a report reading "2147483647" would
+        // tell somebody deciding about a cap that one was set, at a value nobody chose.
+        var lowest = CapInForce(report.LowestCapInForce);
+        var highest = CapInForce(report.HighestCapInForce);
+
         await _output.WriteLineAsync(string.Create(
             CultureInfo.InvariantCulture,
-            $"{Exchanges(report)} exchanges. Caps in force: {report.LowestCapInForce} to " +
-            $"{report.HighestCapInForce}.")).ConfigureAwait(false);
+            $"{Exchanges(report)} exchanges. Caps in force: " +
+            $"{(lowest == highest ? lowest : $"{lowest} to {highest}")}.")).ConfigureAwait(false);
 
         await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
         await _output.WriteLineAsync("depth  exchanges  share").ConfigureAwait(false);
@@ -359,8 +368,8 @@ public sealed class OperatorCommands
 
         await _output.WriteLineAsync(string.Create(
             CultureInfo.InvariantCulture,
-            $"Answers resolving sub-questions differently: " +
-            $"{report.AnswersResolvingSubQuestionsDifferently} of {report.Answers}"))
+            $"Results mixing outcomes across items:        " +
+            $"{report.ResultsWithMixedOutcomes} of {report.Results}"))
             .ConfigureAwait(false);
 
         await _output.WriteLineAsync(string.Empty).ConfigureAwait(false);
@@ -393,6 +402,14 @@ public sealed class OperatorCommands
         return 0;
     }
 
+    /// <summary>A cap as a person reads it: its number, or "none" when the exchange is uncapped.</summary>
+    /// <param name="cap">The cap stamped on an exchange.</param>
+    /// <returns>The words.</returns>
+    private static string CapInForce(long cap) =>
+        cap == Parley.Core.ExchangePolicy.UnboundedClarifications
+            ? "none"
+            : cap.ToString(CultureInfo.InvariantCulture);
+
     /// <summary>Withdraws an agent's registration.</summary>
     /// <param name="agent">The agent to retire.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
@@ -417,8 +434,8 @@ public sealed class OperatorCommands
 
         await _output.WriteLineAsync(
             $"'{agent.Value}' is retired. It will not be routed to or listed, and starting its " +
-            "server will be refused. What it already owed is not resolved here: those exchanges " +
-            "run out of time on the ordinary schedule and each asker is told nobody answered.")
+            "server will be refused. Work it still holds stays open and is flagged as held by a " +
+            "retired agent (`parley flags`): close those conversations, or reinstate it.")
             .ConfigureAwait(false);
 
         return 0;
@@ -531,8 +548,8 @@ public sealed class OperatorCommands
         if (messages.Count == 0)
         {
             await _output.WriteLineAsync(
-                $"No messages in '{conversationId}'. Conversations exist only once an agent has " +
-                "named one on a question or an event.").ConfigureAwait(false);
+                $"No messages in '{conversationId}'. A conversation exists only once a request " +
+                "has been sent in it.").ConfigureAwait(false);
 
             return 1;
         }
@@ -542,8 +559,8 @@ public sealed class OperatorCommands
             var text = new StringBuilder()
                 .Append(message.CreatedUtc)
                 .Append("  ")
-                // Nine, not eight: "question" is exactly eight characters, so padding to its
-                // own length runs the type into the sender. Found by reading the output.
+                // Wider than the longest type, "request" and "clarify" at seven, so the type never
+                // runs into the sender. It once did, padded to its own length; found by reading the output.
                 .Append(Lower(message.Type).PadRight(9))
                 .Append(message.From)
                 .Append(" -> ")
@@ -559,21 +576,22 @@ public sealed class OperatorCommands
         return 0;
     }
 
-    /// <summary>Closes a conversation over its participants' votes.</summary>
-    /// <param name="conversationId">The discussion to close.</param>
+    /// <summary>Closes a conversation now, whatever its participants have voted.</summary>
+    /// <param name="conversationId">The conversation to close.</param>
+    /// <param name="reason">Why, told to every participant holding open work; null for none.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>Zero if it closed, one if it did not.</returns>
     /// <remarks>
-    /// Named <c>force-conclude</c> rather than <c>conclude</c>, following §10.2. It exists
-    /// because a decline blocks closure indefinitely and the agent holding it may simply be
-    /// wrong — a deliberate asymmetry rather than a hole in principle 2.6: no agent may conclude
-    /// over another's objection, and the person running the broker is not an agent.
+    /// Named <c>force-conclude</c> rather than <c>conclude</c>, following §10.2. Nothing in the protocol
+    /// times out, so this is how a person ends work that has stalled — a deliberate asymmetry rather than a
+    /// hole in principle 2.6: no agent may conclude over another's objection, and the person running the
+    /// broker is not an agent.
     /// </remarks>
     public async Task<int> ForceConcludeAsync(
-        string conversationId, CancellationToken cancellationToken)
+        string conversationId, string? reason, CancellationToken cancellationToken)
     {
         var concluded = await _console.ForceConcludeAsync(
-            new Wire.ForceConcludeRequest { ConversationId = conversationId },
+            new Wire.ForceConcludeRequest { ConversationId = conversationId, Reason = reason ?? string.Empty },
             cancellationToken: cancellationToken);
 
         if (!concluded.Changed)
@@ -585,8 +603,136 @@ public sealed class OperatorCommands
         }
 
         await _output.WriteLineAsync(
-            $"'{conversationId}' is closed. A new question naming it will be refused; the same " +
-            "question under a new identifier will not.").ConfigureAwait(false);
+            $"'{conversationId}' is closed. Every request still open in it was closed with a result " +
+            "saying a person closed it, and each participant holding that work was told. A new " +
+            "request naming it will be refused.").ConfigureAwait(false);
+
+        return 0;
+    }
+
+    /// <summary>Gives an agent a person's words as a turn.</summary>
+    /// <param name="agent">Who is instructed.</param>
+    /// <param name="text">What it should do.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Zero unless the instruction could not be delivered or the turn failed.</returns>
+    /// <remarks>
+    /// Declined is zero, not a failure: §11.5 lets an agent refuse, and a command that exits non-zero on a refusal
+    /// teaches a script to treat the agent as broken. Still running is zero too — it is the ordinary answer for
+    /// real work, and <c>parley instructions</c> is where the reply turns up.
+    /// </remarks>
+    public async Task<int> InstructAsync(AgentName agent, string text, CancellationToken cancellationToken)
+    {
+        var reply = await _console.InstructAsync(
+            new Wire.InstructRequest { Agent = agent.Value, Text = text }, cancellationToken: cancellationToken);
+
+        var said = string.IsNullOrEmpty(reply.Reply) ? string.Empty : " " + reply.Reply.ReplaceLineEndings(" ");
+
+        await _output.WriteLineAsync(reply.Outcome switch
+        {
+            Wire.InstructionOutcome.Taken => "Taken." + said,
+            Wire.InstructionOutcome.Declined => "The agent declined, which is its right." + said,
+            Wire.InstructionOutcome.Undeliverable =>
+                "The machine that holds this agent is not connected, so nothing was delivered.",
+            Wire.InstructionOutcome.Failed => "The turn did not complete." + said,
+            _ => $"Given to the agent, and the turn is still running. `parley instructions {agent.Value}` shows its answer when it comes."
+        }).ConfigureAwait(false);
+
+        return reply.Outcome is Wire.InstructionOutcome.Undeliverable or Wire.InstructionOutcome.Failed ? 1 : 0;
+    }
+
+    /// <summary>Asks an agent's machine to start it.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Zero if a start was asked for, one if nothing could start it.</returns>
+    /// <remarks>
+    /// Named apart from the broker's <c>StartAsync</c>, which is an agent attaching (§10.1), for the reason §10.2
+    /// gives. It says what it asked for rather than that the agent is running: registration is the agent's own act
+    /// on attach, and <c>parley registry</c> is where that shows.
+    /// </remarks>
+    public async Task<int> StartAgentAsync(AgentName agent, CancellationToken cancellationToken)
+    {
+        var reply = await _console.StartAsync(
+            new Wire.StartRequest { Agent = agent.Value, Because = "an operator started it from the command line" },
+            cancellationToken: cancellationToken);
+
+        if (!reply.Changed)
+        {
+            await _output.WriteLineAsync(
+                $"Nothing could start '{agent.Value}': its machine's node is not connected, or its catalogue does not name it.")
+                .ConfigureAwait(false);
+
+            return 1;
+        }
+
+        await _output.WriteLineAsync(
+            $"Asked the machine that holds '{agent.Value}' to start it. It registers itself as it attaches; " +
+            "`parley registry` shows when it has.").ConfigureAwait(false);
+
+        return 0;
+    }
+
+    /// <summary>Takes a conversation off the list.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Zero if it changed, one if it did not.</returns>
+    public async Task<int> ArchiveAsync(string conversationId, CancellationToken cancellationToken)
+    {
+        var reply = await _console.ArchiveAsync(
+            new Wire.ConversationRequest { ConversationId = conversationId }, cancellationToken: cancellationToken);
+
+        await _output.WriteLineAsync(reply.Changed
+            ? $"'{conversationId}' is archived. Nothing was deleted, and it stays archived if more is said in it."
+            : $"'{conversationId}' does not exist, or was already archived.").ConfigureAwait(false);
+
+        return reply.Changed ? 0 : 1;
+    }
+
+    /// <summary>Puts an archived conversation back on the list.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Zero if it changed, one if it did not.</returns>
+    public async Task<int> UnarchiveAsync(string conversationId, CancellationToken cancellationToken)
+    {
+        var reply = await _console.UnarchiveAsync(
+            new Wire.ConversationRequest { ConversationId = conversationId }, cancellationToken: cancellationToken);
+
+        await _output.WriteLineAsync(reply.Changed
+            ? $"'{conversationId}' is back in the list."
+            : $"'{conversationId}' does not exist, or was not archived.").ConfigureAwait(false);
+
+        return reply.Changed ? 0 : 1;
+    }
+
+    /// <summary>Deletes a conversation and every message in it, for every participant.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>Zero if it was deleted, one if there was no such conversation.</returns>
+    /// <remarks>
+    /// Per table afterwards, like <see cref="PurgeAsync"/>, and for its reason: nothing here is a confirmation
+    /// prompt, so what an operator needs is an account of what is now missing.
+    /// </remarks>
+    public async Task<int> DestroyAsync(string conversationId, CancellationToken cancellationToken)
+    {
+        var reply = await _console.DestroyAsync(
+            new Wire.ConversationRequest { ConversationId = conversationId }, cancellationToken: cancellationToken);
+
+        if (reply.Verdict != Wire.DestroyVerdict.Gone)
+        {
+            await _output.WriteLineAsync($"There is no conversation called '{conversationId}'.").ConfigureAwait(false);
+
+            return 1;
+        }
+
+        await _output.WriteLineAsync($"'{conversationId}' is destroyed, and with it:").ConfigureAwait(false);
+
+        foreach (var toll in reply.Destroyed)
+        {
+            await _output.WriteLineAsync(string.Create(CultureInfo.InvariantCulture, $"  {toll.Table}  {toll.Rows}"))
+                .ConfigureAwait(false);
+        }
+
+        await _output.WriteLineAsync(
+            "This cannot be undone. Anybody waiting on an open request in it is never told anything.").ConfigureAwait(false);
 
         return 0;
     }
@@ -660,7 +806,8 @@ public sealed class OperatorCommands
 
             await _output.WriteLineAsync(
                 $"{held} more were old enough and were kept: still undelivered, on an exchange " +
-                "that has not closed, or inside the deduplication window. That floor is not " +
+                "that has not closed, the request a result not yet collected carries back, or " +
+                "inside the deduplication window. That floor is not " +
                 "configurable — it is what keeps tightening retention from breaking delivery " +
                 "or deduplication as a side effect.").ConfigureAwait(false);
         }
@@ -693,51 +840,26 @@ public sealed class OperatorCommands
     private static string Hours(TimeSpan value) =>
         string.Create(CultureInfo.InvariantCulture, $"{value.TotalHours:0.##} hours");
 
-    /// <summary>Whether a referral report found nothing.</summary>
-    /// <param name="report">The report.</param>
-    /// <returns><see langword="true"/> if there is nothing to show.</returns>
-    private static bool IsEmpty(Wire.ReferralsReply report) =>
-        report.Pairs.Count == 0 && report.Targets.Count == 0;
-
-    /// <summary>Whether a notification report found nothing.</summary>
-    /// <param name="report">The report.</param>
-    /// <returns><see langword="true"/> if there is nothing to show.</returns>
-    private static bool IsEmpty(Wire.NotificationsReply report) => report.Flows.Count == 0;
-
-    /// <summary>Every notification sent, across all flows.</summary>
-    /// <param name="report">The report.</param>
-    /// <returns>The total.</returns>
-    private static long Sent(Wire.NotificationsReply report) => report.Flows.Sum(f => f.Sent);
-
-    /// <summary>The mean size of a notification across all flows.</summary>
-    /// <param name="report">The report.</param>
-    /// <returns>The mean, in characters.</returns>
-    /// <remarks>
-    /// Weighted by the messages rather than averaged across the flows, so one pair sending a
-    /// thousand short notices is not balanced out by a pair that sent one long one.
-    /// </remarks>
-    private static long Mean(Wire.NotificationsReply report)
+    /// <summary>Renders a wire enum member the way the protocol spells it: <c>missing_information</c>.</summary>
+    /// <param name="value">The member.</param>
+    /// <returns>Its snake-case name.</returns>
+    private static string Snake(Enum value)
     {
-        var sent = Sent(report);
+        var name = value.ToString();
+        var written = new StringBuilder(name.Length + 4);
 
-        return sent == 0 ? 0 : report.Flows.Sum(f => f.Characters) / sent;
+        foreach (var character in name)
+        {
+            if (char.IsUpper(character) && written.Length > 0)
+            {
+                written.Append('_');
+            }
+
+            written.Append(char.ToLowerInvariant(character));
+        }
+
+        return written.ToString();
     }
-
-    /// <summary>How much each agent has received, most first.</summary>
-    /// <param name="report">The report.</param>
-    /// <returns>One entry per recipient.</returns>
-    /// <remarks>
-    /// The half of SPEC.md §17 question 1 that a counter can answer: how much an agent has been
-    /// sent. Whether any of it was worth reading only that agent knows, which is why the answer
-    /// is asked for rather than measured.
-    /// </remarks>
-    private static IReadOnlyList<(string Agent, long Received)> Received(
-        Wire.NotificationsReply report) =>
-        [.. report.Flows
-            .GroupBy(f => f.To, StringComparer.Ordinal)
-            .Select(g => (Agent: g.Key, Received: g.Sum(f => f.Sent)))
-            .OrderByDescending(x => x.Received)
-            .ThenBy(x => x.Agent, StringComparer.Ordinal)];
 
     /// <summary>How many exchanges the clarify distribution covers.</summary>
     /// <param name="report">The report.</param>
@@ -750,23 +872,6 @@ public sealed class OperatorCommands
     /// <returns>The depth, or zero if none did.</returns>
     private static int DeepestReached(Wire.ClarificationsReply report) =>
         report.Distribution.Count == 0 ? 0 : report.Distribution.Max(b => b.Depth);
-
-    /// <summary>The share of a pair's closed exchanges the answerer declined as not its own.</summary>
-    /// <param name="pair">The pair.</param>
-    /// <returns>The rate, between zero and one.</returns>
-    /// <remarks>
-    /// Computed here because the wire carries the two counts and not the quotient. A derived
-    /// field on the wire would be a second place the arithmetic could be done differently, and
-    /// this is the one number in SPEC.md §15 that an operator acts on.
-    /// </remarks>
-    private static double Rate(Wire.ReferralPair pair) =>
-        pair.Closed == 0 ? 0 : (double)pair.OutOfScope / pair.Closed;
-
-    /// <summary>The mean size of a notification on one flow.</summary>
-    /// <param name="flow">The flow.</param>
-    /// <returns>The mean, in characters.</returns>
-    private static long Mean(Wire.NotifyFlow flow) =>
-        flow.Sent == 0 ? 0 : flow.Characters / flow.Sent;
 
     /// <summary>Renders an enum member the way the registry stores it.</summary>
     /// <param name="value">The member.</param>

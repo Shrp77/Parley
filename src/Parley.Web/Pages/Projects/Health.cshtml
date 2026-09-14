@@ -1,5 +1,6 @@
 @page
 @model Parley.Web.Pages.Projects.HealthModel
+@using Parley.Core
 @{
     ViewData["Refresh"] = "60";
     ViewData["Title"] = $"Health of {Model.Project}";
@@ -11,6 +12,7 @@
 <nav aria-label="This project">
     <a href="/Projects/Agents?project=@Model.Project">Agents</a>
     <a href="/Conversations?project=@Model.Project">Conversations</a>
+    <a href="/Projects/Act?project=@Model.Project&amp;action=prune&amp;subject=@Model.Project">Apply the retention policy now</a>
 </nav>
 
 @if (Model.Problem is { Length: > 0 } problem)
@@ -20,13 +22,54 @@
 else
 {
     <section>
+        <h2>Work that needs you</h2>
+        @* Nothing times out, so this is the only way stalled work ends: a person sees it here and
+           closes the conversation, or goes and asks why. *@
+        @if (Model.Flags is { IsEmpty: false } flags)
+        {
+            @if (flags.Exchanges.Count > 0)
+            {
+                <ul>
+                @foreach (var flag in flags.Exchanges)
+                {
+                    <li>
+                        @HealthModel.Describe(flag)
+                        <a href="/Conversations/Detail?project=@Model.Project&amp;id=@flag.ConversationId">@flag.ConversationId</a>
+                        ·
+                        <a href="/Projects/Act?project=@Model.Project&amp;action=forceconclude&amp;subject=@flag.ConversationId">close it</a>
+                    </li>
+                }
+                </ul>
+            }
+
+            @if (flags.Cycles.Count > 0)
+            {
+                <h3>Requests that went round in a circle</h3>
+                <ul>
+                @foreach (var cycle in flags.Cycles)
+                {
+                    <li>
+                        @string.Join(" -> ", cycle.Path.Select(a => a.Value)) in
+                        <a href="/Conversations/Detail?project=@Model.Project&amp;id=@cycle.ConversationId">@cycle.ConversationId</a>
+                    </li>
+                }
+                </ul>
+            }
+        }
+        else
+        {
+            <p>Nothing is flagged. All open work has been collected and is moving.</p>
+        }
+    </section>
+
+    <section>
         <h2>Who is waiting on whom</h2>
-        @* A question nobody is going to answer looks exactly like one that has not been
-           answered yet, from inside the pair. Only a read across pairs tells them apart, which
-           is why this is an operator's view and not an agent's. *@
+        @* Work nobody is going to do looks exactly like work not done yet, from inside the pair.
+           Only a read across pairs tells them apart, which is why this is an operator's view and
+           not an agent's. *@
         @if (Model.Waiting.Count == 0)
         {
-            <p>Nobody is waiting on an answer.</p>
+            <p>Nobody is waiting on a result.</p>
         }
         else
         {
@@ -90,12 +133,11 @@ else
                 @clarify.Exchanges exchanges asked for clarification, the deepest reaching
                 @clarify.DeepestReached rounds. @clarify.ExchangesAtCap ran out of rounds.
             </p>
-            @* Answers that resolved a sub-question differently are the interesting number: they
-               say the clarification changed the answer rather than merely delaying it. *@
+            @* Results that mixed outcomes are the interesting number: work that came back
+               partly done says the request carried more than one thing. *@
             <p>
-                @clarify.Answers answers followed, of which
-                @clarify.AnswersResolvingSubQuestionsDifferently resolved a sub-question
-                differently from the first attempt.
+                @clarify.Results results followed, of which
+                @clarify.ResultsWithMixedOutcomes mixed outcomes across their items.
             </p>
         }
         else
@@ -105,92 +147,69 @@ else
     </section>
 
     <section>
-        <h2>What Notify has carried</h2>
-        @* SPEC.md §17 question 1 leaves Notify uncapped on purpose and decides from evidence.
-           This is the half of that evidence a machine can count; whether any of it was worth
-           reading only the recipient knows. *@
-        @if (Model.Notifications is { IsEmpty: false } notify)
+        <h2>What results reported</h2>
+        @if (Model.Results is { IsEmpty: false } results)
         {
             <table>
-                <caption>Notification volume by sender and recipient</caption>
+                <caption>Item outcomes by the agent that reported them</caption>
                 <thead>
                     <tr>
-                        <th scope="col">From</th>
-                        <th scope="col">To</th>
-                        <th scope="col">Sent</th>
-                        <th scope="col">Mean size</th>
-                        <th scope="col">Largest</th>
-                        <th scope="col">Most recent</th>
+                        <th scope="col">Agent</th>
+                        <th scope="col">Responder</th>
+                        <th scope="col">Outcome</th>
+                        <th scope="col">Items</th>
                     </tr>
                 </thead>
                 <tbody>
-                @foreach (var flow in notify.Flows)
+                @foreach (var row in results.Outcomes)
                 {
                     <tr>
-                        <td>@flow.From</td>
-                        <td>@flow.To</td>
-                        <td>@flow.Sent</td>
-                        <td>@flow.Mean characters</td>
-                        <td>@flow.Largest characters</td>
-                        <td>@flow.LastUtc</td>
-                    </tr>
-                }
-                </tbody>
-            </table>
-        }
-        else
-        {
-            <p>No notifications have been sent.</p>
-        }
-    </section>
-
-    <section>
-        <h2>Where work went when it was out of scope</h2>
-        @if (Model.Referrals is { IsEmpty: false } referrals)
-        {
-            <table>
-                <caption>Exchanges the answerer declined as not its own</caption>
-                <thead>
-                    <tr>
-                        <th scope="col">Asker</th>
-                        <th scope="col">Answerer</th>
-                        <th scope="col">Closed</th>
-                        <th scope="col">Out of scope</th>
-                    </tr>
-                </thead>
-                <tbody>
-                @foreach (var pair in referrals.Pairs)
-                {
-                    <tr>
-                        <td>@pair.Asker</td>
-                        <td>@pair.Answerer</td>
-                        <td>@pair.Closed</td>
-                        @* Shown as a count beside the total rather than as a bare rate: three
-                           out of four reads differently from three thousand out of four
-                           thousand, and a percentage hides which one this is. *@
-                        <td>@pair.OutOfScope</td>
+                        <td>@row.Agent</td>
+                        <td>@row.ResponderModel</td>
+                        <td>@OutcomeTokens.Format(row.Outcome)</td>
+                        <td>@row.Items</td>
                     </tr>
                 }
                 </tbody>
             </table>
 
-            @if (referrals.Targets.Count > 0)
+            @if (results.Blockers.Count > 0)
             {
-                <h3>And where it was sent</h3>
+                <h3>What blocked them</h3>
+                @* A blocker is a boundary or a gap someone can fix, which is why the kind is kept. *@
                 <ul>
-                @foreach (var target in referrals.Targets)
+                @foreach (var row in results.Blockers)
                 {
-                    <li>
-                        @target.Answerer sent @target.Referrals of @target.Asker&#39;s
-                        sub-questions to @target.RedirectedTo
-                    </li>
+                    <li>@row.Agent: @row.Items blocked by @OutcomeTokens.Format(row.Kind).Replace('_', ' ')</li>
+                }
+                </ul>
+            }
+
+            @if (results.Sources.Count > 0)
+            {
+                <h3>Who they relied on</h3>
+                <ul>
+                @foreach (var row in results.Sources)
+                {
+                    <li>@row.Agent relied on @row.Source for @row.Items item@(row.Items == 1 ? "" : "s")</li>
+                }
+                </ul>
+            }
+
+            @if (results.Closures.Count > 0)
+            {
+                <h3>How their conversations ended</h3>
+                <ul>
+                @foreach (var row in results.Closures)
+                {
+                    <li>@row.Agent: @row.ByConsensus by agreement, @row.ByPerson closed by a person</li>
                 }
                 </ul>
             }
         }
         else
         {
-            <p>Nothing has been referred elsewhere.</p>
+            <p>No results have been sent yet.</p>
         }
     </section>
 }

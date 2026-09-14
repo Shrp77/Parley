@@ -185,7 +185,7 @@ internal sealed class ServerFixture : IAsyncDisposable
 
     /// <summary>Runs the sweep and reports what it did.</summary>
     /// <param name="cancellationToken">Cancels the pass.</param>
-    /// <returns>What the pass orphaned, ghosted and pruned.</returns>
+    /// <returns>What the pass concluded and pruned.</returns>
     public Task<TickResult> SweepAsync(CancellationToken cancellationToken) =>
         _server.Runtime.TickAsync(cancellationToken);
 

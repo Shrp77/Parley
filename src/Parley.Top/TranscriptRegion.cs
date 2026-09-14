@@ -57,6 +57,10 @@ internal sealed class TranscriptRegion : FrameView
     private IReadOnlyList<TranscriptLine> _marked = [];
     private List<Color?> _tints = [];
 
+    // Set only for the length of one redraw by Follow, when the reader was on the last row: they are
+    // reading the conversation as it arrives, so the new last row is where they belong.
+    private bool _followEnd;
+
     internal TranscriptRegion()
     {
         Title = RegionTitle;
@@ -112,6 +116,80 @@ internal sealed class TranscriptRegion : FrameView
             return;
         }
 
+        Mark(Laid(conversationId, project, export));
+    }
+
+    /// <summary>Draws the open conversation again, if what it holds has changed.</summary>
+    /// <param name="conversationId">Which conversation this read was of.</param>
+    /// <param name="project">The project it came from.</param>
+    /// <param name="export">What the broker holds now.</param>
+    /// <returns>Whether anything was redrawn.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Asked for by the owner, whose answer arrived in forty-seven seconds and was not on screen until
+    /// they closed the transcript and opened it again.</b> <see cref="Show"/> was the only way in, and it
+    /// is called once, when a conversation is opened.
+    /// </para>
+    /// <para>
+    /// <b>The web console decided the opposite, and the reasoning it recorded is answered rather than
+    /// ignored.</b> It says "a page that changed under a reader mid-sentence would be worse than one that
+    /// is briefly out of date". That is true of a page that redraws from the top. This does not move
+    /// what somebody is reading: a transcript only grows at the end, so the row under the cursor is the
+    /// same row afterwards — and a reader on the last row, who is reading as it arrives, is kept on the
+    /// last row. A reader who has not moved the cursor at all is left at the top, because nothing says
+    /// they are waiting at the bottom.
+    /// </para>
+    /// <para>
+    /// Compared on the written text rather than on a message count. A person's close, a destruction or an
+    /// exchange changing state is a different transcript with the same number of messages in it.
+    /// </para>
+    /// </remarks>
+    internal bool Follow(string conversationId, string project, ConversationExport export)
+    {
+        ArgumentNullException.ThrowIfNull(export);
+
+        // The reader opened something else, or closed it, since this read was queued.
+        if (!string.Equals(Open, conversationId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var lines = Laid(conversationId, project, export);
+        var written = Safe.Lines(string.Join(Environment.NewLine, lines.Select(line => line.Text)));
+
+        if (string.Equals(written, _written, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var rows = _lines.Source?.Count ?? 0;
+
+        _followEnd = rows > 0 && _lines.SelectedItem is { } at && at >= rows - 1;
+
+        try
+        {
+            Mark(lines);
+        }
+        finally
+        {
+            _followEnd = false;
+        }
+
+        return true;
+    }
+
+    /// <summary>Lays a conversation out, whatever state it is in.</summary>
+    /// <param name="conversationId">Which conversation.</param>
+    /// <param name="project">The project it came from.</param>
+    /// <param name="export">What the broker holds, or null when it holds nothing.</param>
+    /// <returns>The lines to draw.</returns>
+    /// <remarks>
+    /// One layout for opening and for following, so the two cannot come to disagree about what a
+    /// destroyed or an empty conversation looks like — which would make every refresh of one a redraw.
+    /// </remarks>
+    private IReadOnlyList<TranscriptLine> Laid(
+        string conversationId, string project, ConversationExport? export)
+    {
         if (export?.Destroyed is { } gone)
         {
             // Indented like any other body text, so that column zero means one thing on this
@@ -119,25 +197,21 @@ internal sealed class TranscriptRegion : FrameView
             // so they were never a forgery — but a rule with an exception in it is a rule a reader
             // has to hold two versions of, and the one that matters is checkable only if it is
             // exact: nothing but a header begins at column zero.
-            Mark(
+            return
             [
                 new TranscriptLine(Destroyed, LineKind.Header, null),
                 new TranscriptLine(string.Empty, LineKind.Blank, null),
                 .. Reading.Gone(gone).Select(line =>
                     new TranscriptLine(new string(' ', Reading.Indent) + line, LineKind.Body, null)),
-            ]);
-
-            return;
+            ];
         }
 
         if (export is null || export.Messages.Count == 0)
         {
-            Say(Empty, LineKind.Annotation);
-
-            return;
+            return [new TranscriptLine(new string(' ', Reading.Indent) + Empty, LineKind.Annotation, null)];
         }
 
-        Mark(Lay(conversationId, project, export));
+        return Lay(conversationId, project, export);
     }
 
     /// <summary>Lays a conversation out for reading.</summary>
@@ -332,7 +406,10 @@ internal sealed class TranscriptRegion : FrameView
         // The rows and their colours together, under the list's guard. This one is reachable from
         // two threads by two routes rather than one: `Show` arrives from a read that finished on
         // the pool, and `OnViewportChanged` arrives from the draw itself.
-        _lines.Replace(wrapped, _lines.SelectedItem, also: () => _tints = tints);
+        // Where the reader left it, unless following is carrying them to the end.
+        var selected = _followEnd && wrapped.Count > 0 ? wrapped.Count - 1 : _lines.SelectedItem;
+
+        _lines.Replace(wrapped, selected, also: () => _tints = tints);
     }
 
     /// <summary>What colour a line is drawn in.</summary>
@@ -355,7 +432,7 @@ internal sealed class TranscriptRegion : FrameView
         LineKind.Header => line.Colour is { } slot ? Colours.Slot(slot) : Colours.Transcript,
         LineKind.Annotation => Colours.Warn,
         LineKind.Point => Colours.Transcript,
-        LineKind.Consequences => Colours.Quiet,
+        LineKind.DoneWhen => Colours.Quiet,
         _ => null,
     };
 }

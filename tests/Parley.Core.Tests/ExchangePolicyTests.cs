@@ -9,7 +9,7 @@ namespace Parley.Core.Tests;
 /// Validation is duplicated between this type and the schema on purpose. The schema is what
 /// survives a broker bug and is therefore the real guarantee; this is what makes a
 /// misconfigured deployment fail at start-up naming the field, rather than on the first
-/// question with a constraint violation raised several layers below the mistake. These pin the
+/// request with a constraint violation raised several layers below the mistake. These pin the
 /// two to the same bounds, because a check that is merely close to the constraint it mirrors is
 /// worse than none: it rejects things storage would have accepted.
 /// </remarks>
@@ -22,33 +22,35 @@ public sealed class ExchangePolicyTests
     }
 
     [Fact]
-    public void A_grace_period_of_zero_is_rejected()
+    public void The_default_bounds_open_requests_not_at_all()
     {
-        // At zero an orphan is ghosted the instant it is created, so the resume policy never
-        // runs and `always` becomes indistinguishable from `never`.
-        var policy = ExchangePolicy.Default with { GracePeriod = TimeSpan.Zero };
-
-        Assert.Throws<ArgumentOutOfRangeException>(policy.Validate);
+        // SPEC.md §7.1: the cap is off unless a deployment asks for one. Asserted on the
+        // property rather than on the number, because what a caller needs to know is whether a
+        // bound applies — and the number the sentinel happens to be is storage's business.
+        Assert.False(ExchangePolicy.Default.BoundsRequests);
+        Assert.Equal(ExchangePolicy.Unbounded, ExchangePolicy.Default.OpenPairCap);
     }
 
     [Fact]
-    public void A_grace_period_beyond_the_ceiling_is_rejected()
+    public void One_below_the_sentinel_is_a_cap_like_any_other()
     {
-        // At the top the exchange effectively never closes, restoring the unbounded retention
-        // ghosting exists to remove.
-        var policy = ExchangePolicy.Default with
-        {
-            GracePeriod = ExchangePolicy.MaximumGracePeriod + TimeSpan.FromSeconds(1)
-        };
+        // The band is not dead above the numbers anybody would choose: a deployment that has
+        // observed a flood may set 49 and have storage hold it. If this ever fails, the sentinel
+        // has eaten a legal cap.
+        var bounded = ExchangePolicy.Default with { OpenPairCap = ExchangePolicy.Unbounded - 1 };
 
-        Assert.Throws<ArgumentOutOfRangeException>(policy.Validate);
+        bounded.Validate();
+        Assert.True(bounded.BoundsRequests);
     }
 
     [Fact]
-    public void The_grace_period_bounds_are_inclusive()
+    public void The_sentinel_is_inside_what_storage_accepts()
     {
-        (ExchangePolicy.Default with { GracePeriod = ExchangePolicy.MinimumGracePeriod }).Validate();
-        (ExchangePolicy.Default with { GracePeriod = ExchangePolicy.MaximumGracePeriod }).Validate();
+        // It is the ceiling of the CHECK rather than a value beside it, so a policy asking for
+        // no cap is storable. A sentinel the schema refused would fail at the first admission.
+        Assert.Equal(ExchangePolicy.MaximumOpenPairCap, ExchangePolicy.Unbounded);
+
+        (ExchangePolicy.Default with { OpenPairCap = ExchangePolicy.Unbounded }).Validate();
     }
 
     [Theory]
@@ -65,12 +67,14 @@ public sealed class ExchangePolicyTests
     }
 
     [Fact]
-    public void A_non_positive_window_is_rejected()
+    public void A_non_positive_threshold_is_rejected()
     {
+        // A threshold of zero flags every Request the instant it is sent, which tells the person
+        // running the deployment nothing.
         Assert.Throws<ArgumentOutOfRangeException>(
-            (ExchangePolicy.Default with { DeliveryWindow = TimeSpan.Zero }).Validate);
+            (ExchangePolicy.Default with { UncollectedAfter = TimeSpan.Zero }).Validate);
         Assert.Throws<ArgumentOutOfRangeException>(
-            (ExchangePolicy.Default with { WorkingWindow = TimeSpan.Zero }).Validate);
+            (ExchangePolicy.Default with { StalledAfter = TimeSpan.Zero }).Validate);
     }
 
     [Fact]
@@ -83,22 +87,33 @@ public sealed class ExchangePolicyTests
     [Fact]
     public void A_clarify_depth_cap_of_zero_is_permitted()
     {
-        // Zero means no clarification at all: answer from what you were given or say unknown.
+        // Zero means no clarification at all: send a Result from what you were given, blocked if need be.
         // A deployment that finds clarification unproductive should be able to switch it off
         // without the type second-guessing the choice.
         (ExchangePolicy.Default with { ClarifyDepthCap = 0 }).Validate();
     }
 
     [Fact]
+    public void A_clarify_cap_above_the_band_is_rejected_unless_it_is_the_no_cap_value()
+    {
+        // The same bound the storage triggers hold, checked here so a misconfigured deployment fails
+        // at start-up naming the field. The one value past the band is the one that means "off".
+        (ExchangePolicy.Default with { ClarifyDepthCap = ExchangePolicy.MaximumClarifyDepthCap }).Validate();
+        (ExchangePolicy.Default with { ClarifyDepthCap = ExchangePolicy.UnboundedClarifications }).Validate();
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            (ExchangePolicy.Default with { ClarifyDepthCap = ExchangePolicy.MaximumClarifyDepthCap + 1 }).Validate);
+    }
+
+    [Fact]
     public void A_named_policy_overrides_only_what_it_names()
     {
         // The cascade a deployment configures: an agent that runs a full end-to-end suite
-        // needs a longer working window and nothing else about it changes.
-        var slowRepo = ExchangePolicy.Default with { WorkingWindow = TimeSpan.FromHours(12) };
+        // needs a longer stalled threshold and nothing else about it changes.
+        var slowRepo = ExchangePolicy.Default with { StalledAfter = TimeSpan.FromHours(12) };
 
-        Assert.Equal(TimeSpan.FromHours(12), slowRepo.WorkingWindow);
-        Assert.Equal(ExchangePolicy.Default.DeliveryWindow, slowRepo.DeliveryWindow);
-        Assert.Equal(ExchangePolicy.Default.GracePeriod, slowRepo.GracePeriod);
+        Assert.Equal(TimeSpan.FromHours(12), slowRepo.StalledAfter);
+        Assert.Equal(ExchangePolicy.Default.UncollectedAfter, slowRepo.UncollectedAfter);
         Assert.Equal(ExchangePolicy.Default.ClarifyDepthCap, slowRepo.ClarifyDepthCap);
         Assert.Equal(ExchangePolicy.Default.OpenPairCap, slowRepo.OpenPairCap);
     }
@@ -112,9 +127,8 @@ public sealed class ExchangePolicyTests
 
         var exchange = Exchange.Open(1, orders, billing, t0);
 
-        Assert.Equal(ExchangePolicy.Default.DeliveryWindow, exchange.DeliveryWindow);
-        Assert.Equal(ExchangePolicy.Default.WorkingWindow, exchange.WorkingWindow);
-        Assert.Equal(ExchangePolicy.Default.GracePeriod, exchange.GracePeriod);
+        Assert.Equal(ExchangePolicy.Default.UncollectedAfter, exchange.UncollectedAfter);
+        Assert.Equal(ExchangePolicy.Default.StalledAfter, exchange.StalledAfter);
         Assert.Equal(ExchangePolicy.Default.ClarifyDepthCap, exchange.ClarifyDepthCap);
     }
 
@@ -127,6 +141,6 @@ public sealed class ExchangePolicyTests
         var t0 = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => Exchange.Open(
-            1, orders, billing, t0, ExchangePolicy.Default with { GracePeriod = TimeSpan.Zero }));
+            1, orders, billing, t0, ExchangePolicy.Default with { StalledAfter = TimeSpan.Zero }));
     }
 }

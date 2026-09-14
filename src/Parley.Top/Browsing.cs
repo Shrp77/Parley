@@ -81,8 +81,8 @@ internal sealed class Browsing : Dialog
         Width = Dim.Percent(80);
         Height = Dim.Percent(80);
 
-        _where = new Label { X = 1, Y = 0, Width = Dim.Fill(2), Height = 1 };
-        _said = new Label { X = 1, Y = 1, Width = Dim.Fill(2), Height = 1, Text = string.Empty };
+        _where = new Plain { X = 1, Y = 0, Width = Dim.Fill(2), Height = 1 };
+        _said = new Plain { X = 1, Y = 1, Width = Dim.Fill(2), Height = 1, Text = string.Empty };
 
         _list.X = 1;
         _list.Y = 2;

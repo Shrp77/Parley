@@ -1,3 +1,6 @@
+using Parley.Client;
+using Parley.Client.Rendering;
+using Parley.Client.Seating;
 using Parley.Core;
 using Terminal.Gui.Input;
 using Terminal.Gui.Views;
@@ -208,6 +211,17 @@ public sealed class LongFieldTests
 
         driving.Show(form);
 
+        // **Measured before anything is typed, and that is the half this test did not have.** It
+        // went straight to filling a field, so it only ever checked a form that had been re-laid
+        // by a keystroke — and a keystroke was the only thing that re-laid one. A form too tall to
+        // fit opened clipped, with its title row off the top, and stayed that way until somebody
+        // wrote into it. Found when the ask form's labels grew to carry an example each.
+        Assert.True(
+            form.Frame.Height <= height,
+            $"on opening, the form is {form.Frame.Height} rows on a {height}-row screen");
+
+        Assert.True(form.Frame.Y >= 0, $"on opening, the form starts at row {form.Frame.Y}");
+
         // Written into until the first field would want every row it is allowed.
         form.Fill(0, new string('x', 4000));
 
@@ -218,6 +232,55 @@ public sealed class LongFieldTests
         // And it is on the screen rather than hanging off the top of it, which is the failure the
         // height on its own does not catch.
         Assert.True(form.Frame.Y >= 0, $"the form starts at row {form.Frame.Y}");
+    }
+
+    [Theory]
+    [InlineData(24)]
+    [InlineData(30)]
+    [InlineData(40)]
+    public void The_request_form_this_surface_actually_opens_fits_on_opening(int height)
+    {
+        // **The labels the composer really carries, rather than a stand-in for them.** The parts
+        // of rule 8.1 each name an example, because the owner could not tell the intent from the
+        // request when both were asked abstractly — and labels of three rows are tall enough to
+        // overflow a screen on their own, which no stand-in label would have shown.
+        using var driving = Driving.Open(width: 100, height: height);
+
+        var form = new FormDialog(
+            Participation.RequestTitle,
+            [
+                new FormField(
+                    Framing.Intent,
+                    string.Empty,
+                    Participation.RequiredProblem,
+                    Long: true),
+                new FormField(
+                    Framing.Item,
+                    string.Empty,
+                    Participation.RequiredProblem,
+                    Long: true),
+                new FormField(
+                    $"Work or question? ({string.Join(" / ", SeatVoice.Kinds.Select(k => k.Value))})",
+                    SeatVoice.Kinds[0].Value,
+                    Participation.KindProblem),
+                new FormField(
+                    $"{Framing.DoneWhen}. {Framing.DoneWhenWhy}",
+                    string.Empty,
+                    Participation.DoneWhenProblem,
+                    Long: true),
+                new FormField(
+                    "Conversation name — " + ConversationName.Rule,
+                    "top-20260911",
+                    Participation.ConversationProblem),
+            ]);
+
+        driving.Show(form);
+
+        Assert.True(
+            form.Frame.Height <= height,
+            $"the request form is {form.Frame.Height} rows on a {height}-row screen");
+
+        Assert.True(form.Frame.Y >= 0, $"the request form starts at row {form.Frame.Y}");
     }
 
     [Fact]

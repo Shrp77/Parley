@@ -13,11 +13,11 @@ namespace Parley.Server;
 /// sequence rather than about identity.
 /// </para>
 /// <para>
-/// It exists because a broker is bound to the agent it attached for: its ghosting clock is when
-/// that agent came up and its detach releases that agent's work. There is no broker to run an
-/// operation against until a stream has opened one, and inventing one for the duration of a
-/// single call would give it a start time of now — which is the value the ghosting grace of §6
-/// is measured from.
+/// It exists because a broker is bound to the agent it attached for: attaching marks that agent
+/// live and hands back the work it had collected (§14), and its detach undoes the mark. There is no
+/// broker to run an operation against until a stream has opened one, and inventing one for the
+/// duration of a single call would run that attach sequence on every call, with no detach ever to
+/// follow it.
 /// </para>
 /// </remarks>
 public sealed class NotAttachedException : InvalidOperationException

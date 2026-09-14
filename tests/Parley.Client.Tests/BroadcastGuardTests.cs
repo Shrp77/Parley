@@ -7,20 +7,20 @@ using Wire = Parley.Transport;
 namespace Parley.Client.Tests;
 
 /// <summary>
-/// The guards a broadcast must not lose by being N sends instead of one.
+/// The guards a Request to everybody must not lose by being N sends instead of one.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A loop is where a rule applied once quietly becomes a rule applied never. Rule 8.5's cap, the
-/// identity a message is sent under, and the seat check the sends happen under are each checked
-/// here rather than assumed to survive the plural case.
+/// A loop is where a rule applied once quietly becomes a rule applied never. Rule 8.5's cap, rule 8.1's
+/// framing, and the seat check the sends happen under are each checked here rather than assumed to survive
+/// the plural case.
 /// </para>
 /// <para>
-/// <b>The seat check is the one with history.</b> 0.18.9 records a composer that captured its seat
-/// when it opened and went on speaking under a name the book had released — found on Linux and
-/// passing on Windows, because what decided it was whether a stream had finished tearing down. A
-/// broadcast is twenty round trips with the idle sweep running throughout, so the window it left
-/// open is twenty times wider.
+/// <b>The seat check is the one with history.</b> 0.18.9 records a composer that captured its seat when it
+/// opened and went on speaking under a name the book had released — found on Linux and passing on Windows,
+/// because what decided it was whether a stream had finished tearing down. Twenty sends with the idle sweep
+/// running throughout leave that window twenty times wider, and every Request that lands under a released
+/// name is work owed to somebody who has left.
 /// </para>
 /// </remarks>
 public sealed class BroadcastGuardTests
@@ -35,20 +35,27 @@ public sealed class BroadcastGuardTests
         AgentName.Create("inventory@test"),
     ];
 
+    /// <summary>A Request that satisfies rule 8.1, so the guards under test are the only thing refusing it.</summary>
+    private const string Intent = "deciding whether to move the schema";
+
+    private const string Item = "does anything here read orders.total?";
+
+    private const string DoneWhen = "every reader of orders.total is named, or none is";
+
     /// <summary>
     /// A client that holds an attachment open and refuses every send.
     /// </summary>
     /// <remarks>
-    /// The attachment has to stay open or the seat is marked lost the moment it is taken, which
-    /// would make every test below a test of the seat guard rather than of the thing it names. So
-    /// the stream yields its acknowledgement and then waits, which is what a real one does.
+    /// The attachment has to stay open or the seat is marked lost the moment it is taken, which would make
+    /// every test below a test of the seat guard rather than of the thing it names. So the stream yields its
+    /// acknowledgement and then waits, which is what a real one does.
     /// </remarks>
     private sealed class Refusing : Wire.Agents.AgentsClient
     {
         public int Calls { get; private set; }
 
-        public override AsyncUnaryCall<Wire.NotifyReply> NotifyAsync(
-            Wire.NotifyRequest request,
+        public override AsyncUnaryCall<Wire.RequestReply> RequestAsync(
+            Wire.OpenRequest request,
             Metadata? headers = null,
             DateTime? deadline = null,
             CancellationToken cancellationToken = default)
@@ -120,8 +127,8 @@ public sealed class BroadcastGuardTests
     [Fact]
     public async Task A_seat_already_lost_sends_to_nobody()
     {
-        // The guard at the top of every iteration, including the first. A person whose seat went
-        // while the composer was open must not have a single message go out under it.
+        // The guard at the top of every iteration, including the first. A person whose seat went while the
+        // composer was open must not have a single Request go out under it.
         var token = TestContext.Current.CancellationToken;
 
         using var book = new SeatBook(_ => new SeatDoubles.Stubborn(StatusCode.PermissionDenied));
@@ -135,34 +142,30 @@ public sealed class BroadcastGuardTests
         var agents = new Refusing();
         var voice = new SeatVoice(agents, taken.Hold!.Seat);
 
-        var said = await voice.NotifyEveryoneAsync(
-            taken.Hold!, Peers, "nobody should hear this", "c1", token);
+        var said = await voice.RequestEveryoneAsync(
+            taken.Hold!, Peers, Intent, Item, "question", DoneWhen, "c1", token);
 
         Assert.Equal(0, agents.Calls);
-        Assert.Contains("Told 0 of 3", said, StringComparison.Ordinal);
+        Assert.Contains("Sent to 0 of 3", said, StringComparison.Ordinal);
         Assert.Contains(SeatVoice.Left, said, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task An_over_long_message_is_refused_once_and_reaches_nobody()
+    public async Task An_over_long_request_is_refused_once_and_reaches_nobody()
     {
-        // The cap is checked before the loop, not inside it. Checked inside, a message twenty
-        // characters over would be refused twenty times and recorded as twenty refusals — twenty
-        // pieces of evidence about the cap from one act, which is what §17 question 16 counts.
+        // The cap is checked before the loop, not inside it. Checked inside, a Request twenty characters
+        // over would be refused twenty times and recorded as twenty refusals — twenty pieces of evidence
+        // about the cap from one act, which is what §17 question 16 counts.
         var token = TestContext.Current.CancellationToken;
 
         var agents = new Refusing();
         var voice = new SeatVoice(agents, Seated("arvind"));
 
-        var said = await voice.NotifyEveryoneAsync(
-            Hold(), Peers, new string('x', MessageLimits.MaxPayloadCharacters + 100), "c1", token);
+        var said = await voice.RequestEveryoneAsync(
+            Hold(), Peers, Intent, new string('x', MessageLimits.MaxPayloadCharacters + 100), "work", DoneWhen, "c1", token);
 
         Assert.Equal(0, agents.Calls);
-        Assert.DoesNotContain("Told", said, StringComparison.Ordinal);
-
-        // **Once, not once per recipient.** §17 question 16 counts refusals as evidence about where
-        // the cap should sit, and three rows for one over-long message somebody wrote once would be
-        // three pieces of evidence about a single act.
+        Assert.DoesNotContain("Sent to", said, StringComparison.Ordinal);
         Assert.Equal(1, agents.Refusals);
     }
 
@@ -174,10 +177,10 @@ public sealed class BroadcastGuardTests
         var agents = new Refusing();
         var voice = new SeatVoice(agents, Seated("arvind"));
 
-        var said = await voice.NotifyEveryoneAsync(Hold(), Peers, "   ", "c1", token);
+        var said = await voice.RequestEveryoneAsync(Hold(), Peers, Intent, "   ", "question", DoneWhen, "c1", token);
 
         Assert.Equal(0, agents.Calls);
-        Assert.Contains("Nothing was written", said, StringComparison.Ordinal);
+        Assert.Contains("Nothing was asked for", said, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -188,27 +191,48 @@ public sealed class BroadcastGuardTests
         var agents = new Refusing();
         var voice = new SeatVoice(agents, Seated("arvind"));
 
-        var said = await voice.NotifyEveryoneAsync(Hold(), [], "anybody?", "c1", token);
+        var said = await voice.RequestEveryoneAsync(Hold(), [], Intent, Item, "question", DoneWhen, "c1", token);
 
         Assert.Equal(0, agents.Calls);
-        Assert.Equal(SeatVoice.NobodyToTell, said);
+        Assert.Equal(SeatVoice.NobodyToAsk, said);
     }
 
-    [Fact]
-    public async Task A_broker_that_answers_nothing_loses_no_recipient_silently()
+    [Theory]
+    [InlineData("", Item, "question", DoneWhen)]
+    [InlineData(Intent, Item, "task", DoneWhen)]
+    [InlineData(Intent, Item, "question", "too short")]
+    public async Task Rule_one_is_applied_before_anybody_is_sent_anything(
+        string intent, string item, string kind, string doneWhen)
     {
-        // One unreachable peer must not lose the other two sends, and a broker that is gone
-        // entirely must be reported rather than reported as success.
+        // Rule 8.1 once, before the loop, in the single send's own words — so a Request the single form
+        // refuses cannot reach nineteen people through the plural one.
         var token = TestContext.Current.CancellationToken;
 
         var agents = new Refusing();
         var voice = new SeatVoice(agents, Seated("arvind"));
 
-        var said = await voice.NotifyEveryoneAsync(Hold(), Peers, "into the void", "c1", token);
+        var said = await voice.RequestEveryoneAsync(Hold(), Peers, intent, item, kind, doneWhen, "c1", token);
+
+        Assert.Equal(0, agents.Calls);
+        Assert.DoesNotContain("Sent to", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_broker_that_answers_nothing_loses_no_recipient_silently()
+    {
+        // Every send is attempted and every failure is reported, rather than the first failure ending the
+        // run and the other recipients vanishing from the report.
+        var token = TestContext.Current.CancellationToken;
+
+        var agents = new Refusing();
+        var voice = new SeatVoice(agents, Seated("arvind"));
+
+        var said = await voice.RequestEveryoneAsync(Hold(), Peers, Intent, Item, "question", DoneWhen, "c1", token);
 
         Assert.Equal(3, agents.Calls);
-        Assert.Contains("Told 0 of 3", said, StringComparison.Ordinal);
-        Assert.Contains("Refused for", said, StringComparison.Ordinal);
+        Assert.Contains("Sent to 0 of 3", said, StringComparison.Ordinal);
+        Assert.Contains("Refused for 3", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("owed", said, StringComparison.Ordinal);
 
         foreach (var peer in Peers)
         {

@@ -121,13 +121,13 @@ Two other fields need the user, not this agent:
   should say what the repository owns, not where it sits. Walk the list with them. `enroll`
   refuses duplicates, because two servers claiming one name means either may collect the other's
   mail, but it cannot tell that `acme-orders-api` names a directory rather than a domain.
-- **`unattended`** is consent for a peer's question to start that repository with nobody watching,
+- **`unattended`** is consent for a peer's request to start that repository with nobody watching,
   spending their tokens. Ask per repository and take no for an answer. It is `false` by default
   and reversible by removing the entry from `node.json`.
 
 **Scan for a boundary that two agents both claim** while reading the list. Two `owns` lines that
-overlap are worse than one that is vague: a peer with a question has two plausible agents and no
-way to choose. Say so before enrolling, not after.
+overlap are worse than one that is vague: a peer with work to request has two plausible agents and
+no way to choose. Say so before enrolling, not after.
 
 ## 4. Dry run, then apply
 

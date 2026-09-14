@@ -77,13 +77,15 @@ public sealed class WakeReportingTests
     }
 
     [Fact]
-    public void An_unreachable_recipient_is_told_the_notice_is_waiting()
+    public void An_unreachable_recipient_is_told_the_request_is_kept()
     {
         // The case the owner met, worded so that it is actionable rather than alarming: the thing
         // to know is that the message survives and who is not going to read it yet.
         var said = SeatVoice.Waking(Wire.WakeOutcome.Unreachable, Orders);
 
-        Assert.Contains("waiting", said, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("collects this when it next runs", said, StringComparison.Ordinal);
+        Assert.Contains(Orders.Value, said, StringComparison.Ordinal);
+        Assert.DoesNotContain("failed", said, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

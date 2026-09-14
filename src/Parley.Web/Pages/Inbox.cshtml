@@ -14,10 +14,10 @@
 }
 
 <p class="lede">
-    What peers have sent to <strong>@(Model.Me?.Name.Value)</strong>. Taking delivery is
-    something you do on purpose rather than something that happens by opening this page:
-    SPEC.md §6 starts the four-hour working window when a question is <em>delivered</em>, and an
-    inbox drain is what records that. Until you take them, nobody is waiting on you.
+    What participants have sent to <strong>@(Model.Me?.Name.Value)</strong>. Taking delivery is
+    something you do on purpose rather than something that happens by opening this page: it marks
+    what you were asked to do as picked up, and work picked up and left is shown to the person
+    running the deployment. Until you take them, nothing is counted against you.
 </p>
 
 @foreach (var project in Model.Projects)
@@ -43,8 +43,8 @@
                 {
                     <text>and <strong>@project.Polls</strong> closure poll@(project.Polls == 1 ? "" : "s")</text>
                 }
-                waiting. Taking them marks them delivered and starts the clock on anything you
-                then owe an answer to. You cannot put them back.
+                waiting. Taking them marks them collected, and anything you are asked to do then
+                counts as picked up. You cannot put them back.
             </p>
             <button type="submit">Take delivery</button>
         </form>
@@ -53,9 +53,7 @@
     @foreach (var item in project.Delivered)
     {
         var payload = Payload.Read(item.Message.PayloadJson);
-        var owed = item.Owes && Model.Asked.TryGetValue(item.Message.ExchangeId!.Value, out var ids)
-            ? ids
-            : [];
+        var owed = item.Items();
 
         <article class="letter@(item.Owes ? " owed" : null)">
             <p class="attribution">
@@ -90,18 +88,22 @@
                         <li>
                             <span class="label">@point.Id</span>
                             <span class="point-text">@point.Text</span>
-                            @if (point.Resolution is { Length: > 0 } verdict)
+                            @if (point.Outcome is { Length: > 0 } verdict)
                             {
-                                <span class="verdict">@verdict</span>
+                                <span class="verdict">@(point.Blocker is { } blocker ? $"{verdict}: {blocker.Replace('_', ' ')}" : verdict)</span>
+                            }
+                            else if (point.Kind is { Length: > 0 } kind)
+                            {
+                                <span class="verdict">@kind</span>
                             }
                         </li>
                     }
                 </ol>
             }
 
-            @if (payload.Consequences is { Length: > 0 } consequences)
+            @if (payload.DoneWhen is { Length: > 0 } doneWhen)
             {
-                <p class="because"><strong>What turns on it:</strong> @consequences</p>
+                <p class="because"><strong>Done when:</strong> @doneWhen</p>
             }
 
             @if (payload.Raw is { Length: > 0 } raw)
@@ -109,48 +111,49 @@
                 <pre><code>@raw</code></pre>
             }
 
+            @if (item.OwesResult && owed.Count > 0)
+            {
+                @* One field per item the request carried. The broker checks the result against the
+                   stored request and names the items it expected when they differ, so this form
+                   cannot close the exchange on items nobody asked about. *@
+                <form method="post" asp-page-handler="Result" class="reply">
+                    <input type="hidden" name="For" value="@project.Project" />
+                    <input type="hidden" name="Exchange" value="@item.Message.ExchangeId" />
+
+                    @foreach (var id in owed)
+                    {
+                        <input type="hidden" name="Ids" value="@id" />
+                        <label for="t-@item.Message.ExchangeId-@id">@id — what was done, the answer, or what blocks it</label>
+                        <textarea id="t-@item.Message.ExchangeId-@id" name="Texts" rows="2"
+                                  required></textarea>
+                        <select name="Verdicts" aria-label="Outcome for @id">
+                            @foreach (var (value, says) in SeatVoice.Outcomes)
+                            {
+                                <option value="@value">@says</option>
+                            }
+                        </select>
+                    }
+
+                    <p class="composer-note">
+                        Blocked is for a concrete blocker: something missing, a conflict, or a
+                        permission you do not have. Name who can resolve it.
+                    </p>
+
+                    <button type="submit">Send result and close</button>
+                </form>
+            }
+
             @if (item.Owes)
             {
-                @if (owed.Count == 0)
-                {
-                    <p class="unreachable">
-                        This exchange is no longer yours to answer — it has been answered,
-                        orphaned or closed since it was handed to you.
-                    </p>
-                }
-                else
-                {
-                    @* One field per sub-question the exchange actually asked, read from the
-                       broker rather than parsed out of the payload above. §5.3 answers by
-                       identifier, and a form built from this process's reading of the document
-                       would be a second opinion about what was asked. *@
-                    <form method="post" asp-page-handler="Answer" class="reply">
-                        <input type="hidden" name="For" value="@project.Project" />
-                        <input type="hidden" name="Exchange" value="@item.Message.ExchangeId" />
-
-                        @foreach (var id in owed)
-                        {
-                            <input type="hidden" name="Ids" value="@id" />
-                            <label for="t-@item.Message.ExchangeId-@id">@id</label>
-                            <textarea id="t-@item.Message.ExchangeId-@id" name="Texts" rows="2"
-                                      required></textarea>
-                            <select name="Verdicts" aria-label="Outcome for @id">
-                                @foreach (var (value, says) in SeatVoice.Outcomes)
-                                {
-                                    <option value="@value">@says</option>
-                                }
-                            </select>
-                        }
-
-                        <p class="composer-note">
-                            The exchange records the least resolved of these, per §5.3 — one
-                            <em>unknown</em> makes the whole answer unknown, because an answer
-                            that left something undetermined has not settled the question.
-                        </p>
-
-                        <button type="submit">Answer and close</button>
-                    </form>
-                }
+                @* The other move a holder has: ask what was meant, or answer what they asked you.
+                   Either way the turn goes to them. *@
+                <form method="post" asp-page-handler="Clarify" class="reply">
+                    <input type="hidden" name="For" value="@project.Project" />
+                    <input type="hidden" name="Exchange" value="@item.Message.ExchangeId" />
+                    <label for="c-@item.Message.ExchangeId">@(item.OwesReply ? "Your reply" : "Or ask them to clarify")</label>
+                    <textarea id="c-@item.Message.ExchangeId" name="Clarification" rows="2" required></textarea>
+                    <button type="submit">@(item.OwesReply ? "Reply" : "Ask")</button>
+                </form>
             }
         </article>
     }
@@ -161,10 +164,9 @@
     <form method="post" asp-page-handler="Clear">
         <input type="hidden" name="For" value="@Model.Projects[0].Project" />
         <p class="composer-note">
-            Answers and notices are finished once you have read them, and nothing takes them off
-            this page but you. A question stays until it is answered — it is a debt, and a button
-            that made it disappear would only hide an exchange still running towards being
-            ghosted.
+            Results are finished once you have read them, and nothing takes them off this page but
+            you. A request stays until you send its result — it is a debt, and a button that made
+            it disappear would only hide an exchange somebody is still waiting on.
         </p>
         <button type="submit">Clear what I have read</button>
     </form>
@@ -179,7 +181,7 @@
 else if (waiting == 0 && held == 0)
 {
     <p class="because">
-        Nothing waiting and nothing outstanding. This page fills up when a peer asks you
-        something or tells you something.
+        Nothing waiting and nothing outstanding. This page fills up when a participant sends you
+        a request.
     </p>
 }

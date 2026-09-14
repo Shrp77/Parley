@@ -575,7 +575,17 @@ public static class ProjectCommand
         // file a moment after it stops answering, and on Windows a file still open cannot go.
         // Never the manifest, whatever the entry says: the manifest refuses such an entry on the
         // way in, and this is the second lock on the same door.
-        foreach (var suffix in new[] { string.Empty, "-wal", "-shm", "-journal" })
+        //
+        // **The lock first, and it is the check rather than a file to tidy.** A broker serving
+        // this store holds it for as long as it serves, so failing to delete it means something
+        // still is — a broker this command did not stop, started by hand or by a terminal restoring
+        // its session. Deleting the store out from under that broker, and then reporting that the
+        // lock could not go, would be the partial destruction this ordering exists to prevent.
+        foreach (var suffix in new[]
+                 {
+                     Parley.Core.StoreFiles.Lock, Parley.Core.StoreFiles.Owner,
+                     string.Empty, "-wal", "-shm", "-journal",
+                 })
         {
             var path = going.Store + suffix;
 
@@ -586,6 +596,17 @@ public static class ProjectCommand
 
             if (!await TryDeleteAsync(path, cancellationToken).ConfigureAwait(false))
             {
+                if (string.Equals(suffix, Parley.Core.StoreFiles.Lock, StringComparison.Ordinal))
+                {
+                    await error.WriteLineAsync(
+                        $"The entry is gone, but {path} is still held, so a broker is still serving " +
+                        $"{going.Store} — one this command did not stop. Stop it yourself, then " +
+                        $"delete {going.Store} and the files beside it. Nothing was deleted.")
+                        .ConfigureAwait(false);
+
+                    return Unavailable;
+                }
+
                 await error.WriteLineAsync(
                     $"Could not delete {path}: something still has it open. The entry is gone " +
                     $"and {string.Join(", ", deleted)} {(deleted.Count == 1 ? "was" : "were")} " +

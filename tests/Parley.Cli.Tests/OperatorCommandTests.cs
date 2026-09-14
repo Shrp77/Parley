@@ -26,8 +26,11 @@ public sealed class OperatorCommandTests : IAsyncDisposable
     private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    private const string Consequences =
-        "If it does I read it from you; if not I snapshot my own copy and we can diverge.";
+    private const string Request =
+        """{"intent":"where does price live","items":[{"id":"q1","kind":"question","text":"gross or net?"}],"done_when":"the price is stated gross or net of tax"}""";
+
+    private const string Result =
+        """{"outcomes":[{"id":"q1","outcome":"answered","text":"net"}]}""";
 
     private readonly SqliteConnection _connection;
     private readonly AgentRepository _agents;
@@ -102,9 +105,10 @@ public sealed class OperatorCommandTests : IAsyncDisposable
         Assert.Equal(AgentStatus.Retired, await StatusOf(Billing));
 
         // Says what it did not do, because that is the part an operator gets wrong: retiring is
-        // about the registry, and the exchanges the agent already owed run out of time on the
-        // ordinary schedule.
-        Assert.Contains("nobody answered", Printed, StringComparison.Ordinal);
+        // about the registry, and nothing times out, so the work the agent already holds stays
+        // open and is flagged until somebody closes it or reinstates the agent.
+        Assert.Contains("stays open and is flagged", Printed, StringComparison.Ordinal);
+        Assert.DoesNotContain("nobody answered", Printed, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -178,10 +182,8 @@ public sealed class OperatorCommandTests : IAsyncDisposable
         var broker = new Broker.Broker(_connection, BrokerOptions.Default);
         await broker.StartAsync(Orders, T0, Ct);
 
-        await broker.AskAsync(
-            Orders, Billing, "some-model-9",
-            $$"""{"intent":"where does price live","sub_questions":[{"id":"q1","text":"gross or net?"}],"consequences":"{{Consequences}}"}""",
-            T0.AddMinutes(1), cancellationToken: Ct);
+        await broker.RequestAsync(
+            Orders, Billing, "some-model-9", Request, T0.AddMinutes(1), cancellationToken: Ct);
 
         Assert.Equal(0, await _commands.PurgeAsync(Billing, Ct));
 
@@ -190,8 +192,8 @@ public sealed class OperatorCommandTests : IAsyncDisposable
         Assert.Contains("messages", Printed, StringComparison.Ordinal);
         Assert.Contains("cannot be undone", Printed, StringComparison.Ordinal);
 
-        // The asker did nothing and is still registered, but its question is gone with the agent
-        // that was asked. That is the collateral, and the command says so rather than hiding it.
+        // The requester did nothing and is still registered, but its request is gone with the agent
+        // that was sent it. That is the collateral, and the command says so rather than hiding it.
         Assert.Contains(Orders, (await _agents.GetAllAsync(Ct)).Select(a => a.Name));
         Assert.Contains("lost that conversation", Printed, StringComparison.Ordinal);
     }
@@ -220,13 +222,10 @@ public sealed class OperatorCommandTests : IAsyncDisposable
         var broker = new Broker.Broker(_connection, BrokerOptions.Default);
         await broker.StartAsync(Orders, T0, Ct);
 
-        var question =
-            $$"""{"intent":"where does price live","sub_questions":[{"id":"q1","text":"gross or net?"}],"consequences":"{{Consequences}}"}""";
+        var sent = await broker.RequestAsync(
+            Orders, Billing, "some-model-9", Request, T0.AddMinutes(1), "pricing", Ct);
 
-        var asked = await broker.AskAsync(
-            Orders, Billing, "some-model-9", question, T0.AddMinutes(1), "pricing", Ct);
-
-        Assert.True(asked.Succeeded, $"expected admission, got {asked.Rejection}");
+        Assert.True(sent.Exchange is not null, $"expected admission, got {sent.Admission.Rejection}");
 
         Assert.Equal(0, await _commands.ExportAsync("pricing", Ct));
 
@@ -236,88 +235,119 @@ public sealed class OperatorCommandTests : IAsyncDisposable
         Assert.Contains("some-model-9", Printed, StringComparison.Ordinal);
         Assert.DoesNotContain("begin peer payload", Printed, StringComparison.Ordinal);
 
-        // Readable rather than merely present. The longest type name is exactly the width the
-        // column was first padded to, so every question ran into its sender.
-        Assert.Contains("question orders@test -> billing@test", Printed, StringComparison.Ordinal);
+        // Readable rather than merely present. The type column was once padded to exactly the
+        // longest type name, so every message of that type ran into its sender.
+        Assert.Contains("request  orders@test -> billing@test", Printed, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task Retiring_leaves_work_already_in_flight_alone()
     {
-        // §14: retiring is about the registry, not the traffic. What the agent already owed
-        // orphans and is ghosted on the ordinary schedule, and each asker is told with its own
-        // stated consequences — the same path any abandoned exchange takes.
+        // §14: retiring is about the registry, not the traffic. What the agent already owed stays
+        // open — nothing times out (§5.3) — and is flagged to the person as held by a retired agent,
+        // who closes it or reinstates the agent.
         //
-        // An answer that does arrive is still accepted. Nothing checks retirement on the way in,
-        // and that is the right way round: ghosting does not discard, and neither should this.
-        // An agent cannot reach it in practice — its server refuses to start — so this is what
-        // happens if one settles a debt some other way, and the answer is worth more than the
-        // ghost it would otherwise become.
+        // A Result that does arrive is still accepted. Nothing checks retirement on the way in, and
+        // that is the right way round: the work may well have been done. An agent cannot reach it in
+        // practice — its server refuses to start — so this is what happens if one settles its work
+        // some other way.
         var broker = new Broker.Broker(_connection, BrokerOptions.Default);
         await broker.StartAsync(Orders, T0, Ct);
 
-        var question =
-            $$"""{"intent":"where does price live","sub_questions":[{"id":"q1","text":"gross or net?"}],"consequences":"{{Consequences}}"}""";
-
-        var asked = await broker.AskAsync(
-            Orders, Billing, "some-model-9", question, T0.AddMinutes(1), cancellationToken: Ct);
+        var sent = await broker.RequestAsync(
+            Orders, Billing, "some-model-9", Request, T0.AddMinutes(1), cancellationToken: Ct);
 
         Assert.Equal(0, await _commands.RetireAsync(Billing, Ct));
 
         var exchanges = new ExchangeRepository(_connection);
         Assert.Equal(
             ExchangeState.Open,
-            (await exchanges.GetAsync(asked.Exchange!.Id, cancellationToken: Ct))!.State);
+            (await exchanges.GetAsync(sent.Exchange!.Id, cancellationToken: Ct))!.State);
 
-        // Nothing new may be asked of it.
-        var refused = await broker.AskAsync(
+        // Nothing new may be sent it.
+        var refused = await broker.RequestAsync(
             Orders, Billing, "some-model-9",
-            $$"""{"intent":"and refunds","sub_questions":[{"id":"q1","text":"and refunds?"}],"consequences":"{{Consequences}}"}""",
+            """{"intent":"and refunds","items":[{"id":"q1","kind":"question","text":"and refunds?"}],"done_when":"refunds are stated gross or net of tax"}""",
             T0.AddMinutes(2), cancellationToken: Ct);
 
-        Assert.Equal(OpenRejection.AnswererUnreachable, refused.Rejection);
+        Assert.Equal(RequestRejection.ReceiverRetired, refused.Admission.Rejection);
 
         // What it already owed, it may still settle.
-        Assert.True((await broker.AnswerAsync(
-            asked.Exchange.Id, Billing, "some-model-9",
-            """{"resolutions":[{"id":"q1","resolution":"answered","text":"net"}]}""",
-            T0.AddMinutes(3), cancellationToken: Ct)).Succeeded);
+        Assert.True((await broker.ResultAsync(
+            sent.Exchange.Id, Billing, "some-model-9", Result, T0.AddMinutes(3), cancellationToken: Ct)).Succeeded);
     }
 
     [Fact]
     public async Task Exporting_a_conversation_nobody_started_says_where_they_come_from()
     {
         Assert.Equal(1, await _commands.ExportAsync("never-happened", Ct));
-        Assert.Contains("named one on a question", Printed, StringComparison.Ordinal);
+        Assert.Contains("request has been sent in it", Printed, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Force_concluding_closes_a_discussion_over_its_votes()
+    public async Task Force_concluding_closes_a_conversation_over_its_votes()
     {
         var broker = new Broker.Broker(_connection, BrokerOptions.Default);
         await broker.StartAsync(Orders, T0, Ct);
 
-        var question =
-            $$"""{"intent":"where does price live","sub_questions":[{"id":"q1","text":"gross or net?"}],"consequences":"{{Consequences}}"}""";
+        await broker.RequestAsync(Orders, Billing, "some-model-9", Request, T0.AddMinutes(1), "pricing", Ct);
 
-        await broker.AskAsync(Orders, Billing, "some-model-9", question, T0.AddMinutes(1), "pricing", Ct);
+        Assert.Equal(0, await _commands.ForceConcludeAsync("pricing", "the pricing work moved elsewhere", Ct));
 
-        Assert.Equal(0, await _commands.ForceConcludeAsync("pricing", Ct));
-
-        // And it stays closed: a new question naming it is refused, which is what the operator
-        // was reaching for.
-        var reopened = await broker.AskAsync(
+        // And it stays closed: a new request naming it is refused, which is what the operator was
+        // reaching for.
+        var reopened = await broker.RequestAsync(
             Orders, Billing, "some-model-9",
-            $$"""{"intent":"and refunds","sub_questions":[{"id":"q1","text":"and refunds?"}],"consequences":"{{Consequences}}"}""",
+            """{"intent":"and refunds","items":[{"id":"q1","kind":"question","text":"and refunds?"}],"done_when":"refunds are stated gross or net of tax"}""",
             T0.AddMinutes(3), "pricing", Ct);
 
-        Assert.Equal(OpenRejection.ConversationClosed, reopened.Rejection);
+        Assert.Equal(RequestRejection.ConversationClosed, reopened.Admission.Rejection);
+    }
+
+    [Fact]
+    public async Task Archiving_takes_a_conversation_off_the_list_and_unarchiving_puts_it_back()
+    {
+        var broker = new Broker.Broker(_connection, BrokerOptions.Default);
+        await broker.StartAsync(Orders, T0, Ct);
+
+        await broker.RequestAsync(Orders, Billing, "some-model-9", Request, T0.AddMinutes(1), "pricing", Ct);
+
+        Assert.Equal(0, await _commands.ArchiveAsync("pricing", Ct));
+        Assert.Equal(1, await _commands.ArchiveAsync("pricing", Ct));
+        Assert.Equal(0, await _commands.UnarchiveAsync("pricing", Ct));
+
+        Assert.Contains("Nothing was deleted", Printed, StringComparison.Ordinal);
+        Assert.Contains("back in the list", Printed, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Destroying_a_conversation_reports_what_went_and_that_it_is_permanent()
+    {
+        var broker = new Broker.Broker(_connection, BrokerOptions.Default);
+        await broker.StartAsync(Orders, T0, Ct);
+
+        await broker.RequestAsync(Orders, Billing, "some-model-9", Request, T0.AddMinutes(1), "pricing", Ct);
+
+        Assert.Equal(0, await _commands.DestroyAsync("pricing", Ct));
+        Assert.Contains("messages", Printed, StringComparison.Ordinal);
+        Assert.Contains("cannot be undone", Printed, StringComparison.Ordinal);
+
+        Assert.Equal(1, await _commands.DestroyAsync("pricing", Ct));
+    }
+
+    [Fact]
+    public async Task Starting_an_agent_no_machine_can_start_says_so_and_exits_non_zero()
+    {
+        // No node has joined this broker, so nothing can launch anything -- and saying it had would be the
+        // "started" that 008 exists to stop anybody claiming.
+        Assert.Equal(1, await _commands.StartAgentAsync(Billing, Ct));
+        Assert.Contains("Nothing could start", Printed, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task Force_concluding_something_that_is_not_open_reports_it()
     {
-        Assert.Equal(1, await _commands.ForceConcludeAsync("never-happened", Ct));
+        Assert.Equal(1, await _commands.ForceConcludeAsync("never-happened", null, Ct));
         Assert.Contains("not open", Printed, StringComparison.Ordinal);
     }
 }

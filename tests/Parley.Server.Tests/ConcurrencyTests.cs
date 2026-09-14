@@ -8,109 +8,71 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The architecture's central claim is a concurrency claim, and nothing was testing it.</b>
-/// <c>BrokerRuntime</c> holds a single <c>SqliteConnection</c> and states plainly that it is not
-/// thread-safe, so every operation queues behind one gate. Every other test in this project
-/// drives one client at a time, which is exactly the shape that cannot tell a held gate from an
-/// absent one: a missed acquisition is invisible until two callers are inside it together.
+/// <b>The architecture's central claim is a concurrency claim.</b> <c>BrokerRuntime</c> holds a single
+/// <c>SqliteConnection</c> that is not thread-safe, so every operation queues behind one gate. A test driving one
+/// client at a time cannot tell a held gate from an absent one.
 /// </para>
 /// <para>
-/// So these drive real gRPC clients concurrently and assert on what the store holds afterwards.
-/// A dropped write, a duplicated row, or a connection used from two threads shows up as a
-/// count that is not the count asked for -- or as an exception the gate exists to prevent, which
-/// is why nothing here catches one.
-/// </para>
-/// <para>
-/// They are not load tests and the numbers are deliberately small. The property is
-/// "simultaneous work is serialised correctly", which does not get truer at a thousand callers;
-/// what a large number would add is runtime on three CI platforms and a flake when one of them
-/// is slow.
+/// So these drive real gRPC clients concurrently and assert on what the store holds afterwards. A dropped write, a
+/// duplicated row, or a connection used from two threads shows up as a count that is not the count asked for.
 /// </para>
 /// </remarks>
 public sealed class ConcurrencyTests
 {
-    private static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);
-
-    private const string Consequences =
-        "If the answer is yes I will record it and stop asking; if no I will raise it with the " +
-        "operator rather than deciding alone.";
-
-    private static string Question(string text) =>
-        $$"""{"intent":"{{text}}","sub_questions":[{"id":"q1","text":"{{text}}"}],"consequences":"{{Consequences}}"}""";
-
     [Fact]
-    public async Task Every_agent_asking_at_the_same_moment_is_admitted_exactly_once()
+    public async Task Every_agent_sending_at_the_same_moment_is_admitted_exactly_once()
     {
         var token = TestContext.Current.CancellationToken;
 
         await using var broker = await LoopbackBroker.StartAsync(token);
 
-        await using var infra = await AttachedClient.AttachAsync(
-            broker, "infra@alpha", "C:/repo-infra", token);
+        await using var infra = await AttachedClient.AttachAsync(broker, "infra@alpha", "C:/repo-infra", token);
 
-        // Attached one at a time rather than concurrently: this test is about concurrent asks,
-        // and an attach storm is the test below. Mixing them would leave a failure ambiguous.
-        var askers = new List<AttachedClient>();
+        // Attached one at a time: this test is about concurrent Requests, and an attach storm is the test below.
+        var requesters = new List<AttachedClient>();
 
         for (var i = 0; i < 8; i++)
         {
-            askers.Add(await AttachedClient.AttachAsync(
-                broker, $"docs{i}@alpha", $"C:/repo-docs-{i}", token));
+            requesters.Add(await AttachedClient.AttachAsync(broker, $"docs{i}@alpha", $"C:/repo-docs-{i}", token));
         }
 
         try
         {
-            // Released together. Starting the calls in a loop and awaiting each would serialise
-            // them at the client and test nothing -- the gate would never see two callers.
+            // Released together. Awaiting each in a loop would serialise them at the client and test nothing.
             var release = new TaskCompletionSource();
 
-            var asks = askers.Select(asker => Task.Run(
+            var sends = requesters.Select(requester => Task.Run(
                 async () =>
                 {
                     await release.Task.ConfigureAwait(false);
 
-                    return await asker.Client.AskAsync(
-                        new Wire.AskRequest
-                        {
-                            From = asker.Name,
-                            To = infra.Name,
-                            ResponderModel = "some-model-9",
-                            PayloadJson = Question($"who owns the retry policy, asked by {asker.Name}")
-                        },
-                        cancellationToken: token);
+                    return Assert.Single((await requester.Client.RequestAsync(
+                        Requests.Open(requester.Name, infra.Name, $"who owns the retry policy, asked by {requester.Name}"),
+                        cancellationToken: token)).Outcomes);
                 },
                 token)).ToList();
 
             release.SetResult();
 
-            var outcomes = await Task.WhenAll(asks);
+            var outcomes = await Task.WhenAll(sends);
 
             Assert.All(outcomes, outcome => Assert.True(outcome.Ok));
+            Assert.Equal(outcomes.Length, outcomes.Select(outcome => outcome.ExchangeId).Distinct().Count());
 
-            // Distinct, because an exchange identifier collision under concurrency is the defect
-            // this shape of test exists to catch and would otherwise surface much later as two
-            // conversations sharing a history.
+            // Eight Requests were sent, so eight are waiting: fewer means a write was lost inside the gate, more means
+            // one was applied twice.
+            var inbox = await infra.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = infra.Name }, cancellationToken: token);
+
+            Assert.Equal(requesters.Count, inbox.Messages.Count);
             Assert.Equal(
-                outcomes.Length,
-                outcomes.Select(outcome => outcome.ExchangeId).Distinct().Count());
-
-            // The store's account of it, read once every ask has returned. Eight questions were
-            // asked, so eight are waiting: fewer means a write was lost inside the gate, more
-            // means one was applied twice.
-            var inbox = await infra.Client.DrainInboxAsync(
-                new Wire.DrainInboxRequest { Agent = infra.Name }, cancellationToken: token);
-
-            Assert.Equal(askers.Count, inbox.Messages.Count);
-
-            Assert.Equal(
-                askers.Select(asker => asker.Name).OrderBy(name => name, StringComparer.Ordinal),
-                inbox.Messages.Select(message => message.Message.From).OrderBy(name => name, StringComparer.Ordinal));
+                requesters.Select(r => r.Name).OrderBy(name => name, StringComparer.Ordinal),
+                inbox.Messages.Select(m => m.Message.From).OrderBy(name => name, StringComparer.Ordinal));
         }
         finally
         {
-            foreach (var asker in askers)
+            foreach (var requester in requesters)
             {
-                await asker.DisposeAsync();
+                await requester.DisposeAsync();
             }
         }
     }
@@ -128,9 +90,7 @@ public sealed class ConcurrencyTests
             async () =>
             {
                 await release.Task.ConfigureAwait(false);
-
-                return await AttachedClient.AttachAsync(
-                    broker, $"docs{i}@alpha", $"C:/repo-docs-{i}", token);
+                return await AttachedClient.AttachAsync(broker, $"docs{i}@alpha", $"C:/repo-docs-{i}", token);
             },
             token)).ToList();
 
@@ -140,18 +100,13 @@ public sealed class ConcurrencyTests
 
         try
         {
-            // Registration happens inside the attach, under the gate, and it is the write most
-            // exposed to a race: it reads whether the name is held and then inserts. Eight names
-            // registering together must produce eight agents and not seven with one silently
-            // folded into another.
-            var roster = await attached[0].Client.ListAgentsAsync(
-                new Wire.ListAgentsRequest { AskingAs = attached[0].Name }, cancellationToken: token);
+            // Registration reads whether the name is held and then inserts, under the gate. Eight names registering
+            // together must produce eight agents and not seven with one silently folded into another.
+            var roster = await attached[0].Client.ListAgentsAsync(new Wire.ListAgentsRequest { AskingAs = attached[0].Name }, cancellationToken: token);
 
             foreach (var client in attached)
             {
-                Assert.Contains(
-                    roster.Agents,
-                    agent => string.Equals(agent.Name, client.Name, StringComparison.Ordinal));
+                Assert.Contains(roster.Agents, agent => string.Equals(agent.Name, client.Name, StringComparison.Ordinal));
             }
         }
         finally
@@ -164,63 +119,38 @@ public sealed class ConcurrencyTests
     }
 
     [Fact]
-    public async Task Two_sessions_of_one_agent_asking_together_do_not_collide()
+    public async Task Two_sessions_of_one_agent_sending_together_do_not_collide()
     {
         var token = TestContext.Current.CancellationToken;
 
         await using var broker = await LoopbackBroker.StartAsync(token);
 
-        await using var infra = await AttachedClient.AttachAsync(
-            broker, "infra@alpha", "C:/repo-infra", token);
+        await using var infra = await AttachedClient.AttachAsync(broker, "infra@alpha", "C:/repo-infra", token);
 
-        // SPEC.md §14: two windows open on one repository are two sessions for one agent, and
-        // `connected` counts them. Both hold their own stream and both may call at once, so the
-        // runtime picking one broker per operation has to be safe against the other picking the
-        // same one mid-flight.
-        await using var first = await AttachedClient.AttachAsync(
-            broker, "docs@alpha", "C:/repo-docs", token);
-
-        await using var second = await AttachedClient.AttachAsync(
-            broker, "docs@alpha", "C:/repo-docs", token);
+        // Two windows open on one repository are two sessions for one agent (§14), and both may call at once.
+        await using var first = await AttachedClient.AttachAsync(broker, "docs@alpha", "C:/repo-docs", token);
+        await using var second = await AttachedClient.AttachAsync(broker, "docs@alpha", "C:/repo-docs", token);
 
         var release = new TaskCompletionSource();
 
-        var asks = new[] { first, second }.Select(session => Task.Run(
+        var sends = new[] { first, second }.Select((session, index) => Task.Run(
             async () =>
             {
                 await release.Task.ConfigureAwait(false);
 
-                return await session.Client.AskAsync(
-                    new Wire.AskRequest
-                    {
-                        From = session.Name,
-                        To = infra.Name,
-                        ResponderModel = "some-model-9",
-
-                        // Distinct per session, deliberately. Identical text is refused by the
-                        // distinctness rule of SPEC.md §7.1, which admitted exactly one of the
-                        // two and left this asserting that one identifier is distinct from
-                        // itself -- a test that passed without ever exercising two callers.
-                        PayloadJson = Question($"who owns the retry policy, per {session.GetHashCode()}")
-                    },
-                    cancellationToken: token);
+                // Distinct per session, deliberately: identical text is refused by distinctness, which would admit
+                // exactly one and leave this asserting that one identifier is distinct from itself.
+                return Assert.Single((await session.Client.RequestAsync(
+                    Requests.Open(session.Name, infra.Name, $"who owns the retry policy, session {index}"),
+                    cancellationToken: token)).Outcomes);
             },
             token)).ToList();
 
         release.SetResult();
 
-        var outcomes = await Task.WhenAll(asks);
-
-        // Whatever the admission rules decide about a second question on one pair, the two
-        // sessions must not both be told they succeeded with the same exchange. Asserting on the
-        // outcomes rather than on a count keeps this a concurrency test rather than a restatement
-        // of §6's admission rules, which their own tests cover.
-        var admitted = outcomes.Where(outcome => outcome.Ok).ToList();
+        var admitted = (await Task.WhenAll(sends)).Where(outcome => outcome.Ok).ToList();
 
         Assert.Equal(2, admitted.Count);
-
-        Assert.Equal(
-            admitted.Count,
-            admitted.Select(outcome => outcome.ExchangeId).Distinct().Count());
+        Assert.Equal(2, admitted.Select(outcome => outcome.ExchangeId).Distinct().Count());
     }
 }

@@ -10,7 +10,7 @@ using Xunit;
 namespace Parley.Top.Tests;
 
 /// <summary>
-/// A person taking part: seated, owed a question, and answering it.
+/// A person taking part: seated, sent a request, and reporting what it came to.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -51,10 +51,14 @@ public sealed class ParticipationTests : IAsyncDisposable
         _connection.Dispose();
     }
 
+    /// <summary>A Request a peer sends a seat, satisfying rule 8.1.</summary>
+    private const string Request =
+        """{"intent":"deciding","items":[{"id":"q1","kind":"question","text":"is it safe"}],"done_when":"a release goes out or does not, with the reason"}""";
+
     [Fact]
-    public async Task A_person_can_answer_a_question_a_peer_asked_them()
+    public async Task A_person_can_send_the_result_of_a_request_a_peer_sent_them()
     {
-        // The story's own test. A peer asks, the person answers from the seat, the exchange
+        // The story's own test. A peer requests, the person reports from the seat, the exchange
         // closes, and what the peer gets back is what the person wrote.
         var ct = TestContext.Current.CancellationToken;
         using var directory = Directory();
@@ -67,31 +71,25 @@ public sealed class ParticipationTests : IAsyncDisposable
         var broker = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
         await broker.StartAsync(Orders, T0, ct);
 
-        var asked = await broker.AskAsync(
-            Orders, me, "model-a",
-            """{"intent":"deciding","sub_questions":[{"id":"q1","text":"is it safe"}],"consequences":"a release goes out or does not, and rolling it back costs a day"}""",
-            T0.AddMinutes(1), "chat", ct);
+        var sent = await broker.RequestAsync(Orders, me, "model-a", Request, T0.AddMinutes(1), "chat", ct);
 
-        Assert.True(asked.Succeeded, $"the ask was refused: {asked.Rejection}");
+        Assert.True(sent.Exchange is not null, $"the request was refused: {sent.Admission.Rejection}");
 
         var voice = new SeatVoice(directory.AgentsFor(project), seated.Seat);
 
         var (taken, _) = await voice.TakeDeliveryAsync(seated, ct);
 
         var owed = taken.Single(one => one.Owes);
-        var exchange = owed.Message.ExchangeId!.Value;
 
-        var ids = await voice.SubQuestionsAsync(exchange, ct);
-
-        var answered = await voice.AnswerAsync(
+        var answered = await voice.ResultAsync(
             seated,
-            exchange,
-            [.. ids.Select(id => (id, "yes, it is safe", "answered"))],
+            owed.Message.ExchangeId,
+            [.. owed.Items().Select(id => (id, "yes, it is safe", "answered"))],
             ct);
 
         Assert.True(answered.Closed, answered.Says);
 
-        // And the peer has it. An answer the asker cannot read is not an answer.
+        // And the peer has it. A Result the requester cannot read is not a Result.
         var export = await new BrokerClient(_broker.Operators).ExportAsync("chat", ct);
 
         Assert.Contains(
@@ -100,11 +98,11 @@ public sealed class ParticipationTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Answering_settles_the_seats_own_idea_of_what_is_owed()
+    public async Task Sending_a_result_settles_the_seats_own_idea_of_what_is_owed()
     {
-        // The half a surface can get wrong on its own. Striking the question off a local list
-        // when the send succeeds -- rather than when the broker says the exchange closed -- shows
-        // a person nothing owed while the working window of §6 is still running against them.
+        // The half a surface can get wrong on its own. Striking the request off a local list when
+        // the send succeeds -- rather than when the broker says the exchange closed -- shows a
+        // person nothing owed while the exchange is still open against them.
         var ct = TestContext.Current.CancellationToken;
         using var directory = Directory();
         using var seats = new SeatBook(directory.AgentsFor);
@@ -115,32 +113,27 @@ public sealed class ParticipationTests : IAsyncDisposable
         var broker = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
         await broker.StartAsync(Orders, T0, ct);
 
-        await broker.AskAsync(
-            Orders, seated.Seat.Name, "model-a",
-            """{"intent":"deciding","sub_questions":[{"id":"q1","text":"is it safe"}],"consequences":"a release goes out or does not, and rolling it back costs a day"}""",
-            T0.AddMinutes(1), "chat", ct);
+        await broker.RequestAsync(Orders, seated.Seat.Name, "model-a", Request, T0.AddMinutes(1), "chat", ct);
 
         var voice = new SeatVoice(directory.AgentsFor(project), seated.Seat);
 
         var (taken, _) = await voice.TakeDeliveryAsync(seated, ct);
-        var exchange = taken.Single(one => one.Owes).Message.ExchangeId!.Value;
+        var owed = taken.Single(one => one.Owes);
 
         Assert.Contains(seated.Delivered, one => one.Owes);
 
-        var ids = await voice.SubQuestionsAsync(exchange, ct);
-
-        await voice.AnswerAsync(
-            seated, exchange, [.. ids.Select(id => (id, "yes", "answered"))], ct);
+        await voice.ResultAsync(
+            seated, owed.Message.ExchangeId, [.. owed.Items().Select(id => (id, "yes", "answered"))], ct);
 
         Assert.DoesNotContain(seated.Delivered, one => one.Owes);
     }
 
     [Fact]
-    public async Task A_debt_cannot_be_cleared_away_instead_of_answered()
+    public async Task Work_owed_cannot_be_cleared_away_instead_of_reported()
     {
         // The attack on the tidy-up button. Clearing must drop what has been read and owes
-        // nothing, and never a question -- a person who could clear a debt would leave the
-        // exchange behind it running on to be ghosted, with nothing on their screen saying so.
+        // nothing, and never a request -- a person who could clear owed work would leave the
+        // exchange behind it open with nobody working it, and nothing on their screen saying so.
         var ct = TestContext.Current.CancellationToken;
         using var directory = Directory();
         using var seats = new SeatBook(directory.AgentsFor);
@@ -151,16 +144,33 @@ public sealed class ParticipationTests : IAsyncDisposable
         var broker = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
         await broker.StartAsync(Orders, T0, ct);
 
-        await broker.AskAsync(
-            Orders, seated.Seat.Name, "model-a",
-            """{"intent":"deciding","sub_questions":[{"id":"q1","text":"is it safe"}],"consequences":"a release goes out or does not, and rolling it back costs a day"}""",
-            T0.AddMinutes(1), "chat", ct);
-
-        await broker.NotifyAsync(
-            Orders, seated.Seat.Name, "model-a", """{"text":"just so you know"}""",
-            T0.AddMinutes(2), "chat", ct);
+        await broker.RequestAsync(Orders, seated.Seat.Name, "model-a", Request, T0.AddMinutes(1), "chat", ct);
 
         var voice = new SeatVoice(directory.AgentsFor(project), seated.Seat);
+
+        // And something that owes nothing: the Result of a request the person sent orders. Every
+        // message is answered, so a Result is the one kind a person holds without owing anything back.
+        Assert.StartsWith(
+            "Sent.",
+            await voice.RequestAsync(Orders, "checking the release", "is the build green", "question",
+                "the build is said to be green or not", "chat", ct),
+            StringComparison.Ordinal);
+
+        long mine;
+
+        using (var query = _connection.CreateCommand())
+        {
+            query.CommandText = "SELECT max(id) FROM exchanges WHERE requester = $me;";
+            query.Parameters.AddWithValue("$me", seated.Seat.Name.Value);
+            mine = (long)query.ExecuteScalar()!;
+        }
+
+        await broker.DrainInboxAsync(Orders, T0.AddMinutes(2), cancellationToken: ct);
+
+        Assert.True((await broker.ResultAsync(
+            mine, Orders, "model-a", """{"outcomes":[{"id":"r1","outcome":"answered","text":"green"}]}""",
+            T0.AddMinutes(3), ct)).Succeeded);
+
         await voice.TakeDeliveryAsync(seated, ct);
 
         Assert.Equal(1, seated.DismissRead());

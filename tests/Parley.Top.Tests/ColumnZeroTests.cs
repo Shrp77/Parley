@@ -181,8 +181,8 @@ public sealed class ColumnZeroTests
                 [
                     new Message(
                         1,
-                        ExchangeId: null,
-                        MessageType.Question,
+                        ExchangeId: 1,
+                        MessageType.Request,
                         AgentName.Create("orders@here"),
                         AgentName.Create("inventory@here"),
                         "test",

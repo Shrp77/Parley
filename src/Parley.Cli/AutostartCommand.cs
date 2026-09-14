@@ -203,8 +203,8 @@ public static class AutostartCommand
 
         // Which half was installed, said plainly, because the two are one entry and therefore
         // indistinguishable in a task list. A deployment whose node was left out looks identical
-        // to one whose node is running, until a question to a repository nobody has open waits
-        // out its window and is ghosted.
+        // to one whose node is running, until a request to a repository nobody has open waits,
+        // never collected, and is flagged.
         if (manifestToServe is not null)
         {
             await output.WriteLineAsync(
@@ -240,8 +240,8 @@ public static class AutostartCommand
         else
         {
             await output.WriteLineAsync(
-                "  hosts: nothing. This entry starts the broker alone, so a question to a " +
-                "repository\n         nobody has open will wait and then be ghosted. Install " +
+                "  hosts: nothing. This entry starts the broker alone, so a request to a " +
+                "repository\n         nobody has open waits, flagged, until somebody opens it. Install " +
                 "with --node-config <path>\n         to have it start this machine's agents too.")
                 .ConfigureAwait(false);
         }

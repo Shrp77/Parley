@@ -74,8 +74,8 @@ internal static class Withdrawing
     /// <summary>What retiring does.</summary>
     internal const string Retiring =
         "Retiring withdraws it from every roster and every route and keeps its record and its "
-        + "history. Exchanges it owes run out of time on the ordinary schedule and each asker is "
-        + "told nobody answered.";
+        + "history. Work it still holds stays open and is flagged as held by a retired agent, "
+        + "so you can close those conversations or reinstate it.";
 
     /// <summary>The agent, as the first dialog describes it.</summary>
     /// <param name="agent">What the registry says, or null when only the catalogue knows it.</param>
@@ -266,7 +266,8 @@ internal static class Withdrawing
     /// <summary>Names the asker and what they will see, and takes an explicit acceptance.</summary>
     /// <remarks>
     /// FR-014's second confirmation, and the reason it exists: retirement's outcome is the kinder
-    /// one — those exchanges run out of time and each asker is told nobody answered — so somebody
+    /// one — those exchanges stay open, flagged as held by a retired agent, for a person to close or
+    /// to reinstate it — so somebody
     /// choosing the permanent one should be choosing between them knowingly rather than agreeing to
     /// a sentence about themselves.
     /// </remarks>
@@ -282,12 +283,12 @@ internal static class Withdrawing
     {
         var accepting = Prompting.Choose(
             Purge,
-            $"{row.Name} owes an answer in {owed.Count} open exchange(s). "
+            $"{row.Name} owes a Result in {owed.Count} open exchange(s). "
             + string.Join(
                 " ",
                 owed.Select(edge =>
                     $"{edge.Waiter.Value} is waiting, and will find the exchange gone rather than "
-                    + "timed out."))
+                    + "still open."))
             + Environment.NewLine + Environment.NewLine + Purging
             + Environment.NewLine + Retiring,
             [Keep, "I accept that, and want to purge it anyway"]);

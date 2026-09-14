@@ -8,82 +8,98 @@ public sealed class ExchangeTests
     private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly AgentName Inventory = AgentName.Create("inventory@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan Delivery = TimeSpan.FromMinutes(15);
-    private static readonly TimeSpan Working = TimeSpan.FromHours(4);
-    private static readonly TimeSpan Grace = TimeSpan.FromHours(3);
-
-    private static readonly ExchangePolicy Policy = ExchangePolicy.Default with
-    {
-        DeliveryWindow = Delivery,
-        WorkingWindow = Working,
-        GracePeriod = Grace
-    };
 
     private static Exchange OpenExchange(int clarifyCap = 3) =>
-        Exchange.Open(1, Orders, Billing, T0, Policy with { ClarifyDepthCap = clarifyCap });
+        Exchange.Open(1, Orders, Billing, T0, ExchangePolicy.Default with { ClarifyDepthCap = clarifyCap });
 
     [Fact]
-    public void Opens_with_answerer_owing()
+    public void Opens_with_the_receiver_owing()
     {
         var exchange = OpenExchange();
 
         Assert.Equal(ExchangeState.Open, exchange.State);
         Assert.Equal(Billing, exchange.OwedBy);
-        Assert.Equal(T0 + Delivery, exchange.ExpiresUtc);
+        Assert.Equal(Orders, exchange.Waiting);
+        Assert.Null(exchange.Outcome);
+        Assert.Null(exchange.DeliveredUtc);
     }
 
     [Fact]
-    public void Asker_cannot_answer_its_own_question()
+    public void The_requester_cannot_send_the_result()
     {
         var exchange = OpenExchange();
 
-        var result = exchange.Answer(Orders, T0);
+        var result = exchange.Close(Orders, T0, ExchangeOutcome.Complete);
 
-        Assert.False(result.Succeeded);
-        Assert.Equal(TransitionError.OnlyAnswererMayAnswer, result.Error);
+        Assert.Equal(TransitionError.OnlyReceiverSendsResult, result.Error);
+        Assert.Equal(ExchangeState.Open, exchange.State);
     }
 
     [Fact]
-    public void Non_participant_is_rejected()
+    public void A_non_participant_is_rejected()
     {
         var exchange = OpenExchange();
 
-        var result = exchange.Clarify(Inventory, T0);
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(TransitionError.NotAParticipant, result.Error);
+        Assert.Equal(TransitionError.NotAParticipant, exchange.Clarify(Inventory, T0).Error);
+        Assert.Equal(TransitionError.NotAParticipant, exchange.Close(Inventory, T0, ExchangeOutcome.Complete).Error);
     }
 
     [Fact]
-    public void Answer_closes_and_releases()
+    public void A_result_closes_the_exchange_with_its_outcome()
     {
         var exchange = OpenExchange();
 
-        Assert.True(exchange.Answer(Billing, T0.AddMinutes(1)).Succeeded);
+        Assert.True(exchange.Close(Billing, T0.AddMinutes(1), ExchangeOutcome.Blocked).Succeeded);
+
         Assert.Equal(ExchangeState.Closed, exchange.State);
+        Assert.Equal(ExchangeOutcome.Blocked, exchange.Outcome);
         Assert.Equal(T0.AddMinutes(1), exchange.ClosedUtc);
     }
 
     [Fact]
-    public void Closed_exchange_accepts_nothing_further()
+    public void A_closed_exchange_accepts_nothing_further()
     {
         var exchange = OpenExchange();
-        exchange.Answer(Billing, T0);
+        exchange.Close(Billing, T0, ExchangeOutcome.Complete);
 
         Assert.Equal(TransitionError.ExchangeNotOpen, exchange.Clarify(Billing, T0).Error);
-        Assert.Equal(TransitionError.ExchangeNotOpen, exchange.Answer(Billing, T0).Error);
+        Assert.Equal(TransitionError.ExchangeNotOpen, exchange.Close(Billing, T0, ExchangeOutcome.Complete).Error);
+        Assert.Equal(TransitionError.ExchangeNotOpen, exchange.CloseWithConversation(T0).Error);
+        Assert.Equal(TransitionError.ExchangeNotOpen, exchange.Deliver(T0).Error);
     }
 
     [Fact]
-    public void Clarify_flips_the_turn_and_resets_the_ttl()
+    public void Only_the_broker_records_closed()
+    {
+        // An agent writing `closed` would claim a person ended its own unfinished work. The schema
+        // refuses it too; refusing it here names the mistake.
+        var exchange = OpenExchange();
+
+        Assert.Equal(TransitionError.ClosedIsTheBrokers, exchange.Close(Billing, T0, ExchangeOutcome.Closed).Error);
+        Assert.Equal(ExchangeState.Open, exchange.State);
+
+        Assert.True(exchange.CloseWithConversation(T0).Succeeded);
+        Assert.Equal(ExchangeOutcome.Closed, exchange.Outcome);
+    }
+
+    [Fact]
+    public void Clarify_flips_the_turn()
     {
         var exchange = OpenExchange();
-        var later = T0.AddMinutes(5);
 
-        Assert.True(exchange.Clarify(Billing, later).Succeeded);
+        Assert.True(exchange.Clarify(Billing, T0.AddMinutes(5)).Succeeded);
 
         Assert.Equal(Orders, exchange.OwedBy);
-        Assert.Equal(later + Working, exchange.ExpiresUtc);
+        Assert.Equal(Billing, exchange.Waiting);
+    }
+
+    [Fact]
+    public void The_receiver_cannot_send_the_result_while_the_requester_holds_the_turn()
+    {
+        var exchange = OpenExchange();
+        exchange.Clarify(Billing, T0);
+
+        Assert.Equal(TransitionError.NotYourTurn, exchange.Close(Billing, T0, ExchangeOutcome.Complete).Error);
     }
 
     [Fact]
@@ -91,94 +107,71 @@ public sealed class ExchangeTests
     {
         var exchange = OpenExchange();
 
-        // Billing owes the answer; Orders has nothing to say yet.
-        var result = exchange.Clarify(Orders, T0);
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(TransitionError.NotYourTurn, result.Error);
+        // Billing owes the move; Orders has nothing to say yet.
+        Assert.Equal(TransitionError.NotYourTurn, exchange.Clarify(Orders, T0).Error);
     }
 
     [Fact]
-    public void Depth_counts_requests_but_not_replies()
+    public void Depth_counts_the_receivers_clarifications_but_not_the_replies()
     {
         var exchange = OpenExchange();
 
-        exchange.Clarify(Billing, T0);   // request  -> depth 1
+        exchange.Clarify(Billing, T0);
         Assert.Equal(1, exchange.ClarifyDepth);
 
-        exchange.Clarify(Orders, T0);    // reply    -> unchanged
+        exchange.Clarify(Orders, T0);
         Assert.Equal(1, exchange.ClarifyDepth);
 
-        exchange.Clarify(Billing, T0);   // request  -> depth 2
+        exchange.Clarify(Billing, T0);
         Assert.Equal(2, exchange.ClarifyDepth);
     }
 
     [Fact]
-    public void Clarify_cap_refuses_and_leaves_the_exchange_open()
+    public void A_set_clarify_cap_refuses_and_leaves_the_exchange_open()
     {
-        // This asserted that a breach forced an answer of `unknown`, through a method written
-        // for it and called from nowhere. SPEC.md §5.2 said the same and was the defect: that
-        // resolution means "I own this and I do not know", which is a statement about the
-        // answerer's knowledge that only the answerer can make. A broker writing it manufactures
-        // an agent's judgement -- the mirror of the fault `ghosted` is trigger-protected against.
-        //
-        // So the breach refuses and does nothing else. The exchange stays open for the answerer
-        // to answer with what it has, and is ghosted by §14 if it never does.
+        // Nothing closes the exchange on the receiver's behalf: an outcome is its judgement about its own
+        // work, so it sends a Result with what it has.
         var exchange = OpenExchange(clarifyCap: 1);
 
         exchange.Clarify(Billing, T0);
         exchange.Clarify(Orders, T0);
 
-        var blocked = exchange.Clarify(Billing, T0);
-
-        Assert.Equal(TransitionError.ClarifyDepthExceeded, blocked.Error);
+        Assert.Equal(TransitionError.ClarifyDepthExceeded, exchange.Clarify(Billing, T0).Error);
         Assert.Equal(ExchangeState.Open, exchange.State);
-        Assert.Null(exchange.Resolution);
+        Assert.Null(exchange.Outcome);
     }
 
     [Fact]
-    public void Expiry_is_reported_only_while_open()
+    public void Only_the_first_collection_is_recorded()
     {
-        var exchange = OpenExchange();
-        var past = T0 + Delivery + TimeSpan.FromSeconds(1);
-
-        Assert.True(exchange.IsExpiredAt(past));
-
-        exchange.Answer(Billing, T0);
-        Assert.False(exchange.IsExpiredAt(past));
-    }
-
-    [Fact]
-    public void Orphan_then_resume_preserves_clarify_depth()
-    {
-        var exchange = OpenExchange();
-        exchange.Clarify(Billing, T0);
-
-        Assert.True(exchange.Orphan(T0.AddMinutes(20)).Succeeded);
-        Assert.Equal(ExchangeState.Orphaned, exchange.State);
-
-        var resumedAt = T0.AddHours(2);
-        Assert.True(exchange.Resume(resumedAt).Succeeded);
-
-        Assert.Equal(ExchangeState.Open, exchange.State);
-        // The delivery window, not the working one: a replay is waiting for pickup again.
-        Assert.Equal(resumedAt + Delivery, exchange.ExpiresUtc);
-
-        // A restart is not a fresh clarification budget.
-        Assert.Equal(1, exchange.ClarifyDepth);
-    }
-
-    [Fact]
-    public void Resume_requires_an_orphaned_exchange()
-    {
+        // A Request delivered again after a restart was collected before; restamping it would hide how
+        // long it has really been owed.
         var exchange = OpenExchange();
 
-        Assert.Equal(TransitionError.ExchangeNotOrphaned, exchange.Resume(T0).Error);
+        exchange.Deliver(T0.AddMinutes(1));
+        exchange.Deliver(T0.AddHours(3));
+
+        Assert.Equal(T0.AddMinutes(1), exchange.DeliveredUtc);
     }
 
     [Fact]
-    public void Self_questioning_is_rejected()
+    public void The_thresholds_are_stamped_from_the_policy()
     {
-        Assert.Throws<ArgumentException>(() => Exchange.Open(1, Orders, Orders, T0, Policy));
+        var policy = ExchangePolicy.Default with
+        {
+            UncollectedAfter = TimeSpan.FromMinutes(5),
+            StalledAfter = TimeSpan.FromHours(12)
+        };
+
+        var exchange = Exchange.Open(1, Orders, Billing, T0, policy);
+
+        Assert.Equal(TimeSpan.FromMinutes(5), exchange.UncollectedAfter);
+        Assert.Equal(TimeSpan.FromHours(12), exchange.StalledAfter);
+    }
+
+    [Fact]
+    public void A_request_to_oneself_is_rejected()
+    {
+        Assert.Throws<ArgumentException>(() => Exchange.Open(1, Orders, Orders, T0));
     }
 }

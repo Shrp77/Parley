@@ -23,7 +23,7 @@ namespace Parley.Client.Tests.Views;
 public sealed class ReadabilityTests
 {
     private static Message Message(
-        string from, string to, string payload, int minute = 0, MessageType type = MessageType.Question) =>
+        string from, string to, string payload, int minute = 0, MessageType type = MessageType.Request) =>
         new(
             1,
             1,

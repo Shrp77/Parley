@@ -28,12 +28,17 @@ workspace, adapter, status and presence; `Waiting` for what the agent owes, as t
 and that file must contain the typed-name prompt. A second file that reaches any of them fails the
 build's test run. FR-017, SC-007.
 
-## The four reports neither contract had named
+## The reports neither contract had named
 
-`Refusals`, `Clarifications`, `Referrals` and `Notifications`. The web console binds all four; the
-terminal binds none, and until this feature no contract said so — which made 004's promise that
+`Refusals`, `Clarifications`, `Referrals` and `Notifications`. The web console bound all four; the
+terminal bound none, and until this feature no contract said so — which made 004's promise that
 absences are *listed* untrue for four of them. Written down here rather than quietly left, because
 a gap nobody recorded is indistinguishable from one nobody noticed.
+
+**Superseded in 0.26.0.** Protocol 0.5 replaced `Referrals` and `Notifications` with `Results` and
+`Flags`, and the terminal now binds all four reports, with `Waiting`, in one Health dialog
+(`Health.cs`) — the same five the web console's Health page reads. The paragraph below records the
+earlier reasoning.
 
 They stay out on the same grounds, and it is scope rather than safety: each is a survey across the
 whole deployment serving an open question in SPEC.md §17 rather than a fact about what is happening
@@ -45,11 +50,19 @@ that grew a fifth region for them would be a different feature, argued here firs
 `DriftTests` compares the two surfaces against this file, so the next operation one of them gains
 alone fails the build rather than waiting to be noticed by somebody moving between them.
 
-## Still excluded, and listed so their absence is deliberate
+## Admitted in 0.26.0: nothing is excluded any more
 
-`ForceConclude`, `Instruct`, `Prune`. The web console binds them. The terminal does not, and
-`SurfaceTests` continues to forbid them anywhere under `Top`. Admitting one is a decision to argue
-here first, not a call to add.
+`ForceConclude`, `Instruct` and `Prune` were excluded here, and that exclusion is withdrawn by the
+owner's decision, made while protocol 0.5 was specified, that **every surface offers every operator
+operation**. A person at a terminal over SSH is the one who cannot open the web console, and a
+surface that shows stalled work but cannot end it sends them elsewhere for the one thing the flag
+asked of them.
+
+They were admitted on the terms the others were: a description first and a deliberate act.
+`SurfaceTests` holds each to one file carrying its door — `Closing.cs` takes the conversation's
+identifier typed back, `Pruning.cs` the project's name, and `Instructing.cs`, which deletes nothing,
+says the agent may decline. `DriftTests` now asserts that both surfaces bind every operation on
+`BrokerClient`, with no exemption read from this file.
 
 ## Order of operations for a withdrawal
 

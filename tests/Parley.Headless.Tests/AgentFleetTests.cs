@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Parley.Configuration;
 using Parley.Core;
 using Parley.Store;
@@ -10,21 +10,20 @@ namespace Parley.Headless.Tests;
 /// Supervising a set of agents: who gets started, who does not, and who is told to quit.
 /// </summary>
 /// <remarks>
-/// The behaviour worth pinning here is all refusal. Starting an agent that owes an answer is the
+/// The behaviour worth pinning here is all refusal. Starting an agent that owes a Result is the
 /// easy half and it is one assertion; the rest of this file is the cases where a fleet must
 /// decline to start something, because each of those is somebody's tokens, somebody's machine, or
 /// an operator's decision being quietly overruled.
 /// </remarks>
 public sealed class AgentFleetTests : IDisposable
 {
-    /// <summary>The unit separator the schema joins a pair key with.</summary>
-    private const string Separator = "\u001F";
-
-
     private readonly string _root =
         Path.Combine(Path.GetTempPath(), "parley-fleet-" + Guid.NewGuid().ToString("N"));
 
     private readonly SqliteConnection _connection;
+
+    /// <summary>Counts the Requests this fixture has written, so no two are refused as the same one.</summary>
+    private int _subjects;
 
     public AgentFleetTests()
     {
@@ -64,8 +63,7 @@ public sealed class AgentFleetTests : IDisposable
     /// Two writes to two places, which is the change these tests exist to describe. The
     /// registration goes in the store; how to start the agent goes in the node's own catalogue
     /// and never leaves this machine (SPEC.md §4). An agent registered without a catalogue entry
-    /// is one the fleet declines to start, which used to be expressed as withheld consent and is
-    /// now simply a machine that has not been told about it.
+    /// is one the fleet declines to start.
     /// </remarks>
     private void Register(
         string name,
@@ -108,108 +106,61 @@ public sealed class AgentFleetTests : IDisposable
         return NodeCatalogue.Read(Path.Combine(_root, "parley.db"));
     }
 
-    /// <summary>The 64-character lower-case hex the schema requires of a content hash.</summary>
-    /// <param name="text">Whatever distinguishes this row from its neighbours.</param>
-    /// <returns>A hash the CHECK constraint accepts.</returns>
-    private static string Hash(string text) =>
-        Convert.ToHexString(
-            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)))
-            .ToLowerInvariant();
-
-    /// <summary>Writes a message nobody has collected, leaving no debt behind it.</summary>
-    /// <param name="from">Who sent it.</param>
-    /// <param name="to">Who has not collected it.</param>
-    /// <param name="type">The message type to write.</param>
-    private void SendUncollected(string from, string to, string type)
+    /// <summary>Opens an exchange and writes its Request, the way the broker does, and marks it collected.</summary>
+    /// <param name="requester">Who sends the Request.</param>
+    /// <param name="receiver">Who owes its Result.</param>
+    /// <returns>The open exchange.</returns>
+    /// <remarks>
+    /// Through the repositories rather than rows written by hand. Storage refuses a malformed Request (§9.3),
+    /// so hand-written rows are a second copy of the schema that goes stale the first time it moves — which is
+    /// exactly how every test in this file came to fail at once.
+    /// </remarks>
+    private async Task<Exchange> OpenCollectedAsync(string requester, string receiver)
     {
-        // A message with no exchange behind it, which is what an answer, a ghost and a notify
-        // all leave once the exchange they belonged to has closed -- or, for a notify, never
-        // had one. Written directly because the point is the row, not the path that made it.
-        // Only a notify may stand alone: the schema enforces
-        // (type = 'notify') = (exchange_id IS NULL). An answer and a ghost belong to an
-        // exchange that has since closed, which is exactly the shape that leaves a message
-        // waiting and no debt behind it -- so the closed exchange is written too rather than
-        // worked around.
-        long? exchange = null;
-
-        if (type != "notify")
-        {
-            using var closing = _connection.CreateCommand();
-            closing.CommandText =
-                """
-                INSERT INTO exchanges
-                    (pair_key, asker, answerer, owed_by, state, delivery_window_ms,
-                     working_window_ms, grace_period_ms, opened_utc, expires_utc,
-                     question_hash, closed_utc, resolution)
-                VALUES (@Pair, @To, @From, @From, 'CLOSED', 60000, 60000, 60000,
-                        @Now, @Now, @Hash, @Now, 'answered')
-                RETURNING id;
-                """;
-            closing.Parameters.AddWithValue("@Pair", string.CompareOrdinal(from, to) < 0
-                ? from + Separator + to
-                : to + Separator + from);
-            closing.Parameters.AddWithValue("@To", to);
-            closing.Parameters.AddWithValue("@From", from);
-            closing.Parameters.AddWithValue("@Now", DateTimeOffset.UtcNow.ToString("o"));
-            closing.Parameters.AddWithValue("@Hash", Hash($"{from}-{to}-{type}-q"));
-            exchange = (long)closing.ExecuteScalar()!;
-        }
-
-        using var command = _connection.CreateCommand();
-        command.CommandText =
-            """
-            INSERT INTO messages
-                (exchange_id, type, from_agent, to_agent, responder_model, payload_json,
-                 content_hash, created_utc)
-            VALUES (@Exchange, @Type, @From, @To, @Responder, '{"text":"x"}', @Hash, @Now);
-            """;
-
-        // A ghost is the broker's own notice and the schema refuses any other attribution --
-        // the same trigger that stops an agent forging one. §14.
-        command.Parameters.AddWithValue(
-            "@Responder", type == "ghost" ? "parley:broker" : "some-model-9");
-        command.Parameters.AddWithValue("@Exchange", (object?)exchange ?? DBNull.Value);
-        command.Parameters.AddWithValue("@Type", type);
-        command.Parameters.AddWithValue("@From", from);
-        command.Parameters.AddWithValue("@To", to);
-        command.Parameters.AddWithValue("@Hash", Hash($"{from}-{to}-{type}"));
-        command.Parameters.AddWithValue("@Now", DateTimeOffset.UtcNow.ToString("o"));
-        command.ExecuteNonQuery();
-    }
-
-    /// <summary>Opens an exchange that leaves one agent owing an answer.</summary>
-    /// <param name="asker">Who asked.</param>
-    /// <param name="answerer">Who owes.</param>
-    private void Owe(string asker, string answerer)
-    {
+        var from = AgentName.Create(requester);
+        var to = AgentName.Create(receiver);
         var now = DateTimeOffset.UtcNow;
 
-        using var command = _connection.CreateCommand();
-        command.CommandText =
-            """
-            INSERT INTO exchanges
-                (pair_key, asker, answerer, owed_by, state, delivery_window_ms,
-                 working_window_ms, grace_period_ms, opened_utc, expires_utc, question_hash)
-            VALUES (@Pair, @Asker, @Answerer, @Answerer, 'OPEN', 60000, 60000, 60000,
-                    @Now, @Expires, @Hash);
-            """;
+        // Distinct per call, so a second Request between the same two agents is not refused as a duplicate.
+        var payload =
+            $$"""{"intent":"deciding where tax is added","items":[{"id":"q1","kind":"question","text":"subject {{++_subjects}}"}],"done_when":"the invoice total is stated gross or net"}""";
 
-        // Built the way the schema's CHECK builds it: ordered, and joined by a unit separator
-        // rather than any character an agent name could contain. Getting this wrong is how the
-        // constraint proves it is doing something.
-        var pair = string.CompareOrdinal(asker, answerer) < 0
-            ? asker + Separator + answerer
-            : answerer + Separator + asker;
+        var opened = await new ExchangeRepository(_connection).TryOpenAsync(
+            from, to, now, MessageIdentity.ComputeRequest(from, to, payload), "fleet", null, cancellationToken: Ct);
 
-        command.Parameters.AddWithValue("@Pair", pair);
-        command.Parameters.AddWithValue("@Asker", asker);
-        command.Parameters.AddWithValue("@Answerer", answerer);
-        command.Parameters.AddWithValue("@Now", ExchangeRow.FormatTimestamp(now));
-        command.Parameters.AddWithValue(
-            "@Expires", ExchangeRow.FormatTimestamp(now.AddHours(1)));
-        command.Parameters.AddWithValue("@Hash", Guid.NewGuid().ToString("N"));
+        Assert.True(opened.Succeeded, $"the fixture's Request was refused: {opened.Rejection}");
 
-        command.ExecuteNonQuery();
+        var messages = new MessageRepository(_connection);
+        var written = await messages.AppendAsync(
+            opened.Exchange!.Id, MessageType.Request, from, to, "some-model-9", payload, now, cancellationToken: Ct);
+
+        Assert.True(await messages.MarkDeliveredAsync(written.Message.Id, now, Ct));
+
+        return opened.Exchange;
+    }
+
+    /// <summary>Leaves one agent owing a Result on work it has already collected.</summary>
+    /// <param name="requester">Who asked.</param>
+    /// <param name="receiver">Who owes.</param>
+    /// <returns>A task that completes when it is written.</returns>
+    /// <remarks>One item waiting: the open exchange. The Request itself was collected.</remarks>
+    private Task OweAsync(string requester, string receiver) => OpenCollectedAsync(requester, receiver);
+
+    /// <summary>Writes a Result nobody has collected, on an exchange it closed, leaving no work owed behind it.</summary>
+    /// <param name="from">Who sent the Result.</param>
+    /// <param name="to">The requester, who has not collected it.</param>
+    /// <returns>A task that completes when it is written.</returns>
+    private async Task SendUncollectedResultAsync(string from, string to)
+    {
+        var exchange = await OpenCollectedAsync(to, from);
+        var now = DateTimeOffset.UtcNow;
+
+        _ = await new MessageRepository(_connection).AppendAsync(
+            exchange.Id, MessageType.Result, exchange.Receiver, exchange.Requester, "some-model-9",
+            """{"outcomes":[{"id":"q1","outcome":"answered","text":"net of tax"}]}""", now, cancellationToken: Ct);
+
+        Assert.True(exchange.Close(exchange.Receiver, now, ExchangeOutcome.Complete).Succeeded);
+        Assert.True(await new ExchangeRepository(_connection).SaveAsync(exchange, cancellationToken: Ct));
     }
 
     /// <summary>The fleet under test, consulting this machine's catalogue.</summary>
@@ -217,12 +168,12 @@ public sealed class AgentFleetTests : IDisposable
     private AgentFleet Fleet() => new(_connection, TimeProvider.System, Catalogue());
 
     [Fact]
-    public async Task An_agent_that_owes_an_answer_is_started_and_given_a_turn()
+    public async Task An_agent_that_owes_a_result_is_started_and_given_a_turn()
     {
         // The feature in one assertion: nobody took a turn, and an agent ran anyway.
         Register("orders@test");
         Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
-        Owe("orders@test", "billing@test");
+        await OweAsync("orders@test", "billing@test");
 
         await using var fleet = Fleet();
 
@@ -244,14 +195,14 @@ public sealed class AgentFleetTests : IDisposable
         // design wearing a supervisor's clothes, and the agent would remember nothing.
         Register("orders@test");
         Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
-        Owe("orders@test", "billing@test");
+        await OweAsync("orders@test", "billing@test");
 
         await using var fleet = Fleet();
 
         var first = await fleet.TickAsync(Ct);
         var session = fleet.SessionOf(AgentName.Create("billing@test"));
 
-        Owe("orders@test", "billing@test");
+        await OweAsync("orders@test", "billing@test");
 
         var second = await fleet.TickAsync(Ct);
 
@@ -263,17 +214,15 @@ public sealed class AgentFleetTests : IDisposable
     [Fact]
     public async Task An_agent_this_machine_cannot_start_is_reported_not_started()
     {
-        // Consent comes from the invoked agent's own launch configuration and nowhere else.
         // Starting a repository nobody offered is spending somebody's tokens on their machine.
         Register("orders@test");
         Register("billing@test");
-        Owe("orders@test", "billing@test");
+        await OweAsync("orders@test", "billing@test");
 
         await using var fleet = Fleet();
 
-        // Reported rather than silent. An agent this machine has no command for is a
-        // configuration gap somebody has to see: under the old design it was withheld consent
-        // and produced nothing at all, which looked identical to a healthy quiet pass.
+        // Reported rather than silent. An agent this machine has no command for is a configuration
+        // gap somebody has to see, and silence looks identical to a healthy quiet pass.
         var skipped = Assert.Single(await fleet.TickAsync(Ct));
 
         Assert.False(skipped.Started);
@@ -285,15 +234,15 @@ public sealed class AgentFleetTests : IDisposable
     public async Task An_agent_somebody_is_already_running_is_left_alone()
     {
         // Two processes behind one identity would drain one inbox, and the exchange's turn check
-        // refuses the loser -- after both have spent tokens getting there. §14's lease is the
-        // only evidence available that a person has that repository open.
+        // refuses the loser -- after both have spent tokens getting there. A connected adapter is
+        // the only evidence available that a person has that repository open.
         Register("orders@test");
         Register(
             "billing@test",
             StubRunner.Answering(Workspace("billing@test")),
             connected: true);
 
-        Owe("orders@test", "billing@test");
+        await OweAsync("orders@test", "billing@test");
 
         await using var fleet = Fleet();
 
@@ -312,7 +261,7 @@ public sealed class AgentFleetTests : IDisposable
             StubRunner.Answering(Workspace("billing@test")),
             connected: false);
 
-        Owe("orders@test", "billing@test");
+        await OweAsync("orders@test", "billing@test");
 
         await using var fleet = Fleet();
 
@@ -323,12 +272,13 @@ public sealed class AgentFleetTests : IDisposable
     public async Task A_retired_agent_is_never_started()
     {
         // Retirement is a person's judgement that the agent will not come back. §14 refuses to
-        // route to one; starting a process against it would overrule the same decision.
+        // route to one; starting a process against it would overrule the same decision. Retired after
+        // the work was sent, which is the order a real deployment meets it in.
         Register("orders@test");
-        Register(
-            "billing@test", StubRunner.Answering(Workspace("billing@test")), status: "retired");
+        Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
 
-        Owe("orders@test", "billing@test");
+        await OweAsync("orders@test", "billing@test");
+        Retire("billing@test");
 
         await using var fleet = Fleet();
 
@@ -342,7 +292,7 @@ public sealed class AgentFleetTests : IDisposable
         // control §14 warns about: the register says one thing and the deployment does another.
         Register("orders@test");
         Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
-        Owe("orders@test", "billing@test");
+        await OweAsync("orders@test", "billing@test");
 
         await using var fleet = Fleet();
 
@@ -350,11 +300,7 @@ public sealed class AgentFleetTests : IDisposable
 
         Assert.Contains("billing@test", fleet.Running, StringComparer.Ordinal);
 
-        using (var retire = _connection.CreateCommand())
-        {
-            retire.CommandText = "UPDATE agents SET status = 'retired' WHERE name = 'billing@test';";
-            retire.ExecuteNonQuery();
-        }
+        Retire("billing@test");
 
         var actions = await fleet.TickAsync(Ct);
 
@@ -367,13 +313,11 @@ public sealed class AgentFleetTests : IDisposable
     [Fact]
     public async Task Delisting_a_running_agent_tells_it_to_quit()
     {
-        // Withdrawal used to be removing PARLEY_INVOKE_COMMAND and opening the repository once,
-        // so the registry learned about it and the fleet acted on a column. It is now removing
-        // the agent from this machine's own catalogue, which is a smaller and more direct thing:
-        // the party that starts agents is the party that stops being told to.
+        // Withdrawal is removing the agent from this machine's own catalogue: the party that starts
+        // agents is the party that stops being told to.
         Register("orders@test");
         Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
-        Owe("orders@test", "billing@test");
+        await OweAsync("orders@test", "billing@test");
 
         await using var fleet = Fleet();
 
@@ -411,7 +355,7 @@ public sealed class AgentFleetTests : IDisposable
     {
         // The ordinary state of a machine somebody has only registered agents on. It must read
         // as "starts nothing" rather than as an error, or a supervisor could not run anywhere it
-        // had not been configured first — and it still has reaping and reporting to do.
+        // had not been configured first.
         Assert.Null(NodeCatalogue.Empty.CommandFor(AgentName.Create("billing@test")));
         Assert.Empty(NodeCatalogue.Empty.Roles);
     }
@@ -420,10 +364,10 @@ public sealed class AgentFleetTests : IDisposable
     public async Task A_turn_is_recorded_with_what_it_cost()
     {
         // §17 question 1 settled a comparable question by measuring rather than guessing, and a
-        // resident fleet costs considerably more than a notification.
+        // resident fleet costs real turns.
         Register("orders@test");
         Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
-        Owe("orders@test", "billing@test");
+        await OweAsync("orders@test", "billing@test");
 
         await using var fleet = Fleet();
         await fleet.TickAsync(Ct);
@@ -442,20 +386,15 @@ public sealed class AgentFleetTests : IDisposable
         Assert.Equal(0L, reader.GetInt64(4));
     }
 
-    [Theory]
-    [InlineData("answer")]
-    [InlineData("ghost")]
-    [InlineData("notify")]
-    public async Task An_uncollected_message_starts_an_agent_that_owes_nothing(string type)
+    [Fact]
+    public async Task An_uncollected_result_starts_the_agent_that_requested_it()
     {
-        // The hole this closes. Only an OPEN exchange used to start anybody, and three of the
-        // five message types leave none: an answer and a ghost close the exchange they belong
-        // to, and a notify never had one. So the fleet could answer a question autonomously and
-        // never start the agent that asked it to read the reply -- the one participant with the
-        // strongest reason to be woken was the only one excluded.
+        // A Result closes the exchange it answers, so an agent waiting only for one owes nothing — and
+        // the fleet would do the work and never start the agent that asked for it to read the Result.
+        // The one participant with the strongest reason to be woken would be the only one excluded.
         Register("orders@test", StubRunner.Answering(Workspace("orders@test")));
         Register("billing@test");
-        SendUncollected("billing@test", "orders@test", type);
+        await SendUncollectedResultAsync("billing@test", "orders@test");
 
         await using var fleet = Fleet();
         var actions = await fleet.TickAsync(Ct);
@@ -468,15 +407,15 @@ public sealed class AgentFleetTests : IDisposable
     }
 
     [Fact]
-    public async Task A_debt_and_an_uncollected_message_are_counted_once_each()
+    public async Task Work_owed_and_an_uncollected_message_are_counted_once_each()
     {
-        // Counted as distinct items rather than summed from two overlapping queries: an OPEN
-        // exchange and a message that has not been collected are two things to deal with, and
-        // an agent holding both should sort above one holding either.
+        // Counted as distinct items rather than summed from two overlapping queries: an open exchange
+        // and a message that has not been collected are two things to deal with, and an agent holding
+        // both should sort above one holding either.
         Register("orders@test");
         Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
-        Owe("orders@test", "billing@test");
-        SendUncollected("orders@test", "billing@test", "notify");
+        await OweAsync("orders@test", "billing@test");
+        await SendUncollectedResultAsync("orders@test", "billing@test");
 
         await using var fleet = Fleet();
         var actions = await fleet.TickAsync(Ct);
@@ -487,16 +426,14 @@ public sealed class AgentFleetTests : IDisposable
     [Fact]
     public async Task A_turn_that_collected_nothing_is_not_repeated_until_something_arrives()
     {
-        // The runaway this guards. An owed exchange ages out through §14 whether or not the
-        // agent cooperates, so a debt it refuses eventually stops being a reason to start it.
-        // An uncollected message has no such schedule -- §9.4's floor holds it against
-        // retention precisely so nothing is lost -- so without a guard, one unread notification
-        // starts a real session every pass, for as long as the fleet runs, on somebody's
-        // account. The stub answers its turn and touches no database, which is exactly the
-        // shape of an agent that is started and collects nothing.
+        // The runaway this guards. Nothing times out (§5.3), and an uncollected message is held against
+        // retention by §9.4's floor precisely so nothing is lost -- so without a guard, one unread Result
+        // starts a real session every pass, for as long as the fleet runs, on somebody's account. The stub
+        // takes its turn and touches no database, which is exactly the shape of an agent that is started
+        // and collects nothing.
         Register("orders@test", StubRunner.Answering(Workspace("orders@test")));
         Register("billing@test");
-        SendUncollected("billing@test", "orders@test", "notify");
+        await SendUncollectedResultAsync("billing@test", "orders@test");
 
         await using var fleet = Fleet();
 
@@ -511,18 +448,18 @@ public sealed class AgentFleetTests : IDisposable
     [Fact]
     public async Task A_new_message_re_arms_an_agent_that_was_stuck()
     {
-        // The bound is one wasted turn per new message, not one wasted turn ever. A second
-        // message raises the count above what was still waiting after the last turn, which is
-        // the evidence that there is something the previous turn cannot have seen.
+        // The bound is one wasted turn per new message, not one wasted turn ever. A second message raises
+        // the count above what was still waiting after the last turn, which is the evidence that there is
+        // something the previous turn cannot have seen.
         Register("orders@test", StubRunner.Answering(Workspace("orders@test")));
         Register("billing@test");
-        SendUncollected("billing@test", "orders@test", "notify");
+        await SendUncollectedResultAsync("billing@test", "orders@test");
 
         await using var fleet = Fleet();
         await fleet.TickAsync(Ct);
         Assert.False(Assert.Single(await fleet.TickAsync(Ct)).Started);
 
-        SendUncollected("billing@test", "orders@test", "answer");
+        await SendUncollectedResultAsync("billing@test", "orders@test");
 
         var third = Assert.Single(await fleet.TickAsync(Ct));
 
@@ -533,12 +470,12 @@ public sealed class AgentFleetTests : IDisposable
     [Fact]
     public async Task An_agent_whose_workspace_is_gone_is_retired()
     {
-        // §14's new half. A missing directory is an observation the broker can make by looking,
-        // rather than an inference from silence, so it is allowed to conclude from it. The cost
-        // is recorded where the code is: a repository that comes back needs `parley reinstate`.
+        // A missing directory is an observation the broker can make by looking, rather than an inference
+        // from silence, so it is allowed to conclude from it. The cost is recorded where the code is: a
+        // repository that comes back needs `parley reinstate`.
         Register("orders@test");
         Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
-        Owe("orders@test", "billing@test");
+        await OweAsync("orders@test", "billing@test");
 
         using (var command = _connection.CreateCommand())
         {
@@ -555,22 +492,19 @@ public sealed class AgentFleetTests : IDisposable
         Assert.False(action.Started);
         Assert.Contains("workspace is gone", action.Skipped!, StringComparison.Ordinal);
 
-        using var query = _connection.CreateCommand();
-        query.CommandText = "SELECT status FROM agents WHERE name = 'billing@test';";
-
-        Assert.Equal("retired", query.ExecuteScalar());
+        Assert.Equal("retired", StatusOf("billing@test"));
     }
 
     [Fact]
     public async Task An_absent_mount_is_not_mistaken_for_a_deleted_repository()
     {
-        // The hazard the parent check exists for. Directory.Exists is false for a repository
-        // somebody deleted and for a drive that is briefly unmounted, and only the first is a
-        // judgement worth making -- every agent on that volume would otherwise be retired in one
-        // pass, each needing a person to reinstate it, because a share was down for a minute.
+        // The hazard the parent check exists for. Directory.Exists is false for a repository somebody
+        // deleted and for a drive that is briefly unmounted, and only the first is a judgement worth
+        // making -- every agent on that volume would otherwise be retired in one pass, each needing a
+        // person to reinstate it, because a share was down for a minute.
         Register("orders@test");
         Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
-        Owe("orders@test", "billing@test");
+        await OweAsync("orders@test", "billing@test");
 
         using (var command = _connection.CreateCommand())
         {
@@ -587,18 +521,13 @@ public sealed class AgentFleetTests : IDisposable
         Assert.False(action.Started);
         Assert.Contains("mount rather than a deletion", action.Skipped!, StringComparison.Ordinal);
 
-        using var query = _connection.CreateCommand();
-        query.CommandText = "SELECT status FROM agents WHERE name = 'billing@test';";
-
-        Assert.Equal("active", query.ExecuteScalar());
+        Assert.Equal("active", StatusOf("billing@test"));
     }
 
     [Fact]
     public async Task An_agent_with_nothing_waiting_is_still_left_alone()
     {
-        // The widening must not become "start everything that consented". A turn given to an
-        // agent with no reason to take one is tokens spent on nothing, which is the first of
-        // the four conditions FindWaitingAsync exists to enforce.
+        // A turn given to an agent with no reason to take one is tokens spent on nothing.
         Register("orders@test", StubRunner.Answering(Workspace("orders@test")));
         Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
 
@@ -610,14 +539,14 @@ public sealed class AgentFleetTests : IDisposable
     [Fact]
     public async Task An_agent_whose_runner_will_not_start_is_reported_and_the_pass_continues()
     {
-        // One misconfigured agent must not end the pass that serves all of them, and it must not
-        // be silent either -- the exchange simply stays owed and nobody learns why.
+        // One misconfigured agent must not end the pass that serves all of them, and it must not be
+        // silent either -- the exchange simply stays owed and nobody learns why.
         Register("orders@test");
         Register("billing@test", "parley-no-such-runner --input-format stream-json");
         Register("shipping@test", StubRunner.Answering(Workspace("shipping@test")));
 
-        Owe("orders@test", "billing@test");
-        Owe("orders@test", "shipping@test");
+        await OweAsync("orders@test", "billing@test");
+        await OweAsync("orders@test", "shipping@test");
 
         await using var fleet = Fleet();
 
@@ -635,8 +564,8 @@ public sealed class AgentFleetTests : IDisposable
         Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
         Register("shipping@test", StubRunner.Answering(Workspace("shipping@test")));
 
-        Owe("orders@test", "billing@test");
-        Owe("orders@test", "shipping@test");
+        await OweAsync("orders@test", "billing@test");
+        await OweAsync("orders@test", "shipping@test");
 
         var fleet = Fleet();
 
@@ -650,5 +579,22 @@ public sealed class AgentFleetTests : IDisposable
         Assert.Empty(fleet.Running);
 
         await fleet.DisposeAsync();
+    }
+
+    private void Retire(string agent)
+    {
+        using var retire = _connection.CreateCommand();
+        retire.CommandText = "UPDATE agents SET status = 'retired' WHERE name = @Name;";
+        retire.Parameters.AddWithValue("@Name", agent);
+        retire.ExecuteNonQuery();
+    }
+
+    private object? StatusOf(string agent)
+    {
+        using var query = _connection.CreateCommand();
+        query.CommandText = "SELECT status FROM agents WHERE name = @Name;";
+        query.Parameters.AddWithValue("@Name", agent);
+
+        return query.ExecuteScalar();
     }
 }

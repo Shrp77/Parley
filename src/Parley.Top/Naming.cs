@@ -177,8 +177,7 @@ internal static class Naming
     }
 
     /// <summary>What is said when a name had to be corrected as it was typed.</summary>
-    internal const string NameWasCorrected =
-        "capitals were lowered and anything but letters, digits and hyphens was dropped";
+    internal const string NameWasCorrected = Parley.Core.NameCorrection.WasCorrected;
 
     /// <summary>
     /// The name rule applied to what is being typed, rather than reported after the fact.
@@ -199,28 +198,17 @@ internal static class Naming
     /// for <see cref="NameProblem"/> to refuse, because guessing what somebody meant is how a
     /// field ends up holding a name they did not choose.
     /// </para>
+    /// <para>
+    /// <b>A space became nothing and now becomes a hyphen</b>, which is the whole of what changed
+    /// here: <c>Order Ledger</c> was corrected to <c>orderledger</c>. That is a name nobody can
+    /// read back, and the owner chose the hyphen for the conversation field on exactly those
+    /// grounds — so the field beside it does not go on swallowing spaces. The rule is
+    /// <see cref="Parley.Core.NameCorrection"/>'s, which is also what an enrolled agent's name and
+    /// a seat are held to: one grammar, one correction.
+    /// </para>
     /// </remarks>
-    internal static string NameCorrection(string? typed)
-    {
-        if (string.IsNullOrEmpty(typed))
-        {
-            return string.Empty;
-        }
-
-        var made = new System.Text.StringBuilder(typed.Length);
-
-        foreach (var character in typed)
-        {
-            var lowered = char.ToLowerInvariant(character);
-
-            if (lowered is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-')
-            {
-                made.Append(lowered);
-            }
-        }
-
-        return made.ToString();
-    }
+    internal static string NameCorrection(string? typed) =>
+        Parley.Core.NameCorrection.Correct(typed);
 
     /// <summary>Why a typed store would be refused, or null.</summary>
     internal static string? StoreProblem(string typed, IReadOnlyList<ProjectSettings> projects)
@@ -352,8 +340,8 @@ internal static class Naming
                     proposed.Endpoint,
                     typed => EndpointProblem(typed, projects)),
                 new FormField(
-                    "Node catalogue (optional) — without one, a question to an agent nobody has "
-                    + "open waits, times out and is ghosted:",
+                    "Node catalogue (optional) — without one, a request to an agent nobody has "
+                    + "open waits until somebody opens it:",
                     proposed.NodeConfig ?? string.Empty),
                 new FormField(
                     "Description (optional) — one line shown beside the name:",

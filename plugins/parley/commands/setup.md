@@ -5,8 +5,8 @@ disable-model-invocation: true
 
 # Set this repository up as a Parley agent
 
-Parley lets an agent in this repository ask an agent in another repository a question, and
-receive an answer, without either seeing the other's files. Getting there takes three things:
+Parley lets an agent in this repository request work of an agent in another repository, or
+something it knows, and receive the result, without either seeing or editing the other's files. Getting there takes three things:
 the server on PATH, a launch configuration naming this repository's agent, and a note telling
 this agent that a peer exists.
 
@@ -97,8 +97,8 @@ merely centralised."* The field is worth routing by because a person meant it.
 does not mean this repository does not own tax, only that it has not been written yet - and
 that half is the one that stops somebody asking the wrong agent. Suggesting it is inventing the
 load-bearing part with confidence. Ask, and take "I don't know yet" for an answer; a name and
-no line still leaves an asker with referral, which is what §17 question 10 says it falls back
-to.
+no line still leaves a requester the name to go on, and a receiver that does not own the work
+asks the agent that does - which is what §17 question 10 says it falls back to.
 
 It must be one line and it is refused at start-up if it is not, so do not paste prose with a
 line break in it. It goes into a JSON file, so escape a quotation mark or a backslash if the
@@ -203,8 +203,8 @@ file with nothing to show which was in force.
 `.mcp.json` is a tracked file in most repositories, so **which branch is checked out decides
 whether this agent exists**. Written on a feature branch, the entry is on disk while that branch
 is out and gone the moment somebody switches to one that predates it — and the agent is then
-simply absent. Nothing errors. The session starts, the tools are not there, and the peer that
-asked it a question waits out its window and is ghosted.
+simply absent. Nothing errors. The session starts, the tools are not there, and the request a
+peer sent it waits, flagged to the person running the deployment as never collected.
 
 It is worse than it first looks, because a session reads `.mcp.json` **once, at startup**. Fixing
 the file, or switching to the branch that has it, does nothing for a session already running:
@@ -304,14 +304,15 @@ about to delete it.
 ## Peers
 
 Other repositories have their own agents, reachable through Parley. They cannot see this
-repository and this repository cannot see theirs: only the text of a question and its answer
+repository and this repository cannot see theirs: only the text of a request and its result
 crosses between them. `parley_inbox` is pull rather than push - call it when you start work,
-and again when you are waiting on a reply.
+and again when you are waiting on a result.
 
 - The roster has not been read yet. Run `/parley:write-peers` to fill this in.
 
-**Do not guess at what these repositories do, and do not edit them. Ask.** A question must say
-what you will do with each possible answer.
+**Do not guess at what these repositories do, and do not edit them.** When you need work done
+in one, or something it knows, send its agent a `parley_request` saying why and what done
+looks like. Do the work other agents request of this repository.
 ```
 
 The placeholder line is deliberate and is not a to-do nobody will action. An agent reading this

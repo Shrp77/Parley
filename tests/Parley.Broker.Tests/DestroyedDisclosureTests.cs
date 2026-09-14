@@ -38,7 +38,7 @@ public sealed class DestroyedDisclosureTests : IDisposable
 
     /// <summary>A payload the schema accepts, kept out of the interpolation.</summary>
     private const string Payload =
-        @"{""question"":""who owns it"",""consequences"":""if it is yours I will ask you to change it, and if it is not I will look elsewhere""}";
+        @"{""intent"":""who owns it"",""items"":[{""id"":""q1"",""kind"":""question"",""text"":""who owns it""}],""done_when"":""if it is yours I will ask you to change it, and if it is not I will look elsewhere""}";
 
     [Fact]
     public void The_record_is_reachable_only_through_the_operator_console()
@@ -134,13 +134,11 @@ public sealed class DestroyedDisclosureTests : IDisposable
                    ('{id}', 'billing@test', '2026-01-01T00:00:00.0000000+00:00');
 
             INSERT INTO exchanges
-                (pair_key, asker, answerer, owed_by, state, conversation_id, opened_utc,
-                 expires_utc, closed_utc, clarify_depth, clarify_depth_cap, delivery_window_ms,
-                 working_window_ms, grace_period_ms, question_hash, resolution)
+                (pair_key, requester, receiver, owed_by, state, conversation_id, opened_utc,
+                 closed_utc, clarify_depth, uncollected_flag_ms, stalled_flag_ms, request_hash, outcome)
             VALUES ('billing@testSEPorders@test', 'orders@test', 'billing@test',
                     'billing@test', 'OPEN', '{id}', '2026-01-01T00:00:00.0000000+00:00',
-                    '2026-01-01T00:30:00.0000000+00:00', NULL, 0, 3, 900000, 3600000, 60000,
-                    'question-hash-{id}', NULL);
+                    NULL, 0, 900000, 14400000, 'request-hash-{id}', NULL);
             """.Replace("SEP", "\u001F", StringComparison.Ordinal));
 
         var exchange = (long)(Scalar("SELECT last_insert_rowid();") ?? 0L);
@@ -151,7 +149,7 @@ public sealed class DestroyedDisclosureTests : IDisposable
                 INSERT INTO messages
                     (exchange_id, type, from_agent, to_agent, responder_model, payload_json,
                      content_hash, conversation_id, created_utc)
-                VALUES ({exchange}, 'question', 'orders@test', 'billing@test', 'some-model-9',
+                VALUES ({exchange}, 'request', 'orders@test', 'billing@test', 'some-model-9',
                         '{Payload}',
                         '{i:x64}', '{id}', '2026-01-01T00:0{i}:00.0000000+00:00');
                 """);

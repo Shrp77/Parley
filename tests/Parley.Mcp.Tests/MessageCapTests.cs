@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Nodes;
+using System.Text.Json.Nodes;
 using Dapper;
 using Parley.Core;
 using Parley.Store;
@@ -12,9 +12,9 @@ namespace Parley.Mcp.Tests;
 /// <remarks>
 /// <para>
 /// The message size cap is a context-poisoning defence rather than a buffer size, and it
-/// lives in the schema so no code path can route around it. That makes it unroutable-around and
-/// it also makes the failure a <c>SqliteException</c> carrying SQL — which is a limit an agent
-/// reaches by working normally, reported in a form it cannot act on. Models are verbose.
+/// lives in the schema so no code path can route around it. That also makes the failure a
+/// <c>SqliteException</c> carrying SQL — a limit an agent reaches by working normally, reported
+/// in a form it cannot act on. Models are verbose.
 /// </para>
 /// <para>
 /// So this pins the shape of the refusal as much as the fact of it: <c>ok: false</c> and a
@@ -25,7 +25,23 @@ public sealed class MessageCapTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);
 
+    private const string DoneWhen = "the tax rate's owner is named and where it is stored";
+
+    /// <summary>
+    /// Room left for the Request around one item's text: the intent, <c>done_when</c> and the JSON.
+    /// </summary>
+    /// <remarks>
+    /// The cap counts the stored payload, so an item's text can never be the whole of it. Generous on
+    /// purpose; what is checked near the boundary is searched for rather than assumed from this.
+    /// </remarks>
+    private const int Wrapper = 400;
+
     private static string Long(int characters) => new('x', characters);
+
+    private static Task<JsonNode> RequestAsync(ParleyTools tools, string text, CancellationToken ct) =>
+        tools.RequestAsync(
+            "billing@test", "Deciding where the tax rate lives.", [new RequestItem("q1", "question", text)], DoneWhen,
+            cancellationToken: ct);
 
     private static void AssertRefusedForLength(JsonNode result)
     {
@@ -38,7 +54,7 @@ public sealed class MessageCapTests
     }
 
     [Fact]
-    public async Task An_oversized_notification_is_refused_with_something_to_do_about_it()
+    public async Task An_oversized_request_is_refused_with_something_to_do_about_it()
     {
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
@@ -46,61 +62,35 @@ public sealed class MessageCapTests
         var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
         var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
-        AssertRefusedForLength(await orders.NotifyAsync(
-            "billing@test", Long(MessageLimits.MaxPayloadCharacters * 2), cancellationToken: ct));
+        AssertRefusedForLength(await RequestAsync(orders, Long(MessageLimits.MaxPayloadCharacters * 2), ct));
 
         // And nothing was delivered, so the refusal is not a report on a message that got through.
         Assert.Empty((await billing.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
     }
 
     [Fact]
-    public async Task An_oversized_question_is_refused()
+    public async Task An_oversized_result_is_refused_and_the_exchange_stays_resolvable()
     {
-        var ct = TestContext.Current.CancellationToken;
-        await using var fixture = new ServerFixture(T0);
-
-        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
-        await fixture.LaunchAsync("billing@test", ct);
-
-        AssertRefusedForLength(await orders.AskAsync(
-            to: "billing@test",
-            intent: "Deciding where the tax rate lives.",
-            subQuestions: [new SubQuestion("q1", Long(MessageLimits.MaxPayloadCharacters))],
-            consequences: "If it does I read it from you; if not I snapshot my own copy.",
-            cancellationToken: ct));
-    }
-
-    [Fact]
-    public async Task An_oversized_answer_is_refused_and_the_exchange_stays_answerable()
-    {
-        // The one where refusing badly would cost most. An answer rejected by the database
-        // leaves the agent holding a debt it has just been told nothing useful about, and its
-        // obvious next move is to send the same thing again.
+        // The one where refusing badly would cost most. A Result rejected by the database leaves
+        // the agent holding work it has just been told nothing useful about, and its obvious next
+        // move is to send the same thing again.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
         var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
         var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
-        var asked = await orders.AskAsync(
-            to: "billing@test",
-            intent: "Deciding where the tax rate lives.",
-            subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
-            consequences: "If it does I read it from you; if not I snapshot my own copy.",
-            cancellationToken: ct);
+        var sent = await RequestAsync(orders, "Does an invoice carry the rate at time of sale?", ct);
 
-        var exchangeId = asked["exchange_id"]!.GetValue<long>();
+        var exchangeId = sent["exchange_id"]!.GetValue<long>();
         Assert.Single((await billing.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
 
-        AssertRefusedForLength(await billing.AnswerAsync(
-            exchangeId,
-            [new Resolution("q1", "answered", Long(MessageLimits.MaxPayloadCharacters))],
-            cancellationToken: ct));
+        AssertRefusedForLength(await billing.ResultAsync(
+            exchangeId, [new ItemOutcome("q1", "answered", Long(MessageLimits.MaxPayloadCharacters))], cancellationToken: ct));
 
         // Shorter, and it lands. The refusal has to be recoverable or it is just a dead end.
-        var second = await billing.AnswerAsync(
-            exchangeId,
-            [new Resolution("q1", "answered", "Yes. invoice_lines.tax_rate is stamped at issue.")],
+        var second = await billing.ResultAsync(
+            exchangeId, [new ItemOutcome("q1", "answered", "Yes. invoice_lines.tax_rate is stamped at issue.")],
             cancellationToken: ct);
 
         Assert.True(second["ok"]?.GetValue<bool>() ?? false, second.ToJsonString());
@@ -109,16 +99,14 @@ public sealed class MessageCapTests
     [Fact]
     public async Task The_guard_never_admits_what_the_database_would_refuse()
     {
-        // The property that makes the guard worth having rather than merely present: it has to
-        // be conservative in one direction. If it ever admitted a message the CHECK then
-        // rejected, an agent would be told its message was fine and get a SqliteException — the
-        // worst of both, and only for messages near the boundary, so it would look like an
-        // intermittent fault rather than a length problem.
+        // The property that makes the guard worth having rather than merely present: it has to be
+        // conservative in one direction. If it ever admitted a message the CHECK then rejected, an
+        // agent would be told its message was fine and get a SqliteException — only near the
+        // boundary, so it would look like an intermittent fault rather than a length problem.
         //
         // Searched rather than asserted at one length, because the boundary is not the number in
-        // MessageLimits: the cap counts the stored JSON, so the wrapper and any escaping come
-        // out of the same budget. Non-ASCII is where that bites — JSON escapes it, so a
-        // character an agent thinks of as one can cost six or twelve.
+        // MessageLimits: the cap counts the stored JSON, so the wrapper and any escaping come out
+        // of the same budget. Every probe either lands or is refused for length; nothing else.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
@@ -131,8 +119,9 @@ public sealed class MessageCapTests
         while (low <= high)
         {
             var middle = (low + high) / 2;
-            var result = await orders.NotifyAsync(
-                "billing@test", new string('x', middle) + $" {middle}", cancellationToken: ct);
+
+            // Distinct per probe, so a duplicate refusal is not what ends the search.
+            var result = await RequestAsync(orders, Long(middle) + $" {middle}", ct);
 
             if (result["ok"]?.GetValue<bool>() ?? false)
             {
@@ -146,18 +135,17 @@ public sealed class MessageCapTests
             }
         }
 
-        // Something is admitted, and it is close to the cap rather than far below it — a guard
-        // that refused everything would also never admit what the database refuses.
-        Assert.InRange(admitted, MessageLimits.MaxPayloadCharacters - 64, MessageLimits.MaxPayloadCharacters);
+        // Something is admitted, and it is close to the cap rather than far below it — a guard that
+        // refused everything would also never admit what the database refuses.
+        Assert.InRange(admitted, MessageLimits.MaxPayloadCharacters - Wrapper, MessageLimits.MaxPayloadCharacters);
     }
 
     [Fact]
     public async Task Text_that_json_escapes_is_measured_after_escaping()
     {
-        // Nine hundred emoji is eighteen hundred UTF-16 units and looks comfortably inside the
-        // cap, but each one escapes to twelve characters in the stored payload. Measuring the
-        // caller's string rather than the JSON would wave this through and let the database
-        // refuse it.
+        // Nine hundred emoji is eighteen hundred UTF-16 units and looks comfortably inside the cap,
+        // but each one escapes to twelve characters in the stored payload. Measuring the caller's
+        // string rather than the JSON would wave this through and let the database refuse it.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
@@ -167,23 +155,20 @@ public sealed class MessageCapTests
         var emoji = string.Concat(Enumerable.Repeat("😀", 900));
         Assert.True(emoji.Length < MessageLimits.MaxPayloadCharacters);
 
-        AssertRefusedForLength(await orders.NotifyAsync("billing@test", emoji, cancellationToken: ct));
+        AssertRefusedForLength(await RequestAsync(orders, emoji, ct));
     }
 
     [Fact]
     public async Task A_message_just_under_the_cap_is_admitted()
     {
-        // The other side, so the guard is not simply refusing everything long. The cap counts the
-        // stored payload rather than the caller's text, so the wrapper has to be left room —
-        // telling an agent its message fits and then failing would be worse than not checking.
+        // The other side, so the guard is not simply refusing everything long.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
         var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
         var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
-        var sent = await orders.NotifyAsync(
-            "billing@test", Long(MessageLimits.MaxPayloadCharacters - 100), cancellationToken: ct);
+        var sent = await RequestAsync(orders, Long(MessageLimits.MaxPayloadCharacters - Wrapper), ct);
 
         Assert.True(sent["ok"]?.GetValue<bool>() ?? false, sent.ToJsonString());
         Assert.Single((await billing.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
@@ -192,30 +177,25 @@ public sealed class MessageCapTests
     [Fact]
     public async Task A_refusal_is_counted_where_the_cap_can_be_argued_from()
     {
-        // The cap is the one number in this protocol nobody has ever had evidence for. This is
-        // where the evidence comes from, so the check is that a refusal an agent actually hits
-        // reaches the record with the type and the length intact -- and that the payload does
-        // not, because keeping the text refused for being too long would retain exactly what the
-        // cap exists to keep out.
+        // The cap's evidence comes from here, so the check is that a refusal an agent actually hits
+        // reaches the record with the type and the length intact — and that the payload does not,
+        // because keeping the text refused for being too long would retain what the cap keeps out.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
         var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
         await fixture.LaunchAsync("billing@test", ct);
 
-        var oversized = new string('x', MessageLimits.MaxPayloadCharacters + 500);
-
-        var refused = await orders.NotifyAsync("billing@test", oversized, cancellationToken: ct);
+        var refused = await RequestAsync(orders, Long(MessageLimits.MaxPayloadCharacters + 500), ct);
 
         Assert.False((bool)refused["ok"]!);
         Assert.Equal("toolong", (string?)refused["refused"]);
 
         var connection = fixture.Connection;
-        var recorded = new SizeRefusalRepository(connection);
-        var only = Assert.Single(await recorded.GetAllAsync(ct));
+        var only = Assert.Single(await new SizeRefusalRepository(connection).GetAllAsync(ct));
 
         Assert.Equal("orders@test", only.Agent.Value);
-        Assert.Equal(MessageType.Notify, only.Type);
+        Assert.Equal(MessageType.Request, only.Type);
         Assert.Equal(1, only.Refusals);
         Assert.True(only.Worst > MessageLimits.MaxPayloadCharacters);
         Assert.Equal(MessageLimits.MaxPayloadCharacters, only.Cap);
@@ -227,60 +207,45 @@ public sealed class MessageCapTests
     [Fact]
     public async Task A_refusal_survives_the_bookkeeping_behind_it_failing()
     {
-        // The recording writes a row keyed on the agent, so anything that makes that write fail
-        // must not reach the agent as an exception: the refusal is the answer it needs, and
-        // instrumentation that can break the thing it measures is not instrumentation. Forced
-        // here by removing the registration the row references, which is the shape of every
-        // reason this write can fail -- a locked database, a full disk, a foreign key.
+        // The recording writes a row keyed on the agent, so anything that makes that write fail must
+        // not reach the agent as an exception: the refusal is the answer it needs. Forced here by
+        // removing the registration the row references, which is the shape of every reason this
+        // write can fail — a locked database, a full disk, a foreign key.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
         var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
         await fixture.LaunchAsync("billing@test", ct);
 
-        {
-            var meddle = fixture.Connection;
-            meddle.Execute("PRAGMA foreign_keys = ON; DELETE FROM agents WHERE name = 'orders@test';");
-        }
+        fixture.Connection.Execute("PRAGMA foreign_keys = ON; DELETE FROM agents WHERE name = 'orders@test';");
 
-        var refused = await orders
-            .NotifyAsync("billing@test", new string('x', MessageLimits.MaxPayloadCharacters + 500),
-                cancellationToken: ct)
+        var refused = await RequestAsync(orders, Long(MessageLimits.MaxPayloadCharacters + 500), ct)
             .WaitAsync(TimeSpan.FromSeconds(15), ct);
 
         Assert.False((bool)refused["ok"]!);
         Assert.Equal("toolong", (string?)refused["refused"]);
 
-        // And the write really did fail, so this is not a check that passes while testing
-        // nothing. ParleyDatabase turns foreign keys on per connection, so the row referencing
-        // a registration that is gone cannot be written.
-        var connection = fixture.Connection;
-
-        Assert.Equal(0, connection.ExecuteScalar<long>("SELECT count(*) FROM size_refusals;"));
+        // And the write really did fail, so this is not a check that passes while testing nothing.
+        Assert.Equal(0, fixture.Connection.ExecuteScalar<long>("SELECT count(*) FROM size_refusals;"));
     }
 
     [Fact]
     public async Task Refusing_does_not_deadlock_on_the_session_gate()
     {
         // The recording takes the same gate every tool call takes, and a SemaphoreSlim is not
-        // reentrant, so a refusal checked from inside the gate rather than before it would hang
-        // the server rather than fail it. The timeout is what turns that into a message: without
-        // it this suite would simply stop, and a hung run reads as infrastructure rather than as
-        // the defect it is.
+        // reentrant, so a refusal checked from inside the gate rather than before it would hang the
+        // server rather than fail it. The timeout turns that into a message.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
         var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
         await fixture.LaunchAsync("billing@test", ct);
 
-        var oversized = new string('x', MessageLimits.MaxPayloadCharacters + 500);
-        var one = new SubQuestion("q1", oversized);
+        var oversized = Long(MessageLimits.MaxPayloadCharacters + 500);
 
-        await orders.AskAsync("billing@test", "intent", [one], "If it fits I keep going; if not I say less.", cancellationToken: ct)
-            .WaitAsync(TimeSpan.FromSeconds(15), ct);
-        await orders.ClarifyAsync(1, oversized, cancellationToken: ct)
-            .WaitAsync(TimeSpan.FromSeconds(15), ct);
-        await orders.NotifyAsync("billing@test", oversized, cancellationToken: ct)
+        await RequestAsync(orders, oversized, ct).WaitAsync(TimeSpan.FromSeconds(15), ct);
+        await orders.ClarifyAsync(1, oversized, cancellationToken: ct).WaitAsync(TimeSpan.FromSeconds(15), ct);
+        await orders.ResultAsync(1, [new ItemOutcome("q1", "answered", oversized)], cancellationToken: ct)
             .WaitAsync(TimeSpan.FromSeconds(15), ct);
 
         // And the session still works afterwards, which is what says the gate was released.

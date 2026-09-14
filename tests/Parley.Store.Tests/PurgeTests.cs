@@ -135,8 +135,8 @@ public sealed class PurgeTests : IDisposable
     [Fact]
     public async Task An_agent_that_has_asked_something_is_deleted_with_its_question()
     {
-        await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
+        await Work.OpenAsync(
+            _connection, Orders, Billing, T0, cancellationToken: TestContext.Current.CancellationToken);
 
         var outcome = await _agents.PurgeAsync(
             Orders, cancellationToken: TestContext.Current.CancellationToken);
@@ -161,21 +161,21 @@ public sealed class PurgeTests : IDisposable
         // This is the cost that makes retirement the right instrument whenever the history
         // matters, and it belongs in a test so nobody re-derives purge as "delete the row and
         // leave the rest" and finds the suite still green.
-        await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
+        await Work.OpenAsync(
+            _connection, Orders, Billing, T0, cancellationToken: TestContext.Current.CancellationToken);
 
         await _agents.PurgeAsync(
             Orders, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Contains(Billing, await Registered());
-        Assert.Equal(0, await Count("SELECT count(*) FROM exchanges WHERE answerer = 'billing@test';"));
+        Assert.Equal(0, await Count("SELECT count(*) FROM exchanges WHERE receiver = 'billing@test';"));
     }
 
     [Fact]
     public async Task An_agent_that_was_asked_something_takes_the_question_with_it()
     {
-        await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
+        await Work.OpenAsync(
+            _connection, Orders, Billing, T0, cancellationToken: TestContext.Current.CancellationToken);
 
         var outcome = await _agents.PurgeAsync(
             Billing, cancellationToken: TestContext.Current.CancellationToken);
@@ -191,8 +191,8 @@ public sealed class PurgeTests : IDisposable
         // The whole reason the keys are deferred to commit rather than the deletes ordered by
         // hand: if any reference were missed the COMMIT fails, so this passing is the database
         // itself confirming the sweep was complete rather than this test trusting a list.
-        await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
+        await Work.OpenAsync(
+            _connection, Orders, Billing, T0, cancellationToken: TestContext.Current.CancellationToken);
 
         await _agents.PurgeAsync(
             Billing, cancellationToken: TestContext.Current.CancellationToken);
@@ -213,8 +213,8 @@ public sealed class PurgeTests : IDisposable
         // sounds right: temporary tables are transactional, so a completed transaction must have
         // dropped them. That argument does not cover the path where the drop is the thing that
         // was forgotten.
-        await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
+        await Work.OpenAsync(
+            _connection, Orders, Billing, T0, cancellationToken: TestContext.Current.CancellationToken);
 
         await _agents.PurgeAsync(Orders, cancellationToken: TestContext.Current.CancellationToken);
 
@@ -305,8 +305,8 @@ public sealed class PurgeTests : IDisposable
     {
         // The blast radius is this agent's own involvement, not the deployment's activity.
         // Otherwise purging anybody would take the whole registry with it.
-        await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
+        await Work.OpenAsync(
+            _connection, Orders, Billing, T0, cancellationToken: TestContext.Current.CancellationToken);
 
         var outcome = await _agents.PurgeAsync(
             Inventory, cancellationToken: TestContext.Current.CancellationToken);
@@ -407,8 +407,8 @@ public sealed class PurgeTests : IDisposable
         // Asserted directly because the pragma is a connection setting that defaults to off, so a
         // connection opened without ParleyDatabase would silently drop the backstop and every
         // other test here would still pass.
-        await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, "q1", cancellationToken: TestContext.Current.CancellationToken);
+        await Work.OpenAsync(
+            _connection, Orders, Billing, T0, cancellationToken: TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<SqliteException>(() =>
             Execute("DELETE FROM agents WHERE name = 'orders@test';"));

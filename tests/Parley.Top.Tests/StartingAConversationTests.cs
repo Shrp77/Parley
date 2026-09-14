@@ -106,7 +106,6 @@ public sealed class StartingAConversationTests : IAsyncDisposable
         var offered = shell.Actions().Select(action => action.Label).ToArray();
 
         Assert.Contains(Participation.StartTitle, offered);
-        Assert.Contains(Participation.StartTellTitle, offered);
     }
 
     [Fact]
@@ -123,28 +122,9 @@ public sealed class StartingAConversationTests : IAsyncDisposable
         await Walking.GoAsync(shell, Viewing.Project);
 
         var form = await Composing.WithAsync(
-            driving, shell.Start, Participation.AskTitle, Orders.Value, () => shell.Settled);
+            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
 
         // The conversation name is the last field, and it arrives suggested rather than empty.
-        Assert.NotEqual(string.Empty, form.Values[^1]);
-
-        form.Finish(taken: false);
-        await shell.Settled;
-    }
-
-    [Fact]
-    public async Task Telling_from_the_list_starts_one_too()
-    {
-        using var driving = Driving.Open();
-        using var directory = Directory();
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = await SeatedAsync(driving, directory, seats);
-
-        await Walking.GoAsync(shell, Viewing.Project);
-
-        var form = await Composing.WithAsync(
-            driving, shell.StartByTelling, Participation.TellTitle, Orders.Value, () => shell.Settled);
-
         Assert.NotEqual(string.Empty, form.Values[^1]);
 
         form.Finish(taken: false);
@@ -196,7 +176,6 @@ public sealed class StartingAConversationTests : IAsyncDisposable
         var offered = shell.Actions().Select(action => action.Label).ToArray();
 
         Assert.DoesNotContain(Participation.StartTitle, offered);
-        Assert.DoesNotContain(Participation.StartTellTitle, offered);
 
         shell.Dispose();
     }

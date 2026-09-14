@@ -395,7 +395,7 @@ public sealed class InstallScriptTests
         // `autostart install` registers a broker-alone entry when given no catalogue, so a script
         // that always calls it that way turns a working deployment into one whose agents are
         // never started -- and the loss arrives days later, on a machine nobody is signed into,
-        // as a question that waits out its window and is ghosted.
+        // as requests that wait, never collected, flagged to a person who may not be looking.
         //
         // The operator ran the script and is reading its output, not the command's, so the
         // command's own warning does not reach them.

@@ -89,8 +89,62 @@ internal sealed class Shell : Window
     /// </remarks>
     internal const string BackStroke = "Esc";
 
+    /// <summary>The most rows the message line may take.</summary>
+    /// <remarks>
+    /// A paragraph, which is what <see cref="FormDialog.Deepest"/> settles on for the same
+    /// question and for the same reason: a screen is one screen, and a message free to grow
+    /// without limit would push the regions somebody opened this to read off the top of it.
+    /// Whatever does not fit is one keystroke away in <see cref="Saying"/>, which scrolls.
+    /// </remarks>
+    internal const int MessageDeepest = 8;
+
+    /// <summary>How many rows the regions keep whatever is being said.</summary>
+    /// <remarks>
+    /// A frame is two rows and a list of nothing is not a list, so six is the least that still
+    /// reads as a region. On a short terminal this is what bounds the message rather than
+    /// <see cref="MessageDeepest"/>.
+    /// </remarks>
+    internal const int LeastRegionRows = 6;
+
+    /// <summary>What copying the open conversation is called.</summary>
+    internal const string CopyTitle = "Copy this conversation to the clipboard";
+
+    /// <summary>The key that copies it.</summary>
+    internal const char CopyKey = 'c';
+
+    /// <summary>What is said when the copy went.</summary>
+    /// <remarks>
+    /// The size is in it because a clipboard gives no other evidence that anything happened: a
+    /// person presses a key, the screen does not change, and the only way to find out whether it
+    /// worked used to be to paste somewhere and look.
+    /// </remarks>
+    internal static string Copied(int characters) =>
+        $"Copied the conversation to the clipboard ({characters} characters).";
+
+    /// <summary>What is said when it did not.</summary>
+    /// <remarks>
+    /// Named rather than silent, and it names the way round it: a clipboard needs a tool this
+    /// machine may not have (<c>xclip</c> on Linux), and over SSH it is the <em>server's</em>
+    /// clipboard the toolkit can reach in any case, which is rarely the one somebody wants.
+    /// </remarks>
+    internal const string NotCopied =
+        "This machine's clipboard could not be written to. `parley export <conversation>` writes "
+        + "the same transcript to a file.";
+
+    /// <summary>What clearing the message line is called.</summary>
+    internal const string ClearTitle = "Clear the message";
+
+    /// <summary>What reading a message too long for the line is called.</summary>
+    internal const string WholeTitle = "Show the whole message";
+
+    /// <summary>The key that clears the message line.</summary>
+    internal const char ClearKey = 'x';
+
+    /// <summary>The key that shows a message the line could not hold.</summary>
+    internal const char WholeKey = 'm';
+
     private readonly BrokerDirectory _directory;
-    private readonly Label _status = new() { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
+    private readonly Plain _status = new() { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
 
     /// <summary>
     /// Where every outcome this surface reports is written.
@@ -117,9 +171,31 @@ internal sealed class Shell : Window
     /// a person nothing at all.
     /// </para>
     /// </remarks>
-    private readonly Label _message = new() { X = 0, Y = Pos.AnchorEnd(2), Width = Dim.Fill() };
+    private readonly Plain _message = new() { X = 0, Y = Pos.AnchorEnd(2), Width = Dim.Fill() };
+
+    /// <summary>How many rows the message line is occupying.</summary>
+    /// <remarks>
+    /// <b>One row was not enough and the owner met it.</b> A broadcast to nineteen agents reports a
+    /// count, a cause and the names — and the cause is a broker's own words, so the line ran off
+    /// the end of the screen mid-sentence, in the one place this surface says what happened. The
+    /// row is as many rows as the message needs now, up to <see cref="MessageDeepest"/>, and the
+    /// panes above it are sized from this rather than from a constant.
+    /// </remarks>
+    private int _messageRows = 1;
+
+    /// <summary>What is being said, before it was wrapped to the screen.</summary>
+    private string _said = string.Empty;
+
     private readonly List<View> _regions;
     private readonly CancellationTokenSource _reading = new();
+
+    // Following the open transcript: the current follow, whether it has a read waiting in the queue,
+    // and the warning it last put on the message line -- kept so that recovering clears its own words
+    // and never somebody else's.
+    private readonly Lock _followGate = new();
+    private CancellationTokenSource? _following;
+    private int _followQueued;
+    private string? _followFailed;
 
     private bool _stacked;
 
@@ -215,6 +291,11 @@ internal sealed class Shell : Window
         // furniture that must be found without being looked for; a message is one sentence in
         // the terminal's own colours, and Colours' rule is that every colour is derived from a
         // word already on the line -- which a message line, being anything at all, has not got.
+
+        // One row until something is said that needs more, and the height is given outright rather
+        // than left to the label: `Show` wraps the text itself, so the rows are counted rather than
+        // guessed at, and the panes above are sized from the same number.
+        _message.Height = 1;
 
         // Every region joins the tree here and none ever leaves it. ArrangeLocked carries why:
         // reparenting on a change of view races the main loop's own walk of this list.
@@ -425,7 +506,7 @@ internal sealed class Shell : Window
             only.X = 0;
             only.Y = 0;
             only.Width = Dim.Fill();
-            only.Height = Dim.Fill(2);
+            only.Height = Dim.Fill(1 + _messageRows);
         }
         else if (stacked)
         {
@@ -441,7 +522,7 @@ internal sealed class Shell : Window
                 pane.X = 0;
                 pane.Y = 0;
                 pane.Width = Dim.Fill();
-                pane.Height = Dim.Fill(2);
+                pane.Height = Dim.Fill(1 + _messageRows);
             }
         }
         else
@@ -452,12 +533,12 @@ internal sealed class Shell : Window
             panes[0].X = 0;
             panes[0].Y = 0;
             panes[0].Width = Dim.Percent(40);
-            panes[0].Height = Dim.Fill(2);
+            panes[0].Height = Dim.Fill(1 + _messageRows);
 
             panes[1].X = Pos.Right(panes[0]);
             panes[1].Y = 0;
             panes[1].Width = Dim.Fill();
-            panes[1].Height = Dim.Fill(2);
+            panes[1].Height = Dim.Fill(1 + _messageRows);
         }
 
         _arranged = true;
@@ -497,6 +578,22 @@ internal sealed class Shell : Window
 
         region.SetFocus();
 
+        DescribeLocked();
+    }
+
+    /// <summary>Writes the status line for wherever the surface is now.</summary>
+    /// <remarks>
+    /// <b>Split out of <see cref="FocusLocked"/> so that redrawing the line does not move focus.</b>
+    /// The captions on it change with the message — clearing is offered only while there is
+    /// something to clear — and the only way to rebuild it used to be to take focus again. A
+    /// message arriving while a dialog is open would then have called <c>SetFocus</c> on a region
+    /// behind that dialog, which is a keystroke landing somewhere nobody is looking.
+    /// </remarks>
+    private void DescribeLocked()
+    {
+        var panes = Panes;
+        var region = panes[FocusedRegion];
+
         // Stacked, the line says which of how many as well as which. A person who has pulled their
         // window in can otherwise see no evidence that the surface has four regions at all, which
         // reads as three of them having been lost to the resize. Naming the other three outright
@@ -528,6 +625,12 @@ internal sealed class Shell : Window
         var back = BackLabel is { } label ? "  " + label : string.Empty;
         var quit = "  " + QuitLabel;
 
+        // **The message's own two actions, beside the ways out rather than among a region's.**
+        // Clearing what was last said is not something the conversations list does; it is
+        // something the surface does, and it is offered only while there is something to clear so
+        // that the line never advertises an action that would do nothing.
+        var about = string.Concat(Messaging().Select(action => "  " + Caption(action)));
+
         var listed = actions.Count == 0
             ? string.Empty
             : "  " + string.Join("  ", actions.Select(Caption));
@@ -557,15 +660,39 @@ internal sealed class Shell : Window
         // list that holds both of them, so the short form is not a screen with no way out -- it is
         // the same way out, one keystroke further away, which is the trade the actions themselves
         // already make.
+        // The message's actions sit between the ways out and the region's own, and drop off the
+        // ladder before either -- the menu holds them, and unlike Escape they are about something
+        // that is already on the screen in front of the person.
+        //
+        // **`?` is on the full line too, which it was not.** The rung that lists everything named
+        // no menu, so on a wide terminal -- where everything fits -- the one route a pointer has
+        // to any action was on no screen at all. contracts/surface.md asks that no action exist
+        // only as a key, and a status line is not clickable. Twelve columns at the width where
+        // there is most room for them.
         _status.Text = Fits(
             room,
-            placed + back + quit + listed,
+            placed + back + quit + about + listed + menu,
+            placed + back + quit + about + menu,
             placed + back + quit + menu,
             placed + menu,
             focus + menu,
             focus + brief,
             focus);
     }
+
+    /// <summary>What can be done about the message line right now.</summary>
+    /// <returns>The actions, which is none when nothing has been said.</returns>
+    /// <remarks>
+    /// <b>Global rather than a region's.</b> <see cref="Actions"/> answers for the pane that has
+    /// focus, and clearing what the surface last said belongs to no pane — it was reported by the
+    /// surface and it is occupying the surface's rows. Offered only while there is something to
+    /// act on, so the status line never names a key that would do nothing.
+    /// </remarks>
+    internal IReadOnlyList<RegionAction> Messaging() =>
+    [
+        .. SaidMore ? new[] { new RegionAction(WholeKey, WholeTitle, Whole) } : [],
+        .. Said.Length > 0 ? new[] { new RegionAction(ClearKey, ClearTitle, Clear) } : [],
+    ];
 
     /// <summary>The first of several status lines that fits, or the shortest when none does.</summary>
     /// <param name="room">How many columns there are.</param>
@@ -622,6 +749,19 @@ internal sealed class Shell : Window
     /// be a menu whose entries silently do nothing.
     /// </remarks>
     private static string Caption(RegionAction action) => $"{action.Key}: {action.Label}";
+
+    /// <summary>How the menu names an action, which is with what it costs.</summary>
+    /// <param name="action">The action.</param>
+    /// <returns>The entry.</returns>
+    /// <remarks>
+    /// The menu has the width for it and the status line does not — see <see cref="RegionAction"/>.
+    /// An em dash rather than brackets, because these read as sentences: "Ask a question — opens an
+    /// exchange they must answer".
+    /// </remarks>
+    private static string Detailed(RegionAction action) =>
+        action.Costs is { Length: > 0 } costs
+            ? $"{Caption(action)} — {costs}"
+            : Caption(action);
 
     /// <summary>Moves focus to the next pane, or the previous one.</summary>
     /// <param name="forwards">Whether to go forwards.</param>
@@ -705,6 +845,8 @@ internal sealed class Shell : Window
                 : [],
 
             new RegionAction('r', Removing.Title, Remove),
+            new RegionAction('y', HealthTitle, ShowHealth),
+            new RegionAction('p', Pruning.Title, PruneSelected),
             new RegionAction('g', FollowLogTitle, FollowLog),
             new RegionAction('e', Onboarding.Title, Enrol),
             new RegionAction('b', OpenConsoleTitle, OpenConsole),
@@ -713,6 +855,16 @@ internal sealed class Shell : Window
         AgentsRegion =>
         [
             new RegionAction('a', Adding.Title, Add),
+
+            // Offered only while there is something to start, so the line never names a key that
+            // would do nothing — and, on a deployment where every agent has registered, never
+            // appears at all.
+            .. NeverRegistered() is { Count: > 0 } waiting
+                ? new[]
+                {
+                    new RegionAction('u', StartEveryTitle(waiting.Count), StartEvery),
+                }
+                : Array.Empty<RegionAction>(),
 
             // Never for a seat, whoever holds it: a person leaves a seat, they are not retired
             // (research R7). Withdrawing refuses one reached by any other route as well.
@@ -733,7 +885,11 @@ internal sealed class Shell : Window
             // What the operator told this agent, and what it said back. Never for a seat: a seat
             // is a person, and nobody instructs themselves.
             .. Agents.Selected is { Seat: false } told
-                ? new[] { new RegionAction('w', ToldTitle + told.Name, ShowTold) }
+                ? new[]
+                {
+                    new RegionAction('w', ToldTitle + told.Name, ShowTold),
+                    new RegionAction('o', Instructing.Title + told.Name, InstructSelected),
+                }
                 : Array.Empty<RegionAction>(),
 
             .. Seats is null
@@ -756,8 +912,7 @@ internal sealed class Shell : Window
             .. Held is not null
                 ? new[]
                 {
-                    new RegionAction('k', Participation.StartTitle, Start),
-                    new RegionAction('t', Participation.StartTellTitle, StartByTelling),
+                    new RegionAction('k', Participation.StartTitle, Start, Owing.Requesting),
                 }
                 : Array.Empty<RegionAction>(),
 
@@ -765,21 +920,37 @@ internal sealed class Shell : Window
                 ? new[]
                 {
                     new RegionAction('h', chosen.Archived ? UnarchiveTitle : ArchiveTitle, ArchiveSelected),
+                    new RegionAction('f', Closing.Title, CloseSelected),
                     new RegionAction('d', Destroying.Title, DestroySelected),
                 }
                 : Array.Empty<RegionAction>(),
 
+            new RegionAction('y', HealthTitle, ShowHealth),
             new RegionAction('b', OpenConsoleTitle, OpenConsole),
         ],
 
         // Taking part needs a seat, because every one of these speaks as somebody. Without one the
         // region still shows a transcript; it simply has no voice to use in it.
-        TranscriptRegion when Held is not null =>
+        //
+        // **Copying does not need one**, which is why this arm is no longer gated on a seat as a
+        // whole: reading a conversation and taking a copy of what you read are the same act, and a
+        // person with no seat is exactly the operator most likely to be quoting a transcript
+        // somewhere else.
+        TranscriptRegion =>
         [
-            new RegionAction('w', Participation.DeliveryTitle, TakeDelivery),
-            new RegionAction('a', Participation.AnswerTitle, Answer),
-            new RegionAction('k', Participation.AskTitle, Ask),
-            new RegionAction('t', Participation.TellTitle, Tell),
+            .. Held is not null
+                ? new[]
+                {
+                    new RegionAction('w', Participation.DeliveryTitle, TakeDelivery),
+                    new RegionAction('a', Participation.ResultTitle, SendResult),
+                    new RegionAction('q', Participation.ClarifyTitle, Clarify),
+                    new RegionAction('k', Participation.RequestTitle, SendRequest, Owing.Requesting),
+                }
+                : Array.Empty<RegionAction>(),
+
+            .. Transcript.Open is not null
+                ? new[] { new RegionAction(CopyKey, CopyTitle, Copy) }
+                : Array.Empty<RegionAction>(),
         ],
 
         _ => [],
@@ -805,10 +976,20 @@ internal sealed class Shell : Window
             return Task.CompletedTask;
         }
 
+        // The message's actions are in the menu for the reason back and quit are: no action on this
+        // surface exists only as a key, and a status line that has fallen back to `?: actions` has
+        // taken their captions off the screen.
+        var about = Messaging();
+
         var menu = Prompting.Choose(
             ActionsTitle,
             NameOf(Panes[FocusedRegion]),
-            [.. back is null ? [] : new[] { back }, .. actions.Select(Caption), QuitLabel]);
+            [
+                .. back is null ? [] : new[] { back },
+                .. about.Select(Detailed),
+                .. actions.Select(Detailed),
+                QuitLabel,
+            ]);
 
         var token = Prompting.Open(app, menu);
 
@@ -830,7 +1011,7 @@ internal sealed class Shell : Window
                 return;
             }
 
-            if (actions.FirstOrDefault(a => Caption(a) == chosen) is { } taken)
+            if (about.Concat(actions).FirstOrDefault(a => Detailed(a) == chosen) is { } taken)
             {
                 _ = taken.Run();
             }
@@ -1119,9 +1300,121 @@ internal sealed class Shell : Window
             // this surface's own words and some are a broker's -- `The broker refused the join:`
             // ends with whatever came back from the far end of a gRPC call -- and a message line is
             // as good a place to smuggle an escape sequence as a transcript is.
-            _message.Text = Safe.Text(value);
+            _said = Safe.Text(value);
+
+            Show();
         }
     } = string.Empty;
+
+    /// <summary>Whether what is being said is longer than the line can hold.</summary>
+    internal bool SaidMore { get; private set; }
+
+    /// <summary>The dialog showing the whole message, once one has been opened.</summary>
+    internal Saying? Showing { get; private set; }
+
+    /// <summary>The message as it is drawn, one entry per row.</summary>
+    /// <remarks>
+    /// What a test reads to find out whether a sentence reached the screen whole.
+    /// <see cref="Said"/> is the string that was set; this is what the person can see of it.
+    /// </remarks>
+    internal IReadOnlyList<string> Shown =>
+        _message.Text.ReplaceLineEndings("\n").Split('\n');
+
+    /// <summary>
+    /// Draws the message at whatever height it needs, and sizes the panes to what is left.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Wrapped here rather than by the label.</b> The breaks are then this surface's own, which
+    /// is the same bargain <see cref="Safe.Lines"/> strikes — and the row count is known rather
+    /// than inferred, which is what the panes above have to be sized against. A label left to wrap
+    /// itself is a label whose height nothing can agree with.
+    /// </para>
+    /// <para>
+    /// <b>Bounded, and it says when it is bounding.</b> The last row names the key that shows the
+    /// rest, because the rule this surface is built on is that nothing is silently cut — the
+    /// status line drops whole captions rather than clipping one, and the transcript wraps rather
+    /// than trimming. A message with more to it than fits is the same problem arriving in the one
+    /// row that exists to report problems.
+    /// </para>
+    /// <para>
+    /// Laid out under <see cref="_screen"/> like everything else that changes the arrangement: this
+    /// is reached from queued work on a pool thread, and <c>ArrangeLocked</c>'s own remark records
+    /// what the main loop is doing to the same views at the same time.
+    /// </para>
+    /// </remarks>
+    private void Show()
+    {
+        var width = Viewport.Width > 0 ? Viewport.Width : Threshold;
+        var height = Viewport.Height > 0 ? Viewport.Height : 24;
+        var room = Math.Clamp(height - 1 - LeastRegionRows, 1, MessageDeepest);
+
+        IReadOnlyList<string> pieces = _said.Length == 0
+            ? [string.Empty]
+            : TranscriptRegion.Wrap(_said, width);
+
+        SaidMore = pieces.Count > room;
+
+        IReadOnlyList<string> shown = SaidMore
+            ? [.. pieces.Take(room - 1), $"{WholeKey}: {WholeTitle}"]
+            : pieces;
+
+        _message.Text = string.Join(Environment.NewLine, shown);
+
+        lock (_screen)
+        {
+            if (shown.Count != _messageRows)
+            {
+                _messageRows = shown.Count;
+                _message.Y = Pos.AnchorEnd(1 + _messageRows);
+                _message.Height = _messageRows;
+
+                // The heights alone, rather than a whole rearrangement: the panes on screen are
+                // the right panes already, and `ArrangeLocked` ends by taking focus — which a
+                // message must not do, since one can arrive while somebody is typing in a dialog.
+                foreach (var pane in Panes)
+                {
+                    pane.Height = Dim.Fill(1 + _messageRows);
+                }
+            }
+
+            // The captions change with the message: clearing is offered only while there is
+            // something to clear, and the whole of it only while the line is holding part of it.
+            DescribeLocked();
+        }
+    }
+
+    /// <summary>Takes the message off the screen and gives its rows back.</summary>
+    /// <returns>When it has gone.</returns>
+    /// <remarks>
+    /// Asked for by the owner in the same breath as the line being too short: a report that has
+    /// been read is a report occupying rows somebody wants back. Nothing else clears it — a
+    /// message stands until the next one replaces it or this removes it, because a line that faded
+    /// on a timer would take the one record of what happened with it.
+    /// </remarks>
+    internal Task Clear()
+    {
+        Said = string.Empty;
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Shows a message the line could not hold, whole.</summary>
+    /// <returns>When the dialog is open.</returns>
+    internal Task Whole()
+    {
+        if (App is not { } app || _said.Length == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        // The session token is dropped and Escape closes it, exactly as `Telling` does: a dialog
+        // that only shows something has one way out and no decision to take.
+        Showing = Saying.Open(
+            app, _said, Viewport.Width > 0 ? Viewport.Width - 4 : Threshold).View;
+
+        return Task.CompletedTask;
+    }
 
     /// <summary>Puts a sentence on the message line.</summary>
     /// <param name="said">What to say.</param>
@@ -1155,6 +1448,7 @@ internal sealed class Shell : Window
                     await new BrokerClient(_directory.ClientFor(asked))
                         .StartAsync(agent, "it was just added", token).ConfigureAwait(false))
                     .ConfigureAwait(false),
+                RegisteredIn,
                 Queue,
                 async said =>
             {
@@ -1165,6 +1459,310 @@ internal sealed class Shell : Window
                 _lastAdded,
                 workspace => _lastAdded = workspace)
             : Task.CompletedTask;
+
+    /// <summary>Puts the open conversation on the clipboard.</summary>
+    /// <returns>When it has been tried.</returns>
+    /// <remarks>
+    /// <b>What is on the screen, rather than what the export writes.</b> The two differ —
+    /// <c>Transcript.Write</c> flattens every payload onto one line, because a text file has no
+    /// defence against a payload shaped like an annotation — and this surface has a defence: the
+    /// indent, which every line but a header carries. So a copy of what somebody is looking at is
+    /// both the more readable artefact and a safe one, and it is what they asked for when they
+    /// asked to copy the conversation.
+    /// </remarks>
+    internal Task Copy()
+    {
+        if (App is not { } app || Transcript.Open is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var written = Transcript.Written;
+
+        Said = Copier(app, written) ? Copied(written.Length) : NotCopied;
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// How this surface reaches the machine's clipboard.
+    /// </summary>
+    /// <remarks>
+    /// A seam, and it exists for exactly the reason <see cref="Opener"/> does: the suite drives
+    /// this surface and a test that pressed the key would overwrite whatever the person running
+    /// it had on their clipboard. That defect has been paid for once already, with a browser tab
+    /// per test run, and the note on <see cref="Opener"/> is the record of it.
+    /// </remarks>
+    internal Func<IApplication, string, bool> Copier { get; set; } = Clipboards.Write;
+
+    /// <summary>How often an open transcript is read again, or null not to read it again at all.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Asked for by the owner, who asked an agent a question, got the answer in forty-seven seconds,
+    /// and saw nothing until they closed the transcript and opened it again.</b> A transcript was read
+    /// once, when it was opened. The web console at least says when its page has fallen behind; this
+    /// surface said nothing and showed a conversation as it had been.
+    /// </para>
+    /// <para>
+    /// <b>Polled, rather than driven by the seat's stream.</b> The stream speaks only to a seat and only
+    /// about its own mail, while a transcript is as often an operator with no seat reading two agents
+    /// talk. One mechanism that works for both at a few seconds' delay is better than a fast one for half
+    /// the cases and a second one for the rest. Three seconds rather than one because §16 permits a
+    /// broker across a private network, and each read is an export across whatever is in between.
+    /// </para>
+    /// <para>
+    /// <b>A seam, for the reason <see cref="Opener"/> is one.</b> The harness never pumps the main loop,
+    /// and <see cref="Settled"/> is what makes a driven journey deterministic: a surface queueing a read
+    /// every few seconds on its own would make assertions across the suite race it. Driving turns it
+    /// off; the tests of following turn it back on.
+    /// </para>
+    /// </remarks>
+    internal TimeSpan? FollowEvery { get; set; } = TimeSpan.FromSeconds(3);
+
+    /// <summary>What is said when an open transcript could not be read again.</summary>
+    /// <param name="problem">What the read reported, which is a broker's words and neutralised.</param>
+    /// <returns>The sentence.</returns>
+    /// <remarks>
+    /// Said, and the transcript left as it was. Replacing what somebody is reading with an error would
+    /// take the conversation off the screen because of a moment's trouble reaching the broker; saying
+    /// nothing would leave it asserting it is current, which is the failure following exists to remove.
+    /// </remarks>
+    internal static string NotFollowing(string? problem) =>
+        $"This conversation could not be read again ({Safe.Text(problem ?? "the broker did not answer")}), " +
+        "so what is on screen may be out of date. It is tried again every few seconds.";
+
+    /// <summary>Starts reading a transcript again every <see cref="FollowEvery"/>, ending any earlier follow.</summary>
+    /// <param name="project">The project the conversation belongs to.</param>
+    /// <param name="conversationId">The conversation now open.</param>
+    private void StartFollowing(ProjectSettings project, string conversationId)
+    {
+        if (FollowEvery is not { } every)
+        {
+            return;
+        }
+
+        CancellationToken stop;
+
+        lock (_followGate)
+        {
+            if (_closed)
+            {
+                return;
+            }
+
+            _following?.Cancel();
+            _following?.Dispose();
+
+            try
+            {
+                _following = CancellationTokenSource.CreateLinkedTokenSource(_reading.Token);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Closing while this opened. Nothing to follow for.
+                _following = null;
+
+                return;
+            }
+
+            stop = _following.Token;
+        }
+
+        _followFailed = null;
+        _ = FollowAsync(project, conversationId, every, stop);
+    }
+
+    /// <summary>Queues a read of the open transcript every interval, until it is left.</summary>
+    /// <param name="project">The project.</param>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="every">The interval.</param>
+    /// <param name="stop">Ended by another conversation opening, or the surface closing.</param>
+    /// <returns>When following has stopped.</returns>
+    private async Task FollowAsync(
+        ProjectSettings project, string conversationId, TimeSpan every, CancellationToken stop)
+    {
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(every, stop).ConfigureAwait(false);
+
+                if (!StillReading(conversationId))
+                {
+                    return;
+                }
+
+                // One read waiting at a time. A broker slower than the interval would otherwise stack a
+                // read per tick behind the first, and every action somebody took would wait on all of them.
+                if (Interlocked.CompareExchange(ref _followQueued, 1, 0) == 0)
+                {
+                    Queue(token => FollowOnceAsync(project, conversationId, token));
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Another conversation was opened, or the surface is closing. This is how it ends.
+        }
+    }
+
+    /// <summary>Whether a conversation is still the one on screen.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <returns>Whether the view is a transcript and that transcript is this conversation.</returns>
+    private bool StillReading(string conversationId)
+    {
+        Viewing viewing;
+
+        lock (_screen)
+        {
+            viewing = _place.Viewing;
+        }
+
+        return viewing == Viewing.Conversation
+            && string.Equals(Transcript.Open, conversationId, StringComparison.Ordinal);
+    }
+
+    /// <summary>Reads the open transcript once, and redraws it if it has changed.</summary>
+    /// <param name="project">The project.</param>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="cancellationToken">Stops the read.</param>
+    /// <returns>When it has been read.</returns>
+    private async Task FollowOnceAsync(
+        ProjectSettings project, string conversationId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!StillReading(conversationId))
+            {
+                return;
+            }
+
+            var read = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(_directory.ClientFor(project))
+                    .ExportAsync(conversationId, cancellationToken).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            if (read.Value is { } export)
+            {
+                // Recovered: take back the warning, but only if nothing has been said since.
+                if (_followFailed is { } warned && string.Equals(Said, warned, StringComparison.Ordinal))
+                {
+                    Said = string.Empty;
+                }
+
+                _followFailed = null;
+                _ = Transcript.Follow(conversationId, project.Name.Value, export);
+
+                return;
+            }
+
+            // Once per outage rather than once per tick, which would bury anything else said meanwhile.
+            if (_followFailed is null && StillReading(conversationId))
+            {
+                _followFailed = NotFollowing(read.Problem);
+                Said = _followFailed;
+            }
+        }
+        finally
+        {
+            _ = Interlocked.Exchange(ref _followQueued, 0);
+        }
+    }
+
+    /// <summary>What starting every unregistered agent in this project is called.</summary>
+    /// <remarks>
+    /// The count is in the label because that is the last moment to say it, which is the rule the
+    /// broadcast row is built on: this launches one process per agent on this machine.
+    /// </remarks>
+    /// <param name="howMany">How many would be started.</param>
+    /// <returns>The label.</returns>
+    internal static string StartEveryTitle(int howMany) =>
+        $"Start the {howMany} that have never registered";
+
+    /// <summary>Every agent here that nothing has ever registered, and this machine can start.</summary>
+    /// <returns>Their names, in the order the roster shows them.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>§14 counts a name nothing has registered as unroutable</b>, and refuses every message
+    /// type to one — so these are not quiet agents, they are unaddressable ones, and no Request
+    /// will wake them. What reaches them is an operator start, which is what
+    /// §12.3's closing paragraph routes through the catalogue.
+    /// </para>
+    /// <para>
+    /// <b>Which is why this exists at all.</b> 012 step 1 made enrolment leave an agent registered
+    /// so that nobody has to open nineteen repositories by hand; a deployment enrolled before that,
+    /// or one whose starts did not take, is left in exactly the state it removed — and the only
+    /// remedies on this screen were nineteen separate keystrokes or nineteen editors.
+    /// </para>
+    /// <para>
+    /// Retired agents are left out, as they are from a broadcast: an operator retired them, and
+    /// starting them would be this screen undoing that quietly.
+    /// </para>
+    /// </remarks>
+    internal IReadOnlyList<AgentName> NeverRegistered() =>
+    [
+        .. Agents.Standings
+            .Where(row => !row.Seat && !row.Retired && !row.EverRun && row.StartableHere)
+            .OrderBy(row => row.Name, StringComparer.Ordinal)
+            .Select(row => Resolve(row.Name, out var peer) ? (AgentName?)peer : null)
+            .OfType<AgentName>(),
+    ];
+
+    /// <summary>Starts every agent here that has never registered, and says what happened.</summary>
+    /// <returns>When the run is over.</returns>
+    /// <remarks>
+    /// Queued like every other action, so the surface stays drawn while it runs: this is one
+    /// process launch per agent and a wait on each, which is the slowest thing this screen does.
+    /// </remarks>
+    internal Task StartEvery()
+    {
+        if (Current is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        var waiting = NeverRegistered();
+
+        Queue(async cancellationToken =>
+        {
+            Said = await Starting.EveryAsync(
+                waiting,
+                (agent, token) => BrokerDirectory.ReadAsync(async () =>
+                    await new BrokerClient(_directory.ClientFor(project))
+                        .StartAsync(agent, "an operator started every unregistered agent", token)
+                        .ConfigureAwait(false)),
+                (agent, token) => RegisteredIn(project, agent, token),
+                Starting.Patience,
+                TimeProvider.System,
+
+                // **Said while it happens, because this is the slowest thing on the screen.**
+                // Nineteen launches and a wait is a minute of a surface that would otherwise say
+                // nothing at all, and a surface that says nothing is one somebody assumes has hung.
+                Report,
+                cancellationToken).ConfigureAwait(false);
+
+            await SelectAsync(project, cancellationToken).ConfigureAwait(false);
+        });
+
+        return Settled;
+    }
+
+    /// <summary>Whether a project's registry holds an agent now.</summary>
+    /// <param name="project">The project to ask.</param>
+    /// <param name="agent">The agent to look for.</param>
+    /// <param name="cancellationToken">Stops the read.</param>
+    /// <returns>Whether it is there, or why the project could not be asked.</returns>
+    /// <remarks>
+    /// <b>The registry is the only thing that knows.</b> §12.3 makes registration the adapter's own
+    /// act on attach, so nothing this surface does can write one and nothing it is told by a node
+    /// proves one happened. Every claim here that an agent is addressable comes through this.
+    /// </remarks>
+    internal Task<ProjectRead<bool>> RegisteredIn(
+        ProjectSettings project, AgentName agent, CancellationToken cancellationToken) =>
+        BrokerDirectory.ReadAsync(async () =>
+            (await new BrokerClient(_directory.ClientFor(project))
+                .RegistryAsync(cancellationToken).ConfigureAwait(false))
+            .Any(row => row.Name == agent));
 
     /// <summary>The repository this session last added, or null when it has added none.</summary>
     /// <remarks>
@@ -1454,7 +2052,13 @@ internal sealed class Shell : Window
         var dialog = Prompting.Text(
             AgentsRegion.JoinTitle,
             AgentsRegion.JoinQuestion,
-            problem: AgentsRegion.NameProblem);
+            problem: AgentsRegion.NameProblem,
+
+            // The correction is `Seat`'s own, not this surface's: it is the same rule `TryRead`
+            // applies a moment later, and the console's join form applies it too. A copy here
+            // would be a third opinion about what a person may call themselves.
+            correct: Seat.Correct,
+            corrected: Seat.WasCorrected);
 
         var token = Prompting.Open(app, dialog);
 
@@ -1529,33 +2133,32 @@ internal sealed class Shell : Window
         return Task.CompletedTask;
     }
 
-    /// <summary>Answers one of the questions this person owes.</summary>
+    /// <summary>Sends the Result of one of the Requests this person owes.</summary>
     /// <returns>When the dialog has been opened.</returns>
     /// <remarks>
-    /// The sub-question identifiers come from the broker rather than from the delivered payload.
-    /// §5.3 answers by identifier and the store holds what was actually asked; a form built from a
-    /// document this process parsed would be a second opinion about it, and the one that disagrees
-    /// produces an answer resolving a sub-question nobody asked.
+    /// The item identifiers come from the Request as delivered. The broker checks the Result against
+    /// the stored Request and names the items it expected when they do not match, so the form cannot
+    /// close an exchange on items nobody asked about.
     /// </remarks>
-    internal Task Answer()
+    internal Task SendResult()
     {
         if (App is not { } app || Held is not { } hold || Voice() is not { } voice)
         {
             return Task.CompletedTask;
         }
 
-        var owed = hold.Delivered.Where(one => one.Owes).ToList();
+        var owed = hold.Delivered.Where(one => one.OwesResult).ToList();
 
         if (owed.Count == 0)
         {
-            Said = "You owe nothing. Take delivery to see what is waiting.";
+            Said = "You owe no result. Take delivery to see what is waiting.";
 
             return Task.CompletedTask;
         }
 
         var choosing = Prompting.Choose(
-            Participation.AnswerTitle,
-            "Which question?",
+            Participation.ResultTitle,
+            "Which request?",
             [.. owed.Select(Participation.Label)]);
 
         var token = Prompting.Open(app, choosing);
@@ -1566,14 +2169,16 @@ internal sealed class Shell : Window
 
             var chosen = owed.Find(one => Participation.Label(one) == picked);
 
-            if (chosen is null || chosen.Message.ExchangeId is not { } exchange)
+            if (chosen is null)
             {
                 Said = picked is null
                     ? string.Empty
-                    : "That message is not part of an exchange to answer.";
+                    : "That request is no longer one you hold.";
 
                 return;
             }
+
+            var exchange = chosen.Message.ExchangeId;
 
             // Asked for again rather than used as captured, for the reason `Compose` carries — and
             // more sharply here, because answering settles somebody else's exchange. A dialog is
@@ -1596,15 +2201,11 @@ internal sealed class Shell : Window
         return Task.CompletedTask;
     }
 
-    /// <summary>Asks a peer a question, in the conversation on screen.</summary>
+    /// <summary>Sends a participant a Request, in the conversation on screen.</summary>
     /// <returns>When the dialog has been opened.</returns>
-    internal Task Ask() => Compose(asking: true, Transcript.Open);
+    private Task SendRequest() => Compose(Transcript.Open);
 
-    /// <summary>Tells a peer something, in the conversation on screen.</summary>
-    /// <returns>When the dialog has been opened.</returns>
-    internal Task Tell() => Compose(asking: false, Transcript.Open);
-
-    /// <summary>Asks a peer a question, opening a new conversation.</summary>
+    /// <summary>Sends a participant a Request, opening a new conversation.</summary>
     /// <returns>When the dialog has been opened.</returns>
     /// <remarks>
     /// <para>
@@ -1617,14 +2218,10 @@ internal sealed class Shell : Window
     /// <para>
     /// The same form either way. What differs is the name it suggests — a new one here, the open one
     /// from a transcript — which is the whole of the difference between starting and continuing, and
-    /// was already what `Ask` did before it had anywhere sensible to be offered from.
+    /// was already what `SendRequest` did before it had anywhere sensible to be offered from.
     /// </para>
     /// </remarks>
-    internal Task Start() => Compose(asking: true, inConversation: null);
-
-    /// <summary>Tells a peer something, opening a new conversation.</summary>
-    /// <returns>When the dialog has been opened.</returns>
-    internal Task StartByTelling() => Compose(asking: false, inConversation: null);
+    internal Task Start() => Compose(inConversation: null);
 
     /// <summary>Releases this person's seat, in every project at once.</summary>
     /// <returns>When it has been released.</returns>
@@ -1770,6 +2367,19 @@ internal sealed class Shell : Window
         }
 
         foreach (var action in Actions())
+        {
+            if (Typed(key, action.Key))
+            {
+                _ = action.Run();
+
+                return true;
+            }
+        }
+
+        // **After the region's, so a pane's own letter always wins.** These two are on every
+        // screen, and a global key that shadowed a region's would take an action away from
+        // wherever it was added later — silently, and only on the screens that had it.
+        foreach (var action in Messaging())
         {
             if (Typed(key, action.Key))
             {
@@ -1977,6 +2587,189 @@ internal sealed class Shell : Window
         });
     }
 
+    /// <summary>What showing a project's health is called.</summary>
+    private const string HealthTitle = "What needs you, and what the work came to";
+
+    /// <summary>Shows the project's flags, waits, results, refusals and clarifications.</summary>
+    /// <returns>When the reading has finished.</returns>
+    /// <remarks>
+    /// The project on screen, or the one under the cursor in the projects list, since this is offered from both.
+    /// </remarks>
+    private Task ShowHealth()
+    {
+        if (App is not { } app || (Current ?? Projects.Selected) is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        Queue(async cancellationToken =>
+        {
+            var client = new BrokerClient(_directory.ClientFor(project));
+
+            var read = await BrokerDirectory.ReadAsync(async () => Health.Lines(
+                await client.FlagsAsync(cancellationToken).ConfigureAwait(false),
+                await client.WaitingAsync(cancellationToken).ConfigureAwait(false),
+                await client.ResultsAsync(cancellationToken).ConfigureAwait(false),
+                await client.RefusalsAsync(cancellationToken).ConfigureAwait(false),
+                await client.ClarificationsAsync(cancellationToken).ConfigureAwait(false))).ConfigureAwait(false);
+
+            if (!read.Reachable)
+            {
+                Said = read.Problem!;
+
+                return;
+            }
+
+            _ = Health.Open(app, project.Name.Value, read.Value!);
+        });
+
+        return Settled;
+    }
+
+    /// <summary>Opens the dialogs that close the selected conversation now.</summary>
+    /// <returns>When the first dialog is open.</returns>
+    private Task CloseSelected()
+    {
+        if (App is not { } app
+            || Conversations.Selected is not { } conversation
+            || Current is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        var row = ConversationsView.Rows([conversation])[0];
+        var client = new BrokerClient(_directory.ClientFor(project));
+
+        return Closing.OpenAsync(app, client, row, Queue, async said =>
+        {
+            Said = said;
+
+            await SelectAsync(project, _reading.Token).ConfigureAwait(false);
+        });
+    }
+
+    /// <summary>Opens the form that instructs the agent under the cursor.</summary>
+    /// <returns>When the form is open.</returns>
+    private Task InstructSelected()
+    {
+        if (App is not { } app
+            || Current is not { } project
+            || Agents.Selected is not { Seat: false } row
+            || !AgentName.TryCreate(row.Name, out var agent))
+        {
+            return Task.CompletedTask;
+        }
+
+        return Instructing.OpenAsync(
+            app, new BrokerClient(_directory.ClientFor(project)), agent, Queue, said =>
+            {
+                Said = said;
+
+                return Task.CompletedTask;
+            });
+    }
+
+    /// <summary>Opens the dialogs that apply the retention policy of the selected project now.</summary>
+    /// <returns>When the first dialog is open.</returns>
+    private Task PruneSelected()
+    {
+        if (App is not { } app || (Current ?? Projects.Selected) is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        return Pruning.OpenAsync(
+            app, new BrokerClient(_directory.ClientFor(project)), project, Queue, said =>
+            {
+                Said = said;
+
+                return Task.CompletedTask;
+            });
+    }
+
+    /// <summary>Sends a clarification on something this person holds.</summary>
+    /// <returns>When the dialog has been opened.</returns>
+    /// <remarks>
+    /// Offered on anything owed — a Request, to ask its requester for what only it can give, or a Clarify, to
+    /// answer it. The seat is asked for again at the send, for the reason <see cref="SendResult"/> gives.
+    /// </remarks>
+    private Task Clarify()
+    {
+        if (App is not { } app || Held is not { } hold || Voice() is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var held = hold.Delivered.Where(one => one.Owes).ToList();
+
+        if (held.Count == 0)
+        {
+            Said = "You hold nothing to clarify. Take delivery to see what is waiting.";
+
+            return Task.CompletedTask;
+        }
+
+        var choosing = Prompting.Choose(Participation.ClarifyTitle, "Which one?", [.. held.Select(Participation.Label)]);
+        var picking = Prompting.Open(app, choosing);
+
+        choosing.Done += (_, picked) =>
+        {
+            Prompting.Close(app, picking);
+
+            var chosen = held.Find(one => Participation.Label(one) == picked);
+
+            if (chosen is null)
+            {
+                Said = picked is null ? string.Empty : "That is no longer one you hold.";
+
+                return;
+            }
+
+            var form = new FormDialog(
+                Participation.ClarifyTitle + Environment.NewLine + Participation.Asked(chosen),
+                [new FormField("What do you need from them, or what did they ask for?", string.Empty, Participation.RequiredProblem, Long: true)]);
+
+            var writing = Prompting.Open(app, form);
+
+            form.Done += (_, values) =>
+            {
+                Prompting.Close(app, writing);
+
+                if (values is null)
+                {
+                    Said = string.Empty;
+
+                    return;
+                }
+
+                var text = values[0];
+
+                Queue(async cancellationToken =>
+                {
+                    if (Voice() is not { } speaking || Held is not { } holding)
+                    {
+                        Said = Participation.Gone;
+
+                        return;
+                    }
+
+                    var sent = await speaking
+                        .ClarifyAsync(holding, chosen.Message.ExchangeId, text, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    Said = sent.Says;
+
+                    if (Current is { } project)
+                    {
+                        await SelectAsync(project, cancellationToken).ConfigureAwait(false);
+                    }
+                });
+            };
+        };
+
+        return Task.CompletedTask;
+    }
+
     /// <summary>Reads one conversation and draws it.</summary>
     /// <param name="project">The project it belongs to.</param>
     /// <param name="conversationId">Which conversation.</param>
@@ -1995,6 +2788,13 @@ internal sealed class Shell : Window
             .ConfigureAwait(false);
 
         Transcript.Show(conversationId, project.Name.Value, read.Value, read.Problem);
+
+        // Followed only once it has been read. A conversation that could not be read already says why,
+        // and asking a broker that did not answer every few seconds would say it again each time.
+        if (read.Problem is null)
+        {
+            StartFollowing(project, conversationId);
+        }
     }
 
     /// <summary>
@@ -2036,21 +2836,20 @@ internal sealed class Shell : Window
         return answers.ToDictionary(a => a.Value, a => a.Health, StringComparer.Ordinal);
     }
 
-    /// <summary>Collects an answer per sub-question, then sends them together.</summary>
+    /// <summary>Collects an outcome per item, then sends them together as the Result.</summary>
     /// <param name="app">The application the dialogs open in.</param>
-    /// <param name="voice">The person's own agent operations.</param>
-    /// <param name="hold">The seat holding the question.</param>
-    /// <param name="owed">The delivered question.</param>
+    /// <param name="voice">The person's own participant operations.</param>
+    /// <param name="hold">The seat holding the Request.</param>
+    /// <param name="owed">The delivered Request.</param>
     /// <param name="exchange">The exchange it belongs to.</param>
     /// <param name="cancellationToken">Cancels the calls.</param>
-    /// <returns>When the answer has been sent, or abandoned.</returns>
+    /// <returns>When the Result has been sent, or abandoned.</returns>
     /// <remarks>
-    /// One form for the whole exchange rather than a dialog per sub-question: a person answering
-    /// the third cannot otherwise revise the first, which is exactly when they notice the first was
-    /// answering something narrower than was asked. The outcome for each is chosen from
-    /// <c>SeatVoice.Outcomes</c>, so <c>ghosted</c> can never appear among them.
+    /// One form for the whole exchange rather than a dialog per item: a person reporting on the third cannot
+    /// otherwise revise the first. The outcome for each is chosen from <c>SeatVoice.Outcomes</c>, so
+    /// <c>closed</c> can never appear among them.
     /// </remarks>
-    private async Task ResolveAsync(
+    private Task ResolveAsync(
         IApplication app,
         SeatVoice voice,
         SeatHold hold,
@@ -2058,29 +2857,25 @@ internal sealed class Shell : Window
         long exchange,
         CancellationToken cancellationToken)
     {
-        var ids = await voice.SubQuestionsAsync(exchange, cancellationToken).ConfigureAwait(false);
+        var ids = owed.Items();
 
         if (ids.Count == 0)
         {
-            Said = "The broker says that exchange asked nothing to resolve.";
+            Said = "That request carried no items this can report on.";
 
-            return;
+            return Task.CompletedTask;
         }
 
         var fields = new List<FormField>();
 
         foreach (var id in ids)
         {
-            fields.Add(new FormField(
-                $"{id} — how does it resolve? ({string.Join(" / ", SeatVoice.Outcomes.Select(o => o.Value))})",
-                SeatVoice.Outcomes[0].Value,
-                Outcome));
-
-            fields.Add(new FormField($"{id} — your answer:", string.Empty, Participation.AnswerProblem));
+            fields.Add(new FormField(Participation.OutcomeLabel(id), SeatVoice.Outcomes[0].Value, Outcome));
+            fields.Add(new FormField(Participation.SaidLabel(id), string.Empty, Participation.ResultProblem));
         }
 
         var form = new FormDialog(
-            Participation.AnswerTitle + Environment.NewLine + Participation.Asked(owed),
+            Participation.ResultTitle + Environment.NewLine + Participation.Asked(owed),
             fields);
 
         var token = Prompting.Open(app, form);
@@ -2113,9 +2908,9 @@ internal sealed class Shell : Window
                 }
 
                 // Through the overload that settles the seat as well, so this surface never strikes
-                // a question off its own list while the broker still believes it open.
+                // a Request off its own list while the broker still believes it open.
                 var answered = await speaking
-                    .AnswerAsync(holding, exchange, resolutions, token2)
+                    .ResultAsync(holding, exchange, resolutions, token2)
                     .ConfigureAwait(false);
 
                 Said = answered.Says;
@@ -2127,27 +2922,30 @@ internal sealed class Shell : Window
             });
         };
 
+        return Task.CompletedTask;
+
         static string? Outcome(string typed) =>
             SeatVoice.Outcomes.Any(o => string.Equals(o.Value, typed.Trim(), StringComparison.Ordinal))
                 ? null
                 : $"One of: {string.Join(", ", SeatVoice.Outcomes.Select(o => o.Value))}";
     }
 
-    /// <summary>Opens the form that asks a peer a question, or tells them something.</summary>
-    /// <param name="asking">Whether an answer is expected.</param>
+    /// <summary>Opens the form that sends a participant a Request.</summary>
     /// <param name="inConversation">
-    /// The conversation to continue, or null to suggest a new one. **This is the whole difference
-    /// between starting and continuing**, and it used to be decided here — asking always suggested a
-    /// new name and telling always took the open one — which left no way to ask inside the
-    /// conversation on screen, and no way to start one from the list where a person looks for that.
+    /// The conversation to continue, or null to suggest a new one. **This is the whole difference between
+    /// starting and continuing.**
     /// </param>
     /// <returns>When the dialog has been opened.</returns>
     /// <remarks>
-    /// The fields are collected in the order rule 8.1 puts them — what is being decided, then the
-    /// question, then what turns on the answer. Asking for the question first invites somebody to
-    /// write it and stop.
+    /// <para>
+    /// One composer, because there is one way to say something to an agent and it is answered (principle
+    /// 2.7). An announcement is a Request asking for an acknowledgement.
+    /// </para>
+    /// <para>
+    /// The fields are collected in the order §5.1 puts them — why, then what, then what counts as finished.
+    /// </para>
     /// </remarks>
-    private Task Compose(bool asking, string? inConversation)
+    private Task Compose(string? inConversation)
     {
         if (App is not { } app || Voice() is not { } voice || Projects.Selected is not { } project)
         {
@@ -2175,20 +2973,20 @@ internal sealed class Shell : Window
         // Its own title, not the composer's. `ActionShapeTests` requires every dialog to answer to a
         // distinct one -- two sharing it makes every `Find` in the suite ambiguous, and it drove the
         // picker where it meant the form.
-        // **Everybody at once, and only when telling.** A question to each of them would open an
-        // exchange apiece and hold a slot apiece under §7.1; a notification takes no slot and
-        // creates no debt, which is what makes the plural case N ordinary messages rather than a
-        // new state machine. It is first in the list because it is what somebody scrolling a long
-        // roster came for.
-        var everybody = asking ? [] : EveryAgent();
+        // **Everybody at once, on both paths.** It was offered only when announcing, on a reason
+        // that turned out to be wrong — §7.1's cap is per peer, so N questions to N different peers
+        // hold one slot each and saturate nothing. `Participation.Everyone` carries what the
+        // asymmetry actually rested on and what replaced it. The row is first in the list because
+        // it is what somebody scrolling a long roster came for.
+        var everybody = EveryAgent();
 
-        var rows = asking || everybody.Count == 0
+        var rows = everybody.Count == 0
             ? peers
             : (IReadOnlyList<string>)[Participation.Everyone(everybody.Count), .. peers];
 
         var picking = Prompting.Choose(
             Participation.WhichPeer,
-            asking ? Participation.AskTitle : Participation.TellTitle,
+            inConversation is null ? Participation.StartTitle : Participation.RequestTitle,
             rows);
 
         var pick = Prompting.Open(app, picking);
@@ -2202,7 +3000,7 @@ internal sealed class Shell : Window
                 return;
             }
 
-            if (!asking && Participation.IsEveryone(chosen, everybody.Count))
+            if (Participation.IsEveryone(chosen, everybody.Count))
             {
                 Open(null, everybody);
 
@@ -2220,38 +3018,52 @@ internal sealed class Shell : Window
         void Open(AgentName? peer, IReadOnlyList<AgentName>? all)
         {
         // **Everything that is prose is a long field, and the name is not.** Rule 8.1's three parts
-        // are sentences and a notification's text may run to the whole of rule 8.5's cap — the
+        // are sentences and a request's text may run to the whole of rule 8.5's cap — the
         // owner wrote a long one into a field one row tall and could see about sixty characters of
         // it. A conversation name stays one line: it is a token that has to survive being written
         // down and read back, and Enter in it is how every form on this surface is finished.
-        var fields = asking
-            ?
-            [
-                new FormField(
-                    "What are you trying to decide?", string.Empty, Participation.RequiredProblem,
-                    Long: true),
-                new FormField(
-                    "The question:", string.Empty, Participation.RequiredProblem, Long: true),
-                new FormField(
-                    "What turns on the answer?", string.Empty, Participation.ConsequencesProblem,
-                    Long: true),
-                new FormField(
-                    "Conversation name:",
-                    inConversation ?? Participation.Suggested(),
-                    Participation.RequiredProblem),
-            ]
-            : new List<FormField>
-            {
-                new(
-                    "What are you telling them?", string.Empty, Participation.RequiredProblem,
-                    Long: true),
-                new(
-                    "Conversation name:",
-                    inConversation ?? Participation.Suggested(),
-                    Participation.RequiredProblem),
-            };
+        //
+        // **And the name field applies its own rule as it is typed.** It carried
+        // `RequiredProblem` alone, so the only thing that knew what may name a conversation was
+        // the send — and the owner met that by naming one `tell everybody test`, writing the
+        // message, and being told the rule with the form closed and their words gone.
+        //
+        // **No examples in these labels, where the console has them.** Five fields, what is wrong with
+        // each and the buttons already fill a twenty-four row terminal at one row a field; the examples
+        // took five more, and a form taller than the screen opens with its first field off the top.
+        // done_when keeps its reason, because it is the field people skip and the one a Result is
+        // checked against.
+        var fields = new List<FormField>
+        {
+            new(
+                Framing.Intent,
+                string.Empty,
+                Participation.RequiredProblem,
+                Long: true),
+            new(
+                Framing.Item,
+                string.Empty,
+                Participation.RequiredProblem,
+                Long: true),
+            new(
+                $"Work or question? ({string.Join(" / ", SeatVoice.Kinds.Select(k => k.Value))})",
+                SeatVoice.Kinds[0].Value,
+                Participation.KindProblem),
+            new(
+                $"{Framing.DoneWhen}. {Framing.DoneWhenWhy}",
+                string.Empty,
+                Participation.DoneWhenProblem,
+                Long: true),
+            new(
+                "Conversation name — " + ConversationName.Rule,
+                inConversation ?? Participation.Suggested(),
+                Participation.ConversationProblem,
+                Correct: ConversationName.Correct,
+                Corrected: ConversationName.WasCorrected),
+        };
 
-        var form = new FormDialog(asking ? Participation.AskTitle : Participation.TellTitle, fields);
+        var form = new FormDialog(
+            inConversation is null ? Participation.StartTitle : Participation.RequestTitle, fields);
         var token = Prompting.Open(app, form);
 
         form.Done += (_, values) =>
@@ -2284,21 +3096,18 @@ internal sealed class Shell : Window
                     return;
                 }
 
-                Said = (asking, all, peer) switch
+                Said = (all, peer) switch
                 {
-                    (true, _, { } one) => await speaking.AskAsync(
-                        one, values[0], values[1], values[2], values[3], cancellationToken)
-                        .ConfigureAwait(false),
+                    // The hold goes in rather than only the voice, because sending to everybody is
+                    // one send per recipient with the idle sweep running throughout: it re-reads the
+                    // seat before each one and stops rather than finishing under a released name.
+                    ({ } everybody, _) => await speaking.RequestEveryoneAsync(
+                        holding, everybody, values[0], values[1], values[2].Trim(), values[3], values[4],
+                        cancellationToken).ConfigureAwait(false),
 
-                    // The hold goes in rather than only the voice, because a broadcast is one send
-                    // per recipient and the sweep runs throughout: it re-reads the seat before each
-                    // one and stops rather than finishing under a name the book has released.
-                    (false, { } everybody, _) => await speaking.NotifyEveryoneAsync(
-                        holding, everybody, values[0], values[1], cancellationToken)
+                    (_, { } one) => await speaking.RequestAsync(
+                        one, values[0], values[1], values[2].Trim(), values[3], values[4], cancellationToken)
                         .ConfigureAwait(false),
-
-                    (false, null, { } one) => await speaking.NotifyAsync(
-                        one, values[0], values[1], cancellationToken).ConfigureAwait(false),
 
                     _ => Participation.Gone,
                 };
@@ -2335,7 +3144,7 @@ internal sealed class Shell : Window
     /// </para>
     /// <para>
     /// <b>A retired agent is not addressed rather than addressed and refused.</b> §14 refuses a
-    /// notification to one, so including them would manufacture a refusal per retired row and
+    /// Request to one, so including them would manufacture a refusal per retired row and
     /// report it beside the real ones — a broadcast that says "3 refused" about agents somebody
     /// deliberately retired reads as a fault.
     /// </para>
@@ -2383,6 +3192,14 @@ internal sealed class Shell : Window
             // TopCommand owns those and ends them when the process does.
             _reading.Cancel();
             _reading.Dispose();
+
+            // Already cancelled with the token it is linked to; released here so it is not left for
+            // the finaliser.
+            lock (_followGate)
+            {
+                _following?.Dispose();
+                _following = null;
+            }
         }
 
         base.Dispose(disposing);
@@ -2523,9 +3340,21 @@ internal sealed class Shell : Window
 /// <param name="Key">The letter shown in the status line.</param>
 /// <param name="Label">What it is called, in the same words the dialog uses.</param>
 /// <param name="Run">Doing it.</param>
+/// <param name="Costs">
+/// What taking it costs whoever it reaches, or null when it costs nobody anything.
+/// </param>
 /// <remarks>
+/// <para>
 /// A record rather than a method per action so that the status line and the key handler read the
 /// same list. Two copies of "what can be done here" is how a surface comes to offer something no
 /// key takes, or take something nothing offered.
+/// </para>
+/// <para>
+/// <b><see cref="Costs"/> is shown in the menu and never on the status line</b>, and the split is
+/// what makes it affordable. The two composer actions need a clause each to be told apart — the
+/// owner could not tell asking from announcing by their labels — and two clauses on the status
+/// line is fifty columns that push every action behind <c>?</c> at any ordinary width. A menu is a
+/// list somebody reads; a status line is a reminder of what they already know.
+/// </para>
 /// </remarks>
-internal sealed record RegionAction(char Key, string Label, Func<Task> Run);
+internal sealed record RegionAction(char Key, string Label, Func<Task> Run, string? Costs = null);

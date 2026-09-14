@@ -22,13 +22,6 @@ namespace Parley.Server.Tests;
 /// </remarks>
 public sealed class DestroyedRecordTests
 {
-    private const string Consequences =
-        "If the answer is yes I will record it and stop asking; if no I will raise it with the "
-        + "operator rather than deciding alone.";
-
-    private static string Question(string text) =>
-        $$"""{"intent":"{{text}}","sub_questions":[{"id":"q1","text":"{{text}}"}],"consequences":"{{Consequences}}"}""";
-
     private static async Task<LoopbackBroker> WithConversationAsync(CancellationToken token)
     {
         var broker = await LoopbackBroker.StartAsync(token);
@@ -36,16 +29,8 @@ public sealed class DestroyedRecordTests
         var orders = await AttachedClient.AttachAsync(broker, "orders@alpha", "C:/repo-o", token);
         var billing = await AttachedClient.AttachAsync(broker, "billing@alpha", "C:/repo-b", token);
 
-        await orders.Client.AskAsync(
-            new Wire.AskRequest
-            {
-                From = orders.Name,
-                To = billing.Name,
-                ConversationId = "a-discussion",
-                ResponderModel = "some-model-9",
-                PayloadJson = Question("who owns the totals"),
-            },
-            cancellationToken: token);
+        await orders.Client.RequestAsync(
+            Requests.Open(orders.Name, billing.Name, "who owns the totals", "a-discussion"), cancellationToken: token);
 
         await orders.DisposeAsync();
         await billing.DisposeAsync();
@@ -126,7 +111,7 @@ public sealed class DestroyedRecordTests
         var whole = export.ToString();
 
         Assert.DoesNotContain("who owns the totals", whole, StringComparison.Ordinal);
-        Assert.DoesNotContain("consequences", whole, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("done_when", whole, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

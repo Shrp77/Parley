@@ -42,6 +42,46 @@ public sealed record Seat(string Person)
     public AgentName Name => AgentName.Create(
         string.Create(CultureInfo.InvariantCulture, $"{Person}@{MachineName.Current}"));
 
+    /// <summary>What a field says when <see cref="Correct"/> changed what was typed.</summary>
+    public const string WasCorrected = Parley.Core.NameCorrection.WasCorrected;
+
+    /// <summary>The most characters a name may hold, per <c>AgentName</c>'s grammar for a role.</summary>
+    public const int Longest = 32;
+
+    /// <summary>The rule in one line, for a field to carry above itself.</summary>
+    public const string Rule =
+        "Letters, digits and hyphens, starting with a letter, up to 32 characters.";
+
+    /// <summary>The same rule as a regular expression, for an HTML <c>pattern</c> attribute.</summary>
+    public const string Pattern = "[A-Za-z][A-Za-z0-9-]{0,31}";
+
+    /// <summary>The characters <see cref="Correct"/> keeps once case has been folded.</summary>
+    public const string Allowed = Parley.Core.NameCorrection.Allowed;
+
+    /// <summary>Turns what somebody typed into something <see cref="TryRead"/> can accept.</summary>
+    /// <param name="typed">What is in the field.</param>
+    /// <returns>What the field should hold instead.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>What <see cref="TryRead"/> already did quietly, done where it can be seen.</b> A name has
+    /// always been lowercased rather than refused for its capitals — the constraint is the
+    /// protocol's spelling of a role, not a rule about how anybody writes their own name — but that
+    /// happened after the form closed, so <c>Arvind</c> became a seat called <c>arvind</c> with
+    /// nothing on screen having said so. The name is what every message this person sends is
+    /// recorded under; they should watch it being made.
+    /// </para>
+    /// <para>
+    /// It corrects and never completes: an empty name and a first character that is a digit are
+    /// left for <see cref="TryRead"/> to refuse with the rule stated.
+    /// </para>
+    /// <para>
+    /// The rule is <see cref="Parley.Core.NameCorrection"/>'s, because a seat's name is a role and
+    /// a role is what a project's name and an enrolled agent's name are too. A copy here would be
+    /// a fourth opinion about a grammar that has one expression.
+    /// </para>
+    /// </remarks>
+    public static string Correct(string? typed) => Parley.Core.NameCorrection.Correct(typed);
+
     /// <summary>Reads a name somebody typed, as a seat or as a reason it cannot be one.</summary>
     /// <param name="typed">What they wrote in the join form.</param>
     /// <param name="seat">The seat, when this returns <see langword="true"/>.</param>

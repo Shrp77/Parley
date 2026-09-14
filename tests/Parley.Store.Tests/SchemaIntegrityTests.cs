@@ -18,8 +18,10 @@ public sealed class SchemaIntegrityTests : IDisposable
     private const string Opened = "2026-01-01T00:00:00.0000000Z";
     private const string DedupHash =
         "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
-    private const string Expires = "2026-01-01T00:15:00.0000000Z";
     private const string Closed = "2026-01-01T00:05:00.0000000Z";
+
+    /// <summary>The conversation every exchange here belongs to unless a test names another.</summary>
+    private const string Conversation = "integrity";
 
     private readonly SqliteConnection _connection;
 
@@ -27,6 +29,7 @@ public sealed class SchemaIntegrityTests : IDisposable
     {
         _connection = ParleyDatabase.OpenInMemory();
         Seed("orders@test", "billing@test", "inventory@test");
+        InsertConversation(Conversation);
     }
 
     public void Dispose() => _connection.Dispose();
@@ -61,20 +64,19 @@ public sealed class SchemaIntegrityTests : IDisposable
         string questionHash = "h", string? conversationId = null) => Execute(
         """
         INSERT INTO exchanges
-            (pair_key, asker, answerer, owed_by, state, delivery_window_ms, working_window_ms,
-             grace_period_ms, question_hash, opened_utc, expires_utc, closed_utc, resolution,
-             conversation_id)
+            (pair_key, requester, receiver, owed_by, state, uncollected_flag_ms, stalled_flag_ms,
+             request_hash, opened_utc, closed_utc, outcome, conversation_id)
         VALUES
-            ($pair, $asker, $answerer, $answerer, $state, 900000, 14400000, 10800000, $hash,
-             $opened, $expires,
+            ($pair, $asker, $answerer, $answerer, $state, 900000, 14400000, $hash,
+             $opened,
              CASE WHEN $state = 'CLOSED' THEN $closed ELSE NULL END,
-             CASE WHEN $state = 'CLOSED' THEN 'answered' ELSE NULL END,
+             CASE WHEN $state = 'CLOSED' THEN 'complete' ELSE NULL END,
              $conversation);
         """,
         ("$pair", pairKey), ("$asker", asker), ("$answerer", answerer), ("$state", state),
         ("$hash", questionHash),
-        ("$opened", Opened), ("$expires", Expires), ("$closed", Closed),
-        ("$conversation", (object?)conversationId ?? DBNull.Value));
+        ("$opened", Opened), ("$closed", Closed),
+        ("$conversation", conversationId ?? Conversation));
 
     /// <summary>Opens a conversation by name.</summary>
     /// <param name="name">The identifier under test.</param>
@@ -103,17 +105,19 @@ public sealed class SchemaIntegrityTests : IDisposable
         string to,
         object? exchangeId = null,
         object? responderModel = null,
-        // A question must state its consequences (rule 1), and most of these tests are about
-        // something else entirely, so the default satisfies that rule rather than making
-        // every caller restate it. A test about rule 1 itself passes its own payload.
-        string payload = """{"consequences":"If yes I drop the column; if no I add a snapshot."}""",
+        // A Request must say what done looks like (rule 8.1), and most of these tests are about
+        // something else entirely, so the default satisfies that rule rather than making every
+        // caller restate it. A test about rule 8.1 itself is in AdmissionGuardTests.
+        string payload = """{"intent":"x","items":[{"id":"q1","kind":"question","text":"x"}],"done_when":"if yes I drop the column; if no I add a snapshot"}""",
         object? contentHash = null,
         string? createdUtc = null) => Execute(
         """
         INSERT INTO messages
             (exchange_id, type, from_agent, to_agent, responder_model, payload_json,
-             content_hash, created_utc)
-        VALUES ($exchange, $type, $from, $to, $responder, $payload, $hash, $created);
+             content_hash, conversation_id, created_utc)
+        VALUES ($exchange, $type, $from, $to, $responder, $payload, $hash,
+                coalesce((SELECT conversation_id FROM exchanges WHERE id = $exchange), 'integrity'),
+                $created);
         """,
         ("$exchange", exchangeId ?? 1L), ("$type", type), ("$from", from), ("$to", to),
         ("$responder", responderModel ?? "claude-opus-5"), ("$payload", payload),
@@ -161,7 +165,7 @@ public sealed class SchemaIntegrityTests : IDisposable
     // ---- one open exchange per pair ----
 
     [Fact]
-    public void A_pair_may_hold_the_same_question_only_once()
+    public void A_pair_may_hold_the_same_request_open_only_once()
     {
         // Replaces the one-open-exchange-per-pair rule. Serialising a pair bought nothing once
         // nothing waited on anything, and cost an agent every other channel to that peer for
@@ -175,7 +179,7 @@ public sealed class SchemaIntegrityTests : IDisposable
     }
 
     [Fact]
-    public void A_pair_may_hold_several_different_questions()
+    public void A_pair_may_hold_several_different_requests()
     {
         InsertExchange(OrdersBilling, "orders@test", "billing@test", questionHash: "where does price live");
         InsertExchange(OrdersBilling, "orders@test", "billing@test", questionHash: "who owns the ladder");
@@ -185,17 +189,17 @@ public sealed class SchemaIntegrityTests : IDisposable
     [Fact]
     public void Distinctness_is_directional()
     {
-        // The same text asked in each direction is two different questions: one asks what
-        // billing does, the other what orders does.
+        // The same text sent in each direction is two different Requests: one asks billing for
+        // work, the other orders.
         InsertExchange(OrdersBilling, "orders@test", "billing@test", questionHash: "who owns this");
         InsertExchange(OrdersBilling, "billing@test", "orders@test", questionHash: "who owns this");
     }
 
     [Fact]
-    public void A_closed_exchange_does_not_block_the_question_being_asked_again()
+    public void A_closed_exchange_does_not_block_the_request_being_sent_again()
     {
-        // The index is partial on state = 'OPEN'. An asker told its question was abandoned may
-        // ask it again, which is the point of telling it.
+        // The index is partial on state = 'OPEN'. A requester told its work was blocked may send it
+        // again once the blocker is resolved, which is the point of telling it.
         InsertExchange(OrdersBilling, "orders@test", "billing@test", "CLOSED", questionHash: "q");
         InsertExchange(OrdersBilling, "orders@test", "billing@test", questionHash: "q");
     }
@@ -239,34 +243,34 @@ public sealed class SchemaIntegrityTests : IDisposable
         Assert.Throws<SqliteException>(() => Execute(
             """
             INSERT INTO exchanges
-                (pair_key, asker, answerer, owed_by, state, delivery_window_ms, working_window_ms, grace_period_ms, question_hash, opened_utc, expires_utc)
-            VALUES ($pair, 'orders@test', 'billing@test', 'inventory@test', 'OPEN', 900000, $opened, $expires);
+                (pair_key, requester, receiver, owed_by, state, uncollected_flag_ms, stalled_flag_ms, request_hash, opened_utc, conversation_id)
+            VALUES ($pair, 'orders@test', 'billing@test', 'inventory@test', 'OPEN', 900000, 14400000, 'h', $opened, 'integrity');
             """,
-            ("$pair", OrdersBilling), ("$opened", Opened), ("$expires", Expires)));
+            ("$pair", OrdersBilling), ("$opened", Opened)));
     }
 
     [Fact]
-    public void Ttl_must_be_positive()
+    public void Flag_thresholds_must_be_positive()
     {
         Assert.Throws<SqliteException>(() => Execute(
             """
             INSERT INTO exchanges
-                (pair_key, asker, answerer, owed_by, state, delivery_window_ms, working_window_ms, grace_period_ms, question_hash, opened_utc, expires_utc)
-            VALUES ($pair, 'orders@test', 'billing@test', 'billing@test', 'OPEN', 0, $opened, $expires);
+                (pair_key, requester, receiver, owed_by, state, uncollected_flag_ms, stalled_flag_ms, request_hash, opened_utc, conversation_id)
+            VALUES ($pair, 'orders@test', 'billing@test', 'billing@test', 'OPEN', 0, 14400000, 'h', $opened, 'integrity');
             """,
-            ("$pair", OrdersBilling), ("$opened", Opened), ("$expires", Expires)));
+            ("$pair", OrdersBilling), ("$opened", Opened)));
     }
 
     [Fact]
-    public void An_agent_cannot_question_itself()
+    public void A_participant_cannot_send_a_request_to_itself()
     {
         Assert.Throws<SqliteException>(() => Execute(
             """
             INSERT INTO exchanges
-                (pair_key, asker, answerer, owed_by, state, delivery_window_ms, working_window_ms, grace_period_ms, question_hash, opened_utc, expires_utc)
-            VALUES ($pair, 'orders@test', 'orders@test', 'orders@test', 'OPEN', 900000, $opened, $expires);
+                (pair_key, requester, receiver, owed_by, state, uncollected_flag_ms, stalled_flag_ms, request_hash, opened_utc, conversation_id)
+            VALUES ($pair, 'orders@test', 'orders@test', 'orders@test', 'OPEN', 900000, 14400000, 'h', $opened, 'integrity');
             """,
-            ("$pair", "orders@test\u001Forders@test"), ("$opened", Opened), ("$expires", Expires)));
+            ("$pair", "orders@test\u001Forders@test"), ("$opened", Opened)));
     }
 
     // ---- agent names obey the grammar every other constraint rests on ----
@@ -458,13 +462,13 @@ public sealed class SchemaIntegrityTests : IDisposable
     // ---- message integrity ----
 
     [Fact]
-    public void Payload_is_capped_at_two_thousand_characters()
+    public void Payload_is_capped_at_the_message_limit()
     {
         InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
         var ex = Assert.Throws<SqliteException>(() => InsertMessage(
-            "question", "orders@test", "billing@test",
-            payload: $$"""{"text":"{{new string('x', 2000)}}"}"""));
+            "clarify", "orders@test", "billing@test",
+            payload: $$"""{"text":"{{new string('x', MessageLimits.MaxPayloadCharacters)}}"}"""));
 
         // Valid JSON, only too long, so json_valid cannot be what refused it.
         Assert.Contains("CHECK", ex.Message, StringComparison.OrdinalIgnoreCase);
@@ -476,48 +480,39 @@ public sealed class SchemaIntegrityTests : IDisposable
         InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
         var ex = Assert.Throws<SqliteException>(() => InsertMessage(
-            "notify", "orders@test", "billing@test", exchangeId: DBNull.Value, payload: "not json at all"));
+            "clarify", "orders@test", "billing@test", payload: "not json at all"));
 
         // Well under the cap, so length cannot be what refused it.
         Assert.Contains("CHECK", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void Notify_must_not_reference_an_exchange()
+    public void Every_message_belongs_to_an_exchange()
     {
-        InsertExchange(OrdersBilling, "orders@test", "billing@test");
-
-        // Notify opens no exchange and claims no pair slot, so an exchange reference on one
-        // would be a lie about which rules applied to it.
+        // 0.4 had a message on no exchange, which nothing answered. Every message is answered now
+        // (principle 2.7), so the column that allowed that is NOT NULL.
         var ex = Assert.Throws<SqliteException>(() => InsertMessage(
-            "notify", "orders@test", "billing@test", exchangeId: 1L));
+            "clarify", "orders@test", "billing@test", exchangeId: DBNull.Value));
 
-        Assert.Contains("CHECK", ex.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void Notify_without_an_exchange_is_accepted()
-    {
-        InsertMessage("notify", "orders@test", "billing@test", exchangeId: DBNull.Value);
+        Assert.Contains("NOT NULL", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
-    [InlineData("question")]
+    [InlineData("request")]
     [InlineData("clarify")]
-    [InlineData("answer")]
-    [InlineData("notify")]
+    [InlineData("result")]
     public void Every_message_must_name_its_responder(string type)
     {
         InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
-        // SPEC 11.3 is a MUST and is not limited to answers. An unattributed 'unknown' from a
+        // SPEC 11.3 is a MUST and is not limited to Results. An unattributed 'blocked' from a
         // weak local model reads identically to a considered one from a frontier model, and
-        // the same calibration applies to a question. The section 13 envelope renders the
+        // the same calibration applies to a Request. The section 13 envelope renders the
         // identity on every delivered message, so a nullable column would leave the envelope
         // a hole the schema itself permitted.
         Assert.Throws<SqliteException>(() => InsertMessage(
             type, "orders@test", "billing@test",
-            exchangeId: type == "notify" ? DBNull.Value : 1L,
+            exchangeId: 1L,
             responderModel: DBNull.Value));
     }
 
@@ -528,14 +523,14 @@ public sealed class SchemaIntegrityTests : IDisposable
 
         // NOT NULL alone would let the empty string through and call it attributed.
         var ex = Assert.Throws<SqliteException>(() => InsertMessage(
-            "answer", "billing@test", "orders@test", responderModel: ""));
+            "clarify", "billing@test", "orders@test", responderModel: ""));
 
         Assert.Contains("CHECK", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
     [InlineData("claude-opus-5")]      // a model
-    [InlineData("parley:broker")]      // broker forced answer, clarify cap breached
+    [InlineData("parley:broker")]      // the broker's own closed Result
     [InlineData("script:contracts")]   // deterministic responder
     [InlineData("human:arvind")]       // escalation to a person
     public void Recognised_responder_forms_are_accepted(string responder)
@@ -544,7 +539,7 @@ public sealed class SchemaIntegrityTests : IDisposable
 
         // Unlike credential_ref, this is not restricted to known schemes: model identifiers
         // cannot be enumerated in advance. Presence is the enforceable part.
-        InsertMessage("answer", "billing@test", "orders@test", responderModel: responder);
+        InsertMessage("clarify", "billing@test", "orders@test", responderModel: responder);
     }
 
     [Theory]
@@ -564,7 +559,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         // framing in this field read as though the broker wrote them. The last case is 65
         // characters, since only the payload is otherwise length-capped.
         Assert.Throws<SqliteException>(() => InsertMessage(
-            "answer", "billing@test", "orders@test", responderModel: responder));
+            "clarify", "billing@test", "orders@test", responderModel: responder));
     }
 
     [Theory]
@@ -580,7 +575,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         // writing an empty or truncated hash would collide unrelated messages, and
         // over-deduplication discards real traffic while the index still looks healthy.
         Assert.Throws<SqliteException>(() => InsertMessage(
-            "question", "orders@test", "billing@test", contentHash: hash));
+            "request", "orders@test", "billing@test", contentHash: hash));
     }
 
     [Theory]
@@ -596,7 +591,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         // not mis-bucket a row — it drops the row out of ux_message_dedup entirely. Two
         // byte-identical messages would then both store while the index reported no conflict.
         Assert.Throws<SqliteException>(() => InsertMessage(
-            "question", "orders@test", "billing@test", createdUtc: created));
+            "request", "orders@test", "billing@test", createdUtc: created));
     }
 
     // ---- deduplication backstop (SPEC 13.1) ----
@@ -606,11 +601,11 @@ public sealed class SchemaIntegrityTests : IDisposable
     {
         InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
-        InsertMessage("question", "orders@test", "billing@test",
+        InsertMessage("request", "orders@test", "billing@test",
             contentHash: DedupHash, createdUtc: "2026-01-01T00:00:10.0000000Z");
 
         var ex = Assert.Throws<SqliteException>(() => InsertMessage(
-            "question", "orders@test", "billing@test",
+            "request", "orders@test", "billing@test",
             contentHash: DedupHash, createdUtc: "2026-01-01T00:00:50.0000000Z"));
 
         Assert.Contains("UNIQUE", ex.Message, StringComparison.OrdinalIgnoreCase);
@@ -626,9 +621,9 @@ public sealed class SchemaIntegrityTests : IDisposable
         // The broker's exact-window check is what refuses them; the index only catches a
         // writer that skipped that check. Asserting the looseness keeps it a known limit
         // rather than something discovered later and mistaken for a bug.
-        InsertMessage("question", "orders@test", "billing@test",
+        InsertMessage("request", "orders@test", "billing@test",
             contentHash: DedupHash, createdUtc: "2026-01-01T00:00:50.0000000Z");
-        InsertMessage("question", "orders@test", "billing@test",
+        InsertMessage("request", "orders@test", "billing@test",
             contentHash: DedupHash, createdUtc: "2026-01-01T00:01:10.0000000Z");
     }
 
@@ -646,7 +641,7 @@ public sealed class SchemaIntegrityTests : IDisposable
             INSERT INTO messages
                 (exchange_id, type, from_agent, to_agent, responder_model, payload_json,
                  content_hash, dedup_bucket, created_utc)
-            VALUES (1, 'question', 'orders@test', 'billing@test', 'claude-opus-5', '{}',
+            VALUES (1, 'request', 'orders@test', 'billing@test', 'claude-opus-5', '{}',
                     'abc123', 999, $created);
             """,
             ("$created", Opened)));
@@ -657,7 +652,7 @@ public sealed class SchemaIntegrityTests : IDisposable
     {
         InsertExchange(OrdersBilling, "orders@test", "billing@test");
 
-        InsertMessage("question", "orders@test", "billing@test",
+        InsertMessage("request", "orders@test", "billing@test",
             contentHash: DedupHash, createdUtc: "2026-01-01T00:00:10.0000000Z");
 
         using var command = _connection.CreateCommand();
@@ -787,15 +782,13 @@ public sealed class SchemaIntegrityTests : IDisposable
     {
         Id = 7,
         PairKey = pairKey,
-        Asker = "orders@test",
-        Answerer = "billing@test",
+        Requester = "orders@test",
+        Receiver = "billing@test",
         OwedBy = "billing@test",
         State = "OPEN",
-        DeliveryWindowMs = 900_000,
-        WorkingWindowMs = 14_400_000,
-        GracePeriodMs = 10_800_000,
-        OpenedUtc = "2026-01-01T00:00:00.0000000+00:00",
-        ExpiresUtc = "2026-01-01T00:15:00.0000000+00:00"
+        UncollectedFlagMs = 900_000,
+        StalledFlagMs = 14_400_000,
+        OpenedUtc = "2026-01-01T00:00:00.0000000+00:00"
     };
 
     private static long ReadForeignKeysPragma(SqliteConnection connection)

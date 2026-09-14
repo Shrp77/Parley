@@ -12,19 +12,18 @@ using Xunit;
 namespace Parley.Top.Tests;
 
 /// <summary>
-/// That a person can tell every agent in a project one thing, in one act.
+/// That a person can send every agent in a project one request, in one act.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>N ordinary notifications, not a protocol operation.</b> SPEC.md §5.5 settled the fan-out
-/// shape for questions and gave the reason — a one-to-many exchange needs its own admission rules,
-/// its own cap arithmetic and its own definition of concluded. All three costs are absent for a
-/// message that opens no exchange, so the restraint is easier here than in the case that took it.
+/// <b>N ordinary Requests, not a protocol operation.</b> SPEC.md §5.5 settled the fan-out shape and gave
+/// the reason — a one-to-many exchange needs its own admission rules, its own cap arithmetic and its own
+/// definition of finished. N exchanges needs none of those, and each is owed its own Result.
 /// </para>
 /// <para>
-/// <b>All agents means agents.</b> Every seat is excluded, the sender's and everybody else's, and
-/// a retired agent is not addressed rather than addressed and refused — §14 would refuse it, and a
-/// broadcast reporting refusals for agents somebody deliberately retired reads as a fault.
+/// <b>All agents means agents.</b> Every seat is excluded, the sender's and everybody else's, and a retired
+/// agent is not addressed rather than addressed and refused — §14 would refuse it, and a report of
+/// refusals for agents somebody deliberately retired reads as a fault.
 /// </para>
 /// </remarks>
 public sealed class TellingEverybodyTests : IAsyncDisposable
@@ -91,12 +90,31 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
         AgentName name, AgentStatus status = AgentStatus.Active, string adapter = "mcp") =>
         new(name, adapter, AgentTier.Pull, null, null, null, false, status);
 
-    [Fact]
-    public async Task Telling_offers_everybody_and_names_how_many()
+    /// <summary>Fills the composer with a Request rule 8.1 accepts.</summary>
+    /// <param name="form">The composer.</param>
+    /// <param name="item">What is being asked for.</param>
+    private static void Written(FormDialog form, string item)
     {
-        // FR-020. Telling nineteen agents starts up to nineteen of them, each a model taking a turn
-        // on somebody's machine, and a row reading only "All agents" would hide the difference
-        // between three and thirty.
+        form.Fill(0, "deciding whether to move the schema");
+        form.Fill(1, item);
+        form.Fill(3, "every reader of orders.total is named, or none is");
+    }
+
+    private async Task<IReadOnlyList<string>> PickerRowsAsync(Driving.Session driving, Shell shell)
+    {
+        await shell.Start();
+
+        var picking = (ChoiceDialog)driving.Find(Participation.WhichPeer);
+
+        return [.. Drawn.Rows(picking.Choices).Select(row => row.Trim())];
+    }
+
+    [Fact]
+    public async Task Everybody_is_offered_first_and_says_how_many()
+    {
+        // FR-020. Sending nineteen agents a request starts up to nineteen of them, each a model taking a turn
+        // on somebody's machine, and a row reading only "All agents" would hide the difference between three
+        // and thirty. First, because it is what somebody scrolling a long roster came for.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var seats = new SeatBook(directory.AgentsFor);
@@ -106,21 +124,17 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
 
         shell.Agents.Show([Agent(Orders), Agent(Billing)], NodeCatalogue.Empty, null);
 
-        await shell.StartByTelling();
+        var rows = await PickerRowsAsync(driving, shell);
 
-        var picking = (ChoiceDialog)driving.Find(Participation.WhichPeer);
-        var rows = Drawn.Rows(picking.Choices).Select(row => row.Trim()).ToList();
-
-        Assert.Contains(Participation.Everyone(2), rows);
         Assert.Equal(Participation.Everyone(2), rows[0]);
     }
 
     [Fact]
-    public async Task Asking_does_not_offer_everybody()
+    public async Task Choosing_everybody_opens_one_exchange_each_and_says_what_is_owed()
     {
-        // A question to each of them opens an exchange apiece and holds a slot apiece under §7.1,
-        // so a broadcast question would saturate a small deployment and leave the asker owing
-        // answers it cannot conclude.
+        // §5.5: one ordinary exchange with each agent, not a new kind of message. Two agents, two Requests,
+        // two open exchanges — counted from the store rather than from the sentence, because a report saying
+        // two and a store holding one is the failure worth catching.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var seats = new SeatBook(directory.AgentsFor);
@@ -130,19 +144,59 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
 
         shell.Agents.Show([Agent(Orders), Agent(Billing)], NodeCatalogue.Empty, null);
 
-        await shell.Start();
+        var form = await Composing.WithAsync(
+            driving, shell.Start, Participation.StartTitle, Participation.Everyone(2), () => shell.Settled);
 
-        var picking = (ChoiceDialog)driving.Find(Participation.WhichPeer);
-        var rows = Drawn.Rows(picking.Choices).Select(row => row.Trim()).ToList();
+        Written(form, "does anything here read orders.total?");
+        form.Finish(taken: true);
 
-        Assert.DoesNotContain(rows, row => row.StartsWith("All agents", StringComparison.Ordinal));
+        await shell.Settled;
+
+        Assert.Contains("Sent to all 2", shell.Said, StringComparison.Ordinal);
+        Assert.Contains("owed a Result", shell.Said, StringComparison.Ordinal);
+
+        // This deployment has no node, so neither can be started -- a fact about the recipients and not a
+        // failed send, and the sentence names them.
+        Assert.Contains(Orders.Value, shell.Said, StringComparison.Ordinal);
+        Assert.Contains(Billing.Value, shell.Said, StringComparison.Ordinal);
+
+        Assert.Equal(2, Requests());
+        Assert.Equal(2, Open());
+
+        // And all in one conversation, so the person can read it in one place.
+        Assert.Equal(1, Count("SELECT count(DISTINCT conversation_id) FROM exchanges;"));
+    }
+
+    [Fact]
+    public async Task One_agent_still_works_from_the_same_picker()
+    {
+        // The everybody row is added to the list rather than replacing it, and a regression here would be
+        // invisible in the tests above.
+        using var driving = Driving.Open();
+        using var directory = Directory();
+        using var seats = new SeatBook(directory.AgentsFor);
+        using var shell = await SeatedAsync(driving, directory, seats);
+
+        await Walking.GoAsync(shell, Viewing.Project);
+
+        shell.Agents.Show([Agent(Orders), Agent(Billing)], NodeCatalogue.Empty, null);
+
+        var form = await Composing.WithAsync(
+            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
+
+        Written(form, "just you");
+        form.Finish(taken: true);
+
+        await shell.Settled;
+
+        Assert.Equal(1, Requests());
     }
 
     [Fact]
     public async Task No_seat_is_counted_among_the_agents()
     {
-        // SC-007. A seat is somebody at a desk rather than something that can be started, and
-        // "tell all the agents" addressed to a colleague is a different act from the one chosen.
+        // SC-007. A seat is somebody at a desk rather than something that can be started, and "all the
+        // agents" addressed to a colleague is a different act from the one chosen.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var seats = new SeatBook(directory.AgentsFor);
@@ -159,10 +213,7 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
             NodeCatalogue.Empty,
             null);
 
-        await shell.StartByTelling();
-
-        var picking = (ChoiceDialog)driving.Find(Participation.WhichPeer);
-        var rows = Drawn.Rows(picking.Choices).Select(row => row.Trim()).ToList();
+        var rows = await PickerRowsAsync(driving, shell);
 
         // One agent, though the roster shows three rows and two of them are people.
         Assert.Equal(Participation.Everyone(1), rows[0]);
@@ -181,10 +232,7 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
         shell.Agents.Show(
             [Agent(Orders), Agent(Inventory, AgentStatus.Retired)], NodeCatalogue.Empty, null);
 
-        await shell.StartByTelling();
-
-        var picking = (ChoiceDialog)driving.Find(Participation.WhichPeer);
-        var rows = Drawn.Rows(picking.Choices).Select(row => row.Trim()).ToList();
+        var rows = await PickerRowsAsync(driving, shell);
 
         Assert.Equal(Participation.Everyone(1), rows[0]);
     }
@@ -192,13 +240,11 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
     [Fact]
     public async Task A_project_holding_only_seats_offers_no_everybody_row()
     {
-        // There are peers to speak to -- another person's seat is one -- so this is not the empty
-        // roster case. There is simply nobody a broadcast would reach.
+        // There are peers to speak to -- another person's seat is one -- so this is not the empty roster
+        // case. There is simply nobody the everybody row would reach.
         //
-        // The seat is on another machine deliberately. `Peers()` excludes every seat on *this* one,
-        // which is what `Mine` means -- not "my seat" but "a seat here" -- so a colleague sharing
-        // this box is already absent from the picker. That is pre-existing and not this feature's
-        // to change, but it decides which fixture states the case: a seat here would have produced
+        // The seat is on another machine deliberately. `Peers()` excludes every seat on *this* one, so a
+        // colleague sharing this box is already absent from the picker, and a seat here would have produced
         // an empty picker and tested the wrong thing.
         using var driving = Driving.Open();
         using var directory = Directory();
@@ -210,81 +256,18 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
         shell.Agents.Show(
             [Agent(AgentName.Create("jo@elsewhere"), adapter: Seat.Adapter)], NodeCatalogue.Empty, null);
 
-        await shell.StartByTelling();
-
-        var picking = (ChoiceDialog)driving.Find(Participation.WhichPeer);
-        var rows = Drawn.Rows(picking.Choices).Select(row => row.Trim()).ToList();
+        var rows = await PickerRowsAsync(driving, shell);
 
         Assert.DoesNotContain(rows, row => row.StartsWith("All agents", StringComparison.Ordinal));
         Assert.Contains("jo@elsewhere", rows);
     }
 
     [Fact]
-    public async Task Choosing_everybody_sends_to_each_and_reports_counts()
-    {
-        using var driving = Driving.Open();
-        using var directory = Directory();
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = await SeatedAsync(driving, directory, seats);
-
-        await Walking.GoAsync(shell, Viewing.Project);
-
-        shell.Agents.Show([Agent(Orders), Agent(Billing)], NodeCatalogue.Empty, null);
-
-        var form = await Composing.WithAsync(
-            driving,
-            shell.StartByTelling,
-            Participation.TellTitle,
-            Participation.Everyone(2),
-            () => shell.Settled);
-
-        form.Fill(0, "the schema moved");
-        form.Finish(taken: true);
-
-        await shell.Settled;
-
-        // Both were told. This deployment has no node, so neither can be started -- which is a fact
-        // about the recipients and not a failed send, and the sentence has to say so.
-        Assert.Contains("Told all 2", shell.Said, StringComparison.Ordinal);
-        Assert.Contains(Orders.Value, shell.Said, StringComparison.Ordinal);
-        Assert.Contains(Billing.Value, shell.Said, StringComparison.Ordinal);
-
-        Assert.Equal(2, Sent());
-    }
-
-    [Fact]
-    public async Task Telling_one_agent_still_works_from_the_same_picker()
-    {
-        // The everybody row is added to the list rather than replacing it, and a regression here
-        // would be invisible in the tests above.
-        using var driving = Driving.Open();
-        using var directory = Directory();
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = await SeatedAsync(driving, directory, seats);
-
-        await Walking.GoAsync(shell, Viewing.Project);
-
-        shell.Agents.Show([Agent(Orders), Agent(Billing)], NodeCatalogue.Empty, null);
-
-        var form = await Composing.WithAsync(
-            driving, shell.StartByTelling, Participation.TellTitle, Orders.Value, () => shell.Settled);
-
-        form.Fill(0, "just you");
-        form.Finish(taken: true);
-
-        await shell.Settled;
-
-        Assert.Equal(1, Sent());
-    }
-
-    [Fact]
     public async Task A_role_in_the_catalogue_and_a_registration_do_not_become_two_recipients()
     {
-        // **The 009 shape, probed rather than assumed safe.** A registration is `role@machine` and a
-        // catalogue key is a role, and three suites once fed fixtures keyed the way no caller keys
-        // them — which is how a closely covered method stayed broken. If the roster ever produced
-        // both spellings of one agent, a broadcast would address it twice and the second would come
-        // back deduplicated: reported as a repeat, from one act.
+        // **The 009 shape, probed rather than assumed safe.** A registration is `role@machine` and a catalogue
+        // key is a role. If the roster ever produced both spellings of one agent, everybody would address it
+        // twice and the second would come back refused as a duplicate: reported as a refusal, from one act.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var seats = new SeatBook(directory.AgentsFor);
@@ -292,34 +275,27 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
 
         await Walking.GoAsync(shell, Viewing.Project);
 
-        shell.Agents.Show(
-            [Agent(Orders), Agent(Billing)],
-            Catalogue("orders"),
-            null);
+        shell.Agents.Show([Agent(Orders), Agent(Billing)], Catalogue("orders"), null);
 
         var form = await Composing.WithAsync(
-            driving,
-            shell.StartByTelling,
-            Participation.TellTitle,
-            Participation.Everyone(2),
-            () => shell.Settled);
+            driving, shell.Start, Participation.StartTitle, Participation.Everyone(2), () => shell.Settled);
 
-        form.Fill(0, "once each, please");
+        Written(form, "once each, please");
         form.Finish(taken: true);
 
         await shell.Settled;
 
-        // Two agents, two messages. Not three, and no repeat reported.
-        Assert.Equal(2, Sent());
-        Assert.DoesNotContain("again", shell.Said, StringComparison.OrdinalIgnoreCase);
+        // Two agents, two Requests. Not three, and no duplicate reported.
+        Assert.Equal(2, Requests());
+        Assert.DoesNotContain("already sent exactly this", shell.Said, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task A_catalogued_role_nothing_has_registered_is_still_told()
+    public async Task A_catalogued_role_nothing_has_registered_is_still_offered()
     {
-        // §12.3 routes spawn-on-demand through the catalogue, so a never-run-but-startable role is
-        // a legitimate thing to tell — and leaving it out would omit exactly the agents somebody
-        // broadcasts in order to wake.
+        // §12.3 routes spawn-on-demand through the catalogue, so a never-run-but-startable role is a
+        // legitimate thing to send to — and leaving it out would omit exactly the agents somebody sends to
+        // everybody in order to wake.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var seats = new SeatBook(directory.AgentsFor);
@@ -327,15 +303,9 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
 
         await Walking.GoAsync(shell, Viewing.Project);
 
-        shell.Agents.Show(
-            [Agent(Orders)],
-            Catalogue("inventory"),
-            null);
+        shell.Agents.Show([Agent(Orders)], Catalogue("inventory"), null);
 
-        await shell.StartByTelling();
-
-        var picking = (ChoiceDialog)driving.Find(Participation.WhichPeer);
-        var rows = Drawn.Rows(picking.Choices).Select(row => row.Trim()).ToList();
+        var rows = await PickerRowsAsync(driving, shell);
 
         Assert.Equal(Participation.Everyone(2), rows[0]);
     }
@@ -344,9 +314,9 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
     /// <param name="roles">The roles this machine could start.</param>
     /// <returns>The catalogue.</returns>
     /// <remarks>
-    /// Through a file rather than a constructed object, because there is no constructor that
-    /// takes roles -- and building one for a test would be a second way to make a catalogue,
-    /// which is how the reader and the writer come to disagree about the shape.
+    /// Through a file rather than a constructed object, because there is no constructor that takes roles --
+    /// and building one for a test would be a second way to make a catalogue, which is how the reader and the
+    /// writer come to disagree about the shape.
     /// </remarks>
     private static NodeCatalogue Catalogue(params string[] roles)
     {
@@ -368,13 +338,22 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
         }
     }
 
-    /// <summary>How many notifications reached the store.</summary>
-    /// <returns>The count.</returns>
-    private int Sent()
+    /// <summary>How many Requests reached the store.</summary>
+    private int Requests() => Count("SELECT count(*) FROM messages WHERE type = 'request';");
+
+    /// <summary>How many exchanges are open, which is what a Request actually costs a peer.</summary>
+    /// <remarks>
+    /// Counted beside the messages rather than instead of them. A Request stored with no open exchange behind
+    /// it would be work nobody owes a Result on, which would make sending to everybody a different operation
+    /// from N single sends.
+    /// </remarks>
+    private int Open() => Count("SELECT count(*) FROM exchanges WHERE state = 'OPEN';");
+
+    private int Count(string sql)
     {
         using var command = _connection.CreateCommand();
 
-        command.CommandText = "SELECT count(*) FROM messages WHERE type = 'notify';";
+        command.CommandText = sql;
 
         return Convert.ToInt32(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
     }

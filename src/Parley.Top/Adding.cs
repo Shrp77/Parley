@@ -218,6 +218,12 @@ internal static class Adding
     /// <param name="start">
     /// Asks the broker to launch the agent once it is written, or null when there is none to ask.
     /// </param>
+    /// <param name="registered">
+    /// Says whether the registry holds the agent now, or null when nothing can be asked.
+    /// <b>Without it this screen could only predict.</b> A node reports that it launched
+    /// something; whether the adapter attached and registered itself is a different question, and
+    /// the registry is the only thing that answers it.
+    /// </param>
     /// <param name="queue">Runs the writes, so the caller can wait for them.</param>
     /// <param name="done">Told what to say when it is over.</param>
     /// <param name="lastAdded">
@@ -236,6 +242,7 @@ internal static class Adding
         ProjectSettings project,
         Catalogue catalogue,
         Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
+        Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? registered,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done,
         string? lastAdded = null,
@@ -261,7 +268,7 @@ internal static class Adding
                 return;
             }
 
-            Ask(app, project, catalogue, folder, start, queue, done, remember);
+            Ask(app, project, catalogue, folder, start, registered, queue, done, remember);
         };
 
         return Task.CompletedTask;
@@ -274,6 +281,7 @@ internal static class Adding
         Catalogue catalogue,
         string workspace,
         Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
+        Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? registered,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done,
         Action<string>? remember)
@@ -282,7 +290,12 @@ internal static class Adding
             Title,
             [
                 new FormField("Repository directory on this machine:", workspace, WorkspaceProblem),
-                new FormField("The role peers will address it by:", string.Empty, RoleProblem),
+                new FormField(
+                    "The role peers will address it by — lowercase letters, digits and hyphens:",
+                    string.Empty,
+                    RoleProblem,
+                    Correct: EnrollmentPlan.CorrectName,
+                    Corrected: EnrollmentPlan.NameWasCorrected),
                 new FormField(
                     "What it owns, and what it does not (optional, and never invented for you):",
                     string.Empty,
@@ -303,7 +316,7 @@ internal static class Adding
                 return;
             }
 
-            Confirm(app, project, catalogue, values, start, queue, done, remember);
+            Confirm(app, project, catalogue, values, start, registered, queue, done, remember);
         };
     }
 
@@ -314,6 +327,7 @@ internal static class Adding
         Catalogue catalogue,
         IReadOnlyList<string> values,
         Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
+        Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? registered,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done,
         Action<string>? remember)
@@ -355,13 +369,14 @@ internal static class Adding
             }
 
             queue(token2 => WriteAsync(
-                project, catalogue, workspace, role, values[2].Trim(), start, token2, done,
-                remember, already));
+                project, catalogue, workspace, role, values[2].Trim(), start, registered, token2,
+                done, remember, already));
         };
     }
 
     /// <summary>Asks a broker to start the agent that was just added.</summary>
     /// <param name="start">Asks a project's broker, or null when there is none to ask.</param>
+    /// <param name="registered">Asks whether the registry holds it, or null when nothing can.</param>
     /// <param name="role">The role that was added.</param>
     /// <param name="project">The project it joined.</param>
     /// <param name="already">
@@ -388,6 +403,7 @@ internal static class Adding
     /// </remarks>
     private static async Task<string> StartAsync(
         Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
+        Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? registered,
         string role,
         ProjectSettings project,
         Enrolment.Shared? already,
@@ -410,23 +426,57 @@ internal static class Adding
             return NotStarted;
         }
 
-        var asked = await start(asking, agent, cancellationToken).ConfigureAwait(false);
+        // **Asked, and then looked at.** This used to end here, with the node's answer and a
+        // sentence promising what would happen next — "It registers itself as it attaches" — which
+        // is a prediction rather than a result. The owner enrolled nineteen repositories, was told
+        // each one had started, and found every one of them unaddressable: a node reports that it
+        // launched something, and whether the adapter attached and registered is a question only
+        // the registry answers. `parley enroll apply` has looked since 012 step 1; this did not.
+        var was = await Starting.OnceAsync(
+            agent,
+            (who, token) => start(asking, who, token),
+            registered is null
+                ? (_, _) => Task.FromResult(ProjectRead<bool>.Unreachable(Unchecked))
+                : (who, token) => registered(asking, who, token),
+            Starting.Patience,
+            TimeProvider.System,
+            cancellationToken).ConfigureAwait(false);
 
-        return !asked.Reachable
-            ? $"{asked.Problem} {NotStarted}"
-            : asked.Value
-                ? already is null
-                    ? $"Started '{role}'. It registers itself as it attaches."
-                    : $"Started it through '{already.Project}', which is what starts this "
-                      + $"repository. It registers as '{role}' here as it attaches."
-                : NotStarted;
+        var through = already is null
+            ? $"'{role}'"
+            : $"'{role}' through '{Safe.Text(already.Project)}', which is what starts this repository,";
+
+        // **Three answers, not two, and the third is the one that misled somebody.** Nothing
+        // started is the old sentence unchanged; started and registered is the only case that may
+        // say the agent can be addressed; started and not seen says exactly that and no more.
+        return was switch
+        {
+            { Launched: false } => $"{Safe.Text(was.Says)} {NotStarted}",
+            { Registered: true } =>
+                $"Started {through} and it registered. It can be asked and told now.",
+            _ => $"Started {through} — {Safe.Text(was.Says)}. {Later}",
+        };
     }
+
+    /// <summary>What is said when there is no broker to ask whether it registered.</summary>
+    private const string Unchecked = "nothing here could ask the registry whether it did";
+
+    /// <summary>What is said after a start whose registration was not seen.</summary>
+    /// <remarks>
+    /// <b>"I do not know", never "it did not happen".</b> 008 exists because a broker stopped
+    /// waiting before a node had finished and recorded the opposite of what occurred, and an agent
+    /// that registers a second after this stopped looking is working. What this says is what to do
+    /// about either case, which is the same thing in both.
+    /// </remarks>
+    private const string Later =
+        "Check the agents list shortly: until something has registered under this name, it cannot "
+        + "be asked or told.";
 
     /// <summary>What is said when the start did not happen.</summary>
     /// <remarks>
     /// <para>
-    /// <b>This said the next question would start it, and that cannot happen.</b> A question and a
-    /// notification are both refused for an unroutable recipient, and §14 counts a name nothing has
+    /// <b>This said the next Request would start it, and that cannot happen.</b> Every message is
+    /// refused for an unroutable recipient, and §14 counts a name nothing has
     /// registered as unroutable — so until something has attached under this name, no message
     /// reaches it and none of them starts it. The sentence sent a person to the one remedy that
     /// does not work.
@@ -456,6 +506,7 @@ internal static class Adding
         string role,
         string owns,
         Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
+        Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? registered,
         CancellationToken cancellationToken,
         Func<string, Task> done,
         Action<string>? remember,
@@ -505,7 +556,7 @@ internal static class Adding
             //
             // Nothing here claims to be anybody. The start is a request; the registration is the
             // agent's own act.
-            said.Add(await StartAsync(start, role, project, already, deployment, cancellationToken)
+            said.Add(await StartAsync(start, registered, role, project, already, deployment, cancellationToken)
                 .ConfigureAwait(false));
         }
         catch (InterruptedEnrolment interrupted)

@@ -21,8 +21,8 @@ internal sealed record Registration(bool Registered, string Says);
 /// <remarks>
 /// <para>
 /// <b>Enrolment is not finished until the agent has attached at least once.</b> Until then §14
-/// counts its name as unroutable, and <em>every</em> message type is refused — a question and a
-/// notification alike, both through <c>IsUnroutableAsync</c>. So a repository that has been
+/// counts its name as unroutable, and <em>every</em> message type is refused, all of them through
+/// <c>IsUnroutableAsync</c>. So a repository that has been
 /// enrolled and never opened is not a quiet agent; it is one nothing can address at all.
 /// </para>
 /// <para>

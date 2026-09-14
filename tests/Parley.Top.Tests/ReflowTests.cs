@@ -102,8 +102,8 @@ public sealed class ReflowTests
             [
                 new Message(
                     1,
-                    null,
-                    MessageType.Notify,
+                    1,
+                    MessageType.Request,
                     AgentName.Create("orders@test"),
                     AgentName.Create("billing@test"),
                     "test",

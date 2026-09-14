@@ -1,321 +1,198 @@
 namespace Parley.Core;
 
 /// <summary>
-/// A single question between two agents and its resolution, including any clarification
-/// rounds.
+/// One Request and its Result, including every clarification between them (SPEC.md §6).
 /// </summary>
 /// <remarks>
 /// <para>
-/// This aggregate owns only what is true of one exchange in isolation: whose turn it is,
-/// how many clarification rounds have been spent, when it expires, and whether it is still
-/// live. Pair mutual exclusion and cycle rejection are broker-level concerns and live
-/// elsewhere — see <see cref="WaitForGraph"/> and the partial unique index
-/// <c>ux_open_pair</c> in the schema.
+/// This aggregate owns only what is true of one exchange in isolation: whose turn it is, how many
+/// clarifications have been asked for, whether it has been collected, and whether it is still open.
+/// Which conversation it belongs to, whether it closes a cycle and whether it is a duplicate are
+/// decided at admission, against every open exchange, and live in the store.
 /// </para>
 /// <para>
-/// The asker and answerer roles are fixed at creation and never swap. The turn, tracked by
-/// <see cref="OwedBy"/>, does swap: a clarification hands the turn back to the asker, and
-/// the asker's reply returns it. Only the answerer may ever close the exchange.
+/// <b>Two states and no timer.</b> An exchange is open until its receiver sends a Result or the
+/// conversation it belongs to is closed (§5.0). Nothing that happens to a process ends it, and there
+/// is no deadline to expire it: the two thresholds it carries decide only when silence is flagged to
+/// the person running the deployment, which changes nothing about the exchange itself.
 /// </para>
 /// <para>
-/// Transitions report refusal through <see cref="TransitionResult"/> rather than throwing.
-/// An agent speaking out of turn is a routine event in a concurrent system, not an
-/// exceptional one. Exceptions are reserved for arguments that could never be valid, such as
-/// an agent addressing itself.
+/// The requester and receiver are fixed at creation and never swap. The turn, tracked by
+/// <see cref="OwedBy"/>, does: a clarification from the receiver hands it to the requester, and the
+/// requester's reply returns it. Only the receiver ever sends the Result.
+/// </para>
+/// <para>
+/// Transitions report refusal through <see cref="TransitionResult"/> rather than throwing. A
+/// participant speaking out of turn is a routine event in a concurrent system, not an exceptional
+/// one. Exceptions are reserved for arguments that could never be valid, such as a participant
+/// addressing itself.
 /// </para>
 /// </remarks>
 public sealed class Exchange
 {
-
     private Exchange(
         long id,
-        AgentName asker,
-        AgentName answerer,
-        TimeSpan deliveryWindow,
-        TimeSpan workingWindow,
-        TimeSpan gracePeriod,
+        AgentName requester,
+        AgentName receiver,
+        TimeSpan uncollectedAfter,
+        TimeSpan stalledAfter,
         int clarifyDepthCap,
         DateTimeOffset openedUtc)
     {
         Id = id;
-        Asker = asker;
-        Answerer = answerer;
-        PairKey = PairKey.For(asker, answerer);
-        OwedBy = answerer;
+        Requester = requester;
+        Receiver = receiver;
+        PairKey = PairKey.For(requester, receiver);
+        OwedBy = receiver;
         State = ExchangeState.Open;
-        DeliveryWindow = deliveryWindow;
-        WorkingWindow = workingWindow;
-        GracePeriod = gracePeriod;
+        UncollectedAfter = uncollectedAfter;
+        StalledAfter = stalledAfter;
         ClarifyDepthCap = clarifyDepthCap;
         OpenedUtc = openedUtc;
-
-        // The delivery window runs first: nothing has picked the question up yet.
-        ExpiresUtc = openedUtc + deliveryWindow;
     }
 
-    /// <summary>
-    /// Gets the storage identity of this exchange.
-    /// </summary>
+    /// <summary>Gets the storage identity of this exchange.</summary>
     /// <value>The primary key assigned when the exchange was inserted.</value>
     public long Id { get; }
 
-    /// <summary>
-    /// Gets the unordered pair key for the two participants.
-    /// </summary>
-    /// <value>The key against which this exchange holds the pair slot while open.</value>
+    /// <summary>Gets the unordered pair key for the two participants.</summary>
+    /// <value>The key every rule about traffic between two participants is built on (§7.1).</value>
     public PairKey PairKey { get; }
 
-    /// <summary>
-    /// Gets the agent that opened the exchange and awaits an answer.
-    /// </summary>
-    /// <value>The asking agent. Fixed for the life of the exchange.</value>
-    public AgentName Asker { get; }
+    /// <summary>Gets the participant that sent the Request.</summary>
+    /// <value>Fixed for the life of the exchange.</value>
+    public AgentName Requester { get; }
 
-    /// <summary>
-    /// Gets the agent that owes the closing answer.
-    /// </summary>
+    /// <summary>Gets the participant asked to do the work.</summary>
     /// <value>
-    /// The answering agent. Fixed for the life of the exchange, and the only agent permitted
-    /// to call <see cref="Answer"/> — even during a clarification round when the turn sits
-    /// with the asker.
+    /// Fixed for the life of the exchange, and the only participant permitted to send the Result —
+    /// even while a clarification has handed the turn to the requester.
     /// </value>
-    public AgentName Answerer { get; }
+    public AgentName Receiver { get; }
 
-    /// <summary>
-    /// Gets the participant who must respond next.
-    /// </summary>
-    /// <value>
-    /// Initially the <see cref="Answerer"/>. Flips on each <see cref="Clarify"/> call and is
-    /// restored to the answerer when the exchange closes.
-    /// </value>
+    /// <summary>Gets the participant who must move next.</summary>
+    /// <value>Initially the <see cref="Receiver"/>. Flips on each <see cref="Clarify"/>.</value>
     public AgentName OwedBy { get; private set; }
 
-    /// <summary>
-    /// Gets the current lifecycle state.
-    /// </summary>
-    /// <value>Open, closed, or orphaned.</value>
+    /// <summary>Gets the current lifecycle state.</summary>
+    /// <value>Open or closed.</value>
     public ExchangeState State { get; private set; }
 
-    /// <summary>
-    /// Gets the number of clarification requests spent so far.
-    /// </summary>
-    /// <value>
-    /// A count of requests made by the <see cref="Answerer"/>. The asker's replies are not
-    /// counted; see <see cref="Clarify"/> for why.
-    /// </value>
+    /// <summary>Gets the number of clarifications the receiver has asked for.</summary>
+    /// <value>Replies from the requester are not counted; see <see cref="Clarify"/>.</value>
     public int ClarifyDepth { get; private set; }
 
-    /// <summary>
-    /// Gets the clarification request limit for this exchange.
-    /// </summary>
+    /// <summary>Gets the clarification limit for this exchange.</summary>
     /// <value>
-    /// The number of requests permitted before <see cref="Clarify"/> refuses and the broker
-    /// must force a resolution.
+    /// The number permitted before <see cref="Clarify"/> refuses the next one, or
+    /// <see cref="ExchangePolicy.UnboundedClarifications"/> when none is refused, which is the
+    /// default (§5.2). Nothing closes the exchange when a cap is reached.
     /// </value>
     public int ClarifyDepthCap { get; }
 
-    /// <summary>
-    /// Gets the window allowed for the question to be picked up.
-    /// </summary>
-    /// <value>Short. Runs from the question being written until it is delivered.</value>
+    /// <summary>Gets how long the Request may go uncollected before it is flagged.</summary>
+    /// <value>The first stage of §6, measured from <see cref="OpenedUtc"/>.</value>
     /// <remarks>
-    /// Silence here means nobody collected the question: the agent never spawned, or died on
-    /// the way. That is the case worth reacting to quickly, because an exchange holding a
-    /// wait-for edge blocks peers who have done nothing wrong.
+    /// Stamped at admission rather than read from configuration, so a deployment changing its
+    /// settings does not re-flag work already in flight.
     /// </remarks>
-    public TimeSpan DeliveryWindow { get; }
+    public TimeSpan UncollectedAfter { get; }
 
-    /// <summary>
-    /// Gets the window allowed for an answer once the question has been delivered.
-    /// </summary>
-    /// <value>Long. Runs from delivery, and is renewed by each clarification.</value>
+    /// <summary>Gets how long the owing participant may go without a message before it is flagged.</summary>
+    /// <value>The second stage of §6, measured from collection or from the latest message.</value>
     /// <remarks>
-    /// Silence here means something entirely different from silence before delivery: the agent
-    /// was alive, took the question, and is working. Answering across a repository boundary can
-    /// mean building something or running a test suite, so this is measured in hours. One timer
-    /// cannot serve both cases — short enough to catch a dead agent will orphan a working one,
-    /// and long enough to let real work finish leaves a vanished agent holding its edge all
-    /// afternoon. Delivery is already recorded, so the split costs no extra message.
+    /// A different number from <see cref="UncollectedAfter"/> because it describes a different
+    /// fact. Nobody having picked a Request up is worth showing quickly; somebody working on it for
+    /// hours is ordinary. One threshold short enough for the first would flag every agent doing real
+    /// work, and one long enough for the second would hide a vanished agent all afternoon.
     /// </remarks>
-    public TimeSpan WorkingWindow { get; }
+    public TimeSpan StalledAfter { get; }
 
-    /// <summary>
-    /// Gets how long an orphan is kept before it is ghosted.
-    /// </summary>
-    /// <value>The period after orphaning during which the owing agent may still return.</value>
-    /// <remarks>
-    /// Carried per exchange rather than read from configuration when the sweep runs, so an
-    /// exchange is ghosted on the terms it was opened under. Held globally, lengthening the
-    /// setting would retroactively revive orphans already past the old period, and shortening
-    /// it would ghost a batch of live ones at once.
-    /// </remarks>
-    public TimeSpan GracePeriod { get; }
-
-    /// <summary>
-    /// Gets the instant the question was delivered, if it has been.
-    /// </summary>
-    /// <value><see langword="null"/> until an inbox drain collects it.</value>
+    /// <summary>Gets when the receiver first collected the Request.</summary>
+    /// <value><see langword="null"/> until a collection hands it over.</value>
     public DateTimeOffset? DeliveredUtc { get; private set; }
 
-    /// <summary>
-    /// Gets why the exchange closed, once it has.
-    /// </summary>
-    /// <value><see langword="null"/> while the exchange is open or orphaned.</value>
+    /// <summary>Gets how the exchange closed, once it has.</summary>
+    /// <value><see langword="null"/> while open.</value>
     /// <remarks>
-    /// A rollup of the per-sub-question resolutions, taking the least resolved of them, so an
-    /// exchange counts as answered only when every part of it was. It outlives the message text
-    /// that retention eventually prunes, which makes it the only thing left distinguishing a
-    /// ghost from an answer.
+    /// The rolled-up outcome of §5.3: the least favourable reading of the Result. It outlives the
+    /// message text retention prunes, so it is what §15 is computed from.
     /// </remarks>
-    public Resolution? Resolution { get; private set; }
+    public ExchangeOutcome? Outcome { get; private set; }
 
-    /// <summary>
-    /// Gets the instant the exchange was opened.
-    /// </summary>
-    /// <value>The creation timestamp, in UTC. Never changes.</value>
+    /// <summary>Gets the instant the exchange was opened.</summary>
+    /// <value>The creation timestamp, in UTC.</value>
     public DateTimeOffset OpenedUtc { get; }
 
-    /// <summary>
-    /// Gets the instant after which the exchange is eligible for orphaning.
-    /// </summary>
-    /// <value>
-    /// A sliding deadline, extended by each clarification. An agent that disappears
-    /// mid-question must not hold the pair slot indefinitely.
-    /// </value>
-    public DateTimeOffset ExpiresUtc { get; private set; }
-
-    /// <summary>
-    /// Gets the instant the exchange was closed.
-    /// </summary>
-    /// <value>
-    /// The closing timestamp, or <see langword="null"/> if the exchange is not closed.
-    /// </value>
+    /// <summary>Gets the instant the exchange was closed.</summary>
+    /// <value>The closing timestamp, or <see langword="null"/> while open.</value>
     public DateTimeOffset? ClosedUtc { get; private set; }
 
-    /// <summary>
-    /// Gets a value indicating whether the answer was flagged for promotion to a durable
-    /// decision record.
-    /// </summary>
-    /// <value>
-    /// <see langword="true"/> when the closing answer settled something worth writing down.
-    /// </value>
+    /// <summary>Gets the optimistic concurrency stamp last read from or written to storage.</summary>
+    /// <value>Zero for an exchange that has never been saved.</value>
     /// <remarks>
-    /// Promotion is what stops the same boundary question being re-derived weeks later at
-    /// full token cost, which is the failure the protocol exists to prevent.
-    /// </remarks>
-    public bool IsDecision { get; private set; }
-
-    /// <summary>
-    /// Gets the optimistic concurrency stamp last read from or written to storage.
-    /// </summary>
-    /// <value>
-    /// Zero for an exchange that has never been saved; otherwise the value held by the
-    /// stored row at the time this instance was loaded.
-    /// </value>
-    /// <remarks>
-    /// This is frankly a persistence concern rather than a domain one, and it lives on the
-    /// aggregate only because it has to round-trip with it. It exists because two paths that
-    /// both load, transition, and save would otherwise silently lose one transition, and the
-    /// transition most likely to be lost is a <see cref="ClarifyDepth"/> increment — which
-    /// would quietly turn <see cref="ClarifyDepthCap"/> into a suggestion. Never interpret
-    /// it as domain state.
+    /// A persistence concern that lives here only because it has to round-trip with the aggregate.
+    /// Two paths that both load, transition and save would otherwise silently lose one transition,
+    /// and the one most likely to be lost is a <see cref="ClarifyDepth"/> increment.
     /// </remarks>
     public long Version { get; private set; }
 
-    /// <summary>
-    /// Records that this instance has been persisted, adopting the stamp the store assigned.
-    /// </summary>
+    /// <summary>Records that this instance has been persisted, adopting the stamp the store assigned.</summary>
     /// <param name="version">The concurrency stamp now held by the stored row.</param>
     /// <remarks>
-    /// Called by the persistence layer immediately after a successful save, so that a second
-    /// save of the same instance carries the current stamp rather than a stale one. Adopting
-    /// a stamp anywhere else silently defeats the optimistic concurrency check, which is why
-    /// this is internal and reachable only through the <c>InternalsVisibleTo</c> grant to
-    /// Parley.Store rather than left public with a warning attached to it.
+    /// Internal and reachable only through the grant to Parley.Store: adopting a stamp anywhere else
+    /// silently defeats the concurrency check.
     /// </remarks>
     internal void MarkSaved(long version) => Version = version;
 
-    /// <summary>
-    /// Determines whether an agent is a participant in this exchange.
-    /// </summary>
-    /// <param name="agent">The agent to test.</param>
-    /// <returns>
-    /// <see langword="true"/> if <paramref name="agent"/> is the asker or the answerer;
-    /// otherwise <see langword="false"/>.
-    /// </returns>
-    public bool Involves(AgentName agent) => agent == Asker || agent == Answerer;
+    /// <summary>Determines whether a participant is party to this exchange.</summary>
+    /// <param name="agent">The participant to test.</param>
+    /// <returns><see langword="true"/> if it is the requester or the receiver.</returns>
+    public bool Involves(AgentName agent) => agent == Requester || agent == Receiver;
 
-    /// <summary>
-    /// Determines whether the exchange is overdue at a given instant.
-    /// </summary>
-    /// <param name="now">The instant to evaluate against, in UTC.</param>
-    /// <returns>
-    /// <see langword="true"/> if the exchange is still open and has passed
-    /// <see cref="ExpiresUtc"/>; otherwise <see langword="false"/>.
-    /// </returns>
-    /// <remarks>
-    /// Closed and orphaned exchanges never report as expired: they hold no pair slot, so
-    /// there is nothing left for the reaper to release.
-    /// </remarks>
-    public bool IsExpiredAt(DateTimeOffset now) => State == ExchangeState.Open && now >= ExpiresUtc;
+    /// <summary>Gets the participant waiting on <see cref="OwedBy"/>.</summary>
+    /// <value>Whichever party does not owe the next move.</value>
+    public AgentName Waiting => OwedBy == Receiver ? Requester : Receiver;
 
-    /// <summary>
-    /// Opens a new exchange, with the answerer owing the first response.
-    /// </summary>
+    /// <summary>Opens a new exchange, with the receiver owing the first move.</summary>
     /// <param name="id">The storage identity assigned to this exchange.</param>
-    /// <param name="asker">The agent posing the question.</param>
-    /// <param name="answerer">The agent expected to answer it.</param>
+    /// <param name="requester">The participant sending the Request.</param>
+    /// <param name="receiver">The participant asked to do the work.</param>
     /// <param name="nowUtc">The current instant, in UTC.</param>
     /// <param name="policy">
-    /// The terms to admit this exchange under, or <see langword="null"/> for
-    /// <see cref="ExchangePolicy.Default"/>. A resolved policy rather than the name of one:
-    /// selection belongs to the operator, and no parameter here should let an agent ask for a
-    /// longer window or a larger cap.
+    /// The terms to admit it under, or <see langword="null"/> for <see cref="ExchangePolicy.Default"/>.
+    /// A resolved policy rather than the name of one: selection belongs to the operator (§7.1).
     /// </param>
     /// <returns>The newly opened exchange.</returns>
-    /// <exception cref="ArgumentException">
-    /// <paramref name="asker"/> and <paramref name="answerer"/> are the same agent.
-    /// </exception>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="policy"/> carries a value outside what storage will accept.
-    /// </exception>
-    /// <remarks>
-    /// This constructs the aggregate only. Admission control — checking the pair slot is
-    /// free and that the question would not close a cycle — belongs to the broker and must
-    /// happen before this is called.
-    /// </remarks>
+    /// <exception cref="ArgumentException">The requester and receiver are the same participant.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="policy"/> is out of range.</exception>
     public static Exchange Open(
         long id,
-        AgentName asker,
-        AgentName answerer,
+        AgentName requester,
+        AgentName receiver,
         DateTimeOffset nowUtc,
         ExchangePolicy? policy = null)
     {
-        if (asker == answerer)
+        if (requester == receiver)
         {
-            throw new ArgumentException($"An agent cannot question itself ('{asker}').", nameof(answerer));
+            throw new ArgumentException(
+                $"A participant cannot send a request to itself ('{requester}').", nameof(receiver));
         }
 
         var terms = policy ?? ExchangePolicy.Default;
         terms.Validate();
 
         return new Exchange(
-            id, asker, answerer, terms.DeliveryWindow, terms.WorkingWindow, terms.GracePeriod,
+            id, requester, receiver, terms.UncollectedAfter, terms.StalledAfter,
             terms.ClarifyDepthCap, nowUtc);
     }
 
-    /// <summary>
-    /// Records that the question has been collected, and starts the working window.
-    /// </summary>
-    /// <param name="nowUtc">The instant of delivery, in UTC.</param>
-    /// <returns>
-    /// <see cref="TransitionResult.Ok"/> on success, or a failure carrying
-    /// <see cref="TransitionError.ExchangeNotOpen"/>.
-    /// </returns>
+    /// <summary>Records that the receiver has collected the Request.</summary>
+    /// <param name="nowUtc">The instant of collection, in UTC.</param>
+    /// <returns><see cref="TransitionResult.Ok"/>, or a failure if the exchange is not open.</returns>
     /// <remarks>
-    /// Idempotent in effect but not silent: delivering twice renews the working window, which
-    /// is what a replay after an orphan is supposed to do. What it must not do is run before
-    /// the exchange is open, since a closed exchange has nothing left to deliver.
+    /// Only the first collection is recorded. A Request delivered again after a restart (§6) was
+    /// collected before, and restamping it would hide how long it has really been owed.
     /// </remarks>
     public TransitionResult Deliver(DateTimeOffset nowUtc)
     {
@@ -324,94 +201,24 @@ public sealed class Exchange
             return TransitionResult.Fail(TransitionError.ExchangeNotOpen);
         }
 
-        DeliveredUtc = nowUtc;
-        ExpiresUtc = nowUtc + WorkingWindow;
+        DeliveredUtc ??= nowUtc;
         return TransitionResult.Ok;
     }
 
-    /// <summary>
-    /// Closes an orphaned exchange that nobody came back for.
-    /// </summary>
+    /// <summary>Sends a clarification, handing the turn to the other participant.</summary>
+    /// <param name="from">The participant sending it. Must hold the turn.</param>
     /// <param name="nowUtc">The current instant, in UTC.</param>
-    /// <returns>
-    /// <see cref="TransitionResult.Ok"/> on success, or a failure carrying
-    /// <see cref="TransitionError.ExchangeNotOrphaned"/>.
-    /// </returns>
-    /// <remarks>
-    /// The terminal state an orphan otherwise lacks. Without it a `never` resume policy retains
-    /// orphans nothing ever clears, so the retention age cap is not in fact absolute — the gap
-    /// SPEC.md §9.4 used to concede. Ghosting does not discard the question: the broker returns
-    /// it to the asker along with the consequences the asker itself wrote down.
-    /// </remarks>
-    public TransitionResult Ghost(DateTimeOffset nowUtc)
-    {
-        if (State != ExchangeState.Orphaned)
-        {
-            return TransitionResult.Fail(TransitionError.ExchangeNotOrphaned);
-        }
-
-        State = ExchangeState.Closed;
-        ClosedUtc = nowUtc;
-        Resolution = Core.Resolution.Ghosted;
-        OwedBy = Answerer;
-        return TransitionResult.Ok;
-    }
-
-    /// <summary>
-    /// Reports whether this orphan's grace period has elapsed.
-    /// </summary>
-    /// <param name="nowUtc">The instant to evaluate against.</param>
-    /// <param name="brokerStartUtc">When the broker most recently started.</param>
-    /// <returns><see langword="true"/> if the exchange may be ghosted.</returns>
-    /// <remarks>
-    /// The clock runs from the later of orphaning and broker start. A broker that was down
-    /// overnight returns to exchanges whose grace period elapsed while nothing could possibly
-    /// have resumed them, and a plain wall-clock rule would ghost every one of them within a
-    /// second of start-up. In steady running the two agree, because broker start is in the past
-    /// for everything orphaned since.
-    /// </remarks>
-    public bool IsGhostableAt(DateTimeOffset nowUtc, DateTimeOffset brokerStartUtc)
-    {
-        if (State != ExchangeState.Orphaned)
-        {
-            return false;
-        }
-
-        var from = ExpiresUtc > brokerStartUtc ? ExpiresUtc : brokerStartUtc;
-        return nowUtc >= from + GracePeriod;
-    }
-
-    /// <summary>
-    /// Sends a clarification, handing the turn to the other participant and extending the
-    /// deadline.
-    /// </summary>
-    /// <param name="from">The agent sending the clarification. Must hold the turn.</param>
-    /// <param name="nowUtc">The current instant, in UTC.</param>
-    /// <returns>
-    /// <see cref="TransitionResult.Ok"/> on success, or a failure carrying
-    /// <see cref="TransitionError.ExchangeNotOpen"/>,
-    /// <see cref="TransitionError.NotAParticipant"/>,
-    /// <see cref="TransitionError.NotYourTurn"/>, or
-    /// <see cref="TransitionError.ClarifyDepthExceeded"/>.
-    /// </returns>
+    /// <returns><see cref="TransitionResult.Ok"/>, or why the move was refused.</returns>
     /// <remarks>
     /// <para>
-    /// Clarification claims no pair slot. Allocating one would make the answerer unable to
-    /// request detail, since the pair's only slot is already held by the question it is
-    /// trying to answer.
+    /// Depth increments only when the <see cref="Receiver"/> sends. The requester's reply supplies
+    /// what was asked for rather than opening a round, and charging both directions would halve any
+    /// cap without saying so.
     /// </para>
     /// <para>
-    /// Depth increments only when the <see cref="Answerer"/> sends. The asker's reply is
-    /// supplying detail that was asked for, not opening a new round, and charging both
-    /// directions would halve the effective cap without saying so.
-    /// </para>
-    /// <para>
-    /// When the cap is reached this refuses and nothing else happens. It does not close the
-    /// exchange and the broker writes no answer: <c>unknown</c> means "I own this and I do not
-    /// know", which is a statement about the answerer's knowledge that only the answerer can
-    /// make. A broker writing it would manufacture an agent's judgement -- the same fault
-    /// <c>ghosted</c> is protected against from the other side. The answerer answers with what it
-    /// has, or the exchange goes unanswered and SPEC.md 14 ghosts it like any other.
+    /// When a cap is set and reached this refuses and nothing else happens (§5.2). The receiver sends
+    /// a Result with what it has — <c>blocked</c> where that is the truth — and nothing closes the
+    /// exchange on its behalf, because an outcome is a participant's judgement about its own work.
     /// </para>
     /// </remarks>
     public TransitionResult Clarify(AgentName from, DateTimeOffset nowUtc)
@@ -431,53 +238,31 @@ public sealed class Exchange
             return TransitionResult.Fail(TransitionError.NotYourTurn);
         }
 
-        var isRequest = from == Answerer;
-        if (isRequest && ClarifyDepth >= ClarifyDepthCap)
+        var fromReceiver = from == Receiver;
+
+        if (fromReceiver && ClarifyDepth >= ClarifyDepthCap)
         {
             return TransitionResult.Fail(TransitionError.ClarifyDepthExceeded);
         }
 
-        if (isRequest)
+        if (fromReceiver)
         {
             ClarifyDepth++;
         }
 
-        OwedBy = from == Asker ? Answerer : Asker;
-        ExpiresUtc = nowUtc + WorkingWindow;
+        OwedBy = fromReceiver ? Requester : Receiver;
         return TransitionResult.Ok;
     }
 
-    /// <summary>
-    /// Closes the exchange with an answer, releasing the pair slot.
-    /// </summary>
-    /// <param name="from">
-    /// The agent answering. Must be the <see cref="Answerer"/> and must hold the turn.
-    /// </param>
+    /// <summary>Closes the exchange with the receiver's Result.</summary>
+    /// <param name="from">The participant sending the Result. Must be the receiver, holding the turn.</param>
     /// <param name="nowUtc">The current instant, in UTC.</param>
-    /// <param name="resolution">
-    /// The rolled-up outcome, taking the least resolved of the per-sub-question resolutions.
-    /// <see cref="Core.Resolution.Ghosted"/> is refused: only the broker records that.
+    /// <param name="outcome">
+    /// The rolled-up outcome of the Result's items. <see cref="ExchangeOutcome.Closed"/> is refused:
+    /// only the broker records that, when the conversation is closed first.
     /// </param>
-    /// <param name="isDecision">
-    /// <see langword="true"/> if the answer settles something that should be promoted to a
-    /// durable decision record.
-    /// </param>
-    /// <returns>
-    /// <see cref="TransitionResult.Ok"/> on success, or a failure carrying
-    /// <see cref="TransitionError.ExchangeNotOpen"/>,
-    /// <see cref="TransitionError.NotAParticipant"/>,
-    /// <see cref="TransitionError.OnlyAnswererMayAnswer"/>, or
-    /// <see cref="TransitionError.NotYourTurn"/>.
-    /// </returns>
-    /// <remarks>
-    /// The per-sub-question <see cref="Resolution"/> values travel on the message payload,
-    /// not on the aggregate. The exchange tracks whether it closed, not what it concluded.
-    /// </remarks>
-    public TransitionResult Answer(
-        AgentName from,
-        DateTimeOffset nowUtc,
-        Resolution resolution = Core.Resolution.Answered,
-        bool isDecision = false)
+    /// <returns><see cref="TransitionResult.Ok"/>, or why the move was refused.</returns>
+    public TransitionResult Close(AgentName from, DateTimeOffset nowUtc, ExchangeOutcome outcome)
     {
         if (State != ExchangeState.Open)
         {
@@ -489,9 +274,9 @@ public sealed class Exchange
             return TransitionResult.Fail(TransitionError.NotAParticipant);
         }
 
-        if (from != Answerer)
+        if (from != Receiver)
         {
-            return TransitionResult.Fail(TransitionError.OnlyAnswererMayAnswer);
+            return TransitionResult.Fail(TransitionError.OnlyReceiverSendsResult);
         }
 
         if (from != OwedBy)
@@ -499,136 +284,84 @@ public sealed class Exchange
             return TransitionResult.Fail(TransitionError.NotYourTurn);
         }
 
-        if (resolution == Core.Resolution.Ghosted)
+        if (outcome == ExchangeOutcome.Closed)
         {
-            // A ghost asserts nobody answered, so it cannot arrive on an answer. The schema
-            // refuses this too; refusing it here means the caller learns why rather than
-            // meeting a constraint violation from three layers down.
-            return TransitionResult.Fail(TransitionError.GhostIsNotAnAnswer);
+            // The schema refuses this too. Refusing it here means the caller learns what it did
+            // rather than meeting a trigger three layers down.
+            return TransitionResult.Fail(TransitionError.ClosedIsTheBrokers);
         }
 
         State = ExchangeState.Closed;
         ClosedUtc = nowUtc;
-        IsDecision = isDecision;
-        Resolution = resolution;
-        OwedBy = Answerer;
+        Outcome = outcome;
+        OwedBy = Receiver;
         return TransitionResult.Ok;
     }
 
-    /// <summary>
-    /// Marks the exchange orphaned after a time-out or a participant disconnect.
-    /// </summary>
-    /// <param name="nowUtc">The current instant, in UTC.</param>
-    /// <returns>
-    /// <see cref="TransitionResult.Ok"/> on success, or a failure carrying
-    /// <see cref="TransitionError.ExchangeNotOpen"/>.
-    /// </returns>
+    /// <summary>Closes the exchange because the conversation it belongs to closed first.</summary>
+    /// <param name="nowUtc">The instant of closure, in UTC.</param>
+    /// <returns><see cref="TransitionResult.Ok"/>, or a failure if the exchange is not open.</returns>
     /// <remarks>
-    /// Orphaning releases the pair slot and removes the wait-for edge, so an agent that
-    /// vanishes cannot block its peers indefinitely — while preserving the question so it is
-    /// not silently lost. Call <see cref="Resume"/> when the owing agent returns.
+    /// The one transition nobody party to the exchange makes. It is taken only together with the
+    /// broker's own <c>closed</c> Result to each participant holding the exchange, in one write
+    /// (§14), and the schema refuses the outcome without that Result.
     /// </remarks>
-    public TransitionResult Orphan(DateTimeOffset nowUtc)
+    public TransitionResult CloseWithConversation(DateTimeOffset nowUtc)
     {
         if (State != ExchangeState.Open)
         {
             return TransitionResult.Fail(TransitionError.ExchangeNotOpen);
         }
 
-        State = ExchangeState.Orphaned;
-        ExpiresUtc = nowUtc;
+        State = ExchangeState.Closed;
+        ClosedUtc = nowUtc;
+        Outcome = ExchangeOutcome.Closed;
         return TransitionResult.Ok;
     }
 
-    /// <summary>
-    /// Reopens an orphaned exchange, granting a fresh deadline.
-    /// </summary>
-    /// <param name="nowUtc">The current instant, in UTC.</param>
-    /// <returns>
-    /// <see cref="TransitionResult.Ok"/> on success, or a failure carrying
-    /// <see cref="TransitionError.ExchangeNotOrphaned"/>.
-    /// </returns>
-    /// <remarks>
-    /// <see cref="ClarifyDepth"/> is deliberately preserved. A restart is not a fresh budget
-    /// for going in circles, and resetting it would let a pathological exchange evade the cap
-    /// by cycling through orphan and resume.
-    /// </remarks>
-    public TransitionResult Resume(DateTimeOffset nowUtc)
-    {
-        if (State != ExchangeState.Orphaned)
-        {
-            return TransitionResult.Fail(TransitionError.ExchangeNotOrphaned);
-        }
-
-        State = ExchangeState.Open;
-
-        // The delivery window, not the working one. A replay marks the question undelivered
-        // again (SPEC.md 14), so the exchange is back to waiting for someone to pick it up,
-        // and granting hours for that would hide an agent that never returned at all.
-        DeliveredUtc = null;
-        ExpiresUtc = nowUtc + DeliveryWindow;
-        return TransitionResult.Ok;
-    }
-
-    /// <summary>
-    /// Reconstructs an exchange from stored values without replaying its transitions.
-    /// </summary>
+    /// <summary>Reconstructs an exchange from stored values without replaying its transitions.</summary>
     /// <param name="id">The storage identity.</param>
-    /// <param name="asker">The asking agent.</param>
-    /// <param name="answerer">The answering agent.</param>
-    /// <param name="owedBy">The participant who currently owes a response.</param>
+    /// <param name="requester">The participant that sent the Request.</param>
+    /// <param name="receiver">The participant asked to do the work.</param>
+    /// <param name="owedBy">The participant who owes the next move.</param>
     /// <param name="state">The lifecycle state.</param>
-    /// <param name="clarifyDepth">Clarification requests spent so far.</param>
-    /// <param name="clarifyDepthCap">The clarification request limit.</param>
-    /// <param name="deliveryWindow">The window allowed for pickup.</param>
-    /// <param name="workingWindow">The window allowed for an answer once delivered.</param>
-    /// <param name="gracePeriod">How long an orphan is kept before it is ghosted.</param>
+    /// <param name="clarifyDepth">Clarifications the receiver has asked for.</param>
+    /// <param name="clarifyDepthCap">The clarification limit.</param>
+    /// <param name="uncollectedAfter">The first flag threshold.</param>
+    /// <param name="stalledAfter">The second flag threshold.</param>
     /// <param name="openedUtc">The creation timestamp.</param>
-    /// <param name="expiresUtc">The current deadline.</param>
+    /// <param name="deliveredUtc">When the Request was first collected, if it has been.</param>
     /// <param name="closedUtc">The closing timestamp, if closed.</param>
-    /// <param name="deliveredUtc">When the question was collected, if it has been.</param>
-    /// <param name="isDecision">Whether the answer was flagged for promotion.</param>
-    /// <param name="resolution">Why the exchange closed, or <see langword="null"/> if open.</param>
+    /// <param name="outcome">How it closed, or <see langword="null"/> while open.</param>
     /// <param name="version">The optimistic concurrency stamp held by the stored row.</param>
     /// <returns>The reconstructed exchange.</returns>
     /// <remarks>
-    /// Intended for the persistence layer only. This bypasses every transition guard, so the
-    /// values supplied are trusted to be internally consistent — which the schema's
-    /// <c>CHECK</c> constraints are responsible for guaranteeing.
+    /// For the persistence layer only. It bypasses every transition guard, so the values are trusted
+    /// to be consistent — which the schema's constraints are responsible for guaranteeing.
     /// </remarks>
     public static Exchange Rehydrate(
         long id,
-        AgentName asker,
-        AgentName answerer,
+        AgentName requester,
+        AgentName receiver,
         AgentName owedBy,
         ExchangeState state,
         int clarifyDepth,
         int clarifyDepthCap,
-        TimeSpan deliveryWindow,
-        TimeSpan workingWindow,
-        TimeSpan gracePeriod,
+        TimeSpan uncollectedAfter,
+        TimeSpan stalledAfter,
         DateTimeOffset openedUtc,
-        DateTimeOffset expiresUtc,
-        DateTimeOffset? closedUtc,
         DateTimeOffset? deliveredUtc,
-        bool isDecision,
-        Resolution? resolution,
-        long version = 0)
-    {
-        var exchange = new Exchange(
-            id, asker, answerer, deliveryWindow, workingWindow, gracePeriod, clarifyDepthCap, openedUtc)
+        DateTimeOffset? closedUtc,
+        ExchangeOutcome? outcome,
+        long version = 0) =>
+        new(id, requester, receiver, uncollectedAfter, stalledAfter, clarifyDepthCap, openedUtc)
         {
             OwedBy = owedBy,
             State = state,
             ClarifyDepth = clarifyDepth,
-            ExpiresUtc = expiresUtc,
-            ClosedUtc = closedUtc,
             DeliveredUtc = deliveredUtc,
-            IsDecision = isDecision,
-            Resolution = resolution,
+            ClosedUtc = closedUtc,
+            Outcome = outcome,
             Version = version
         };
-
-        return exchange;
-    }
 }

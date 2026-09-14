@@ -128,7 +128,7 @@ public sealed class ReadmeTests
         // makes an agent reach for the tools at all.
         var readme = Readme();
 
-        foreach (var needed in new[] { "CLAUDE.md", "AGENTS.md", "parley_ask", "parley_inbox" })
+        foreach (var needed in new[] { "CLAUDE.md", "AGENTS.md", "parley_request", "parley_inbox" })
         {
             Assert.True(
                 readme.Contains(needed, StringComparison.Ordinal),

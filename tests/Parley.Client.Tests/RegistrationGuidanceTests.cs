@@ -120,7 +120,7 @@ public sealed class RegistrationGuidanceTests
         // The failure this prevents is silent and recurring. `.mcp.json` is usually tracked, so
         // an entry written on a feature branch is on disk while that branch is out and gone on
         // one that predates it — the session starts, the tools are absent, nothing errors, and
-        // the peer that asked a question waits out its window and is ghosted.
+        // the peer that sent a request waits, its work flagged as never collected.
         //
         // Cost real hours on a real deployment before it was written down anywhere.
         Assert.Contains("which branch is checked out", Page, StringComparison.Ordinal);

@@ -1,3 +1,4 @@
+using System.Drawing;
 using Terminal.Gui.App;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
@@ -40,13 +41,24 @@ internal static class Prompting
     /// <param name="problem">
     /// What is wrong with what has been typed, or null when nothing is. Called on every keystroke.
     /// </param>
+    /// <param name="correct">
+    /// What the typed text becomes, for a field whose rule can be applied rather than only
+    /// reported. Null leaves whatever is typed alone, which is what the dialogs that take a name
+    /// typed back need: correcting there would type half of the confirmation for the person.
+    /// </param>
+    /// <param name="corrected">
+    /// What to say when <paramref name="correct"/> changed something. Required whenever a
+    /// correction is given, for the reason <see cref="FormField.Corrected"/> gives.
+    /// </param>
     /// <returns>The dialog, not yet open.</returns>
     internal static TextDialog Text(
         string title,
         string question,
         string proposal = "",
-        Func<string, string?>? problem = null) =>
-        new(title, question, proposal, problem);
+        Func<string, string?>? problem = null,
+        Func<string, string>? correct = null,
+        string? corrected = null) =>
+        new(title, question, proposal, problem, correct, corrected);
 
     /// <summary>Offers a choice, with the safe answer first.</summary>
     /// <param name="title">What the dialog is called.</param>
@@ -128,13 +140,32 @@ internal static class Prompting
 internal sealed class TextDialog : Dialog
 {
     private readonly Func<string, string?>? _problem;
+    private readonly Func<string, string>? _correct;
+    private readonly string _corrected;
     private readonly TextField _field;
     private readonly Label _why;
     private readonly Button _ok;
 
-    internal TextDialog(string title, string question, string proposal, Func<string, string?>? problem)
+    /// <summary>What the last keystroke's correction did, until one that corrects nothing.</summary>
+    private string _note = string.Empty;
+
+    internal TextDialog(
+        string title,
+        string question,
+        string proposal,
+        Func<string, string?>? problem,
+        Func<string, string>? correct = null,
+        string? corrected = null)
     {
         _problem = problem;
+        _correct = correct;
+        _corrected = corrected ?? string.Empty;
+
+        if (correct is not null && string.IsNullOrEmpty(corrected))
+        {
+            throw new ArgumentException(
+                "A correction has to say what it did. See FormField.Corrected.", nameof(corrected));
+        }
 
         Title = title;
         Width = Dim.Percent(70);
@@ -154,7 +185,7 @@ internal sealed class TextDialog : Dialog
         // dialog *before* this one reads correctly and this one did not.
         Height = Dim.Percent(60);
 
-        var asked = new Label
+        var asked = new Plain
         {
             Text = question,
             X = 1,
@@ -169,8 +200,17 @@ internal sealed class TextDialog : Dialog
 
         // The footer sits against the bottom, so the question keeps everything above it however
         // tall the dialog ends up.
-        _field = new TextField { X = 1, Y = Pos.AnchorEnd(4), Width = Dim.Fill(2), Text = proposal };
-        _why = new Label { X = 1, Y = Pos.AnchorEnd(3), Width = Dim.Fill(2), Text = string.Empty };
+        _field = new TextField
+        {
+            X = 1,
+            Y = Pos.AnchorEnd(4),
+            Width = Dim.Fill(2),
+
+            // Corrected before it is shown, like the forms do it, so a proposal this dialog would
+            // refuse is never the thing Enter accepts.
+            Text = correct is not null ? correct(proposal) : proposal,
+        };
+        _why = new Plain { X = 1, Y = Pos.AnchorEnd(3), Width = Dim.Fill(2), Text = string.Empty };
         _ok = new Button { Title = Prompting.Confirm, X = 1, Y = Pos.AnchorEnd(2), IsDefault = true };
 
         var cancel = new Button
@@ -180,7 +220,7 @@ internal sealed class TextDialog : Dialog
             Y = Pos.AnchorEnd(2),
         };
 
-        _field.TextChanged += (_, _) => Check();
+        _field.TextChanged += (_, _) => { Fix(); Check(); };
         _ok.Accepting += (_, args) => { args.Handled = true; Finish(taken: true); };
         cancel.Accepting += (_, args) => { args.Handled = true; Finish(taken: false); };
 
@@ -195,11 +235,25 @@ internal sealed class TextDialog : Dialog
     internal string Typed => _field.Text;
 
     /// <summary>What is wrong with what has been typed, as shown.</summary>
+    /// <remarks>
+    /// The one line under the field, which carries a problem when there is one and otherwise
+    /// whatever the last correction did. A problem outranks a note for the reason
+    /// <see cref="FormDialog"/> gives: "this name is already taken" matters more than "the capital
+    /// was lowered".
+    /// </remarks>
     internal string Problem => _why.Text;
+
+    /// <summary>Whether what has been typed would be refused.</summary>
+    /// <remarks>
+    /// Asked of the button rather than of <see cref="Problem"/>, which stopped being the same
+    /// question when a correction's note started sharing that line. Reading the label to decide
+    /// whether to accept would refuse every name a correction had just tidied.
+    /// </remarks>
+    internal bool Wrong => !_ok.Enabled;
 
     /// <summary>Answers as if the person had pressed the button.</summary>
     /// <param name="taken">Whether they went ahead.</param>
-    internal void Finish(bool taken) => Done?.Invoke(this, taken && _why.Text.Length == 0 ? _field.Text : null);
+    internal void Finish(bool taken) => Done?.Invoke(this, taken && !Wrong ? _field.Text : null);
 
     /// <inheritdoc/>
     protected override bool OnKeyDown(Key key)
@@ -219,8 +273,43 @@ internal sealed class TextDialog : Dialog
     /// <summary>Re-checks what has been typed and enables or refuses the button.</summary>
     private void Check()
     {
-        _why.Text = _problem?.Invoke(_field.Text) ?? string.Empty;
-        _ok.Enabled = _why.Text.Length == 0;
+        var problem = _problem?.Invoke(_field.Text) ?? string.Empty;
+
+        _why.Text = problem.Length > 0 ? problem : _note;
+        _ok.Enabled = problem.Length == 0;
+    }
+
+    /// <summary>Applies this dialog's own rule to what has just been typed, and says so.</summary>
+    /// <remarks>
+    /// <see cref="FormDialog.Fix"/> in one field's worth, and re-entrant by the same construction:
+    /// setting <c>Text</c> raises <c>TextChanged</c> again, and a corrected value corrects to
+    /// itself, so the second pass changes nothing and stops. The note stays while the corrected
+    /// text does and goes when the field is emptied — clearing it on the first keystroke that
+    /// needed no correction was tried in the forms and is wrong, because everything after the
+    /// character that was corrected is usually already acceptable.
+    /// </remarks>
+    private void Fix()
+    {
+        if (_correct is not { } correct)
+        {
+            return;
+        }
+
+        var typed = _field.Text;
+        var corrected = correct(typed);
+
+        if (string.Equals(typed, corrected, StringComparison.Ordinal))
+        {
+            if (corrected.Length == 0)
+            {
+                _note = string.Empty;
+            }
+
+            return;
+        }
+
+        _note = _corrected;
+        _field.Text = corrected;
     }
 }
 
@@ -252,7 +341,7 @@ internal sealed class ChoiceDialog : Dialog
         Height = Dim.Func(
             view => Math.Min(wants + choices.Count + Edges, Room(view)), this);
 
-        var said = new Label
+        var said = new Plain
         {
             Text = description,
             X = 1,
@@ -462,12 +551,12 @@ internal sealed class FormDialog : Dialog
 
         foreach (var field in fields)
         {
-            var asked = new Label { Text = field.Label, X = 1, Width = Dim.Fill(2) };
+            var asked = new Plain { Text = field.Label, X = 1, Width = Dim.Fill(2) };
 
             asked.TextFormatter.WordWrap = true;
 
             var entry = Entry.For(field);
-            var why = new Label { X = 1, Width = Dim.Fill(2), Text = string.Empty };
+            var why = new Plain { X = 1, Width = Dim.Fill(2), Text = string.Empty };
 
             entry.Changed += () =>
             {
@@ -557,6 +646,44 @@ internal sealed class FormDialog : Dialog
         if (IsInitialized)
         {
             Layout();
+        }
+    }
+
+    /// <summary>The screen height this form last laid itself out for.</summary>
+    private int _room;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// <b>The moment the screen's height becomes knowable, and until this existed nothing used
+    /// it.</b> <see cref="Trimmed"/> says in as many words that nothing can be trimmed in the
+    /// constructor because the form is not running in anything yet, and that it will be laid out
+    /// "for the size it will be given a moment later" — but the only thing that ever re-laid it
+    /// was a keystroke. A form too tall to fit opened clipped and stayed clipped until somebody
+    /// typed into it.
+    /// </para>
+    /// <para>
+    /// <b>Its own guard passed throughout, because it typed.</b>
+    /// <c>LongFieldTests.The_form_never_grows_taller_than_the_screen</c> fills a field with four
+    /// thousand characters before it measures anything, so it only ever checked the form after a
+    /// re-lay. Found when the ask form's labels grew: three labels carrying an example each are
+    /// tall enough to overflow a thirty-row screen on their own, and the dialog opened with its
+    /// title row off the top.
+    /// </para>
+    /// <para>
+    /// Keyed on the height rather than on a "have I done this" flag, so a terminal resized under
+    /// an open form is laid out for the size it has now.
+    /// </para>
+    /// </remarks>
+    protected override void OnFrameChanged(in Rectangle frame)
+    {
+        base.OnFrameChanged(in frame);
+
+        if (App?.Screen.Height is { } room && room != _room)
+        {
+            _room = room;
+
+            Lay();
         }
     }
 

@@ -13,42 +13,41 @@ namespace Parley.Top.Tests;
 /// Lens 2 of the review gate, run 2.4. A surface that re-implements a protocol rule has a second
 /// opinion about it, and the one that disagrees is always the one that lets something through.
 /// Three rules are visible on these screens and none of them is this surface's: rule 8.1's intent
-/// and consequences, rule 8.5's size cap, and §5.3's outcomes.
+/// and done_when, rule 8.5's size cap, and §5.3's outcomes.
 /// </para>
 /// <para>
-/// <b>The one that matters most is the outcome list.</b> §5.3 reserves <c>ghosted</c> for the
-/// broker recording an exchange nobody returned to; an agent — or a person at a seat — able to write
-/// it over their own unanswered work would be manufacturing the evidence §15 counts to find an
-/// unhealthy deployment. The list comes from <c>SeatVoice</c>, so this surface cannot grow a fourth
-/// by having somebody type one.
+/// <b>The one that matters most is the outcome list.</b> §5.3 reserves <c>closed</c> for the
+/// broker closing a conversation; an agent — or a person at a seat — able to write it over their
+/// own open work would be forging the broker's hand in the record §15 counts. The list comes from
+/// <c>SeatVoice</c>, so this surface cannot grow another by having somebody type one.
 /// </para>
 /// </remarks>
 public sealed class GuardOwnershipTests
 {
     [Fact]
-    public void The_outcomes_offered_are_the_clients_and_ghosted_is_not_among_them()
+    public void The_outcomes_offered_are_the_clients_and_closed_is_not_among_them()
     {
         Assert.NotEmpty(SeatVoice.Outcomes);
 
         Assert.DoesNotContain(
             SeatVoice.Outcomes,
-            outcome => outcome.Value.Contains("ghost", StringComparison.OrdinalIgnoreCase));
+            outcome => outcome.Value.StartsWith("closed", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public void The_consequences_rule_is_quoted_from_the_client_rather_than_written_here()
+    public void The_done_when_rule_is_quoted_from_the_client_rather_than_written_here()
     {
         // The number is SeatVoice's, so raising or lowering it there changes what this refuses
         // without anybody remembering to look here.
-        var short_ = new string('a', SeatVoice.MinimumConsequences - 1);
-        var exact = new string('a', SeatVoice.MinimumConsequences);
+        var short_ = new string('a', SeatVoice.MinimumDoneWhen - 1);
+        var exact = new string('a', SeatVoice.MinimumDoneWhen);
 
-        Assert.NotNull(Participation.ConsequencesProblem(short_));
-        Assert.Null(Participation.ConsequencesProblem(exact));
+        Assert.NotNull(Participation.DoneWhenProblem(short_));
+        Assert.Null(Participation.DoneWhenProblem(exact));
 
         Assert.Contains(
-            SeatVoice.MinimumConsequences.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            Participation.ConsequencesProblem(short_),
+            SeatVoice.MinimumDoneWhen.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Participation.DoneWhenProblem(short_),
             StringComparison.Ordinal);
     }
 
@@ -63,14 +62,13 @@ public sealed class GuardOwnershipTests
     }
 
     [Fact]
-    public void An_empty_answer_is_refused_because_it_closes_an_exchange_while_saying_nothing()
+    public void An_empty_result_is_refused_because_it_closes_an_exchange_while_saying_nothing()
     {
-        // §5.3: an answer settles the exchange. An empty one settles it and tells the asker
-        // nothing, and they cannot ask again -- so it is refused in the field rather than sent and
-        // regretted.
-        Assert.NotNull(Participation.AnswerProblem(string.Empty));
-        Assert.NotNull(Participation.AnswerProblem("   "));
-        Assert.Null(Participation.AnswerProblem("because the totals are computed downstream"));
+        // §5.3: a Result closes the exchange. An empty one closes it and tells the requester
+        // nothing -- so it is refused in the field rather than sent and regretted.
+        Assert.NotNull(Participation.ResultProblem(string.Empty));
+        Assert.NotNull(Participation.ResultProblem("   "));
+        Assert.Null(Participation.ResultProblem("because the totals are computed downstream"));
     }
 
     [Fact]

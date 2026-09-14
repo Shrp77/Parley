@@ -558,7 +558,7 @@
             overflow-wrap: anywhere;
         }
 
-        /* The answerer's own word for the outcome. "Out of scope" and "answered" are different
+        /* The receiver's own word for the outcome. "blocked" and "done" are different
            results and only one of them is finished. */
         ol.points .verdict {
             flex: 0 0 auto;
@@ -1224,6 +1224,95 @@
 
             new ResizeObserver(apply).observe(frame);
             apply();
+        })();
+
+        // **A field whose rule can be applied applies it, rather than refusing after the fact.**
+        // The owner named a broadcast `tell everybody test` in the terminal, wrote the whole
+        // message, sent it, and got the rule back with their words gone. This console's
+        // "Start a conversation called" field had the identical defect and a placeholder that
+        // invited prose into it, and its Join field had the quieter half: a capital was lowered
+        // after the form closed, with nothing on screen having said so.
+        //
+        // Every rule here is written once, in C#, and reaches this page as the attributes a field
+        // carries: `data-correct` is the character class `ConversationName.Correct` and
+        // `Seat.Correct` keep, and `data-lower` says the rule folds case as `Seat` does. So the
+        // console and the terminal cannot come to hold two spellings of one rule -- and the
+        // `pattern` attribute beside them, from the same constants, is what a browser with no
+        // scripts enforces.
+        //
+        // Progressive enhancement, like everything else here: without scripts the field keeps
+        // `pattern` and `maxlength`, the browser refuses the form, and the server refuses it
+        // again in its own words. This only moves the refusal to the keystroke.
+        (function () {
+            var fields = document.querySelectorAll('[data-correct]');
+
+            // **Character by character, because the obvious two-line version disagreed with the
+            // C# in one case and a test caught it.** Replacing every run of whitespace first and
+            // then dropping what is left over turns `1.2 / notes` into `1.2--notes`, where the
+            // rule -- which walks the characters once and only emits a hyphen for a run of spaces
+            // it has not already emitted one for -- gives `1.2-notes`. Two surfaces offering
+            // different names for the same typing is exactly what one shared rule is for.
+            var correct = function (field, text) {
+                var keep = new RegExp('^' + field.getAttribute('data-correct') + '$');
+                var lower = field.hasAttribute('data-lower');
+                var made = '';
+                var wasSpace = false;
+
+                for (var at = 0; at < text.length; at++) {
+                    var character = lower ? text[at].toLowerCase() : text[at];
+
+                    if (keep.test(character)) {
+                        made += character;
+                        wasSpace = false;
+                    } else if (/\s/.test(text[at])) {
+                        // A space becomes the separator the rule allows rather than being
+                        // dropped: `tell everybody test` is a name somebody can read back, and
+                        // `telleverybodytest` is not.
+                        if (!wasSpace) {
+                            made += '-';
+                        }
+
+                        wasSpace = true;
+                    }
+                }
+
+                return made;
+            };
+
+            Array.prototype.forEach.call(fields, function (field) {
+                var note = document.getElementById(field.id + '-corrected');
+
+                field.addEventListener('input', function () {
+                    var was = field.value;
+                    var now = correct(field, was);
+
+                    if (now === was) {
+                        // The note stays while the corrected text does. Clearing it on the next
+                        // keystroke leaves somebody who typed a capital believing they typed
+                        // what the field is now showing.
+                        if (note && was.length === 0) {
+                            note.hidden = true;
+                        }
+
+                        return;
+                    }
+
+                    // The caret is put back where it was, less whatever the correction removed
+                    // before it, so typing into the middle of a name does not throw somebody to
+                    // the end of it.
+                    var at = correct(field, was.slice(0, field.selectionStart)).length;
+
+                    field.value = now;
+
+                    if (field.setSelectionRange) {
+                        field.setSelectionRange(at, at);
+                    }
+
+                    if (note) {
+                        note.hidden = false;
+                    }
+                });
+            });
         })();
     </script>
     @await RenderSectionAsync("Scripts", required: false)

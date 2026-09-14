@@ -29,21 +29,22 @@ public sealed class BrokersWordsTests
     }
 
     [Fact]
-    public void Retiring_says_what_the_askers_will_see_rather_than_only_what_is_kept()
+    public void Retiring_says_what_becomes_of_the_work_it_holds_rather_than_only_what_is_kept()
     {
-        // The kinder outcome, and the one somebody choosing between the two needs stated: those
-        // exchanges run out of time and each asker is told nobody answered.
-        Assert.Contains("run out of time", Withdrawing.Retiring, StringComparison.Ordinal);
-        Assert.Contains("nobody answered", Withdrawing.Retiring, StringComparison.Ordinal);
+        // The kinder outcome, and the one somebody choosing between the two needs stated. Nothing
+        // times out (§5.3), so the work stays open and is put in front of the person who retired it.
+        Assert.Contains("stays open", Withdrawing.Retiring, StringComparison.Ordinal);
+        Assert.Contains("flagged", Withdrawing.Retiring, StringComparison.Ordinal);
+        Assert.DoesNotContain("run out of time", Withdrawing.Retiring, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Taking_delivery_says_that_a_clock_starts_before_it_starts_one()
+    public void Taking_delivery_says_what_it_marks_before_it_marks_it()
     {
-        // A drain marks messages delivered and starts the working window of §6 on anything owed.
-        // Somebody who discovered that afterwards would have started a clock they did not know was
-        // running, which is why the sentence is shown before the choice rather than after it.
-        Assert.Contains("working window", Participation.DeliveryWarning, StringComparison.Ordinal);
+        // A drain marks messages collected, and work collected and left is flagged to the person
+        // running the deployment as stalled (§15). Somebody who discovered that afterwards would have
+        // picked up work they did not know they had, which is why the sentence comes before the choice.
+        Assert.Contains("counts as picked up", Participation.DeliveryWarning, StringComparison.Ordinal);
         Assert.Contains("not a look at the inbox", Participation.DeliveryWarning, StringComparison.Ordinal);
     }
 

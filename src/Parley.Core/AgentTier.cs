@@ -83,9 +83,9 @@ public enum AgentStatus
 /// session killed on Tuesday read as healthy on Friday.
 /// </para>
 /// <para>
-/// None of these gate routing. See SPEC.md §14: a question to an agent that is not running is
-/// what causes it to be started, and a question to one on a switched-off machine orphans and is
-/// ghosted — which tells the asker something, where a refusal at the door would not.
+/// None of these gate routing. See SPEC.md §14: a Request to an agent that is not running is
+/// what causes it to be started, and one to an agent on a switched-off machine waits and is
+/// flagged to the person — which a refusal at the door would hide.
 /// </para>
 /// </remarks>
 public enum AgentPresence

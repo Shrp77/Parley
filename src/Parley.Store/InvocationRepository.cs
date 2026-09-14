@@ -270,7 +270,7 @@ public sealed class InvocationRepository(SqliteConnection connection)
     /// <remarks>
     /// <para>
     /// Every turn is recorded, including the ones that failed and the ones that achieved nothing.
-    /// §17 question 1's decision to leave Notify unbounded rests on measuring it, and this is the
+    /// §17 question 1's decision to leave request volume unbounded rests on measuring it, and this is the
     /// same bargain on something that costs considerably more: recording only the successes would
     /// make a deployment burning tokens on failures look idle.
     /// </para>

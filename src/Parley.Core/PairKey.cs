@@ -62,7 +62,7 @@ public readonly struct PairKey : IEquatable<PairKey>
     /// <returns>The key identifying this pair.</returns>
     /// <exception cref="ArgumentException">
     /// <paramref name="a"/> and <paramref name="b"/> are the same agent. An agent cannot
-    /// pair with itself; a self-directed question has no answerer.
+    /// pair with itself; a Request to oneself has no receiver.
     /// </exception>
     public static PairKey For(AgentName a, AgentName b)
     {

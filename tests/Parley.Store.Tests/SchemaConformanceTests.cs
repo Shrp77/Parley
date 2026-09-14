@@ -97,6 +97,10 @@ public sealed class SchemaConformanceTests : IDisposable
     [InlineData("conversations")]
     [InlineData("conversation_participants")]
     [InlineData("messages")]
+    [InlineData("size_refusals")]
+    [InlineData("conversation_cycles")]
+    [InlineData("result_items")]
+    [InlineData("result_sources")]
     public void Every_column_agrees(string table)
     {
         Assert.Equal(Columns(_fromSpec, table), Columns(_fromMigration, table));

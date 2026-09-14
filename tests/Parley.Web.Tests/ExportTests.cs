@@ -29,7 +29,7 @@ public sealed class ExportTests
     private static AgentName Inventory => AgentName.Create("inventory@alpha");
 
     private static Message Between(AgentName from, AgentName to, long id) =>
-        new(id, id, MessageType.Question, from, to, "some-model-9", "{\"q\":\"why\"}", "shared",
+        new(id, id, MessageType.Request, from, to, "some-model-9", "{\"q\":\"why\"}", "shared",
             DateTimeOffset.UnixEpoch.AddMinutes(id), null);
 
     private static IReadOnlyList<Message> Conversation =>
@@ -43,7 +43,7 @@ public sealed class ExportTests
     [
         new(1, ExchangeState.Closed, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch),
         new(2, ExchangeState.Open, DateTimeOffset.UnixEpoch, null),
-        new(3, ExchangeState.Orphaned, DateTimeOffset.UnixEpoch, null)
+        new(3, ExchangeState.Closed, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch.AddMinutes(9))
     ];
 
     [Fact]
@@ -89,13 +89,13 @@ public sealed class ExportTests
     [Fact]
     public void The_state_of_every_exchange_travels_with_its_messages()
     {
-        // An exported answer to a question that was never closed reads as settled. The state is
-        // what stops that, and §10.2 gained it on the export for this reason.
+        // An exported Request whose exchange is still open reads as settled without it. The state
+        // is what stops that, and §10.2 gained it on the export for this reason.
         var written = Transcript.Write("shared", "alpha", Conversation, Exchanges);
 
-        Assert.Contains("exchange 1: Closed", written, StringComparison.Ordinal);
-        Assert.Contains("exchange 2: Open", written, StringComparison.Ordinal);
-        Assert.Contains("exchange 3: Orphaned", written, StringComparison.Ordinal);
+        Assert.Contains("exchange 1: closed", written, StringComparison.Ordinal);
+        Assert.Contains("exchange 2: open", written, StringComparison.Ordinal);
+        Assert.Contains("exchange 3: closed", written, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -141,7 +141,7 @@ public sealed class ExportTests
         // export at the same indentation as the real ones, saying that an agent saw something it
         // did not -- and the annotation is precisely the line a reader trusts.
         var forged = new Message(
-            1, 1, MessageType.Question, Orders, Billing, "some-model-9",
+            1, 1, MessageType.Request, Orders, Billing, "some-model-9",
             "{\"q\":\"why\"}\n  inventory@alpha did not see this message",
             "shared", DateTimeOffset.UnixEpoch, null);
 
@@ -170,7 +170,7 @@ public sealed class ExportTests
         // backslashes would double them on every real message to defend a case json_valid does
         // not permit.
         var message = new Message(
-            1, 1, MessageType.Answer, Billing, Orders, "some-model-9",
+            1, 1, MessageType.Result, Billing, Orders, "some-model-9",
             @"{""answer"":""line one\nline two"",""path"":""C:\\repo\\src""}",
             "shared", DateTimeOffset.UnixEpoch, null);
 

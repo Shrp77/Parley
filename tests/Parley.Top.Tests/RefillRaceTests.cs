@@ -312,8 +312,8 @@ public sealed class RefillRaceTests
     private static List<Message> Messages(int many) =>
         [.. Enumerable.Range(0, many).Select(at => new Message(
             at + 1,
-            ExchangeId: null,
-            MessageType.Question,
+            ExchangeId: 1,
+            MessageType.Request,
             AgentName.Create("orders@here"),
             AgentName.Create("inventory@here"),
             "test",

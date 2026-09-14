@@ -33,41 +33,30 @@ public sealed class SurfaceBoundaryTests
     /// </remarks>
     private static readonly HashSet<string> BrokerSurface =
     [
-        // §10.1, as far as it is built.
-        nameof(Broker.AskAsync),
+        // §10.1.
+        nameof(Broker.RequestAsync),
 
-        // The same §10.1 operation with a role for a recipient (§5.5), not a second one. It
-        // opens N ordinary exchanges and can do nothing AskAsync could not do N times, which is
-        // why it belongs on this side: an agent addressing a role is addressing peers, and the
-        // operator surface has no ask at all.
-        nameof(Broker.AskRoleAsync),
+        // The same §10.1 operation with a role for a receiver (§5.5), not a second one. It opens N ordinary
+        // exchanges and can do nothing RequestAsync could not do N times.
+        nameof(Broker.RequestRoleAsync),
         nameof(Broker.ClarifyAsync),
-        nameof(Broker.AnswerAsync),
+        nameof(Broker.ResultAsync),
         nameof(Broker.ConcludeAsync),
-        nameof(Broker.NotifyAsync),
         nameof(Broker.DrainInboxAsync),
         nameof(Broker.ListAgentsAsync),
-
-        // Reads the identifiers an exchange's question declared, so an adapter can hold §5.3's
-        // rule that there is one resolution per sub-question asked. On this side of the line
-        // because the answerer was already told them when the question arrived — it returns
-        // identifiers, never the question, so it cannot become a way around §13's envelope.
-        nameof(Broker.GetSubQuestionIdsAsync),
 
         // Lifecycle. Driven by the host, not exposed to an agent by any adapter.
         nameof(Broker.StartAsync),
         nameof(Broker.DetachAsync),
 
-        // Neither §10.1 nor §10.2, and that is the finding rather than an exemption from it.
-        // ServeFrom starts the ghosting clock for a broker that speaks for no agent, which is
-        // what the sweep runs on now that SPEC.md §4 gives a deployment one broker process. An
-        // agent must never reach it -- it would move the clock and silently grant every orphan
-        // in the deployment a fresh grace period -- and neither must an operator, who has no
-        // business deciding when the host came up. It is on this list beside the other lifecycle
-        // entries because a host drives it and nothing else may.
+        // Neither §10.1 nor §10.2. ServeFrom marks a broker that speaks for no agent as started, for the tick;
+        // an agent must never reach it, and neither must an operator.
         nameof(Broker.ServeFrom),
         nameof(Broker.TickAsync),
-        nameof(Broker.ResumeOwedByAsync),
+
+        // What a restart wakes an agent for (§14). The host reads it; an agent reaching it would learn what
+        // another agent owes.
+        nameof(Broker.OutstandingToWakeForAsync),
         "get_StartedUtc",
         "get_Attached"
     ];
@@ -146,8 +135,11 @@ public sealed class SurfaceBoundaryTests
             // has clarify(exchange_id, text). A console method called DescribeClarifyAsync beside
             // a tool called parley_clarify is exactly the near-miss that convention exists for.
             nameof(OperatorConsole.DescribeClarificationsAsync),
-            nameof(OperatorConsole.DescribeReferralsAsync),
-            nameof(OperatorConsole.DescribeNotificationsAsync),
+
+            // What Results said, and what needs the person. Both read across every pair, which is the disclosure
+            // §10.1 withholds: an agent could learn who has been blocked on whom.
+            nameof(OperatorConsole.DescribeResultsAsync),
+            nameof(OperatorConsole.DescribeFlagsAsync),
 
             // Who is waiting on whom. An operator operation because the whole of its value is
             // that it reads across pairs: from inside one, a question nobody will answer looks
@@ -167,8 +159,8 @@ public sealed class SurfaceBoundaryTests
             // §14's purge argument applied to a narrower subject, and it sits beside purge rather
             // than beside force_conclude for that reason: force_conclude ends a discussion and
             // leaves the record, this removes the record. Every participant's half goes, and an
-            // open exchange inside it does not orphan and is not ghosted — it ceases to exist, so
-            // the agent waiting on it is never told anything at all. An agent able to reach this
+            // open exchange inside it is not closed — it ceases to exist, so the agent waiting on
+            // it is never told anything at all. An agent able to reach this
             // could erase a peer's evidence of having dealt with it, which is the same leak the
             // purge entry above warns about with a smaller blast radius and the same shape.
             nameof(OperatorConsole.DestroyConversationAsync)
@@ -200,11 +192,9 @@ public sealed class SurfaceBoundaryTests
         // guess, and a conversation id is a string an agent chose — so an operation that takes
         // one and no acting agent will answer whoever calls it about whatever they name.
         //
-        // This is not hypothetical. GetSubQuestionIdsAsync shipped without the agent for exactly
-        // one review round, and the adapter built a refusal out of it that read back another
-        // pair's sub-question identifiers to a bystander that had guessed the exchange id.
-        // Identifiers are agent-chosen, so one may well name what a team is working on. Ordering
-        // the adapter's guards would not have fixed it: what leaked was the diagnostic itself.
+        // This is not hypothetical. An operation reading an exchange's item identifiers shipped
+        // without the agent for one review round, and the adapter built a refusal out of it that
+        // read another pair's identifiers back to a bystander that had guessed the exchange id.
         var unscoped = typeof(Broker)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Where(m => m.GetParameters().Any(p =>
@@ -239,11 +229,11 @@ public sealed class SurfaceBoundaryTests
     [Fact]
     public void The_operator_console_carries_no_agent_operation()
     {
-        // The boundary in the other direction. An operator console that grew an ask would put a
+        // The boundary in the other direction. An operator console that grew a request would put a
         // person's hand on an agent's identity, which §11.3 spends its length keeping honest.
         var leaked = PublicMethodsOf(typeof(OperatorConsole))
-            .Where(n => n is nameof(Broker.AskAsync) or nameof(Broker.ClarifyAsync)
-                          or nameof(Broker.AnswerAsync) or nameof(Broker.ConcludeAsync)
+            .Where(n => n is nameof(Broker.RequestAsync) or nameof(Broker.ClarifyAsync)
+                          or nameof(Broker.ResultAsync) or nameof(Broker.ConcludeAsync)
                           or nameof(Broker.DrainInboxAsync));
 
         Assert.Empty(leaked);

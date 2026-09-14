@@ -46,7 +46,7 @@ public sealed class ReadableSurfaceTests
         new(
             1,
             1,
-            MessageType.Question,
+            MessageType.Request,
             AgentName.Create("orders@test"),
             AgentName.Create("billing@test"),
             "some-model-9",

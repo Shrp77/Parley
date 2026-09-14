@@ -15,15 +15,14 @@ namespace Parley.Mcp.Tests;
 /// <para>
 /// SPEC.md §7.3 refuses to hand a model a refusal it cannot act on, on the grounds that
 /// instructing a language model to remember something for later produces a token-burning loop or
-/// silent abandonment. "An error occurred invoking 'parley_ask'" is exactly that refusal.
+/// silent abandonment. "An error occurred invoking 'parley_request'" is exactly that refusal.
 /// </para>
 /// </remarks>
 public sealed class BrokerAwayTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 4, 1, 9, 0, 0, TimeSpan.Zero);
 
-    private const string Consequences =
-        "If it is mine I will fix it here; if not I will raise it with the operator.";
+    private const string DoneWhen = "the owner of tax is named, with where it is computed";
 
     [Fact]
     public async Task Every_tool_says_so_rather_than_failing_opaquely()
@@ -42,11 +41,11 @@ public sealed class BrokerAwayTests
         {
             ("parley_agents", () => tools.AgentsAsync(ct)),
             ("parley_inbox", () => tools.InboxAsync(cancellationToken: ct)),
-            ("parley_ask", () => tools.AskAsync(
+            ("parley_request", () => tools.RequestAsync(
                 to: "billing@test",
                 intent: "who owns tax",
-                subQuestions: [new SubQuestion("q1", "Gross or net?")],
-                consequences: Consequences,
+                items: [new RequestItem("q1", "question", "Gross or net?")],
+                doneWhen: DoneWhen,
                 cancellationToken: ct)),
         })
         {
@@ -76,7 +75,7 @@ public sealed class BrokerAwayTests
                 // Nothing to act on but the deployment, so say so plainly and send them to the
                 // person who can start it.
                 Assert.Contains("not something you did", why, StringComparison.Ordinal);
-                Assert.Contains("principal", why, StringComparison.Ordinal);
+                Assert.Contains("person you work for", why, StringComparison.Ordinal);
             }
         }
 

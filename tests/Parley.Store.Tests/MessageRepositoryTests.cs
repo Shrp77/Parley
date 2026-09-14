@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Xunit;
 
@@ -10,13 +10,8 @@ public sealed class MessageRepositoryTests : IDisposable
     private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly AgentName Inventory = AgentName.Create("inventory@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(15);
 
-    // A question must state what the asker will do with each possible answer (rule 1),
-    // and the schema refuses one that does not. Forty characters is the floor, chosen so
-    // that "n/a" cannot satisfy it.
-    private const string Payload = """{"text":"is the invoice total gross or net?","consequences":"If gross I stop adding tax at invoice time; if net I keep it."}""";
-    private const string Model = "claude-opus-5";
+    private static readonly string Payload = Work.Request();
 
     private readonly SqliteConnection _connection;
     private readonly MessageRepository _messages;
@@ -26,53 +21,38 @@ public sealed class MessageRepositoryTests : IDisposable
     public MessageRepositoryTests()
     {
         _connection = ParleyDatabase.OpenInMemory();
+        Work.Register(_connection, Orders, Billing, Inventory);
 
-        var agents = new AgentRepository(_connection);
-        foreach (var name in new[] { Orders, Billing, Inventory })
-        {
-            agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Full, null, null, null, false, AgentStatus.Active),
-                TestContext.Current.CancellationToken)
-                .GetAwaiter().GetResult();
-        }
+        _exchanges = new ExchangeRepository(_connection);
+        _messages = new MessageRepository(_connection);
 
-        var exchanges = new ExchangeRepository(_connection);
-        _exchangeId = exchanges
-            .TryOpenAsync(Orders, Billing, T0, "q1",
+        // The exchange is admitted without its Request, so each test decides what is written on it.
+        _exchangeId = _exchanges
+            .TryOpenAsync(Orders, Billing, T0, MessageIdentity.ComputeRequest(Orders, Billing, Payload), Work.Conversation,
                 cancellationToken: TestContext.Current.CancellationToken)
             .GetAwaiter().GetResult().Exchange!.Id;
-
-        _messages = new MessageRepository(_connection);
-        _exchanges = new ExchangeRepository(_connection);
     }
-
-    // The conversation is chosen when the exchange is opened, not by the first message on it,
-    // so a test about conversations needs its own exchange rather than the shared fixture one.
-    private async Task<long> OpenInConversation(string conversationId, string question) =>
-        (await _exchanges.TryOpenAsync(
-            Orders, Billing, T0, question, conversationId: conversationId,
-            cancellationToken: TestContext.Current.CancellationToken)).Exchange!.Id;
 
     public void Dispose() => _connection.Dispose();
 
+    private static CancellationToken Token => TestContext.Current.CancellationToken;
+
     private Task<AppendOutcome> Append(
-        string payload = Payload,
-        MessageType type = MessageType.Question,
+        string? payload = null,
+        MessageType type = MessageType.Request,
         AgentName? from = null,
         AgentName? to = null,
         DateTimeOffset? at = null,
-        long? exchangeId = -1,
-        string? conversationId = null) =>
+        long? exchangeId = null) =>
         _messages.AppendAsync(
-            exchangeId == -1 ? _exchangeId : exchangeId,
+            exchangeId ?? _exchangeId,
             type,
             from ?? Orders,
             to ?? Billing,
-            Model,
-            payload,
+            Work.Model,
+            payload ?? Payload,
             at ?? T0,
-            conversationId,
-            cancellationToken: TestContext.Current.CancellationToken);
+            cancellationToken: Token);
 
     [Fact]
     public async Task Appending_persists_and_round_trips()
@@ -81,18 +61,18 @@ public sealed class MessageRepositoryTests : IDisposable
 
         Assert.True(outcome.Stored);
 
-        var loaded = await _messages.GetAsync(outcome.Message.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var loaded = await _messages.GetAsync(outcome.Message.Id, cancellationToken: Token);
 
         Assert.NotNull(loaded);
         Assert.Equal(_exchangeId, loaded.ExchangeId);
-        Assert.Equal(MessageType.Question, loaded.Type);
+        Assert.Equal(MessageType.Request, loaded.Type);
         Assert.Equal(Orders, loaded.From);
         Assert.Equal(Billing, loaded.To);
-        Assert.Equal(Model, loaded.ResponderModel);
+        Assert.Equal(Work.Model, loaded.ResponderModel);
         Assert.Equal(Payload, loaded.PayloadJson);
+        Assert.Equal(Work.Conversation, loaded.ConversationId);
         Assert.Equal(T0, loaded.CreatedUtc);
         Assert.Null(loaded.DeliveredUtc);
-        Assert.True(loaded.IsPending);
     }
 
     // ---- deduplication ----
@@ -106,23 +86,20 @@ public sealed class MessageRepositoryTests : IDisposable
         Assert.True(first.Stored);
         Assert.False(second.Stored);
 
-        // The earlier message is returned rather than a bare refusal, so a caller can report
-        // what the retry collided with.
+        // The earlier message is returned rather than a bare refusal, so a caller can report what the retry
+        // collided with.
         Assert.Equal(first.Message.Id, second.Message.Id);
-
-        var pending = await _messages.GetPendingAsync(Billing, cancellationToken: TestContext.Current.CancellationToken);
-        Assert.Single(pending);
+        Assert.Single(await _messages.GetPendingAsync(Billing, cancellationToken: Token));
     }
 
     [Fact]
     public async Task An_identical_message_outside_the_window_is_appended()
     {
-        // The window absorbs transport retries. It does not police an agent that genuinely
-        // says the same thing again later.
+        // The window absorbs transport retries. It does not police a participant that genuinely says the
+        // same thing again later.
         var first = await Append();
         var second = await Append(at: T0.Add(MessageIdentity.DeduplicationWindow).AddSeconds(1));
 
-        Assert.True(first.Stored);
         Assert.True(second.Stored);
         Assert.NotEqual(first.Message.Id, second.Message.Id);
     }
@@ -130,56 +107,35 @@ public sealed class MessageRepositoryTests : IDisposable
     [Fact]
     public async Task The_window_boundary_is_exclusive_of_the_cutoff()
     {
-        // Exactly one window later is outside it. Pinned because the check is a strict
-        // inequality against the cutoff, and an off-by-one here silently changes the rule.
+        // Exactly one window later is outside it. Pinned because the check is a strict inequality against
+        // the cutoff, and an off-by-one here silently changes the rule.
         await Append();
-        var later = await Append(at: T0.Add(MessageIdentity.DeduplicationWindow));
 
-        Assert.True(later.Stored);
-    }
-
-    [Fact]
-    public async Task The_same_text_to_a_different_peer_is_not_a_duplicate()
-    {
-        // Both are notifications on no exchange, so the recipient is the only thing that
-        // differs. Varying the type or the exchange as well would prove nothing about
-        // routing: any one of the three would account for the result.
-        var toBilling = await Append(
-            type: MessageType.Notify, exchangeId: null, to: Billing, payload: """{"n":"same"}""");
-        var toInventory = await Append(
-            type: MessageType.Notify, exchangeId: null, to: Inventory, payload: """{"n":"same"}""");
-
-        Assert.True(toBilling.Stored);
-        Assert.True(toInventory.Stored);
-        Assert.NotEqual(toBilling.Message.Id, toInventory.Message.Id);
+        Assert.True((await Append(at: T0.Add(MessageIdentity.DeduplicationWindow))).Stored);
     }
 
     [Fact]
     public async Task A_single_changed_character_is_not_a_duplicate()
     {
-        // Byte-identical is the rule, so near-identical must pass. The two payloads differ
-        // only in their final punctuation.
         await Append();
-        var altered = await Append(payload: """{"text":"is the invoice total gross or net!","consequences":"If gross I stop adding tax at invoice time; if net I keep it."}""");
 
-        Assert.True(altered.Stored);
-    }
-
-    [Fact]
-    public async Task A_notification_needs_no_exchange()
-    {
-        var outcome = await Append(type: MessageType.Notify, exchangeId: null);
-
-        Assert.True(outcome.Stored);
-        Assert.Null(outcome.Message.ExchangeId);
+        Assert.True((await Append(payload: Work.Request("is the invoice total gross or net!"))).Stored);
     }
 
     // ---- argument and constraint failures ----
 
     [Fact]
-    public async Task An_agent_cannot_message_itself()
+    public async Task A_participant_cannot_message_itself()
     {
         await Assert.ThrowsAsync<ArgumentException>(() => Append(to: Orders));
+    }
+
+    [Fact]
+    public async Task Every_message_belongs_to_an_exchange()
+    {
+        // 0.4 had a message type that carried none. Every message is answered now, so every one is on an
+        // exchange, and the conversation is read from it.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Append(exchangeId: 9999));
     }
 
     [Theory]
@@ -187,19 +143,17 @@ public sealed class MessageRepositoryTests : IDisposable
     [InlineData("")]
     public async Task An_unattributed_message_is_rejected_before_it_reaches_the_schema(string? model)
     {
-        // The schema would refuse this too, but an argument exception names the parameter at
-        // fault, which a SqliteException does not.
+        // The schema would refuse this too, but an argument exception names the parameter at fault.
         await Assert.ThrowsAnyAsync<ArgumentException>(() => _messages.AppendAsync(
-            _exchangeId, MessageType.Question, Orders, Billing, model!, Payload, T0,
-            cancellationToken: TestContext.Current.CancellationToken));
+            _exchangeId, MessageType.Request, Orders, Billing, model!, Payload, T0, cancellationToken: Token));
     }
 
     [Fact]
     public async Task An_over_length_payload_is_refused_by_the_schema()
     {
-        // Terseness is a context-poisoning defence, and the cap lives in the schema so no code
-        // path can route around it — including this one.
-        var huge = $$"""{"text":"{{new string('x', 2000)}}"}""";
+        // Terseness is a context-poisoning defence, and the cap lives in the schema so no code path can route
+        // around it — including this one.
+        var huge = Work.Request(new string('x', MessageLimits.MaxPayloadCharacters));
 
         await Assert.ThrowsAsync<SqliteException>(() => Append(payload: huge));
     }
@@ -210,62 +164,38 @@ public sealed class MessageRepositoryTests : IDisposable
         await Assert.ThrowsAsync<SqliteException>(() => Append(payload: "not json at all"));
     }
 
-    [Fact]
-    public async Task A_notification_carrying_an_exchange_is_refused_by_the_schema()
-    {
-        await Assert.ThrowsAsync<SqliteException>(() => Append(type: MessageType.Notify));
-    }
-
     // ---- inbox ----
 
     [Fact]
-    public async Task The_inbox_holds_only_undelivered_messages_for_that_agent()
+    public async Task The_inbox_holds_only_undelivered_messages_for_that_participant()
     {
         var toBilling = await Append();
-        await Append(to: Inventory, exchangeId: null, type: MessageType.Notify);
+        var toInventory = await Work.OpenAsync(_connection, Orders, Inventory, T0, cancellationToken: Token);
 
-        Assert.Single(await _messages.GetPendingAsync(Billing, cancellationToken: TestContext.Current.CancellationToken));
-        Assert.Single(await _messages.GetPendingAsync(Inventory, cancellationToken: TestContext.Current.CancellationToken));
-        Assert.Empty(await _messages.GetPendingAsync(Orders, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Single(await _messages.GetPendingAsync(Billing, cancellationToken: Token));
+        Assert.Equal(toInventory.Request.Id, Assert.Single(await _messages.GetPendingAsync(Inventory, cancellationToken: Token)).Id);
+        Assert.Empty(await _messages.GetPendingAsync(Orders, cancellationToken: Token));
 
-        Assert.True(await _messages.MarkDeliveredAsync(
-            toBilling.Message.Id, T0.AddMinutes(1), TestContext.Current.CancellationToken));
+        Assert.True(await _messages.MarkDeliveredAsync(toBilling.Message.Id, T0.AddMinutes(1), Token));
 
-        Assert.Empty(await _messages.GetPendingAsync(Billing, cancellationToken: TestContext.Current.CancellationToken));
-    }
-
-    [Fact]
-    public async Task The_inbox_is_ordered_by_identity_not_timestamp()
-    {
-        // Two messages can share a stored timestamp. An inbox that reordered them could
-        // present an answer before the clarification it answers.
-        var first = await Append(type: MessageType.Notify, exchangeId: null, payload: """{"n":1}""");
-        var second = await Append(type: MessageType.Notify, exchangeId: null, payload: """{"n":2}""");
-        var third = await Append(type: MessageType.Notify, exchangeId: null, payload: """{"n":3}""");
-
-        var pending = await _messages.GetPendingAsync(Billing, cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.Equal(
-            [first.Message.Id, second.Message.Id, third.Message.Id],
-            pending.Select(m => m.Id));
+        Assert.Empty(await _messages.GetPendingAsync(Billing, cancellationToken: Token));
     }
 
     [Fact]
     public async Task A_limited_drain_returns_the_oldest_messages_only()
     {
-        // The per-message cap bounds one message; nothing bounds a backlog. Until per-sender
-        // rate limits exist, this limit is the only thing between an undrained inbox and a
-        // context window, so it has to take from the oldest end rather than an arbitrary one.
+        // The per-message cap bounds one message; nothing bounds a backlog. This limit is what stands between
+        // an undrained inbox and a context window, so it takes from the oldest end.
         var ids = new List<long>();
+
         for (var i = 0; i < 5; i++)
         {
-            var outcome = await Append(
-                type: MessageType.Notify, exchangeId: null, payload: $$"""{"n":{{i}}}""");
-            ids.Add(outcome.Message.Id);
+            var (_, request) = await Work.OpenAsync(
+                _connection, Inventory, Billing, T0.AddSeconds(i), Work.Request($"request {i}"), cancellationToken: Token);
+            ids.Add(request.Id);
         }
 
-        var page = await _messages.GetPendingAsync(
-            Billing, limit: 2, cancellationToken: TestContext.Current.CancellationToken);
+        var page = await _messages.GetPendingAsync(Billing, limit: 2, cancellationToken: Token);
 
         Assert.Equal(ids.Take(2), page.Select(m => m.Id));
     }
@@ -275,221 +205,123 @@ public sealed class MessageRepositoryTests : IDisposable
     [InlineData(-1)]
     public async Task A_non_positive_drain_limit_is_rejected(int limit)
     {
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _messages.GetPendingAsync(
-            Billing, limit, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _messages.GetPendingAsync(Billing, limit, Token));
     }
 
     [Fact]
     public async Task Delivering_twice_is_refused()
     {
-        // Guarded on the message still being pending, so a concurrent second drain cannot
-        // overwrite the first delivery's timestamp with its own.
+        // Guarded on the message still being pending, so a concurrent second drain cannot overwrite the first
+        // delivery's timestamp with its own.
         var outcome = await Append();
 
-        Assert.True(await _messages.MarkDeliveredAsync(
-            outcome.Message.Id, T0.AddMinutes(1), TestContext.Current.CancellationToken));
-        Assert.False(await _messages.MarkDeliveredAsync(
-            outcome.Message.Id, T0.AddMinutes(2), TestContext.Current.CancellationToken));
+        Assert.True(await _messages.MarkDeliveredAsync(outcome.Message.Id, T0.AddMinutes(1), Token));
+        Assert.False(await _messages.MarkDeliveredAsync(outcome.Message.Id, T0.AddMinutes(2), Token));
 
-        var loaded = await _messages.GetAsync(outcome.Message.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var loaded = await _messages.GetAsync(outcome.Message.Id, cancellationToken: Token);
         Assert.Equal(T0.AddMinutes(1), loaded!.DeliveredUtc);
     }
 
     [Fact]
     public async Task Delivering_a_message_that_does_not_exist_reports_failure()
     {
-        Assert.False(await _messages.MarkDeliveredAsync(
-            9999, T0, TestContext.Current.CancellationToken));
+        Assert.False(await _messages.MarkDeliveredAsync(9999, T0, Token));
     }
 
-    // ---- conversations (SPEC 5.0, 10.2) ----
+    // ---- conversations ----
 
     [Fact]
-    public async Task A_conversation_is_gathered_by_its_identifier()
+    public async Task Every_message_on_an_exchange_is_in_its_conversation()
     {
-        // The export in SPEC 10.2. It reads across agents, which is why it is an operator
-        // operation and must never reach an agent's tool set.
-        //
-        // The conversations exist first, because a message may not name one that does not: a
-        // Notify carries no exchange, so the composite key cannot vouch for its identifier and
-        // the direct reference does it instead. This test used to conjure both by naming them.
-        var conversations = new ConversationRepository(_connection);
-        foreach (var id in new[] { "pricing-boundary", "invoice-rounding" })
-        {
-            await conversations.EnsureOpenAsync(id, T0, cancellationToken: TestContext.Current.CancellationToken);
-        }
-
-        var first = await Append(payload: """{"n":1}""", type: MessageType.Notify,
-            exchangeId: null, conversationId: "pricing-boundary");
-        await Append(payload: """{"n":2}""", type: MessageType.Notify, exchangeId: null);
-        var second = await Append(payload: """{"n":3}""", type: MessageType.Notify,
-            exchangeId: null, conversationId: "pricing-boundary");
-        await Append(payload: """{"n":4}""", type: MessageType.Notify, exchangeId: null,
-            conversationId: "invoice-rounding");
-
-        var conversation = await _messages.GetConversationAsync(
-            "pricing-boundary", TestContext.Current.CancellationToken);
-
-        Assert.Equal([first.Message.Id, second.Message.Id], conversation.Select(m => m.Id));
-    }
-
-    [Fact]
-    public async Task An_exchange_may_stand_alone()
-    {
-        // The common case. Most exchanges belong to no wider discussion, and an agent that
-        // says nothing about grouping is not asked to invent one.
-        var outcome = await Append();
-
-        Assert.Null(outcome.Message.ConversationId);
-        Assert.Empty(await _messages.GetConversationAsync(
-            "never-used", TestContext.Current.CancellationToken));
-    }
-
-    [Fact]
-    public async Task The_identifier_is_not_part_of_deduplication_identity()
-    {
-        // It groups messages; it is not one of them. Hashing it would let an agent defeat
-        // deduplication by varying which discussion it claimed the message belonged to.
-        var first = await Append();
-        var second = await Append(at: T0.AddSeconds(10), conversationId: "pricing-boundary");
-
-        Assert.True(first.Stored);
-        Assert.False(second.Stored);
-    }
-
-    [Fact]
-    public async Task A_message_inherits_its_exchange_conversation()
-    {
-        // SPEC 5.0: the exchange holds the conversation and everything on it follows. A message
-        // stores a copy, which the composite foreign key keeps in agreement.
-        var exchangeId = await OpenInConversation("pricing-boundary", "where does price live");
-
-        var question = await Append(
-            type: MessageType.Question, exchangeId: exchangeId,
-            payload: """{"text":"gross or net?","consequences":"If gross I stop adding tax at invoice time; if net I keep it."}""");
-        var clarify = await Append(
-            type: MessageType.Clarify, exchangeId: exchangeId, from: Billing, to: Orders,
-            payload: """{"text":"gross or net of tax?"}""");
-
-        Assert.Equal("pricing-boundary", question.Message.ConversationId);
-        Assert.Equal("pricing-boundary", clarify.Message.ConversationId);
-
-        var conversation = await _messages.GetConversationAsync(
-            "pricing-boundary", TestContext.Current.CancellationToken);
-        Assert.Equal(2, conversation.Count);
-    }
-
-    [Fact]
-    public async Task A_reply_cannot_reassign_its_exchange_to_another_conversation()
-    {
-        // Without this a clarification could split one discussion across two exports, or graft
-        // it onto somebody else's. The composite foreign key refuses it too; refusing here
-        // means the caller learns what it did rather than meeting a constraint violation.
-        var exchangeId = await OpenInConversation("pricing-boundary", "where does price live");
-
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() => Append(
-            type: MessageType.Clarify, exchangeId: exchangeId, from: Billing, to: Orders,
-            payload: """{"text":"gross or net?"}""", conversationId: "invoice-rounding"));
-
-        Assert.Equal("conversationId", ex.ParamName);
-    }
-
-    [Fact]
-    public async Task An_exchange_that_began_alone_cannot_be_joined_to_a_conversation()
-    {
-        // SPEC 5.0 gives the choice to the question, which means a reply cannot retroactively
-        // enrol an exchange that started without one. Pinned because the alternative reading —
-        // that a null conversation is simply unset and free to fill in — is equally plausible
-        // from the code, and the two differ in whether an agent can annexe an exchange after
-        // the fact.
-        await Append(type: MessageType.Question);
-
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() => Append(
-            type: MessageType.Clarify, from: Billing, to: Orders,
-            payload: """{"text":"gross or net?"}""", conversationId: "pricing-boundary"));
-
-        Assert.Equal("conversationId", ex.ParamName);
-    }
-
-    [Fact]
-    public async Task A_reply_may_restate_the_conversation_it_already_belongs_to()
-    {
-        // Agreeing with the exchange is not a conflict, so a caller that threads the identifier
-        // through every call is not punished for it.
-        var exchangeId = await OpenInConversation("pricing-boundary", "where does price live");
+        // The exchange holds the conversation and everything on it follows (§5.0). There is no parameter
+        // through which a Clarify or a Result could name a different one.
+        var (exchange, request) = await Work.OpenAsync(
+            _connection, Orders, Billing, T0, Work.Request("where does price live"), "pricing-boundary", cancellationToken: Token);
 
         var clarify = await Append(
-            type: MessageType.Clarify, exchangeId: exchangeId, from: Billing, to: Orders,
-            payload: """{"text":"gross or net?"}""", conversationId: "pricing-boundary");
+            payload: """{"text":"gross or net of which tax?"}""", type: MessageType.Clarify,
+            from: Billing, to: Orders, exchangeId: exchange.Id);
 
+        Assert.Equal("pricing-boundary", request.ConversationId);
         Assert.Equal("pricing-boundary", clarify.Message.ConversationId);
+
+        var conversation = await _messages.GetConversationAsync("pricing-boundary", Token);
+        Assert.Equal([request.Id, clarify.Message.Id], conversation.Select(m => m.Id));
     }
 
-    [Theory]
-    [InlineData("run 3")]
-    [InlineData("run`3")]
-    [InlineData("")]
-    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
-    public async Task An_identifier_that_could_travel_badly_is_rejected(string id)
+    [Fact]
+    public async Task A_conversation_holds_only_its_own_messages()
     {
-        // Agent-supplied, and it names an export, so it is likely to reach a filename, a report
-        // heading or a console. Same restriction as responder_model, for the same reason.
-        //
-        // Checked on a Notify, which is now the one message type that declares its own
-        // conversation. Everything attached to an exchange takes the exchange's.
-        await Assert.ThrowsAsync<SqliteException>(() => Append(
-            type: MessageType.Notify, exchangeId: null, to: Billing,
-            payload: """{"n":"contract changed"}""", conversationId: id));
+        await Work.OpenAsync(_connection, Orders, Billing, T0, Work.Request("where does price live"), "pricing-boundary", cancellationToken: Token);
+        await Work.OpenAsync(_connection, Orders, Inventory, T0, Work.Request("how much stock"), "stock-levels", cancellationToken: Token);
+
+        Assert.Single(await _messages.GetConversationAsync("pricing-boundary", Token));
+        Assert.Empty(await _messages.GetConversationAsync("never-used", Token));
     }
 
     [Fact]
     public async Task Exporting_without_an_identifier_is_rejected()
     {
-        await Assert.ThrowsAnyAsync<ArgumentException>(
-            () => _messages.GetConversationAsync("", TestContext.Current.CancellationToken));
+        await Assert.ThrowsAnyAsync<ArgumentException>(() => _messages.GetConversationAsync("", Token));
     }
 
-    // ---- replay ----
+    [Fact]
+    public async Task A_result_is_found_beside_the_request_it_closes()
+    {
+        // What the envelope quotes back to the requester (§13): the Request as sent, read from the exchange
+        // rather than from anything the Result says about itself.
+        var (exchange, request) = await Work.OpenAsync(_connection, Orders, Inventory, T0, cancellationToken: Token);
+        await Work.CloseAsync(_connection, exchange, T0.AddMinutes(1), cancellationToken: Token);
+
+        var found = await _messages.GetRequestAsync(exchange.Id, cancellationToken: Token);
+
+        Assert.Equal(request.Id, found!.Id);
+    }
+
+    // ---- redelivery ----
 
     [Fact]
-    public async Task Replay_returns_a_message_to_the_inbox_without_writing_a_new_one()
+    public async Task Redelivery_returns_a_message_to_the_inbox_without_writing_a_new_one()
     {
-        // Replay is re-delivery, not re-sending. A fresh row would make the log a record of
-        // delivery attempts rather than of what was said.
+        // Redelivery, not re-sending. A fresh row would make the log a record of delivery attempts rather than
+        // of what was said, and after a long outage would fall outside the deduplication window and double it.
         var outcome = await Append();
-        await _messages.MarkDeliveredAsync(
-            outcome.Message.Id, T0.AddMinutes(1), TestContext.Current.CancellationToken);
+        await _messages.MarkDeliveredAsync(outcome.Message.Id, T0.AddMinutes(1), Token);
 
-        Assert.True(await _messages.RedeliverAsync(
-            outcome.Message.Id, TestContext.Current.CancellationToken));
+        Assert.True(await _messages.RedeliverAsync(outcome.Message.Id, Token));
 
-        var pending = await _messages.GetPendingAsync(Billing, cancellationToken: TestContext.Current.CancellationToken);
+        var pending = await _messages.GetPendingAsync(Billing, cancellationToken: Token);
 
-        Assert.Single(pending);
-        Assert.Equal(outcome.Message.Id, pending[0].Id);
+        Assert.Equal(outcome.Message.Id, Assert.Single(pending).Id);
         Assert.Null(pending[0].DeliveredUtc);
     }
 
     [Fact]
-    public async Task Replay_long_after_the_window_still_writes_nothing_new()
+    public async Task Redelivering_a_message_that_does_not_exist_reports_failure()
     {
-        // The reason re-delivery is not merely a convenience. Re-sending after a long outage
-        // would fall outside the deduplication window, succeed, and double the record — which
-        // is exactly the case a fast-restart dedup hit would have hidden.
-        var outcome = await Append();
-        await _messages.MarkDeliveredAsync(
-            outcome.Message.Id, T0.AddMinutes(1), TestContext.Current.CancellationToken);
-
-        await _messages.RedeliverAsync(outcome.Message.Id, TestContext.Current.CancellationToken);
-
-        var all = await _messages.GetPendingAsync(Billing, cancellationToken: TestContext.Current.CancellationToken);
-        Assert.Single(all);
+        Assert.False(await _messages.RedeliverAsync(9999, Token));
     }
 
     [Fact]
-    public async Task Replaying_a_message_that_does_not_exist_reports_failure()
+    public async Task The_latest_owed_message_is_the_most_recent_one_addressed_to_the_participant()
     {
-        Assert.False(await _messages.RedeliverAsync(9999, TestContext.Current.CancellationToken));
+        // What redelivery hands back. An exchange holds traffic in both directions, and the participant that
+        // owes a move needs the last thing said to it, not the last thing said.
+        await Append();
+        await Append(payload: """{"text":"gross of what tax?"}""", type: MessageType.Clarify, from: Billing, to: Orders);
+
+        var owed = await _messages.GetLatestOwedAsync(_exchangeId, Orders, Token);
+
+        Assert.Equal(MessageType.Clarify, owed!.Type);
+        Assert.Equal(Orders, owed.To);
+    }
+
+    [Fact]
+    public async Task An_exchange_with_nothing_addressed_to_the_participant_has_nothing_owed()
+    {
+        // Redelivery must cope rather than assume a message exists: an exchange is admitted before its Request
+        // is written.
+        Assert.Null(await _messages.GetLatestOwedAsync(_exchangeId, Orders, Token));
     }
 
     [Fact]
@@ -499,32 +331,6 @@ public sealed class MessageRepositoryTests : IDisposable
         await cancelled.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => _messages.AppendAsync(
-            _exchangeId, MessageType.Question, Orders, Billing, Model, Payload, T0,
-            cancellationToken: cancelled.Token));
-    }
-    [Fact]
-    public async Task The_latest_owed_message_is_the_most_recent_one_addressed_to_the_agent()
-    {
-        // What a replay hands back. An exchange holds traffic in both directions, and the agent
-        // that owes a response needs the last thing said to it, not the last thing said.
-        await Append(type: MessageType.Question, payload: Payload);
-        await Append(type: MessageType.Clarify, from: Billing, to: Orders,
-            payload: """{"text":"gross of what tax?"}""");
-
-        var owed = await _messages.GetLatestOwedAsync(
-            _exchangeId, Orders, TestContext.Current.CancellationToken);
-
-        Assert.NotNull(owed);
-        Assert.Equal(MessageType.Clarify, owed.Type);
-        Assert.Equal(Orders, owed.To);
-    }
-
-    [Fact]
-    public async Task An_exchange_with_nothing_addressed_to_the_agent_has_nothing_owed()
-    {
-        // A replay must cope with it rather than assuming a message exists: an exchange can be
-        // admitted before its question is written, and the two are separate operations.
-        Assert.Null(await _messages.GetLatestOwedAsync(
-            _exchangeId, Orders, TestContext.Current.CancellationToken));
+            _exchangeId, MessageType.Request, Orders, Billing, Work.Model, Payload, T0, cancellationToken: cancelled.Token));
     }
 }

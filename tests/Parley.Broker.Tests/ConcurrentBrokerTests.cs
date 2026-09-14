@@ -1,4 +1,4 @@
-﻿using Parley.Core;
+using Parley.Core;
 using Parley.Store;
 using Xunit;
 
@@ -9,16 +9,14 @@ namespace Parley.Broker.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Not the deployment SPEC.md §4.1 describes — that has one broker per project, each with its
-/// own database — but it is the arrangement §13.1 contemplates when it names the hashing
-/// algorithm so that <em>independent implementations sharing a database</em> agree on what a
-/// duplicate is. Sharing is admitted, so contention has to resolve into a refusal an agent can
+/// Not the deployment SPEC.md §4.1 describes — that has one broker per project — but it is the arrangement §13.1
+/// contemplates when it names the hashing algorithm so that independent implementations sharing a database agree
+/// on what a duplicate is. Sharing is admitted, so contention has to resolve into a refusal a participant can
 /// read rather than an exception or a half-written exchange.
 /// </para>
 /// <para>
-/// These use a real file, because an in-memory database is private to the connection that
-/// opened it and would make two brokers into two universes that could not possibly collide —
-/// a test that passes by never running the case.
+/// These use a real file, because an in-memory database is private to the connection that opened it and would
+/// make two brokers into two universes that could not possibly collide.
 /// </para>
 /// </remarks>
 public sealed class ConcurrentBrokerTests : IDisposable
@@ -27,13 +25,7 @@ public sealed class ConcurrentBrokerTests : IDisposable
     private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    private const string Model = "claude-opus-5";
-
-    private const string Question =
-        """{"text":"is the price gross or net?","consequences":"If gross I stop adding tax; if net I keep adding it."}""";
-
-    private readonly string _path =
-        Path.Combine(Path.GetTempPath(), $"parley-concurrent-{Guid.NewGuid():N}.db");
+    private readonly string _path = Path.Combine(Path.GetTempPath(), $"parley-concurrent-{Guid.NewGuid():N}.db");
 
     public void Dispose()
     {
@@ -45,123 +37,76 @@ public sealed class ConcurrentBrokerTests : IDisposable
             }
             catch (IOException)
             {
-                // Best effort. The temp directory is not what is under test, and a file still
-                // held open by SQLite's cleanup would otherwise fail a test that had passed.
+                // Best effort. The temp directory is not what is under test.
             }
         }
     }
 
-    private async Task<(Broker One, Broker Two)> TwoBrokersAsync(
-        Microsoft.Data.Sqlite.SqliteConnection one,
-        Microsoft.Data.Sqlite.SqliteConnection two)
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    private static async Task<(Broker One, Broker Two)> TwoBrokersAsync(
+        Microsoft.Data.Sqlite.SqliteConnection one, Microsoft.Data.Sqlite.SqliteConnection two)
     {
-        var agents = new AgentRepository(one);
-        foreach (var name in new[] { Orders, Billing })
-        {
-            await agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Full, null, null, null, false, AgentStatus.Active),
-                TestContext.Current.CancellationToken);
-        }
+        Requests.Register(one, Orders, Billing);
 
         var brokerOne = new Broker(one, BrokerOptions.Default);
         var brokerTwo = new Broker(two, BrokerOptions.Default);
-        await brokerOne.StartAsync(Orders, T0, TestContext.Current.CancellationToken);
-        await brokerTwo.StartAsync(Orders, T0, TestContext.Current.CancellationToken);
+        await brokerOne.StartAsync(Orders, T0, Ct);
+        await brokerTwo.StartAsync(Orders, T0, Ct);
         return (brokerOne, brokerTwo);
     }
 
+    private static Task<RequestOutcome> Send(Broker broker) =>
+        broker.RequestAsync(Orders, Billing, Requests.Model, Requests.Request(), T0.AddMinutes(1), "pricing", Ct);
+
     [Fact]
-    public async Task The_same_question_asked_at_once_by_both_opens_exactly_one_exchange()
+    public async Task The_same_request_sent_at_once_by_both_opens_exactly_one_exchange()
     {
-        // The window this probes is the one the transaction opened up: an ask now holds the
-        // write lock across two writes rather than one, so there is more of it to collide with.
-        // It resolves into the ordinary refusal — busy_timeout makes the loser wait for the
-        // lock, and the distinctness index of §7.1 refuses it when it gets there.
+        // busy_timeout makes the loser wait for the lock, and the distinctness index of §7.1 refuses it when it
+        // gets there.
         using var one = ParleyDatabase.OpenAndMigrate(_path);
         using var two = ParleyDatabase.OpenAndMigrate(_path);
         var (brokerOne, brokerTwo) = await TwoBrokersAsync(one, two);
 
-        var results = await Task.WhenAll(
-            Task.Run(() => Ask(brokerOne)),
-            Task.Run(() => Ask(brokerTwo)));
+        var results = await Task.WhenAll(Task.Run(() => Send(brokerOne)), Task.Run(() => Send(brokerTwo)));
 
-        Assert.Single(results, r => r == "opened");
-        Assert.Single(results, r => r == nameof(OpenRejection.DuplicateQuestion));
-
-        async Task<string> Ask(Broker broker)
-        {
-            var asked = await broker.AskAsync(
-                Orders, Billing, Model, Question, T0.AddMinutes(1),
-                cancellationToken: TestContext.Current.CancellationToken);
-            return asked.Succeeded ? "opened" : asked.Rejection.ToString();
-        }
+        Assert.Single(results, r => r.Succeeded);
+        Assert.Single(results, r => r.Rejection == RequestRejection.Duplicate);
     }
 
     [Fact]
-    public async Task The_loser_of_a_race_writes_no_question()
+    public async Task The_loser_of_a_race_writes_no_request()
     {
-        // The refusal has to leave nothing behind, or the losing broker has done exactly what
-        // the two-commit version did: contributed a question with no exchange, or an exchange
-        // with no question.
         using var one = ParleyDatabase.OpenAndMigrate(_path);
         using var two = ParleyDatabase.OpenAndMigrate(_path);
         var (brokerOne, brokerTwo) = await TwoBrokersAsync(one, two);
 
-        await Task.WhenAll(
-            Task.Run(() => brokerOne.AskAsync(
-                Orders, Billing, Model, Question, T0.AddMinutes(1),
-                cancellationToken: TestContext.Current.CancellationToken)),
-            Task.Run(() => brokerTwo.AskAsync(
-                Orders, Billing, Model, Question, T0.AddMinutes(1),
-                cancellationToken: TestContext.Current.CancellationToken)));
+        await Task.WhenAll(Task.Run(() => Send(brokerOne)), Task.Run(() => Send(brokerTwo)));
 
-        var open = await new ExchangeRepository(one).GetOpenAsync(
-            cancellationToken: TestContext.Current.CancellationToken);
-        Assert.Single(open);
-
-        var pending = await new MessageRepository(one).GetPendingAsync(
-            Billing, cancellationToken: TestContext.Current.CancellationToken);
-        Assert.Single(pending);
+        Assert.Single(await new ExchangeRepository(one).GetOpenAsync(cancellationToken: Ct));
+        Assert.Single(await new MessageRepository(one).GetPendingAsync(Billing, cancellationToken: Ct));
     }
 
     [Fact]
-    public async Task Two_answers_to_one_exchange_close_it_once()
+    public async Task Two_results_for_one_exchange_close_it_once()
     {
-        // Both read inside their own write-locked transaction, so they serialise: the second
-        // reads the row the first committed and its transition is refused against a closed
-        // exchange. What must not happen is two answers landing on one exchange, which would
-        // put two settlements in the asker's inbox for one question.
+        // Both read inside their own write-locked transaction, so they serialise: the second reads the row the
+        // first committed and is refused against a closed exchange. What must not happen is two Results on one
+        // exchange, which would put two settlements in the requester's inbox for one piece of work.
         using var one = ParleyDatabase.OpenAndMigrate(_path);
         using var two = ParleyDatabase.OpenAndMigrate(_path);
         var (brokerOne, brokerTwo) = await TwoBrokersAsync(one, two);
 
-        var asked = await brokerOne.AskAsync(
-            Orders, Billing, Model, Question, T0.AddMinutes(1),
-            cancellationToken: TestContext.Current.CancellationToken);
-        Assert.True(asked.Succeeded);
+        var sent = await Send(brokerOne);
+        Assert.True(sent.Succeeded);
 
-        var results = await Task.WhenAll(
-            Task.Run(() => Answer(brokerOne)),
-            Task.Run(() => Answer(brokerTwo)));
+        var results = await Task.WhenAll(Task.Run(() => Result(brokerOne)), Task.Run(() => Result(brokerTwo)));
 
         Assert.Single(results, r => r);
-
-        // The loser is refused against a closed exchange, not reported as stale: it read the
-        // row the winner had already committed. That is why SayOutcome carries no staleness —
-        // see SayAsync.
         Assert.Single(results, r => !r);
+        Assert.Single((await brokerOne.DrainInboxAsync(Orders, T0.AddMinutes(5), cancellationToken: Ct)).Messages);
 
-        var inbox = (await brokerOne.DrainInboxAsync(
-            Orders, T0.AddMinutes(5), cancellationToken: TestContext.Current.CancellationToken)).Messages;
-        Assert.Single(inbox);
-
-        async Task<bool> Answer(Broker broker)
-        {
-            var answered = await broker.AnswerAsync(
-                asked.Exchange!.Id, Billing, Model,
-                """{"resolutions":[{"id":"q1","resolution":"answered","text":"net"}]}""",
-                T0.AddMinutes(3), cancellationToken: TestContext.Current.CancellationToken);
-            return answered.Succeeded;
-        }
+        async Task<bool> Result(Broker broker) =>
+            (await broker.ResultAsync(sent.Exchange!.Id, Billing, Requests.Model, Requests.Result(), T0.AddMinutes(3), Ct)).Succeeded;
     }
 }

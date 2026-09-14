@@ -30,12 +30,12 @@ public sealed class ConversationListingTests : IDisposable
 
     /// <summary>A payload the schema accepts, kept out of the interpolation.</summary>
     /// <remarks>
-    /// The consequences run past forty characters because rule 8.1 is enforced in storage rather
-    /// than in code: §9.3 puts it there so no path can write a question that does not say what
-    /// turns on the answer. A fixture with a short one is refused, which is the constraint working.
+    /// It is a whole Request because rule 8.1 is enforced in storage rather than in code: §9.3 puts it
+    /// there so no path can write a Request that does not say what done looks like. A fixture without
+    /// one is refused, which is the constraint working.
     /// </remarks>
     private const string Payload =
-        @"{""question"":""who owns it"",""consequences"":""if it is yours I will ask you to change it, and if it is not I will look elsewhere""}";
+        @"{""intent"":""who owns it"",""items"":[{""id"":""q1"",""kind"":""question"",""text"":""who owns it""}],""done_when"":""if it is yours I will ask you to change it, and if it is not I will look elsewhere""}";
 
     public ConversationListingTests()
     {
@@ -69,7 +69,8 @@ public sealed class ConversationListingTests : IDisposable
 
     /// <summary>Opens a conversation with one exchange and some messages on it.</summary>
     private long Discussion(
-        string id, string asker, string answerer, int minute, int messages, string state = "CLOSED")
+        string id, string asker, string answerer, int minute, int messages, string state = "CLOSED",
+        string outcome = "complete")
     {
         Execute($"""
             INSERT INTO conversations (id, state, opened_utc, closed_utc)
@@ -81,14 +82,13 @@ public sealed class ConversationListingTests : IDisposable
             ON CONFLICT DO NOTHING;
 
             INSERT INTO exchanges
-                (pair_key, asker, answerer, owed_by, state, conversation_id, opened_utc,
-                 expires_utc, closed_utc, clarify_depth, clarify_depth_cap, delivery_window_ms, working_window_ms, grace_period_ms,
-                 question_hash, resolution)
+                (pair_key, requester, receiver, owed_by, state, conversation_id, opened_utc,
+                 closed_utc, clarify_depth, uncollected_flag_ms, stalled_flag_ms, request_hash, outcome)
             VALUES ('{Pair(asker, answerer)}', '{asker}', '{answerer}', '{answerer}', '{state}',
-                    '{id}', '{Stamp(minute)}', '{Stamp(minute + 30)}',
-                    {(state == "CLOSED" ? $"'{Stamp(minute + 1)}'" : "NULL")}, 0, 3, 900000, 3600000, 60000,
-                    'question-hash-{id}',
-                    {(state == "CLOSED" ? "'answered'" : "NULL")});
+                    '{id}', '{Stamp(minute)}',
+                    {(state == "CLOSED" ? $"'{Stamp(minute + 1)}'" : "NULL")}, 0, 900000, 14400000,
+                    'request-hash-{id}',
+                    {(state == "CLOSED" ? $"'{outcome}'" : "NULL")});
             """);
 
         var exchange = (long)(ExecuteScalar("SELECT last_insert_rowid();") ?? 0L);
@@ -101,7 +101,7 @@ public sealed class ConversationListingTests : IDisposable
                 INSERT INTO messages
                     (exchange_id, type, from_agent, to_agent, responder_model, payload_json,
                      content_hash, conversation_id, created_utc)
-                VALUES ({exchange}, 'question', '{asker}', '{answerer}', 'some-model-9',
+                VALUES ({exchange}, 'request', '{asker}', '{answerer}', 'some-model-9',
                         '{Payload}', '{_hashes:x64}', '{id}',
                         '{Stamp(minute + i)}');
                 """);
@@ -214,16 +214,17 @@ public sealed class ConversationListingTests : IDisposable
     }
 
     [Fact]
-    public async Task An_orphaned_exchange_is_not_reported_as_a_closed_one()
+    public async Task An_exchange_the_person_closed_is_not_reported_as_a_finished_one()
     {
-        // The reason the snapshot is read rather than inferred: both carry the same messages, and
-        // an operator opens a conversation because something went wrong.
-        Discussion("abandoned", "orders@test", "billing@test", minute: 1, messages: 1,
-            state: "ORPHANED");
+        // The reason the snapshot is read rather than inferred: an exchange a person closed and one its
+        // receiver finished can carry the same messages, and an operator opens a conversation because
+        // something went wrong.
+        Discussion("abandoned", "orders@test", "billing@test", minute: 1, messages: 1, outcome: "closed");
 
-        var snapshots = await _exchanges.GetSnapshotsAsync("abandoned", Ct);
+        var snapshot = Assert.Single(await _exchanges.GetSnapshotsAsync("abandoned", Ct));
 
-        Assert.Equal(ExchangeState.Orphaned, Assert.Single(snapshots).State);
+        Assert.Equal(ExchangeState.Closed, snapshot.State);
+        Assert.Equal(ExchangeOutcome.Closed, snapshot.Outcome);
     }
 
     [Fact]

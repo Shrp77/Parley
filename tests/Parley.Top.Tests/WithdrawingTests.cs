@@ -327,7 +327,7 @@ public sealed class WithdrawingTests : IAsyncDisposable
         Assert.Contains("orders@test", await CatalogueTextAsync(), StringComparison.Ordinal);
     }
 
-    /// <summary>A question from billing that orders has not answered.</summary>
+    /// <summary>A request from billing that orders has not sent the result of.</summary>
     private async Task OwedAsync()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -336,11 +336,11 @@ public sealed class WithdrawingTests : IAsyncDisposable
         await broker.StartAsync(Billing, T0, ct);
         await broker.StartAsync(Orders, T0, ct);
 
-        await broker.AskAsync(
+        await broker.RequestAsync(
             Billing,
             Orders,
             "model-a",
-            """{"intent":"deciding","sub_questions":[{"id":"q1","text":"which"}],"consequences":"this decides which of two paths is taken here"}""",
+            """{"intent":"deciding","items":[{"id":"q1","kind":"question","text":"which"}],"done_when":"this decides which of two paths is taken here"}""",
             T0.AddMinutes(1),
             "owed",
             ct);

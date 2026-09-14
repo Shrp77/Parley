@@ -99,10 +99,7 @@ else
             var said = Payload.Read(message.PayloadJson);
             var on = DateOnly.FromDateTime(
                 TimeZoneInfo.ConvertTime(message.CreatedUtc, TimeZoneInfo.Local).DateTime);
-            var ghost = said.Ghosted
-                || (message.ExchangeId is { } gid
-                    && Model.Exchanges.TryGetValue(gid, out var snap)
-                    && snap.State == ExchangeState.Orphaned);
+            var ghost = Model.ClosedUnfinished(message);
 
             @* A date only where the date changes, the way a messenger marks a new day. The
                times come from the machines the agents run on, so this follows the record rather
@@ -154,38 +151,45 @@ else
                                             <span class="label">@label</span>
                                         }
                                         <span class="point-text">@point.Text</span>
-                                        @if (point.Resolution is { Length: > 0 } verdict)
+                                        @if (point.Outcome is { Length: > 0 } verdict)
                                         {
-                                            @* The word the answerer chose, shown rather than
-                                               summarised: "out of scope" and "answered" are
-                                               different outcomes and only one of them is done. *@
-                                            <span class="verdict">@verdict</span>
+                                            @* The word the receiver chose, shown rather than
+                                               summarised: "blocked" and "done" are different
+                                               outcomes and only one of them is finished. *@
+                                            <span class="verdict">@(point.Blocker is { } blocker ? $"{verdict}: {blocker.Replace('_', ' ')}" : verdict)</span>
+                                        }
+                                        else if (point.Kind is { Length: > 0 } kind)
+                                        {
+                                            <span class="verdict">@kind</span>
+                                        }
+                                        @if (point.Sources.Count > 0)
+                                        {
+                                            <span class="verdict">relied on @string.Join(", ", point.Sources)</span>
                                         }
                                     </li>
                                 }
                             </ol>
                         }
 
-                        @if (said.Consequences is { Length: > 0 } because)
+                        @if (said.DoneWhen is { Length: > 0 } because)
                         {
-                            @* Rule 8.1's other half: what turns on the answer. Kept distinct
-                               because it is the part a reader skims and the part that says
-                               whether the question was worth asking. *@
-                            <p class="because"><span>Consequences</span> @because</p>
+                            @* Rule 8.1's other half: what counts as finished. Kept distinct
+                               because it is what the result is measured against. *@
+                            <p class="because"><span>Done when</span> @because</p>
                         }
                     }
 
                     <p class="meta">
                         @if (ghost)
                         {
-                            <span class="tag">abandoned</span>
+                            <span class="tag">closed by a person</span>
                         }
                         @message.Type
                         @if (Model.StateOf(message) is { Length: > 0 } state)
                         {
                             <span> · exchange @message.ExchangeId, @state</span>
                         }
-                        <span> · answered by @message.ResponderModel</span>
+                        <span> · written by @message.ResponderModel</span>
                     </p>
                 </div>
             </li>
@@ -213,10 +217,7 @@ else
         {
             var on = DateOnly.FromDateTime(
                 TimeZoneInfo.ConvertTime(message.CreatedUtc, TimeZoneInfo.Local).DateTime);
-            var abandoned = Payload.Read(message.PayloadJson).Ghosted
-                || (message.ExchangeId is { } rid
-                    && Model.Exchanges.TryGetValue(rid, out var rsnap)
-                    && rsnap.State == ExchangeState.Orphaned);
+            var abandoned = Model.ClosedUnfinished(message);
 
             if (railDay != on)
             {
@@ -227,10 +228,10 @@ else
             <a data-agent="@message.From.Value"
                class="tick slot-@Palette.SlotFor(message.From)@(abandoned ? " ghosted" : null)"
                href="@($"#m{message.Id}")"
-               title="@message.CreatedUtc.ToString("d MMM HH:mm") — @message.From.Value to @message.To.Value@(abandoned ? " — abandoned" : null)">
+               title="@message.CreatedUtc.ToString("d MMM HH:mm") — @message.From.Value to @message.To.Value@(abandoned ? " — closed by a person" : null)">
                 <span class="visually-hidden">
                     @message.CreatedUtc.ToString("d MMM HH:mm"),
-                    @message.From.Value to @message.To.Value@(abandoned ? ", abandoned" : null)
+                    @message.From.Value to @message.To.Value@(abandoned ? ", closed by a person" : null)
                 </span>
             </a>
         }
@@ -309,38 +310,36 @@ else
     <textarea name="Says" rows="3" required
               placeholder="@(Model.Seat is null
                   ? "What do you want them to do, or to know?"
-                  : "What do you want to say, or to ask?")">@Model.Says</textarea>
-
-    <label class="wants">
-        <input type="checkbox" name="WantsAnswer" value="true"
-               @(Model.WantsAnswer ? "checked" : null) />
-        I would like a reply
-    </label>
+                  : Framing.ItemExample)">@Model.Says</textarea>
 
     @if (Model.Seat is not null)
     {
-        @* Revealed by the reply box rather than always shown, because these two fields are
-           meaningless for a notice and rule 8.1 is mandatory for a question. The schema enforces
-           the second: a question with no consequences comes back as a CHECK constraint naming
-           json_extract, which is the worst possible answer to a mistake about thinking. Asking
-           here costs a sentence and turns that into a form field. *@
+        @* Every message is answered (principle 2.7), so there is one thing to send from a seat and it
+           carries its framing. §8 rule 1 is enforced in storage: a request with no intent or a short
+           done-when comes back as a trigger error, which is the worst possible answer to a mistake
+           about thinking. Asking here costs a sentence and turns that into a form field. *@
         <div class="framing">
-            <p class="composer-note">
-                A question carries its framing, and SPEC.md §8 rule 1 makes that a rule rather
-                than advice — the peer uses it to judge how much precision is worth its time, and
-                so do you when the answer arrives and you no longer remember asking.
-            </p>
+            <p class="composer-note">A request — @Owing.Requesting.</p>
 
-            <label for="intent">What are you trying to decide?</label>
+            <label for="intent">@Framing.Intent</label>
             <input id="intent" name="Intent" value="@Model.Intent"
-                   placeholder="One sentence." />
+                   placeholder="@Framing.IntentExample" />
 
-            <label for="consequences">
-                What will you do with each possible answer?
-                (at least @SeatVoice.MinimumConsequences characters)
+            <label for="kind">Work or question?</label>
+            <select id="kind" name="Kind">
+                @foreach (var (value, says) in SeatVoice.Kinds)
+                {
+                    <option value="@value" selected="@(Model.Kind == value)">@says</option>
+                }
+            </select>
+
+            <label for="donewhen">
+                @Framing.DoneWhen
+                (at least @SeatVoice.MinimumDoneWhen characters)
             </label>
-            <textarea id="consequences" name="Consequences" rows="2"
-                      placeholder="If yes I will…; if no I will…">@Model.Consequences</textarea>
+            <p class="composer-note">@Framing.DoneWhenWhy.</p>
+            <textarea id="donewhen" name="DoneWhen" rows="2"
+                      placeholder="@Framing.DoneWhenExample">@Model.DoneWhen</textarea>
         </div>
     }
 

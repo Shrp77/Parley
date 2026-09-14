@@ -82,7 +82,14 @@ public sealed class DialogStackTests
 
         driving.Type("who?");
 
-        Assert.Equal("who?", dialog.Typed);
+        // **The `?` reaches the field and the field's own rule drops it, which is the order that
+        // matters.** A seat's name may hold letters, digits and hyphens, so this field corrects
+        // what is typed into it — and what is being checked here is that the keystroke was the
+        // field's to refuse: had the surface taken it first, the actions menu would be on top of
+        // a half-typed name.
+        Assert.Equal("who", dialog.Typed);
+        Assert.False(driving.Has(Shell.ActionsTitle), "the actions menu opened over the dialog");
+        Assert.True(driving.Has(AgentsRegion.JoinTitle), "the dialog is no longer on screen");
     }
 
     [Fact]

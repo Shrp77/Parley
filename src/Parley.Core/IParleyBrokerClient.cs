@@ -102,19 +102,19 @@ public interface IParleyBrokerClient
     /// <returns>The report.</returns>
     Task<ClarifyReport> ClarificationsAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Where work was sent when it was out of scope.</summary>
+    /// <summary>What Results have said: outcomes by responder, blockers by kind, sources, and closures.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The report.</returns>
-    Task<ReferralReport> ReferralsAsync(CancellationToken cancellationToken = default);
+    Task<ResultsReport> ResultsAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>What Notify has carried, and to whom.</summary>
+    /// <summary>Work in front of the person: open exchanges gone quiet or owed by a retired agent, and cycles.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
-    /// <returns>The report.</returns>
+    /// <returns>The flags, derived at the moment of reading.</returns>
     /// <remarks>
-    /// §17 question 1 leaves Notify uncapped on purpose; this is the evidence for whether that
-    /// holds.
+    /// What replaced ghosting (§6, §14). Nothing ends a piece of work but its participants or its
+    /// person, so an exchange that stops moving is shown here for the person to act on.
     /// </remarks>
-    Task<NotifyVolumeReport> NotificationsAsync(CancellationToken cancellationToken = default);
+    Task<FlagReport> FlagsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Read back what became of the instructions an operator gave.</summary>
     /// <param name="agent">Narrow to one agent, or null for every agent.</param>
@@ -179,10 +179,15 @@ public interface IParleyBrokerClient
 
     /// <summary>Close a conversation regardless of its participants' votes.</summary>
     /// <param name="conversationId">The conversation.</param>
+    /// <param name="reason">Why, told to every participant holding open work; or null.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>Whether anything changed.</returns>
+    /// <remarks>
+    /// How the person ends work (§5.0). Every exchange still open ends <c>closed</c>, and every
+    /// participant holding one is sent the broker's <c>closed</c> Result in the same write (§14).
+    /// </remarks>
     Task<bool> ForceConcludeAsync(
-        string conversationId, CancellationToken cancellationToken = default);
+        string conversationId, string? reason = null, CancellationToken cancellationToken = default);
 
     /// <summary>Apply the retention policy now rather than waiting for the sweep.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
@@ -227,7 +232,7 @@ public interface IParleyBrokerClient
     /// <see cref="PurgeOutcome"/> makes about an agent, applied to a narrower subject.
     /// </para>
     /// <para>
-    /// <b>An open exchange inside it is not orphaned and not ghosted: it ceases to exist</b>, so
+    /// <b>An open exchange inside it is not closed: it ceases to exist</b>, so
     /// the agent waiting on it is never told anything at all. That is a different outcome from
     /// every other way an exchange can end and the one an operator is least likely to predict, so
     /// a surface offering this without first naming it has warned nobody.

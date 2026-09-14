@@ -192,8 +192,8 @@ public sealed class ColourTests
     private static Message Message(string from, string to, long id, string? payload = null) =>
         new(
             id,
-            ExchangeId: null,
-            MessageType.Question,
+            ExchangeId: 1,
+            MessageType.Request,
             AgentName.Create(from),
             AgentName.Create(to),
             "test",

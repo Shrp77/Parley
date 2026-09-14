@@ -186,8 +186,8 @@ public sealed class ConversationActionsTests
     public async Task An_open_exchange_is_named_before_the_identifier_is_asked_for()
     {
         // The consequence an operator is least likely to predict, and the reason it comes first:
-        // the exchange does not orphan and is not ghosted, so whoever is waiting is never told
-        // anything at all -- not even the ghost §7 guarantees for a question nobody answers.
+        // the exchange is not closed, so whoever is waiting is never told anything at all -- not
+        // even the closed Result a person closing the conversation would have sent.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var shell = await OnConversationsAsync(
@@ -204,7 +204,12 @@ public sealed class ConversationActionsTests
         var consequence = (ChoiceDialog)driving.Find(Destroying.ConsequenceTitle);
 
         Assert.Equal(Destroying.Keep, consequence.Choices.Source!.ToList()[0]?.ToString());
-        Assert.Contains("never told anything at all", driving.Text(), StringComparison.Ordinal);
+
+        // The words from the dialog itself, and a phrase from them from the screen. Asserting the whole phrase on the
+        // screen broke when 0.5 shortened the sentence: "never" ended one row and "told anything at all." began the
+        // next, so a check about what is said became a check about where the wrap falls.
+        Assert.Equal(Destroying.Waiting, consequence.Described);
+        Assert.Contains("told anything at all", driving.Text(), StringComparison.Ordinal);
     }
 
     [Fact]

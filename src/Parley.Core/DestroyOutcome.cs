@@ -38,9 +38,8 @@ public enum DestroyVerdict
 /// registered</i>, which is true of nothing here.
 /// </para>
 /// <para>
-/// There is no <c>Succeeded</c> property, for the reason set out on <see cref="ReapResult"/>: a
-/// derived summary is a second definition of the outcome that drifts from the first the moment a
-/// verdict is added.
+/// There is no <c>Succeeded</c> property: a derived summary is a second definition of the outcome
+/// that drifts from the first the moment a verdict is added.
 /// </para>
 /// </remarks>
 public sealed record DestroyOutcome(DestroyVerdict Verdict, IReadOnlyList<PurgeToll> Destroyed)

@@ -74,7 +74,7 @@ public sealed class TwiceTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Answering_the_same_exchange_twice_leaves_one_answer_and_says_so()
+    public async Task Sending_the_same_result_twice_leaves_one_result_and_says_so()
     {
         var ct = TestContext.Current.CancellationToken;
         using var directory = Directory();
@@ -83,16 +83,16 @@ public sealed class TwiceTests : IAsyncDisposable
         var (seated, voice) = await AskedAsync(directory, seats, ct);
 
         var (taken, _) = await voice.TakeDeliveryAsync(seated, ct);
-        var exchange = taken.Single(one => one.Owes).Message.ExchangeId!.Value;
-        var ids = await voice.SubQuestionsAsync(exchange, ct);
+        var owed = taken.Single(one => one.Owes);
+        var exchange = owed.Message.ExchangeId;
 
-        var first = await voice.AnswerAsync(
-            seated, exchange, [.. ids.Select(id => (id, "yes", "answered"))], ct);
+        var first = await voice.ResultAsync(
+            seated, exchange, [.. owed.Items().Select(id => (id, "yes", "answered"))], ct);
 
         Assert.True(first.Closed, first.Says);
 
-        var again = await voice.AnswerAsync(
-            seated, exchange, [.. ids.Select(id => (id, "yes again", "answered"))], ct);
+        var again = await voice.ResultAsync(
+            seated, exchange, [.. owed.Items().Select(id => (id, "yes again", "answered"))], ct);
 
         // Whatever the broker's verdict is, it is reported rather than swallowed, and the record
         // holds one answer rather than two.
@@ -119,10 +119,10 @@ public sealed class TwiceTests : IAsyncDisposable
         var (seated, voice) = await AskedAsync(directory, seats, ct);
 
         var (taken, _) = await voice.TakeDeliveryAsync(seated, ct);
-        var exchange = taken.Single(one => one.Owes).Message.ExchangeId!.Value;
-        var ids = await voice.SubQuestionsAsync(exchange, ct);
+        var owed = taken.Single(one => one.Owes);
 
-        await voice.AnswerAsync(seated, exchange, [.. ids.Select(id => (id, "yes", "answered"))], ct);
+        await voice.ResultAsync(
+            seated, owed.Message.ExchangeId, [.. owed.Items().Select(id => (id, "yes", "answered"))], ct);
 
         Assert.DoesNotContain(seated.Delivered, one => one.Owes);
 
@@ -167,16 +167,16 @@ public sealed class TwiceTests : IAsyncDisposable
 
         await broker.StartAsync(Orders, T0, cancellationToken);
 
-        var asked = await broker.AskAsync(
+        var sent = await broker.RequestAsync(
             Orders,
             seated.Seat.Name,
             "model-a",
-            """{"intent":"deciding","sub_questions":[{"id":"q1","text":"is it safe"}],"consequences":"a release goes out or does not, and rolling it back costs a day"}""",
+            """{"intent":"deciding","items":[{"id":"q1","kind":"question","text":"is it safe"}],"done_when":"a release goes out or does not, with the reason"}""",
             T0.AddMinutes(1),
             "chat",
             cancellationToken);
 
-        Assert.True(asked.Succeeded, $"the ask was refused: {asked.Rejection}");
+        Assert.True(sent.Exchange is not null, $"the request was refused: {sent.Admission.Rejection}");
 
         return (seated, new SeatVoice(directory.AgentsFor(project), seated.Seat));
     }

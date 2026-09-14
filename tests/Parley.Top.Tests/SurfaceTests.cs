@@ -3,24 +3,21 @@
 namespace Parley.Top.Tests;
 
 /// <summary>
-/// That the terminal binds no destructive operator operation.
+/// That every operator operation the terminal performs happens in one place, behind its door.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>contracts/operations.md</c> excludes <c>Retire</c>, <c>Reinstate</c>, <c>Purge</c>,
-/// <c>ForceConclude</c>, <c>Instruct</c> and <c>Prune</c> from this surface on a specific
-/// argument: <b>a destructive action taken by a keystroke in a full-screen application is a
-/// different risk from one taken by a POST behind a page that describes it first.</b> The web
-/// console binds them and is right to; this one would be one arrow key away from purging an
-/// agent, and that needs its own argument rather than arriving as a side effect of a navigation
-/// feature.
+/// <c>contracts/operations.md</c> once excluded <c>Retire</c>, <c>Reinstate</c>, <c>Purge</c>,
+/// <c>ForceConclude</c>, <c>Instruct</c> and <c>Prune</c> from this surface, on the argument that
+/// <b>a destructive action taken by a keystroke in a full-screen application is a different risk from
+/// one taken by a POST behind a page that describes it first.</b> Each was admitted since, the last three
+/// in 0.26.0 on the owner's decision that every surface offers every operator operation — and each on the
+/// same terms: a description first and a deliberate act.
 /// </para>
 /// <para>
-/// <b>Enforced rather than remembered.</b> That exclusion is currently true because nobody wrote
-/// the call, which is exactly the kind of fact that stops being true quietly. Every one of these
-/// is already sitting on <c>BrokerClient</c>, one method call away from any screen here, so the
-/// only thing between the terminal and a purge is that somebody has not typed it. This test is
-/// that somebody noticing.
+/// <b>Enforced rather than remembered.</b> Every one of these sits on <c>BrokerClient</c>, one method
+/// call away from any screen here, so what keeps the door in front of it is that the call may appear in
+/// exactly one file and that file must carry the door.
 /// </para>
 /// <para>
 /// A source scan, and deliberately not a reflection one. The operations are ordinary methods on a
@@ -141,22 +138,31 @@ public sealed class SurfaceTests
     }
 
     [Theory]
-    [InlineData("ForceConcludeAsync")]
-    [InlineData("InstructAsync")]
-    [InlineData("PruneAsync")]
-    public void The_terminal_calls_no_destructive_operator_operation(string operation)
+    [InlineData("ForceConcludeAsync", "Closing.cs", "Type the conversation's identifier")]
+    [InlineData("PruneAsync", "Pruning.cs", "Type the project's name")]
+    [InlineData("InstructAsync", "Instructing.cs", "It may decline")]
+    public void The_remaining_operator_operations_happen_in_one_place_behind_their_door(
+        string operation, string home, string door)
     {
-        var offenders = Sources()
-            .Where(file => File.ReadAllText(file.FullName)
-                .Contains(operation, StringComparison.Ordinal))
+        // **Admitted in 0.26.0 on the owner's decision that every surface offers every operator operation.**
+        // Until then this asserted the terminal called none of them, on 005's argument that a keystroke in a
+        // full-screen application is a different risk from a POST behind a page that describes it. What that
+        // argument asks for is a description and a deliberate act, which is how destroying a project,
+        // withdrawing an agent and destroying a conversation were admitted — so these are held to the same
+        // rule: one file, and that file carries the door. Closing a conversation and pruning take a name typed
+        // back; instructing deletes nothing and its door is the description that says the agent may decline.
+        var mentioning = Sources()
+            .Where(file => File.ReadAllText(file.FullName).Contains(operation, StringComparison.Ordinal))
             .Select(file => file.Name)
+            .Order(StringComparer.Ordinal)
             .ToList();
 
-        Assert.True(
-            offenders.Count == 0,
-            $"{operation} is destructive and contracts/operations.md keeps it off this surface. "
-            + $"It appears in: {string.Join(", ", offenders)}. If it belongs here now, that is a "
-            + "decision to argue in the contract first, not a call to add.");
+        Assert.Equal([home], mentioning);
+
+        Assert.Contains(
+            door,
+            File.ReadAllText(Sources().Single(file => file.Name == home).FullName),
+            StringComparison.Ordinal);
     }
 
     [Fact]

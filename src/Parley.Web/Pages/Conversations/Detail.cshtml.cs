@@ -81,28 +81,22 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     [BindProperty]
     public string? Says { get; set; }
 
-    /// <summary>Whether an answer is wanted back.</summary>
+    /// <summary>Why the person is asking, when they send a Request from a seat.</summary>
     /// <remarks>
-    /// It means two different things depending on who is writing, which is the honest reading of
-    /// both. From a seat it chooses between §10.1's <c>ask</c> and <c>notify</c>, and an
-    /// exchange is opened or not. From the operator it is a sentence in an instruction, because
-    /// §11.5 has no reply channel and the agent may decline the whole thing.
-    /// </remarks>
-    [BindProperty]
-    public bool WantsAnswer { get; set; }
-
-    /// <summary>What the person is trying to decide, when they are asking a question.</summary>
-    /// <remarks>
-    /// Only reached from a seat. §8 rule 1 is enforced in the schema, so a question without it
-    /// is refused by a <c>CHECK</c> constraint — this asks for it in the form instead, where the
-    /// answer is a sentence rather than a debugging session.
+    /// Only reached from a seat. §8 rule 1 is enforced in the schema, so a Request without it is refused
+    /// by a trigger — this asks for it in the form instead, where the answer is a sentence rather than a
+    /// debugging session.
     /// </remarks>
     [BindProperty]
     public string? Intent { get; set; }
 
-    /// <summary>What turns on the answer, when they are asking a question.</summary>
+    /// <summary>Whether the item is work to do or a question to answer.</summary>
     [BindProperty]
-    public string? Consequences { get; set; }
+    public string? Kind { get; set; }
+
+    /// <summary>What counts as finished, when they send a Request from a seat.</summary>
+    [BindProperty]
+    public string? DoneWhen { get; set; }
 
     /// <summary>The seat this person holds in this project, or null if they hold none.</summary>
     /// <remarks>
@@ -125,21 +119,22 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
 
     /// <summary>Says where the exchange a message belongs to stands.</summary>
     /// <param name="message">The message.</param>
-    /// <returns>The state in words, or empty when the message belongs to no exchange.</returns>
+    /// <returns>The state in words, or empty when the export did not include the exchange.</returns>
     /// <remarks>
-    /// Read from the export rather than inferred from the messages, because an orphaned exchange
-    /// and an open one carry exactly the same traffic — and an operator opens a conversation
+    /// Read from the export rather than inferred from the messages, because an exchange a person closed
+    /// and one that was finished can carry the same last message — and an operator opens a conversation
     /// precisely because something went wrong.
     /// </remarks>
     public string StateOf(Message message) =>
-        message.ExchangeId is { } id && Exchanges.TryGetValue(id, out var snapshot)
-            ? snapshot.State switch
-            {
-                ExchangeState.Open => "still open, awaiting an answer",
-                ExchangeState.Orphaned => "orphaned: nobody returned to it",
-                _ => "closed"
-            }
+        Exchanges.TryGetValue(message.ExchangeId, out var snapshot)
+            ? snapshot.State == ExchangeState.Open ? "still open, awaiting a result" : Reading.State(snapshot)
             : string.Empty;
+
+    /// <summary>Whether the exchange a message belongs to was closed by a person rather than finished.</summary>
+    /// <param name="message">The message.</param>
+    /// <returns><see langword="true"/> when its exchange closed with outcome <c>closed</c>.</returns>
+    public bool ClosedUnfinished(Message message) =>
+        Exchanges.TryGetValue(message.ExchangeId, out var snapshot) && snapshot.Outcome == ExchangeOutcome.Closed;
 
     /// <summary>The identifier of the newest message on this page.</summary>
     /// <remarks>
@@ -290,8 +285,8 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     /// </para>
     /// <para>
     /// Without a seat it instructs, and puts nothing in the conversation. §5.0 derives
-    /// participants from being party to an exchange, and there is no operator <c>ask</c> or
-    /// <c>notify</c> — an operator is not an agent and has no name in the registry to send as.
+    /// participants from being party to an exchange, and there is no operator <c>request</c> — an
+    /// operator is not an agent and has no name in the registry to send as.
     /// What it does is tell agents something, marked as the operator's (§11.5); if one of them
     /// then speaks to a peer, that message is theirs and appears here as theirs.
     /// </para>
@@ -385,10 +380,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
 
             if (voice is not null)
             {
-                sent.Add((target, WantsAnswer
-                    ? await voice.AskAsync(agent, Intent, Says, Consequences, Id, token)
-                        .ConfigureAwait(false)
-                    : await voice.NotifyAsync(agent, Says, Id, token).ConfigureAwait(false)));
+                sent.Add((target, await voice
+                    .RequestAsync(agent, Intent, Says, Kind, DoneWhen, Id, token)
+                    .ConfigureAwait(false)));
 
                 continue;
             }
@@ -414,12 +408,8 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     /// will be said cannot be responsible for it — and the node marks this as the operator's, so
     /// the agent reads it as the principal speaking.
     /// </remarks>
-    public string Compose()
-    {
-        var opening = WantsAnswer ? "I would like a reply." : "No reply needed.";
-
-        return $"About conversation '{Id}'. {opening}{Environment.NewLine}{Environment.NewLine}{Says}";
-    }
+    public string Compose() =>
+        $"About conversation '{Id}'.{Environment.NewLine}{Environment.NewLine}{Says}";
 
     /// <summary>Puts one instruction's outcome into words.</summary>
     /// <param name="result">What the broker reported.</param>

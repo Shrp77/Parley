@@ -23,9 +23,16 @@ namespace Parley.Top.Tests;
 /// </remarks>
 public sealed class NameAsYouTypeTests
 {
+    // **`Time Tracker` was `timetracker` and is `time-tracker` now**, which is the one thing about
+    // this correction that changed after 0.25.1. The owner chose the hyphen for the conversation
+    // field on the grounds that `telleverybodytest` is a name nobody can read back, and the field
+    // beside it had no business going on swallowing spaces. One grammar, one correction:
+    // `Parley.Core.NameCorrection` is what a project's name, an enrolled agent's role and a seat
+    // are all held to now.
     [Theory]
     [InlineData("TimeTracker", "timetracker")]
-    [InlineData("Time Tracker", "timetracker")]
+    [InlineData("Time Tracker", "time-tracker")]
+    [InlineData("Time  Tracker", "time-tracker")]
     [InlineData("TIME_TRACKER", "timetracker")]
     [InlineData("time-tracker", "time-tracker")]
     [InlineData("Café/Bar!", "cafbar")]
@@ -175,7 +182,7 @@ public sealed class NameAsYouTypeTests
 
         var screen = driving.Text();
 
-        var missing = "without one, a question to an agent nobody has open waits, times out and is ghosted"
+        var missing = "without one, a request to an agent nobody has open waits until somebody opens it"
             .Split(' ', StringSplitOptions.RemoveEmptyEntries)
             .Select(word => word.Trim(',', '.'))
             .Where(word => !screen.Contains(word, StringComparison.Ordinal))

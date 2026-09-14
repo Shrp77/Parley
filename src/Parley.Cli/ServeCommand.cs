@@ -120,6 +120,15 @@ public static class ServeCommand
         {
             runtime = BrokerRuntime.Open(databasePath, BrokerOptions.Default, TimeProvider.System);
         }
+        catch (StoreHeldException held)
+        {
+            // A duplicate launch, not a failure: a scheduled task and a terminal restoring its session
+            // both start this. Nothing was written, and the broker already serving is the one to use,
+            // so this says which process that is and goes.
+            await output.WriteLineAsync(HeldElsewhere(databasePath, held)).ConfigureAwait(false);
+
+            return 0;
+        }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             await error.WriteLineAsync($"Could not open '{databasePath}': {exception.Message}")
@@ -282,7 +291,7 @@ public static class ServeCommand
         // Starts one project's broker and everything that lives beside it. Called for the
         // initial set and again by the watcher for a project named while this runs; the two
         // never overlap, because the watcher starts after this loop is over.
-        async Task<bool> StartAsync(ProjectSettings project)
+        async Task<Start> StartAsync(ProjectSettings project)
         {
             BrokerRuntime runtime;
 
@@ -290,13 +299,23 @@ public static class ServeCommand
             {
                 runtime = BrokerRuntime.Open(project.Store, BrokerOptions.Default, TimeProvider.System);
             }
+            catch (StoreHeldException held)
+            {
+                // Not a failure. Another launcher got there first -- a scheduled task and a terminal
+                // restoring its session both start this at logon -- and the store is being served.
+                await output.WriteLineAsync(
+                    HeldElsewhere($"{project.Name}: its store at {project.Store}", held))
+                    .ConfigureAwait(false);
+
+                return Start.Held;
+            }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 await error.WriteLineAsync(
                     $"{project.Name}: could not open '{project.Store}': {exception.Message}")
                     .ConfigureAwait(false);
 
-                return false;
+                return Start.Failed;
             }
 
             ParleyServer server;
@@ -322,7 +341,7 @@ public static class ServeCommand
                     $"{project.Name}: could not listen on {project.Endpoint}: {exception.Message}")
                     .ConfigureAwait(false);
 
-                return false;
+                return Start.Failed;
             }
 
             // Its own source, linked to the interrupt, so that this one project can be stopped
@@ -354,7 +373,7 @@ public static class ServeCommand
                 started.Add(hosted);
             }
 
-            return true;
+            return Start.Serving;
         }
 
         // Stops one project's broker, its sweep and its node, and releases its store. What it
@@ -401,17 +420,40 @@ public static class ServeCommand
             // serving at the end is not one that failed, whatever it did at the start.
             var notStarted = new HashSet<string>(StringComparer.Ordinal);
 
+            var servedElsewhere = 0;
+
             foreach (var project in projects)
             {
-                if (!await StartAsync(project).ConfigureAwait(false))
+                switch (await StartAsync(project).ConfigureAwait(false))
                 {
-                    failed++;
-                    _ = notStarted.Add(project.Name.Value);
+                    case Start.Serving:
+                        break;
+
+                    case Start.Held:
+                        servedElsewhere++;
+                        break;
+
+                    default:
+                        failed++;
+                        _ = notStarted.Add(project.Name.Value);
+                        break;
                 }
             }
 
             if (started.Count == 0)
             {
+                // Everything named is already served by another broker: a second launcher at logon,
+                // and a deployment that is working. Anything that genuinely failed beside it makes
+                // this a failure again.
+                if (failed == 0 && servedElsewhere > 0)
+                {
+                    await output.WriteLineAsync(
+                        "Every project here is already being served by another Parley broker. Nothing to do; exiting.")
+                        .ConfigureAwait(false);
+
+                    return 0;
+                }
+
                 await error.WriteLineAsync(
                     "No broker started. Nothing is serving.").ConfigureAwait(false);
 
@@ -439,9 +481,9 @@ public static class ServeCommand
                 "Agents connect with PARLEY_AGENT set; machines join with `parley up`. Ctrl+C stops them all.")
                 .ConfigureAwait(false);
 
-            // What runs beside the brokers rather than inside one of them: the console once,
+            // What runs beside the brokers rather than inside one of them: the web UI once,
             // against the first started broker as its fallback -- it reads the manifest for the
-            // rest -- and the watcher. The console is not contained here: the entry point
+            // rest -- and the watcher. The web UI is not contained here: the entry point
             // contains it, and says what it does when a port is taken.
             var beside = new List<Task<int>>();
 
@@ -537,9 +579,46 @@ public static class ServeCommand
     /// </remarks>
     internal static readonly TimeSpan WatchInterval = TimeSpan.FromSeconds(2);
 
+    /// <summary>What a broker says when it finds its store already being served, before it exits.</summary>
+    /// <param name="label">The store, or the project and its store.</param>
+    /// <param name="held">The refusal.</param>
+    /// <returns>The line.</returns>
+    /// <remarks>
+    /// <b>It names the process, because that is the question the owner had to answer by hand.</b>
+    /// Seventeen agents read as stranded and the cause was a second broker started by a terminal
+    /// restoring its session; nothing on screen or in the log said a second process existed. The log
+    /// is shared now, so this line reaches it even from the process that is leaving.
+    /// </remarks>
+    internal static string HeldElsewhere(string label, StoreHeldException held)
+    {
+        ArgumentNullException.ThrowIfNull(held);
+
+        var who = held.Owner is { } owner
+            ? "process " + owner.ProcessId.ToString(CultureInfo.InvariantCulture)
+              + ", started " + owner.StartedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
+              + (owner.Build is { } build ? ", parley " + build : string.Empty)
+            : "a process whose details could not be read";
+
+        return $"{label} is already being served by another Parley broker ({who}), so this process is " +
+               "not serving it.";
+    }
+
+    /// <summary>What became of starting one project's broker.</summary>
+    private enum Start
+    {
+        /// <summary>It is serving, from this process.</summary>
+        Serving,
+
+        /// <summary>Another broker already serves its store, so this process does not.</summary>
+        Held,
+
+        /// <summary>Its store could not be opened for another reason, or its endpoint listened on.</summary>
+        Failed,
+    }
+
     /// <summary>Keeps what is serving in step with what the manifest names.</summary>
     /// <param name="reread">Reads the manifest again, or returns null when it has not changed or cannot be read.</param>
-    /// <param name="start">Starts one project, and says whether it came up.</param>
+    /// <param name="start">Starts one project, and says what became of it.</param>
     /// <param name="stop">Stops one project, for the reason given.</param>
     /// <param name="started">Every project serving right now.</param>
     /// <param name="output">Where to say that a project was named since the start.</param>
@@ -569,7 +648,7 @@ public static class ServeCommand
     /// </remarks>
     private static async Task<int> WatchAsync(
         Func<IReadOnlyList<ProjectSettings>?> reread,
-        Func<ProjectSettings, Task<bool>> start,
+        Func<ProjectSettings, Task<Start>> start,
         Func<Hosted, string, Task> stop,
         List<Hosted> started,
         TextWriter output,
@@ -657,7 +736,9 @@ public static class ServeCommand
                             : $"{project.Name}: named in the manifest since this started; starting it.")
                         .ConfigureAwait(false);
 
-                    if (!await start(project).ConfigureAwait(false))
+                    // Held goes with failed here: another broker serves it, and a project is tried
+                    // again only when its entry changes -- the rule a busy port already follows.
+                    if (await start(project).ConfigureAwait(false) != Start.Serving)
                     {
                         _ = failing.Add(project);
                     }
@@ -798,14 +879,14 @@ public static class ServeCommand
     /// <para>
     /// One sweep for the deployment, which is the arrangement that first becomes possible here.
     /// It used to run inside every adapter, so twenty repositories ran twenty sweeps over one
-    /// file — each taking the write lock, each with its own idea of when the ghosting clock
-    /// started, and none of them wrong in a way anybody could see.
+    /// file — each taking the write lock for the same work, and none of them wrong in a way anybody
+    /// could see.
     /// </para>
     /// <para>
-    /// A failing pass is reported and the loop continues. The sweep enforces deadlines, so
-    /// stopping on the first failure would leave every exchange in the deployment counting down
-    /// against nothing — and the failures worth surviving are the transient ones a busy file
-    /// produces.
+    /// A failing pass is reported and the loop continues. The pass concludes polls whose last
+    /// decline lapsed, settles instructions nothing will report on and applies retention, so
+    /// stopping on the first failure would leave all three undone for as long as the broker ran —
+    /// and the failures worth surviving are the transient ones a busy file produces.
     /// </para>
     /// </remarks>
     private static async Task SweepAsync(

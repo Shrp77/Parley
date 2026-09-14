@@ -17,11 +17,16 @@ specification must be able to stand alone for somebody who will never read the c
 
 ### II. No agent has authority over another
 
-There is no orchestrator, no lead agent, and no plan that one agent imposes on another. An
-agent may refuse, may decline to conclude, and may not be overruled by a peer. The one
-asymmetry is the operator, who is a person and not an agent: operator operations exist on a
-separate type, in a separate binary, so an adapter has nothing to bind by accident. Any
-design that introduces authority between agents contradicts the premise.
+There is no orchestrator, no lead agent, and no plan that one agent imposes on another. **That is
+not the same as agents declining each other's work, and Parley exists so that they do not.** Any
+agent or person may request work of another repository's agent; each owner changes only its own
+repository; and a request is declined only for a concrete blocker the receiver pursued and could
+not resolve — missing information, a conflict, or a permission it does not have. No agent may
+conclude a conversation over another's objection, and nothing ends work because a participant
+was silent. The one asymmetry is the operator, who is a person and not an agent: operator
+operations exist on a separate type, in a separate binary, so an adapter has nothing to bind by
+accident, and a person may close a conversation whatever its participants have voted. Any design
+that introduces authority between agents contradicts the premise.
 
 ### III. Identity is fixed by the launch, never by a call
 

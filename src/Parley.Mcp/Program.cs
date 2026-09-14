@@ -72,8 +72,8 @@ builder.Services.AddSingleton(provider =>
         .GetAwaiter().GetResult());
 
 // No sweep here any more. It ran in every adapter while every adapter opened the store, which
-// meant a deployment of twenty repositories ran twenty sweeps over one file, each with its own
-// idea of when the ghosting clock started. It belongs to the process that owns the store.
+// meant a deployment of twenty repositories ran twenty sweeps over one file, each taking the
+// write lock for the same work. It belongs to the process that owns the store.
 
 builder.Services
     // Instructions travel with the protocol, which makes this the one way to tell a model what

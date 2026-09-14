@@ -61,11 +61,17 @@ public sealed class WakeLifecycleTests
     }
 
     [Fact]
-    public async Task A_drain_that_took_only_some_of_it_still_frees_the_next_wake()
+    public async Task A_drain_that_took_only_some_of_it_asks_again_for_the_rest()
     {
         // A limited drain collects part of what is waiting, so the agent has not seen everything --
         // but it has taken a turn and there is more mail, which is a legitimate reason to be woken
         // again. The alternative would hold the mark while unread messages accumulated behind it.
+        //
+        // **This asserted that the mark was clear afterwards, which stood in for "it will be woken
+        // again" and was not the same thing.** Clear, the rest waited for some later message to ask, and
+        // the review gate found that nothing ever might (lens 1 run 1.18). The drain now asks for the
+        // turn itself, so the mark is held again -- for a turn that is coming -- and a further message
+        // does not stack a second one.
         var token = TestContext.Current.CancellationToken;
 
         await using var broker = await LoopbackBroker.StartAsync(token);
@@ -77,16 +83,8 @@ public sealed class WakeLifecycleTests
 
         for (var at = 0; at < 3; at++)
         {
-            _ = await sender.Client.NotifyAsync(
-                new Wire.NotifyRequest
-                {
-                    From = "billing@alpha",
-                    To = "orders@alpha",
-                    ResponderModel = "test",
-                    PayloadJson = $$"""{"text":"notice {{at}}"}""",
-                    ConversationId = "c1"
-                },
-                cancellationToken: token);
+            _ = await sender.Client.RequestAsync(
+                Requests.Open("billing@alpha", "orders@alpha", $"request {at}"), cancellationToken: token);
         }
 
         Assert.True(broker.Runtime.AttentionPending(Orders));
@@ -95,7 +93,13 @@ public sealed class WakeLifecycleTests
             new Wire.DrainInboxRequest { Agent = "orders@alpha", Limit = 1 },
             cancellationToken: token);
 
-        Assert.False(broker.Runtime.AttentionPending(Orders));
+        Assert.True(broker.Runtime.AttentionPending(Orders));
+        Assert.Equal(2, await node.CountCommandsAsync(Settle));
+
+        _ = await sender.Client.RequestAsync(
+            Requests.Open("billing@alpha", "orders@alpha", "request after the drain"), cancellationToken: token);
+
+        Assert.Equal(2, await node.CountCommandsAsync(Settle));
     }
 
     [Fact]

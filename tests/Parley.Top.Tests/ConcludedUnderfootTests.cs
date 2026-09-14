@@ -61,7 +61,7 @@ public sealed class ConcludedUnderfootTests : IAsyncDisposable
         // reports what became of the recipient and this test is about the refusal below it.
         Assert.StartsWith(
             "Sent.",
-            await voice.NotifyAsync(Recipient, "first", Conversation, token),
+            await voice.RequestAsync(Recipient, Intent, "first", "question", DoneWhen, Conversation, token),
             StringComparison.Ordinal);
 
         // And close it underneath the person, which is what an operator or the other participant
@@ -72,11 +72,11 @@ public sealed class ConcludedUnderfootTests : IAsyncDisposable
         // the broker and arrives here as "Exception was thrown by handler" -- which is what the
         // first version of this probe spent a cycle mistaking for the defect it was hunting.
         Execute(
-            "UPDATE conversations SET state = 'CLOSED', "
+            "UPDATE conversations SET state = 'CLOSED', closed_by = 'person', "
             + "closed_utc = '2026-09-02T00:00:00.0000000+00:00' "
             + $"WHERE id = '{Conversation}';");
 
-        var refused = await voice.NotifyAsync(Recipient, "second", Conversation, token);
+        var refused = await voice.RequestAsync(Recipient, Intent, "second", "question", DoneWhen, Conversation, token);
 
         // Named, not generic. "The broker refused it and did not say why" is the fallback this
         // must not fall through to -- it would send somebody off to retry something that cannot
@@ -97,8 +97,8 @@ public sealed class ConcludedUnderfootTests : IAsyncDisposable
         var token = TestContext.Current.CancellationToken;
         var voice = await SeatedAsync(token);
 
-        var refused = await voice.NotifyAsync(
-            AgentName.Create("nobody@test"), "hello", Conversation, token);
+        var refused = await voice.RequestAsync(
+            AgentName.Create("nobody@test"), Intent, "hello", "question", DoneWhen, Conversation, token);
 
         Assert.DoesNotContain("did not say why", refused, StringComparison.Ordinal);
         Assert.Equal(0, Rows());
@@ -106,6 +106,12 @@ public sealed class ConcludedUnderfootTests : IAsyncDisposable
 
     /// <summary>The conversation these are said in.</summary>
     private const string Conversation = "concluded-probe";
+
+    /// <summary>Why the person is sending, satisfying rule 8.1 so the refusals below are the only ones.</summary>
+    private const string Intent = "checking the conversation is still open";
+
+    /// <summary>What counts as finished, long enough for rule 8.1.</summary>
+    private const string DoneWhen = "they have acknowledged the message";
 
     /// <summary>Who the message is addressed to.</summary>
     private static AgentName Recipient => AgentName.Create("orders@test");

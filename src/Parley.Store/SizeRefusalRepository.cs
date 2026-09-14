@@ -106,28 +106,14 @@ public sealed class SizeRefusalRepository(SqliteConnection connection)
     /// <summary>Writes a message type as the schema stores it.</summary>
     /// <param name="type">The type.</param>
     /// <returns>Its token.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">The type is not one of the four.</exception>
-    private static string Format(MessageType type) => type switch
-    {
-        MessageType.Question => "question",
-        MessageType.Clarify => "clarify",
-        MessageType.Answer => "answer",
-        MessageType.Notify => "notify",
-        _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
-    };
+    /// <exception cref="ArgumentOutOfRangeException">The type is not one of the three.</exception>
+    private static string Format(MessageType type) => MessageIdentity.FormatType(type);
 
     /// <summary>Reads a stored message type.</summary>
     /// <param name="value">The token.</param>
     /// <returns>The type.</returns>
     /// <exception cref="InvalidOperationException">The token is not recognised.</exception>
-    private static MessageType Parse(string value) => value switch
-    {
-        "question" => MessageType.Question,
-        "clarify" => MessageType.Clarify,
-        "answer" => MessageType.Answer,
-        "notify" => MessageType.Notify,
-        _ => throw new InvalidOperationException($"Unrecognised message type '{value}'.")
-    };
+    private static MessageType Parse(string value) => MessageIdentity.ParseType(value);
 
     /// <summary>Flat projection of a row in the <c>size_refusals</c> table.</summary>
     private sealed class Row

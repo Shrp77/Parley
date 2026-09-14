@@ -231,7 +231,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         File.WriteAllText(Path.Combine(_workspace, ".mcp.json"), manifest);
     }
 
-    /// <summary>Builds a store holding one undelivered notify from a peer, and serves it.</summary>
+    /// <summary>Builds a store holding one undelivered Request from a peer, and serves it.</summary>
     /// <param name="ct">Cancels the seeding.</param>
     /// <remarks>
     /// A broker is started over the seeded file, because the hook asks rather than reads. That is
@@ -251,9 +251,21 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
                 ct);
         }
 
+        var payload = JsonSerializer.Serialize(new
+        {
+            intent = "deciding where tax is added to an invoice",
+            items = new[] { new { id = "w1", kind = "work", text = PeerWords } },
+            done_when = "the contracts directory is in the state asked for"
+        });
+
+        var opened = await new ExchangeRepository(connection).TryOpenAsync(
+            Billing, Orders, T0, MessageIdentity.ComputeRequest(Billing, Orders, payload), "invoice-rounding", null,
+            cancellationToken: ct);
+
+        Assert.True(opened.Succeeded, "the fixture failed to open its exchange");
+
         var appended = await new MessageRepository(connection).AppendAsync(
-            null, MessageType.Notify, Billing, Orders, "test-model",
-            JsonSerializer.Serialize(new { text = PeerWords }), T0, cancellationToken: ct);
+            opened.Exchange!.Id, MessageType.Request, Billing, Orders, "test-model", payload, T0, cancellationToken: ct);
 
         Assert.True(appended.Stored, "the fixture failed to store its message");
 

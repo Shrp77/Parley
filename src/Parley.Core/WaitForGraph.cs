@@ -1,132 +1,98 @@
 namespace Parley.Core;
 
 /// <summary>
-/// A directed graph of which agents are blocked waiting on which others, used to reject a
-/// question that would close a cycle.
+/// A directed graph of which participants are waiting on which others, used to record a Request
+/// that closes a cycle (SPEC.md §7.2).
 /// </summary>
 /// <remarks>
 /// <para>
-/// Pair serialisation alone is not sufficient to prevent deadlock. Given the open exchanges
-/// <c>orders → billing</c>, <c>billing → inventory</c> and <c>inventory → orders</c>, every
-/// pair slot is legitimately held by exactly one exchange, no pair rule is violated, and all
-/// three agents are nonetheless blocked forever. Pair locking plus cycle detection on insert
-/// is complete for cycles of every length.
+/// <b>A cycle is admitted, not refused.</b> An earlier version of this type rejected any question that
+/// would close one, on the argument that a cycle is a set of questions none of which can be answered.
+/// That holds only when each answer depends on its own outcome, and nothing at admission can tell that
+/// case from the ordinary one — <c>orders</c> asks <c>billing</c> for work, <c>billing</c> asks
+/// <c>inventory</c>, and <c>inventory</c> asks <c>orders</c> which field the price lives in. Refusing
+/// every cycle refused the communication that resolves blockers. The broker records the cycle on the
+/// conversation instead, where the person running the deployment sees it.
 /// </para>
 /// <para>
-/// Each open exchange contributes exactly one edge: the participant waiting for a response
-/// is blocked by the participant who owes it. That direction follows
-/// <see cref="Exchange.OwedBy"/> rather than <see cref="Exchange.Asker"/>, because a
-/// clarification reverses it — while the asker owes a clarification reply, it is the
-/// answerer that is waiting.
+/// Each open exchange contributes one edge, from the participant waiting to the participant named in
+/// <see cref="Exchange.OwedBy"/>. The direction is easy to state backwards, and edges the other way
+/// produce a graph in which no cycle is ever found and nothing reports the omission.
 /// </para>
 /// <para>
-/// This type is a transient snapshot, not a live structure. Build it from the current open
-/// set inside the same transaction that performs admission, and discard it afterwards.
+/// A transient snapshot, built from the open set inside the admitting transaction and discarded.
 /// </para>
 /// </remarks>
 public sealed class WaitForGraph
 {
     private readonly Dictionary<AgentName, List<AgentName>> _edges = [];
 
-    /// <summary>
-    /// Records that one agent is waiting on another.
-    /// </summary>
-    /// <param name="blocked">The agent that is waiting.</param>
-    /// <param name="blocker">The agent that owes a response.</param>
-    /// <remarks>
-    /// Duplicate edges are ignored, so the same wait may be added more than once safely.
-    /// </remarks>
-    public void AddWait(AgentName blocked, AgentName blocker)
+    /// <summary>Records that one participant is waiting on another.</summary>
+    /// <param name="waiting">The participant that is waiting.</param>
+    /// <param name="owedBy">The participant that owes the next move.</param>
+    /// <remarks>Duplicate edges are ignored.</remarks>
+    public void AddWait(AgentName waiting, AgentName owedBy)
     {
-        if (!_edges.TryGetValue(blocked, out var blockers))
+        if (!_edges.TryGetValue(waiting, out var owing))
         {
-            blockers = [];
-            _edges[blocked] = blockers;
+            owing = [];
+            _edges[waiting] = owing;
         }
 
-        if (!blockers.Contains(blocker))
+        if (!owing.Contains(owedBy))
         {
-            blockers.Add(blocker);
+            owing.Add(owedBy);
         }
     }
 
-    /// <summary>
-    /// Builds a graph from a set of exchanges, using only those that are open.
-    /// </summary>
-    /// <param name="exchanges">
-    /// The exchanges to derive edges from. Closed and orphaned entries are skipped, since
-    /// neither holds a pair slot nor blocks anyone.
-    /// </param>
-    /// <returns>A snapshot graph of the current waits.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="exchanges"/> is <see langword="null"/>.</exception>
+    /// <summary>Builds a graph from a set of exchanges, using only those that are open.</summary>
+    /// <param name="exchanges">The exchanges to derive edges from.</param>
+    /// <returns>A snapshot of the current waits.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="exchanges"/> is null.</exception>
     public static WaitForGraph FromOpenExchanges(IEnumerable<Exchange> exchanges)
     {
         ArgumentNullException.ThrowIfNull(exchanges);
 
         var graph = new WaitForGraph();
+
         foreach (var exchange in exchanges)
         {
-            if (exchange.State != ExchangeState.Open)
+            if (exchange.State == ExchangeState.Open)
             {
-                continue;
+                graph.AddWait(exchange.Waiting, exchange.OwedBy);
             }
-
-            var waiting = exchange.OwedBy == exchange.Answerer ? exchange.Asker : exchange.Answerer;
-            graph.AddWait(waiting, exchange.OwedBy);
         }
 
         return graph;
     }
 
-    /// <summary>
-    /// Determines whether a prospective question would close a cycle and deadlock.
-    /// </summary>
-    /// <param name="asker">The agent that wants to ask, and would therefore start waiting.</param>
-    /// <param name="answerer">The agent that would owe the answer.</param>
+    /// <summary>Determines whether a prospective Request would close a cycle.</summary>
+    /// <param name="requester">The participant that would start waiting.</param>
+    /// <param name="receiver">The participant that would owe the next move.</param>
     /// <param name="cyclePath">
-    /// When this method returns <see langword="true"/>, the agents forming the cycle in the
-    /// order they block one another, beginning at <paramref name="asker"/> and running
-    /// through <paramref name="answerer"/>. The path lists each agent once and does not
-    /// repeat the start to close the loop — the caller renders the wrap-around. Returned so
-    /// the broker can hand the asker something actionable rather than a bare refusal it
-    /// cannot act on. Empty when the method returns <see langword="false"/>.
+    /// When this returns <see langword="true"/>, the participants in the order each waits on the next,
+    /// beginning at <paramref name="requester"/>, each named once. Empty otherwise.
     /// </param>
-    /// <returns>
-    /// <see langword="true"/> if admitting the question would create a cycle; otherwise
-    /// <see langword="false"/>.
-    /// </returns>
+    /// <returns><see langword="true"/> if the Request would close a cycle.</returns>
     /// <remarks>
-    /// The prospective edge is <paramref name="asker"/> waiting on
-    /// <paramref name="answerer"/>. It closes a cycle exactly when
-    /// <paramref name="asker"/> is already reachable from <paramref name="answerer"/> by
-    /// following existing waits.
+    /// The prospective edge is <paramref name="requester"/> waiting on <paramref name="receiver"/>. It
+    /// closes a cycle exactly when the requester is already reachable from the receiver.
     /// </remarks>
-    public bool WouldDeadlock(AgentName asker, AgentName answerer, out IReadOnlyList<AgentName> cyclePath)
+    public bool ClosesCycle(AgentName requester, AgentName receiver, out IReadOnlyList<AgentName> cyclePath)
     {
-        if (TryFindPath(answerer, asker, out var path))
-        {
-            // path runs answerer -> ... -> asker, so its final element is asker itself.
-            // Prepending asker and keeping that terminal entry would name the asker twice;
-            // the loop is implied by the sequence, not spelled out.
-            var full = new List<AgentName>(path.Count) { asker };
-            for (var i = 0; i < path.Count - 1; i++)
-            {
-                full.Add(path[i]);
-            }
+        var path = new List<AgentName>();
 
+        if (DepthFirst(receiver, requester, [], path))
+        {
+            // path runs receiver -> ... -> requester; the requester leads, and is named once.
+            var full = new List<AgentName>(path.Count) { requester };
+            full.AddRange(path.Take(path.Count - 1));
             cyclePath = full;
             return true;
         }
 
         cyclePath = [];
         return false;
-    }
-
-    private bool TryFindPath(AgentName from, AgentName target, out List<AgentName> path)
-    {
-        path = [];
-        var visited = new HashSet<AgentName>();
-        return DepthFirst(from, target, visited, path);
     }
 
     private bool DepthFirst(AgentName current, AgentName target, HashSet<AgentName> visited, List<AgentName> path)
@@ -143,9 +109,9 @@ public sealed class WaitForGraph
             return true;
         }
 
-        if (_edges.TryGetValue(current, out var blockers))
+        if (_edges.TryGetValue(current, out var owing))
         {
-            foreach (var next in blockers)
+            foreach (var next in owing)
             {
                 if (DepthFirst(next, target, visited, path))
                 {

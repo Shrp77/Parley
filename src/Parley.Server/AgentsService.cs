@@ -6,26 +6,23 @@ using Wire = Parley.Transport;
 namespace Parley.Server;
 
 /// <summary>
-/// The agent surface of SPEC.md §10.1, served over the transport.
+/// The participant surface of SPEC.md §10.1, served over the transport.
 /// </summary>
 /// <remarks>
 /// <para>
 /// It holds no state. Everything is on <see cref="BrokerRuntime"/>, because a gRPC service is
-/// constructed per call and state on one would be state that vanished between them.
+/// constructed per call.
 /// </para>
 /// <para>
-/// <b>There is no operator operation here and there cannot be one.</b> CLAUDE.md records why the
-/// broker's own surface is guarded: SPEC.md §10.2 warns that an adapter surfacing an operator
-/// operation into an agent's tool set would breach §10.1, and a naming convention is thin
-/// protection. Splitting the wire into two services makes it structural — this class has no
-/// reference to an <see cref="Parley.Broker.OperatorConsole"/> to bind, so the mistake cannot be
-/// made by reaching for the nearest object.
+/// <b>There is no operator operation here and there cannot be one.</b> This class has no reference to an
+/// <see cref="Parley.Broker.OperatorConsole"/> to bind, so the mistake §10.2 warns about cannot be made
+/// by reaching for the nearest object.
 /// </para>
 /// <para>
-/// <b>Every handler nudges the peer it wrote to, after the write and outside the gate.</b> The
-/// notice is the point of holding a connection at all (§4.0), and it is deliberately the last
-/// thing each handler does: the operation is durable once the broker returns, so a failure to
-/// nudge costs the peer some latency and costs the protocol nothing.
+/// <b>Every message wakes the participant it was written to, after the write and outside the gate</b>
+/// (§5.4). The operation is durable once the broker returns, so a failure to wake costs latency and
+/// never correctness. Waking is coalesced per receiver across every sender until it collects, so a
+/// burst of Requests costs one turn.
 /// </para>
 /// </remarks>
 public sealed class AgentsService : Wire.Agents.AgentsBase
@@ -70,123 +67,87 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
 
         try
         {
-            attached = await _runtime.AttachAsync(registration, context.CancellationToken)
-                .ConfigureAwait(false);
+            attached = await _runtime.AttachAsync(registration, context.CancellationToken).ConfigureAwait(false);
         }
         catch (InvalidOperationException exception)
         {
-            // A name held by another workspace, an unknown registration, a retirement. All three
-            // are deployment faults a person has to fix, and none is retryable -- so they are
-            // reported as FailedPrecondition rather than as an error the client should back off
-            // and repeat.
-            throw new RpcException(
-                new Status(StatusCode.FailedPrecondition, exception.Message, exception));
+            // A name held by another workspace, an unknown registration, a retirement: deployment faults
+            // a person has to fix, none of them retryable.
+            throw new RpcException(new Status(StatusCode.FailedPrecondition, exception.Message, exception));
         }
 
         await using (attached.ConfigureAwait(false))
         {
-            // First and always. SPEC.md §6.4: an agent coming back is told how much of its own
-            // abandoned work was released, because the alternative is that it resumes a task it
-            // no longer owes and discovers that only when the write is refused.
             await responseStream.WriteAsync(
                 new Wire.Event
                 {
                     Attached = new Wire.Attached
                     {
                         AgentMarkedLive = attached.Started.AgentMarkedLive,
-                        ExchangesOrphaned = attached.Started.ExchangesOrphaned
+                        ExchangesRedelivered = attached.Started.ExchangesRedelivered
                     }
                 },
                 context.CancellationToken).ConfigureAwait(false);
 
-            // Anything already waiting, before the stream goes quiet. Without this an agent that
-            // attaches after a question was asked hears nothing until the next one arrives --
-            // the notice would only ever cover what happened while it was watching, which is the
-            // half of the problem polling did not have.
+            // Anything already waiting, before the stream goes quiet, so a participant that attaches
+            // after a Request arrived hears about it now rather than at the next one.
             await _runtime.NudgeAsync(name, context.CancellationToken).ConfigureAwait(false);
 
             try
             {
-                await foreach (var notice in attached.Notices
-                    .ReadAllAsync(context.CancellationToken).ConfigureAwait(false))
+                await foreach (var notice in attached.Notices.ReadAllAsync(context.CancellationToken)
+                                   .ConfigureAwait(false))
                 {
-                    await responseStream.WriteAsync(
-                        new Wire.Event { Notice = notice }, context.CancellationToken)
+                    await responseStream.WriteAsync(new Wire.Event { Notice = notice }, context.CancellationToken)
                         .ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)
             {
-                // The client went away, which is the ordinary end of an attachment rather than a
-                // fault. The registry is told by the disposal above, on every path out of here.
+                // The client went away: the ordinary end of an attachment.
             }
         }
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.AskReply> Ask(
-        Wire.AskRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.RequestReply> Request(Wire.OpenRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
         var from = Name(request.From);
-        var to = Name(request.To);
+        var conversation = Blank(request.ConversationId);
 
-        var outcome = await Run(
-            from,
-            (broker, now, ct) => broker.AskAsync(
-                from, to, request.ResponderModel, request.PayloadJson, now,
-                Blank(request.ConversationId), ct),
-            context).ConfigureAwait(false);
+        // A bare role reaches every participant registered under it (§5.5); a whole name reaches one.
+        // Told apart by shape rather than guessed at.
+        IReadOnlyList<Parley.Broker.RequestOutcome> outcomes = AgentName.IsRole(request.To)
+            ? await Run(
+                from,
+                (broker, now, ct) => broker.RequestRoleAsync(
+                    from, request.To, request.ResponderModel, request.PayloadJson, now, conversation, ct),
+                context).ConfigureAwait(false)
+            : [await Run(
+                from,
+                (broker, now, ct) => broker.RequestAsync(
+                    from, Name(request.To), request.ResponderModel, request.PayloadJson, now, conversation, ct),
+                context).ConfigureAwait(false)];
 
-        if (outcome.Succeeded)
-        {
-            await WakeAsync(to, from, context).ConfigureAwait(false);
-        }
-
-        return Asked(outcome);
-    }
-
-    /// <inheritdoc/>
-    public override async Task<Wire.AskRoleReply> AskRole(
-        Wire.AskRoleRequest request,
-        ServerCallContext context)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(context);
-
-        var from = Name(request.From);
-
-        var outcomes = await Run(
-            from,
-            (broker, now, ct) => broker.AskRoleAsync(
-                from, request.Role, request.ResponderModel, request.PayloadJson, now,
-                Blank(request.ConversationId), ct),
-            context).ConfigureAwait(false);
-
-        var reply = new Wire.AskRoleReply();
+        var reply = new Wire.RequestReply();
 
         foreach (var outcome in outcomes)
         {
-            reply.Outcomes.Add(Asked(outcome));
+            WakeOutcome? wake = outcome.Exchange is { } exchange
+                ? await WakeAsync(exchange.Receiver, $"{from.Value} sent it a request", context).ConfigureAwait(false)
+                : null;
 
-            // Each member individually, because a role question is N ordinary exchanges (§5.5)
-            // and the members that were admitted must be woken whether or not the others were.
-            if (outcome.Exchange is { } exchange)
-            {
-                await WakeAsync(exchange.Answerer, from, context).ConfigureAwait(false);
-            }
+            reply.Outcomes.Add(Conversions.Out(outcome, wake));
         }
 
         return reply;
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.SayReply> Clarify(
-        Wire.ClarifyRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.SayReply> Clarify(Wire.ClarifyRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
@@ -199,15 +160,13 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
                 request.ExchangeId, from, request.ResponderModel, request.PayloadJson, now, ct),
             context).ConfigureAwait(false);
 
-        await NudgeRecipient(outcome, context).ConfigureAwait(false);
+        await WakeRecipientAsync(outcome, context).ConfigureAwait(false);
 
         return Said(outcome);
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.SayReply> Answer(
-        Wire.AnswerRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.SayReply> Result(Wire.ResultRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
@@ -216,81 +175,29 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
 
         var outcome = await Run(
             from,
-            (broker, now, ct) => broker.AnswerAsync(
-                request.ExchangeId, from, request.ResponderModel, request.PayloadJson, now,
-                Conversions.In(request.Resolution), request.IsDecision, ct),
+            (broker, now, ct) => broker.ResultAsync(
+                request.ExchangeId, from, request.ResponderModel, request.PayloadJson, now, ct),
             context).ConfigureAwait(false);
 
-        await NudgeRecipient(outcome, context).ConfigureAwait(false);
+        await WakeRecipientAsync(outcome, context).ConfigureAwait(false);
 
-        return Said(outcome);
-    }
-
-    /// <inheritdoc/>
-    public override async Task<Wire.NotifyReply> Notify(
-        Wire.NotifyRequest request,
-        ServerCallContext context)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(context);
-
-        var from = Name(request.From);
-        var to = Name(request.To);
-
-        var outcome = await Run(
-            from,
-            (broker, now, ct) => broker.NotifyAsync(
-                from, to, request.ResponderModel, request.PayloadJson, now,
-                Blank(request.ConversationId), ct),
-            context).ConfigureAwait(false);
-
-        var wake = Core.WakeOutcome.Unreachable;
-
-        if (outcome.Succeeded)
+        // The Result may have closed the last work a poll was waiting behind.
+        if (outcome is { Message: { } result, Stored: true })
         {
-            await _runtime.NudgeAsync(to, context.CancellationToken).ConfigureAwait(false);
-
-            // **SPEC.md §5.4, as of protocol 0.4: a notification wakes its recipient.** It did not
-            // until now, and §17 question 15 argued that it should not — on the grounds that Notify
-            // is the uncapped message type and wiring it here would make turns unbounded. That is
-            // answered by the coalescing rather than waved away: attention is asked for once per
-            // recipient until it drains, and a drain collects everything pending, so a hundred
-            // notifications cost one turn.
-            //
-            // Deduplicated traffic is deliberately excluded. §13.1 has already decided the message
-            // carries nothing the recipient has not been sent, so a turn spent on it is a turn
-            // spent on nothing — and it is the one type where that control does the most work.
-            wake = outcome.Stored
-                ? _runtime.RequestAttentionForMail(to, $"{from.Value} told it something")
-                : Core.WakeOutcome.AlreadyComing;
+            await WakeSilentVotersAsync(result.ConversationId, context).ConfigureAwait(false);
         }
 
-        return new Wire.NotifyReply
-        {
-            Ok = outcome.Succeeded,
-            Refusal = Conversions.Out(outcome.Rejection),
-            Deduplicated = outcome.Succeeded && !outcome.Stored,
-
-            // Reported whatever happened, because a sender told only that the message was stored
-            // cannot tell delivery from silence — which is half of the defect this feature exists
-            // for. It is not a second refusal: `Ok` above is unaffected by any of it.
-            Wake = Conversions.Out(wake)
-        };
+        return Said(outcome);
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.ConcludeReply> Conclude(
-        Wire.ConcludeRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.ConcludeReply> Conclude(Wire.ConcludeRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
         var from = Name(request.From);
 
-        // Through Conversions like every other enum, rather than switched on here. One home for
-        // each mapping is what lets a reflection test check them all; a mapping written at its
-        // call site is one the guard cannot see.
         Vote vote;
 
         try
@@ -301,18 +208,22 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         {
             throw new RpcException(new Status(
                 StatusCode.InvalidArgument,
-                "A vote must be DONE or NOT_DONE. An unset vote is not an abstention: SPEC.md " +
-                "§8 has silence lapse into consent on its own schedule, and a call that said " +
-                "nothing would conclude a conversation without anybody deciding to.",
+                "A vote must be DONE or NOT_DONE. An unset vote is not an answer, and a call that said " +
+                "nothing must not be recorded as a participant having said something.",
                 exception));
         }
 
-        var finished = vote == Vote.Done;
-
         var outcome = await Run(
             from,
-            (broker, now, ct) => broker.ConcludeAsync(request.ConversationId, from, finished, now, ct),
+            (broker, now, ct) => broker.ConcludeAsync(request.ConversationId, from, vote == Vote.Done, now, ct),
             context).ConfigureAwait(false);
+
+        // A vote that did not close it may have left it waiting on nothing but the silent. Each is asked again at most
+        // once for each poll, whatever the votes do next — see WakeSilentVotersAsync for why that bound and not another.
+        if (outcome is { Succeeded: true, Concluded: false })
+        {
+            await WakeSilentVotersAsync(request.ConversationId, context).ConfigureAwait(false);
+        }
 
         return new Wire.ConcludeReply
         {
@@ -323,96 +234,75 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.ListAgentsReply> ListAgents(
-        Wire.ListAgentsRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.ListAgentsReply> ListAgents(Wire.ListAgentsRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
         var asking = Name(request.AskingAs);
 
-        var agents = await Run(
-            asking,
-            (broker, _, ct) => broker.ListAgentsAsync(ct),
-            context).ConfigureAwait(false);
+        var agents = await Run(asking, (broker, _, ct) => broker.ListAgentsAsync(ct), context).ConfigureAwait(false);
 
         var reply = new Wire.ListAgentsReply();
-
-        foreach (var agent in agents)
-        {
-            reply.Agents.Add(Conversions.Out(agent));
-        }
+        reply.Agents.AddRange(agents.Select(Conversions.Out));
 
         return reply;
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.InboxReply> DrainInbox(
-        Wire.DrainInboxRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.InboxReply> DrainInbox(Wire.DrainInboxRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
         var agent = Name(request.Agent);
 
-        // **The single place a collection is observable, which is why the wake bound keys on it.**
-        // Keyed here rather than on the attach because the two differ: §4.2 separates waking an
-        // adapter from the model taking a turn, and an agent that attached and has not drained has
-        // read nothing. Clearing on the attach would have bounded nothing at all — the first
-        // notification starts the agent, it attaches within a second, and every one after it buys a
-        // turn.
-        //
-        // **After the read, and a probe that said otherwise was wrong about its own assertion.** The
-        // worry was a message stored between the read and this line having its mark wiped by a
-        // drain that never collected it. It cannot: the claim is taken by the notification *after*
-        // its message is committed, and `Ask` sets the mark again itself once the node has been
-        // told — so a clear landing in that window is followed by the mark being re-set, not by
-        // silence. Clearing first was tried and is worse: a message stored between the clear and
-        // the read is collected here and still leaves a mark set, suppressing the next
-        // notification's turn for nothing.
+        // The single place a collection is observable, which is why the wake bound keys on it: an agent that
+        // attached and has not collected has read nothing. Collected rather than run, so the bound is freed before
+        // the drain reads and a message landing during it asks for its own turn.
         var inbox = await Run(
             agent,
-            (broker, now, ct) => broker.DrainInboxAsync(
-                agent, now, request.Limit > 0 ? request.Limit : null, ct),
-            context).ConfigureAwait(false);
+            (broker, now, ct) => broker.DrainInboxAsync(agent, now, request.Limit > 0 ? request.Limit : null, ct),
+            context,
+            collecting: true).ConfigureAwait(false);
 
-        _runtime.Collected(agent);
+        // A collection its caller limited frees the bound for everything, and may have left messages behind that
+        // nothing will now ask a turn for. Asked again here, once: the claim holds until the next collection, so a
+        // caller draining one at a time costs a turn per collection and never a turn per message left.
+        if (request.Limit > 0 && inbox.Messages.Count >= request.Limit)
+        {
+            var left = await _runtime.UseConnectionAsync(
+                async (connection, _, ct) => await new MessageRepository(connection).CountPendingAsync(agent, ct)
+                    .ConfigureAwait(false),
+                context.CancellationToken).ConfigureAwait(false);
+
+            if (left > 0)
+            {
+                _ = await WakeAsync(agent, "a collection it limited left messages waiting", context).ConfigureAwait(false);
+            }
+        }
 
         var reply = new Wire.InboxReply();
-
-        foreach (var message in inbox.Messages)
-        {
-            reply.Messages.Add(Conversions.Out(message));
-        }
-
-        foreach (var poll in inbox.ClosurePolls)
-        {
-            reply.ClosurePolls.Add(Conversions.Out(poll));
-        }
+        reply.Messages.AddRange(inbox.Messages.Select(Conversions.Out));
+        reply.ClosurePolls.AddRange(inbox.ClosurePolls.Select(Conversions.Out));
 
         return reply;
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.Notice> Waiting(
-        Wire.WaitingRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.Notice> Waiting(Wire.WaitingRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
         var agent = Name(request.Agent);
 
-        // Deliberately not routed through the attachment. This is asked by things that hold no
-        // stream — an editor hook, a status line — and requiring an attach would mean opening one
-        // to ask a question about counts, which is the opposite of cheap.
+        // Not routed through an attachment: asked by things that hold no stream.
         return await _runtime.UseConnectionAsync(
             async (connection, _, ct) => new Wire.Notice
             {
-                MessagesWaiting = await new MessageRepository(connection)
-                    .CountPendingAsync(agent, ct).ConfigureAwait(false),
+                MessagesWaiting = await new MessageRepository(connection).CountPendingAsync(agent, ct)
+                    .ConfigureAwait(false),
                 ClosurePollsWaiting = await new ConversationRepository(connection)
                     .CountOutstandingPollsAsync(agent, ct).ConfigureAwait(false)
             },
@@ -420,19 +310,15 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.Empty> RecordRefusal(
-        Wire.RecordRefusalRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.Empty> RecordRefusal(Wire.RecordRefusalRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
         var agent = Name(request.Agent);
 
-        // Best effort, and silent when it fails. The adapter has already told the model its
-        // message was too long, and that refusal must not depend on the bookkeeping behind it
-        // succeeding — a full disk would otherwise turn a clear "say it in fewer words" into an
-        // error about storage.
+        // Best effort, and silent when it fails: the adapter has already told the model its message was
+        // too long, and that must not depend on the bookkeeping behind it.
         try
         {
             _ = await _runtime.UseConnectionAsync(
@@ -450,204 +336,123 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         return new Wire.Empty();
     }
 
-    /// <inheritdoc/>
-    public override async Task<Wire.ExchangesReply> ResumeOwedBy(
-        Wire.ResumeOwedByRequest request,
-        ServerCallContext context)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(context);
-
-        var agent = Name(request.Agent);
-
-        var exchanges = await Run(
-            agent,
-            (broker, now, ct) => broker.ResumeOwedByAsync(agent, now, ct),
-            context).ConfigureAwait(false);
-
-        var reply = new Wire.ExchangesReply();
-
-        foreach (var exchange in exchanges)
-        {
-            reply.Exchanges.Add(Conversions.Out(exchange));
-        }
-
-        return reply;
-    }
-
-    /// <inheritdoc/>
-    public override async Task<Wire.SubQuestionsReply> GetSubQuestionIds(
-        Wire.SubQuestionsRequest request,
-        ServerCallContext context)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(context);
-
-        // Deliberately not on the request. The identity of the asker is the attachment's, and a
-        // sub-question list is scoped to a participant -- so taking it from a field would let a
-        // caller read the sub-questions of an exchange it is not party to by naming somebody who
-        // is. §16 says the wire cannot tell who is calling; that is not a reason to add a second
-        // place for a caller to say so.
-        var asking = Name(request.AskingAs);
-
-        var ids = await Run(
-            asking,
-            (broker, _, ct) => broker.GetSubQuestionIdsAsync(request.ExchangeId, asking, ct),
-            context).ConfigureAwait(false);
-
-        var reply = new Wire.SubQuestionsReply();
-        reply.Ids.AddRange(ids);
-
-        return reply;
-    }
-
-    /// <summary>Runs work on an agent's broker, turning its refusals into wire faults.</summary>
-    /// <typeparam name="T">What the work returns.</typeparam>
-    /// <param name="agent">The agent the work is on behalf of.</param>
-    /// <param name="work">The work.</param>
-    /// <param name="context">The call.</param>
-    /// <returns>Whatever the work returned.</returns>
     private async Task<T> Run<T>(
         AgentName agent,
         Func<Parley.Broker.Broker, DateTimeOffset, CancellationToken, Task<T>> work,
-        ServerCallContext context)
+        ServerCallContext context,
+        bool collecting = false)
     {
         try
         {
-            return await _runtime.RunAsync(agent, work, context.CancellationToken)
-                .ConfigureAwait(false);
+            return collecting
+                ? await _runtime.CollectAsync(agent, work, context.CancellationToken).ConfigureAwait(false)
+                : await _runtime.RunAsync(agent, work, context.CancellationToken).ConfigureAwait(false);
         }
         catch (NotAttachedException exception)
         {
-            throw new RpcException(
-                new Status(StatusCode.FailedPrecondition, exception.Message, exception));
+            throw new RpcException(new Status(StatusCode.FailedPrecondition, exception.Message, exception));
         }
         catch (ArgumentException exception)
         {
-            // A payload the broker would not accept: too long, malformed, missing what §8
-            // requires of a question. Invalid rather than failed, because the same call with a
-            // different payload would succeed.
-            throw new RpcException(
-                new Status(StatusCode.InvalidArgument, exception.Message, exception));
+            // A payload the broker would not accept. Invalid rather than failed, because the same call with
+            // a different payload would succeed.
+            throw new RpcException(new Status(StatusCode.InvalidArgument, exception.Message, exception));
         }
-    }
-
-    /// <summary>
-    /// Tells a peer a question is waiting, and has it started if it is not running.
-    /// </summary>
-    /// <param name="peer">The agent the question went to.</param>
-    /// <param name="asker">Who asked, named only so an operator can see why a process appeared.</param>
-    /// <param name="context">The call.</param>
-    /// <returns>A task that completes when both have been attempted.</returns>
-    /// <remarks>
-    /// <para>
-    /// The two halves are for the two states a peer can be in. A running one is nudged, because
-    /// its stream is already open. An idle one is started, because SPEC.md §5.5 says a question
-    /// to a registered agent that is not running is what causes it to run — and a question that
-    /// merely waited would be indistinguishable, from the asker's side, from one nobody could be
-    /// bothered to answer.
-    /// </para>
-    /// <para>
-    /// Neither is required to succeed. A machine with no node cannot start anything, and that
-    /// is the case §5.5 designs for rather than around: the question stays open, orphans on the
-    /// ordinary schedule, and is ghosted, so the asker is told that nobody answered instead of
-    /// waiting on something that was never going to arrive.
-    /// </para>
-    /// </remarks>
-    private async Task WakeAsync(AgentName peer, AgentName asker, ServerCallContext context)
-    {
-        await _runtime.NudgeAsync(peer, context.CancellationToken).ConfigureAwait(false);
-
-        _ = _runtime.RequestAttention(peer, $"{asker.Value} asked it a question");
-    }
-
-    /// <summary>Wakes whichever party a move handed the turn to.</summary>
-    /// <param name="outcome">The move.</param>
-    /// <param name="context">The call.</param>
-    /// <returns>A task that completes when the notice has been queued.</returns>
-    /// <remarks>
-    /// Read from the stored message rather than worked out from the exchange, because the
-    /// message is what was actually written and the exchange is what it was written against. A
-    /// clarification goes back to the asker and an answer goes to the asker too, but a
-    /// clarification's <em>reply</em> goes the other way — and deriving that here would be a
-    /// second copy of the turn-taking rule of §5, which lives in the broker.
-    /// </remarks>
-    private async Task NudgeRecipient(Parley.Broker.SayOutcome outcome, ServerCallContext context)
-    {
-        if (outcome.Message is { } message)
+        catch (Microsoft.Data.Sqlite.SqliteException exception) when (exception.SqliteErrorCode == 19)
         {
-            await _runtime.NudgeAsync(message.To, context.CancellationToken).ConfigureAwait(false);
-
-            // Started as well, for the same reason an ask does it: a clarification handed to an
-            // agent that has since closed its session is a turn nobody is there to take, and the
-            // exchange is still open and still counting down.
-            _ = _runtime.RequestAttention(message.To, $"{message.From.Value} is waiting on it");
+            // A storage constraint refused the write — a Request without done_when, a source that is not
+            // registered. Nothing was written. Reported as invalid with the constraint's own words, which
+            // name the rule, rather than as a fault in the broker.
+            throw new RpcException(new Status(StatusCode.InvalidArgument, exception.Message, exception));
         }
     }
 
-    /// <summary>Converts an admission outcome for the wire.</summary>
-    /// <param name="outcome">The outcome.</param>
-    /// <returns>The reply.</returns>
-    private static Wire.AskReply Asked(Parley.Broker.AskOutcome outcome)
+    /// <summary>Tells a receiver something is waiting, and has it started or given a turn.</summary>
+    /// <param name="receiver">Who the message went to.</param>
+    /// <param name="because">Why, for whoever reads the node's log.</param>
+    /// <param name="context">The call.</param>
+    /// <returns>What became of the receiver.</returns>
+    /// <remarks>
+    /// A running receiver is nudged down its stream; one that is not is started or given a turn by its
+    /// machine. Neither is required to succeed: a receiver on a machine that is off gets the message when
+    /// it comes back, and the person is shown it waiting (§6).
+    /// </remarks>
+    private async Task<WakeOutcome> WakeAsync(AgentName receiver, string because, ServerCallContext context)
     {
-        var reply = new Wire.AskReply
+        await _runtime.NudgeAsync(receiver, context.CancellationToken).ConfigureAwait(false);
+        return _runtime.RequestAttentionForMail(receiver, because);
+    }
+
+    private async Task WakeRecipientAsync(Parley.Broker.SayOutcome outcome, ServerCallContext context)
+    {
+        // A retry that stored nothing has already woken its recipient once.
+        if (outcome is { Message: { } message, Stored: true })
+        {
+            _ = await WakeAsync(message.To, $"{message.From.Value} is waiting on it", context).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Asks again the participants a conversation is waiting on for nothing but a vote (§5.0).</summary>
+    /// <param name="conversationId">The conversation that just moved.</param>
+    /// <param name="context">The call.</param>
+    /// <returns>A task that completes when each has been woken.</returns>
+    /// <remarks>
+    /// <para>
+    /// The poll reaches a participant through its inbox, and only a participant that collects sees it. One that
+    /// finished its part has no reason to collect again, so without this the conversation stayed closing and
+    /// nothing asked it. The reason names nobody: the poll leaks nothing about who else was asked (§5.0).
+    /// </para>
+    /// <para>
+    /// <b>At most once for each participant in each poll.</b> Each turn is a collection and a collection frees the
+    /// next wake, so any rule about <i>when</i> to ask was a rule a participant could replay: waking on every vote
+    /// let one that had agreed buy a silent one a turn per call, and waking on a decline turning into agreement let
+    /// it buy one for every two calls by alternating. The bound is on the thing being spent instead. A new poll —
+    /// which only a new Request can bring about, by voiding this one — may ask again, and a broker that restarts
+    /// forgets and may ask once more.
+    /// </para>
+    /// </remarks>
+    private async Task WakeSilentVotersAsync(string? conversationId, ServerCallContext context)
+    {
+        if (string.IsNullOrEmpty(conversationId))
+        {
+            return;
+        }
+
+        var silent = await _runtime.UseConnectionAsync(
+            async (connection, _, ct) => await new ConversationRepository(connection)
+                .GetSilentVotersAsync(conversationId, ct).ConfigureAwait(false),
+            context.CancellationToken).ConfigureAwait(false);
+
+        foreach (var (voter, polled) in silent)
+        {
+            if (_runtime.TryAskAgain(conversationId, voter, polled))
+            {
+                _ = await WakeAsync(voter, "a conversation it is in is waiting only on its vote", context).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static Wire.SayReply Said(Parley.Broker.SayOutcome outcome)
+    {
+        var reply = new Wire.SayReply
         {
             Ok = outcome.Succeeded,
-            Rejection = Conversions.Out(outcome.Rejection),
-            ExchangeId = outcome.Exchange?.Id ?? 0,
-            Answerer = outcome.Exchange?.Answerer.Value ?? string.Empty
+            Refusal = Conversions.Out(outcome.Error),
+            Deduplicated = outcome.Succeeded && !outcome.Stored,
+            MessageId = outcome.Message?.Id ?? 0
         };
 
-        // What the asker is already waiting on, when it was refused for being at its cap. §7.1
-        // hands this back so the refusal is actionable: the remedy is to conclude one of these,
-        // and an asker that was told only "saturated" would have to go looking for which.
-        foreach (var outstanding in outcome.Admission.Outstanding)
-        {
-            reply.WaitingOn.Add(outstanding.Id);
-        }
-
+        reply.ExpectedItems.AddRange(outcome.ExpectedItems);
         return reply;
     }
-
-    /// <summary>Converts a move outcome for the wire.</summary>
-    /// <param name="outcome">The outcome.</param>
-    /// <returns>The reply.</returns>
-    private static Wire.SayReply Said(Parley.Broker.SayOutcome outcome) => new()
-    {
-        Ok = outcome.Succeeded,
-        Refusal = Conversions.Out(outcome.Error),
-        Deduplicated = outcome.Succeeded && !outcome.Stored,
-        MessageId = outcome.Message?.Id ?? 0
-    };
 
     /// <summary>Refuses an adapter speaking a different protocol.</summary>
     /// <param name="announced">What the adapter said it speaks.</param>
     /// <exception cref="RpcException">It is not what this broker speaks.</exception>
     /// <remarks>
-    /// <para>
-    /// The field existed before this did, which is the worse half of the story: an adapter sent
-    /// its version on every attach and the broker read none of them. A field that looks like a
-    /// compatibility check and is not is worse than no field at all, because somebody reading
-    /// the contract concludes they are protected.
-    /// </para>
-    /// <para>
-    /// <b>Any difference is refused while the major is zero</b>, because SPEC.md §18 says the
-    /// minor carries breaking changes in that state. That is strict — an upgrade means updating
-    /// the broker and every adapter together — and the alternative is worse in a way that is
-    /// hard to diagnose: two versions that half-understand each other produce exchanges that
-    /// open and are never answered, which looks exactly like a peer that is ignoring you.
-    /// </para>
-    /// <para>
-    /// An adapter that announces nothing is refused with the same message. Silence means a build
-    /// from before the field carried anything, which is 0.1 — and 0.1 opened the database
-    /// directly, so it is not merely older but incompatible in the one way that matters.
-    /// </para>
-    /// <para>
-    /// <c>Join</c> has no equivalent and needs none. A node receives commands rather than
-    /// interpreting a state machine, and it ignores any command case it does not recognise —
-    /// so a node older than its broker declines to act on what it cannot understand, which is
-    /// the behaviour a version check would have had to produce anyway.
-    /// </para>
+    /// Any difference is refused while the major is zero, because every minor carries breaking changes.
+    /// Two versions that half-understand each other produce exchanges that open and are never answered,
+    /// which looks exactly like a participant ignoring you.
     /// </remarks>
     private static void RequireTheSameProtocol(string announced)
     {
@@ -658,33 +463,19 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
 
         throw new RpcException(new Status(
             StatusCode.FailedPrecondition,
-            $"This broker speaks Parley protocol {ProtocolVersion.Current} and that adapter " +
-            $"speaks {(announced is { Length: > 0 } said ? said : "an older version that did not say")}. " +
-            "While the major version is zero every minor carries breaking changes, so the two " +
-            "do not interoperate. Update whichever is behind: both ship from the same build."));
+            $"This broker speaks Parley protocol {ProtocolVersion.Current} and that adapter speaks " +
+            $"{(announced is { Length: > 0 } said ? said : "an older version that did not say")}. While the major " +
+            "version is zero every minor carries breaking changes, so the two do not interoperate. Update " +
+            "whichever is behind: both ship from the same build."));
     }
 
-    /// <summary>Reads an agent name, refusing anything that is not one.</summary>
-    /// <param name="value">The name as it arrived.</param>
-    /// <returns>The name.</returns>
-    /// <exception cref="RpcException">The value is not a well-formed name.</exception>
     private static AgentName Name(string value) =>
         AgentName.TryCreate(value, out var name)
             ? name
             : throw new RpcException(new Status(
                 StatusCode.InvalidArgument,
-                $"'{value}' is not an agent name. Names are role@machine, lower case, and the " +
-                "machine half is detected rather than configured (SPEC.md §4.1.1)."));
+                $"'{value}' is not an agent name. Names are role@machine, lower case, and the machine half " +
+                "is detected rather than configured (SPEC.md §4.1.1)."));
 
-    /// <summary>Reads an optional string, treating the empty one as absent.</summary>
-    /// <param name="value">The value as it arrived.</param>
-    /// <returns>The value, or <see langword="null"/>.</returns>
-    /// <remarks>
-    /// proto3 has no null for a scalar, so absence and emptiness arrive identically. Every field
-    /// this is applied to is one where an empty string would be meaningless — a workspace path,
-    /// a conversation identifier, a statement of ownership — so collapsing them loses nothing
-    /// that could have been said deliberately.
-    /// </remarks>
-    private static string? Blank(string value) =>
-        string.IsNullOrEmpty(value) ? null : value;
+    private static string? Blank(string value) => string.IsNullOrEmpty(value) ? null : value;
 }

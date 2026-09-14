@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -6,14 +6,12 @@ using Xunit;
 namespace Parley.Broker.Tests;
 
 /// <summary>
-/// One discussion from first question to concluded, across a restart.
+/// One line of work from first Request to closed by consensus, across a restart.
 /// </summary>
 /// <remarks>
-/// Every other test here isolates a rule. This one runs the whole of SPEC.md §10.1 as an agent
-/// would meet it — ask, drain, clarify, answer, conclude — with §14's reboot sequence in the
-/// middle, because the parts have been correct individually while the joins between them were
-/// where the last several defects lived: a replay that handed nothing back, a poll that a
-/// restart let one participant win alone.
+/// Every other test here isolates a rule. This one runs the whole of SPEC.md §10.1 as a participant would meet
+/// it — request, collect, clarify, result, conclude — with an agent's session ending in the middle, because the
+/// parts have been correct individually while the joins between them were where defects lived.
 /// </remarks>
 public sealed class FullDiscussionTests : IDisposable
 {
@@ -22,7 +20,7 @@ public sealed class FullDiscussionTests : IDisposable
     private static readonly AgentName Inventory = AgentName.Create("inventory@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    private const string Model = "claude-opus-5";
+    private const string Model = Requests.Model;
     private const string Conversation = "pricing";
 
     private readonly SqliteConnection _connection;
@@ -31,106 +29,60 @@ public sealed class FullDiscussionTests : IDisposable
     public FullDiscussionTests()
     {
         _connection = ParleyDatabase.OpenInMemory();
-        var agents = new AgentRepository(_connection);
-        foreach (var name in new[] { Orders, Billing, Inventory })
-        {
-            agents.UpsertAsync(
-                new AgentRecord(name, "test", AgentTier.Full, null, null, null, false, AgentStatus.Active),
-                TestContext.Current.CancellationToken).GetAwaiter().GetResult();
-        }
-
+        Requests.Register(_connection, Orders, Billing, Inventory);
         _conversations = new ConversationRepository(_connection);
     }
 
     public void Dispose() => _connection.Dispose();
 
-    private static string Question(string text) =>
-        $$"""{"text":"{{text}}","consequences":"If gross I stop adding tax; if net I keep adding it."}""";
-
     [Fact]
-    public async Task A_discussion_runs_from_first_question_to_concluded()
+    public async Task A_line_of_work_runs_from_first_request_to_closed()
     {
         var ct = TestContext.Current.CancellationToken;
 
-        // Always, so the restart in the middle replays rather than abandoning.
-        var options = BrokerOptions.Default with
-        {
-            ResumePolicy = ResumePolicy.Always,
-            ResumeGate = AlwaysResume.Instance
-        };
-
-        var broker = new Broker(_connection, options);
+        var broker = new Broker(_connection);
         await broker.StartAsync(Orders, T0, ct);
 
-        // Orders asks billing, naming the discussion.
-        var asked = await broker.AskAsync(
-            Orders, Billing, Model, Question("is the price gross or net?"),
-            T0.AddMinutes(1), Conversation, ct);
-        Assert.True(asked.Succeeded, $"expected admission, got {asked.Rejection}");
+        // Orders asks billing for work, naming the conversation.
+        var sent = await broker.RequestAsync(
+            Orders, Billing, Model, Requests.Request("state the price as gross or net", "work"), T0.AddMinutes(1), Conversation, ct);
+        Assert.True(sent.Succeeded, $"expected admission, got {sent.Rejection}");
 
-        // Billing collects it, which starts the working window.
-        var billingInbox = await broker.DrainInboxAsync(Billing, T0.AddMinutes(2), cancellationToken: ct);
-        Assert.Equal(MessageType.Question, Assert.Single(billingInbox.Messages).Message.Type);
+        // Billing collects it, and needs detail, so the turn goes back.
+        Assert.Equal(MessageType.Request, Assert.Single((await broker.DrainInboxAsync(Billing, T0.AddMinutes(2), cancellationToken: ct)).Messages).Message.Type);
+        Assert.True((await broker.ClarifyAsync(sent.Exchange!.Id, Billing, Model, Requests.Clarify("gross of VAT or of duty?"), T0.AddMinutes(3), ct)).Succeeded);
 
-        // It needs detail, so the turn goes back.
-        Assert.True((await broker.ClarifyAsync(
-            asked.Exchange!.Id, Billing, Model, """{"text":"gross of VAT or of duty?"}""",
-            T0.AddMinutes(3), ct)).Succeeded);
-
-        // Orders reads what it was asked for, and then gets no further with it.
-        Assert.Equal(MessageType.Clarify, Assert.Single(
-            (await broker.DrainInboxAsync(Orders, T0.AddMinutes(3), cancellationToken: ct))
-                .Messages).Message.Type);
-
-        // The process dies here, mid-clarification, with orders holding the turn — and holding
-        // it knowingly, which is what makes the debt one the attach sequence releases. Had orders
-        // never collected the clarification, §14 would leave the exchange open for it to find.
+        // Orders reads what it was asked for, and its session ends before it replies.
+        Assert.Equal(MessageType.Clarify, Assert.Single((await broker.DrainInboxAsync(Orders, T0.AddMinutes(3), cancellationToken: ct)).Messages).Message.Type);
         await broker.DetachAsync(ct);
 
-        // Two hours later, which is what a restart looks like from the registry: the previous
-        // session stopped renewing its liveness lease, and the lease lapsing is the evidence
-        // that nobody is still holding this. Coming back inside the lease would find the agent
-        // apparently still attached and release nothing, which is the right answer for a second
-        // window opened beside a live session and the wrong one for a process that died.
+        // Two hours later orders comes back. Nothing ended the exchange meanwhile, and the clarification it owes a
+        // reply to is handed over again rather than left stamped as collected.
         var back = T0.AddHours(2);
-        var restarted = new Broker(_connection, options);
-        var reboot = await restarted.StartAsync(Orders, back, ct);
-        Assert.Equal(1, reboot.ExchangesOrphaned);
+        var restarted = new Broker(_connection);
+        Assert.Equal(1, (await restarted.StartAsync(Orders, back, ct)).ExchangesRedelivered);
+        Assert.Equal(MessageType.Clarify, Assert.Single((await restarted.DrainInboxAsync(Orders, back.AddMinutes(1), cancellationToken: ct)).Messages).Message.Type);
 
-        // Orders comes back. Its own traffic is what replays what it owes, and the question it
-        // owes an answer to is handed over again rather than left stamped as delivered.
-        var ordersInbox = await restarted.DrainInboxAsync(Orders, back.AddMinutes(1), cancellationToken: ct);
-        Assert.Equal(MessageType.Clarify, Assert.Single(ordersInbox.Messages).Message.Type);
+        Assert.True((await restarted.ClarifyAsync(sent.Exchange.Id, Orders, Model, Requests.Clarify("of VAT."), back.AddMinutes(2), ct)).Succeeded);
 
-        Assert.True((await restarted.ClarifyAsync(
-            asked.Exchange.Id, Orders, Model, """{"text":"of VAT."}""", back.AddMinutes(2), ct)).Succeeded);
+        // Billing does the work and sends the Result, which reaches orders with its own Request beside it.
+        Assert.True((await restarted.ResultAsync(sent.Exchange.Id, Billing, Model, Requests.Result(("q1", "done")), back.AddMinutes(3), ct)).Succeeded);
 
-        // Billing answers, closing the exchange and releasing the pair slot.
-        var answered = await restarted.AnswerAsync(
-            asked.Exchange.Id, Billing, Model,
-            """{"resolutions":[{"id":"q1","resolution":"answered","text":"net"}]}""",
-            back.AddMinutes(3), Resolution.Answered, isDecision: true, cancellationToken: ct);
-        Assert.True(answered.Succeeded);
+        var result = Assert.Single((await restarted.DrainInboxAsync(Orders, back.AddMinutes(4), cancellationToken: ct)).Messages);
+        Assert.Equal(MessageType.Result, result.Message.Type);
+        Assert.Contains("state the price as gross or net", result.Envelope, StringComparison.Ordinal);
 
-        var settled = await restarted.DrainInboxAsync(Orders, back.AddMinutes(4), cancellationToken: ct);
-        Assert.Equal(MessageType.Answer, Assert.Single(settled.Messages).Message.Type);
+        // Orders says it is finished. Nobody holds open work any more, so nobody is asked, and the conversation
+        // closes by consensus on the one statement.
+        Assert.True((await restarted.ConcludeAsync(Conversation, Orders, true, back.AddMinutes(5), ct)).Concluded);
 
-        // Orders proposes closure. Billing holds nothing open now, so it is not woken to answer
-        // a question about nothing, and the discussion concludes on the proposal alone.
-        var concluded = await restarted.ConcludeAsync(Conversation, Orders, true, back.AddMinutes(5), ct);
-        Assert.True(concluded.Concluded);
+        // It stays closed: further work naming it is refused, with who closed it.
+        var reopened = await restarted.RequestAsync(Orders, Inventory, Model, Requests.Request("and for refunds?"), back.AddMinutes(7), Conversation, ct);
+        Assert.Equal(RequestRejection.ConversationClosed, reopened.Rejection);
+        Assert.Equal(ConversationCloser.Consensus, reopened.Admission.ClosedBy);
 
-        // And it stays concluded: a further question naming it is refused, with a reason.
-        var reopened = await restarted.AskAsync(
-            Orders, Inventory, Model, Question("and for refunds?"),
-            back.AddMinutes(6), Conversation, ct);
-        Assert.Equal(OpenRejection.ConversationClosed, reopened.Rejection);
-
-        // The same question under a new identifier is admitted, which is what makes that refusal
-        // something an agent can act on rather than a dead end.
-        var afresh = await restarted.AskAsync(
-            Orders, Inventory, Model, Question("and for refunds?"),
-            back.AddMinutes(7), "refunds", ct);
+        // The same work in a new conversation is admitted, which is what makes the refusal actionable.
+        var afresh = await restarted.RequestAsync(Orders, Inventory, Model, Requests.Request("and for refunds?"), back.AddMinutes(8), "refunds", ct);
         Assert.True(afresh.Succeeded, $"expected admission, got {afresh.Rejection}");
 
         var record = await _conversations.GetAsync(Conversation, cancellationToken: ct);

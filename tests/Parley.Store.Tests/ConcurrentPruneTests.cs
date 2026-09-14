@@ -69,15 +69,15 @@ public sealed class ConcurrentPruneTests : IDisposable
                 new AgentRecord(name, "test", AgentTier.Full, null, null, null, false, AgentStatus.Active), Ct);
         }
 
-        var exchanges = new ExchangeRepository(connection);
         var repository = new MessageRepository(connection);
 
-        // One exchange, closed, so nothing is held by the floor's live-exchange clause. The
-        // messages differ by payload so deduplication does not refuse them.
-        var exchange = (await exchanges.TryOpenAsync(Orders, Billing, T0, "q1", cancellationToken: Ct))
-            .Exchange!;
+        // One exchange, closed, so nothing is held by the floor's live-exchange clause. Its Request and
+        // Result are two of the messages; the rest are clarifications differing by payload so
+        // deduplication does not refuse them.
+        var (exchange, request) = await Work.OpenAsync(connection, Orders, Billing, T0, cancellationToken: Ct);
+        Assert.True(await repository.MarkDeliveredAsync(request.Id, T0, Ct));
 
-        for (var i = 0; i < messages; i++)
+        for (var i = 0; i < messages - 2; i++)
         {
             var text = i.ToString(CultureInfo.InvariantCulture);
 
@@ -90,8 +90,8 @@ public sealed class ConcurrentPruneTests : IDisposable
         }
 
         Assert.True(exchange.Deliver(T0).Succeeded);
-        Assert.True(exchange.Answer(Billing, T0).Succeeded);
-        Assert.True(await exchanges.SaveAsync(exchange, cancellationToken: Ct));
+        var result = await Work.CloseAsync(connection, exchange, T0, cancellationToken: Ct);
+        Assert.True(await repository.MarkDeliveredAsync(result.Id, T0, Ct));
 
     }
 

@@ -9,16 +9,15 @@ namespace Parley.Store;
 /// <remarks>
 /// <para>
 /// This exists because several repository operations are individually atomic and were being
-/// composed into operations that were not. Opening an exchange and writing its question are one
-/// act from the protocol's point of view — SPEC.md §10.1 calls it <c>ask</c> — but two commits
-/// here, and a failure between them leaves an exchange open with no question in it. That
-/// exchange holds a pair slot and an entry in the distinctness index, waits out its delivery
-/// window, and is finally reported to the asker as <c>ghosted</c>: nobody came, when nobody was
-/// ever asked. Five of them saturate the pair and lock it out entirely.
+/// composed into operations that were not. Opening an exchange and writing its Request are one
+/// act from the protocol's point of view — SPEC.md §10.1 calls it <c>request</c> — but two commits
+/// here, and a failure between them leaves an exchange open with no Request in it. That exchange
+/// holds an entry in the distinctness index and owes a Result on work nobody sent, and it is
+/// flagged to the person as never collected: nobody came, when nobody was ever asked.
 /// </para>
 /// <para>
 /// The alternative was to validate before writing, which is worse. The rules that reject a
-/// question live in the schema deliberately — §8.5's length cap and rule 1's consequences floor
+/// Request live in the schema deliberately — rule 8.5's length cap and rule 8.1's done_when floor
 /// are there so no code path can route around them — and a broker that re-implemented them to
 /// pre-check would be the second copy those constraints exist to avoid.
 /// </para>

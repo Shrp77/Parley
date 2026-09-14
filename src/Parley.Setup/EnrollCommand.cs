@@ -893,7 +893,19 @@ public static class EnrollCommand
 
             if (already is not null)
             {
-                problems.Add($"{entry.Agent}: {Catalogues.Refusal(already)}");
+                // **The way out, said here rather than in the refusal itself.** `Catalogues.Refusal`
+                // is shared with `Enrolment.AddAsync`, which the terminal reaches — and there the
+                // advice would be wrong, because that surface has no manifest row to edit and makes
+                // the same choice for the person. The rule belongs in one place and the remedy
+                // belongs where it can be acted on.
+                //
+                // The owner met this from the terminal, where it was a dead end. It never was one
+                // here, and saying nothing about the flag that opens it made it look like one.
+                problems.Add(
+                    $"{entry.Agent}: {Catalogues.Refusal(already)} Set \"unattended\": false on "
+                    + "this row to enroll it here anyway: it answers in this project and is started "
+                    + "by the other one, which brings up every parley server in its launch "
+                    + "configuration.");
             }
             else if (unseen is not null)
             {
@@ -1168,9 +1180,9 @@ public static class EnrollCommand
         // **Enrolment is not finished until each agent has registered**, and it cannot register
         // itself without running once: §12.3 makes registration the adapter's own act on attach, so
         // the only honest way to leave one registered is to start it and let it do so. Until then
-        // §14 counts the name unroutable and every message type is refused — a question and a
-        // notification alike — so a repository enrolled and never opened is not a quiet agent but
-        // one nothing can address.
+        // §14 counts the name unroutable and every message type is refused, a Request as surely as
+        // any other, so a repository enrolled and never opened is not a quiet agent but one nothing
+        // can address.
         //
         // Last, after both files and the catalogue: a start asks the broker to launch a role, and
         // the node cannot launch what its catalogue does not yet name.
@@ -1181,7 +1193,7 @@ public static class EnrollCommand
         // for one. A run that wrote `unattended` into the catalogue and then said "start a
         // broker" has described half a deployment: the repositories it just recorded as
         // startable are startable by a process it never mentioned, so they sit there reading as
-        // available and are ghosted when somebody asks them anything. The catalogue is named
+        // available while work sent to them waits, never collected. The catalogue is named
         // because a supervisor starts a process with no shell environment, and this is the one
         // moment somebody has both facts in front of them.
         var start = nodeChanged
