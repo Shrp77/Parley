@@ -37,4 +37,25 @@ public static class StoreFiles
     /// the machine — which is exactly what the owner had to do to find a terminal tab.
     /// </remarks>
     public const string Owner = ".owner";
+
+    /// <summary>
+    /// The file location: a directory holding one folder per conversation that has files (SPEC.md §9.5).
+    /// </summary>
+    /// <remarks>
+    /// A directory rather than a file, and beside the store rather than inside a user's profile, so that
+    /// destroying a project takes its files with it and a person looking for them finds them next to the
+    /// store they already know.
+    /// </remarks>
+    public const string Files = ".files";
+
+    /// <summary>
+    /// Where placements in progress are written before they are moved into the location.
+    /// </summary>
+    /// <remarks>
+    /// Beside the location and never inside it, which was the owner's call: the folder a person opens and the
+    /// watcher watches then never holds a half-uploaded file, and on the same disk a finished upload still
+    /// moves into place in one step. Emptied when a broker starts, because nothing survives a broker that
+    /// could have finished writing it.
+    /// </remarks>
+    public const string FilesIncoming = ".files-incoming";
 }

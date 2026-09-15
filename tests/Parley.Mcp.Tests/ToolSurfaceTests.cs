@@ -26,6 +26,10 @@ public sealed class ToolSurfaceTests
         "parley_agents",
         "parley_clarify",
         "parley_conclude",
+        "parley_file_fetch",
+        "parley_file_list",
+        "parley_file_place",
+        "parley_file_remove",
         "parley_inbox",
         "parley_request",
         "parley_result"
@@ -37,7 +41,7 @@ public sealed class ToolSurfaceTests
             .Where(m => m.GetCustomAttribute<McpServerToolAttribute>() is not null);
 
     [Fact]
-    public void The_agent_facing_tool_set_is_exactly_the_six_operations_of_section_10_1()
+    public void The_agent_facing_tool_set_is_exactly_the_operations_of_section_10_1()
     {
         var names = ToolMethods()
             .Select(m => m.GetCustomAttribute<McpServerToolAttribute>()!.Name)

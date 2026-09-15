@@ -4,7 +4,7 @@ package parley.v1;
 
 option csharp_namespace = "Parley.Transport";
 
-// The Parley wire contract, per SPEC.md section 4.0. Protocol 0.5.
+// The Parley wire contract, per SPEC.md section 4.0. Protocol 0.6.
 //
 // SPEC.md is the authority and this file is not. A message defined here and absent there is a
 // defect here; a rule stated there and unrepresentable here is a defect here too -- the same
@@ -60,6 +60,26 @@ service Agents {
   // Records that an adapter refused to send something for being over the size cap. Length only,
   // never the payload: that is the material the cap exists to keep out of a context.
   rpc RecordRefusal(RecordRefusalRequest) returns (Empty);
+
+  // Places a file from the agent's own repository in a conversation's folder of the file location (section 9.5).
+  // The first frame is a header naming the conversation and the file; every later frame carries bytes. The
+  // conversation is assigned as a Request's is (section 5.0), and placing makes the placer a participant.
+  rpc PlaceFile(stream PlaceFileFrame) returns (PlaceFileReply);
+
+  // Streams one whole content of a file: a header and then bytes, or a refusal instead of the header. While the
+  // call is open the stored file is held for reading and a replacement or removal waits. The adapter writes the
+  // bytes to disk; nothing carries them into a model's context.
+  rpc FetchFile(FetchFileRequest) returns (stream FetchFileFrame);
+
+  // Reports that a fetch was written and verified. Only then is it recorded, so change notices follow. A report of
+  // a fetch the broker did not stream to this agent, or of a hash it did not stream, is refused.
+  rpc FetchedFile(FetchedFileRequest) returns (FetchedFileReply);
+
+  // A page of the files in the location: names, sizes, hashes and placers, never contents.
+  rpc ListFiles(ListFilesRequest) returns (FilesReply);
+
+  // Removes files the calling agent placed. Every other name is refused, naming its placer.
+  rpc RemoveOwnFiles(RemoveFilesRequest) returns (RemoveFilesReply);
 }
 
 message AttachRequest {
@@ -94,6 +114,7 @@ message Attached {
 message Notice {
   int32 messages_waiting = 1;
   int32 closure_polls_waiting = 2;
+  int32 file_notices_waiting = 3;     // section 9.5: counted like the rest, and never waking anything
 }
 
 message OpenRequest {
@@ -204,6 +225,193 @@ message DrainInboxRequest {
 message InboxReply {
   repeated DeliveredMessage messages = 1;
   repeated ClosurePoll closure_polls = 2;
+
+  // Section 9.5. Not messages: nothing is owed back. At most 200 in one collection, oldest change first, whatever
+  // `limit` says about messages; the rest wait for the agent's next collection and are counted here.
+  repeated FileNotice file_notices = 3;
+  int32 file_notices_waiting = 4;
+}
+
+// That a file the agent fetched has changed or gone since. A name and two hashes, never the content.
+message FileNotice {
+  string conversation_id = 1;
+  string name = 2;
+  string sha256_had = 3;              // what the agent fetched
+  string sha256_now = 4;              // empty when gone
+  int64 size_bytes = 5;               // 0 when gone
+  string changed_utc = 6;
+  bool gone = 7;
+}
+
+// ===========================================================================================
+// Files -- SPEC.md section 9.5
+//
+// What crosses about a file is its name, size, hash and placer. Its bytes travel only inside PlaceFile and
+// FetchFile, in pieces well under the default message limit, and land on disk on either side.
+// ===========================================================================================
+
+message PlaceFileFrame {
+  oneof frame {
+    PlaceFileHeader header = 1;       // first, and only first
+    bytes chunk = 2;                  // at most 256 KiB
+  }
+}
+
+message PlaceFileHeader {
+  string agent = 1;                   // the adapter's launch identity, as every Agents call carries
+  string conversation_id = 2;         // empty: assigned by the broker (section 5.0)
+  string name = 3;                    // section 9.5's rules; only .md and .txt
+}
+
+message PlaceFileReply {
+  PlaceOutcome outcome = 1;
+  FileRejection rejection = 2;        // NONE when the file was placed, replaced or already current
+  string conversation_id = 3;
+  string name = 4;
+  int64 size_bytes = 5;
+  string sha256 = 6;                  // the broker's, never the placer's
+  string previous_sha256 = 7;         // on REPLACED
+  string placed_by = 8;               // on NAME_PLACED_BY_ANOTHER; empty there means the person
+  repeated string assignable_conversations = 9;   // on CONVERSATION_NOT_ASSIGNABLE, as a Request's refusal carries
+  int32 characters_left = 10;         // on DOES_NOT_FIT: the longest name the conversation's folder allows
+  string detail = 11;                 // on a refusal, the rule in words
+}
+
+message FetchFileRequest {
+  string agent = 1;
+  string conversation_id = 2;         // empty: looked for across the location
+  string name = 3;
+  string expect_sha256 = 4;           // empty: no expectation
+}
+
+message FetchFileFrame {
+  oneof frame {
+    SharedFileView header = 1;        // size, hash and placer of the content about to be streamed
+    bytes chunk = 2;
+    FileRefusal refusal = 3;          // sent instead of a header
+  }
+}
+
+message FileRef {
+  string conversation_id = 1;         // empty: looked for across the location
+  string name = 2;
+}
+
+message FileRefusal {
+  FileRef file = 1;
+  FileRejection rejection = 2;
+  string placed_by = 3;               // on NAME_PLACED_BY_ANOTHER; empty there means the person
+  repeated string conversations = 4;  // on AMBIGUOUS_NAME: at most 200 holding the name
+  int32 conversations_more = 5;       // how many more hold it than are listed
+  string sha256_now = 6;              // on CHANGED: the hash the location holds
+  string detail = 7;                  // the rule, in words
+}
+
+message FetchedFileRequest {
+  string agent = 1;
+  string conversation_id = 2;
+  string name = 3;
+  string sha256 = 4;                  // what the adapter verified it wrote
+}
+
+message FetchedFileReply {
+  bool ok = 1;
+  FileRejection rejection = 2;        // NOT_FETCHED: no completed stream of that content to this agent
+}
+
+message ListFilesRequest {
+  string agent = 1;                   // empty on the Operators service
+  string conversation_id = 2;         // empty for every conversation
+  int32 page_size = 3;                // 0 for 50; the broker bounds this at 200 whatever is asked for
+  string page_token = 4;              // empty for the first page
+}
+
+message SharedFileView {
+  string conversation_id = 1;
+  string name = 2;
+  int64 size_bytes = 3;
+  string sha256 = 4;
+  string placed_by = 5;               // empty: the person
+  string placed_utc = 6;
+  string changed_utc = 7;
+  string folder = 8;                  // the conversation's folder on disk
+}
+
+message FilesReply {
+  repeated SharedFileView files = 1;              // one page, ordered by conversation and then name
+  repeated ConversationFilesTotal totals = 2;     // the conversations on this page, each counted whole
+  int64 total_bytes = 3;                          // everything listed, whatever the page
+  repeated FilePlacementCount placements = 4;     // Operators only
+  string next_page_token = 5;                     // empty at the end
+  int32 total_files = 6;                          // the files total_bytes counts
+}
+
+message ConversationFilesTotal {
+  string conversation_id = 1;
+  int32 files = 2;
+  int64 bytes = 3;
+}
+
+message FilePlacementCount {
+  string agent = 1;                   // kept after the agent is purged
+  int64 placements = 2;
+  int64 bytes = 3;
+  string last_utc = 4;
+}
+
+message RemoveFilesRequest {
+  string agent = 1;                   // empty on the Operators service
+  repeated FileRef files = 2;         // at most 200; more is refused whole
+}
+
+message RemoveFilesReply {
+  repeated FileRef removed = 1;
+  repeated FileRefusal refused = 2;
+  int64 bytes_freed = 3;
+  FileRejection rejection = 4;        // TOO_MANY_NAMES when nothing was removed for that reason
+}
+
+message PruneFilesReply {
+  int32 files_removed = 1;
+  int64 bytes_freed = 2;
+}
+
+message FileLocationRequest {
+  string conversation_id = 1;         // empty: the whole location
+  string name = 2;                    // empty: the folder
+}
+
+message FileLocationReply {
+  bool ok = 1;
+  FileRefusal refusal = 2;            // when not ok
+  string machine = 3;                 // the broker's machine name (section 4.1.1)
+  string path = 4;                    // absolute, on that machine
+}
+
+enum FileRejection {
+  FILE_REJECTION_UNSPECIFIED = 0;
+  FILE_REJECTION_NONE = 1;
+  FILE_REJECTION_BAD_NAME = 2;
+  FILE_REJECTION_NAME_PLACED_BY_ANOTHER = 3;
+  FILE_REJECTION_NO_SUCH_FILE = 4;
+  FILE_REJECTION_AMBIGUOUS_NAME = 5;
+  FILE_REJECTION_CONVERSATION_NOT_ASSIGNABLE = 6;
+  FILE_REJECTION_CONVERSATION_CLOSED = 7;
+  FILE_REJECTION_CHANGED = 8;
+  FILE_REJECTION_INCOMPLETE = 9;
+  FILE_REJECTION_NO_SPACE = 10;
+  FILE_REJECTION_EXTENSION_NOT_ALLOWED = 11;
+  FILE_REJECTION_NOT_FETCHED = 12;
+  FILE_REJECTION_TOO_MANY_NAMES = 13;
+}
+
+enum PlaceOutcome {
+  PLACE_OUTCOME_UNSPECIFIED = 0;
+  PLACE_OUTCOME_PLACED = 1;
+  PLACE_OUTCOME_REPLACED = 2;
+  PLACE_OUTCOME_ALREADY_CURRENT = 3;
+  PLACE_OUTCOME_PLACED_BY_ANOTHER = 4;
+  PLACE_OUTCOME_DOES_NOT_FIT = 5;
 }
 
 // A message and the envelope that marks it as a participant's words, per section 13. Built by the
@@ -388,6 +596,13 @@ service Operators {
 
   // Causes a launch and never a registration (section 12.3).
   rpc Start(StartRequest) returns (DidItReply);
+
+  // The file location (section 9.5). Removing any file and pruning them all are the person's, because they remove
+  // files other agents placed. Describing where a file is lets a surface on that machine open it in place.
+  rpc ListSharedFiles(ListFilesRequest) returns (FilesReply);
+  rpc RemoveFiles(RemoveFilesRequest) returns (RemoveFilesReply);
+  rpc PruneFiles(Empty) returns (PruneFilesReply);
+  rpc DescribeFileLocation(FileLocationRequest) returns (FileLocationReply);
 }
 
 message Empty {}

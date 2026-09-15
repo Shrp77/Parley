@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 
-// Opened for one seam, on the same terms as the grants Parley.Cli, Parley.Setup, Parley.Top and
+// Opened for one seam, on the same terms as the grants Parley.Cli, Parley.Setup, Parley.Terminal and
 // Parley.Client each make.
 //
 // What needed it: the wake bound's state. Whether a turn is already coming for an agent, and how

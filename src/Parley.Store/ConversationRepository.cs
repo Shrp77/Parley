@@ -129,6 +129,44 @@ public sealed class ConversationRepository(SqliteConnection connection)
         await VoidPollAsync(conversationId, transaction, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Records that an agent that placed a file is party to the file's conversation.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="participant">The agent that placed the file.</param>
+    /// <param name="nowUtc">The instant of joining.</param>
+    /// <param name="transaction">The transaction recording the placement.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <remarks>
+    /// <para>
+    /// The one way into a conversation that is not an exchange (SPEC.md §5.0). A conversation started by a file has
+    /// no exchange for membership to be derived from, and the agent that started it must be able to add a second
+    /// file by naming it and take part in closing it.
+    /// </para>
+    /// <para>
+    /// Unlike joining through a Request, this voids no poll: a file is not new work reopening the subject, and a
+    /// participant that placed one has said nothing about whether it is finished.
+    /// </para>
+    /// </remarks>
+    public Task JoinByPlacingAsync(
+        string conversationId,
+        AgentName participant,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        return _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                INSERT INTO conversation_participants (conversation_id, agent, joined_utc)
+                VALUES (@Conversation, @Agent, @When)
+                ON CONFLICT (conversation_id, agent) DO NOTHING;
+                """,
+                new { Conversation = conversationId, Agent = participant.Value, When = ExchangeRow.FormatTimestamp(nowUtc) },
+                transaction,
+                cancellationToken: cancellationToken));
+    }
+
     /// <summary>Discards a poll in progress and every vote cast in it.</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
@@ -704,13 +742,27 @@ public sealed class ConversationRepository(SqliteConnection connection)
         var rows = await _connection.QueryAsync<ConversationSummaryRow>(
             new CommandDefinition(
                 """
-                WITH activity AS (
+                WITH messaged AS (
                     SELECT conversation_id      AS id,
                            count(*)             AS messages,
                            min(created_utc)     AS first_utc,
                            max(created_utc)     AS last_utc
                       FROM messages
                      GROUP BY conversation_id
+                ),
+                -- A conversation started by placing a file has no message (SPEC.md §5.0), and is still a line of work
+                -- a person must be able to find: its activity is when it opened, until a message says otherwise. One
+                -- that was named and never used — no message, no participant, no file — still does not appear.
+                activity AS (
+                    SELECT c.id                                   AS id,
+                           coalesce(m.messages, 0)                AS messages,
+                           coalesce(m.first_utc, c.opened_utc)    AS first_utc,
+                           coalesce(m.last_utc, c.opened_utc)     AS last_utc
+                      FROM conversations c
+                      LEFT JOIN messaged m ON m.id = c.id
+                     WHERE m.id IS NOT NULL
+                        OR EXISTS (SELECT 1 FROM conversation_participants p WHERE p.conversation_id = c.id)
+                        OR EXISTS (SELECT 1 FROM shared_files f WHERE f.conversation_id = c.id)
                 )
                 SELECT c.id                                       AS Id,
                        a.messages                                 AS Messages,
@@ -794,11 +846,19 @@ public sealed class ConversationRepository(SqliteConnection connection)
         await _connection.ExecuteScalarAsync<int>(
             new CommandDefinition(
                 """
-                WITH activity AS (
+                WITH messaged AS (
                     SELECT conversation_id      AS id,
                            max(created_utc)     AS last_utc
                       FROM messages
                      GROUP BY conversation_id
+                ),
+                activity AS (
+                    SELECT c.id AS id, coalesce(m.last_utc, c.opened_utc) AS last_utc
+                      FROM conversations c
+                      LEFT JOIN messaged m ON m.id = c.id
+                     WHERE m.id IS NOT NULL
+                        OR EXISTS (SELECT 1 FROM conversation_participants p WHERE p.conversation_id = c.id)
+                        OR EXISTS (SELECT 1 FROM shared_files f WHERE f.conversation_id = c.id)
                 )
                 SELECT count(*)
                   FROM conversations c
@@ -977,6 +1037,26 @@ public sealed class ConversationRepository(SqliteConnection connection)
             .ConfigureAwait(false);
 
         await RazeAsync("exchanges", "DELETE FROM exchanges WHERE conversation_id = @Conversation;")
+            .ConfigureAwait(false);
+
+        // Its files (SPEC.md §14): every agent that fetched one is told it is gone before the records that say who
+        // fetched what are deleted, and the rows are reported like every other. The folder on disk is the server's
+        // to delete; the notices stay, having no key to the conversation, so the agents are still told.
+        await new FileNoticeRepository(_connection).RaiseGoneForConversationsAsync(
+            ConversationScope.One,
+            new { Conversation = conversationId, When = ExchangeRow.FormatTimestamp(nowUtc) },
+            scope.Transaction,
+            cancellationToken).ConfigureAwait(false);
+
+        await RazeAsync("file_fetches", "DELETE FROM file_fetches WHERE conversation_id = @Conversation;")
+            .ConfigureAwait(false);
+
+        await RazeAsync("shared_files", "DELETE FROM shared_files WHERE conversation_id = @Conversation;")
+            .ConfigureAwait(false);
+
+        await RazeAsync(
+            "conversation_folders",
+            "DELETE FROM conversation_folders WHERE conversation_id = @Conversation;")
             .ConfigureAwait(false);
 
         await RazeAsync(

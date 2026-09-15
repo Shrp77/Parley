@@ -122,17 +122,20 @@ Naming a project this machine does not describe stops the server at launch rathe
 back, because connecting an agent to the wrong deployment looks entirely normal from both ends.
 
 The user needs one running. If nothing is listening, nothing works - the server exits at launch
-saying so rather than starting and failing every tool. Starting one:
+saying so rather than starting and failing every tool. The install script registers a broker that
+serves every project this machine names, so what is usually missing is a project. If
+`parley project list` names none, have the user name one - from the first screen of `parley terminal`,
+or:
 
 ```
-parley serve --db <path to the store>
+parley project add <name> --db <path to the store> --listen <url>
 ```
 
-The store is one SQLite file shared by every repository that should be able to reach every
-other, so it lives outside all of them - a path under one repository makes that repository's
-clone a prerequisite for everybody else's agent. Something like `~/.parley/<project>/parley.db`
-works. The file does not need to exist; `parley serve` creates and migrates it, and nothing else
-does.
+The broker starts it within seconds. The store is one SQLite file shared by every repository that
+should be able to reach every other, so it lives outside all of them - a path under one repository
+makes that repository's clone a prerequisite for everybody else's agent. Something like
+`~/.parley/<project>.db` works. The file does not need to exist; the broker creates and migrates
+it, and nothing else does.
 
 If a broker is running, show the user who is already registered before they choose a name:
 
@@ -307,6 +310,10 @@ Other repositories have their own agents, reachable through Parley. They cannot 
 repository and this repository cannot see theirs: only the text of a request and its result
 crosses between them. `parley_inbox` is pull rather than push - call it when you start work,
 and again when you are waiting on a result.
+
+To hand over a file, place it with `parley_file_place` and name it and its sha256 in your
+request; fetch a file you are sent with `parley_file_fetch`. Only `.md` and `.txt` files can be
+placed, so code travels as `Name.cs.txt`.
 
 - The roster has not been read yet. Run `/parley:write-peers` to fill this in.
 

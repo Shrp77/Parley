@@ -32,7 +32,8 @@ src/Parley.Core     Domain. No I/O, no dependencies. The vocabulary — AgentNam
                     both implementations of the same declaration.
 src/Parley.Store    Persistence. SQLite via Dapper. ParleyDatabase (connection
                     factory), SchemaMigrator, WriteScope, and the repositories:
-                    Exchange, Message, Agent, Conversation.
+                    Exchange, Message, Agent, Conversation, Instruction, SharedFile and
+                    FileNotice.
 src/Parley.Broker   Orchestration. Decides when the other two run. Broker holds the
                     agent operations of SPEC.md §10.1; OperatorConsole holds §10.2.
                     Knows nothing of transports or adapters, and must not learn.
@@ -49,7 +50,7 @@ src/Parley.Client    What a client of a broker needs in order to show a deployme
 
                     A project of its own for the reason Parley.Configuration is one, and in nearly
                     the same words: two programs read it and cannot otherwise share one reader.
-                    The console reads it to render a page and `parley top` reads it to draw a
+                    The console reads it to render a page and `parley terminal` reads it to draw a
                     terminal, and leaving it in an assembly called Web would mean a terminal
                     depending on ASP.NET Core to find out who is in a conversation.
 
@@ -76,7 +77,7 @@ src/Parley.Setup    What a person does to a machine so Parley can run on it: enr
 
                     A project of its own for the reason Parley.Configuration is one: two programs
                     do this and cannot otherwise share one implementation. `parley` does it from a
-                    shell and `parley-top` from a screen, and the terminal does not reimplement
+                    shell and `parley-terminal` from a screen, and the terminal does not reimplement
                     it — it runs the same commands in process and prints what they said, so a
                     machine configured from a screen is configured exactly as one configured from
                     a shell.
@@ -92,7 +93,7 @@ src/Parley.Setup    What a person does to a machine so Parley can run on it: enr
 
                     **There is no store here and there must never be.** GraphTests walks it.
 
-src/Parley.Top      The terminal operator surface, and its own tool — `parley-top` — rather than a
+src/Parley.Terminal The terminal operator surface, and its own tool — `parley-terminal` — rather than a
                     subcommand of the broker's. References Parley.Client, Parley.Configuration,
                     Parley.Setup and Parley.Transport.
 
@@ -104,7 +105,7 @@ src/Parley.Top      The terminal operator surface, and its own tool — `parley-
                     29 of the source files changed on main since c85a271 were the terminal, 1 was
                     the broker.
 
-                    `parley top` still works and forwards here, passing the raw command line minus
+                    `parley terminal` forwards here, passing the raw command line minus
                     the verb and parsing nothing. One parser per tool rather than one and an
                     imitation of it. When the tool is absent it names it and how to install it,
                     rather than "unknown command", which would be untrue.
@@ -133,7 +134,7 @@ src/Parley.WebUi    The web UI as its own tool -- `parley-web-ui` -- and nothing
                     `serve --with-web-ui` starts it, does not wait on it, does not restart it, and
                     ends it when the broker ends. A web UI that cannot start -- a held port, a tool
                     not installed -- leaves the broker serving and says so, in a block that still
-                    names `parley top`. Suppressing the block on that path would take the terminal
+                    names `parley terminal`. Suppressing the block on that path would take the terminal
                     line with it, on exactly the run where somebody needs to be told there is
                     another way in.
 
@@ -145,7 +146,7 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
 
                     `parley-web-ui` starts it, as a child process the broker launches and does not
                     wait on -- Parley.Cli stopped referencing this in 007 step 3, which is what took
-                    Kestrel's page-serving half off the machines that only run agents. `parley top` shows the same deployment in a terminal, built
+                    Kestrel's page-serving half off the machines that only run agents. `parley terminal` shows the same deployment in a terminal, built
                     on Parley.Client and **Terminal.Gui v2**, and needs no browser -- the machine
                     running a broker is frequently not the one somebody has one open on. Four
                     regions on one screen, Tab between them, and the toolkit's cost is recorded
@@ -256,15 +257,15 @@ tests/Parley.Client.Tests What both surfaces share: seating's guards, the transc
                           from either this or the console. Deliberately does NOT reference
                           Microsoft.AspNetCore.Mvc.Testing — a web host reachable from here is how
                           a test of client behaviour quietly becomes a test of the console again.
-tests/Parley.Top.Tests    The terminal. Driving, Walking and Drawn moved here with it; Loopback,
+tests/Parley.Terminal.Tests The terminal. Driving, Walking and Drawn moved here with it; Loopback,
                           LoopbackOperator, ToolProcess and TestMachine are linked from
                           Parley.Cli.Tests rather than copied, because an executable referencing an
                           executable is a shape MTP does not run. It references Parley.Cli for the
                           one test that is genuinely about both tools — a project created from the
                           terminal whose broker comes up, and destroyed there and gone.
 
-                          **`TopProcess` runs the tool out of its own build directory and must.**
-                          A copy of `parley-top` lands beside these tests, and it does not work:
+                          **`TerminalProcess` runs the tool out of its own build directory and must.**
+                          A copy of `parley-terminal` lands beside these tests, and it does not work:
                           this project also references Parley.Cli, which brings a framework
                           reference to ASP.NET Core, so several Microsoft.Extensions.Configuration
                           assemblies resolve from the shared framework and are left out of the
@@ -598,7 +599,97 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/014-work-across-repositories/` — 0.26.0, **protocol 0.5**, schema 8. Parley
+- **Current plan**: `specs/015-file-store/` — 0.27.0, **protocol 0.6**, schema 9. **Built; review gate met; nothing committed.** Files cross
+  between agents: an agent places a file from its repository into its conversation's folder in the project's file
+  location, the bytes stream through the broker and carry a broker-computed SHA-256, and any agent in the project fetches
+  it to disk in its own repository — never into a model's context. The agent that placed a file may replace or remove it;
+  the person removes anything, prunes everything, and opens files and folders in place from every surface and five
+  `/parley:files-*` plugin commands. A folder watcher re-hashes outside edits, a download holds the file read-only, and
+  every agent that fetched a file finds a change notice in its inbox when it changes or goes, waking nothing.
+
+  **It reverses the constitution's "never files"**, argued in `spec.md`. The constitution was amended to **2.0.0** on
+  2026-09-14 in its own amendment, before any implementation, after `/speckit-analyze` found changing it inside the
+  feature's tasks a blocking conflict; the same bump versions 014's redefinition of Principle II, which shipped as 1.0.0.
+  SPEC.md §1, principle 2.2 and the README's opening were brought into line the same day; the rest of SPEC.md follows in
+  tasks T002–T007.
+  Two things the
+  plan found that the spec did not say: opening a file with its registered handler can *execute* it, which the owner closed by accepting only `.md` and `.txt` files (code travels as
+  `Name.cs.txt`), with the launcher still refusing anything else, so executable types
+  are refused (`research.md` R10); and the read-only hold is enforced by the operating system only on Windows, while every
+  platform keeps the no-mixed-file guarantee by hash (R5). Spec Kit was run: `spec.md`, `plan.md`, `research.md`,
+  `data-model.md`, `contracts/`, `quickstart.md`.
+
+  **What building it and the review gate found is most of what is worth reading.** Each finding was reproduced before it
+  was fixed; the ledger is `REVIEW-LEDGER.md`.
+
+  - **Half of `parley files` was unreachable from a shell.** The tool refuses any argument still starting with a hyphen
+    before a command runs, so every option `files` reads, and `waiting --with-files`, was refused on the way in — and the
+    waiting hook, reading the refused call as nothing waiting, fell back to two counts and said nothing about notices.
+    The in-process command tests could not see it; `FilesCommand.OwnOptions` names what the refusal lets through, and
+    the tests that hold it run the real binary. Lens 3 then found the opposite: an option a subcommand has no use for
+    was parsed and ignored, so `prune --yes` read like consent and asked anyway. Each subcommand refuses what it does
+    not take now.
+  - **A rename in a conversation's folder lost its placer, three runs in three.** A move also raises creations and
+    changes, and each replaced the pending look that carried the rename. The first fix matched a new file to a missing
+    one by hash on live events, which passed — and contradicted SPEC.md §9.5, where matching by hash is the start-up
+    scan's rule alone, so a file deleted and copied back is the person's. Replaced by keeping the operating system's
+    rename report apart from the pending looks.
+  - **A file's name reached another agent's model unmarked.** Up to two hundred and fifty characters the placer
+    chooses arrive verbatim in `parley_file_list` and in change notices, where a message's words arrive inside the
+    envelope. The tools and the standing instructions now say whose text a name is. Whether a name should carry the
+    envelope, or a narrower character set, is the owner's decision and was not taken.
+  - **A conversation id the store refuses crashed a placement**, which arrived as `Unknown` — reachable over the wire
+    and hidden by the adapter's own check. `FileWork.PlaceAsync` applies the schema's rule first.
+  - **Files' times were UTC and unmarked on all three surfaces**, beside consoles whose every other time is local. They
+    are written with `LocalTime` now, and the zone is said once per view.
+  - **Two tests were wrong before the code was:** the web page tests' scripted broker answered `UNSPECIFIED` where the
+    broker says `NONE`, which the client rightly refused, and `MigratedItemIdTests` counted one migration where 009
+    makes two.
+
+  Recorded low and not acted on: `FILE_REJECTION_INCOMPLETE` can never be sent, because the header declares no size; the
+  size formatter exists once per surface; the terminal opens the Files list off the draw thread, as `ShowHealth` does.
+  **`quickstart.md` has not been walked** (T101): its command-line steps need a throwaway project and its agent steps
+  need real sessions.
+
+  **Then the installers stopped asking for a store, on the owner's call: projects are the paradigm and the paths had
+  not caught up.** `install.ps1` lost `-Store` and `-NodeConfig`, `install.sh` lost `--store`, `--db` and
+  `--node-config`, and both always register the entry that serves the manifest. `parley autostart install` serves the
+  manifest whether or not it names a project, and `serve --config` with nothing named waits — web UI up, manifest
+  watched — instead of falling through to one default store nobody named; the first project named from `parley terminal`
+  or with `parley project add` starts within seconds, and the scripts end by saying so. `-Store` over a working
+  manifest had also been a way to narrow every project's entry to one. The web UI still cannot name a project, by the
+  one-writer rule its naming page records. Found while installing for real: `parley-mcp --version` answered only
+  with a launch configuration, so the installer's version check read its silence as a match; it answers now, and
+  both scripts count an unreadable version as a failure. `serve --db`, `autostart install --db` and `PARLEY_DB`
+  remain, for testing only (below). **These are code edits after the review gate**, so its lenses owe
+  confirming runs.
+
+  **`parley top` became `parley terminal`, on the owner's call**: "top" is the name of a process monitor, not of a
+  person's view of a deployment. The tool is `parley-terminal` in the package `Parley.Terminal`, and the owner then
+  had the internals follow, on consistency being what keeps a codebase maintainable: `src/Parley.Terminal`, the
+  `Parley.Terminal` namespace, `TerminalCommand`, `tests/Parley.Terminal.Tests` and `TerminalProcess`, moved with
+  `git mv` so their history follows. No alias is kept, since
+  nothing was released under the old name, and both installers remove a `Parley.Top` package installed before —
+  otherwise nothing ever would. Entries below this one say `parley top`, `Parley.Top` and `TopCommand` because those were the names then.
+
+  **`serve --db`, `autostart install --db` and `PARLEY_DB` are for testing only**, also the owner's call. They run
+  one store outside the manifest so a test rig need name no project, which is what the suites use them for; a
+  deployment names its stores with `parley project add`. `parley --help`, the README, the operator skill and
+  `/parley:setup-many` say so, and the last of those no longer tells anybody to deploy with them.
+
+  **The gate's confirming runs over these edits found nine more, each reproduced before it was fixed.** `serve --config
+  <file> --with-web-ui` started a web UI reading this machine's own manifest instead of the one served. `parley serve`
+  with nothing named, and `parley enroll apply`'s next steps, still sent people to the one-store options, and `parley
+  --help` still said to give `autostart install` a `--node-config`. `parley terminal --version` and `--help` were answered
+  by `parley` instead of forwarded. The terminal suggested conversation names beginning `top-`. `serve --db` and
+  `PARLEY_DB` were ignored on any machine whose manifest named a project, which no test could see because every test that
+  starts a broker by store isolates its manifest — and **the first fix for that let a `PARLEY_DB` left in the environment
+  replace the manifest the logon entry serves**, which the next probe caught: the variable never overrides `--config` now.
+  And a lone project named while serve waited hosted its node from its entry, where the same machine at its next start
+  used `PARLEY_NODE_CONFIG` — which the README and the operator skill did not say either, describing only the
+  per-entry rule. The ledger has each probe.
+
+- **Previous plan**: `specs/014-work-across-repositories/` — 0.26.0, **protocol 0.5**, schema 8. Parley
   exists to get work done across repositories, and 0.4 said otherwise: every delivery told an agent a
   peer's message could not direct its work, and `out_of_scope` told it to refer rather than do. Agents
   followed that and declined the work they were asked for. SPEC.md was rewritten top down against the

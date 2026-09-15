@@ -3,11 +3,11 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// That `parley top` reaches the tool that provides it, and says something useful when it cannot.
+/// That `parley terminal` reaches the tool that provides it, and says something useful when it cannot.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The terminal is a separate package now, so `parley top` is a command whose implementation may
+/// The terminal is a separate package now, so `parley terminal` is a command whose implementation may
 /// simply not be on the machine. That is a new failure mode and it is the one a person will meet
 /// first, on any machine that installed the broker alone.
 /// </para>
@@ -65,29 +65,41 @@ public sealed class ForwardingTests
     [Fact]
     public void The_wrapper_forwards_the_command_line_rather_than_understanding_it()
     {
-        // The property, read off the source: `top` dispatches into Forwarding and touches nothing
-        // it was given except to drop the verb. A branch that read `--config` here would be a
-        // second parser to keep in step with the tool it forwards to, which is the thing the split
-        // exists to stop.
+        // The property, read off the source: `terminal` dispatches into Forwarding and touches
+        // nothing it was given except to drop the verb. A branch that read `--config` here would be
+        // a second parser to keep in step with the tool it forwards to, which is the thing the
+        // split exists to stop.
         var program = RepositoryFile.Read("src/Parley.Cli/Program.cs");
-        var block = program[program.IndexOf("if (verb == \"top\")", StringComparison.Ordinal)..];
+        var block = program[program.IndexOf("if (verb == \"terminal\")", StringComparison.Ordinal)..];
 
         block = block[..block.IndexOf("\n}", StringComparison.Ordinal)];
 
         Assert.Contains("Forwarding", block, StringComparison.Ordinal);
-        Assert.Contains("forwarded.Remove(\"top\")", block, StringComparison.Ordinal);
+        Assert.Contains("forwarded.Remove(\"terminal\")", block, StringComparison.Ordinal);
+        Assert.Contains("\"parley-terminal\", \"Parley.Terminal\"", block, StringComparison.Ordinal);
         Assert.DoesNotContain("manifestPath", block, StringComparison.Ordinal);
         Assert.DoesNotContain("brokerAddress", block, StringComparison.Ordinal);
-        Assert.DoesNotContain("TopCommand", block, StringComparison.Ordinal);
+        Assert.DoesNotContain("TerminalCommand", block, StringComparison.Ordinal);
     }
 
     [Fact]
     public void The_terminal_is_named_in_the_help_as_a_separate_tool()
     {
         // Somebody reading `parley --help` on a broker-only machine must be able to find out that
-        // `top` needs a second package, without first running it and failing.
+        // `terminal` needs a second package, without first running it and failing.
         var help = RepositoryFile.Read("src/Parley.Cli/Program.cs");
 
-        Assert.Contains("parley-top", help, StringComparison.Ordinal);
+        Assert.Contains("parley-terminal", help, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_old_verb_is_gone_rather_than_kept_beside_the_new_one()
+    {
+        // The owner renamed `top` to `terminal` before anything was released, so no alias was kept: two spellings
+        // of one command is a second thing for every document to mention.
+        var program = RepositoryFile.Read("src/Parley.Cli/Program.cs");
+
+        Assert.DoesNotContain("verb == \"top\"", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"parley-top\"", program, StringComparison.Ordinal);
     }
 }

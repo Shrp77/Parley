@@ -44,7 +44,8 @@ public sealed record InvocationCommand(
     public const string Prompt =
         "Parley work is waiting for you. Call parley_inbox and act on what is there: do the work you " +
         "are asked for in this repository, or resolve what stops it, and send a parley_result for each " +
-        "request. Pursue what you need from other agents with parley_request. When nothing you were " +
+        "request. Pursue what you need from other agents with parley_request; a file a request names is " +
+        "fetched into this repository with parley_file_fetch. When nothing you were " +
         "asked for is left to do this turn, end it.";
 
     /// <summary>

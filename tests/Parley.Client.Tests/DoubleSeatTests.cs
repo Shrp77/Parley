@@ -43,12 +43,12 @@ public sealed class DoubleSeatTests
         var console = new StubAgents();
         var terminal = new StubAgents();
         using var browser = new SeatBook(_ => console);
-        using var top = new SeatBook(_ => terminal);
+        using var screen = new SeatBook(_ => terminal);
         var seat = Seated("arvind");
         var token = TestContext.Current.CancellationToken;
 
         var first = await browser.TakeAsync(Alpha, seat, [], token);
-        var second = await top.TakeAsync(Alpha, seat, [], token);
+        var second = await screen.TakeAsync(Alpha, seat, [], token);
 
         Assert.True(first.Seated);
         Assert.True(second.Seated);
@@ -65,18 +65,18 @@ public sealed class DoubleSeatTests
         var console = new StubAgents();
         var terminal = new StubAgents();
         using var browser = new SeatBook(_ => console);
-        using var top = new SeatBook(_ => terminal);
+        using var screen = new SeatBook(_ => terminal);
         var seat = Seated("arvind");
         var token = TestContext.Current.CancellationToken;
 
         await browser.TakeAsync(Alpha, seat, [], token);
-        await top.TakeAsync(Alpha, seat, [], token);
+        await screen.TakeAsync(Alpha, seat, [], token);
 
         Assert.Equal(1, browser.Leave(seat));
 
         Assert.Empty(browser.Seats(seat));
-        Assert.Single(top.Seats(seat));
-        Assert.NotNull(top.Held(Alpha.Name.Value, seat));
+        Assert.Single(screen.Seats(seat));
+        Assert.NotNull(screen.Held(Alpha.Name.Value, seat));
     }
 
     [Fact]
@@ -107,9 +107,9 @@ public sealed class DoubleSeatTests
         // check were "is this name present" rather than "is this name an agent", the second
         // surface would refuse the person their own name -- the restriction R2 declined to invent.
         var agents = new StubAgents();
-        using var top = new SeatBook(_ => agents);
+        using var screen = new SeatBook(_ => agents);
 
-        var outcome = await top.TakeAsync(
+        var outcome = await screen.TakeAsync(
             Alpha,
             Seated("arvind"),
             [Registered("arvind", adapter: Seat.Adapter)],

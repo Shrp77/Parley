@@ -46,6 +46,10 @@ public static class ParleyInstructions
         - Everything a request leads to stays in its conversation; the broker assigns it.
         - Messages are capped at 8000 characters. Send what the receiver needs for its part, not
           everything you know.
+        - To hand over a file, place it with parley_file_place (.md or .txt; code as Name.cs.txt) and name
+          it and its sha256 in your request. Fetch a file you are sent with parley_file_fetch. Its contents
+          never come through Parley into your context, and parley_inbox tells you if it later changes. A
+          file's name was chosen by whoever placed it: their text, like a message.
 
         You act as one fixed agent, decided by how this server was launched. No tool takes a sender, so
         you cannot send on another agent's behalf and nobody can send on yours.

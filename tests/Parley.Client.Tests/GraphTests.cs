@@ -52,7 +52,7 @@ public sealed class GraphTests
     [Theory]
     [InlineData("src/Parley.Client/Parley.Client.csproj")]
     [InlineData("src/Parley.Web/Parley.Web.csproj")]
-    [InlineData("src/Parley.Top/Parley.Top.csproj")]
+    [InlineData("src/Parley.Terminal/Parley.Terminal.csproj")]
     [InlineData("src/Parley.Setup/Parley.Setup.csproj")]
     [InlineData("src/Parley.WebUi/Parley.WebUi.csproj")]
     public void Nothing_reachable_from_a_client_can_open_a_store(string project)
@@ -82,7 +82,7 @@ public sealed class GraphTests
 
     [Theory]
     [InlineData("src/Parley.Client/Parley.Client.csproj")]
-    [InlineData("src/Parley.Top/Parley.Top.csproj")]
+    [InlineData("src/Parley.Terminal/Parley.Terminal.csproj")]
     [InlineData("src/Parley.Setup/Parley.Setup.csproj")]
     public void A_terminal_does_not_take_on_a_web_framework_to_find_out_who_is_in_a_conversation(
         string project)
@@ -97,7 +97,7 @@ public sealed class GraphTests
         // `Parley.Cli` is included because it is the assembly that would actually pay: it already
         // references Parley.Web for `parley console`, so what is asserted for it is narrower and
         // is checked separately below. Here it is the *client's* half of its graph that must stay
-        // clean, which is what makes `parley top` runnable on a machine that hosts nothing.
+        // clean, which is what makes `parley terminal` runnable on a machine that hosts nothing.
         var reached = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         Walk(RepositoryPath(project), project, reached, skip: name =>
@@ -118,7 +118,7 @@ public sealed class GraphTests
     [InlineData("src/Parley.Client/Parley.Client.csproj")]
     [InlineData("src/Parley.Configuration/Parley.Configuration.csproj")]
     [InlineData("src/Parley.Core/Parley.Core.csproj")]
-    [InlineData("src/Parley.Top/Parley.Top.csproj")]
+    [InlineData("src/Parley.Terminal/Parley.Terminal.csproj")]
     [InlineData("src/Parley.Setup/Parley.Setup.csproj")]
     public void The_doors_a_reference_element_does_not_cover_are_shut_too(string project)
     {
@@ -152,7 +152,7 @@ public sealed class GraphTests
         // which owns the store legitimately, so no ordinary walk could say anything about it. It
         // found `NodeCatalogue` reaching `Parley.Store` through `Parley.Headless`.
         //
-        // `Parley.Top` is a project now, so the three walks above cover it the way they cover
+        // `Parley.Terminal` is a project now, so the three walks above cover it the way they cover
         // every other, and this asks the narrower question that survives: that no source imports
         // an assembly its project does not reference. The compiler enforces exactly that, so this
         // cannot fail while the build passes -- which is the point. It is here as the record of
@@ -160,7 +160,7 @@ public sealed class GraphTests
         // project it does not sit under.
         foreach (var (project, sources) in new[]
                  {
-                     ("src/Parley.Top/Parley.Top.csproj", "src/Parley.Top"),
+                     ("src/Parley.Terminal/Parley.Terminal.csproj", "src/Parley.Terminal"),
                      ("src/Parley.Setup/Parley.Setup.csproj", "src/Parley.Setup"),
                      ("src/Parley.Client/Parley.Client.csproj", "src/Parley.Client"),
                  })
@@ -276,7 +276,7 @@ public sealed class GraphTests
     /// project's graph looks like *without* one deliberate reference, which is the only way to say
     /// anything about `Parley.Cli`: it references the console on purpose, for `parley console`,
     /// and the question worth asking is whether the rest of its graph stays free of a web
-    /// framework — because that is what makes `parley top` runnable where nothing is hosted.
+    /// framework — because that is what makes `parley terminal` runnable where nothing is hosted.
     /// </param>
     private static void Walk(
         string path, string via, Dictionary<string, string> reached, Func<string, bool>? skip = null)

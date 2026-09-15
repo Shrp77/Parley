@@ -103,10 +103,14 @@ public static class ServeCommand
 
         if (string.IsNullOrWhiteSpace(databasePath))
         {
+            // Reached by `parley serve` with no project named and no store given. The way on is a project, which is how
+            // a machine is deployed; the one-store options are named last and as what they are, because a refusal that
+            // offered only them sent a person to set up a deployment by hand outside the manifest.
             await error.WriteLineAsync(
-                "No database. Pass --db <path>, or set " +
-                $"{DeploymentEnvironment.DatabaseVariable}. The broker owns one file and every " +
-                "agent in the project reaches it through this process.").ConfigureAwait(false);
+                "No database: no project is named, and no store was given. Name a project with " +
+                "`parley project add <name> --db <path> --listen <url>`, and `parley serve` serves every project named " +
+                "(`parley autostart install` does the same at every logon). --db <path> or " +
+                $"{DeploymentEnvironment.DatabaseVariable} serves one store by hand, for testing only.").ConfigureAwait(false);
 
             return Config;
         }
@@ -440,7 +444,13 @@ public static class ServeCommand
                 }
             }
 
-            if (started.Count == 0)
+            // **A manifest that names nothing yet, being watched, is a machine waiting for its first project**, not a
+            // failure. The installer registers exactly this entry before anybody has named a project, and a person
+            // names one from `parley terminal` or `parley project add`; the watcher starts it within seconds. Without a
+            // watcher nothing could ever start here, and that stays the failure below says it is.
+            var awaitingFirstProject = projects.Count == 0 && reread is not null;
+
+            if (started.Count == 0 && !awaitingFirstProject)
             {
                 // Everything named is already served by another broker: a second launcher at logon,
                 // and a deployment that is working. Anything that genuinely failed beside it makes
@@ -471,15 +481,25 @@ public static class ServeCommand
                     .ConfigureAwait(false);
             }
 
-            // Said here too. Several addresses rather than one makes the confusion likelier, not
-            // less: whichever a person clicks, none of them is a web page.
-            await output.WriteLineAsync(
-                "  Those addresses are for agents and speak gRPC. None of them is a web page.")
-                .ConfigureAwait(false);
+            if (awaitingFirstProject)
+            {
+                await output.WriteLineAsync(
+                    "No project is named yet. Name the first one from `parley terminal`, or with `parley project add " +
+                    "<name> --db <path> --listen <url>`; it starts here within seconds. Ctrl+C stops this.")
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                // Said here too. Several addresses rather than one makes the confusion likelier, not
+                // less: whichever a person clicks, none of them is a web page.
+                await output.WriteLineAsync(
+                    "  Those addresses are for agents and speak gRPC. None of them is a web page.")
+                    .ConfigureAwait(false);
 
-            await output.WriteLineAsync(
-                "Agents connect with PARLEY_AGENT set; machines join with `parley up`. Ctrl+C stops them all.")
-                .ConfigureAwait(false);
+                await output.WriteLineAsync(
+                    "Agents connect with PARLEY_AGENT set; machines join with `parley up`. Ctrl+C stops them all.")
+                    .ConfigureAwait(false);
+            }
 
             // What runs beside the brokers rather than inside one of them: the web UI once,
             // against the first started broker as its fallback -- it reads the manifest for the
@@ -489,7 +509,8 @@ public static class ServeCommand
 
             if (alongside is not null)
             {
-                beside.Add(alongside(started[0].Server.Addresses, output, cancellationToken));
+                // No broker to fall back to while no project is named: the web UI reads the manifest and says so.
+                beside.Add(alongside(started.Count > 0 ? started[0].Server.Addresses : [], output, cancellationToken));
             }
 
             if (reread is not null)

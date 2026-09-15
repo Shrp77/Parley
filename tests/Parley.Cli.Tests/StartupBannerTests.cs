@@ -188,13 +188,25 @@ public sealed class StartupBannerTests
     public void Both_ways_into_a_deployment_are_named_where_a_person_is_standing()
     {
         // The reader of this block is at a terminal on the machine running the broker, which is
-        // frequently not a machine with a browser on it — the case `parley top` was built for.
+        // frequently not a machine with a browser on it — the case `parley terminal` was built for.
         // Naming only the console here left the terminal surface to be discovered in --help,
         // after deciding the deployment had no way in.
         var block = ConsoleAnnouncement(RepositoryFile.Read("src/Parley.Cli/Program.cs"));
 
-        Assert.Contains("parley top", block, StringComparison.Ordinal);
+        Assert.Contains("parley terminal", block, StringComparison.Ordinal);
         Assert.Contains("no browser needed", block, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Both_ways_in_are_pointed_at_the_manifest_being_served()
+    {
+        // Found by the gate over the installer change, by running `serve --config <file> --with-web-ui` and reading the
+        // page: it listed this machine's own projects, because the child located a manifest on its own. The web UI is
+        // handed the one being served, and the terminal line names it whenever it is not this machine's default.
+        var program = RepositoryFile.Read("src/Parley.Cli/Program.cs");
+
+        Assert.Contains("start.Environment[ProjectManifest.PathVariable] = manifestPath;", program, StringComparison.Ordinal);
+        Assert.Contains("Terminal: parley terminal{(configPath is null ? string.Empty : $\" --config", program, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -216,7 +228,7 @@ public sealed class StartupBannerTests
         // Non-vacuous first: a capture that missed the block would make every assertion below it
         // true of an empty list.
         Assert.Equal(2, rules.Count);
-        Assert.Contains(content, line => line.Contains("parley top", StringComparison.Ordinal));
+        Assert.Contains(content, line => line.Contains("parley terminal", StringComparison.Ordinal));
 
         var widest = content.Max(line => line.TrimEnd().Length);
 

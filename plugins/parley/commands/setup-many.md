@@ -34,8 +34,8 @@ dotnet tool list --global
 
 Look for `parley.mcp`. If it is missing, `/parley:setup` step 1 has the build-from-clone
 instructions; this command does not install anything. A broker also has to be running before any
-of these repositories can connect - `parley serve --db <path to the store>` - but that is needed
-at restart time, not now.
+of these repositories can connect - `parley autostart install` serves every project this
+machine names - but that is needed at restart time, not now.
 
 **If this machine runs more than one Parley deployment**, `parley project list` says which, and
 every command below takes `--project <name>` to say which one is being enrolled into. It matters
@@ -153,14 +153,14 @@ before running `apply`. Three behaviours are worth knowing so the output is not 
 
 `enroll apply` prints this, and it is the part that has to be done in order:
 
-1. A broker running, and this machine's node with it:
-   `parley serve --db <path to the store> --with-node --node-config <path to node.json>`.
-   One process, because a node that is not running leaves every repository you just enrolled
-   reading as startable and never started. To have it survive a reboot, install the same pair as
-   one logon entry: `parley autostart install --db <path> --node-config <path to node.json>` -
-   or, once the deployment is a named project whose entry carries the catalogue, plain
-   `parley autostart install`, which serves every project in the manifest.
-   Name the catalogue explicitly in both rather than relying on `PARLEY_NODE_CONFIG` or a bare
+1. A broker running, and this machine's node with it. The deployment is a named project whose
+   entry carries the catalogue - `parley project set <name> --node-config <path to node.json>`
+   if it does not yet - and `parley autostart install` serves every project in the manifest,
+   each with its own node, from one process that starts again at every logon. One process,
+   because a node that is not running leaves every repository you just enrolled reading as
+   startable and never started. (`parley serve --db` and `parley autostart install --db` run one
+   store outside the manifest and are for testing only.)
+   Name the catalogue explicitly in the project's entry rather than relying on `PARLEY_NODE_CONFIG` or a bare
    `node.json`: a logon entry has no working directory worth relying on, and whether it sees an
    environment variable depends on which supervisor it is. `setx` in particular does not affect
    the session it is typed in, so the `parley up` somebody runs straight afterwards to check is

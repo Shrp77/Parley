@@ -198,7 +198,8 @@ public sealed class MigratedItemIdTests
                 At = Stamp
             });
 
-        Assert.Equal(1, SchemaMigrator.Migrate(connection));
+        // Every migration after schema 7, which is what this store was built as: 008 and whatever came after it.
+        Assert.Equal(SchemaMigrator.LatestVersion - 7, SchemaMigrator.Migrate(connection));
 
         return connection;
     }

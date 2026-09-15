@@ -345,6 +345,31 @@ public sealed class ProjectDestroyTests : IDisposable
         Assert.False(File.Exists(project.Store));
     }
 
+    [Fact]
+    public async Task Destroying_removes_the_file_location_and_its_staging_directory()
+    {
+        // The files agents placed belong to the store (SPEC.md §9.5). A project destroyed while they stayed
+        // would leave every file anybody placed on disk under a name nothing refers to any more.
+        var ct = TestContext.Current.CancellationToken;
+
+        var project = Project("with-files", null);
+
+        ProjectManifest.Write(Manifest, [project]);
+        await File.WriteAllTextAsync(project.Store, string.Empty, ct);
+
+        var folder = Path.Combine(project.Store + StoreFiles.Files, "pricing");
+        Directory.CreateDirectory(folder);
+        await File.WriteAllTextAsync(Path.Combine(folder, "price-snapshot.md"), "net of tax", ct);
+        Directory.CreateDirectory(project.Store + StoreFiles.FilesIncoming);
+
+        var (code, output, _) = await RemoveAsync("with-files", destroy: true);
+
+        Assert.Equal(0, code);
+        Assert.False(Directory.Exists(project.Store + StoreFiles.Files));
+        Assert.False(Directory.Exists(project.Store + StoreFiles.FilesIncoming));
+        Assert.Contains(StoreFiles.Files, output, StringComparison.Ordinal);
+    }
+
     private async Task<(int Code, string Out, string Error)> RemoveAsync(string name, bool destroy)
     {
         var output = new StringWriter();

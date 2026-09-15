@@ -29,6 +29,24 @@ using Parley.Mcp;
 // The agent's identity comes from that environment and from nowhere else. No tool takes it as
 // a parameter, so no tool call can change who the caller is — see ServerOptions.
 
+// Before the environment is read, because asking which build this is must not need a launch configuration. The
+// installer asks every tool it installed, from a shell that sets nothing -- and while this answered only with
+// PARLEY_AGENT set, its check printed nothing and passed.
+if (Array.Exists(args, argument => argument is "--version" or "-v"))
+{
+    var build = System.Reflection.CustomAttributeExtensions
+        .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(ServerOptions).Assembly)
+        ?.InformationalVersion ?? "unknown";
+    var plus = build.IndexOf('+', StringComparison.Ordinal);
+
+    await Console.Out.WriteLineAsync(string.Create(
+        System.Globalization.CultureInfo.InvariantCulture,
+        $"parley-mcp {(plus < 0 ? build : build[..plus])}, speaking Parley protocol {Parley.Core.ProtocolVersion.Current}"))
+        .ConfigureAwait(false);
+
+    return 0;
+}
+
 ServerOptions options;
 
 try

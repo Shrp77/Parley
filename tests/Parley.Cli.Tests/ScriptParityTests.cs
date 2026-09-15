@@ -27,13 +27,13 @@ public sealed class ScriptParityTests
     [Fact]
     public void Both_scripts_know_the_same_tools()
     {
-        foreach (var package in new[] { "Parley.Cli", "Parley.Mcp", "Parley.Top" })
+        foreach (var package in new[] { "Parley.Cli", "Parley.Mcp", "Parley.Terminal" })
         {
             Assert.Contains(package, Windows, StringComparison.Ordinal);
             Assert.Contains(package, Unix, StringComparison.Ordinal);
         }
 
-        foreach (var command in new[] { "parley-mcp", "parley-top" })
+        foreach (var command in new[] { "parley-mcp", "parley-terminal" })
         {
             Assert.Contains(command, Windows, StringComparison.Ordinal);
             Assert.Contains(command, Unix, StringComparison.Ordinal);
@@ -51,8 +51,6 @@ public sealed class ScriptParityTests
                      ("-Only", "--only"),
                      ("-Uninstall", "--uninstall"),
                      ("-Force", "--force"),
-                     ("-Store", "--store"),
-                     ("-NodeConfig", "--node-config"),
                  })
         {
             Assert.Contains(windows, Windows, StringComparison.Ordinal);
@@ -89,7 +87,7 @@ public sealed class ScriptParityTests
         // and a remark demanded of one produces the restatement of the signature that the rule
         // forbids. It also named `Program`, which the compiler generates for top-level statements.
         //
-        // `Parley.Top` is not named here: this project cannot see it, deliberately, and its own
+        // `Parley.Terminal` is not named here: this project cannot see it, deliberately, and its own
         // `DocumentedTests` already requires a summary and a why of every file in it.
         var introduced = new[]
         {

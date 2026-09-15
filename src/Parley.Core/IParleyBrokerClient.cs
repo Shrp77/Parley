@@ -263,4 +263,54 @@ public interface IParleyBrokerClient
     /// </remarks>
     Task<bool> StartAsync(
         AgentName agent, string because, CancellationToken cancellationToken = default);
+
+    /// <summary>List a page of the file location (SPEC.md §9.5).</summary>
+    /// <param name="conversationId">One conversation's files, or <see langword="null"/> for every one.</param>
+    /// <param name="pageSize">Files per page; zero or less for the broker's default. The broker bounds it.</param>
+    /// <param name="pageToken">The token a previous page returned, or <see langword="null"/> for the first.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The page, and the placement counts per agent.</returns>
+    /// <remarks>
+    /// Named apart from §10.1's <c>file_list</c>, because the person is given what an agent is not: how many
+    /// placements, and how many bytes, each agent has made — the evidence a size limit would be set from.
+    /// </remarks>
+    Task<SharedFileListing> ListSharedFilesAsync(
+        string? conversationId = null,
+        int pageSize = 0,
+        string? pageToken = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Remove files, whichever agent placed them.</summary>
+    /// <param name="files">At most <see cref="FileLimits.NamesPerRemoval"/> files.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>What was removed and what was refused.</returns>
+    /// <remarks>
+    /// The person's, because it removes files other agents placed and no agent may (§9.5). A surface offering this
+    /// says which files and how much space before it calls, and takes a deliberate confirmation.
+    /// </remarks>
+    Task<RemoveFilesOutcome> RemoveFilesAsync(
+        IReadOnlyList<FileRef> files, CancellationToken cancellationToken = default);
+
+    /// <summary>Remove every file in the location.</summary>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>How many files went, and how much space.</returns>
+    /// <remarks>
+    /// Named apart from <see cref="PruneAsync"/>, which applies retention to messages and never touches a file. A
+    /// surface offering this says how many files and how much space first, and takes the project's name typed back.
+    /// </remarks>
+    Task<PruneFilesOutcome> PruneFilesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Say where the location, a conversation's folder or a file is, on the broker's machine.</summary>
+    /// <param name="conversationId">The conversation, or <see langword="null"/>.</param>
+    /// <param name="name">The file, or <see langword="null"/> for a folder.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The machine and path, or why there is none.</returns>
+    /// <remarks>
+    /// What lets a surface open a file in place: on the broker's machine it launches, and anywhere else it names the
+    /// machine and the path and launches nothing, because the file is not there to open (§10.2).
+    /// </remarks>
+    Task<FileLocationAnswer> DescribeFileLocationAsync(
+        string? conversationId = null,
+        string? name = null,
+        CancellationToken cancellationToken = default);
 }

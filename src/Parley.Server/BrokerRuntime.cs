@@ -161,9 +161,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
         Parley.Broker.BrokerOptions options,
         TimeProvider clock,
         RetentionPolicy retention,
+        FileLocationStore files,
         bool ownsConnection = true,
         StoreLock? storeLock = null)
     {
+        Files = files;
         _connection = connection;
         _ownsConnection = ownsConnection;
         _storeLock = storeLock;
@@ -181,7 +183,15 @@ public sealed class BrokerRuntime : IAsyncDisposable
         var now = clock.GetUtcNow();
         _ = new NodeRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
         _ = new AgentRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
+
+        // Last, once everything it reads through is in place: the scan it starts goes through the gate like any other
+        // write, and changes made while no broker was running are found before anybody asks.
+        Watcher = new FolderWatcher(this);
+        Watcher.Start();
     }
+
+    /// <summary>Gets what notices changes made to the file location outside Parley (SPEC.md §9.5).</summary>
+    internal FolderWatcher Watcher { get; }
 
     /// <summary>
     /// How long a wake stays pending before another may be asked for.
@@ -241,6 +251,17 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// there is.
     /// </remarks>
     public RetentionPolicy Retention { get; }
+
+    /// <summary>Gets the file location this broker's store keeps its placed files in (SPEC.md §9.5).</summary>
+    /// <remarks>
+    /// Owned by the runtime because it is the store's: the same process that alone opens the database alone writes
+    /// the files, and the holds a download takes live in memory here, so a restart ends every download and every
+    /// hold together.
+    /// </remarks>
+    public FileLocationStore Files { get; }
+
+    /// <summary>Gets the fetches streamed to completion and not yet reported as written.</summary>
+    public ServedFetches Fetches { get; } = new();
 
     /// <summary>Gets the agents currently attached, by name.</summary>
     public IReadOnlyCollection<string> Attached => (IReadOnlyCollection<string>)_attached.Keys;
@@ -311,9 +332,15 @@ public sealed class BrokerRuntime : IAsyncDisposable
             RefuseAForeignDatabase(connection, databasePath);
             SchemaMigrator.Migrate(connection);
 
+            // After the lock, like everything else that touches what belongs to the store: emptying the staging
+            // directory while another broker was mid-placement would destroy an upload it was about to commit.
+            var files = new FileLocationStore(databasePath + StoreFiles.Files, databasePath + StoreFiles.FilesIncoming);
+            files.Prepare();
+
             return new BrokerRuntime(
                 connection, options, clock,
                 retention ?? RetentionPolicyEnvironment.Read(Environment.GetEnvironmentVariable),
+                files,
                 storeLock: held);
         }
         catch
@@ -330,6 +357,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="options">Lifecycle configuration.</param>
     /// <param name="clock">The clock.</param>
     /// <param name="retention">What to prune to, or <see langword="null"/> for the default.</param>
+    /// <param name="filesRoot">
+    /// Where placed files go, or <see langword="null"/> for a temporary directory deleted when the runtime is.
+    /// </param>
     /// <returns>The runtime.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     /// <remarks>
@@ -340,7 +370,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public static BrokerRuntime OpenInMemory(
         Parley.Broker.BrokerOptions options,
         TimeProvider clock,
-        RetentionPolicy? retention = null)
+        RetentionPolicy? retention = null,
+        string? filesRoot = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(clock);
@@ -350,7 +381,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
         try
         {
             return new BrokerRuntime(
-                connection, options, clock, retention ?? RetentionPolicy.Default);
+                connection, options, clock, retention ?? RetentionPolicy.Default, FilesAt(filesRoot));
         }
         catch
         {
@@ -419,6 +450,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="options">Lifecycle configuration.</param>
     /// <param name="clock">The clock.</param>
     /// <param name="retention">What to prune to, or <see langword="null"/> for the default.</param>
+    /// <param name="filesRoot">
+    /// Where placed files go, or <see langword="null"/> for a temporary directory deleted when the runtime is.
+    /// </param>
     /// <returns>The runtime.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     /// <remarks>
@@ -437,14 +471,33 @@ public sealed class BrokerRuntime : IAsyncDisposable
         SqliteConnection connection,
         Parley.Broker.BrokerOptions options,
         TimeProvider clock,
-        RetentionPolicy? retention = null)
+        RetentionPolicy? retention = null,
+        string? filesRoot = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(clock);
 
         return new BrokerRuntime(
-            connection, options, clock, retention ?? RetentionPolicy.Default, ownsConnection: false);
+            connection, options, clock, retention ?? RetentionPolicy.Default, FilesAt(filesRoot), ownsConnection: false);
+    }
+
+    /// <summary>A file location for a runtime that has no store path to put one beside.</summary>
+    /// <param name="root">The directory asked for, or <see langword="null"/> for a temporary one.</param>
+    /// <returns>The location, prepared.</returns>
+    /// <remarks>
+    /// Temporary by default and deleted with the runtime, so a test never writes beside a real store and never
+    /// leaves a location behind. The staging directory is beside the root, as it is for a real store.
+    /// </remarks>
+    private static FileLocationStore FilesAt(string? root)
+    {
+        var temporary = root is null;
+        var location = root ?? Path.Combine(Path.GetTempPath(), "parley-files-" + Guid.NewGuid().ToString("N"));
+
+        var files = new FileLocationStore(location, location + "-incoming", deleteOnDispose: temporary);
+        files.Prepare();
+
+        return files;
     }
 
     /// <summary>
@@ -1216,6 +1269,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
                     new KeyValuePair<string, ImmutableArray<AttachedAgent>>(
                         attached.Name.Value, sessions)))
                 {
+                    // Its last session: nothing left can report a fetch it was streamed (SPEC.md §9.5).
+                    Fetches.Forget(attached.Name);
                     break;
                 }
             }
@@ -1278,6 +1333,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <returns>A task that completes when it is closed.</returns>
     public async ValueTask DisposeAsync()
     {
+        // Before the gate and the connection go: a look it had scheduled would otherwise reach for both.
+        await Watcher.DisposeAsync().ConfigureAwait(false);
+
         CloseStreams();
 
         _attached.Clear();
@@ -1295,6 +1353,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
             // only: the other projects' connections are theirs.
             SqliteConnection.ClearPool(_connection);
         }
+
+        Files.Dispose();
 
         // Last, after the connection and its pool have let go of the file. Released any earlier, a
         // broker started the moment this one stopped could open a database this process still had

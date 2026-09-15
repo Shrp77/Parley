@@ -218,6 +218,23 @@ public sealed class WaitingHookTests
         // reading on the rare turn it appears. PostToolBatch makes it sharper: it fires after
         // every batch of tool calls, so a needless line would be the loudest thing in the
         // transcript.
-        Assert.Contains("if unread or owed:", Code, StringComparison.Ordinal);
+        Assert.Contains("if unread or owed or notices:", Code, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_file_notice_alone_never_holds_a_turn_open()
+    {
+        // A change notice wakes nothing (SPEC.md §9.5), and a Stop hook that speaks continues the turn — which is a
+        // turn asked for. So at Stop the notices count only beside mail that would hold the turn anyway.
+        Assert.Contains("if event == \"Stop\" and not (unread or owed):", Code, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_older_tool_without_the_file_count_is_still_asked()
+    {
+        // The plugin and the tool are upgraded separately. A tool from before files refuses --with-files, and a hook
+        // that read that as nothing waiting would go quiet about mail as well — the failure this file exists to end.
+        Assert.Contains("--with-files", Code, StringComparison.Ordinal);
+        Assert.Contains("if len(counts) > 2 else 0", Code, StringComparison.Ordinal);
     }
 }

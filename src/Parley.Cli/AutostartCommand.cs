@@ -221,6 +221,16 @@ public static class AutostartCommand
                 await output.WriteLineAsync(line).ConfigureAwait(false);
             }
 
+            // A machine just installed names nothing, and the entry is waiting rather than broken: said, with the way on.
+            if (Parley.Configuration.ProjectManifest.TryRead(manifestToServe, out var listedProjects, out _)
+                && listedProjects.Count == 0)
+            {
+                await output.WriteLineAsync(
+                    "  names: no project yet. Name the first one from `parley terminal`, or with `parley project add`;\n" +
+                    "         it starts within seconds, and the web UI shows it.")
+                    .ConfigureAwait(false);
+            }
+
             if (replacing is { ServesManifest: false, NodeConfig: { Length: > 0 } dropped }
                 && !ProjectsNameACatalogue(manifestToServe))
             {

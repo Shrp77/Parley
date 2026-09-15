@@ -81,7 +81,7 @@ public sealed class QuickstartRunnableTests
         {
             var words = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-            // `parley-top` is its own tool and takes no verb of its own.
+            // `parley-terminal` is its own tool and takes no verb of its own.
             if (words[0] != "parley")
             {
                 continue;

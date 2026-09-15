@@ -1,7 +1,7 @@
 using System.Runtime.CompilerServices;
 
 // Opened for one seam and named as such rather than as a general invitation, which is the same
-// terms Parley.Cli, Parley.Setup and Parley.Top each grant on.
+// terms Parley.Cli, Parley.Setup and Parley.Terminal each grant on.
 //
 // What needed it: the sentences a send reports back. Every one of them is derivable only by
 // standing a broker up and putting a real recipient into each of four states -- running, closed,

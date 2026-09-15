@@ -453,4 +453,170 @@ internal static class Conversions
             Connected = record.Connected
         };
     }
+
+    /// <summary>Converts a file operation's refusal reason for the wire.</summary>
+    /// <param name="rejection">The reason.</param>
+    /// <returns>The wire value.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The reason is not a defined member.</exception>
+    public static Wire.FileRejection Out(FileRejection rejection) => rejection switch
+    {
+        FileRejection.None => Wire.FileRejection.None,
+        FileRejection.BadName => Wire.FileRejection.BadName,
+        FileRejection.NamePlacedByAnother => Wire.FileRejection.NamePlacedByAnother,
+        FileRejection.NoSuchFile => Wire.FileRejection.NoSuchFile,
+        FileRejection.AmbiguousName => Wire.FileRejection.AmbiguousName,
+        FileRejection.ConversationNotAssignable => Wire.FileRejection.ConversationNotAssignable,
+        FileRejection.ConversationClosed => Wire.FileRejection.ConversationClosed,
+        FileRejection.Changed => Wire.FileRejection.Changed,
+        FileRejection.Incomplete => Wire.FileRejection.Incomplete,
+        FileRejection.NoSpace => Wire.FileRejection.NoSpace,
+        FileRejection.ExtensionNotAllowed => Wire.FileRejection.ExtensionNotAllowed,
+        FileRejection.NotFetched => Wire.FileRejection.NotFetched,
+        FileRejection.TooManyNames => Wire.FileRejection.TooManyNames,
+        _ => throw new ArgumentOutOfRangeException(nameof(rejection), rejection, "Not a defined file rejection.")
+    };
+
+    /// <summary>Converts what a placement came to for the wire.</summary>
+    /// <param name="outcome">The outcome.</param>
+    /// <returns>The wire value.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The outcome is not a defined member.</exception>
+    public static Wire.PlaceOutcome Out(PlaceOutcome outcome) => outcome switch
+    {
+        PlaceOutcome.Placed => Wire.PlaceOutcome.Placed,
+        PlaceOutcome.Replaced => Wire.PlaceOutcome.Replaced,
+        PlaceOutcome.AlreadyCurrent => Wire.PlaceOutcome.AlreadyCurrent,
+        PlaceOutcome.PlacedByAnother => Wire.PlaceOutcome.PlacedByAnother,
+        PlaceOutcome.DoesNotFit => Wire.PlaceOutcome.DoesNotFit,
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined place outcome.")
+    };
+
+    /// <summary>Converts a shared file for the wire: what it is, never what is in it.</summary>
+    /// <param name="file">The file.</param>
+    /// <returns>The wire view.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="file"/> is null.</exception>
+    public static Wire.SharedFileView Out(SharedFile file)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+
+        return new Wire.SharedFileView
+        {
+            ConversationId = file.ConversationId,
+            Name = file.Name.Value,
+            SizeBytes = file.SizeBytes,
+            Sha256 = file.Sha256.Value,
+            PlacedBy = file.PlacedBy?.Value ?? string.Empty,
+            PlacedUtc = Stamp(file.PlacedUtc),
+            ChangedUtc = Stamp(file.ChangedUtc),
+            Folder = file.Folder
+        };
+    }
+
+    /// <summary>Converts a page of the file location for the wire.</summary>
+    /// <param name="page">The page.</param>
+    /// <param name="placements">Placement counts, for the Operators service only; <see langword="null"/> for an agent.</param>
+    /// <returns>The reply.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="page"/> is null.</exception>
+    /// <remarks>
+    /// Placement counts are the person's evidence for a size limit and are not an agent's business, so an agent's
+    /// reply leaves the field empty rather than carrying them.
+    /// </remarks>
+    public static Wire.FilesReply Out(SharedFilePage page, IReadOnlyList<FilePlacementCount>? placements)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+
+        var reply = new Wire.FilesReply
+        {
+            TotalBytes = page.TotalBytes,
+            TotalFiles = page.TotalFiles,
+            NextPageToken = page.NextPageToken ?? string.Empty
+        };
+
+        reply.Files.AddRange(page.Files.Select(Out));
+        reply.Totals.AddRange(page.Totals.Select(t => new Wire.ConversationFilesTotal
+        {
+            ConversationId = t.ConversationId,
+            Files = t.Files,
+            Bytes = t.Bytes
+        }));
+
+        if (placements is not null)
+        {
+            reply.Placements.AddRange(placements.Select(p => new Wire.FilePlacementCount
+            {
+                Agent = p.Agent,
+                Placements = p.Placements,
+                Bytes = p.Bytes,
+                LastUtc = Stamp(p.LastUtc)
+            }));
+        }
+
+        return reply;
+    }
+
+    /// <summary>Converts a change notice for the wire.</summary>
+    /// <param name="notice">The notice.</param>
+    /// <returns>The wire notice.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="notice"/> is null.</exception>
+    public static Wire.FileNotice Out(FileNotice notice)
+    {
+        ArgumentNullException.ThrowIfNull(notice);
+
+        return new Wire.FileNotice
+        {
+            ConversationId = notice.ConversationId,
+            Name = notice.Name,
+            Sha256Had = notice.Had.Value,
+            Sha256Now = notice.Now?.Value ?? string.Empty,
+            SizeBytes = notice.SizeBytes ?? 0,
+            ChangedUtc = Stamp(notice.ChangedUtc),
+            Gone = notice.Gone
+        };
+    }
+
+    /// <summary>Converts a file reference for the wire.</summary>
+    /// <param name="reference">The reference.</param>
+    /// <returns>The wire reference.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="reference"/> is null.</exception>
+    public static Wire.FileRef Out(FileRef reference)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+
+        return new Wire.FileRef { ConversationId = reference.ConversationId ?? string.Empty, Name = reference.Name };
+    }
+
+    /// <summary>Reads a file reference from the wire.</summary>
+    /// <param name="reference">The wire reference.</param>
+    /// <returns>The reference; an empty conversation means one was not named.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="reference"/> is null.</exception>
+    public static FileRef In(Wire.FileRef reference)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+
+        return new FileRef(string.IsNullOrEmpty(reference.ConversationId) ? null : reference.ConversationId, reference.Name);
+    }
+
+    /// <summary>Converts a refusal of one file for the wire.</summary>
+    /// <param name="refusal">The refusal.</param>
+    /// <param name="detail">The rule in words, when there is one to say.</param>
+    /// <param name="sha256Now">The hash the location holds, on a refusal for changed content.</param>
+    /// <returns>The wire refusal.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="refusal"/> is null.</exception>
+    public static Wire.FileRefusal Out(FileRefusal refusal, string? detail = null, ContentHash? sha256Now = null)
+    {
+        ArgumentNullException.ThrowIfNull(refusal);
+
+        var wire = new Wire.FileRefusal
+        {
+            File = Out(refusal.File),
+            Rejection = Out(refusal.Rejection),
+            PlacedBy = refusal.PlacedBy ?? string.Empty,
+            ConversationsMore = refusal.ConversationsMore,
+            Sha256Now = sha256Now?.Value ?? string.Empty,
+            Detail = detail ?? string.Empty
+        };
+
+        wire.Conversations.AddRange(refusal.Conversations);
+
+        return wire;
+    }
 }

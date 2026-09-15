@@ -17,14 +17,14 @@
 # is the one that was just built. That last step is the point: it is the only way to tell a
 # successful install from a silent no-op.
 #
-# It then registers the broker to start when you log in and checks that it answers. Installing
+# It then registers the broker to start when you log in and checks that it answers. The broker
+# serves every project this machine names; a machine that names none yet is served too, waiting
+# for the first, so this never asks where a store goes -- a project says that. Installing
 # the tools is not the same as having Parley working: the broker is a separate process that owns
 # the store, and until one is running every agent fails to attach with "No broker is listening"
 # -- a message that arrives in an editor, days later, rather than here.
 #
 #   ./install.sh                 build, install, and set the broker up
-#   ./install.sh --store <path>  the store the broker owns; asked for if not given
-#   ./install.sh --node-config <path>  the catalogue of agents this machine may start
 #   ./install.sh --uninstall     remove every tool and the autostart entry, and stop
 #   ./install.sh --surfaces X    which operator surfaces to install: terminal, web-ui,
 #                                both or none. Defaults to web-ui here and to both on
@@ -37,9 +37,9 @@
 #                                whatever version it had, and this says so on the way out:
 #                                a skipped surface going quietly is how a machine ends up
 #                                running a terminal three versions behind its broker.
-#   ./install.sh --only parley-top
+#   ./install.sh --only parley-terminal
 #                                install exactly these tools and leave every other one alone.
-#                                This is what SC-001 is about: --only parley-top replaces the
+#                                This is what SC-001 is about: --only parley-terminal replaces the
 #                                terminal and does not stop the broker, because the broker's
 #                                binary is not among the files being unlinked. SPEC.md section 12
 #                                says the node stopping tells every agent it started to quit, and
@@ -59,8 +59,6 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 uninstall=0
 force=0
-store=""
-node_config=""
 surfaces=""
 only=""
 
@@ -72,17 +70,10 @@ while [ $# -gt 0 ]; do
         --only=*) only="${only:+$only }${1#--only=}"; shift ;;
         --surfaces=*) surfaces="${1#--surfaces=}"; shift ;;
         --force) force=1; shift ;;
-        # --db as well as --store, because `parley serve --db` is the flag this ends up
-        # passing and the two being different words is a trap laid for nobody's benefit.
-        --store|--db) store="${2:-}"; shift 2 ;;
-        --node-config) node_config="${2:-}"; shift 2 ;;
-        --node-config=*) node_config="${1#--node-config=}"; shift ;;
-        --store=*) store="${1#--store=}"; shift ;;
-        --db=*) store="${1#--db=}"; shift ;;
         -h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \\?//'; exit 0 ;;
         *)
             echo "Unknown argument: $1" >&2
-            echo "Usage: ./install.sh [--store <path>] [--node-config <path>] [--surfaces terminal|web-ui|both|none] [--only <command>] [--uninstall] [--force]" >&2
+            echo "Usage: ./install.sh [--surfaces terminal|web-ui|both|none] [--only <command>] [--uninstall] [--force]" >&2
             exit 64
             ;;
     esac
@@ -91,9 +82,15 @@ done
 # A fourth array rather than three. `surface_of` says which of the two operator surfaces a tool
 # is, and empty means it is not one: the broker and the agent adapter are what Parley is, and
 # every machine that runs Parley at all needs both.
-packages=("Parley.Cli" "Parley.Mcp" "Parley.Top" "Parley.WebUi")
-projects=("src/Parley.Cli/Parley.Cli.csproj" "src/Parley.Mcp/Parley.Mcp.csproj" "src/Parley.Top/Parley.Top.csproj" "src/Parley.WebUi/Parley.WebUi.csproj")
-commands=("parley" "parley-mcp" "parley-top" "parley-web-ui")
+packages=("Parley.Cli" "Parley.Mcp" "Parley.Terminal" "Parley.WebUi")
+projects=("src/Parley.Cli/Parley.Cli.csproj" "src/Parley.Mcp/Parley.Mcp.csproj" "src/Parley.Terminal/Parley.Terminal.csproj" "src/Parley.WebUi/Parley.WebUi.csproj")
+commands=("parley" "parley-mcp" "parley-terminal" "parley-web-ui")
+
+# The terminal's tool was parley-top, in a package called Parley.Top, until 0.27.0 renamed it. A machine that
+# installed it before still has it and nothing would ever remove it, so it goes wherever the terminal is installed
+# and with --uninstall, and a running one holds files like any other tool.
+retired_terminal_package="Parley.Top"
+retired_terminal_command="parley-top"
 surface_of=("" "" "terminal" "web-ui")
 
 # The web UI alone by default, for the reason at the top: this script runs where there is usually
@@ -275,45 +272,6 @@ installed() {
     done
 }
 
-# Where the broker's store goes: given on the command line, asked for otherwise, defaulted when
-# there is nobody to ask.
-#
-# The default is under $HOME rather than beside this checkout, and that is why it is a question
-# rather than a constant. The store outlives any one clone -- it holds every exchange the
-# deployment has ever had -- so putting it inside a repository means `git clean` destroys the
-# history of twenty agents, and putting it inside *this* one makes Parley's own working copy
-# load-bearing for machines that do not have it.
-resolve_store() {
-    local default="$HOME/.parley/parley.db"
-
-    if [ -n "$store" ]; then
-        printf '%s\n' "$store"
-        return
-    fi
-
-    # Prompting needs somebody to answer. No terminal on stdin means a script or a CI job is
-    # running this, and `read` there returns nothing -- so take the default and say so, because
-    # a silent choice of where a database lives is worse than a loud one.
-    if [ ! -t 0 ]; then
-        note "nothing to prompt (no terminal); using $default" >&2
-        printf '%s\n' "$default"
-        return
-    fi
-
-    {
-        echo
-        echo '  The broker owns one SQLite file, and every agent on this machine reaches it'
-        echo '  through that one process. It belongs outside every repository, because it is'
-        echo '  shared by all of them and outlives any one clone.'
-        echo
-    } >&2
-
-    local answer
-    read -r -p "  Store [$default]: " answer </dev/tty >&2 || answer=""
-
-    printf '%s\n' "${answer:-$default}"
-}
-
 # ---------------------------------------------------------------- uninstall --
 
 if [ "$uninstall" = "1" ]; then
@@ -371,6 +329,11 @@ if [ "$uninstall" = "1" ]; then
         # somebody running this to clean up wants both attempted.
         dotnet tool uninstall -g "$package" >/dev/null 2>&1 || true
     done
+
+    if printf '%s\n' "$(dotnet tool list -g 2>/dev/null || true)" | grep -qi "^parley\.top[[:space:]]"; then
+        step "Removing $retired_terminal_package, the terminal's old name"
+        dotnet tool uninstall -g "$retired_terminal_package" >/dev/null 2>&1 || true
+    fi
 
     # The same check the install does, for the same reason. Every step above can report success
     # while leaving a tool exactly where it was, so the only honest closing line is one that
@@ -478,6 +441,10 @@ for i in "${!commands[@]}"; do
     [ "${commands[$i]}" = "$broker" ] && continue
     is_wanted "$i" || continue
     adapters+=("${commands[$i]}")
+
+    if [ "${commands[$i]}" = "parley-terminal" ]; then
+        adapters+=("$retired_terminal_command")
+    fi
 done
 
 holders="$(holding "${adapters[@]}")"
@@ -585,13 +552,17 @@ for i in "${!commands[@]}"; do
     is_wanted "$i" && replacing+=("${commands[$i]}")
 done
 
+case " ${replacing[*]} " in
+    *" parley-terminal "*) replacing+=("$retired_terminal_command") ;;
+esac
+
 strays="$(holding "${replacing[@]}")"
 
 if [ -n "$strays" ]; then
     if [ "$force" = "1" ]; then
         note "something still holds the tools; --force is ending it"
 
-        if ! survivors="$(remove_holders "${commands[@]}")"; then
+        if ! survivors="$(remove_holders "${commands[@]}" "$retired_terminal_command")"; then
             echo "==> Something is still holding the tools after --force tried to end it:" >&2
             printf '      pid %s\n' $survivors >&2
             echo "    Nothing has been replaced." >&2
@@ -638,6 +609,11 @@ for i in "${!packages[@]}"; do
     # and the version has not moved on every rebuild that fixed something without shipping new
     # behaviour. Removing first makes the install unconditional.
     dotnet tool uninstall -g "${packages[$i]}" >/dev/null 2>&1 || true
+
+    if [ "${commands[$i]}" = "parley-terminal" ] && printf '%s\n' "$listed_before" | grep -qi "^parley\.top[[:space:]]"; then
+        dotnet tool uninstall -g "$retired_terminal_package" >/dev/null 2>&1 || true
+        outcomes+=("$retired_terminal_command: removed: the terminal is parley-terminal now")
+    fi
 
     if ! said="$(dotnet tool install -g --add-source "$source_dir" "${packages[$i]}" \
             --version "$built" 2>&1)"; then
@@ -711,7 +687,10 @@ for i in "${!commands[@]}"; do
         binary="${commands[$i]}"
     fi
 
-    says="$("$binary" --version)"
+    # A tool that exits non-zero, or says nothing, is a failure named below rather than a silent exit: under set -e a
+    # bare substitution here ended the script with no message, which is how parley-mcp answering --version only with a
+    # launch configuration went unnoticed.
+    says="$("$binary" --version 2>&1)" || says=""
 
     case "$says" in
         *"$built"*) ;;
@@ -747,110 +726,73 @@ if [ "$replacing_broker" != "1" ]; then
 fi
 
 
-# A machine that names projects gets an entry that serves them all, and is not asked for a store
-# at all: every project's store and port are in the manifest, and SPEC.md 4.1 says one process
-# may host every one of them. Asked of the tool rather than by looking for the file, because
-# where the manifest lives is the tool's to know.
+# **Every machine's entry serves the manifest**: every project this machine names, each on its own store and port, and
+# a project named later started within seconds. A machine that names none yet gets the same entry, waiting for the
+# first -- so this never asks where a store goes. That is a project's to say, and a project is named in `parley terminal`
+# or with `parley project add`, where everything else it needs is said at the same time.
+#
+# This used to ask for a store when nothing was named and register one deployment by explicit paths, and to register
+# that same narrow entry over a working manifest when it was given --store: a reinstall that stopped serving every
+# project but one. Both went with the option.
 manifest=""
+named=0
 
-if [ -z "$store" ]; then
-    if listed="$("$parley_command" project list 2>/dev/null)" \
-        && ! printf '%s' "$listed" | grep -q 'No projects configured'; then
-        manifest="$(printf '%s\n' "$listed" | sed -n 's/^manifest:[[:space:]]*//p' | tail -n 1)"
+if listed="$("$parley_command" project list 2>/dev/null)"; then
+    manifest="$(printf '%s\n' "$listed" | sed -n 's/^manifest:[[:space:]]*//p' | tail -n 1)"
+
+    if ! printf '%s' "$listed" | grep -q 'No projects configured'; then
+        named=1
     fi
-fi
-
-if [ -z "$manifest" ]; then
-    store="$(resolve_store)"
-fi
-
-# Asked before registering anything, and only because the check at the end cannot tell one
-# broker from another. stop_broker has already stopped the one an autostart entry started, so
-# anything answering now was started by hand -- and it holds the port, which means the entry
-# about to be registered will not bind until that process goes. The final check would pass
-# against it and report a store that nothing is actually serving.
-foreign=0
-
-if "$parley_command" registry >/dev/null 2>&1; then
-    foreign=1
 fi
 
 step "Registering the broker to start at logon"
 
+if [ -n "$manifest" ]; then
+    echo "  serving every project in $manifest"
+fi
+
 # No root here, and not by luck: this writes a systemd *user* unit or a per-user launch agent.
 # The broker binds a loopback port and writes under the invoking user's own home, so it needs no
 # privilege they do not already have, and asking for one would be asking for the tool's benefit.
-autostart_arguments=()
-
-if [ -n "$manifest" ]; then
-    echo "  serving every project in $manifest"
-
-    if [ -n "$node_config" ]; then
-        note "--node-config is not used by an entry that serves the manifest: each project names its own catalogue"
-    fi
-else
-    # `autostart install` registers a broker-alone entry when it is given no catalogue, so a
-    # machine whose agents were being started for it loses that half -- and the loss arrives days
-    # later, on a machine nobody is signed into, as a question that waits out its window and is
-    # ghosted.
-    #
-    # Said here rather than carried over. install.ps1 reads the catalogue back out of the
-    # scheduled task it is replacing; there is no portable equivalent here, because this
-    # registers a systemd user unit on Linux and a launch agent on macOS. Announcing the gap is
-    # better than a read-back that works on one platform and silently does nothing on the other.
-    if [ -z "$node_config" ]; then
-        echo "  no agent catalogue given, so this entry starts the broker alone. Pass"
-        echo "  --node-config <path> to have it start this machine's agents too."
-    fi
-
-    autostart_arguments+=(--db "$store")
-
-    if [ -n "$node_config" ]; then
-        autostart_arguments+=(--node-config "$node_config")
-    fi
-fi
-
-if ! "$parley_command" autostart install "${autostart_arguments[@]}"; then
+#
+# What the command says is shown as it is and read for two things: where the broker logs, and where the web UI it
+# starts listens. Read rather than assumed, because both are the command's to decide.
+if ! registered="$("$parley_command" autostart install)"; then
+    printf '%s\n' "$registered"
     echo "Could not set the broker to start automatically. The tools are installed, so running" >&2
-
-    if [ -n "$manifest" ]; then
-        echo "  parley serve" >&2
-    else
-        echo "  parley serve --db $store" >&2
-    fi
-
+    echo "  parley serve" >&2
     echo "by hand will say why." >&2
     exit 1
 fi
+
+printf '%s\n' "$registered"
+
+log="$(printf '%s\n' "$registered" | sed -n 's/^[[:space:]]*logs:[[:space:]]*//p' | head -n 1)"
+web_ui="$(printf '%s\n' "$registered" | sed -n 's/.*--web-ui[[:space:]]\{1,\}"\{0,1\}\([^[:space:]"]*\).*/\1/p' | head -n 1)"
 
 # ----------------------------------------------------------------- prove ----
 
 step "Checking that it answers"
 
-# Asked of the broker, not of the supervisor. "The unit is enabled" and "an agent can attach"
-# are different claims, and the second is the one this script is making -- so the check is a
-# client. With one store, `parley registry` connects over the transport and exits 69 when
-# nothing is listening; with a manifest, `parley project list` asks every project's broker and
-# says which are reachable, and the claim is that all of them are.
-if [ -n "$manifest" ]; then
-    log="$(dirname "$manifest")/parley-broker.log"
-else
-    log="$(dirname "$store")/parley-broker.log"
-fi
-
+# Asked of the broker, not of the supervisor. "The unit is enabled" and "an agent can attach" are different claims.
+# With projects named, `parley project list` asks every project's broker and says which are reachable, and the claim
+# is that all of them are. With none named there is no broker to ask yet -- the entry is waiting -- so what is checked
+# is that the process it started is running, and the person is told how to name the first project.
 answering=0
 
 for _ in $(seq 1 80); do
-    if [ -n "$manifest" ]; then
-        if listed="$("$parley_command" project list 2>/dev/null)" \
-            && printf '%s\n' "$listed" | grep -q ' reachable$' \
+    if listed="$("$parley_command" project list 2>/dev/null)"; then
+        if printf '%s\n' "$listed" | grep -q 'No projects configured'; then
+            if pgrep -x parley >/dev/null 2>&1; then
+                answering=1
+                break
+            fi
+        elif printf '%s\n' "$listed" | grep -q ' reachable$' \
             && ! printf '%s\n' "$listed" | grep -q 'not reachable'; then
             answering=1
+            named=1
             break
         fi
-    elif "$parley_command" registry >/dev/null 2>&1; then
-        answering=1
-        break
     fi
 
     sleep 0.25
@@ -864,20 +806,33 @@ fi
 
 if [ -n "$manifest" ]; then
     note "serves: every project in $manifest"
-else
-    note "store: $store"
 fi
 
 note "log:   $log"
 
-if [ "$foreign" = "1" ] && [ -z "$manifest" ]; then
-    echo "warning: a broker that this did not start was already listening, and it is the one" >&2
-    echo "answering. It is serving its own store, not $store. Stop it and log out and in, or" >&2
-    echo "run 'parley serve --db $store' yourself." >&2
-fi
-
 echo
 printf '%sThe broker is running, and starts again when you log in.%s\n' "$green" "$plain"
 echo
+
+if [ "$named" != "1" ]; then
+    # The first thing a person does on a machine just installed, said as the next step rather than left to be found.
+    echo "No project is named yet, so nothing is being served. Name the first one:"
+
+    if command -v parley-terminal >/dev/null 2>&1 || [ -x "$shims/parley-terminal" ]; then
+        echo "  parley terminal                                   and create a project on its first screen"
+    fi
+
+    echo "  parley project add <name> --db <path> --listen <url>"
+    echo "The broker starts it within seconds."
+
+    if [ -n "$web_ui" ]; then
+        echo "The web UI shows it once it is named: $web_ui"
+    fi
+
+    echo
+elif [ -n "$web_ui" ]; then
+    echo "The web UI:                                       $web_ui"
+fi
+
 echo "Next, in each repository you want an agent in:   /parley:setup"
 echo "Restart the editor there, then check it arrived:  parley registry"

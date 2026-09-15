@@ -329,6 +329,127 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         return new PruneResult(reply.Removed, reply.HeldByFloor, reply.Contended, reply.Capped, reply.InstructionsRemoved);
     }
 
+    /// <inheritdoc/>
+    public async Task<SharedFileListing> ListSharedFilesAsync(
+        string? conversationId = null,
+        int pageSize = 0,
+        string? pageToken = null,
+        CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.ListSharedFilesAsync(
+            new Wire.ListFilesRequest
+            {
+                ConversationId = conversationId ?? string.Empty,
+                PageSize = pageSize,
+                PageToken = pageToken ?? string.Empty
+            },
+            cancellationToken: cancellationToken);
+
+        return new SharedFileListing(
+            new SharedFilePage(
+                [.. reply.Files.Select(SharedFileOf)],
+                [.. reply.Totals.Select(t => new ConversationFilesTotal(t.ConversationId, t.Files, t.Bytes))],
+                reply.TotalFiles,
+                reply.TotalBytes,
+                string.IsNullOrEmpty(reply.NextPageToken) ? null : reply.NextPageToken),
+            [.. reply.Placements.Select(p => new FilePlacementCount(
+                p.Agent, p.Placements, p.Bytes, Read(p.LastUtc) ?? DateTimeOffset.MinValue))]);
+    }
+
+    /// <inheritdoc/>
+    public async Task<RemoveFilesOutcome> RemoveFilesAsync(
+        IReadOnlyList<FileRef> files, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(files);
+
+        var request = new Wire.RemoveFilesRequest();
+        request.Files.AddRange(files.Select(f => new Wire.FileRef { ConversationId = f.ConversationId ?? string.Empty, Name = f.Name }));
+
+        var reply = await _operators.RemoveFilesAsync(request, cancellationToken: cancellationToken);
+
+        return new RemoveFilesOutcome(
+            [.. reply.Removed.Select(r => new FileRef(Blank(r.ConversationId), r.Name))],
+            [.. reply.Refused.Select(RefusalOf)],
+            reply.BytesFreed,
+            RejectionOf(reply.Rejection));
+    }
+
+    /// <inheritdoc/>
+    public async Task<PruneFilesOutcome> PruneFilesAsync(CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.PruneFilesAsync(new Wire.Empty(), cancellationToken: cancellationToken);
+
+        return new PruneFilesOutcome(reply.FilesRemoved, reply.BytesFreed);
+    }
+
+    /// <inheritdoc/>
+    public async Task<FileLocationAnswer> DescribeFileLocationAsync(
+        string? conversationId = null,
+        string? name = null,
+        CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.DescribeFileLocationAsync(
+            new Wire.FileLocationRequest { ConversationId = conversationId ?? string.Empty, Name = name ?? string.Empty },
+            cancellationToken: cancellationToken);
+
+        return reply.Ok
+            ? new FileLocationAnswer(new FileLocation(reply.Machine, reply.Path), null)
+            : new FileLocationAnswer(null, RefusalOf(reply.Refusal ?? new Wire.FileRefusal()));
+    }
+
+    /// <summary>Reads a shared file from the wire.</summary>
+    /// <param name="view">The wire view.</param>
+    /// <returns>The file.</returns>
+    /// <exception cref="InvalidOperationException">The broker sent a name or hash no file can have.</exception>
+    /// <remarks>
+    /// Refused rather than shown, because a name the rules refuse is text this surface did not validate, reaching a
+    /// screen through the one field meant to carry a checked name.
+    /// </remarks>
+    private static SharedFile SharedFileOf(Wire.SharedFileView view) =>
+        new(
+            view.ConversationId,
+            view.Folder,
+            SharedFileName.TryCreate(view.Name, out var name)
+                ? name
+                : throw new InvalidOperationException("The broker listed a file under a name no file can have."),
+            view.SizeBytes,
+            ContentHash.TryParse(view.Sha256, out var hash)
+                ? hash
+                : throw new InvalidOperationException("The broker listed a file with a hash that is not one."),
+            string.IsNullOrEmpty(view.PlacedBy) ? null : AgentName.Create(view.PlacedBy),
+            Read(view.PlacedUtc) ?? DateTimeOffset.MinValue,
+            Read(view.ChangedUtc) ?? DateTimeOffset.MinValue);
+
+    private static FileRefusal RefusalOf(Wire.FileRefusal refusal) =>
+        new(
+            new FileRef(Blank(refusal.File?.ConversationId), refusal.File?.Name ?? string.Empty),
+            RejectionOf(refusal.Rejection),
+            Blank(refusal.PlacedBy),
+            [.. refusal.Conversations],
+            refusal.ConversationsMore,
+            Blank(refusal.Detail));
+
+    private static FileRejection RejectionOf(Wire.FileRejection rejection) => rejection switch
+    {
+        Wire.FileRejection.None => FileRejection.None,
+        Wire.FileRejection.BadName => FileRejection.BadName,
+        Wire.FileRejection.NamePlacedByAnother => FileRejection.NamePlacedByAnother,
+        Wire.FileRejection.NoSuchFile => FileRejection.NoSuchFile,
+        Wire.FileRejection.AmbiguousName => FileRejection.AmbiguousName,
+        Wire.FileRejection.ConversationNotAssignable => FileRejection.ConversationNotAssignable,
+        Wire.FileRejection.ConversationClosed => FileRejection.ConversationClosed,
+        Wire.FileRejection.Changed => FileRejection.Changed,
+        Wire.FileRejection.Incomplete => FileRejection.Incomplete,
+        Wire.FileRejection.NoSpace => FileRejection.NoSpace,
+        Wire.FileRejection.ExtensionNotAllowed => FileRejection.ExtensionNotAllowed,
+        Wire.FileRejection.NotFetched => FileRejection.NotFetched,
+        Wire.FileRejection.TooManyNames => FileRejection.TooManyNames,
+        _ => throw new InvalidOperationException(
+            $"The broker refused a file operation for a reason this build does not know ({rejection}). It speaks a different protocol.")
+    };
+
+    private static string? Blank(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
     private static string Render(DateTimeOffset? instant) =>
         instant?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) ?? string.Empty;
 

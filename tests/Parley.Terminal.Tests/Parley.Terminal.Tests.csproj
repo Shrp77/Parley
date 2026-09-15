@@ -1,0 +1,83 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      xUnit v3 test projects are stand-alone executables, not libraries. Omitting this
+      produces a project that builds but discovers no tests.
+    -->
+    <OutputType>Exe</OutputType>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+
+    <!--
+      Documentation stays generated here even though test classes are not API surface:
+      IDE0005 (unnecessary usings) only runs when GenerateDocumentationFile is true, and
+      catching dead usings in tests is worth more than avoiding an unused XML file. CS1591 is
+      suppressed instead, so missing doc comments on test methods are not errors.
+    -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    The terminal and what it is a client of, and nothing else. There is no route to a store from
+    here, which is the property GraphTests checks on the project this exercises; a test project
+    that could open one would be able to write a test asserting the surface behaves correctly
+    against a database it opened itself.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Parley.Terminal\Parley.Terminal.csproj" />
+    <ProjectReference Include="..\..\src\Parley.Server\Parley.Server.csproj" />
+  </ItemGroup>
+
+  <!--
+    Parley.Cli, for the one test that is genuinely about both tools: a project created from the
+    terminal whose broker comes up, and destroyed there and gone. That test is worth more after
+    the split than before it, because "the two halves still work together" stopped being true by
+    construction the moment they became two packages.
+
+    It is a test project reaching a store, which the project it exercises must never do. That is
+    not a loosening: these tests reached one before the move as well, through Parley.Server, and
+    the boundary that matters is checked on src by GraphTests rather than here.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Parley.Cli\Parley.Cli.csproj" />
+  </ItemGroup>
+
+  <!--
+    Shared source rather than a project reference, because both are test hosts: an executable
+    referencing an executable is a shape MTP does not run. Linking keeps one copy of the file,
+    which is what Loopback's own remarks ask for. A duplicated wait is worse than most
+    duplication: the copy that drifts does not fail, it waits differently, and stops passing
+    only on somebody else's machine.
+  -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)..\Parley.Cli.Tests\Loopback.cs" Link="Loopback.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\Parley.Cli.Tests\ToolProcess.cs" Link="ToolProcess.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\Parley.Cli.Tests\LoopbackOperator.cs" Link="LoopbackOperator.cs" />
+
+    <!--
+      TestMachine fixes the machine half of every agent name, through a module initializer. It was
+      missed on the first pass of the move and the suite said so: two seating guards stopped
+      refusing, because a registry holding `orders@test` no longer matched a seat asking for
+      `orders@<this laptop>`. The guard was intact; the fixture had gone. Linked rather than
+      copied for the reason the others are.
+    -->
+    <Compile Include="$(MSBuildThisFileDirectory)..\Parley.Cli.Tests\TestMachine.cs" Link="TestMachine.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\Parley.Cli.Tests\FileLocationFixture.cs" Link="FileLocationFixture.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\ManifestIsolation.cs" Link="ManifestIsolation.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <!-- See Directory.Packages.props: one banned symbol, and why. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)..\..\BannedSymbols.txt" />
+  </ItemGroup>
+</Project>

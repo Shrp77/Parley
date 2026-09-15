@@ -777,6 +777,10 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <param name="name">The agent to purge.</param>
     /// <param name="transaction">A transaction to join, or <see langword="null"/> to own one.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
+    /// <param name="nowUtc">
+    /// When it happened, stamped on the notices telling agents that files they fetched from the purged conversations
+    /// are gone.
+    /// </param>
     /// <returns>What was destroyed, or <see cref="PurgeOutcome.NotRegistered"/>.</returns>
     /// <remarks>
     /// <para>
@@ -814,6 +818,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// </remarks>
     public async Task<PurgeOutcome> PurgeAsync(
         AgentName name,
+        DateTimeOffset nowUtc,
         SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
@@ -895,6 +900,28 @@ public sealed class AgentRepository(SqliteConnection connection)
             "DELETE FROM exchanges WHERE id IN (SELECT id FROM doomed_exchanges);")
             .ConfigureAwait(false);
 
+        // The files of those conversations go with them (SPEC.md §14): placing a file made its placer a participant,
+        // so a purged agent's own files are among them. Every other agent that fetched one is told it is gone before
+        // the records of who fetched what are deleted; the purged agent's own records cascade from it. The folders
+        // on disk are the server's to delete.
+        await new FileNoticeRepository(_connection).RaiseGoneForConversationsAsync(
+            ConversationScope.Doomed,
+            new { Name = name.Value, When = ExchangeRow.FormatTimestamp(nowUtc) },
+            scope.Transaction,
+            cancellationToken).ConfigureAwait(false);
+
+        await RazeAsync("file_fetches",
+            "DELETE FROM file_fetches WHERE conversation_id IN (SELECT id FROM doomed_conversations);")
+            .ConfigureAwait(false);
+
+        await RazeAsync("shared_files",
+            "DELETE FROM shared_files WHERE conversation_id IN (SELECT id FROM doomed_conversations);")
+            .ConfigureAwait(false);
+
+        await RazeAsync("conversation_folders",
+            "DELETE FROM conversation_folders WHERE conversation_id IN (SELECT id FROM doomed_conversations);")
+            .ConfigureAwait(false);
+
         await RazeAsync("conversation_participants",
             "DELETE FROM conversation_participants WHERE conversation_id IN " +
             "(SELECT id FROM doomed_conversations);").ConfigureAwait(false);
@@ -961,6 +988,21 @@ public sealed class AgentRepository(SqliteConnection connection)
             toll[table] = toll.GetValueOrDefault(table) + rows;
         }
     }
+
+    /// <summary>Deletes an agent and everything it was party to, stamping what it raises with the current time.</summary>
+    /// <param name="name">The agent.</param>
+    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>What was destroyed, or <see cref="PurgeOutcome.NotRegistered"/>.</returns>
+    /// <remarks>
+    /// Kept so that callers with no clock of their own go on calling purge as they did before files existed; the
+    /// only thing the time stamps is a notice.
+    /// </remarks>
+    public Task<PurgeOutcome> PurgeAsync(
+        AgentName name,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default) =>
+        PurgeAsync(name, DateTimeOffset.UtcNow, transaction, cancellationToken);
 
     /// <summary>
     /// Asks the schema which columns reference <c>agents(name)</c> without cascading.

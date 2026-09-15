@@ -96,6 +96,19 @@ alternative is losing the message silently. A deployment that cannot collect
 its mail is broken, and being told so on every turn is better than the four
 and a half hours of quiet that prompted this file.
 
+File change notices
+-------------------
+A notice that a file this agent fetched has changed or gone is counted with
+the mail, and like the mail it is only a count: never the file's name, which
+its placer chose and which is as much a peer's words as a payload is. A notice
+wakes nothing -- it waits for the next inbox check -- and holding a turn open
+at ``Stop`` is asking for a turn, so there notices are mentioned only beside
+mail that holds the turn anyway.
+
+The count is asked for with ``--with-files``, and a ``parley`` from before
+files refuses the flag. The hook then asks again without it, so a plugin
+upgraded ahead of its tool keeps reporting mail rather than going quiet.
+
 What it costs
 -------------
 Two things, both measured rather than estimated, and recorded here because §14's
@@ -171,8 +184,8 @@ def configuration(root: Path) -> tuple[str, str] | None:
     return (agent, broker) if agent else None
 
 
-def waiting(broker: str, agent: str) -> tuple[int, int]:
-    """Ask the broker what is waiting: uncollected messages, and polls owed a vote."""
+def waiting(broker: str, agent: str) -> tuple[int, int, int]:
+    """Ask the broker what is waiting: uncollected messages, polls owed a vote, and file change notices."""
     # Asked rather than read, and that is the whole of the change here. This used
     # to open the database read-only and count rows itself, which worked while the
     # file was on this machine and every process opened it. One process owns it
@@ -186,7 +199,7 @@ def waiting(broker: str, agent: str) -> tuple[int, int]:
     tool = shutil.which("parley")
 
     if tool is None:
-        return 0, 0
+        return 0, 0, 0
 
     command = [tool]
 
@@ -200,19 +213,29 @@ def waiting(broker: str, agent: str) -> tuple[int, int]:
     # dropped; the caller treats any failure as "nothing waiting", which is the
     # safe direction -- a session that does not know it has mail is a great deal
     # better than one that cannot be worked in.
+    #
+    # File change notices are a third count, asked for with --with-files, and a
+    # tool from before files existed refuses the flag. Asked again without it
+    # then, so a plugin upgraded ahead of its tool keeps reporting mail rather
+    # than going quiet.
     finished = subprocess.run(
-        command, capture_output=True, text=True, timeout=5, check=False
+        command + ["--with-files"], capture_output=True, text=True, timeout=5, check=False
     )
 
     if finished.returncode != 0:
-        return 0, 0
+        finished = subprocess.run(
+            command, capture_output=True, text=True, timeout=5, check=False
+        )
 
-    messages, _, polls = finished.stdout.strip().partition(" ")
+    if finished.returncode != 0:
+        return 0, 0, 0
 
-    return int(messages), int(polls)
+    counts = [int(count) for count in finished.stdout.split()]
+
+    return counts[0], counts[1], counts[2] if len(counts) > 2 else 0
 
 
-def tally(unread: int, owed: int) -> str:
+def tally(unread: int, owed: int, notices: int = 0) -> str:
     """Say what is waiting, in counts only."""
     parts = []
 
@@ -221,6 +244,13 @@ def tally(unread: int, owed: int) -> str:
 
     if owed:
         parts.append(f"{owed} question{'s' if owed != 1 else ''} you owe an answer")
+
+    # A count and never a name: a file's name was chosen by whoever placed it,
+    # and is as much a peer's words as a payload is.
+    if notices:
+        parts.append(
+            f"{notices} notice{'s' if notices != 1 else ''} that a file you fetched has changed or gone"
+        )
 
     return " and ".join(parts)
 
@@ -247,14 +277,14 @@ UNAVAILABLE = (
 )
 
 
-def sentence(unread: int, owed: int, event: str) -> str:
+def sentence(unread: int, owed: int, event: str, notices: int = 0) -> str:
     """Say what is waiting, and what to do about it, for one event."""
     # The Stop wording differs because the situation does: the agent is about to
     # go idle, and going idle is the thing that loses the message. Everywhere
     # else it is a notice; here it is the reason the turn has not ended.
     if event == "Stop":
         return (
-            f"Parley: {tally(unread, owed)}. Do not finish here - call "
+            f"Parley: {tally(unread, owed, notices)}. Do not finish here - call "
             "`parley_inbox` first and deal with what it hands you. The inbox is "
             "pull, so nothing arrives until you do, and an idle session collects "
             "nothing. This notice carries no message content by design; the "
@@ -262,7 +292,7 @@ def sentence(unread: int, owed: int, event: str) -> str:
         )
 
     return (
-        f"Parley: {tally(unread, owed)}. Call `parley_inbox` to collect it - the "
+        f"Parley: {tally(unread, owed, notices)}. Call `parley_inbox` to collect it - the "
         "inbox is pull, so nothing arrives until you do. This notice carries no "
         "message content by design; the envelope comes with the message." + UNAVAILABLE
     )
@@ -320,10 +350,17 @@ def main() -> int:
     # waiting -- so an unreachable broker costs this hook a moment and says
     # nothing, which is the right outcome for something that runs in front of a
     # person waiting for their turn to start.
-    unread, owed = waiting(broker, agent)
+    unread, owed, notices = waiting(broker, agent)
 
-    if unread or owed:
-        print(render(sentence(unread, owed, event), event))
+    # A change notice wakes nothing (SPEC.md 9.5): it is told at the next inbox
+    # check and never asks for a turn. Holding a turn open at Stop is asking for
+    # one, so notices alone do not; they are mentioned there only beside mail
+    # that does.
+    if event == "Stop" and not (unread or owed):
+        notices = 0
+
+    if unread or owed or notices:
+        print(render(sentence(unread, owed, event, notices), event))
 
     return 0
 

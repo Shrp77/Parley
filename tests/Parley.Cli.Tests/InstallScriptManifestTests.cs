@@ -3,12 +3,13 @@
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Both install scripts register an entry that serves the manifest when there is one.
+/// Both install scripts register an entry that serves the manifest, whether or not it names a project yet.
 /// </summary>
 /// <remarks>
 /// A reinstall over a machine that names projects used to prompt for a store and register an
 /// entry serving that one store, which quietly narrowed a manifest-serving deployment back to a
-/// single project. The scripts now ask the tool what is named before asking a person anything.
+/// single project. Then the store parameter went altogether: every entry serves the manifest, and
+/// a machine that names nothing is waiting for its first project.
 /// </remarks>
 public sealed class InstallScriptManifestTests
 {
@@ -16,7 +17,7 @@ public sealed class InstallScriptManifestTests
 
     [Theory]
     [MemberData(nameof(BothScripts))]
-    public void Each_script_asks_what_is_named_before_asking_for_a_store(string script)
+    public void Each_script_asks_what_is_named_and_serves_the_manifest(string script)
     {
         var text = RepositoryFile.Read(script);
 

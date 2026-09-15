@@ -868,7 +868,12 @@ public sealed class Broker
 
         var polls = await _conversations.GetOutstandingPollsAsync(agent, cancellationToken).ConfigureAwait(false);
 
-        return new Inbox(delivered, polls);
+        // Whatever the limit said about messages (SPEC.md §9.5): a limit meant for messages must not hold back the
+        // notices, and the notices carry their own bound.
+        var notices = await new FileNoticeRepository(_connection).CollectAsync(agent, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        return new Inbox(delivered, polls, notices);
     }
 
     private async Task RecordCollectionAsync(long exchangeId, DateTimeOffset nowUtc, CancellationToken cancellationToken)

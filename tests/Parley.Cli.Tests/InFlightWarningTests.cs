@@ -38,9 +38,9 @@ public sealed class InFlightWarningTests
         // The negative, and the reason this test exists. A script that opened the database would be
         // quicker and would break §4, which gives the store to one process.
         //
-        // **Naming the store is not opening it, and a first draft confused the two.** These scripts
-        // pass a path to `autostart install --db`, so `parley.db` appears in both and always will.
-        // What must not appear is anything that reads it.
+        // **Naming a store is not opening it, and a first draft confused the two.** These scripts
+        // once passed a path to `autostart install --db`, and still tell a person how to name a
+        // project's store. What must not appear is anything that reads one.
         // Named as the ways a script could actually open one, rather than as the word. Both scripts
         // say "SQLite" out loud -- one in its help, one in the sentence it prints while asking where
         // the store should go -- and a check that forbade the word would delete the explanation to

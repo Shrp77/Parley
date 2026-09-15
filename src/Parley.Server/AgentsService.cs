@@ -286,6 +286,10 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         reply.Messages.AddRange(inbox.Messages.Select(Conversions.Out));
         reply.ClosurePolls.AddRange(inbox.ClosurePolls.Select(Conversions.Out));
 
+        // Never a reason to wake anything, even when some are left behind: a notice waits for the agent's next look.
+        reply.FileNotices.AddRange(inbox.Notices.Notices.Select(Conversions.Out));
+        reply.FileNoticesWaiting = inbox.Notices.StillWaiting;
+
         return reply;
     }
 
@@ -304,7 +308,9 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
                 MessagesWaiting = await new MessageRepository(connection).CountPendingAsync(agent, ct)
                     .ConfigureAwait(false),
                 ClosurePollsWaiting = await new ConversationRepository(connection)
-                    .CountOutstandingPollsAsync(agent, ct).ConfigureAwait(false)
+                    .CountOutstandingPollsAsync(agent, ct).ConfigureAwait(false),
+                FileNoticesWaiting = await new FileNoticeRepository(connection)
+                    .CountWaitingAsync(agent, cancellationToken: ct).ConfigureAwait(false)
             },
             context.CancellationToken).ConfigureAwait(false);
     }
@@ -334,6 +340,61 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         }
 
         return new Wire.Empty();
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Placing sends nothing and wakes nobody (SPEC.md §5): the Request or Result that needs the file names it, and
+    /// that message does the waking.
+    /// </remarks>
+    public override Task<Wire.PlaceFileReply> PlaceFile(
+        IAsyncStreamReader<Wire.PlaceFileFrame> requestStream,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(requestStream);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).PlaceAsync(requestStream, context.CancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public override Task FetchFile(
+        Wire.FetchFileRequest request,
+        IServerStreamWriter<Wire.FetchFileFrame> responseStream,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(responseStream);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).FetchAsync(request, responseStream, context.CancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public override Task<Wire.FetchedFileReply> FetchedFile(Wire.FetchedFileRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).FetchedAsync(request, context.CancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public override Task<Wire.FilesReply> ListFiles(Wire.ListFilesRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).ListAsync(request, forOperator: false, context.CancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public override Task<Wire.RemoveFilesReply> RemoveOwnFiles(Wire.RemoveFilesRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).RemoveAsync(request, forOperator: false, context.CancellationToken);
     }
 
     private async Task<T> Run<T>(

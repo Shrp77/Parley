@@ -88,6 +88,10 @@ repository and this repository cannot see theirs: only the text of a request and
 crosses between them. `parley_inbox` is pull rather than push - call it when you start work,
 and again when you are waiting on a result.
 
+To hand over a file, place it with `parley_file_place` and name it and its sha256 in your
+request; fetch a file you are sent with `parley_file_fetch`. Only `.md` and `.txt` files can be
+placed, so code travels as `Name.cs.txt`.
+
 - `billing` says it owns invoicing and tax. This repository computes a net order total and
   does not apply VAT.
 - `inventory` says it owns stock levels and reservations. This repository does not decide

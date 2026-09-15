@@ -1196,12 +1196,37 @@ public static class EnrollCommand
         // available while work sent to them waits, never collected. The catalogue is named
         // because a supervisor starts a process with no shell environment, and this is the one
         // moment somebody has both facts in front of them.
-        var start = nodeChanged
-            ? "  1. A broker and this machine's node:\n" +
-              $"       parley serve --db <path to the store> --with-node --node-config {nodePath}\n" +
-              "     Or install both as one logon entry:\n" +
-              $"       parley autostart install --db <path to the store> --node-config {nodePath}\n"
-            : "  1. A broker running:  parley serve --db <path to the store>\n";
+        //
+        // **A machine is deployed as projects**, and the logon entry `parley autostart install` writes serves every one,
+        // hosting each project's node from the catalogue its entry names -- or, on a machine with one project, from
+        // PARLEY_NODE_CONFIG when that is set, as `parley up` would. This said
+        // `parley serve --db` and `autostart install --db`, which serve one store outside the manifest and are for
+        // testing only; found by the gate over the installer change. The entry is named as something to install only
+        // when `autostart status` does not already show it, because installing it again restarts the broker and ends
+        // every agent it started.
+        var named = project?.Name.Value;
+        var entryCatalogue = project?.NodeConfig;
+        var catalogueNamed = entryCatalogue is { Length: > 0 }
+            && string.Equals(
+                Path.GetFullPath(entryCatalogue),
+                Path.GetFullPath(nodePath),
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+        const string Serve =
+            "     Served at every logon by `parley autostart install`; a machine whose entry already serves the\n" +
+            "     manifest (`parley autostart status` says) picks this up within seconds and needs nothing.\n";
+
+        var start = named is null
+            ? "  1. Name the project these repositories answer in:\n" +
+              "       parley project add <name> --db <path to the store> --listen <url>" +
+              (nodeChanged ? $" --node-config {nodePath}\n" : "\n") +
+              Serve
+            : nodeChanged && !catalogueNamed
+                ? $"  1. Point {named} at the catalogue this wrote, since a machine serving several projects hosts each\n" +
+                  "     node from the catalogue its entry names:\n" +
+                  $"       parley project set {named} --node-config {nodePath}\n" +
+                  Serve
+                : $"  1. A broker{(nodeChanged ? " and this machine's node" : string.Empty)} for {named}.\n" + Serve;
 
         // **This used to have three steps and the middle one was "restart your editor in each
         // repository".** It existed because enrolment wrote two files and started nothing, so every

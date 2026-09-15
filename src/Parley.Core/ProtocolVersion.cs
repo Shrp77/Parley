@@ -16,6 +16,13 @@ namespace Parley.Core;
 /// minor carries breaking changes.
 /// </para>
 /// <para>
+/// <b>0.6 lets files cross between repositories.</b> An agent places a <c>.md</c> or <c>.txt</c> file in
+/// the file location beside the store and another fetches it onto disk in its own repository; the broker
+/// computes each file's SHA-256, and an agent that fetched a file finds a change notice in its inbox when
+/// the file changes or goes. What crosses about a file is a bounded name and a hash, never its contents
+/// in a model's context.
+/// </para>
+/// <para>
 /// <b>0.5 made Parley a protocol for work across repositories.</b> Question, Answer and Notify became
 /// Request, Clarify and Result; every message is answered; the broker assigns the conversation; nothing
 /// is orphaned or ghosted; a cycle is recorded rather than refused; and the envelope says a participant
@@ -33,5 +40,5 @@ namespace Parley.Core;
 public static class ProtocolVersion
 {
     /// <summary>The protocol version, as SPEC.md declares it.</summary>
-    public const string Current = "0.5";
+    public const string Current = "0.6";
 }

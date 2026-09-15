@@ -53,7 +53,7 @@ public sealed class ProbeEightTests : IDisposable
     [Fact]
     public async Task Everything_that_reads_the_manifest_can_still_read_it_while_the_gate_is_held()
     {
-        // The probe. `parley registry`, `parley top`, the web UI and the node all begin by reading
+        // The probe. `parley registry`, `parley terminal`, the web UI and the node all begin by reading
         // this file; a bulk enrolment holding it against them would stop the machine for as long as
         // the enrolment ran, and the message they would print is about a file that cannot be read
         // rather than one that is busy.

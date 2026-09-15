@@ -16,7 +16,7 @@ namespace Parley.Cli.Tests;
 /// </para>
 /// <para>
 /// This asks the question the list cannot: is the type reachable from either tool? <c>Parley.Setup</c>
-/// is referenced by <c>parley</c> and by <c>parley-top</c> and by nothing else, so a public type
+/// is referenced by <c>parley</c> and by <c>parley-terminal</c> and by nothing else, so a public type
 /// neither of them names is public for the tests' benefit — and the tests can be granted internals
 /// instead, which is what the rest of this repository does.
 /// </para>
@@ -31,7 +31,7 @@ public sealed class SetupSurfaceJustifiedTests
     {
         var text = new List<string>();
 
-        foreach (var project in (string[])["Parley.Cli", "Parley.Top"])
+        foreach (var project in (string[])["Parley.Cli", "Parley.Terminal"])
         {
             foreach (var file in Directory.EnumerateFiles(
                 Path.Combine(Root, "src", project), "*.cs", SearchOption.AllDirectories))

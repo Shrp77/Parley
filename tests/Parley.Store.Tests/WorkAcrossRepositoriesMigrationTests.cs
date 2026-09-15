@@ -68,7 +68,9 @@ public sealed class WorkAcrossRepositoriesMigrationTests : IDisposable
 
         _largestMessageId = Scalar<long>("SELECT max(id) FROM messages;");
 
-        Assert.Equal(1, SchemaMigrator.Migrate(_connection));
+        // Every migration after 7, rather than 1: this store is built at schema 7 and 008 is no longer the last
+        // migration a 0.4 store passes through on its way up.
+        Assert.Equal(SchemaMigrator.LatestVersion - 7, SchemaMigrator.Migrate(_connection));
     }
 
     public void Dispose() => _connection.Dispose();

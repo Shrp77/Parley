@@ -84,7 +84,7 @@ Removing a project and deleting its store are two decisions, so deleting has its
 catalogue, and lists the repositories that were agents in it, whose launch configuration still
 names it. A broker it does not own - one started by hand - is reported and left running.
 
-**Retiring and purging an agent can also be done from `parley top`, since 2026-09-05.** The rule
+**Retiring and purging an agent can also be done from `parley terminal`, since 2026-09-05.** The rule
 that kept them off it was that a purge behind a keystroke is a different risk from one behind a page
 describing it first; what the rule asks for is a description and a deliberate act, and the terminal
 now gives both. It describes the agent — what it is, where it runs, what it owns, and any answer it
@@ -103,25 +103,29 @@ agent's own act.
 A repository already started unattended by another project gets no catalogue line in the second one,
 and is started through the project that does start it.
 
-**With projects named, `parley autostart install` needs no `--db`.** The entry then serves every
-project in the manifest from one process, hosts this machine's node in each project whose entry
-names a catalogue, and starts a project named later within seconds. `parley autostart status`
-says which form is installed and, for the one-store form, how to switch.
+**`parley autostart install` serves the manifest.** The entry serves every project in it from
+one process, hosts this machine's node in each project whose entry
+names a catalogue (on a machine with one project `PARLEY_NODE_CONFIG` wins when it is set, as it
+does for `parley up`), and starts a project named later within seconds. `parley autostart status`
+says which form is installed and, for the one-store form, how to switch. That form -
+`autostart install --db` - and `parley serve --db` and `PARLEY_DB` are for testing only: a
+deployment names its stores with `parley project add`.
 
 ## The commands
 
 ```
-parley serve --db <path>              run the broker: the one process that opens the store
+parley serve                          run the broker: the one process that opens the stores
+parley serve --db <path>              one store by hand, outside the manifest: testing only
 parley serve --with-node              and this machine's node in the same process
-parley autostart install              start both whenever you log in; with projects named
-                                      and no --db, serve every project in the manifest
+parley autostart install              start both whenever you log in, serving every project
+                                      in the manifest (--db: one store, testing only)
 parley autostart remove               stop doing that
 parley autostart status               say whether it is set up, and what it serves
 parley up                             run this machine's node, so its agents can be started
 parley web-ui [<url>]                 the operator's web UI in a browser; loopback by default
                                       (its own tool: parley-web-ui, installed separately)
-parley top                            the same deployment in this terminal; needs a real one
-                                      (its own tool: parley-top, installed separately)
+parley terminal                       the same deployment in this terminal; needs a real one
+                                      (its own tool: parley-terminal, installed separately)
 
 parley project list                   what this machine is configured for
 parley project add <name> --db <path> --listen <url>    name a deployment
@@ -147,6 +151,11 @@ parley start <agent>                  ask the machine that holds an agent to sta
 parley archive <conversation>         take a conversation off the list; deletes nothing
 parley unarchive <conversation>       put an archived conversation back
 parley destroy <conversation>         DESTROY a conversation and every message in it
+parley files list [--conversation <id>] [--full]  the files agents placed: size, sha256, who placed each
+parley files remove <name>... [--conversation <id>] [--yes]  remove files whoever placed them; describes them and asks
+parley files prune [--yes-remove-every-file]  REMOVE every file; asks for the project's name
+parley files open <name>... [--conversation <id>]  open files in their editor here, or say where they are
+parley files folder [--conversation <id>] open a conversation's folder, or say where it is
 parley refusals                       what the message size cap refused
 parley clarifications                 how deep clarification went, and whether a cap binds
 parley results                        what Results reported: outcomes, and what blocked
@@ -194,7 +203,8 @@ there is a real service, which does need privilege.
 
 `serve` is the broker. It opens the store, migrates it, and serves every agent and node in the
 project. Nothing else opens the file - so this is also the only command that can create one, and
-the only one that takes `--db`.
+the only one that takes `--db` - which is for testing only, since a deployment's stores are
+named with `parley project add`.
 
 `up` is this machine's node. It tells the broker the machine is here, which is what makes the
 agents registered to it startable rather than stranded, and starts one when a question arrives

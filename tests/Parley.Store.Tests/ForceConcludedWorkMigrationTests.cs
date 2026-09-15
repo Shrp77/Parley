@@ -99,7 +99,8 @@ public sealed class ForceConcludedWorkMigrationTests : IDisposable
         // Then force-concluded, as 0.4 did it: the conversation row alone.
         _connection.Execute($"UPDATE conversations SET state = 'CLOSED', closed_utc = '{Ended}' WHERE id = 'ended';");
 
-        Assert.Equal(1, SchemaMigrator.Migrate(_connection));
+        // Every migration after 7, rather than 1: 008 is no longer the last one a 0.4 store passes through.
+        Assert.Equal(SchemaMigrator.LatestVersion - 7, SchemaMigrator.Migrate(_connection));
     }
 
     public void Dispose() => _connection.Dispose();

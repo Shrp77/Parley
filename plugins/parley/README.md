@@ -13,8 +13,16 @@
 | `/parley:setup` | Configures this repository as a Parley agent: checks the server is installed, writes `.mcp.json`, creates the database directory, and sends you to restart - which is when the tools appear, and therefore before `/parley:write-peers` can read anything |
 | `/parley:setup-many` | Configures several repositories in one pass, from a manifest you fill in. Does the nine tenths of setup that needs no tools; leaves the `owns` lines to you and the roster to `/parley:write-peers` |
 | `/parley:write-peers` | Writes or refreshes the `## Peers` block in this repository's standing instructions, from the live roster |
+| `/parley:files-list` | Shows the files agents have placed in the project: sizes, hashes, and who placed each |
+| `/parley:files-remove` | Removes named files, whoever placed them, after showing what goes and asking you |
+| `/parley:files-prune` | Removes every file in the project, behind the project's name typed back |
+| `/parley:files-open` | Opens a placed file in its editor, on the broker's machine |
+| `/parley:files-folder` | Opens a conversation's files folder, or the whole file location |
 | `parley-operator` skill | The `parley` command-line tool - the operations that are deliberately not tools |
-| `parley_waiting` hook | Tells an attended session when mail is waiting, on session start and on every prompt |
+| `parley_waiting` hook | Tells an attended session when mail is waiting, on session start and on every prompt, and when a file it fetched has changed or gone |
+
+The five `files-` commands can only be typed by a person: each is marked so that a model cannot invoke it, because
+they act on every agent's files at once.
 
 ## Why there is a hook
 

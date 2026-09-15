@@ -1,8 +1,8 @@
 ﻿# Parley
 
 A durable, vendor-neutral coordination protocol for AI coding agents. Lets per-repo
-agents ask each other questions and get answers without sharing context, files, or
-history. Typed exchanges, deadlock-free queuing, and a persistent registry that
+agents ask each other questions and get answers, and hand each other files, without sharing
+context or history. Typed exchanges, deadlock-free queuing, and a persistent registry that
 survives restarts. Pluggable adapters for any agent, model, or human.
 
 > **Status: early draft.** The specification is the primary artifact. The reference
@@ -26,9 +26,11 @@ Neither agent can answer alone. The usual workarounds all cost something:
 
 ## What Parley does
 
-A broker sits between independent agents. They ask each other questions and receive
-answers, and **only the question and answer text ever crosses the boundary** — never
-conversation history, never files, never each other's context.
+A broker sits between independent agents. They ask each other to do work and to answer
+questions, and every request comes back with a result. **What crosses the boundary is those
+messages** — never conversation history, never one agent's context poured into another's.
+An agent can also hand over a file: it places the file with Parley and other agents fetch it
+onto disk in their own repositories, so its contents never land in a model's context.
 
 ```
 ┌──────────────┐   ┌──────────────┐   ┌───────────────┐
@@ -141,9 +143,11 @@ cd Parley
 ```
 
 That is the whole of it. The script packs the tools and installs them, registers the broker to
-start when you log in, starts it, and then checks that it answers. It asks where the store
-should go, defaulting to `.parley` in your home directory; `-Store <path>` on Windows or
-`--store <path>` elsewhere answers that in advance, for an unattended run.
+start when you log in, starts it, and then checks that it answers. It never asks where a store
+goes: that is a project's to say. The broker serves every project this machine names, and on a
+machine that names none yet it waits for the first — so the script ends by telling you to name
+one, from the first screen of `parley terminal` or with `parley project add`. The broker starts it
+within seconds, and the web UI shows it.
 
 There are four tools, and which of them a machine wants is a real question:
 
@@ -151,7 +155,7 @@ There are four tools, and which of them a machine wants is a real question:
 |---|---|---|
 | `parley` | The operator's commands, and the broker itself | Always |
 | `parley-mcp` | The MCP server a launch configuration names | Always |
-| `parley-top` | The terminal a person watches a deployment from | Windows yes, Linux no |
+| `parley-terminal` | The terminal a person watches a deployment from | Windows yes, Linux no |
 | `parley-web-ui` | The web UI a person opens in a browser | Yes |
 
 `-Surfaces terminal|web-ui|both|none` on Windows, or `--surfaces` elsewhere, chooses. The
@@ -162,7 +166,7 @@ tunnel, which is why the default there is not `none`.
 **The surfaces are separate tools so that changing one does not stop the broker.** Windows
 cannot replace a running executable, so while the terminal lived inside `parley` every change
 to it meant stopping the broker — and stopping a broker tells every agent it started to quit,
-losing everything each of them had learned. `-Only parley-top` (or `--only parley-top`)
+losing everything each of them had learned. `-Only parley-terminal` (or `--only parley-terminal`)
 replaces just the terminal: nothing being unlinked is the broker's, so it is not stopped, no
 autostart entry is re-registered, and nothing in flight is interrupted.
 
@@ -220,17 +224,20 @@ somebody reinstalling a tool has not asked to lose their history or their launch
 ### 2. Know what the broker is
 
 The script already started one, so this is here to explain what it started rather than to be
-run. One process owns the store and everything else connects to it:
+run. A deployment is a **project**: a store, the address its broker listens on, and optionally the
+catalogue of agents this machine may start for it. Name one from the first screen of
+`parley terminal`, or:
 
 ```
-parley serve --db /src/acme/.parley/parley.db
+parley project add acme --db ~/.parley/acme.db --listen http://127.0.0.1:51707
 ```
 
-It listens on `127.0.0.1:51707` unless `--listen` says otherwise, and runs until it is stopped.
-What the script registered is that same command under a supervisor:
+One process serves every project this machine names, each on its own store and port, and each
+broker owns its store while everything else connects to it. What the script registered is that
+process under a supervisor:
 
 ```
-parley autostart install --db /src/acme/.parley/parley.db
+parley autostart install
 ```
 
 That installs a scheduled task on Windows, a systemd user unit on Linux, or a launch agent on
@@ -239,12 +246,12 @@ you, and start the broker again at logon. `parley autostart status` says whether
 and what it was registered to run; `parley autostart remove` undoes it, leaving a broker that is
 already running alone.
 
-**With projects named, leave off `--db`.** A machine that has named its deployments — with
-`parley project add`, or from the first screen of `parley top` — gets an entry that serves every
-project in the manifest from one process, each on its own store and port, hosting this machine's
-node in each project whose entry names a catalogue. A project named later gets its broker within
-seconds, because the process watches the manifest; nothing is reinstalled and nothing restarts.
-The install script does the same: it asks what is named before it asks for a store.
+**It serves the manifest, not a store.** Every project named in it gets its own broker from that
+one process, hosting this machine's node in each project whose entry names a catalogue — except on
+a machine with one project, where `PARLEY_NODE_CONFIG`, when it is set, names the catalogue instead,
+as it does for `parley up`. A project named later gets its broker within seconds, because the process watches the manifest; nothing is
+reinstalled and nothing restarts. A machine that names no project yet is served the same way: the
+process waits, with the web UI up, for the first one.
 
 **It starts the web UI too**, on `127.0.0.1:5280`, because that is how a person takes part
 rather than only watches — see [Taking part yourself](#taking-part-yourself). An agent attached
@@ -255,14 +262,14 @@ for people. `--web-ui <url>` moves it and `--no-web-ui` leaves it out.
 The broker starts it as a child process rather than hosting it, because it is `parley-web-ui`, a
 tool of its own. If the address is already taken, or the tool is not installed on this machine,
 the broker says so and carries on serving: a web page that cannot bind must never cost you a
-deployment, and it names `parley top` in the same breath so you are never told there is no way in.
+deployment, and it names `parley terminal` in the same breath so you are never told there is no way in.
 
 `--with-console`, `--console` and `--no-console` were the old spellings. They are **removed** as of
 0.22.0: a broker given one starts anyway and ignores it, so an autostart entry written before this
 version keeps working and quietly stops starting a web UI — `parley autostart status` says so and
 names what to re-run. `parley autostart install` writes an entry this version understands.
 
-**`parley top` is the same deployment without a browser**, and the broker names both when it
+**`parley terminal` is the same deployment without a browser**, and the broker names both when it
 starts. The machine running a broker is frequently not the machine you have a browser open on —
 a server you are in over SSH, a box in a cupboard — and on those the web UI's address is an
 instruction you cannot follow. Both surfaces show the same projects, agents and conversations,
@@ -286,9 +293,11 @@ configured nothing needs naming. With several and none named, every command **re
 them** rather than choosing — acting on a deployment nobody asked for produces output that looks
 entirely normal. `parley serve` is the exception, and starts them all.
 
-**None of this is required.** A machine with no projects behaves exactly as it always has, its
-absence is never mentioned, and an explicit `--db`, `--broker` or environment variable still wins
-over anything a project says. `parley project set <name>` changes what an entry says — only the
+**Explicit paths still win.** `--broker` and the environment variables below override anything a
+project says. **`parley serve --db <path>`, `parley autostart install --db <path>` and `PARLEY_DB`
+are for testing only**: they run one store by hand, outside the manifest, so a test rig need name
+no project. A machine's deployment names its stores with `parley project add` and nothing else, and
+`PARLEY_DB` never replaces a manifest named with `--config`, which is how the logon entry names the one it serves. `parley project set <name>` changes what an entry says — only the
 fields given, and an empty value clears an optional one — and the process serving the manifest
 restarts that project on its new store, endpoint or catalogue within seconds; a description
 changes nothing running. `parley project remove` forgets an entry and deletes nothing — not
@@ -309,7 +318,7 @@ Everything that describes the deployment rather than one repository belongs to t
 because it is the one process applying it:
 
 ```
-PARLEY_DB=/src/acme/.parley/parley.db   # instead of --db
+PARLEY_DB=/src/acme/.parley/parley.db   # one store instead of the manifest: testing only
 PARLEY_RETENTION_IDLE_HOURS=72          # how long the log keeps what it carried
 PARLEY_RETENTION_MAX_AGE_HOURS=720
 PARLEY_TICK_SECONDS=5                   # how often deadlines are swept
@@ -478,7 +487,7 @@ exists to prevent — the tools being bound is not enough on its own.
 
 ### What the agent can do
 
-Six tools, and no way to say who it is:
+Ten tools, and no way to say who it is:
 
 | Tool | What it does |
 |---|---|
@@ -488,6 +497,18 @@ Six tools, and no way to say who it is:
 | `parley_inbox` | Collect what is waiting, work you owe first. |
 | `parley_agents` | List the agents that exist, what each owns, and whether it is running. |
 | `parley_conclude` | Say whether you are finished with a conversation. |
+| `parley_file_place` | Put a `.md` or `.txt` file from your repository where other agents can fetch it. Returns its name and sha256; the contents go into nobody's context. |
+| `parley_file_fetch` | Write a file another agent placed into your own repository, checked against its sha256. |
+| `parley_file_list` | List the files placed so far: names, sizes, hashes, and who placed each. |
+| `parley_file_remove` | Take back files you placed. |
+
+A file is how something too large or too exact for a message crosses: a schema, a price list, a
+generated client. Only `.md` and `.txt` files can be placed, so code travels as
+`PriceSnapshot.cs.txt` — which keeps anything a person opens from the file location from being
+something that runs. The agent that needs a file is sent a request naming it and its sha256,
+fetches exactly that, and is told at its next inbox check if the file later changes or goes: told,
+never woken. Only the agent that placed a file can replace or remove it. A fetched file is another
+participant's data, exactly like a message, and cannot give instructions.
 
 Every message is answered: a Request is always closed by a Result, even if all it says is
 "acknowledged". A Request carries its **intent** and what **done** looks like, because a
@@ -624,7 +645,14 @@ parley export <conversation>        every message in a discussion, across agents
 parley force-conclude <conv>        close a discussion over its participants' votes
 parley prune                        apply the retention policy now
 parley refusals                     what the message size cap refused, and how far over
-parley waiting <agent>              how many messages and polls await an agent
+parley waiting <agent>              how many messages and polls await an agent;
+                                    --with-files adds the file notices waiting
+parley files list                   every placed file: size, sha256, who placed it, and how
+                                    much each agent has placed
+parley files remove <name>...       remove files whoever placed them, after saying what goes
+parley files prune                  remove every file, behind the project's name typed back
+parley files open <name>...         open a file in its editor, on the broker's machine
+parley files folder                 open a conversation's folder, or the whole location
 parley web-ui [<url>]               the web UI in a browser: every project, the agents in
                                     each, and conversations as a transcript that says who
                                     did not see what. Join it with a name to take part as
@@ -638,10 +666,21 @@ parley --help                       the same list, on stdout, exiting zero
 
 Every one of these except `serve`, `up` and `project` is a client: they connect to the broker at
 `--broker`, or `PARLEY_BROKER`, and default to the local one. `web-ui` reads this machine's named
-projects instead, and falls back to that same broker when none are named — so it works on a
-machine configured entirely by explicit paths, which is a supported way to run. None of them opens the store, so none can be pointed at the wrong
-file — `--db` belongs to `parley serve` alone. `prune` applies the policy the broker was started
+projects instead, and falls back to that same broker when none are named — so it works
+against a broker run by explicit paths, which is how a test rig runs. None of them opens the store, so none can be pointed at the wrong
+file — `--db` belongs to `parley serve` alone, and is for testing only. `prune` applies the policy the broker was started
 with, which is the only policy in the deployment; your shell no longer has an opinion about it.
+
+Placed files live in a folder beside the broker's store, one folder for each conversation, and they
+are yours to read and change there: an edit is the file's new content and every agent that fetched
+it is told, a rename keeps who placed it, and a deletion is the file gone. `open` and `folder`
+launch only on the broker's own machine — anywhere else they say which machine and which path —
+and only `.md` and `.txt` files are ever opened. While an agent is downloading a file, Windows
+refuses anybody else a write to it; other platforms do not, and a change made mid-download is
+caught by its hash and the agent told to fetch again. Nothing removes a file on a timer: it goes
+when its placer removes it, when you remove or prune it, or when its conversation is destroyed or
+an agent that took part in it is purged. The web UI offers the same operations on each project's
+Files page, and so does the terminal.
 
 ### Taking part yourself
 
@@ -670,14 +709,14 @@ The machine running a broker is frequently not one anybody has a browser open on
 deployment is there in a terminal:
 
 ```
-parley top
+parley terminal
 ```
 
-That is `parley-top`, a tool of its own, and `parley top` forwards to it without reading the
-arguments — so `parley-top` works identically if you would rather type it. The two are installed
+That is `parley-terminal`, a tool of its own, and `parley terminal` forwards to it without reading
+the arguments — so `parley-terminal` works identically if you would rather type it. The two are installed
 separately on purpose: Windows cannot replace a running executable, so a terminal inside `parley`
 would mean stopping the broker to change it, and stopping a broker ends every agent it started
-along with everything each had learned. On a machine that does not have it, `parley top` says
+along with everything each had learned. On a machine that does not have it, `parley terminal` says
 which tool provides the command and how to install it.
 
 Three views, one thing at a time. It opens on the projects this machine names, with a line beside
@@ -742,6 +781,11 @@ un-archive it. **Destroy** deletes one and every participant's half of it, behin
 purge stands behind — described first, keeping offered first, the conversation's own identifier
 typed back — and when something in it is still open, what the waiting agent will see is named and
 accepted before the identifier is asked for.
+
+**Files** (`l`, from the projects list or from the conversations half) lists what agents have
+placed, with who placed how much. Choosing a file opens it in its editor or removes it — described
+first, keeping offered first — and the list also opens the folder, or removes every file, which
+takes the project's name typed back.
 
 A seat lives in the agents half too — the same seat as the web UI, with the same rules — and from
 a conversation you read what is waiting for you, answer it, ask, and tell. Each agent has its own

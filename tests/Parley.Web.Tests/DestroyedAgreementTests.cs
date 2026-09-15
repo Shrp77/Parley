@@ -54,7 +54,7 @@ public sealed class DestroyedAgreementTests
     public void Both_surfaces_compose_the_account_through_the_one_helper()
     {
         var console = Sources("src", "Parley.Web");
-        var terminal = Sources("src", "Parley.Top");
+        var terminal = Sources("src", "Parley.Terminal");
 
         Assert.Contains("Reading.Gone(", console, StringComparison.Ordinal);
         Assert.Contains("Reading.Gone(", terminal, StringComparison.Ordinal);
@@ -68,7 +68,7 @@ public sealed class DestroyedAgreementTests
         foreach (var (where, source) in new[]
                  {
                      ("console", Sources("src", "Parley.Web")),
-                     ("terminal", Sources("src", "Parley.Top")),
+                     ("terminal", Sources("src", "Parley.Terminal")),
                  })
         {
             Assert.False(
@@ -106,7 +106,7 @@ public sealed class DestroyedAgreementTests
     {
         // The distinction is the whole of FR-006 and it is easy to lose by widening one message to
         // cover both. Each surface has to say two different things.
-        var terminal = Sources("src", "Parley.Top");
+        var terminal = Sources("src", "Parley.Terminal");
         var console = Sources("src", "Parley.Web");
 
         Assert.Contains("has no messages", terminal, StringComparison.Ordinal);
@@ -120,6 +120,6 @@ public sealed class DestroyedAgreementTests
     public void The_check_is_reading_both_trees()
     {
         Assert.Contains("BrokerClient", Sources("src", "Parley.Web"), StringComparison.Ordinal);
-        Assert.Contains("BrokerClient", Sources("src", "Parley.Top"), StringComparison.Ordinal);
+        Assert.Contains("BrokerClient", Sources("src", "Parley.Terminal"), StringComparison.Ordinal);
     }
 }

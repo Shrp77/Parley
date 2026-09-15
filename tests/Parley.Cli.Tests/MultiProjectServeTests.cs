@@ -302,15 +302,62 @@ public sealed class MultiProjectServeTests : IDisposable
     }
 
     [Fact]
+    public async Task An_empty_manifest_being_watched_waits_and_starts_the_first_project_named()
+    {
+        // The machine the installer leaves: an entry serving a manifest that names nothing yet. It used to fall through
+        // to one default store nobody had named. Now it waits, and the first project named from `parley terminal` or with
+        // `parley project add` gets its broker from the watcher within seconds.
+        var ct = TestContext.Current.CancellationToken;
+        var orders = Project("orders");
+
+        using var named = new ManualResetEventSlim();
+        using var stopping = new CancellationTokenSource();
+
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        var serving = ServeCommand.RunAsync(
+            [],
+            null,
+            output,
+            error,
+            reread: () => named.IsSet ? new List<ProjectSettings> { orders } : null,
+            cancellationToken: stopping.Token);
+
+        await Task.Delay(TimeSpan.FromSeconds(1), ct);
+
+        Assert.False(serving.IsCompleted, $"an empty manifest being watched ended the process: {error}");
+
+        named.Set();
+
+        var reachable = false;
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+
+        while (!reachable && DateTime.UtcNow < deadline)
+        {
+            reachable = await AnswersAsync(orders.Endpoint, ct);
+
+            if (!reachable)
+            {
+                await Task.Delay(250, ct);
+            }
+        }
+
+        await stopping.CancelAsync();
+        await serving.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+        Assert.True(reachable, $"the first project named was never served: {output}{error}");
+        Assert.Contains("No project is named yet", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains("orders: named in the manifest since this started", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task An_empty_list_returns_rather_than_serving_nothing_forever()
     {
-        // Not the "machine with no projects" case — that never arrives here. The entry point sends
-        // an unconfigured machine to the single-project overload, because a fresh install has no
-        // manifest and must keep working; only a non-empty list reaches this one.
-        //
-        // Asserted anyway because this overload is public, and the alternative to returning is a
-        // process that has started nothing and will now wait on the interrupt for as long as
-        // anybody leaves it. A supervisor cannot tell that apart from a healthy broker.
+        // Without a watcher. An entry serving a manifest waits for its first project (the test above); a list that is
+        // empty with nothing to reread could never start anything, and the alternative to returning is a process that
+        // has started nothing and will now wait on the interrupt for as long as anybody leaves it. A supervisor cannot
+        // tell that apart from a healthy broker.
         var (code, _, error) = await ServeAsync([], () => Task.CompletedTask);
 
         Assert.NotEqual(0, code);

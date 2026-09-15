@@ -106,9 +106,24 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
+        // Its files go with it (SPEC.md §14), once every download in progress has finished: the rows first, in the
+        // destroy's own transaction, then the folder on disk — and only when the rows really went.
+        var files = new FileWork(_runtime);
+
+        using var held = await files.HoldEverythingAsync(context.CancellationToken).ConfigureAwait(false);
+
+        var folder = string.IsNullOrEmpty(request.ConversationId)
+            ? null
+            : await _runtime.UseConnectionAsync(
+                (connection, _, ct) => new Parley.Store.SharedFileRepository(connection)
+                    .GetFolderAsync(request.ConversationId, cancellationToken: ct),
+                context.CancellationToken).ConfigureAwait(false);
+
         var outcome = await Console(
             (console, now, ct) => console.DestroyConversationAsync(request.ConversationId, now, ct),
             context).ConfigureAwait(false);
+
+        await DeleteFoldersWhoseRowsWentAsync(files, folder is null ? [] : [folder], context).ConfigureAwait(false);
 
         var reply = new Wire.DestroyReply { Verdict = Conversions.Out(outcome.Verdict) };
         reply.Destroyed.AddRange(outcome.Destroyed.Select(t => new Wire.PurgeToll { Table = t.Table, Rows = t.Rows }));
@@ -180,7 +195,21 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(context);
 
         var agent = Name(request.Agent);
+
+        // Every conversation it took part in goes, and placing a file made it a participant, so its files go too
+        // (SPEC.md §14). The folders are read before the purge, because afterwards nothing names them.
+        var files = new FileWork(_runtime);
+
+        using var held = await files.HoldEverythingAsync(context.CancellationToken).ConfigureAwait(false);
+
+        var folders = await _runtime.UseConnectionAsync(
+            (connection, _, ct) => new Parley.Store.SharedFileRepository(connection)
+                .GetFoldersPurgingWouldDeleteAsync(agent, cancellationToken: ct),
+            context.CancellationToken).ConfigureAwait(false);
+
         var outcome = await Console((console, _, ct) => console.PurgeAsync(agent, ct), context).ConfigureAwait(false);
+
+        await DeleteFoldersWhoseRowsWentAsync(files, folders, context).ConfigureAwait(false);
 
         var reply = new Wire.PurgeReply { Verdict = Conversions.Out(outcome.Verdict) };
         reply.Destroyed.AddRange(outcome.Destroyed.Select(t => new Wire.PurgeToll { Table = t.Table, Rows = t.Rows }));
@@ -578,6 +607,81 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             Contended = result.Contended,
             Capped = result.Capped
         };
+    }
+
+    /// <inheritdoc/>
+    public override Task<Wire.FilesReply> ListSharedFiles(Wire.ListFilesRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).ListAsync(request, forOperator: true, context.CancellationToken);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Any placer's, which is why this is here and not on <c>Agents</c>: an agent removes only what it placed.
+    /// </remarks>
+    public override Task<Wire.RemoveFilesReply> RemoveFiles(Wire.RemoveFilesRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).RemoveAsync(request, forOperator: true, context.CancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public override Task<Wire.PruneFilesReply> PruneFiles(Wire.Empty request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).PruneAsync(context.CancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public override Task<Wire.FileLocationReply> DescribeFileLocation(Wire.FileLocationRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).DescribeAsync(request, context.CancellationToken);
+    }
+
+    /// <summary>Deletes the folders on disk of conversations whose rows are gone.</summary>
+    /// <param name="files">The file operations.</param>
+    /// <param name="folders">The folders as they were recorded before the delete.</param>
+    /// <param name="context">The call.</param>
+    /// <returns>A task that completes when they are deleted.</returns>
+    /// <remarks>
+    /// Checked against the store rather than assumed from the outcome, so a destroy or purge that deleted nothing —
+    /// no such conversation, no such agent — can never take a folder that still belongs to one.
+    /// </remarks>
+    private async Task DeleteFoldersWhoseRowsWentAsync(FileWork files, IReadOnlyList<string> folders, ServerCallContext context)
+    {
+        if (folders.Count == 0)
+        {
+            return;
+        }
+
+        var gone = await _runtime.UseConnectionAsync(
+            async (connection, _, ct) =>
+            {
+                var repository = new Parley.Store.SharedFileRepository(connection);
+                var orphaned = new List<string>();
+
+                foreach (var folder in folders)
+                {
+                    if (await repository.GetConversationForFolderAsync(folder, cancellationToken: ct).ConfigureAwait(false) is null)
+                    {
+                        orphaned.Add(folder);
+                    }
+                }
+
+                return orphaned;
+            },
+            context.CancellationToken).ConfigureAwait(false);
+
+        files.DeleteFolders(gone);
     }
 
     private Task<T> Console<T>(

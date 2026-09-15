@@ -619,6 +619,32 @@ public static class ProjectCommand
             deleted.Add(path);
         }
 
+        // The file location and its staging directory (SPEC.md §9.5), and only after the lock went: a
+        // broker still serving would have kept the lock, and deleting files it may be streaming to an
+        // agent would be the partial destruction the ordering above exists to prevent.
+        foreach (var suffix in new[] { Parley.Core.StoreFiles.Files, Parley.Core.StoreFiles.FilesIncoming })
+        {
+            var path = going.Store + suffix;
+
+            if (!Directory.Exists(path))
+            {
+                continue;
+            }
+
+            if (!await TryDeleteDirectoryAsync(path, cancellationToken).ConfigureAwait(false))
+            {
+                await error.WriteLineAsync(
+                    $"Could not delete {path}: something still has a file in it open. The entry is gone " +
+                    $"and {string.Join(", ", deleted)} {(deleted.Count == 1 ? "was" : "were")} " +
+                    "deleted; delete the rest yourself once nothing holds it.")
+                    .ConfigureAwait(false);
+
+                return IoError;
+            }
+
+            deleted.Add(path);
+        }
+
         if (going.NodeConfig is { Length: > 0 } catalogue
             && File.Exists(catalogue)
             && !ProjectManifest.IsTheManifest(catalogue, manifestPath)
@@ -709,6 +735,37 @@ public static class ProjectCommand
         }
 
         return !File.Exists(path);
+    }
+
+    /// <summary>Deletes a directory and everything in it, retrying while something still holds a file.</summary>
+    /// <param name="path">The directory.</param>
+    /// <param name="cancellationToken">Cancels the waits between attempts.</param>
+    /// <returns><see langword="true"/> when the directory is gone.</returns>
+    /// <remarks>
+    /// Retried for the reason <see cref="TryDeleteAsync"/> is: a broker releases what it held a moment after
+    /// it stops answering, and on Windows a file still open cannot be deleted.
+    /// </remarks>
+    private static async Task<bool> TryDeleteDirectoryAsync(string path, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            try
+            {
+                Directory.Delete(path, recursive: true);
+
+                return true;
+            }
+            catch (IOException)
+            {
+                await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return !Directory.Exists(path);
     }
 }
 
