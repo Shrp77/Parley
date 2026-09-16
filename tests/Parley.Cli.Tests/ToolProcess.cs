@@ -42,8 +42,28 @@ internal static class ToolProcess
         // the test mentions.
         Parley.Core.BrokerEndpoint.Variable,
         Parley.Configuration.NodeCatalogue.PathVariable,
-        Parley.Configuration.ProjectManifest.PathVariable
+        Parley.Configuration.ProjectManifest.PathVariable,
+
+        // A terminal's project, since commands take one from it. A developer who has run `parley use` would otherwise
+        // lend every test in that shell a project.
+        Parley.Setup.EnrollmentPlan.ProjectVariable
     ];
+
+    /// <summary>A directory in no repository, created once, where the tool runs unless a test says otherwise.</summary>
+    /// <remarks>
+    /// <b>Never the directory the suite runs in.</b> The tool takes a project from the repository it runs in, and the suite
+    /// runs inside this repository — whose <c>.mcp.json</c>, on a machine that registered it as an agent, names a real
+    /// project. A test would then act on whatever that entry names, on that machine only, for a reason nothing in the test
+    /// mentions: the failure <see cref="Configuration"/> exists to prevent, arriving by a door it cannot see.
+    /// </remarks>
+    private static readonly Lazy<string> Neutral = new(() =>
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "parley-tool-" + Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(directory);
+
+        return directory;
+    });
 
     /// <summary>Why this still sets a variable the clearing loop above already touched.</summary>
     /// <remarks>
@@ -106,7 +126,16 @@ internal static class ToolProcess
     /// to the end — doing that to a process that never exits would block for ever.
     /// </remarks>
     public static Process Launch(
-        (string Name, string Value)[] environment, params string[] arguments)
+        (string Name, string Value)[] environment, params string[] arguments) =>
+        LaunchIn(null, environment, arguments);
+
+    /// <summary>Starts the tool in a working directory of the test's choosing, without waiting for it.</summary>
+    /// <param name="directory">Where the tool runs, or null for a directory in no repository.</param>
+    /// <param name="environment">Variables to set for this run, after the tool's own are cleared.</param>
+    /// <param name="arguments">The command line.</param>
+    /// <returns>The running process, whose output the caller reads.</returns>
+    public static Process LaunchIn(
+        string? directory, (string Name, string Value)[] environment, params string[] arguments)
     {
         var (fileName, argument) = Locate();
 
@@ -114,7 +143,8 @@ internal static class ToolProcess
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            UseShellExecute = false
+            UseShellExecute = false,
+            WorkingDirectory = directory ?? Neutral.Value,
         };
 
         if (argument is not null)
@@ -159,6 +189,25 @@ internal static class ToolProcess
         (string Name, string Value)[] environment, params string[] arguments)
     {
         using var process = Launch(environment, arguments);
+
+        var error = process.StandardError.ReadToEndAsync();
+        var output = process.StandardOutput.ReadToEndAsync();
+
+        Assert.True(process.WaitForExit(TimeSpan.FromSeconds(30)), "the tool never exited");
+        Task.WaitAll([error, output], TimeSpan.FromSeconds(10));
+
+        return (process.ExitCode, output.Result, error.Result);
+    }
+
+    /// <summary>Runs the tool to completion in a working directory of the test's choosing, keeping both streams.</summary>
+    /// <param name="directory">Where the tool runs.</param>
+    /// <param name="environment">Variables to set for this run, after the tool's own are cleared.</param>
+    /// <param name="arguments">The command line.</param>
+    /// <returns>Its exit code and both of its streams.</returns>
+    public static (int ExitCode, string Output, string Error) RunFullyIn(
+        string directory, (string Name, string Value)[] environment, params string[] arguments)
+    {
+        using var process = LaunchIn(directory, environment, arguments);
 
         var error = process.StandardError.ReadToEndAsync();
         var output = process.StandardOutput.ReadToEndAsync();

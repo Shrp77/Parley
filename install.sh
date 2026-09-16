@@ -512,17 +512,50 @@ if [ "$replacing_broker" = "1" ]; then
     # built on. `parley open` is the same conversations() reply both surfaces read.
     #
     # A warning and not a refusal: the person running this has decided to upgrade.
-    if command -v parley >/dev/null 2>&1 && in_flight="$(parley open 2>/dev/null)"; then
+    # **Asked of each project, because `parley open` refuses to choose between several.** On a machine naming more than
+    # one, a bare `parley open` could never answer, so this said it could not ask on exactly the machines with the most in
+    # flight -- found by reinstalling one. Names come from `parley project list`, whose first column is the name and whose
+    # second is the endpoint; a machine naming none is asked once, of the broker it would default to.
+    in_flight=""
+    unasked=""
+    asked=0
+
+    if command -v parley >/dev/null 2>&1; then
+        names="$( (parley project list 2>/dev/null || true) | sed -n -E 's/^([a-z][a-z0-9-]*)[[:space:]]+[^[:space:]]+:\/\/.*/\1/p')"
+
+        if [ -z "$names" ]; then
+            if in_flight="$(parley open 2>/dev/null)"; then
+                asked=1
+            fi
+        else
+            asked=1
+
+            for name in $names; do
+                if said="$(parley --project "$name" open 2>/dev/null)"; then
+                    if [ -n "$said" ]; then
+                        in_flight="${in_flight}$(printf '%s\n' "$said" | sed "s/^/$name: /")"$'\n'
+                    fi
+                else
+                    unasked="$unasked $name"
+                fi
+            done
+        fi
+    fi
+
+    if [ "$asked" = "1" ]; then
+        if [ -n "$unasked" ]; then
+            echo "warning: could not ask${unasked} what is open, so this cannot say what stopping the" >&2
+            echo "         broker will interrupt there. That is not the same as nothing being in flight." >&2
+        fi
+
         if [ -n "$in_flight" ]; then
-            count="$(printf '%s
-' "$in_flight" | grep -c . || true)"
+            count="$(printf '%s\n' "$in_flight" | grep -c . || true)"
 
             echo "warning: $count conversation(s) have an exchange still open. Stopping the broker" >&2
             echo "         ends every agent it started, and a question already delivered has nothing" >&2
             echo "         left to answer it:" >&2
 
-            printf '%s
-' "$in_flight" | while IFS= read -r line; do
+            printf '%s\n' "$in_flight" | while IFS= read -r line; do
                 [ -n "$line" ] && echo "      $line" >&2
             done
         fi
@@ -835,4 +868,7 @@ elif [ -n "$web_ui" ]; then
 fi
 
 echo "Next, in each repository you want an agent in:   /parley:setup"
-echo "Restart the editor there, then check it arrived:  parley registry"
+# `parley registry` refuses to choose between several projects, so the check it names says which to pass.
+project_count="$( ("$parley_command" project list 2>/dev/null || true) | grep -cE '^[a-z][a-z0-9-]*[[:space:]]+[^[:space:]]+://' || true)"
+if [ "${project_count:-0}" -gt 1 ]; then check="parley --project <name> registry"; else check="parley registry"; fi
+echo "Restart the editor there, then check it arrived:  $check"

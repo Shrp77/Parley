@@ -19,7 +19,7 @@
 | `/parley:files-open` | Opens a placed file in its editor, on the broker's machine |
 | `/parley:files-folder` | Opens a conversation's files folder, or the whole file location |
 | `parley-operator` skill | The `parley` command-line tool - the operations that are deliberately not tools |
-| `parley_waiting` hook | Tells an attended session when mail is waiting, on session start and on every prompt, and when a file it fetched has changed or gone |
+| `parley_waiting` hook | Tells an attended session when mail is waiting — on session start, on every prompt, after every batch of tool calls, and rather than letting the session go idle carrying it — and when a file it fetched has changed or gone |
 
 The five `files-` commands can only be typed by a person: each is marked so that a model cannot invoke it, because
 they act on every agent's files at once.
@@ -50,8 +50,13 @@ no way to tell "nothing is waiting" from "this never ran". To check, run it by h
 repository that is a Parley agent:
 
 ```
-python ~/.claude/plugins/cache/parley/parley/*/hooks/parley_waiting.py <<< '{"cwd":"."}'
+python ~/.claude/plugins/cache/parley/parley/*/hooks/parley_waiting.py <<< '{"hook_event_name":"UserPromptSubmit","cwd":"."}'
 ```
+
+**The event name is part of that payload and the script decides everything from it**, including
+whether to speak at all: a payload naming no event is answered with silence, without the broker
+being asked anything, whatever is waiting. A recipe that left it out would return the reassuring
+answer on every run, which is the failure this check exists to catch.
 
 Silence means nothing is waiting. An error means the hook would have been silent for the wrong
 reason.

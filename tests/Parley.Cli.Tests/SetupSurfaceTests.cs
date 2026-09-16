@@ -75,6 +75,11 @@ public sealed class SetupSurfaceTests
                 "ProjectFields",
                 "ProjectResolution",
                 "RepositoryPlan",
+
+                // A command's project comes from its context, and `parley` reads which projects the repository it runs
+                // in names. Here rather than in the CLI because the terminal enrols repositories through this assembly
+                // and the key rule it reads -- `parley-<project>` -- is `LaunchKey`'s, which must not be written twice.
+                "RepositoryProjects",
                 "RepositorySelection",
                 "Resolved",
                 "ScheduledTasks",

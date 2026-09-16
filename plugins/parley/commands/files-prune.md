@@ -13,7 +13,7 @@ removes everything, and nothing does it on a schedule.
 
 ## 1. Show what would go
 
-Run, with any `--project <name>` the person gave:
+Run, with any `--project <name>` the person gave - and, when this machine names more than one project and they named none, `--project` with the one this repository answers in (the `PARLEY_PROJECT` of its `parley-<project>` entry in `.mcp.json`; ask which if it has several):
 
 ```
 parley files prune $ARGUMENTS

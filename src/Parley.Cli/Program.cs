@@ -68,6 +68,10 @@ const string Help = """
       parley autostart status                          say whether it is set up, and what it
                                                        was registered to run
 
+      parley use [<project>] [--shell <name>]          choose the project this terminal's commands act
+                 [--clear]                             on: prints the line that sets PARLEY_PROJECT, or
+                                                       with no project says which one is in use and why
+
       parley project list                              what this machine is configured for
       parley project add <name> --db <path>            name a deployment, so commands stop
                         --listen <url>                 being told its paths one at a time
@@ -124,7 +128,9 @@ const string Help = """
                                                        still open, and who is in it. What a
                                                        broker restart would interrupt
 
-      parley waiting <agent> [--with-files]            how many messages, polls and file notices await an agent
+      parley waiting <agent|role> [--with-files]       how many messages, polls and file notices
+                                                       await it; a bare role means that role on
+                                                       this machine
 
       parley instructions [<agent>]                    what you told your agents, what became of
                                                        each, and what they said back
@@ -144,7 +150,11 @@ const string Help = """
 
     project names deployments so that a machine running more than one stops being told its paths
     a flag at a time. Each project carries a store, an endpoint and optionally a node catalogue;
-    --project picks one, and a machine with exactly one configured needs no flag. A machine that
+    a command acts on the project --project names, or PARLEY_PROJECT (which `parley use <name>`
+    prints the line to set, for one terminal), or the one the repository it runs in names -- when
+    exactly one of those is a project this machine has -- or the only project there is, and refuses
+    rather than guesses. Where several are configured it says on standard error which it acted on.
+    A machine that
     names none yet is waiting for its first: the logon entry serves the manifest regardless, and
     starts a project within seconds of it being named. Where the manifest lives is `parley project
     list`; --config or PARLEY_CONFIG names a different one, for a test rig or a second account.
@@ -253,6 +263,8 @@ var logPath = TakeOption("--log", null);
 var webUiOn = TakeOption("--web-ui", null);
 var noWebUi = TakeFlag("--no-web-ui");
 var withFiles = TakeFlag("--with-files");
+var shellName = TakeOption("--shell", null);
+var clearProject = TakeFlag("--clear");
 
 // Resolved once. `serve --with-web-ui` and `autostart install` both need the address, and a
 // default written in two places is two answers to one question that agree only until somebody
@@ -347,6 +359,15 @@ if (withFiles && verb != "waiting")
     return Usage;
 }
 
+if ((shellName is not null || clearProject) && verb != "use")
+{
+    await Console.Error.WriteLineAsync(
+        "--shell and --clear are only for `parley use`, which prints the line that sets or clears a terminal's project. "
+        + $"`parley {verb}` takes neither.").ConfigureAwait(false);
+
+    return Usage;
+}
+
 if ((webUiAt is not null || noWebUi) && verb != "serve" && verb != "autostart")
 {
     await Console.Error.WriteLineAsync(
@@ -405,6 +426,22 @@ if (destroy && verb != "project")
         + $"project's store. `parley {verb}` does not.").ConfigureAwait(false);
 
     return Usage;
+}
+
+// **`use` chooses the project a terminal's commands act on.** A process cannot change the environment of the shell that
+// started it, so it prints the line that does; `UseCommand` says why that and not a saved current project.
+if (verb == "use")
+{
+    return await UseCommand.RunAsync(
+        rest,
+        shellName,
+        clearProject,
+        projectName,
+        configuredProjects,
+        Environment.GetEnvironmentVariable(EnrollmentPlan.ProjectVariable),
+        RepositoryProjects.Read(Environment.CurrentDirectory),
+        Console.Out,
+        Console.Error).ConfigureAwait(false);
 }
 
 if (verb == "project")
@@ -986,14 +1023,39 @@ if (verb == "autostart" && rest.Length == 1)
         Console.Error).ConfigureAwait(false);
 }
 
-// Selection is refused rather than guessed, for every command that acts on one deployment.
-// Several configured and none named, or a name the manifest does not describe, both end here —
-// choosing one silently acts on a deployment the operator did not ask for, and falling back
-// connects to a different one.
-if (!ProjectResolution.TrySelect(projectName, configuredProjects, out var project, out var selectionProblem))
+// **The project a command acts on comes from its context**, in this order: --project; PARLEY_PROJECT, which `parley use`
+// prints the line to set for one terminal; the repository the command runs in, when its .mcp.json names exactly one
+// project this machine describes; and the only project on the machine. Otherwise it is refused and the projects listed,
+// as before. The owner's call, made when a machine naming several projects had every command asking to be told again;
+// `ProjectResolution.TrySelect` carries why this and not a saved current project.
+var projectFromVariable = Environment.GetEnvironmentVariable(EnrollmentPlan.ProjectVariable);
+var projectFromRepository = RepositoryProjects.Read(Environment.CurrentDirectory);
+
+if (!ProjectResolution.TrySelect(
+        projectName, projectFromVariable, projectFromRepository, configuredProjects,
+        out var project, out var projectSource, out var selectionProblem))
 {
-    await Console.Error.WriteLineAsync(selectionProblem).ConfigureAwait(false);
-    return Config;
+    // **An address given explicitly is a choice, and is not refused for naming no project.** --broker and PARLEY_BROKER
+    // say exactly where to connect, which is all a project would have added for a client, and the help says explicit
+    // flags and variables win over a project. Refusing them on a machine naming several left every caller that
+    // connects by address -- a launch configuration's PARLEY_BROKER read by the waiting hook, a script pointed at one
+    // broker -- unable to ask anything. Found by the sweep over project-scoped callers. A project named that the
+    // manifest does not describe is still refused, address or not.
+    var explicitBroker = !string.IsNullOrWhiteSpace(brokerAddress)
+        || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(BrokerEndpoint.Variable));
+
+    if (!(string.IsNullOrWhiteSpace(projectName) && string.IsNullOrWhiteSpace(projectFromVariable) && explicitBroker))
+    {
+        await Console.Error.WriteLineAsync(selectionProblem).ConfigureAwait(false);
+        return Config;
+    }
+}
+
+// Said on a machine naming several, because that is where a command could have acted on another deployment: which one,
+// and what chose it. To standard error, so a script reading the answer reads only the answer.
+if (project is not null && configuredProjects.Count > 1)
+{
+    await Console.Error.WriteLineAsync($"Project: {project.Name.Value} ({projectSource}).").ConfigureAwait(false);
 }
 
 var resolvedStore = ProjectResolution.Store(databasePath, Environment.GetEnvironmentVariable, project);
@@ -1172,7 +1234,7 @@ try
         // read "0 1" as a number: it fails silently, which for that hook means never speaking again. Taken with the other
         // flags above, because anything still starting with a hyphen here was refused before the verb ran.
         case "waiting" when rest.Length == 1:
-            return await WithAgent(
+            return await WithAgentHere(
                 rest[0],
                 async a =>
                 {
@@ -1418,6 +1480,16 @@ async Task<int> WithAgent(string name, Func<AgentName, Task<int>> run)
 
     return await run(agent).ConfigureAwait(false);
 }
+
+// **`waiting` takes a bare role and completes it with this machine**, as the adapter completes PARLEY_AGENT. A launch
+// configuration names a role, so the waiting hook -- which reads one, on the agent's own machine -- had nothing else to
+// pass, and every call was refused as not an agent name: in all twenty-one enrolled repositories on the machine where
+// the sweep over project-scoped callers found it, so the hook had never spoken there. Only here: a command that acts on
+// an agent still takes the whole name, because acting on one by guessing its machine is the wrong way to be helpful.
+async Task<int> WithAgentHere(string name, Func<AgentName, Task<int>> run) =>
+    !AgentName.TryCreate(name, out _) && MachineName.TryNameHere(name, out var here)
+        ? await run(here).ConfigureAwait(false)
+        : await WithAgent(name, run).ConfigureAwait(false);
 
 // Consumes an option and its value from the argument list, or returns null.
 // Flags have to be taken here, beside the options, rather than read by the command they belong

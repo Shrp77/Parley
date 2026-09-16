@@ -30,7 +30,7 @@ Call `parley_agents`.
 If the tool is not there, Parley is not running in this session, and the useful part of the
 report is which of the three reasons it is:
 
-- **Never configured.** No `parley` entry in `.mcp.json` at the repository root. Run
+- **Never configured.** No `parley` or `parley-<project>` entry in `.mcp.json` at the repository root. Run
   `/parley:setup`.
 - **Configured since this session started.** The entry is there. MCP servers are launched when
   Claude Code starts, so a repository configured mid-session has no tools until a restart, and
@@ -95,7 +95,7 @@ repeating the claims here invites somebody to act on a description that has not 
 Two files survive a purge and a re-run, and both are the class of thing that looks like a fresh
 install and is not:
 
-- **`.mcp.json`** may carry variables from an older shape. A `parley` entry naming a store path,
+- **`.mcp.json`** may carry variables from an older shape. A `parley` or `parley-<project>` entry naming a store path,
   a sweep cadence, a retention pair or a clarify cap predates the broker, and nothing reads them
   now - they belong to the broker process. Report them; they are not harmful, but they are
   evidence that this repository was configured against a Parley that no longer exists.

@@ -54,7 +54,8 @@ public sealed record Resolved(string? Value, ValueSource Source, string? Detail 
 /// lets an existing deployment upgrade without migrating.
 /// </para>
 /// <para>
-/// <b>It never guesses which project was meant.</b> Several configured and none named is a
+/// <b>It never guesses which project was meant.</b> A project is named, set for the terminal, named by the repository a
+/// command runs in, or the only one — and several configured with nothing of those choosing is a
 /// refusal, not a choice, and a named project the manifest does not describe is a refusal rather
 /// than a fall-back. Falling back there would connect to a different deployment — plausibly a
 /// working one, silently wrong, and invisible from both ends of a message.
@@ -120,6 +121,118 @@ public static class ProjectResolution
             "Name one with --project.";
 
         return false;
+    }
+
+    /// <summary>
+    /// Chooses the project a command should act on from its context, and says what chose it.
+    /// </summary>
+    /// <param name="requested">The name given with <c>--project</c>, or null.</param>
+    /// <param name="fromVariable">The terminal's <c>PARLEY_PROJECT</c>, or null.</param>
+    /// <param name="fromRepository">The projects the repository the command runs in names; see <see cref="RepositoryProjects"/>.</param>
+    /// <param name="projects">What the manifest described.</param>
+    /// <param name="project">The chosen project, when this returns true. May be null when none applies.</param>
+    /// <param name="source">What chose it, as a phrase, when one was chosen.</param>
+    /// <param name="problem">Why no choice could be made, when this returns false.</param>
+    /// <returns><see langword="true"/> when a project was chosen, or none was needed.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="fromRepository"/> or <paramref name="projects"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>In this order: <c>--project</c>, the terminal's <c>PARLEY_PROJECT</c>, the repository, the only project.</b> The
+    /// owner's call, made when a machine naming several projects had every command asking to be told which one again. A
+    /// saved "current project" was offered and declined: chosen in one window yesterday, it would quietly apply to a purge
+    /// in another today. A terminal's choice ends with the terminal, and a repository names what it is.
+    /// </para>
+    /// <para>
+    /// <b>A context that names a project this machine does not describe is not silently passed over.</b> A terminal's
+    /// variable naming an unknown project is refused, because somebody set it and would otherwise act somewhere else. A
+    /// repository naming only projects that live elsewhere falls through to the rest of the order, because a machine with
+    /// no manifest — or with one project — must keep resolving exactly as it did; the command says which project it then
+    /// took. A repository naming two projects both described here is refused: which one is meant is not its to say.
+    /// </para>
+    /// </remarks>
+    public static bool TrySelect(
+        string? requested,
+        string? fromVariable,
+        IReadOnlyList<string> fromRepository,
+        IReadOnlyList<ProjectSettings> projects,
+        out ProjectSettings? project,
+        out string? source,
+        out string? problem)
+    {
+        ArgumentNullException.ThrowIfNull(fromRepository);
+        ArgumentNullException.ThrowIfNull(projects);
+
+        source = null;
+
+        if (!string.IsNullOrWhiteSpace(requested))
+        {
+            var chosen = TrySelect(requested, projects, out project, out problem);
+
+            source = chosen ? "named with --project" : null;
+
+            return chosen;
+        }
+
+        if (!string.IsNullOrWhiteSpace(fromVariable))
+        {
+            var named = fromVariable.Trim();
+
+            project = projects.FirstOrDefault(p => string.Equals(p.Name.Value, named, StringComparison.Ordinal));
+
+            if (project is not null)
+            {
+                source = "from PARLEY_PROJECT";
+                problem = null;
+
+                return true;
+            }
+
+            problem = projects.Count == 0
+                ? $"PARLEY_PROJECT is '{named}', and this machine has no projects configured. "
+                  + "Clear it with `parley use --clear`, or add the project with `parley project add`."
+                : $"PARLEY_PROJECT is '{named}', and this machine names {Names(projects)}. "
+                  + "Choose one with `parley use <name>`, clear it with `parley use --clear`, or name one with --project.";
+
+            return false;
+        }
+
+        var present = projects
+            .Where(p => fromRepository.Contains(p.Name.Value, StringComparer.Ordinal))
+            .ToList();
+
+        if (present.Count == 1)
+        {
+            project = present[0];
+            source = "from this repository's .mcp.json";
+            problem = null;
+
+            return true;
+        }
+
+        if (present.Count > 1)
+        {
+            project = null;
+            problem = $"This repository answers in {Names(present)}, and which one is meant is not its to say. "
+                      + "Name one with --project, or choose one for this terminal with `parley use <name>`.";
+
+            return false;
+        }
+
+        var selected = TrySelect(null, projects, out project, out problem);
+
+        if (selected && project is not null)
+        {
+            source = "the only project on this machine";
+        }
+        else if (!selected)
+        {
+            problem = problem?.Replace(
+                "Name one with --project.",
+                "Name one with --project, or choose one for this terminal with `parley use <name>`.",
+                StringComparison.Ordinal);
+        }
+
+        return selected;
     }
 
     /// <summary>

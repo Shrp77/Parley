@@ -9,7 +9,7 @@ Takes one or more file names. Each opens in the editor this machine has register
 location, so a correction the person saves is the shared file's new content: its hash changes, and every agent that
 fetched it is told.
 
-Run, with the names and any `--conversation <id>` or `--project <name>` the person gave:
+Run, with the names and any `--conversation <id>` or `--project <name>` the person gave - and, when this machine names more than one project and they named none, `--project` with the one this repository answers in (the `PARLEY_PROJECT` of its `parley-<project>` entry in `.mcp.json`; ask which if it has several):
 
 ```
 parley files open $ARGUMENTS

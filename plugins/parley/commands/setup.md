@@ -266,7 +266,8 @@ machine and an entry here can only ever mean an agent on it.
 
 ## 5. Check the broker is reachable
 
-`parley registry` answers if one is running, and says how to start one if not. This is worth
+`parley registry` answers if one is running, and says how to start one if not - `parley --project <name> registry`
+when this machine names more than one project, since it will not choose between them. This is worth
 doing before the restart rather than after: a repository configured against a broker that is not
 there produces a server that exits at launch, which the user meets as a plugin that installed
 and did nothing.

@@ -526,13 +526,35 @@ if ($replacingBroker) {
     # them is not this script's job.
     $parleyOnPath = Get-Command parley -ErrorAction SilentlyContinue
 
+    # **Asked of each project, because `parley open` refuses to choose between several.** On a machine naming more than
+    # one, a bare `parley open` could never answer, so this said it could not ask on exactly the machines with the most in
+    # flight -- found by reinstalling one. Names come from `parley project list`, whose first column is the name and whose
+    # second is the endpoint; a machine naming none is asked once, of the broker it would default to.
+    $inFlight = @()
+    $unasked = @()
+    $asked = $false
+
     if ($parleyOnPath) {
-        $inFlight = & parley open 2>$null
-        $asked = $LASTEXITCODE -eq 0
-    }
-    else {
-        $inFlight = $null
-        $asked = $false
+        $names = @(& parley project list 2>$null | ForEach-Object { if ("$_" -match '^([a-z][a-z0-9-]*)\s+\S+://') { $Matches[1] } })
+
+        if ($names.Count -eq 0) {
+            $inFlight = @(& parley open 2>$null)
+            $asked = $LASTEXITCODE -eq 0
+        }
+        else {
+            $asked = $true
+
+            foreach ($name in $names) {
+                $said = @(& parley --project $name open 2>$null)
+
+                if ($LASTEXITCODE -ne 0) {
+                    $unasked += $name
+                    continue
+                }
+
+                $inFlight += @($said | Where-Object { $_ -is [string] -and $_.Trim() } | ForEach-Object { "${name}: $_" })
+            }
+        }
     }
 
     if (-not $asked) {
@@ -540,7 +562,11 @@ if ($replacingBroker) {
         # so: the two readings look identical from here and lead somewhere completely different.
         Write-Warning 'Could not ask the broker what is open, so this cannot say what stopping it will interrupt. That is not the same as nothing being in flight.'
     }
-    elseif ($inFlight) {
+    else {
+        if ($unasked.Count -gt 0) {
+            Write-Warning "Could not ask $($unasked -join ', ') what is open, so this cannot say what stopping the broker will interrupt there. That is not the same as nothing being in flight."
+        }
+
         $lines = @($inFlight | Where-Object { $_ -is [string] -and $_.Trim() })
 
         if ($lines.Count -gt 0) {
@@ -838,4 +864,7 @@ elseif ($webUi) {
 }
 
 Write-Host 'Next, in each repository you want an agent in:   /parley:setup' -ForegroundColor White
-Write-Host 'Restart the editor there, then check it arrived:  parley registry' -ForegroundColor White
+# `parley registry` refuses to choose between several projects, so the check it names says which to pass.
+$projectCount = @(& $parley project list 2>$null | Where-Object { "$_" -match '^[a-z][a-z0-9-]*\s+\S+://' }).Count
+$check = if ($projectCount -gt 1) { 'parley --project <name> registry' } else { 'parley registry' }
+Write-Host "Restart the editor there, then check it arrived:  $check" -ForegroundColor White

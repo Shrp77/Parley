@@ -285,13 +285,27 @@ parley project add acme --db /src/acme/.parley/parley.db --listen http://127.0.0
 parley --project acme registry
 ```
 
-The list lives in one file per machine, under your own configuration directory;
-`parley project list` says where and reports which brokers are answering. `--config`, or
-`PARLEY_CONFIG`, names a different file — for a test rig or a second account, not for one
-repository to have its own, which would be the disagreement this ends rather than a use of it. With one project
-configured nothing needs naming. With several and none named, every command **refuses and lists
-them** rather than choosing — acting on a deployment nobody asked for produces output that looks
-entirely normal. `parley serve` is the exception, and starts them all.
+The list lives in one file per machine, under your own configuration directory; `parley project
+list` says where and reports which brokers are answering. `--config`, or `PARLEY_CONFIG`, names a
+different file — for a test rig or a second account, not for one repository to have its own, which
+would be the disagreement this ends rather than a use of it. A command acts on the project
+`--project` names; failing that, on `PARLEY_PROJECT`, which `parley use <name>` prints the line to
+set for one terminal; failing that, on the one the repository you run it in names in its
+`.mcp.json`, when exactly one of the projects it names is on this machine; and failing that, on the
+only project there is. On a machine naming several it says on standard error which project it acted
+on and what chose it. Otherwise it **refuses and lists them** rather than choosing — acting on a
+deployment nobody asked for produces output that looks entirely normal. `parley serve` is the
+exception, and starts them all.
+
+```
+parley use acme                     # prints the line for PowerShell, bash and cmd
+Invoke-Expression (parley use acme --shell powershell)
+eval "$(parley use acme --shell posix)"
+parley use                          # which project a command here would act on, and why
+```
+
+The choice lasts until the terminal closes. There is deliberately no saved "current project": chosen
+in one window, it would quietly apply to a purge in another.
 
 **Explicit paths still win.** `--broker` and the environment variables below override anything a
 project says. **`parley serve --db <path>`, `parley autostart install --db <path>` and `PARLEY_DB`
@@ -645,7 +659,7 @@ parley export <conversation>        every message in a discussion, across agents
 parley force-conclude <conv>        close a discussion over its participants' votes
 parley prune                        apply the retention policy now
 parley refusals                     what the message size cap refused, and how far over
-parley waiting <agent>              how many messages and polls await an agent;
+parley waiting <agent|role>         how many messages and polls await an agent;
                                     --with-files adds the file notices waiting
 parley files list                   every placed file: size, sha256, who placed it, and how
                                     much each agent has placed
@@ -661,6 +675,7 @@ parley web-ui [<url>]               the web UI in a browser: every project, the 
 parley serve                        run the broker: the one process that opens the store
 parley up                           run this machine's node, so its agents can be started
 parley project list|add|remove      the deployments this machine is configured for
+parley use [<project>]              the project this terminal's commands act on
 parley --help                       the same list, on stdout, exiting zero
 ```
 

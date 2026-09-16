@@ -1,4 +1,6 @@
 ﻿using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using Parley.Core;
 using Parley.Store;
@@ -348,6 +350,15 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         start.Environment["PATH"] =
             ToolDirectory.Value + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH");
 
+        // A test that names projects says which manifest the tool reads; every other one reads none, so the machine
+        // running the suite never lends it a project.
+        start.Environment["PARLEY_CONFIG"] = _projects ?? Path.Combine(_workspace, "no-projects.json");
+
+        if (_machine is not null)
+        {
+            start.Environment["PARLEY_MACHINE"] = _machine;
+        }
+
         using var process = Process.Start(start)!;
 
         process.StandardInput.Write(JsonSerializer.Serialize(fields));
@@ -572,6 +583,175 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Empty(Run("SubagentStop", new { stop_hook_active = false }));
         Assert.Empty(Run("TeammateIdle"));
         Assert.Empty(Run("PreToolUse"));
+    }
+
+    /// <summary>The project manifest the tool reads in a test that names projects, or null.</summary>
+    private string? _projects;
+
+    /// <summary>
+    /// Names two projects on this machine — the served broker as <c>alpha</c>, and a <c>beta</c> nothing listens for —
+    /// so that `parley` refuses to choose when a caller names neither.
+    /// </summary>
+    private void NameTwoProjects()
+    {
+        _projects = Path.Combine(_workspace, "projects.json");
+
+        Parley.Configuration.ProjectManifest.Write(
+            _projects,
+            [
+                new ProjectSettings(ProjectName.Create("alpha"), Path.Combine(_workspace, "alpha.db"), _broker!.Addresses[0], null, null),
+                new ProjectSettings(ProjectName.Create("beta"), Path.Combine(_workspace, "beta.db"), "http://127.0.0.1:1", null, null),
+            ]);
+    }
+
+    /// <summary>Writes launch entries the way enrolment into named projects writes them.</summary>
+    /// <param name="entries">Each entry's key and environment.</param>
+    private void WriteEntries(params (string Key, Dictionary<string, string> Env)[] entries)
+    {
+        var servers = entries.ToDictionary(
+            e => e.Key,
+            e => (object)new { command = "parley-mcp", env = e.Env },
+            StringComparer.Ordinal);
+
+        File.WriteAllText(Path.Combine(_workspace, ".mcp.json"), JsonSerializer.Serialize(new { mcpServers = servers }));
+    }
+
+    [Theory]
+    [InlineData("UserPromptSubmit")]
+    [InlineData("PostToolBatch")]
+    public async Task A_repository_enrolled_into_a_named_project_is_told_its_mail(string hookEvent)
+    {
+        // Found by the sweep over project-scoped callers: the hook read only the `parley` key, and enrolment into a
+        // named project writes `parley-<project>` with PARLEY_PROJECT -- so on a machine where every repository was
+        // enrolled that way, every session was told nothing, and `parley waiting` would have refused to choose anyway.
+        await SeedAsync(TestContext.Current.CancellationToken);
+        NameTwoProjects();
+        WriteEntries(("parley-alpha", new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["PARLEY_AGENT"] = "orders@test",
+            ["PARLEY_PROJECT"] = "alpha",
+        }));
+
+        Assert.Contains("1 uncollected message", Run(hookEvent), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_entry_key_names_the_project_when_the_entry_does_not()
+    {
+        await SeedAsync(TestContext.Current.CancellationToken);
+        NameTwoProjects();
+        WriteEntries(("parley-alpha", new Dictionary<string, string>(StringComparer.Ordinal) { ["PARLEY_AGENT"] = "orders@test" }));
+
+        Assert.Contains("1 uncollected message", Run("UserPromptSubmit"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_repository_answering_in_two_projects_hears_from_the_one_that_answers()
+    {
+        // One inbox per project. Beta's broker is not running, which costs its entry a moment and says nothing; alpha's
+        // mail is still reported, rather than the whole check going quiet over one project.
+        await SeedAsync(TestContext.Current.CancellationToken);
+        NameTwoProjects();
+        WriteEntries(
+            ("parley-beta", new Dictionary<string, string>(StringComparer.Ordinal) { ["PARLEY_AGENT"] = "orders@test", ["PARLEY_PROJECT"] = "beta" }),
+            ("parley-alpha", new Dictionary<string, string>(StringComparer.Ordinal) { ["PARLEY_AGENT"] = "orders@test", ["PARLEY_PROJECT"] = "alpha" }));
+
+        Assert.Contains("1 uncollected message", Run("UserPromptSubmit"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_entry_that_connects_by_address_is_asked_on_a_machine_naming_several_projects()
+    {
+        // The other half of the sweep's finding: `parley --broker <address>` was refused on a machine naming several
+        // projects, so a launch configuration written with PARLEY_BROKER could not be asked either.
+        await SeedAsync(TestContext.Current.CancellationToken);
+        NameTwoProjects();
+        WriteManifest("orders@test");
+
+        Assert.Contains("1 uncollected message", Run("UserPromptSubmit"), StringComparison.Ordinal);
+    }
+
+    /// <summary>The machine name the hook's own environment carries in a test that sets one, or null.</summary>
+    private string? _machine;
+
+    [Fact]
+    public async Task A_launch_configuration_naming_a_role_is_asked_about_that_role_on_this_machine()
+    {
+        // Enrolment writes PARLEY_AGENT as a role and the adapter appends the machine. The hook passed the role as it
+        // stood and `parley waiting` refused it as not an agent name -- every call, in every enrolled repository on the
+        // machine where the sweep found it, so the hook had never spoken there.
+        await SeedAsync(TestContext.Current.CancellationToken);
+        NameTwoProjects();
+        _machine = "test";
+        WriteEntries(("parley-alpha", new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["PARLEY_AGENT"] = "orders",
+            ["PARLEY_PROJECT"] = "alpha",
+        }));
+
+        Assert.Contains("1 uncollected message", Run("UserPromptSubmit"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_machine_the_entry_names_completes_the_role_rather_than_the_hosts_own()
+    {
+        // A container names its machine in the entry, because its host name changes at every start, and the adapter
+        // takes that name. The hook's own environment names a different machine here, so only the entry's can find it.
+        await SeedAsync(TestContext.Current.CancellationToken);
+        NameTwoProjects();
+        _machine = "somewhere-else";
+        WriteEntries(("parley-alpha", new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["PARLEY_AGENT"] = "orders",
+            ["PARLEY_PROJECT"] = "alpha",
+            ["PARLEY_MACHINE"] = "test",
+        }));
+
+        Assert.Contains("1 uncollected message", Run("UserPromptSubmit"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_project_whose_broker_never_answers_does_not_silence_the_others()
+    {
+        // Found by the review gate. Asking once per entry made every entry's failure the whole run's: a timeout was
+        // raised out of `waiting`, out of `main` and into the blanket `except` at the bottom of the hook, so the
+        // entries after it were never asked and the counts already gathered were discarded. One project slow to
+        // answer silenced the mail in all the others.
+        //
+        // The other unreachable-project test above cannot see it, and that is the point of this one: nothing listens
+        // on its address, so the connection is *refused* — back in a moment, non-zero, handled since this file was
+        // written. Here something accepts the connection and then says nothing, which is what a broker wedged or
+        // mid-restart looks like from the outside, and the only shape that reaches the timeout.
+        await SeedAsync(TestContext.Current.CancellationToken);
+        NameTwoProjects();
+
+        var blackHole = new TcpListener(IPAddress.Loopback, 0);
+
+        blackHole.Start();
+
+        try
+        {
+            var held = $"http://127.0.0.1:{((IPEndPoint)blackHole.LocalEndpoint).Port}";
+
+            // Named first, so its entry is asked first and alpha's mail depends on the run surviving it.
+            WriteEntries(
+                ("parley-held", new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["PARLEY_AGENT"] = "orders@test",
+                    ["PARLEY_BROKER"] = held,
+                }),
+                ("parley-alpha", new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["PARLEY_AGENT"] = "orders@test",
+                    ["PARLEY_PROJECT"] = "alpha",
+                }));
+
+            Assert.Contains("1 uncollected message", Run("UserPromptSubmit"), StringComparison.Ordinal);
+        }
+        finally
+        {
+            blackHole.Stop();
+        }
     }
 
     [Fact]

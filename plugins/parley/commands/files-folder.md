@@ -8,7 +8,7 @@ disable-model-invocation: true
 Opens the folder holding one conversation's files in this machine's file browser, or the whole file location when no
 conversation is given.
 
-Run, with any `--conversation <id>` or `--project <name>` the person gave:
+Run, with any `--conversation <id>` or `--project <name>` the person gave - and, when this machine names more than one project and they named none, `--project` with the one this repository answers in (the `PARLEY_PROJECT` of its `parley-<project>` entry in `.mcp.json`; ask which if it has several):
 
 ```
 parley files folder $ARGUMENTS

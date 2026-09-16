@@ -31,7 +31,7 @@ call `parley_inbox` again for them."*
 | `parley files prune` | Says how many files and how much space, asks for the project's name typed back (`--yes-remove-every-file` to skip), removes everything, reports. |
 | `parley files open <name>... [--conversation <id>]` | On the broker's machine, opens each file with its registered editor (only `.md` and `.txt` files exist in the location); elsewhere prints `<name> is on machine <X>, at <Y>`. |
 | `parley files folder [--conversation <id>]` | On the broker's machine, opens the conversation's folder (or the whole location) in the file browser; elsewhere prints `The files are on machine <X>, in <Y>`. |
-| `parley waiting <agent> --with-files` | Prints a third count, the file change notices waiting, after the messages and closure polls. Without the flag the line keeps its two counts, because a waiting hook installed before files existed splits it on its first space. The flag is refused on every other command. |
+| `parley waiting <agent> --with-files` (a bare role is that role on this machine) | Prints a third count, the file change notices waiting, after the messages and closure polls. Without the flag the line keeps its two counts, because a waiting hook installed before files existed splits it on its first space. The flag is refused on every other command. |
 
 Every command takes `--project <name>` like the existing operator commands. Output is flattened through the same
 line-safety every operator report uses: names are other participants' text.

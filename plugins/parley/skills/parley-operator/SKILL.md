@@ -64,9 +64,14 @@ parley project add orders --db C:/parley/orders.db --listen http://127.0.0.1:517
 parley --project orders registry
 ```
 
-With exactly one project configured, `--project` is unnecessary. With more than one and none
-named, **every command refuses and lists them rather than choosing** - picking silently would
-act on a deployment nobody asked for, and the output would look entirely normal.
+A command acts on the project `--project` names; failing that, `PARLEY_PROJECT`, which `parley
+use <name>` prints the line to set for one terminal; failing that, the one the repository it
+runs in names in `.mcp.json`, when exactly one of them is a project this machine has; failing
+that, the only project. With several and nothing of those choosing, **every command refuses and
+lists them rather than choosing** - picking silently would act on a deployment nobody asked for,
+and the output would look entirely normal. On such a machine each command says on standard error
+which project it acted on and why. Run from inside a repository enrolled in one project, nothing
+needs naming.
 
 **A machine with no projects is an ordinary machine.** The manifest is optional, nothing reports
 its absence, and every flag and environment variable that worked before still works and still
@@ -128,6 +133,7 @@ parley terminal                       the same deployment in this terminal; need
                                       (its own tool: parley-terminal, installed separately)
 
 parley project list                   what this machine is configured for
+parley use [<name>] [--shell <name>]  the project this terminal's commands act on (--clear to stop)
 parley project add <name> --db <path> --listen <url>    name a deployment
 parley project set <name> [--db] [--listen] [--node-config] [--description]   change one
 parley project remove <name>          forget how to reach one; deletes nothing
@@ -161,7 +167,7 @@ parley clarifications                 how deep clarification went, and whether a
 parley results                        what Results reported: outcomes, and what blocked
 parley flags                          open work nobody collected or nobody is moving, and
                                       conversations waiting only on somebody's vote
-parley waiting <agent>                how many messages and polls await an agent
+parley waiting <agent|role>           how many messages and polls await an agent
 parley open                           conversations with an exchange still open, and who is in
                                       them; what stopping the broker would interrupt
 parley instructions [<agent>]         what you told your agents, what became of each, and what

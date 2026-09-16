@@ -689,6 +689,65 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   used `PARLEY_NODE_CONFIG` — which the README and the operator skill did not say either, describing only the
   per-entry rule. The ledger has each probe.
 
+  **0.27.1 is a sweep of every caller that acts on one deployment, on a machine naming several** — asked for by the
+  owner after the reinstall's in-flight warning said it could not ask. Every client command already refused to choose
+  between several projects when none was named, as documented; the defects were in what calls them.
+
+  - **The waiting hook had been silent in every repository enrolled into a named project.** It read only the `parley`
+    key in `.mcp.json`, and enrolment into a project writes `parley-<project>`: on the owner's machine it found an agent
+    in none of the twenty-one. It reads every `parley` and `parley-<project>` entry now, asks each by its address or
+    its project — the order the adapter resolves them in — and adds the counts, since a repository answering in two
+    projects has an inbox in each. **And it could not have spoken even with the right key**: enrolment writes
+    `PARLEY_AGENT` as a role and the adapter appends the machine, while `parley waiting` refused a bare role as not an
+    agent name. Found only by running the fixed hook against the live repositories — all twenty-one were found and all
+    twenty-one refused. `waiting` completes a bare role with this machine now, through the adapter's own
+    `MachineName.TryNameHere`, and the hook hands on a `PARLEY_MACHINE` its entry names; commands that act on an agent
+    still take the whole name.
+  - **`--broker` and `PARLEY_BROKER` were refused on a machine naming several projects**, though they say exactly where
+    to connect and the help says explicit flags and variables win. An address given explicitly now satisfies selection
+    when no project is named; a project named that the manifest does not describe is still refused.
+  - **Both installers asked `parley open` with no project**, so on a machine naming several they always said they
+    could not ask what a reinstall would interrupt. They ask each project in turn, and name any that could not be
+    asked. Their closing hint names `--project` when several are named.
+  - The `/parley:files-*` commands take the project from the repository's own `parley-<project>` entry when the person
+    names none; `/parley:setup` says `registry` needs `--project` on such a machine; `/parley:status` recognises the
+    per-project key.
+
+  **Then a command's project came to be taken from its context, on the owner's call.** `--project`; then
+  `PARLEY_PROJECT`, which the new `parley use <name>` prints the line to set for one terminal, since a process cannot
+  change its parent shell's environment; then the repository a command runs in, when the `.mcp.json` at its root
+  names exactly one project this machine describes; then the only project. With several and nothing choosing, it
+  still refuses and lists them. On a machine naming several, each command says on standard error which project it
+  acted on and what chose it. A saved "current project" was offered and declined: chosen in one window, it would
+  quietly apply to a purge in another. `RepositoryProjects` finds the repository by its `.git` and reads only that
+  `.mcp.json`, so a launch configuration in a home directory cannot choose for a folder that is not a repository; a
+  repository naming only projects that live elsewhere falls through, so a machine with one project resolves as it
+  did. `ToolProcess` now runs the tool from a directory in no repository, because the suite runs inside this one,
+  whose `.mcp.json` on a registered machine names a real project.
+
+  **The review gate was met on the final code, on all three lenses.** Each finding below was reproduced by probe
+  before it was fixed; the ledger is `REVIEW-LEDGER.md`.
+
+  - **One project slow to answer silenced the mail in every other project.** Asking once per launch entry made every
+    entry's failure the whole run's: a broker that accepts a connection and never answers raised a timeout out of
+    `main` and into the hook's blanket `except`, so the entries after it were never asked and the counts already
+    gathered went into the traceback with everything else. Every entry is asked independently now, under a timeout
+    per question and a budget across all of them. The test that holds it accepts a connection and says nothing,
+    because a *refused* connection comes back in a moment and is the shape the existing test already used.
+  - **The README, the operator skill and `parley --help` each stated a narrower rule than the code applies**, saying
+    the repository chooses when it names exactly one project. What decides is the intersection with this machine's
+    manifest, which is what lets a repository enrolled in projects on two machines resolve on each of them — so a
+    repository naming one project here and one elsewhere resolves, where all three documents predicted a refusal.
+  - **The plugin's own way of checking the hook could only ever answer "nothing waiting".**
+    `plugins/parley/README.md` gives a payload carrying no event name, and the script decides everything from the
+    event, including whether to speak at all: it printed nothing and never asked a broker, under a sentence saying
+    silence means nothing is waiting. The recipe names an event now, and the table row beside it names all four
+    events the plugin declares rather than two.
+
+  Two smaller things went with them: the old selection comment left standing above its replacement in `Program.cs`,
+  and the clause `--help` was missing about saying which project a command acted on. 3,698 tests pass across every
+  suite.
+
 - **Previous plan**: `specs/014-work-across-repositories/` — 0.26.0, **protocol 0.5**, schema 8. Parley
   exists to get work done across repositories, and 0.4 said otherwise: every delivery told an agent a
   peer's message could not direct its work, and `out_of_scope` told it to refer rather than do. Agents
