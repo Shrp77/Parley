@@ -50,7 +50,7 @@ public sealed class RosterConsistencyTests
         foreach (var page in new[]
         {
             "src/Parley.Web/Pages/Projects/Agents.cshtml",
-            "src/Parley.Web/Pages/Conversations/Detail.cshtml"
+            "src/Parley.Web/Pages/Conversations/_Conversation.cshtml"
         })
         {
             Assert.Contains(
@@ -80,7 +80,7 @@ public sealed class RosterConsistencyTests
         // so the anchors rendered as the text "m@message.Id" and every tick pointed at nothing.
         // The page still looked right, which is why this is asserted rather than eyeballed.
         var markup = File.ReadAllText(
-            RepositoryPath("src/Parley.Web/Pages/Conversations/Detail.cshtml"));
+            RepositoryPath("src/Parley.Web/Pages/Conversations/_Conversation.cshtml"));
 
         Assert.Contains("id=\"@($\"m{message.Id}\")\"", markup, StringComparison.Ordinal);
         Assert.Contains("href=\"@($\"#m{message.Id}\")\"", markup, StringComparison.Ordinal);
@@ -110,11 +110,15 @@ public sealed class RosterConsistencyTests
         //
         // Matched on the agent's own name rather than its palette slot, so the marking cannot
         // drift from whatever colour it happened to be given.
+        // The markup is the partial the page and its follow read both render; the script that marks it stays on the
+        // page, because a followed region is replaced and a script inside it would be run again on every swap.
         var markup = File.ReadAllText(
+            RepositoryPath("src/Parley.Web/Pages/Conversations/_Conversation.cshtml"));
+        var page = File.ReadAllText(
             RepositoryPath("src/Parley.Web/Pages/Conversations/Detail.cshtml"));
 
         Assert.Contains("data-agent=\"@message.From.Value\"", markup, StringComparison.Ordinal);
-        Assert.Contains("'[data-agent=\"' + agent + '\"]'", markup, StringComparison.Ordinal);
+        Assert.Contains("'[data-agent=\"' + agent + '\"]'", page, StringComparison.Ordinal);
         Assert.Contains("id=\"kin\"", markup, StringComparison.Ordinal);
         Assert.Contains("role=\"status\"", markup, StringComparison.Ordinal);
 

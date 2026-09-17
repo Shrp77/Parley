@@ -353,7 +353,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 reply.TotalBytes,
                 string.IsNullOrEmpty(reply.NextPageToken) ? null : reply.NextPageToken),
             [.. reply.Placements.Select(p => new FilePlacementCount(
-                p.Agent, p.Placements, p.Bytes, Read(p.LastUtc) ?? DateTimeOffset.MinValue))]);
+                p.Agent, p.Placements, p.Bytes, Read(p.LastUtc) ?? DateTimeOffset.MinValue))],
+            Math.Max(0, reply.FilesNotListed));
     }
 
     /// <inheritdoc/>
@@ -444,6 +445,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         Wire.FileRejection.ExtensionNotAllowed => FileRejection.ExtensionNotAllowed,
         Wire.FileRejection.NotFetched => FileRejection.NotFetched,
         Wire.FileRejection.TooManyNames => FileRejection.TooManyNames,
+        Wire.FileRejection.SafeNameTaken => FileRejection.SafeNameTaken,
         _ => throw new InvalidOperationException(
             $"The broker refused a file operation for a reason this build does not know ({rejection}). It speaks a different protocol.")
     };

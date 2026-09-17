@@ -396,10 +396,11 @@ public sealed class FileEdgesOverTheWireTests
     [Theory]
     [InlineData("COM", 0xB9, ".md")]
     [InlineData("LPT", 0xB2, ".txt")]
-    public async Task A_name_some_windows_reserve_with_a_superscript_digit_is_refused_or_crosses_exactly(string stem, int superscript, string extension)
+    public async Task A_name_some_windows_reserve_with_a_superscript_digit_is_renamed_to_one_nothing_reserves(string stem, int superscript, string extension)
     {
-        // Older Windows reserves COM¹ to LPT³ as devices; Windows 11 and every other platform write them as files. Either
-        // answer is acceptable. A placement that fails as a call, or lands as something other than the bytes sent, is not.
+        // Older Windows reserves COM¹ to LPT³ as devices; Windows 11 and every other platform write them as files. The
+        // probe used to accept either answer. A superscript is outside the set now, so the name becomes COM_.md, which no
+        // Windows reserves, and it must land as exactly the bytes sent.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
@@ -408,14 +409,12 @@ public sealed class FileEdgesOverTheWireTests
         var content = Text("device probe");
 
         var placed = await FileWire.PlaceAsync(billing.Client, Billing, name, content, "pricing", Ct);
+        var safe = stem + "_" + extension;
 
-        if (placed.Rejection != Wire.FileRejection.None)
-        {
-            return;
-        }
-
-        Assert.Equal(content, await File.ReadAllBytesAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), name), Ct));
-        Assert.Equal(placed.Sha256, (await FileWire.FetchAndReportAsync(orders.Client, Orders, name, "pricing", Ct)).Sha256);
+        Assert.Equal(Wire.FileRejection.None, placed.Rejection);
+        Assert.Equal(safe, placed.Name);
+        Assert.Equal(content, await File.ReadAllBytesAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), safe), Ct));
+        Assert.Equal(placed.Sha256, (await FileWire.FetchAndReportAsync(orders.Client, Orders, safe, "pricing", Ct)).Sha256);
     }
 
     [Fact]

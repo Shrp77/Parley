@@ -106,6 +106,44 @@ public sealed class BrokerLink : IAsyncDisposable
     /// </value>
     public Wire.Notice Waiting { get; private set; } = new();
 
+    /// <summary>Raised on the pump's thread each time the broker sends a notice, after <see cref="Waiting"/> is updated.</summary>
+    /// <remarks>
+    /// A signal and nothing more: a handler reads <see cref="Waiting"/> for the counts. It must return quickly, because
+    /// the pump reading the broker's stream is the thread that raises it.
+    /// </remarks>
+    public event EventHandler? NoticeReceived;
+
+    /// <summary>Raised after this agent collected its inbox, once <see cref="Waiting"/> holds what is left.</summary>
+    /// <remarks>
+    /// The broker posts a notice when mail arrives and never when a drain takes it, so without this the count an adapter
+    /// holds only ever rises — and anything that tells the model once per rise would tell it once for ever.
+    /// </remarks>
+    public event EventHandler? Collected;
+
+    /// <summary>Records that this agent collected its inbox, and reads what is still waiting.</summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>A task that completes when <see cref="Collected"/> has been raised.</returns>
+    /// <remarks>
+    /// Best effort. The read is one more call to a broker that has just answered the drain; if it fails, the counts are
+    /// taken as empty rather than left as they were, because a stale count read as new mail is a turn spent finding
+    /// nothing, and the broker's next notice corrects either.
+    /// </remarks>
+    public async Task CollectedAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            Waiting = await Agents.WaitingAsync(
+                new Wire.WaitingRequest { Agent = Agent.Value }, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (RpcException)
+        {
+            Waiting = new Wire.Notice();
+        }
+
+        Collected?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <summary>
     /// Connects to the broker and attaches this agent.
     /// </summary>
@@ -214,6 +252,7 @@ public sealed class BrokerLink : IAsyncDisposable
                     if (received.EventCase == Wire.Event.EventOneofCase.Notice)
                     {
                         Waiting = received.Notice;
+                        NoticeReceived?.Invoke(this, EventArgs.Empty);
                     }
                 }
             }

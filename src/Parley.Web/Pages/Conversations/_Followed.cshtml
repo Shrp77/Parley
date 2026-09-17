@@ -1,0 +1,23 @@
+@model Parley.Web.Pages.Conversations.DetailModel
+@using System.Text.Encodings.Web
+@*
+    The followed region of a conversation's page, and the whole of what the Follow handler returns.
+
+    Rendered once, written out to text only to take a digest of it, and then written as the content
+    Razor produced -- never as a raw string, which RenderingTests forbids on every page and which this
+    has no need of. The digest is what lets a following page do nothing at all when nothing changed: it
+    compares the digest it has with the one it is sent, and only a difference touches the page. A digest
+    of the rendered markup rather than of the data behind it, because a data fingerprint is a list of
+    what the partial reads, and the first edit that reads one more thing without adding it to the list
+    would be a transcript that stopped following that thing and said nothing.
+*@
+@{
+    var rendered = await Html.PartialAsync("_Conversation", Model);
+    using var written = new StringWriter();
+    rendered.WriteTo(written, HtmlEncoder.Default);
+    var seen = Parley.Web.Pages.Conversations.DetailModel.Digest(written.ToString());
+}
+<div id="followed"
+     data-seen="@seen"
+     data-follow="@Model.FollowPath"
+     data-participants="@string.Join(", ", Model.Participants.Select(p => p.Value))">@rendered</div>

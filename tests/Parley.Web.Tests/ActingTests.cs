@@ -99,7 +99,8 @@ public sealed class ActingTests : IClassFixture<WebApplicationFactory<Program>>
         // will not change it.
         var page = File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Projects/Act.cshtml.cs"));
 
-        Assert.Contains("not connected, so nothing was delivered", page, StringComparison.Ordinal);
+        // The shared sentence rather than a copy: every surface said the same wrong thing until it was one constant.
+        Assert.Contains("InstructionWording.Undeliverable", page, StringComparison.Ordinal);
         Assert.Contains("The turn did not complete", page, StringComparison.Ordinal);
     }
 

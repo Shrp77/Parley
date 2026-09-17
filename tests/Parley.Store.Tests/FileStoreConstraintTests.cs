@@ -85,6 +85,10 @@ public sealed class FileStoreConstraintTests : IDisposable
     [InlineData("LPT1.txt")]
     [InlineData("con.notes.md")]
     [InlineData("a.m")]
+    [InlineData("a b.md")]
+    [InlineData("a+b.md")]
+    [InlineData("a~b.md")]
+    [InlineData("Übersicht.md")]
     public void A_name_breaking_a_rule_is_refused(string name)
     {
         Refused(() => File("pricing", name.ToUpperInvariant(), name));
@@ -106,6 +110,13 @@ public sealed class FileStoreConstraintTests : IDisposable
     public void A_key_that_is_not_upper_case_is_refused()
     {
         Refused(() => File("pricing", "notes.md", "notes.md"));
+    }
+
+    [Fact]
+    public void A_key_that_is_another_names_is_refused()
+    {
+        // Upper case, and a different file's key: a second name for one file, which the key exists to prevent.
+        Refused(() => File("pricing", "OTHER.MD", "notes.md"));
     }
 
     [Theory]

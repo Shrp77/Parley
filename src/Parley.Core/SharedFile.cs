@@ -66,7 +66,28 @@ public sealed record SharedFilePage(
 /// </summary>
 /// <param name="Page">The page.</param>
 /// <param name="Placements">How many placements and bytes each agent has made.</param>
-public sealed record SharedFileListing(SharedFilePage Page, IReadOnlyList<FilePlacementCount> Placements);
+/// <param name="NotListed">
+/// Files in the folders listed whose names break the rules of SPEC.md §9.5, and so are in no list. A count and never
+/// the names, which are text nothing has checked.
+/// </param>
+public sealed record SharedFileListing(SharedFilePage Page, IReadOnlyList<FilePlacementCount> Placements, int NotListed = 0)
+{
+    /// <summary>The sentence a surface shows when <see cref="NotListed"/> is more than zero.</summary>
+    /// <remarks>
+    /// One sentence for every surface, so the terminal, the web UI and the command line say the same thing about the
+    /// same files. It says where the rule is broken rather than naming the files, and what to do.
+    /// </remarks>
+    public string? NotListedSentence => NotListedSentenceFor(NotListed);
+
+    /// <summary>The sentence for a count of files not listed.</summary>
+    /// <param name="notListed">The count.</param>
+    /// <returns>The sentence, or <see langword="null"/> when the count is zero.</returns>
+    public static string? NotListedSentenceFor(int notListed) => notListed <= 0
+        ? null
+        : $"{notListed} file(s) in these folders are not listed, because their names break the rules: a name uses only " +
+          $"{SharedFileName.AllowedCharactersInWords}, ends in .md or .txt, and does not begin with a dot. Rename them " +
+          "on disk to list them.";
+}
 
 /// <summary>
 /// Where a file or folder is, or why there is no such thing to point at.

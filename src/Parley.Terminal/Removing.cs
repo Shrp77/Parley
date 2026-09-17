@@ -226,7 +226,7 @@ internal static class Removing
         // which is what the command said, line by line.
         var gone = code == 0 || !StillNamed(manifestPath, project.Name.Value);
 
-        await done(string.Join(Environment.NewLine, lines), gone).ConfigureAwait(false);
+        await done(Reports.Sentences(lines), gone).ConfigureAwait(false);
     }
 
     private static bool StillNamed(string manifestPath, string name) =>

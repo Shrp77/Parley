@@ -38,6 +38,18 @@ public sealed class RenderingTests : IClassFixture<WebApplicationFactory<Program
     }
 
     [Fact]
+    public async Task Every_page_names_the_build_that_served_it()
+    {
+        // Asked for by the owner, who could not tell from a page which build was running while a fix was installed.
+        using var client = _console.CreateClient();
+
+        var body = await client.GetStringAsync(new Uri("/", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        Assert.Matches(@"^\d+\.\d+\.\d+", Parley.Web.WebBuild.Version);
+        Assert.Contains($"parley-web-ui {Parley.Web.WebBuild.Version}", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_machine_with_no_projects_says_so_rather_than_showing_an_empty_page()
     {
         // An absent manifest and a broken one are different facts, and a page that rendered both

@@ -1,182 +1,99 @@
 using Grpc.Net.Client;
-using Microsoft.Data.Sqlite;
-using Parley.Cli.Tests;
 using Parley.Client;
-using Parley.Configuration;
 using Parley.Client.Seating;
 using Parley.Client.Views;
 using Parley.Core;
-using Parley.Store;
+using Terminal.Gui.ViewBase;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
 
 /// <summary>
-/// That a conversation can be started from the list of conversations.
+/// That a person looking for how to start a conversation is shown it, and is not misled by the one thing they found
+/// instead.
 /// </summary>
 /// <remarks>
-/// <para>
-/// **Reported by the owner, who went looking in the obvious place and did not find it.** Both surfaces
-/// could only compose from inside an existing conversation: the terminal offered asking and telling
-/// from the transcript region alone, and the console only from a conversation's own page. So a project
-/// with no conversations yet had no standing place to begin, and the first conversation was the
-/// hardest one to start.
-/// </para>
-/// <para>
-/// <c>Shell.Actions</c> states the rule this broke, directly above itself: <i>actions belong to the
-/// region that shows the thing acted on</i>. A conversation that does not exist yet is not shown in a
-/// transcript of one that does. The giveaway was in the form's own defaults — asking always suggested
-/// a <i>new</i> conversation name, so it had always been a start-a-conversation action, filed under
-/// the one region implying the opposite.
-/// </para>
+/// Reported by the owner with a screenshot: the conversations menu offered no way to start one, because the action is
+/// hidden until a seat is held and nothing said so; the empty list's own sentence was cut at the pane's edge before it
+/// said how; and Instruct, which they reached for, answered that the agent's machine was not connected when the machine
+/// was and the agent simply was not running.
 /// </remarks>
-public sealed class StartingAConversationTests : IAsyncDisposable
+public sealed class StartingAConversationTests
 {
-    private static readonly AgentName Orders = AgentName.Create("orders@test");
-
-    private readonly SqliteConnection _connection;
-    private readonly LoopbackOperator _broker;
-
-    public StartingAConversationTests()
+    [Fact]
+    public async Task Without_a_seat_the_conversations_menu_still_offers_to_start_one_and_says_what_it_takes()
     {
-        _connection = ParleyDatabase.OpenInMemory();
-
-        // Somebody to speak to. Without one the picker has nothing to offer and says so, which is
-        // its own case below rather than the shape these two are about.
-        new AgentRepository(_connection).UpsertAsync(
-            new AgentRecord(Orders, "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active),
-            TestContext.Current.CancellationToken).GetAwaiter().GetResult();
-
-        _broker = LoopbackOperator.Start(_connection);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await _broker.DisposeAsync();
-
-        _connection.Dispose();
-    }
-
-    private ProjectSettings Project() =>
-        new(ProjectName.Create("acme"), "unused.db", _broker.Address, null, null);
-
-    private BrokerDirectory Directory() =>
-        new([Project()], _ => GrpcChannel.ForAddress(_broker.Address));
-
-    private static async Task<Shell> SeatedAsync(
-        Driving.Session driving, BrokerDirectory directory, SeatBook seats)
-    {
-        var shell = new Shell(directory) { Seats = seats };
+        using var driving = Driving.Open();
+        using var directory = Directory();
+        using var seats = new SeatBook(directory.AgentsFor);
+        using var shell = TerminalCommand.Build(directory, seats, manifestPath: "nowhere");
 
         driving.Show(shell);
-        await shell.RefreshAsync(TestContext.Current.CancellationToken);
-        await shell.Settled;
+        await Walking.GoAsync(shell, Viewing.Project);
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Conversations));
 
-        await shell.Join();
+        Assert.Null(shell.Held);
 
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
+        var start = Assert.Single(shell.Actions(), action => action.Key == 'k');
 
-        driving.Type("arvind");
-        dialog.Finish(taken: true);
-
-        await shell.Settled;
-
-        Assert.NotNull(shell.Held);
-
-        return shell;
+        Assert.Equal(Participation.StartSeatFirstTitle, start.Label);
     }
 
     [Fact]
-    public async Task The_conversations_region_offers_starting_one()
+    public async Task Choosing_it_without_a_seat_says_why_and_asks_for_a_name()
     {
-        // The whole report: somebody seated, looking at the list, wanting to begin.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = await SeatedAsync(driving, directory, seats);
-
-        await Walking.GoAsync(shell, Viewing.Project);
-
-        // The conversations pane, which is where somebody stands when they want to begin.
-        while (shell.Panes[shell.FocusedRegion] is not ConversationsRegion)
-        {
-            shell.Move(forwards: true);
-        }
-
-        var offered = shell.Actions().Select(action => action.Label).ToArray();
-
-        Assert.Contains(Participation.StartTitle, offered);
-    }
-
-    [Fact]
-    public async Task Starting_one_suggests_a_new_name_rather_than_the_open_conversation()
-    {
-        // The difference between starting and continuing is the name the form arrives holding, and
-        // that is the whole of it. From the list it must not be the conversation somebody happens to
-        // have selected, or "start" quietly means "add to that one".
-        using var driving = Driving.Open();
-        using var directory = Directory();
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = await SeatedAsync(driving, directory, seats);
-
-        await Walking.GoAsync(shell, Viewing.Project);
-
-        var form = await Composing.WithAsync(
-            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
-
-        // The conversation name is the last field, and it arrives suggested rather than empty.
-        Assert.NotEqual(string.Empty, form.Values[^1]);
-
-        form.Finish(taken: false);
-        await shell.Settled;
-    }
-
-    [Fact]
-    public async Task A_project_with_nobody_in_it_says_so_rather_than_opening_an_empty_picker()
-    {
-        // A list with nothing in it is a surface that looks broken; a sentence naming what is
-        // missing is one somebody can act on.
-        using var driving = Driving.Open();
-        using var directory = Directory();
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = await SeatedAsync(driving, directory, seats);
-
-        await Walking.GoAsync(shell, Viewing.Project);
-
-        shell.Agents.Show([], NodeCatalogue.Empty, null);
-
-        await shell.Start();
-        await shell.Settled;
-
-        Assert.Equal(Participation.NoPeers, shell.Said);
-    }
-
-    [Fact]
-    public async Task Without_a_seat_the_list_offers_neither()
-    {
-        // The control, and the same rule every other way of speaking is held to: without a seat there
-        // is no identity to speak as, so the region shows the list and offers no voice to use in it.
-        using var driving = Driving.Open();
-        using var directory = Directory();
-
-        var shell = new Shell(directory);
+        using var shell = TerminalCommand.Build(directory, seats, manifestPath: "nowhere");
 
         driving.Show(shell);
-        await shell.RefreshAsync(TestContext.Current.CancellationToken);
-        await shell.Settled;
-
         await Walking.GoAsync(shell, Viewing.Project);
 
-        // The conversations pane, which is where somebody stands when they want to begin.
-        while (shell.Panes[shell.FocusedRegion] is not ConversationsRegion)
-        {
-            shell.Move(forwards: true);
-        }
+        await shell.StartSeatFirst();
 
-        var offered = shell.Actions().Select(action => action.Label).ToArray();
-
-        Assert.DoesNotContain(Participation.StartTitle, offered);
-
-        shell.Dispose();
+        Assert.Equal(Participation.SeatFirst, shell.Said);
     }
+
+    [Fact]
+    public void Every_row_of_the_empty_list_fits_the_narrowest_pane()
+    {
+        // Forty columns is the narrowest terminal this surface is held to, less the pane's two border columns.
+        Assert.All(ConversationsRegion.Nothing, row => Assert.True(row.Length <= 38, $"{row.Length}: {row}"));
+        Assert.Contains(ConversationsRegion.Nothing, row => row.Contains("press k", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Undeliverable_names_both_causes_and_what_to_do()
+    {
+        Assert.Contains("not running", InstructionWording.Undeliverable, StringComparison.Ordinal);
+        Assert.Contains("not connected", InstructionWording.Undeliverable, StringComparison.Ordinal);
+        Assert.Contains("request", InstructionWording.Undeliverable, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_shell_titles_the_terminal_with_its_build_and_a_dialog_does_not_take_the_title()
+    {
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+
+        Assert.Equal($"parley terminal {BuildIdentity.Version}", shell.Title);
+
+        using var driving = Driving.Open();
+        var dialog = Prompting.Choose("What this region can do", "described", ["one"]);
+
+        // Non-vacuity: the toolkit's dialogs do take the terminal's title unless told not to.
+        Assert.True(dialog.Border.Settings.HasFlag(BorderSettings.TerminalTitle));
+
+        var token = Prompting.Open(driving.App, dialog);
+
+        Assert.False(dialog.Border.Settings.HasFlag(BorderSettings.TerminalTitle));
+
+        Prompting.Close(driving.App, token);
+    }
+
+    private static BrokerDirectory Directory() =>
+        new(
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null, null)],
+            _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 }

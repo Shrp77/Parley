@@ -206,7 +206,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             InstructionOutcome.Taken => $"Taken. {result.Reply}",
             InstructionOutcome.Declined => $"The agent declined, which is its right. {result.Reply}",
             InstructionOutcome.Undeliverable =>
-                "The machine that holds this agent is not connected, so nothing was delivered.",
+                InstructionWording.Undeliverable,
             InstructionOutcome.Failed => $"The turn did not complete. {result.Reply}",
 
             // The ordinary answer for any real piece of work, and it must not read as a fault.

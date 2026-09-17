@@ -632,7 +632,7 @@ public sealed class OperatorCommands
             Wire.InstructionOutcome.Taken => "Taken." + said,
             Wire.InstructionOutcome.Declined => "The agent declined, which is its right." + said,
             Wire.InstructionOutcome.Undeliverable =>
-                "The machine that holds this agent is not connected, so nothing was delivered.",
+                InstructionWording.Undeliverable,
             Wire.InstructionOutcome.Failed => "The turn did not complete." + said,
             _ => $"Given to the agent, and the turn is still running. `parley instructions {agent.Value}` shows its answer when it comes."
         }).ConfigureAwait(false);

@@ -83,9 +83,9 @@ internal static class Files
                 return;
             }
 
-            var (files, placements) = read.Value!;
+            var (files, placements, notListed) = read.Value!;
 
-            Show(app, client, project, conversation, launcher, queue, done, files, placements);
+            Show(app, client, project, conversation, launcher, queue, done, files, placements, notListed);
         });
 
         return Task.CompletedTask;
@@ -96,12 +96,14 @@ internal static class Files
     /// <param name="conversation">The conversation, or <see langword="null"/>.</param>
     /// <param name="files">The files.</param>
     /// <param name="placements">The placement counts.</param>
+    /// <param name="notListed">Files in the folders whose names break the rules, and so have no row.</param>
     /// <returns>The description, safe to draw.</returns>
     internal static string Describe(
         string project,
         string? conversation,
         IReadOnlyList<SharedFile> files,
-        IReadOnlyList<FilePlacementCount> placements)
+        IReadOnlyList<FilePlacementCount> placements,
+        int notListed = 0)
     {
         var lines = new List<string>
         {
@@ -125,6 +127,11 @@ internal static class Files
             lines.Add(LocalTime.Note());
         }
 
+        if (SharedFileListing.NotListedSentenceFor(notListed) is { } sentence)
+        {
+            lines.Add(sentence);
+        }
+
         if (placements.Count > 0)
         {
             lines.Add("Placed so far:");
@@ -132,7 +139,8 @@ internal static class Files
                 CultureInfo.InvariantCulture, $"  {p.Agent}: {p.Placements} placement(s), {Size(p.Bytes)}")));
         }
 
-        return Safe.Text(string.Join('\n', lines));
+        // Lines rather than Text: the breaks are this surface's layout, and Text draws each as a replacement character.
+        return Safe.Lines(string.Join('\n', lines));
     }
 
     /// <summary>One file's row: conversation and name, size, short hash, placer and when it last changed.</summary>
@@ -168,7 +176,8 @@ internal static class Files
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done,
         IReadOnlyList<SharedFile> files,
-        IReadOnlyList<FilePlacementCount> placements)
+        IReadOnlyList<FilePlacementCount> placements,
+        int notListed)
     {
         var rows = files.Select(Row).ToList();
         var choices = new List<string> { Close, OpenFolder };
@@ -182,7 +191,7 @@ internal static class Files
 
         var choosing = Prompting.Choose(
             conversation is null ? ProjectTitle : ConversationTitle,
-            Describe(project.Name.Value, conversation, files, placements),
+            Describe(project.Name.Value, conversation, files, placements, notListed),
             choices);
 
         var token = Prompting.Open(app, choosing);
@@ -240,13 +249,14 @@ internal static class Files
         };
     }
 
-    private static async Task<(IReadOnlyList<SharedFile> Files, IReadOnlyList<FilePlacementCount> Placements)> EveryFileAsync(
+    private static async Task<(IReadOnlyList<SharedFile> Files, IReadOnlyList<FilePlacementCount> Placements, int NotListed)> EveryFileAsync(
         BrokerClient client,
         string? conversation,
         CancellationToken cancellationToken)
     {
         var files = new List<SharedFile>();
         IReadOnlyList<FilePlacementCount> placements = [];
+        var notListed = 0;
         string? next = null;
 
         do
@@ -256,11 +266,12 @@ internal static class Files
 
             files.AddRange(listing.Page.Files);
             placements = listing.Placements;
+            notListed = listing.NotListed;
             next = listing.Page.NextPageToken;
         }
         while (next is not null);
 
-        return (files, placements);
+        return (files, placements, notListed);
     }
 
     private static async Task OpenFileAsync(

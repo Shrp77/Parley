@@ -113,7 +113,7 @@ internal static class Instructing
             InstructionOutcome.Taken => "Taken." + reply,
             InstructionOutcome.Declined => "The agent declined, which is its right." + reply,
             InstructionOutcome.Undeliverable =>
-                "The machine that holds this agent is not connected, so nothing was delivered.",
+                InstructionWording.Undeliverable,
             InstructionOutcome.Failed => "The turn did not complete." + reply,
             _ => "Given to the agent, and the turn is still running. Its answer will appear under what you have told it.",
         }).ConfigureAwait(false);

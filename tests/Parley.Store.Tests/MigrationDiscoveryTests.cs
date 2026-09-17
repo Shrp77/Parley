@@ -26,7 +26,7 @@ public sealed class MigrationDiscoveryTests
     /// Bumped deliberately when one is added, which is the point: the number is the assertion,
     /// and a migration that appears without anybody deciding it should is what this catches.
     /// </remarks>
-    private const int Expected = 9;
+    private const int Expected = 10;
 
     [Fact]
     public void Every_migration_in_the_folder_is_embedded_and_reachable()

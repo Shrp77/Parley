@@ -599,7 +599,20 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/015-file-store/` — 0.27.0, **protocol 0.6**, schema 9. **Built; review gate met; nothing committed.** Files cross
+- **Current plan**: `specs/016-request-is-the-ask/` — **specified and planned, nothing built.** Protocol 0.7, schema 11.
+  A Request becomes the conversation it belongs to and the ask; `intent`, `items`, item ids, work-or-question, gates and
+  `done_when` leave the protocol, and a Result answers the exchange whole. The owner's call on 2026-09-17, made while
+  composing one in the terminal: the fields were the same thing asked four times, and a receiver that cannot tell how far
+  an ask goes has a question — which is what Clarify (§5.2) is. Nothing replaces them.
+
+  **It rests on a path already built**: a Request whose items a Result cannot name is already answered as a whole under
+  the item `request` (`Broker.cs:495-505`, there for 0.4's carried-forward questions), so a flat `ask` needs no new
+  machinery and `result_items`, the flags and the health reports are untouched. **Migration 011 replaces two triggers and
+  rewrites no row**: messages are never updated, so what changes is what may be written next, and every 0.5 and 0.6
+  conversation still reads whole — which is FR-009 and the cheapest thing to get wrong. `research.md` carries ten
+  decisions, `contracts/surfaces.md` what each composer asks for after, and `quickstart.md` the walk.
+
+- **Previous plan**: `specs/015-file-store/` — 0.27.0 to 0.28.2, **protocol 0.6**, schema 9, then 10. **0.27.1 built, gated and committed, not yet pushed** (`3cf9e48`, then `1f302bd`); **0.28.0 built and uncommitted, its review gate not yet run.** Files cross
   between agents: an agent places a file from its repository into its conversation's folder in the project's file
   location, the bytes stream through the broker and carry a broker-computed SHA-256, and any agent in the project fetches
   it to disk in its own repository — never into a model's context. The agent that placed a file may replace or remove it;
@@ -637,7 +650,7 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   - **A file's name reached another agent's model unmarked.** Up to two hundred and fifty characters the placer
     chooses arrive verbatim in `parley_file_list` and in change notices, where a message's words arrive inside the
     envelope. The tools and the standing instructions now say whose text a name is. Whether a name should carry the
-    envelope, or a narrower character set, is the owner's decision and was not taken.
+    envelope, or a narrower character set, was left to the owner — who chose the set in 0.28.0, below.
   - **A conversation id the store refuses crashed a placement**, which arrived as `Unknown` — reachable over the wire
     and hidden by the adapter's own check. `FileWork.PlaceAsync` applies the schema's rule first.
   - **Files' times were UTC and unmarked on all three surfaces**, beside consoles whose every other time is local. They
@@ -648,8 +661,10 @@ below in the form Spec Kit's checks read; this file remains the authority when t
 
   Recorded low and not acted on: `FILE_REJECTION_INCOMPLETE` can never be sent, because the header declares no size; the
   size formatter exists once per surface; the terminal opens the Files list off the draw thread, as `ShowHealth` does.
-  **`quickstart.md` has not been walked** (T101): its command-line steps need a throwaway project and its agent steps
-  need real sessions.
+  **`quickstart.md` was walked on 2026-09-15** (T101), against tools packed and installed into a scratch path with a
+  broker on its own store and port, so the live deployment was left alone: 45 checks across its seven steps, all
+  passed. Steps 3 and 6 were run as another machine, since as written they open an editor and a file browser on the
+  desktop. The ledger has each check.
 
   **Then the installers stopped asking for a store, on the owner's call: projects are the paradigm and the paths had
   not caught up.** `install.ps1` lost `-Store` and `-NodeConfig`, `install.sh` lost `--store`, `--db` and
@@ -747,6 +762,88 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   Two smaller things went with them: the old selection comment left standing above its replacement in `Program.cs`,
   and the clause `--help` was missing about saying which project a command acted on. 3,698 tests pass across every
   suite.
+
+  **0.28.0: a file's name is a set, and a placement is renamed rather than refused; and the web UI follows an open
+  conversation.** Both the owner's calls, made on 2026-09-16. Schema 10; **protocol still 0.6**, because 0.6 was never
+  released and SPEC.md §18 says so rather than spending a number on it. `spec.md` carries the amendment.
+
+  - **A name is `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_` and `-`.** The broker replaces anything else with `_`, one character
+    for one — a surrogate pair is one — and the reply carries the name asked for beside the name placed. A renamed
+    placement whose spelling is already a file's name is refused **whoever placed it, the caller included**, with the
+    owner's sentence naming all three names: `a:b.md` and `a?b.md` are both `a_b.md`, and replacing one with the other is a
+    rename nobody asked for. Placing under the safe spelling replaces on purpose. A name *looked up* is never renamed,
+    since the renamed spelling could be a different file; its refusal offers the spelling instead. The key is now
+    SQLite's own `upper(name)`, which retired the combining-mark caveat in §9.5.
+  - **A person's file under any other name stays ignored**, and the person's listing counts them —
+    `FilesReply.files_not_listed`, on all three surfaces, never the names, which are text nothing checked.
+  - **Migration 010 rebuilds `shared_files`**, which nothing references, so the parent-table hazard 006 and 008 record
+    does not apply. A row under a name outside the set is dropped, its file left on disk, and each active fetcher told it
+    is gone. `FileNameSetMigrationTests` builds a schema-9 store with such rows first, and **found the migration's first
+    draft writing a timestamp the store cannot read**: SQL's `%f` is three digits and `ParseTimestamp` takes exactly
+    round-trip's seven.
+  - **Found while building it, and fixed: a placement destroyed a file the person had just put on disk.** Nothing but
+    the watcher looked, and until it had, a placement of the same name committed over the person's bytes and reported
+    `Placed`. Reproduced by probe; `FileLocationStore.OnDisk` is asked inside the committing transaction now.
+  - **The web UI's transcript follows**, as the terminal's has since 0.25.7, which reverses the `_Layout.cshtml` remark
+    recorded there. The page and a new `follow` read render one partial, `_Conversation`; the page polls every three
+    seconds, one read at a time, not while hidden, swaps the region only when its digest changed, and does not move a
+    reader. **A follow never touches a seat's idle clock** — only the frame does, and a follow returns no frame —
+    because a tab left open is not a person at a desk. The script has no test; this project has no browser.
+  - **`parley-mcp` is a Claude Code channel**, the owner's call on 2026-09-17: it declares
+    `experimental.claude/channel` and sends `notifications/claude/channel` when the broker's pushed count of messages
+    and closure polls rises, so an open session collects its mail without anybody typing — the half of §17 question 15
+    that concerns a window somebody has open. **Counts and never words**, because the event reaches the model outside
+    §13's envelope; file notices never count, because §9.5 wakes nobody. Once per rise: Claude Code queues events that
+    arrive during a turn and hands them over together. **The broker posts a notice on arrival and never on a drain**, so
+    the count an adapter held only rose and the second arrival was never told — found by the second test written,
+    `parley_inbox` now re-reads the counts after collecting and resets the baseline. The first test found the other:
+    waiting on `ClientCapabilities` waits for ever on a client that declares none, and `ClientInfo` is the handshake.
+    `ChannelNudgeTests` drives the built server over stdio with the SDK's client. **Claude Code acting on the event is
+    checked by hand**: custom channels need `claude --dangerously-load-development-channels server:<key>` during the
+    research preview, behind a warning dialog, so nothing unattended can start one that way.
+
+  **0.28.1 is two defects in the terminal's add, reported by the owner with a screenshot the first hour 0.28.0 was
+  installed.** A repository one project already runs was added to a second; the message line said *"Started 'inventory'
+  through 'alpha', which is what starts this repository, and it registered. It can be asked and told now"*, and the
+  agents list beside it, redrawn from the second project, did not have it. **The registration check asked the starting
+  project about the role the
+  repository has there** — which was always yes for a repository that project already ran — rather than asking the
+  project added to about the role added. The regression test was run against the old check and fails there, asking the
+  wrong project sixty times over the wait. When the name is not seen, the report now also says a session already running
+  loads a new launch entry only when it restarts, which is the likeliest reason. **And every line break in the report was
+  drawn as `��`**: it was joined with `Environment.NewLine`, and the message line makes every control character visible
+  on purpose, since a line break in a broker's text is how 0.25.1's forged second line was made. **Four more screens built
+  their reports the same way** — removing a project, withdrawing an agent, enrolling and naming — and the Files dialog
+  passed its own layout through `Safe.Text` where `Safe.Lines` keeps it. `Reports.Sentences` is the one join now, and a
+  test reads the terminal's sources for `await done(string.Join(`.
+
+  **Both surfaces now say which build they are**, the owner's request in the same hour: the terminal on its status line
+  beside every rung that still names the ways out, in the actions menu, and in the window title; the web UI in its footer.
+  Each names its own tool (`parley-terminal`, `parley-web-ui`), not the broker, because they are installed apart. Placing
+  it found that **a resize crossing no stacking threshold never rewrote the status line**, so a terminal widened after it
+  opened kept the rung chosen for its first width; and that the projects view's actions alone are wider than two hundred
+  columns, so a build said only on the widest rung was said on no real terminal.
+
+  **The add picker opens in the folder `parley terminal` was started from**, the owner's call, where it opened at the
+  home directory. Beside the last repository added still wins once one has been, and home remains for a start folder
+  that has gone. `Shell.StartedIn` is read when the shell is built; `parley terminal` forwards without setting a working
+  directory, so the tool inherits the shell's.
+
+  **0.28.2: starting a conversation could not be found, reported by the owner with a screenshot of 0.28.1.** They opened the conversations
+  menu to start one, found nothing, and reached for Instruct — which is not a message and never becomes a conversation —
+  and three things on this surface each made that worse:
+  - **The action was hidden without a seat, and nothing said a seat was needed.** `k` is offered either way now: seated,
+    it starts one; unseated, it says a request is sent as somebody, asks for a name, and opens the request once seated.
+  - **The empty list's sentence was cut at the pane's edge**, at exactly the half saying how to start one. A list row does
+    not wrap, so it is four short rows, each held to the narrowest pane.
+  - **Undeliverable said the agent's machine was not connected, beside a node that was.** A node gives an instruction only
+    to an agent it already runs and reports undeliverable when it runs none — so the owner's agent was merely not
+    running. The CLI, the terminal and both web pages each spelled their own sentence; `InstructionWording.Undeliverable`
+    names both causes and the remedy for all of them, and **SPEC.md §10.2 was widened to match**, since it named only the
+    machine. That was the spec being incomplete rather than the code being wrong: an instruction is a turn, and no
+    machine gives a turn to an agent it is not running.
+  - And the window title the version went into was overwritten by every dialog: the toolkit writes a modal runnable's
+    title to the terminal. `Prompting.Open` clears that from every dialog, and the shell's own title names the build.
 
 - **Previous plan**: `specs/014-work-across-repositories/` — 0.26.0, **protocol 0.5**, schema 8. Parley
   exists to get work done across repositories, and 0.4 said otherwise: every delivery told an agent a

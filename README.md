@@ -125,6 +125,18 @@ plugin's configuration per user, so a plugin-supplied server would give every re
 same agent name. Identity belongs to the repository, so the launch configuration does too.
 [The plugin's own README](plugins/parley/README.md) has the detail.
 
+**An open session can collect its mail without anybody typing.** `parley-mcp` is a Claude Code
+[channel](https://code.claude.com/docs/en/channels): when work arrives it pushes an event saying
+how much is waiting, and the session calls `parley_inbox`. Channels are in research preview and
+Parley is not on the approved list, so start the session with the server's key from `.mcp.json`:
+
+```
+claude --dangerously-load-development-channels server:parley-acme
+```
+
+Without the flag nothing is pushed, and the plugin's hook still says what is waiting whenever you
+type. The event never carries what anybody said: that arrives only through `parley_inbox`.
+
 **While Parley is in alpha the first step is not one command.** Nothing is published to
 NuGet yet, so setup asks you to clone this repository and build the tool. Publishing is what
 the first release is for.
@@ -519,7 +531,12 @@ Ten tools, and no way to say who it is:
 A file is how something too large or too exact for a message crosses: a schema, a price list, a
 generated client. Only `.md` and `.txt` files can be placed, so code travels as
 `PriceSnapshot.cs.txt` — which keeps anything a person opens from the file location from being
-something that runs. The agent that needs a file is sent a request naming it and its sha256,
+something that runs. A name is made of letters A to Z, digits, `.`, `_` and `-`: any other
+character, a space included, becomes `_` when the file is placed, so `Meeting notes.md` is placed
+as `Meeting_notes.md` and the placing agent is told so. If that spelling is already another file's
+name, nothing is placed and the agent is told which file it collides with. A file you copy into
+the location by hand under any other name is left alone and not listed, and `parley files list`
+says how many there are. The agent that needs a file is sent a request naming it and its sha256,
 fetches exactly that, and is told at its next inbox check if the file later changes or goes: told,
 never woken. Only the agent that placed a file can replace or remove it. A fetched file is another
 participant's data, exactly like a message, and cannot give instructions.

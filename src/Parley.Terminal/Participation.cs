@@ -79,6 +79,19 @@ internal static class Participation
     /// </remarks>
     internal const string StartTitle = "Start a conversation with a request";
 
+    /// <summary>The same action before a seat is held, which takes one first.</summary>
+    /// <remarks>
+    /// <b>Offered rather than hidden.</b> The owner opened this menu to start a conversation, found no such action, and
+    /// reached for Instruct instead — which is not a message and never appears as a conversation. The action was hidden
+    /// because a request needs somebody to speak as; hiding it said nothing about why, so this names the step and takes it.
+    /// </remarks>
+    internal const string StartSeatFirstTitle = "Start a conversation (takes a seat first)";
+
+    /// <summary>What is said when the seat is being taken so that a conversation can be started.</summary>
+    internal const string SeatFirst =
+        "A request is sent as somebody, so starting a conversation takes a seat first: name yourself, and the request " +
+        "opens once you are seated.";
+
     /// <summary>What the dialog sending a Result is called.</summary>
     internal const string ResultTitle = "Send the result of something you were asked";
 

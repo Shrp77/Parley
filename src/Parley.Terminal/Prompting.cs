@@ -114,6 +114,10 @@ internal static class Prompting
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(dialog);
 
+        // A dialog does not rename the terminal. The toolkit writes a modal runnable's title to the terminal's own, so the
+        // owner's tab read "What this region can do" while a menu was open, in place of the build the shell names there.
+        dialog.Border.Settings &= ~BorderSettings.TerminalTitle;
+
         var token = app.Begin((IRunnable)dialog);
 
         app.LayoutAndDraw(true);

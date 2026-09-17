@@ -80,6 +80,18 @@ public static class TerminalCommand
         // chord did nothing at all, and no test had ever pressed it — the one place the suite
         // mentioned Ctrl+Q was a comment on a test that disposes the surface directly. `Shell`
         // binds it now, which is what makes the sentence true rather than aspirational.
+        // The window's title names the build, which is the one place a tab strip shows. Set here and never in the shell:
+        // a driven session writes nothing to standard output, and a title is written there on every platform but Windows.
+        try
+        {
+            Console.Title = $"parley terminal {BuildIdentity.Version}";
+        }
+        catch (Exception unsettable) when (unsettable is IOException or PlatformNotSupportedException)
+        {
+            // A console that has no title to set -- redirected, or a host that refuses -- loses a convenience, not the version:
+            // the status line says it too.
+        }
+
         using var app = Application.Create(TimeProvider.System as ITimeProvider);
 
         app.Init();

@@ -1,3 +1,5 @@
+using Parley.Client;
+using Parley.Core;
 using Parley.Setup;
 using Xunit;
 
@@ -102,5 +104,86 @@ public sealed class SecondProjectTests
         {
             Assert.DoesNotContain(wrong, said, StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    [Fact]
+    public async Task A_start_through_the_other_project_looks_for_the_new_name_in_this_one()
+    {
+        // Reported by the owner with a screenshot: a repository one project already runs was added to another, and the
+        // message line said it registered and could be asked now while the agents list beside it did not show it. The
+        // check had asked the starting project about the role the repository has there, which was always yes.
+        var alpha = new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null, null);
+        var beta = new ProjectSettings(ProjectName.Create("beta"), string.Empty, "http://127.0.0.1:2", null, null);
+        var asked = new List<(string Project, string Agent)>();
+        var started = new List<(string Project, string Agent)>();
+
+        var said = await Adding.StartAsync(
+            (project, agent, _) =>
+            {
+                started.Add((project.Name.Value, agent.Value));
+                return Task.FromResult(ProjectRead<bool>.Read(true));
+            },
+            (project, agent, _) =>
+            {
+                asked.Add((project.Name.Value, agent.Value));
+                return Task.FromResult(ProjectRead<bool>.Read(project == beta && agent.Role == "inventory"));
+            },
+            "inventory",
+            beta,
+            Already,
+            [alpha, beta],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal([("alpha", "orders@" + MachineName.Current)], started);
+        Assert.NotEmpty(asked);
+        Assert.All(asked, one => Assert.Equal(("beta", "inventory@" + MachineName.Current), one));
+        Assert.Contains("It can be asked and told now", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_report_is_sentences_on_one_line_so_the_message_line_draws_no_replacement_characters()
+    {
+        // The same screenshot: every line break in the add report was drawn as two replacement characters, because the
+        // message line makes every control character visible rather than let one start a forged line.
+        var report = Reports.Sentences(["Added 'inventory'.", ".mcp.json: create parley-beta entry", "wrote C:/repo/.mcp.json"]);
+
+        Assert.DoesNotContain('\n', report);
+        Assert.DoesNotContain('\r', report);
+        Assert.Equal("Added 'inventory'. .mcp.json: create parley-beta entry. wrote C:/repo/.mcp.json.", report);
+        Assert.DoesNotContain('\uFFFD', Safe.Text(report));
+    }
+
+    [Fact]
+    public void No_report_that_reaches_the_message_line_is_joined_with_line_breaks()
+    {
+        // Five screens built their report the same way and the owner met it on one. Held by reading the source, because
+        // each report is only drawn after a dialog, a write and a broker, and a check that drove all five would test
+        // those rather than this.
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "Parley.slnx")))
+        {
+            root = root.Parent;
+        }
+
+        Assert.NotNull(root);
+
+        var offenders = Directory
+            .EnumerateFiles(Path.Combine(root.FullName, "src", "Parley.Terminal"), "*.cs")
+            .Where(path => File.ReadAllText(path).Contains("await done(string.Join(", StringComparison.Ordinal))
+            .Select(Path.GetFileName)
+            .ToList();
+
+        Assert.True(offenders.Count == 0, "joined with line breaks for the message line: " + string.Join(", ", offenders));
+    }
+
+    [Fact]
+    public void The_files_description_keeps_its_own_line_breaks()
+    {
+        // The same fault in a dialog: Text rather than Lines drew every break in the description as a replacement.
+        var described = Files.Describe("alpha", null, [], [], 2);
+
+        Assert.DoesNotContain('\uFFFD', described);
+        Assert.Contains(Environment.NewLine, described, StringComparison.Ordinal);
     }
 }

@@ -141,6 +141,156 @@ public sealed class FilesOverTheWireTests
     }
 
     [Fact]
+    public async Task A_name_outside_the_set_is_placed_under_its_safe_spelling_and_the_reply_says_what_was_asked()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+
+        var placed = await PlaceAsync(billing, "Meeting notes: v2.md", Text("agenda"), conversation: "pricing");
+
+        Assert.Equal(Wire.FileRejection.None, placed.Rejection);
+        Assert.Equal(Wire.PlaceOutcome.Placed, placed.Outcome);
+        Assert.Equal("Meeting_notes__v2.md", placed.Name);
+        Assert.Equal("Meeting notes: v2.md", placed.RequestedName);
+        Assert.True(File.Exists(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "Meeting_notes__v2.md")));
+
+        var fetched = await FetchAsync(orders, "Meeting_notes__v2.md", conversation: "pricing");
+        Assert.Equal(Text("agenda"), fetched.Bytes);
+    }
+
+    [Fact]
+    public async Task A_name_already_in_the_set_says_nothing_was_asked_differently()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+
+        var placed = await PlaceAsync(billing, "notes.md", Text("x"), conversation: "pricing");
+
+        Assert.Equal(string.Empty, placed.RequestedName);
+    }
+
+    [Fact]
+    public async Task A_renamed_placement_colliding_with_another_agents_file_is_refused_naming_the_three_names()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+
+        var kept = await PlaceAsync(billing, "A_B.md", Text("billing's"), conversation: "pricing");
+        await RequestAsync(billing, Orders, "pricing", "does this match yours?");
+
+        var refused = await PlaceAsync(orders, "a:b.md", Text("orders'"));
+
+        Assert.Equal(Wire.FileRejection.SafeNameTaken, refused.Rejection);
+        Assert.Equal("a_b.md", refused.Name);
+        Assert.Equal("a:b.md", refused.RequestedName);
+        Assert.Equal(
+            "File 'a:b.md' has illegal characters and will be named 'a_b.md', which collides with an existing file with " +
+            "that name ('A_B.md'). Nothing was placed. Choose another name, or place it as 'a_b.md' to replace that file " +
+            "if it is yours.",
+            refused.Detail);
+        Assert.Equal(kept.Sha256, (await FetchAsync(orders, "A_B.md", conversation: "pricing")).Header!.Sha256);
+    }
+
+    [Fact]
+    public async Task A_renamed_placement_colliding_with_the_callers_own_file_is_refused_and_the_safe_spelling_replaces_it()
+    {
+        // 'a:b.md' and 'a?b.md' are one safe spelling. Replacing silently would let either overwrite the other.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+
+        var first = await PlaceAsync(billing, "a:b.md", Text("one"), conversation: "pricing");
+        var second = await PlaceAsync(billing, "a?b.md", Text("two"), conversation: "pricing");
+
+        Assert.Equal(Wire.PlaceOutcome.Placed, first.Outcome);
+        Assert.Equal(Wire.FileRejection.SafeNameTaken, second.Rejection);
+
+        var onPurpose = await PlaceAsync(billing, "a_b.md", Text("two"), conversation: "pricing");
+
+        Assert.Equal(Wire.PlaceOutcome.Replaced, onPurpose.Outcome);
+        Assert.Equal(first.Sha256, onPurpose.PreviousSha256);
+    }
+
+    [Fact]
+    public async Task A_renamed_placement_colliding_with_a_file_the_person_put_on_disk_is_refused_the_same_way()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+
+        await PlaceAsync(billing, "notes.md", Text("makes the folder"), conversation: "pricing");
+        await File.WriteAllTextAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "price_list.md"), "the person's", Ct);
+        await RequestAsync(billing, Orders, "pricing", "does this match yours?");
+
+        var refused = await PlaceAsync(orders, "price list.md", Text("orders'"));
+
+        Assert.Equal(Wire.FileRejection.SafeNameTaken, refused.Rejection);
+        Assert.Equal(
+            "the person's",
+            await File.ReadAllTextAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "price_list.md"), Ct));
+    }
+
+    [Fact]
+    public async Task A_placement_never_replaces_a_file_the_person_put_on_disk_before_anything_recorded_it()
+    {
+        // Reproduced before it was fixed: the placement reported Placed and the person's file held the agent's bytes.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+
+        await PlaceAsync(billing, "notes.md", Text("makes the folder"), conversation: "pricing");
+
+        var path = Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "Price_List.md");
+        await File.WriteAllTextAsync(path, "the person's", Ct);
+
+        var refused = await PlaceAsync(billing, "price_list.md", Text("billing's"), conversation: "pricing");
+
+        Assert.Equal(Wire.FileRejection.NamePlacedByAnother, refused.Rejection);
+        Assert.Equal(string.Empty, refused.PlacedBy);
+        Assert.Equal("the person's", await File.ReadAllTextAsync(path, Ct));
+    }
+
+    [Fact]
+    public async Task A_fetch_by_a_name_outside_the_set_is_refused_and_told_the_spelling_a_placement_would_have_had()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+
+        await PlaceAsync(billing, "price list.md", Text("x"), conversation: "pricing");
+
+        var refused = await FetchAsync(orders, "price list.md", conversation: "pricing");
+
+        Assert.Equal(Wire.FileRejection.BadName, refused.Refusal!.Rejection);
+        Assert.Contains("'price_list.md'", refused.Refusal.Detail, StringComparison.Ordinal);
+        Assert.Empty(refused.Bytes);
+    }
+
+    [Fact]
+    public async Task A_file_the_person_copied_in_under_a_name_outside_the_set_is_counted_for_the_person_and_listed_to_nobody()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+
+        await PlaceAsync(billing, "notes.md", Text("x"), conversation: "pricing");
+        await PlaceAsync(billing, "other.md", Text("y"), conversation: "refunds");
+
+        await File.WriteAllTextAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "Meeting notes.md"), "z", Ct);
+        await File.WriteAllTextAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "run.bat"), "z", Ct);
+
+        var operators = broker.ConnectAsOperator();
+        var everything = await operators.ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct);
+        var refunds = await operators.ListSharedFilesAsync(new Wire.ListFilesRequest { ConversationId = "refunds" }, cancellationToken: Ct);
+        var agent = await billing.Client.ListFilesAsync(new Wire.ListFilesRequest { Agent = Billing }, cancellationToken: Ct);
+
+        Assert.Equal(2, everything.TotalFiles);
+        Assert.Equal(2, everything.FilesNotListed);
+        Assert.Equal(0, refunds.FilesNotListed);
+        Assert.Equal(0, agent.FilesNotListed);
+        Assert.DoesNotContain(everything.Files, f => f.Name.Contains(' ', StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Another_agent_placing_the_same_name_is_refused_naming_the_placer_and_the_file_is_unchanged()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

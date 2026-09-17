@@ -1,3 +1,4 @@
+using Parley.Client;
 using Terminal.Gui.Input;
 using Xunit;
 
@@ -180,11 +181,47 @@ public sealed class BrowsingTests : IDisposable
     }
 
     [Fact]
-    public void With_nothing_added_yet_it_starts_at_the_home_directory()
+    public void With_nothing_added_yet_it_starts_in_the_folder_the_terminal_was_started_from()
+    {
+        // The owner's call: the shell somebody typed `parley terminal` into is where their work is, and often the very
+        // repository they mean to add.
+        var here = Folder("started-here", repository: true);
+
+        Assert.Equal(here, Browsing.Opening(null, here));
+    }
+
+    [Fact]
+    public void Beside_the_last_one_added_still_wins_over_where_it_was_started()
+    {
+        var orders = Folder("orders", repository: true);
+        var elsewhere = Folder("elsewhere", repository: false);
+
+        Assert.Equal(_root, Browsing.Opening(orders, elsewhere));
+    }
+
+    [Fact]
+    public void With_no_start_folder_it_starts_at_the_home_directory()
     {
         Assert.Equal(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             Browsing.Opening(null));
+    }
+
+    [Fact]
+    public void A_start_folder_that_has_gone_falls_back_to_the_home_directory()
+    {
+        Assert.Equal(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            Browsing.Opening(null, Path.Combine(_root, "gone-since")));
+    }
+
+    [Fact]
+    public void A_shell_remembers_the_folder_it_was_started_in()
+    {
+        using var directory = new BrokerDirectory([], _ => throw new InvalidOperationException("no broker is asked"));
+        using var shell = new Shell(directory);
+
+        Assert.Equal(Directory.GetCurrentDirectory(), shell.StartedIn);
     }
 
     [Fact]

@@ -287,7 +287,9 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
         Assert.True(
             !outcomes.Any(o => o.EndsWith(": Unknown", StringComparison.Ordinal) || o.EndsWith(": Internal", StringComparison.Ordinal)),
             string.Join('\n', outcomes));
-        Assert.Equal("seed.md", Assert.Single(listed.Files).Name);
+        // A DEL in a name is no longer malformed: it is a character outside the set, so the placement is renamed and
+        // stored as a_.md (SPEC.md §9.5). Everything else probed here stores nothing.
+        Assert.Equal(["a_.md", "seed.md"], listed.Files.Select(f => f.Name).Order(StringComparer.Ordinal));
     }
 
     private static async Task<Wire.SharedFileView> FetchOnlyAsync(Wire.Agents.AgentsClient client, string name, string? expect = null)

@@ -239,7 +239,7 @@ internal sealed class Shell : Window
 
         _directory = directory;
 
-        Title = "parley";
+        Title = $"parley terminal {BuildIdentity.Version}";
         BorderStyle = LineStyle.None;
 
         Projects = new ProjectsRegion();
@@ -440,6 +440,14 @@ internal sealed class Shell : Window
 
         if (stacked == _stacked && _arranged)
         {
+            // The panes stay; the status line does not. Which rung of it fits is a question about the width, and a resize
+            // that crossed no threshold used to leave the line chosen for whatever width it was first drawn at — found
+            // putting the build on the widest rung, which never appeared on a terminal widened after it opened.
+            lock (_screen)
+            {
+                DescribeLocked();
+            }
+
             return;
         }
 
@@ -669,10 +677,21 @@ internal sealed class Shell : Window
         // to any action was on no screen at all. contracts/surface.md asks that no action exist
         // only as a key, and a status line is not clickable. Twelve columns at the width where
         // there is most room for them.
+        // **The build, on the widest rung and nowhere below it.** Asked for by the owner, who could not tell from the
+        // screen which terminal was running while a fix was being installed over it. Last on the line and first to go,
+        // because on a narrow terminal the focus and `?` matter more; `?` lists it for that case, and the window title
+        // carries it whatever the width.
+        var build = "  " + VersionLabel;
+
+        // Beside every rung that still names the ways out, not only the widest: on the projects view the actions alone are
+        // wider than two hundred columns, so a build said only beside all of them was said on no terminal anybody has.
         _status.Text = Fits(
             room,
+            placed + back + quit + about + listed + menu + build,
             placed + back + quit + about + listed + menu,
+            placed + back + quit + about + menu + build,
             placed + back + quit + about + menu,
+            placed + back + quit + menu + build,
             placed + back + quit + menu,
             placed + menu,
             focus + menu,
@@ -915,7 +934,9 @@ internal sealed class Shell : Window
                 {
                     new RegionAction('k', Participation.StartTitle, Start, Owing.Requesting),
                 }
-                : Array.Empty<RegionAction>(),
+                : Seats is not null
+                    ? new[] { new RegionAction('k', Participation.StartSeatFirstTitle, StartSeatFirst, Owing.Requesting) }
+                    : Array.Empty<RegionAction>(),
 
             .. Conversations.Selected is { } chosen
                 ? new[]
@@ -985,7 +1006,8 @@ internal sealed class Shell : Window
 
         var menu = Prompting.Choose(
             ActionsTitle,
-            NameOf(Panes[FocusedRegion]),
+            // The build beside the pane's name, for the narrow terminal whose status line has already dropped it.
+            $"{NameOf(Panes[FocusedRegion])} · {VersionLabel}",
             [
                 .. back is null ? [] : new[] { back },
                 .. about.Select(Detailed),
@@ -1255,6 +1277,13 @@ internal sealed class Shell : Window
     /// <summary>How the status line and the menu name leaving.</summary>
     internal const string QuitLabel = "Ctrl+Q: Quit";
 
+    /// <summary>Which build this is, as the status line and the actions menu say it.</summary>
+    /// <remarks>
+    /// This tool's own version, not the broker's: they are installed apart and can differ, and the broker's
+    /// is in its log and in <c>parley --version</c>.
+    /// </remarks>
+    internal static string VersionLabel { get; } = $"parley-terminal {BuildIdentity.Version}";
+
     /// <summary>Where the web console listens when a broker hosts it.</summary>
     /// <remarks>
     /// <b>The one source of the number, not a second copy of it.</b> This was a literal
@@ -1466,7 +1495,8 @@ internal sealed class Shell : Window
                 await SelectAsync(project, _reading.Token).ConfigureAwait(false);
             },
                 _lastAdded,
-                workspace => _lastAdded = workspace)
+                workspace => _lastAdded = workspace,
+                StartedIn)
             : Task.CompletedTask;
 
     /// <summary>Puts the open conversation on the clipboard.</summary>
@@ -1782,6 +1812,15 @@ internal sealed class Shell : Window
     /// </remarks>
     private string? _lastAdded;
 
+    /// <summary>The folder this terminal was started from, which the add picker opens at first.</summary>
+    /// <remarks>
+    /// Read when the shell is built, which is when the tool starts, and kept: nothing here changes the working
+    /// directory, but a folder picked up later would be whatever that was by then rather than where the person typed the
+    /// command. <c>parley terminal</c> forwards without setting one, so the tool inherits the shell's. Settable so a test
+    /// need not change its own process's directory, which every test running beside it shares.
+    /// </remarks>
+    internal string StartedIn { get; init; } = Directory.GetCurrentDirectory();
+
     /// <summary>Opens the dialog that withdraws the selected agent.</summary>
     /// <returns>When the dialog is open.</returns>
     /// <remarks>
@@ -2051,7 +2090,12 @@ internal sealed class Shell : Window
 
     /// <summary>Opens the dialog that takes a seat.</summary>
     /// <returns>When the dialog has been opened.</returns>
-    internal Task Join()
+    internal Task Join() => Join(then: null);
+
+    /// <summary>Asks for a name and takes a seat under it, then does something with the seat.</summary>
+    /// <param name="then">What to do once seated, or null for nothing; not done when the seat was refused.</param>
+    /// <returns>When the dialog is open.</returns>
+    private Task Join(Func<Task>? then)
     {
         if (App is not { } app || Seats is null || Projects.Selected is not { } project)
         {
@@ -2082,7 +2126,15 @@ internal sealed class Shell : Window
 
             // The same path the key takes, so a name typed and a row chosen are seated alike and
             // reported alike.
-            Queue(cancellationToken => TakeSeatAsync(project, typed, cancellationToken));
+            Queue(async cancellationToken =>
+            {
+                await TakeSeatAsync(project, typed, cancellationToken).ConfigureAwait(false);
+
+                if (then is not null && Held is not null)
+                {
+                    await then().ConfigureAwait(false);
+                }
+            });
         };
 
         return Task.CompletedTask;
@@ -2231,6 +2283,15 @@ internal sealed class Shell : Window
     /// </para>
     /// </remarks>
     internal Task Start() => Compose(inConversation: null);
+
+    /// <summary>Takes a seat, and then starts a conversation from it.</summary>
+    /// <returns>When the seat dialog is open.</returns>
+    internal Task StartSeatFirst()
+    {
+        Said = Participation.SeatFirst;
+
+        return Join(then: Start);
+    }
 
     /// <summary>Releases this person's seat, in every project at once.</summary>
     /// <returns>When it has been released.</returns>

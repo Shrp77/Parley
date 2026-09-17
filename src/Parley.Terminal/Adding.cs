@@ -230,6 +230,7 @@ internal static class Adding
     /// The repository this session last added, so the search starts beside it.
     /// </param>
     /// <param name="remember">Told which repository was added, once the files are written.</param>
+    /// <param name="startedIn">The folder the terminal was started from, where the picker opens before anything is added.</param>
     /// <returns>When the first dialog is open.</returns>
     /// <remarks>
     /// <b>The folder is found before it is named.</b> The owner was typing an absolute path per
@@ -246,7 +247,8 @@ internal static class Adding
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done,
         string? lastAdded = null,
-        Action<string>? remember = null)
+        Action<string>? remember = null,
+        string? startedIn = null)
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(project);
@@ -254,7 +256,7 @@ internal static class Adding
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(done);
 
-        var browsing = new Browsing(Browsing.Opening(lastAdded));
+        var browsing = new Browsing(Browsing.Opening(lastAdded, startedIn));
         var walk = Prompting.Open(app, browsing);
 
         browsing.Done += (_, folder) =>
@@ -401,7 +403,7 @@ internal static class Adding
     /// One start, two registrations.
     /// </para>
     /// </remarks>
-    private static async Task<string> StartAsync(
+    internal static async Task<string> StartAsync(
         Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? start,
         Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? registered,
         string role,
@@ -421,7 +423,9 @@ internal static class Adding
                 string.Equals(one.Name.Value, already.Project, StringComparison.Ordinal)),
                 already.Role);
 
-        if (asking is null || !AgentName.TryCreate($"{named}@{MachineName.Current}", out var agent))
+        if (asking is null
+            || !AgentName.TryCreate($"{named}@{MachineName.Current}", out var agent)
+            || !AgentName.TryCreate($"{role}@{MachineName.Current}", out var added))
         {
             return NotStarted;
         }
@@ -432,12 +436,18 @@ internal static class Adding
         // each one had started, and found every one of them unaddressable: a node reports that it
         // launched something, and whether the adapter attached and registered is a question only
         // the registry answers. `parley enroll apply` has looked since 012 step 1; this did not.
+        // **Started through one project, looked for in the other.** The start goes to the project whose node names this
+        // repository, under the role it has there; the question this screen answers is whether the agent just added is
+        // in the project it was added to, under the role it was added as. Asking the starting project about its own role
+        // was always yes for a repository it already ran, so the owner was told "It can be asked and told now" about a
+        // name the project it was added to had never seen — and the agents list, redrawn from that project, said
+        // otherwise beside the claim.
         var was = await Starting.OnceAsync(
             agent,
             (who, token) => start(asking, who, token),
             registered is null
                 ? (_, _) => Task.FromResult(ProjectRead<bool>.Unreachable(Unchecked))
-                : (who, token) => registered(asking, who, token),
+                : (_, token) => registered(project, added, token),
             Starting.Patience,
             TimeProvider.System,
             cancellationToken).ConfigureAwait(false);
@@ -454,9 +464,19 @@ internal static class Adding
             { Launched: false } => $"{Safe.Text(was.Says)} {NotStarted}",
             { Registered: true } =>
                 $"Started {through} and it registered. It can be asked and told now.",
+            _ when already is not null => $"Started {through} — {Safe.Text(was.Says)}. {Later} {Reload}",
             _ => $"Started {through} — {Safe.Text(was.Says)}. {Later}",
         };
     }
+
+    /// <summary>What is added when a repository another project runs was not seen registering in this one.</summary>
+    /// <remarks>
+    /// The likeliest reason, and the one thing a person can do about it. A session reads its launch configuration when it
+    /// starts, so a session the other project already has running holds every server but the one just written, and a
+    /// start through that project gives it a turn rather than a restart.
+    /// </remarks>
+    private const string Reload =
+        "If that repository's session was already running, it loads the new entry only when it is restarted.";
 
     /// <summary>What is said when there is no broker to ask whether it registered.</summary>
     private const string Unchecked = "nothing here could ask the registry whether it did";
@@ -581,7 +601,7 @@ internal static class Adding
             said.Add(NothingWritten);
         }
 
-        await done(string.Join(Environment.NewLine, said)).ConfigureAwait(false);
+        await done(Reports.Sentences(said)).ConfigureAwait(false);
     }
 }
 

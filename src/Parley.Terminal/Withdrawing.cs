@@ -364,7 +364,7 @@ internal static class Withdrawing
             await WithdrawAsync(row, project, catalogueFile, said, cancellationToken).ConfigureAwait(false);
         }
 
-        await done(string.Join(Environment.NewLine, said)).ConfigureAwait(false);
+        await done(Reports.Sentences(said)).ConfigureAwait(false);
     }
 
     /// <summary>Purges, then withdraws the two files.</summary>
@@ -396,7 +396,7 @@ internal static class Withdrawing
             await WithdrawAsync(row, project, catalogueFile, said, cancellationToken).ConfigureAwait(false);
         }
 
-        await done(string.Join(Environment.NewLine, said)).ConfigureAwait(false);
+        await done(Reports.Sentences(said)).ConfigureAwait(false);
     }
 
     /// <summary>Takes the launch configuration and the catalogue line away, and lists what went.</summary>

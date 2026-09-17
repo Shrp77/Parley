@@ -362,6 +362,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 new Wire.DrainInboxRequest { Agent = _options.Agent.Value, Limit = limit ?? 0 },
                 cancellationToken: cancellationToken);
 
+            // So a channel can tell the next arrival: the broker says nothing when a drain takes mail away.
+            await _link.CollectedAsync(cancellationToken).ConfigureAwait(false);
+
             var messages = new JsonArray();
 
             foreach (var delivered in inbox.Messages)
@@ -522,6 +525,11 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         disk. Placing tells nobody. Send the agent that needs it a request naming the file and its sha256,
         so it fetches exactly what you meant.
 
+        A name is made of letters A to Z and a to z, digits, '.', '_' and '-'. Any other character, a space
+        included, becomes '_': the result's name is the one the file was placed under, and requested_name
+        says what you asked for. Use the placed name when you tell anybody about the file. If that name is
+        already another file's, nothing is placed and you are told which file it collides with.
+
         Placing a name you placed before in the same conversation replaces it; identical content changes
         nothing. You cannot replace a file another agent placed. The conversation is decided as a
         request's is: leave conversation_id out while you hold requests from one conversation.
@@ -529,7 +537,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     public async Task<JsonNode> FilePlaceAsync(
         [Description("The file to place: a path inside your repository, relative to its root or absolute.")]
         string path,
-        [Description("Optional. The name to place it under; defaults to the file's own name. Must end in .md or .txt.")]
+        [Description(
+            "Optional. The name to place it under; defaults to the file's own name. Must end in .md or .txt. " +
+            "Characters other than letters A to Z, digits, '.', '_' and '-' become '_'.")]
         string? name = null,
         [Description(
             "Optional. The conversation it belongs to. Leave it out while you hold requests from one " +
@@ -557,7 +567,10 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             }
 
             var placedName = string.IsNullOrWhiteSpace(name) ? Path.GetFileName(source) : name;
-            var problem = SharedFileName.Check(placedName);
+
+            // Checked as the broker will store it, so a name refused only for its characters is sent rather than
+            // refused here. What is sent is the name asked for: the broker renames, and says it did.
+            var problem = SharedFileName.Check(SharedFileName.Safe(placedName));
 
             if (problem != SharedFileNameProblem.None)
             {
@@ -620,6 +633,12 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                     refusal["placed_by"] = placedBy;
                 }
 
+                if (reply.Rejection == Wire.FileRejection.SafeNameTaken)
+                {
+                    refusal["name"] = reply.Name;
+                    refusal["requested_name"] = reply.RequestedName;
+                }
+
                 if (reply.AssignableConversations.Count > 0)
                 {
                     refusal["assignable_conversations"] =
@@ -647,6 +666,14 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             if (reply.PreviousSha256 is { Length: > 0 } previous)
             {
                 placed["previous_sha256"] = previous;
+            }
+
+            if (reply.RequestedName is { Length: > 0 } requested)
+            {
+                placed["requested_name"] = requested;
+                placed["renamed"] =
+                    $"The name asked for has characters outside {SharedFileName.AllowedCharactersInWords}, so the file " +
+                    $"was placed as '{reply.Name}'. Use that name when you tell anybody about it.";
             }
 
             return placed;
@@ -720,7 +747,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             {
                 return FileRefused(
                     problem == SharedFileNameProblem.ExtensionNotAllowed ? "extensionnotallowed" : "badname",
-                    SharedFileName.Describe(problem));
+                    SharedFileName.DescribeLookup(name));
             }
 
             var root = RepositoryPaths.Root(_options.Workspace);

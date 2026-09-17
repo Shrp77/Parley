@@ -147,7 +147,10 @@ public sealed class FilesUnderRaceAndOnDiskTests
             Directory.Delete(directory, recursive: true);
         }
 
-        Assert.True(tried > 1000, $"only {tried} names tried");
+        // Every letter a name can hold, which is the ASCII ones since the set replaced the list (SPEC.md §9.5). This probe
+        // tried every letter in the basic plane while names could be any of them, and still walks them all, so a set
+        // widened again is probed again without anybody remembering to.
+        Assert.Equal(52, tried);
         Assert.True(collisions.Count == 0, string.Join('\n', collisions.Take(25)) + $"\n({collisions.Count} in all, of {tried})");
     }
 

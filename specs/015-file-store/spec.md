@@ -654,3 +654,29 @@ Run it from another machine: it reports the machine name and the folder path, an
   hash does and does not attest, §14 for what destroying a conversation or project removes, §16 for the trusted-network
   assumption now covering file bytes and claimed identity deciding replacement and removal, and §18 for the new protocol
   version.
+
+## Amendment, 2026-09-16: names are a set, and a placement is renamed
+
+The owner's call, taken after the review gate had recorded — and left undecided — that a file's name reached another
+agent's model as up to two hundred and fifty characters of the placer's choosing. It supersedes FR-003's clause about
+accented and non-Latin letters, and FR-004's list of refused characters, and is carried by SPEC.md §9.5 and migration
+010 (schema 10, version 0.28.0, protocol still 0.6 because 0.6 was never released).
+
+- **A name is made of `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_` and `-`.** Every other rule stands: `.md` or `.txt`, no
+  leading dot, no reserved device name, 255 characters with the folder. Because every name is ASCII, the key is the
+  name in upper case and SQLite computes the same one, so the combining-mark caveat is gone.
+- **A placement asking for any other character is renamed**, each such character becoming `_`, one for one. The reply
+  carries the name placed and the name asked for. The broker renames; the adapter shows the spelling first.
+- **A renamed placement whose spelling is already a file's name is refused**, whoever placed that file, with the
+  sentence the owner specified: the name asked for has illegal characters and will be named the safe spelling, which
+  collides with the existing file of that name, named as it is stored. Placing under the safe spelling replaces a
+  caller's own file on purpose.
+- **A name looked up is never renamed.** A fetch or removal by a name outside the set is refused, and told the spelling a
+  placement of it would have had.
+- **A file a person copies in under any other name stays ignored** (the owner's call), and the person's listing counts
+  such files without naming them, on every surface.
+- **A store at schema 9** keeps every row whose name is in the set. A row under any other name is dropped, its file left
+  on disk, and each active agent that fetched it is told it is gone.
+
+Found while building it: a placement replaced a file the person had put on disk before the watcher recorded it,
+because only the watcher had ever looked. A placement now asks the disk too, and refuses.

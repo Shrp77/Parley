@@ -48,7 +48,6 @@ public sealed class FileStoreMigrationTests : IDisposable
     [Fact]
     public void The_store_is_at_the_latest_schema()
     {
-        Assert.Equal(9, SchemaMigrator.GetUserVersion(_connection));
         Assert.Equal(SchemaMigrator.LatestVersion, SchemaMigrator.GetUserVersion(_connection));
     }
 

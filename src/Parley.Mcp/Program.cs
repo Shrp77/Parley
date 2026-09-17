@@ -97,9 +97,22 @@ builder.Services
     // Instructions travel with the protocol, which makes this the one way to tell a model what
     // Parley is for that does not depend on which vendor's client it lives in. See
     // ParleyInstructions for what belongs in it and what deliberately does not.
-    .AddMcpServer(server => server.ServerInstructions = ParleyInstructions.Text)
+    .AddMcpServer(server =>
+    {
+        server.ServerInstructions = ParleyInstructions.Text;
+
+        // Declared always. A Claude Code session started with this server as a channel is pushed an event when work
+        // arrives, and every other client drops or ignores it -- see ChannelNudges for why that is safe and what the
+        // event may carry.
+        server.Capabilities = new ModelContextProtocol.Protocol.ServerCapabilities
+        {
+            Experimental = new Dictionary<string, object> { [ChannelNudges.Capability] = new System.Text.Json.Nodes.JsonObject() }
+        };
+    })
     .WithStdioServerTransport()
     .WithTools<ParleyTools>();
+
+builder.Services.AddHostedService<ChannelNudges>();
 
 var host = builder.Build();
 

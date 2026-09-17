@@ -130,14 +130,22 @@ internal sealed class Browsing : Dialog
 
     /// <summary>Where to start looking.</summary>
     /// <param name="last">The last repository added in this session, or null when none was.</param>
+    /// <param name="startedIn">The folder the terminal was started from, or null when it is not known.</param>
     /// <returns>The folder to open.</returns>
     /// <remarks>
+    /// <para>
     /// <b>The parent of the last one, because repositories sit beside each other.</b> Somebody
     /// adding a second agent is almost always adding the repository next to the first, and starting
-    /// them back at their home directory each time is the walk this exists to remove. Home is the
-    /// answer for the first one, since nothing yet says where they keep their work.
+    /// them back where they began each time is the walk this exists to remove.
+    /// </para>
+    /// <para>
+    /// <b>For the first one, the folder the terminal was started in</b>, the owner's call. It used to be the home
+    /// directory, on the reasoning that nothing yet said where somebody keeps their work — but the shell they typed
+    /// <c>parley terminal</c> into says exactly that, and is very often the repository itself. Home is left for a
+    /// start folder that has gone.
+    /// </para>
     /// </remarks>
-    internal static string Opening(string? last)
+    internal static string Opening(string? last, string? startedIn = null)
     {
         if (last is { Length: > 0 } && Directory.Exists(last))
         {
@@ -147,6 +155,11 @@ internal sealed class Browsing : Dialog
             {
                 return above;
             }
+        }
+
+        if (startedIn is { Length: > 0 } && Directory.Exists(startedIn))
+        {
+            return Path.GetFullPath(startedIn);
         }
 
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);

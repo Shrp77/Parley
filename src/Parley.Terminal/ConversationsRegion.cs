@@ -32,10 +32,20 @@ internal sealed class ConversationsRegion : FrameView
     /// <summary>An exchange that has been concluded.</summary>
     internal const string Settled = "settled";
 
-    /// <summary>What is shown when a project has had none.</summary>
-    internal const string Nothing =
-        "No conversation has happened in this project yet. One begins when an agent asks another "
-        + "something, or when you do from a seat.";
+    /// <summary>What is shown when a project has had none, a short row at a time.</summary>
+    /// <remarks>
+    /// Rows rather than one sentence, because a list row does not wrap: the sentence was wider than the half-width pane a
+    /// project view gives this region, and the owner's screenshot showed it cut at "when an agent asks an" — which is
+    /// the half that says how to start one, lost while they were looking for exactly that. Each row fits in the
+    /// narrowest pane this surface draws.
+    /// </remarks>
+    internal static readonly IReadOnlyList<string> Nothing =
+    [
+        "No conversation here yet.",
+        "One starts when an agent sends",
+        "another a request, or when you",
+        "press k to start one yourself.",
+    ];
 
     private readonly GuardedList _list = Lists.Filling(Colours.Conversations);
 
@@ -103,7 +113,7 @@ internal sealed class ConversationsRegion : FrameView
         var lines = problem is not null
             ? [Safe.Text(problem)]
             : summaries.Count == 0
-                ? new List<string> { archivedOmitted > 0 ? ConversationsView.AllArchived : Nothing }
+                ? archivedOmitted > 0 ? new List<string> { ConversationsView.AllArchived } : [.. Nothing]
                 : [.. summaries.Select(Line)];
 
         if (hidden.Length > 0 && problem is null)

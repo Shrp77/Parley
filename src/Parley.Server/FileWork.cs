@@ -59,7 +59,10 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
         RequireAttached(agent);
 
-        var problem = SharedFileName.Check(header.Name);
+        // Renamed here and nowhere else (SPEC.md §9.5). An adapter shows an agent the same spelling before it sends, but
+        // the broker must not trust that it did, and a second implementation's adapter may not.
+        var safe = SharedFileName.Safe(header.Name);
+        var problem = SharedFileName.Check(safe);
 
         if (problem != SharedFileNameProblem.None)
         {
@@ -71,7 +74,8 @@ internal sealed class FileWork(BrokerRuntime runtime)
             };
         }
 
-        var name = SharedFileName.Create(header.Name);
+        var name = SharedFileName.Create(safe);
+        var requested = string.Equals(safe, header.Name, StringComparison.Ordinal) ? null : header.Name;
         var named = Blank(header.ConversationId);
 
         // The schema's rule, applied before anything is looked up or staged. An id the store refuses reached the store
@@ -95,6 +99,11 @@ internal sealed class FileWork(BrokerRuntime runtime)
         if (before.Refusal is { } early)
         {
             return early;
+        }
+
+        if (requested is not null && before.Existing is { } clash)
+        {
+            return SafeNameTaken(requested, name, clash.File);
         }
 
         if (before.Existing is { } taken && taken.File.PlacedBy != agent)
@@ -160,7 +169,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
                     var committed = await _runtime.UseConnectionAsync(
                         (connection, now, ct) => CommitAsync(
-                            connection, agent, conversation, name, staged, sha256, heldFolder, now, ct),
+                            connection, agent, conversation, name, requested, staged, sha256, heldFolder, now, ct),
                         cancellationToken).ConfigureAwait(false);
 
                     if (committed.Reply is { } reply)
@@ -175,6 +184,50 @@ internal sealed class FileWork(BrokerRuntime runtime)
             throw new RpcException(new Status(
                 StatusCode.Aborted, "The file kept changing while it was being placed, and nothing was written. Place it again."));
         }
+    }
+
+    /// <summary>How many files in the folders listed have names §9.5 does not accept, and so are not listed.</summary>
+    /// <param name="folders">Every recorded folder.</param>
+    /// <param name="scope">The conversation listed, or <see langword="null"/> for all of them.</param>
+    /// <returns>The count.</returns>
+    /// <remarks>
+    /// <para>
+    /// The person's alone. Such a file is never listed, fetched or opened, and the broker does not rename a file a person
+    /// put on their own disk — so without this count, one copied in as <c>Meeting notes.md</c> is simply absent from
+    /// every surface, with nothing to say why. A count rather than the names, because a name that breaks the rules is
+    /// exactly the text nothing has checked. Agents are not told: the files are not theirs, and not in the location.
+    /// </para>
+    /// <para>
+    /// A folder that cannot be read counts nothing rather than failing the list, which answers a different question.
+    /// </para>
+    /// </remarks>
+    private int NotListed(IReadOnlyList<(string ConversationId, string Folder)> folders, string? scope)
+    {
+        var count = 0;
+
+        foreach (var (conversation, folder) in folders)
+        {
+            if (scope is not null && !string.Equals(conversation, scope, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            try
+            {
+                var directory = _runtime.Files.FolderPath(folder);
+
+                if (Directory.Exists(directory))
+                {
+                    count += Directory.EnumerateFiles(directory)
+                        .Count(path => SharedFileName.Check(Path.GetFileName(path)) != SharedFileNameProblem.None);
+                }
+            }
+            catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+
+        return count;
     }
 
     /// <summary>Whether a conversation id is one the store accepts.</summary>
@@ -340,9 +393,17 @@ internal sealed class FileWork(BrokerRuntime runtime)
                     var page = await files.ListAsync(scope, request.PageSize, Blank(request.PageToken), cancellationToken: ct)
                         .ConfigureAwait(false);
 
-                    return Conversions.Out(
+                    var reply = Conversions.Out(
                         page,
                         forOperator ? await files.GetPlacementsAsync(cancellationToken: ct).ConfigureAwait(false) : null);
+
+                    if (forOperator)
+                    {
+                        reply.FilesNotListed = NotListed(
+                            await files.GetFoldersAsync(cancellationToken: ct).ConfigureAwait(false), scope);
+                    }
+
+                    return reply;
                 },
                 cancellationToken).ConfigureAwait(false);
         }
@@ -546,6 +607,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
         AgentName agent,
         string conversation,
         SharedFileName name,
+        string? requested,
         FileLocationStore.StagedFile staged,
         ContentHash sha256,
         string? heldFolder,
@@ -559,6 +621,21 @@ internal sealed class FileWork(BrokerRuntime runtime)
         if (look.Refusal is { } refusal)
         {
             return new Committed(refusal, null);
+        }
+
+        // Asked again inside the transaction, because the name can be taken while the bytes arrive — and before the
+        // turn is sought, since a collision is refused whoever holds the file and needs no turn to say so.
+        if (requested is not null && look.Existing is { } clash)
+        {
+            return new Committed(SafeNameTaken(requested, name, clash.File), null);
+        }
+
+        // A file on disk that no row names yet is the person's (§9.5), and committing over it would destroy it. Found by
+        // the review of the name set: a person's file dropped into a folder was replaced by the next placement of its
+        // name, because nothing but the watcher had ever looked, and the watcher had not looked yet.
+        if (look.Existing is null && look.Folder is { } folder && _runtime.Files.OnDisk(folder, name) is { } unrecorded)
+        {
+            return new Committed(PersonsOnDisk(conversation, name, requested, unrecorded), null);
         }
 
         // A file of this name exists now, and this attempt does not hold its turn: a download of it may be streaming,
@@ -600,7 +677,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
         transaction.Commit();
 
-        return new Committed(Reply(placed, conversation, name), null);
+        return new Committed(Reply(placed, conversation, name, requested), null);
     }
 
     private async Task<FileResolution> ResolveCurrentAsync(FileRef reference, CancellationToken cancellationToken)
@@ -684,8 +761,10 @@ internal sealed class FileWork(BrokerRuntime runtime)
             cancellationToken).ConfigureAwait(false);
     }
 
-    private static Wire.PlaceFileReply Reply(PlaceResult placed, string conversation, SharedFileName asked) => placed.Outcome switch
+    private static Wire.PlaceFileReply Reply(PlaceResult placed, string conversation, SharedFileName asked, string? requested) => placed.Outcome switch
     {
+        // A file on disk that no row named yet is refused here rather than in the look, and it is still a collision.
+        PlaceOutcome.PlacedByAnother when requested is not null => SafeNameTaken(requested, asked, placed.File!),
         PlaceOutcome.PlacedByAnother => PlacedByAnother(placed.File!),
         PlaceOutcome.DoesNotFit => new Wire.PlaceFileReply
         {
@@ -706,8 +785,38 @@ internal sealed class FileWork(BrokerRuntime runtime)
             Name = placed.File!.Name.Value,
             SizeBytes = placed.File.SizeBytes,
             Sha256 = placed.File.Sha256.Value,
-            PreviousSha256 = placed.Previous?.Value ?? string.Empty
+            PreviousSha256 = placed.Previous?.Value ?? string.Empty,
+            RequestedName = requested ?? string.Empty
         }
+    };
+
+    private static Wire.PlaceFileReply PersonsOnDisk(string conversation, SharedFileName name, string? requested, string onDisk) =>
+        requested is null
+            ? new()
+            {
+                Outcome = Wire.PlaceOutcome.PlacedByAnother,
+                Rejection = Wire.FileRejection.NamePlacedByAnother,
+                ConversationId = conversation,
+                Name = name.Value,
+                Detail = PlacerSentence(null)
+            }
+            : new()
+            {
+                Rejection = Wire.FileRejection.SafeNameTaken,
+                ConversationId = conversation,
+                Name = name.Value,
+                RequestedName = requested,
+                Detail = SharedFileName.SafeNameTaken(requested, name.Value, onDisk)
+            };
+
+    private static Wire.PlaceFileReply SafeNameTaken(string requested, SharedFileName safe, SharedFile existing) => new()
+    {
+        Rejection = Wire.FileRejection.SafeNameTaken,
+        ConversationId = existing.ConversationId,
+        Name = safe.Value,
+        RequestedName = requested,
+        PlacedBy = existing.PlacedBy?.Value ?? string.Empty,
+        Detail = SharedFileName.SafeNameTaken(requested, safe.Value, existing.Name.Value)
     };
 
     private static Wire.PlaceFileReply PlacedByAnother(SharedFile file) => new()
@@ -769,7 +878,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
             $"'{refusal.File.Name}' is in more than one conversation: {string.Join(", ", refusal.Conversations)}" +
             (refusal.ConversationsMore > 0 ? $", and {refusal.ConversationsMore} more" : string.Empty) +
             ". Nothing was done; call again naming the conversation you want.",
-        FileRejection.BadName or FileRejection.ExtensionNotAllowed => SharedFileName.Describe(SharedFileName.Check(refusal.File.Name)),
+        FileRejection.BadName or FileRejection.ExtensionNotAllowed => SharedFileName.DescribeLookup(refusal.File.Name),
         FileRejection.NamePlacedByAnother => PlacerSentence(refusal.PlacedBy),
         FileRejection.Changed =>
             $"The file is not the content expected: the location holds {sha256Now?.Value ?? "different content"}. " +

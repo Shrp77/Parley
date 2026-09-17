@@ -55,17 +55,19 @@ public sealed class FilesPageTests : IDisposable
     }
 
     [Fact]
-    public async Task Names_and_conversations_are_encoded_as_somebody_elses_text()
+    public async Task Conversations_are_encoded_as_somebody_elses_text()
     {
-        _console.Broker.Files.Add(View("pricing<b>", "Tom & Jerry's.md", 1, new string('c', 64), "billing@alpha"));
+        // A name can no longer carry markup: SPEC.md §9.5 makes it letters, digits, '.', '_' and '-', and the client
+        // refuses a listing that breaks that rather than showing it. The conversation arriving from a broker is still
+        // text this surface did not write.
+        _console.Broker.Files.Add(View("pricing<b>", "Tom_and_Jerry.md", 1, new string('c', 64), "billing@alpha"));
 
         using var client = _console.CreateClient();
 
         var body = await client.GetStringAsync(new Uri(Page, UriKind.Relative), Ct);
 
         Assert.DoesNotContain("pricing<b>", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("Tom & Jerry", body, StringComparison.Ordinal);
-        Assert.Contains("Tom &amp; Jerry", body, StringComparison.Ordinal);
+        Assert.Contains("pricing&lt;b&gt;", body, StringComparison.Ordinal);
     }
 
     [Fact]

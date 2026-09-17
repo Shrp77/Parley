@@ -427,7 +427,7 @@ internal static class Naming
             });
         }
 
-        await done(string.Join(Environment.NewLine, lines)).ConfigureAwait(false);
+        await done(Reports.Sentences(lines)).ConfigureAwait(false);
     }
 
     /// <summary>What a form proposes for each field, and the one line saying why.</summary>

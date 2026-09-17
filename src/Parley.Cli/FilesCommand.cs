@@ -164,6 +164,7 @@ public sealed class FilesCommand(
         if (files.Count == 0)
         {
             await _output.WriteLineAsync("The file location is empty.").ConfigureAwait(false);
+            await NotListedAsync(last).ConfigureAwait(false);
             await PlacementsAsync(last.Placements).ConfigureAwait(false);
             return 0;
         }
@@ -194,9 +195,18 @@ public sealed class FilesCommand(
         // Local, as every other time this tool and the screens show a person, and said once rather than per row.
         await _output.WriteLineAsync(LocalTime.Note()).ConfigureAwait(false);
 
+        await NotListedAsync(last).ConfigureAwait(false);
         await PlacementsAsync(last.Placements).ConfigureAwait(false);
 
         return 0;
+    }
+
+    private async Task NotListedAsync(SharedFileListing listing)
+    {
+        if (listing.NotListedSentence is { } sentence)
+        {
+            await _output.WriteLineAsync(sentence).ConfigureAwait(false);
+        }
     }
 
     private async Task PlacementsAsync(IReadOnlyList<FilePlacementCount> placements)

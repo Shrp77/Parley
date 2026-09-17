@@ -275,6 +275,7 @@ message PlaceFileReply {
   repeated string assignable_conversations = 9;   // on CONVERSATION_NOT_ASSIGNABLE, as a Request's refusal carries
   int32 characters_left = 10;         // on DOES_NOT_FIT: the longest name the conversation's folder allows
   string detail = 11;                 // on a refusal, the rule in words
+  string requested_name = 12;         // the name asked for, when characters outside the set renamed it (section 9.5)
 }
 
 message FetchFileRequest {
@@ -344,6 +345,7 @@ message FilesReply {
   repeated FilePlacementCount placements = 4;     // Operators only
   string next_page_token = 5;                     // empty at the end
   int32 total_files = 6;                          // the files total_bytes counts
+  int32 files_not_listed = 7;                     // Operators only: files in the listed folders whose names break section 9.5's rules
 }
 
 message ConversationFilesTotal {
@@ -403,6 +405,7 @@ enum FileRejection {
   FILE_REJECTION_EXTENSION_NOT_ALLOWED = 11;
   FILE_REJECTION_NOT_FETCHED = 12;
   FILE_REJECTION_TOO_MANY_NAMES = 13;
+  FILE_REJECTION_SAFE_NAME_TAKEN = 14;  // a renamed placement's safe spelling is already another file's name
 }
 
 enum PlaceOutcome {

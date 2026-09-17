@@ -199,7 +199,7 @@ internal static class Onboarding
             lines.Add(Applied);
         }
 
-        await done(string.Join(Environment.NewLine, lines)).ConfigureAwait(false);
+        await done(Reports.Sentences(lines)).ConfigureAwait(false);
     }
 
     private static bool Yes(string typed) =>

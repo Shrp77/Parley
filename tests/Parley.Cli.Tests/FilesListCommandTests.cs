@@ -111,10 +111,11 @@ public sealed class FilesListCommandTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_name_built_to_move_the_terminal_arrives_as_one_row()
+    public async Task A_name_built_to_move_the_terminal_arrives_renamed_as_one_row()
     {
-        // Both are legal in a name: a C1 next-line, which some terminals take as a line break, and a right-to-left
-        // override, which makes a name read as something it is not.
+        // A C1 next-line, which some terminals take as a line break, and a right-to-left override, which makes a name
+        // read as something it is not. Both were legal in a name until 0.28.0; now the broker renames each to '_' when
+        // the file is placed, so neither reaches a list at all.
         var nextLine = "notes" + (char)0x85 + "rates.md";
         var reversed = "invoice" + (char)0x202E + "dm.txt";
 
@@ -125,8 +126,8 @@ public sealed class FilesListCommandTests : IAsyncDisposable
 
         Assert.DoesNotContain((char)0x85, output);
         Assert.DoesNotContain((char)0x202E, output);
-        Assert.Contains("notes?rates.md", output, StringComparison.Ordinal);
-        Assert.Contains("invoice?dm.txt", output, StringComparison.Ordinal);
+        Assert.Contains("notes_rates.md", output, StringComparison.Ordinal);
+        Assert.Contains("invoice_dm.txt", output, StringComparison.Ordinal);
     }
 
     [Fact]

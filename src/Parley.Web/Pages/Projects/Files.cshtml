@@ -149,6 +149,11 @@ else if (Model.Listing is { } listing)
         }
     }
 
+    @if (listing.NotListedSentence is { } notListed)
+    {
+        <p class="notice">@notListed</p>
+    }
+
     @if (listing.Placements.Count > 0)
     {
         <h2>Placements</h2>

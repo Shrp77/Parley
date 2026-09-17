@@ -88,6 +88,12 @@ public enum FileRejection
 
     /// <summary>A removal named more files than one call may carry.</summary>
     TooManyNames,
+
+    /// <summary>
+    /// A placement's name held characters outside the set, and the spelling it would be stored under is already
+    /// another file's name in that conversation; nothing was placed.
+    /// </summary>
+    SafeNameTaken,
 }
 
 /// <summary>

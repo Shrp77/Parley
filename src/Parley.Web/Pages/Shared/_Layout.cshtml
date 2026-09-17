@@ -1139,9 +1139,13 @@
         }
 
     </style>
-    @* List views refresh themselves; a transcript never does. A page that changed under a reader
-       mid-sentence would be worse than one that is briefly out of date, and the transcript says
-       so itself when it has fallen behind. *@
+    @* List views refresh themselves by reloading; a transcript never reloads. It follows its
+       conversation instead, replacing only the region that changed and keeping the message a reader
+       is looking at where it was -- a reload would throw away their place, what they had typed into
+       the composer, and what they were searching for. This comment used to say a transcript never
+       changes at all, because a page moving under a reader mid-sentence is worse than one briefly
+       out of date; following is built so that it does not move them, which answers that rather
+       than overruling it. *@
     @if (ViewData["Refresh"] is string seconds)
     {
         <meta http-equiv="refresh" content="@seconds" />
@@ -1198,6 +1202,7 @@
            would be the more comforting sentence and the false one. *@
         <p>Operator view. Everything is a read except retire, reinstate, instruct, purge and
            force-conclude, and each of those says what it will do before it does it.</p>
+        <p class="build">parley-web-ui @Parley.Web.WebBuild.Version</p>
     </footer>
     <script>
         // --frame is what the sticky frame occupies, and three other things are positioned

@@ -473,6 +473,7 @@ internal static class Conversions
         FileRejection.ExtensionNotAllowed => Wire.FileRejection.ExtensionNotAllowed,
         FileRejection.NotFetched => Wire.FileRejection.NotFetched,
         FileRejection.TooManyNames => Wire.FileRejection.TooManyNames,
+        FileRejection.SafeNameTaken => Wire.FileRejection.SafeNameTaken,
         _ => throw new ArgumentOutOfRangeException(nameof(rejection), rejection, "Not a defined file rejection.")
     };
 

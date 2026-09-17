@@ -3,19 +3,18 @@ using Xunit;
 namespace Parley.Web.Tests;
 
 /// <summary>
-/// That a list view keeps itself current and says so, and that a transcript does not.
+/// That a list view keeps itself current by reloading and says so, and that a transcript does not reload.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A console left open on a wall is the ordinary way this is used, and the two failures are
-/// opposite. A list that never refreshes shows a deployment as it was; a transcript that
-/// refreshes moves under somebody halfway through reading a message, which is worse than being
-/// briefly out of date because the reader cannot tell it happened.
+/// A console left open on a wall is the ordinary way this is used. A list that never refreshes shows a
+/// deployment as it was, so a list reloads. A transcript that reloaded would throw away a reader's place,
+/// what they had typed and what they were searching for, so a transcript follows instead, without moving
+/// them — which <see cref="FollowingTests"/> holds.
 /// </para>
 /// <para>
-/// So the rule is split by page rather than applied uniformly, and the stamp is what makes either
-/// half safe: a page that says when it was built can be trusted to be stale, which a page that
-/// says nothing cannot.
+/// The stamp is what makes a page that cannot follow safe: a page that says when it was built can be
+/// trusted to be stale, which a page that says nothing cannot.
 /// </para>
 /// </remarks>
 public sealed class CurrencyTests
@@ -34,9 +33,9 @@ public sealed class CurrencyTests
     }
 
     [Fact]
-    public void The_transcript_stamps_itself_but_does_not_refresh()
+    public void The_transcript_stamps_itself_but_does_not_reload()
     {
-        // The deliberate asymmetry. It says when it was read, and then holds still.
+        // It says when it was read, and follows rather than reloading.
         var markup = Page("src/Parley.Web/Pages/Conversations/Detail.cshtml");
 
         Assert.Contains("ViewData[\"AsOf\"]", markup, StringComparison.Ordinal);
@@ -73,37 +72,6 @@ public sealed class CurrencyTests
 
         Assert.DoesNotContain("read-only", served, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("says what it will do before it does it", served, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task A_staleness_check_that_could_not_run_is_not_reported_as_up_to_date()
-    {
-        // "Nothing has arrived" and "nobody could say" are the same silence to a reader, and the
-        // second is where they most need to stop trusting the screen. A transcript whose broker
-        // went away would otherwise sit there asserting it was current for as long as the tab
-        // stayed open.
-        using var console = new DeadBrokerConsole();
-        using var client = console.CreateStubbornClient();
-
-        var body = await client.GetStringAsync(
-            new Uri(
-                $"/Conversations/Detail?project={DeadBrokerConsole.Project}"
-                + "&id=shared&handler=Since&since=0",
-                UriKind.Relative),
-            TestContext.Current.CancellationToken);
-
-        Assert.Contains("\"checkFailed\":true", body, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void The_transcript_has_somewhere_to_say_the_check_failed()
-    {
-        // The reporting half. A handler that answered honestly into a page with nowhere to put
-        // the answer would be a fix that changed nothing anybody sees.
-        var markup = Page("src/Parley.Web/Pages/Conversations/Detail.cshtml");
-
-        Assert.Contains("id=\"uncertain\"", markup, StringComparison.Ordinal);
-        Assert.Contains("d.checkFailed", markup, StringComparison.Ordinal);
     }
 
     /// <summary>Finds a path in the repository from wherever the tests run.</summary>

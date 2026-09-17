@@ -164,6 +164,36 @@ public sealed class FileLocationStore : IDisposable
         return Contained(Path.Combine(FolderPath(folder), name.Value));
     }
 
+    /// <summary>The name of a file already on disk in a folder under a name with the same key, if there is one.</summary>
+    /// <param name="folder">The conversation's folder name.</param>
+    /// <param name="name">The name being placed.</param>
+    /// <returns>The file's name as it is on disk, or <see langword="null"/>.</returns>
+    /// <remarks>
+    /// Compared by key, because Windows and macOS hold <c>Notes.md</c> and <c>notes.md</c> as one file, and a placement
+    /// committed under either spelling would replace it there. Asked of the disk rather than of the store: a file a
+    /// person put in the folder has no row until the watcher or the next list records it, and until then the disk is
+    /// the only thing that knows it is there.
+    /// </remarks>
+    public string? OnDisk(string folder, SharedFileName name)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+
+        var directory = FolderPath(folder);
+
+        try
+        {
+            return Directory.Exists(directory)
+                ? Directory.EnumerateFiles(directory)
+                    .Select(Path.GetFileName)
+                    .FirstOrDefault(n => n is not null && string.Equals(SharedFileName.KeyOf(n), name.Key, StringComparison.Ordinal))
+                : null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Starts a placement: a staging file that hashes what is written to it.</summary>
     /// <returns>The staged file, which deletes itself unless it is committed.</returns>
     /// <exception cref="IOException">The staging file could not be created, including for want of space.</exception>

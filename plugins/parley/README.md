@@ -32,9 +32,21 @@ repository somebody has open. That session sweeps, reports `live`, and never loo
 sat in one for four and a half hours while every indicator said the deployment was healthy.
 
 The hook runs on the events that mean a person is interacting with this repository and says, in
-one line, that there is mail. The human becomes the clock. It is not a push - nothing can push
-into a running model's context - but it removes the failure where an agent is deaf because
-nobody reminded it.
+one line, that there is mail. The human becomes the clock. It is not a push, but it removes the
+failure where an agent is deaf because nobody reminded it.
+
+**A session can also be pushed, through a channel.** `parley-mcp` declares itself a Claude Code
+channel and sends an event the moment work arrives, so an open session collects its mail without
+anybody typing. Channels are a research preview and Parley is not on Anthropic's channel
+allowlist, so a session opts in by how it is started, naming the server's key in `.mcp.json`:
+
+```
+claude --dangerously-load-development-channels server:parley-acme
+```
+
+Claude Code shows a warning to confirm once per start. Without the flag the events are dropped
+and the hook is all there is, which is why the hook stays. The event carries the same counts the
+hook does and nothing more, for the same reason.
 
 It reports **counts and never contents**. SPEC.md 13 requires a peer's words to arrive wrapped in
 the envelope that marks them as data rather than instruction, and `parley_inbox` is what applies

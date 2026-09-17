@@ -258,11 +258,12 @@ public sealed class FileToolTests : IDisposable
     }
 
     [Fact]
-    public async Task A_name_a_placer_chose_reaches_another_agent_verbatim_so_the_tools_say_whose_text_it_is()
+    public async Task A_name_a_placer_chose_reaches_another_agent_as_the_placer_chose_it_so_the_tools_say_whose_text_it_is()
     {
         // Review gate, lens 2 run 2.1. A message reaches a model inside the envelope that marks it as another
-        // participant's words; a file's name is up to two hundred and fifty characters of the placer's choosing and
-        // reaches the fetcher's list and inbox as it is. So each tool that returns one says so.
+        // participant's words; a file's name is the placer's choosing and reaches the fetcher's list and inbox as it is.
+        // So each tool that returns one says so. Since 0.28.0 a name is letters, digits, '.', '_' and '-', which takes
+        // the spaces out of a sentence and leaves its words: narrower text, still the placer's.
         await using var fixture = new ServerFixture(T0);
         var (_, billing) = await fixture.LaunchInAsync("billing@test", BillingRepository, Ct);
         var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
@@ -270,7 +271,10 @@ public sealed class FileToolTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(BillingRepository, "plain.md"), "net", Ct);
         await billing.FilePlaceAsync("plain.md", name: PeerWords + ".md", conversationId: "pricing", cancellationToken: Ct);
 
-        Assert.Contains(PeerWords, (await orders.FileListAsync(cancellationToken: Ct)).ToJsonString(), StringComparison.Ordinal);
+        var listed = (await orders.FileListAsync(cancellationToken: Ct)).ToJsonString();
+
+        Assert.DoesNotContain(PeerWords, listed, StringComparison.Ordinal);
+        Assert.Contains(PeerWords.Replace(' ', '_'), listed, StringComparison.Ordinal);
 
         foreach (var tool in new[] { nameof(ParleyTools.FileListAsync), nameof(ParleyTools.FileFetchAsync), nameof(ParleyTools.InboxAsync) })
         {

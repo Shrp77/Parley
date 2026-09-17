@@ -1738,20 +1738,19 @@ END;
 -- grow the log and every backup, and a person opens the folder itself.
 CREATE TABLE shared_files (
   conversation_id TEXT    NOT NULL REFERENCES conversation_folders(conversation_id),
-  -- The name in upper case for every letter, computed by the broker because SQL folds only ASCII.
-  -- Every key on a file is this, so 'Übersicht.md' and 'übersicht.md' are one row, as they are one
-  -- file on the disks that hold them.
-  name_key        TEXT    NOT NULL CHECK (length(name_key) >= 1 AND name_key = upper(name_key)),
-  -- As placed. One flat component a disk on any of the three platforms accepts, ending .md or .txt
-  -- so that nothing placed has a handler that runs a program (§13). The folder, a separator and the
-  -- name together are bounded by tr_shared_file_path_fits.
+  -- The name in upper case. Every name is ASCII, so SQLite's upper() is the key, and every key on a
+  -- file is this: 'Readme.md' and 'README.md' are one row, as they are one file on the disks of
+  -- Windows and macOS.
+  name_key        TEXT    NOT NULL CHECK (name_key = upper(name)),
+  -- As placed, after renaming. Made of letters A to Z, digits, '.', '_' and '-', which every disk on
+  -- the three platforms accepts and which carries no text of the placer's beyond a word, ending .md
+  -- or .txt so that nothing placed has a handler that runs a program (§13). The folder, a separator
+  -- and the name together are bounded by tr_shared_file_path_fits.
   name            TEXT    NOT NULL
                   CHECK (length(name) BETWEEN 4 AND 254
                          AND (lower(name) GLOB '*.md' OR lower(name) GLOB '*.txt')
-                         AND name NOT GLOB '*[/\:*?"<>|]*'
-                         AND name NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*')
+                         AND name NOT GLOB '*[^A-Za-z0-9._-]*'
                          AND name NOT GLOB '.*'
-                         AND name NOT GLOB ' *'
                          AND upper(substr(name, 1, instr(name, '.') - 1)) NOT IN
                              ('CON', 'PRN', 'AUX', 'NUL',
                               'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
@@ -1938,9 +1937,8 @@ that needed it; an enumeration written as prose has already decayed.
   it and when, because the placer is what decides who may replace or remove it.
 - **A name is a safe file name, and fits its folder.** The `CHECK` on `shared_files.name` and the two
   `tr_shared_file_path_fits` triggers hold §9.5's rules, so a name that could escape its folder, run a
-  program when opened, or be refused by a disk is refused where it would be written. The folded key
-  cannot be computed in SQL, which folds only ASCII; the schema holds its shape and the broker computes
-  it.
+  program when opened, or be refused by a disk is refused where it would be written. Every name is
+  ASCII, so the key is SQL's own `upper(name)`, and the schema holds it to that.
 - **A placer is registered, or is the person.** `tr_placer_is_registered`, on insert. Not a foreign key:
   purge deletes the rows by name and reports them (§14), where a key would cascade silently or refuse.
 - **A folder's name is fixed and unique.** `conversation_folders` refuses a second conversation's folder
@@ -2073,15 +2071,32 @@ is still traced to its conversation. A folder no row names belongs to no convers
 
 **A name ends in `.md` or `.txt`.** Code travels as text — `PriceSnapshot.cs.txt` — so nothing placed
 in a location has a handler that runs a program when a person opens it (§13). Only the name is
-checked; the bytes are never inspected. A name is one flat component that every platform's disks
-accept: no path separator, none of `\ : * ? " < > |`, no control character, no leading space or dot,
-and not a reserved device name. The folder, a separator and the name together are at most 255
-characters, the location's own path not counted. Names are compared by a key that is the name in upper case, letter by
-letter, so `Übersicht.md` and `übersicht.md` are one file, as they are on the disks of Windows and macOS.
-The key does not normalise Unicode: an accented name spelled with a combining mark and the same name
-spelled with a single precomposed letter are two names, though macOS may hold them as one file. A file whose name breaks a rule, copied in by hand or renamed there,
-is not in the location: it is never listed, fetched or opened, and a rename to such a name is the old
-name gone.
+checked; the bytes are never inspected. A name is made of `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_` and `-`
+and nothing else, does not begin with a dot, and is not a reserved device name (`CON`, `PRN`, `AUX`,
+`NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, with or without an extension). The folder, a separator and the
+name together are at most 255 characters, the location's own path not counted. Names are compared by a
+key that is the name in upper case, so `Readme.md` and `README.md` are one file, as they are on the
+disks of Windows and macOS.
+
+**A placement is renamed rather than refused for its characters.** The broker replaces each character
+outside the set with `_`, one for one — a character outside the Basic Multilingual Plane is one
+character and becomes one `_` — and places the file under that spelling: `Meeting notes v2.md` is
+placed as `Meeting_notes_v2.md`. The reply carries the name placed and the name asked for. The rename
+is the broker's alone; an adapter may show an agent the spelling first, and the broker applies it
+whether or not the adapter did. A rename that leaves a rule still broken — `../notes.md` becomes
+`.._notes.md`, which begins with a dot — is refused for that rule.
+
+**A renamed placement whose spelling is already a file's name is refused**, whoever placed that file,
+the caller included, and nothing is placed. The refusal names the three: the name asked for, the
+spelling it would have had, and the file already there as it is stored. `a:b.md` and `a?b.md` are both
+`a_b.md`, and replacing one with the other would be a rename nobody asked for; placing again under
+`a_b.md` replaces it on purpose, under the rule for a caller's own file. A name looked up — fetched,
+removed, opened — is never renamed, because the renamed spelling could be a different file from the
+one meant; its refusal says the spelling a placement of it would have had.
+
+A file whose name breaks a rule, copied in by hand or renamed there, is not in the location: it is
+never listed, fetched or opened, and a rename to such a name is the old name gone. The broker renames
+nothing a person put on disk. The person's listing counts such files, without naming them (§10.2).
 
 **The content hash is the broker's.** SHA-256 of the stored bytes, in lowercase hex, computed as they
 arrive and again whenever they change by any route. A placing adapter's own hash is never taken. The
@@ -2091,7 +2106,8 @@ same hash is the same content; it attests nothing about who wrote it.
 (§9.3). The agent that placed a file may replace its content or remove it; placing identical content
 changes nothing. No agent may replace or remove a file another agent placed (§16), and a refusal names
 the placer without preventing the caller's own files in the same request. A file the person put there
-is the person's. The person may remove any file and prune them all (§10.2).
+is the person's, from the moment it is on disk: a placement of its name is refused even before
+anything has recorded it. The person may remove any file and prune them all (§10.2).
 
 **A conversation is assigned as a Request's is** (§5.0), and a bare name is looked for across the whole
 location: one match is used, and several is a refusal that does nothing and lists the conversations
@@ -2151,7 +2167,7 @@ else's. §10.2 is what the person running the deployment may do, which is everyt
 | `result(exchange_id, outcomes)` | Close an exchange you received, with one outcome per item of its Request (§5.3). |
 | `inbox()` | Drain pending messages, debts first (§7.3). Results arrive here, carrying the identifier `request` returned and the Request they close (§4.2, §13). Also surfaces any closure poll outstanding for the caller (§5.0), and change notices about files the caller fetched, at most 200 at once with a count of the rest (§9.5). |
 | `conclude(conversation_id, finished)` | Say whether you are finished with a discussion. The first call opens a poll; later calls answer one. |
-| `file_place(name, bytes, conversation_id?)` | Place a file from the caller's own repository in a conversation's folder of the file location (§9.5). The conversation is assigned as a Request's is (§5.0), and placing makes the caller a participant. Returns the conversation, name, size and the broker's content hash, and whether the file was placed, replaced, or already current; or a refusal naming, where one exists, the agent that placed the name. |
+| `file_place(name, bytes, conversation_id?)` | Place a file from the caller's own repository in a conversation's folder of the file location (§9.5). The conversation is assigned as a Request's is (§5.0), and placing makes the caller a participant. Returns the conversation, the name placed and, when characters outside the set renamed it, the name asked for, the size and the broker's content hash, and whether the file was placed, replaced, or already current; or a refusal naming, where one exists, the agent that placed the name, or the file a renamed placement collides with. |
 | `file_fetch(name, conversation_id?, expect_sha256?)` | Write one whole content of a file into the caller's own repository. Refused, writing nothing, when the file's hash is not the one expected. The adapter verifies what it wrote and reports it, and only then is the fetch recorded, so change notices follow (§9.5). Never returns the file's contents. |
 | `file_list(conversation_id?, page)` | The files in the location: conversation, name, size, content hash, placer and when, with totals. Paged, and the broker bounds the page whatever is asked for. |
 | `file_remove(files)` | Remove files the caller placed. Every other name is refused, naming its placer, without preventing the rest. |
@@ -2255,7 +2271,7 @@ other could.
 | `unarchive(conversation)` | Reverse it. |
 | `destroy(conversation)` | Delete a conversation and every message, exchange and file belonging to it, for every participant. Destroys its peers' side too and cannot be undone. Leaves the record of §14, which holds facts and no content. Named apart from `purge`, which takes an agent: two operations on different subjects sharing one name is how the wrong one gets bound. |
 | `start(agent)` | Ask the node whose catalogue names this agent's role to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. |
-| `list_shared_files(conversation_id?, page)` | Every file in the location, with its conversation, size, content hash, placer and when, totals per conversation and overall, and how many placements and bytes each agent has made. Paged, and the broker bounds the page whatever is asked for. Named apart from §10.1's `file_list`, which does not report placement counts. |
+| `list_shared_files(conversation_id?, page)` | Every file in the location, with its conversation, size, content hash, placer and when, totals per conversation and overall, how many placements and bytes each agent has made, and how many files in the folders listed are not listed because their names break §9.5's rules. Paged, and the broker bounds the page whatever is asked for. Named apart from §10.1's `file_list`, which does not report placement counts. |
 | `remove_files(files)` | Remove any files, whichever agent placed them (§9.5). A name held by several conversations must name one; names not present are reported without preventing the rest. Named apart from §10.1's `file_remove`, which removes only the caller's own. |
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
 | `describe_file_location(conversation_id?, name?)` | The broker's machine name and the absolute path of the location, of a conversation's folder, or of one file. A surface on that machine opens the file or folder in place; anywhere else it says where it is and launches nothing (§13). |
@@ -2298,8 +2314,9 @@ receiving side is a separate contract (§11.5) that carries no operator operatio
 whether an instruction was taken has been given a button and no indicator, and the obvious response
 — issue it again — is the one thing that makes the situation worse. So there are five outcomes and
 they are different facts: *taken*, the agent was given the turn and acted; *declined*, it was given
-the turn and named a blocker it could not resolve (principle 2.6); *undeliverable*, the machine that
-holds it is not connected and nothing was given at all; *failed*, the turn was attempted and did not
+the turn and named a blocker it could not resolve (principle 2.6); *undeliverable*, nothing was given at
+all, because the machine that holds it is not connected or the agent is not running there — an
+instruction is a turn, and a machine gives turns only to agents it is already running; *failed*, the turn was attempted and did not
 complete; *still running*, the turn was begun and has not finished.
 
 **A broker MUST NOT record an outcome because it stopped waiting for one.** Ceasing to wait is a
@@ -3671,6 +3688,15 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
     because only the node knows which sessions are its own — a broker that asked for a start
     instead would produce exactly the duplicate process that suppression existed to prevent.
 
+    **A person's window can be told, where its host offers a way, and that is the adapter's to
+    do.** The broker already pushes a count down the attach stream (§4). An adapter whose host
+    accepts events from a server — Claude Code's channels are one — MAY pass that on as an event
+    the session reacts to, which gives an open window its turn without anybody typing. Two rules
+    carry over unchanged. The event carries counts and never words, for the reason §4 gives a
+    notice, since it reaches the model outside §13's envelope; and being told is not delivery
+    (§12), so the model still collects with `inbox()`. It changes nothing for a window nobody has
+    open, and nothing about the tier the adapter declares.
+
     What remains open is the bound.
 
     A turn is not free. It is a model taking a turn, charged to whoever hosts the agent rather than
@@ -3853,15 +3879,20 @@ What a second implementation will observe:
 - **`inbox()` returns change notices** beside messages and closure polls, at most 200 at once with a
   count of the rest, and the waiting count includes them. A notice wakes nothing (§9.5).
 - **A conversation can be started by placing a file**, and placing makes the placer a participant (§5.0).
-- **Only `.md` and `.txt` names are accepted**, compared by a key folded for every letter, and a file's
-  folder and name are at most 255 characters together (§9.5).
+- **Only `.md` and `.txt` names made of `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_` and `-` are stored**, compared
+  by their upper case, and a file's folder and name are at most 255 characters together (§9.5). A
+  placement asking for any other character is renamed, each such character becoming `_`, and refused when
+  that spelling is already a file's name. This was narrowed from a list of characters some disk refuses
+  before 0.6 was released, so no released implementation stores anything else.
 - **The broker computes every content hash.** A fetch may state the hash it expects, and is recorded only
   when its adapter reports the content the broker streamed to it.
 - **Destroying a conversation and purging an agent remove files** (§14), reported with the other rows.
 - **A download holds its file**, refusing an editor's save where the operating system can and failing the
   download where it cannot (§9.5).
 - **Schema 9 adds five tables** (§9.2): `conversation_folders`, `shared_files`, `file_fetches`,
-  `file_notices` and `file_placements`.
+  `file_notices` and `file_placements`. **Schema 10 rebuilds `shared_files`** to the narrower names; a
+  row a store at schema 9 held under any other name is dropped, its file left on disk and every agent
+  that fetched it told it is gone.
 
 ### 0.5 — work across repositories
 
