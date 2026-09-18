@@ -600,8 +600,8 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/016-request-is-the-ask/` — **0.29.0, protocol 0.7, schema 11. Built; the review gate is
-  outstanding.** A Request is the conversation it belongs to and the ask; `intent`, `items`, item ids,
+- **Current plan**: `specs/016-request-is-the-ask/` — **0.29.0, protocol 0.7, schema 11. Built, gated on all three
+  lenses, committed and not yet pushed.** A Request is the conversation it belongs to and the ask; `intent`, `items`, item ids,
   work-or-question, gates and `done_when` left the protocol, and a Result answers the exchange whole. The owner's call
   on 2026-09-17, made while composing one in the terminal: the fields were the same thing asked four times, and a
   receiver that cannot tell how far an ask goes has a question — which is what Clarify (§5.2) is. Nothing replaces them.
@@ -635,9 +635,28 @@ below in the form Spec Kit's checks read; this file remains the authority when t
     payload is never rewritten in service — that is the property 011 rests on — so there is no other route to the state
     an upgraded store is actually in, and the two tests that need one say so where they do it.
 
-  Also corrected in passing: §18's 0.3 entry named "rule 8.5's cap", which after §8's renumbering pointed at a different
-  rule; it names 8.4 and says when it moved. `research.md` carries ten decisions, `contracts/surfaces.md` what each
-  composer asks for after, and `quickstart.md` the walk.
+  **The review gate found three things above low, all in what this change added, and each is now a test.**
+
+  - **The 0.6 retry turned a three-thousand-character answer into a thirty-thousand-character refusal** (lens 1),
+    reporting a length the agent never wrote, on an exchange nothing will time out. It is measured before it is
+    sent now, and the refusal names what would fit.
+  - **And it wrote that length into `size_refusals`** (lens 2), which is what §17 question 16 reads and the one
+    value in this protocol set from evidence rather than judgement. Nothing the retry assembles is a message an
+    agent composed.
+  - **The new trigger admitted an ask of one tab or one no-break space** (lens 3), because SQL's one-argument
+    `trim()` removes the space character and nothing else — a storage guard weaker than the code above it, which
+    is the wrong way round for a rule §9.3 puts in storage so nothing can route around it. The blank set is spelled
+    out now, less U+200B, which is not whitespace by the rule the senders apply.
+
+  Migration 011 was edited rather than followed by a 012, on the one ground that permits it: 0.29.0 is installed
+  nowhere, so it had been applied in no store outside a test process.
+
+  Also corrected in passing: §18's 0.3 entry named "rule 8.5's cap", which after §8's renumbering pointed at a
+  different rule; `ItemOutcome` was left public carrying tool descriptions for a form nobody is shown; and a second
+  pre-existing flake went with the first — `WakeDuringCollectionTests` counted node commands after a fixed sleep and
+  failed one full run in three. `REVIEW-LEDGER.md` carries every probe, including what the clean runs looked at.
+  `research.md` carries ten decisions, `contracts/surfaces.md` what each composer asks for after, and
+  `quickstart.md` the walk.
 
 - **Previous plan**: `specs/015-file-store/` — 0.27.0 to 0.28.2, **protocol 0.6**, schema 9, then 10. **0.27.1 built, gated and committed, not yet pushed** (`3cf9e48`, then `1f302bd`); **0.28.0 built and uncommitted, its review gate not yet run.** Files cross
   between agents: an agent places a file from its repository into its conversation's folder in the project's file

@@ -59,11 +59,19 @@ public static class MessageLimits
     /// </remarks>
     public const int MaxPayloadCharacters = 8000;
 
-    /// <summary>The longest item id a Result can carry (SPEC.md §5.1).</summary>
+    /// <summary>The longest item id a Result can carry (SPEC.md §5.3).</summary>
     /// <remarks>
-    /// A Result answers each item by its id and storage records one row per item, holding the id to this. A Request
-    /// is refused a longer one; a question 0.4 wrote was not, and its longer ids are read as though absent so the
-    /// work can still be reported on (<see cref="PayloadShape.ItemIds"/>).
+    /// <para>
+    /// A Result answers by id and storage records one row per outcome, holding the id to this.
+    /// </para>
+    /// <para>
+    /// <b>Since 0.7 nothing a sender writes reaches here.</b> A Request is the ask (§5.1) and declares no
+    /// identifiers, so what a Result names is either the single spelling <c>request</c> or the identifiers of a
+    /// Request stored under an earlier version — which are the reason this bound is still enforced rather than
+    /// retired. 0.5 and 0.6 refused a longer one when the Request was written; a question 0.4 wrote was not, and
+    /// its longer ids are read as though absent so the work can still be reported on
+    /// (<see cref="PayloadShape.ItemIds"/>).
+    /// </para>
     /// </remarks>
     public const int LongestItemId = 64;
 

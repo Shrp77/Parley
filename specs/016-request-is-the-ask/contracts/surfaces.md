@@ -43,8 +43,10 @@ repetition: one outcome, one answer, its sources, and a blocker when blocked.
 
 ## The web console composer
 
-The same two fields, with the same rules stated in the page and applied by the browser and the server, as they are
-now. The transcript and the inbox keep rendering a 0.6 message whole.
+One field: the ask. This composer sits on a conversation's own page, so the conversation is where it is rather
+than something to name -- which is why the terminal has two fields here and the console has one, and was already
+true before 0.7. The note beside it says what a request costs, which is the thing a person cannot see. The
+transcript and the inbox keep rendering a 0.6 message whole.
 
 ## What every transcript shows
 

@@ -158,6 +158,41 @@ public sealed class AdmissionGuardTests : IDisposable
             "carries an ask");
     }
 
+    [Theory]
+    // Tab, line feed and carriage return: ASCII, and all three admitted by a bare trim().
+    [InlineData(9)]
+    [InlineData(10)]
+    [InlineData(13)]
+    // No-break space, ideographic space, and the narrow no-break space: blank on every screen, and the ones a
+    // sender would have to go out of its way to write.
+    [InlineData(160)]
+    [InlineData(12288)]
+    [InlineData(8239)]
+    public void An_ask_of_whitespace_that_is_not_the_space_character_is_refused_too(int codePoint)
+    {
+        // **Found by the review gate, lens 3 run 3.4.** SQL's one-argument trim() removes the space character and
+        // nothing else, so the first version of this trigger admitted each of these — while both senders in this
+        // repository refuse them, because .NET's IsNullOrWhiteSpace does. §9.3 puts the rule in storage precisely
+        // so a second implementation cannot route around it, and a guard weaker than the code above it is the
+        // wrong way round: this is a Request that says nothing, arriving from an adapter that did not check.
+        InsertExchange("q");
+
+        Refused(
+            () => InsertMessage(
+                "request", "orders@test", "billing@test", $"json_object('ask', char({codePoint}))"),
+            "carries an ask");
+    }
+
+    [Fact]
+    public void A_zero_width_space_is_not_blank_and_is_admitted()
+    {
+        // The other side of the line, and the reason the set is spelled out rather than guessed at: U+200B is not
+        // whitespace by the rule the senders apply, so storage refusing it would refuse what they had just sent.
+        InsertExchange("q");
+
+        InsertMessage("request", "orders@test", "billing@test", "json_object('ask', char(8203))");
+    }
+
     [Fact]
     public void An_ask_that_is_not_text_is_refused()
     {

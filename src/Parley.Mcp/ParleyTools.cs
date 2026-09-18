@@ -284,6 +284,35 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 && stale.ExpectedItems.Count > 0
                 && !(stale.ExpectedItems.Count == 1 && stale.ExpectedItems[0] == PayloadShape.WholeRequest))
             {
+                // **Measured before it is sent, and that is the whole of this branch's care.** Recording one
+                // answer against ten identifiers writes it ten times, so an answer well under the cap can put the
+                // retry far over it. Found by probe, twice over:
+                //
+                // The first version let the send refuse it, and the agent was told "that message is 30405
+                // characters" — a number it never wrote and cannot act on, leaving it to shorten to something
+                // arbitrary or abandon an exchange nothing will time out. So the real constraint is named, with
+                // the length that would fit.
+                //
+                // **And letting the send refuse it also wrote that number into `size_refusals`**, which is the
+                // record SPEC.md §17 question 16 sets the cap from, and the only value in this protocol chosen
+                // from evidence rather than judgement. One agent's three-thousand-character answer became
+                // evidence of a thirty-thousand-character one. Nothing this branch assembles is a message an
+                // agent composed, so nothing this branch assembles belongs in that record.
+                var multiplied = Framed(answer, stale.ExpectedItems);
+
+                if (multiplied.Length > MessageLimits.MaxPayloadCharacters)
+                {
+                    var room = MessageLimits.MaxPayloadCharacters
+                        - Framed(answer with { Text = string.Empty }, stale.ExpectedItems).Length;
+
+                    return Malformed(
+                        $"That exchange was opened under an older version of the protocol, which asked for one "
+                        + $"outcome per item: {string.Join(", ", stale.ExpectedItems)}. Your answer is recorded "
+                        + $"against each, so it has to fit {Math.Max(room / stale.ExpectedItems.Count, 0)} "
+                        + $"characters rather than {MessageLimits.MaxPayloadCharacters}. Say the shorter thing, "
+                        + "or send what does not fit as its own request.");
+                }
+
                 sent = await SendResultAsync(
                     [.. stale.ExpectedItems.Select(id => answer with { Id = id })],
                     exchangeId,
@@ -316,10 +345,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         string? responderModel,
         CancellationToken cancellationToken)
     {
-        var json = new JsonObject
-        {
-            ["outcomes"] = new JsonArray([.. outcomes.Select(o => (JsonNode?)o.ToJson())])
-        }.ToJsonString();
+        var json = Framed(outcomes);
 
         if (await TooLongAsync(json, MessageType.Result, cancellationToken).ConfigureAwait(false) is { } refused)
         {
@@ -338,6 +364,26 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
         return (reply, null);
     }
+
+    /// <summary>Writes outcomes into the document SPEC.md §5.3 stores.</summary>
+    /// <param name="outcomes">What to record.</param>
+    /// <returns>The payload.</returns>
+    private static string Framed(IReadOnlyList<ItemOutcome> outcomes) =>
+        new JsonObject
+        {
+            ["outcomes"] = new JsonArray([.. outcomes.Select(o => (JsonNode?)o.ToJson())])
+        }.ToJsonString();
+
+    /// <summary>The payload one outcome would produce against several identifiers, for measuring the room left.</summary>
+    /// <param name="shape">The outcome, with whatever text is to be measured around.</param>
+    /// <param name="ids">The identifiers it would be recorded against.</param>
+    /// <returns>The payload.</returns>
+    /// <remarks>
+    /// Measured by building the real document rather than by arithmetic on it: the blocker, the sources and the
+    /// identifiers are all part of what the cap counts, and a formula would go stale the first time one of them moved.
+    /// </remarks>
+    private static string Framed(ItemOutcome shape, IEnumerable<string> ids) =>
+        Framed([.. ids.Select(id => shape with { Id = id })]);
 
     /// <summary>Collects what is waiting, and any closure poll outstanding.</summary>
     /// <param name="limit">The most messages to collect at once.</param>
@@ -1624,18 +1670,25 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     }
 }
 
-/// <summary>The outcome of one item of a Request, per SPEC.md §5.3.</summary>
-/// <param name="Id">The item's id.</param>
+/// <summary>One entry of a Result's <c>outcomes</c> array, per SPEC.md §5.3.</summary>
+/// <param name="Id">The item's id: <c>request</c>, or an identifier a Request stored before 0.7 declared.</param>
 /// <param name="Outcome"><c>done</c>, <c>answered</c>, <c>acknowledged</c> or <c>blocked</c>.</param>
 /// <param name="Text">What was done, the answer, or exactly what blocks it and what was tried.</param>
 /// <param name="Blocker">On <c>blocked</c>: <c>missing_information</c>, <c>conflict</c> or <c>permission</c>.</param>
 /// <param name="Sources">The other agents whose Results this relied on.</param>
-public sealed record ItemOutcome(
-    [property: Description("The item id this outcome is for.")] string Id,
-    [property: Description("One of: done, answered, acknowledged, blocked.")] string Outcome,
-    [property: Description("What was done, the answer, or exactly what blocks it and what you tried.")] string Text,
-    [property: Description("Only when blocked: missing_information, conflict, or permission.")] string? Blocker = null,
-    [property: Description("Optional. The agents whose Results you relied on for this item.")] string[]? Sources = null)
+/// <remarks>
+/// <b>Internal since 0.7, and it carries no tool descriptions any more.</b> It was the argument type of
+/// <c>parley_result</c>, so each component described itself for the schema a model fills in; that tool now takes
+/// one outcome and writes the array itself, and an agent never names an identifier. Left public it would have been
+/// a type nothing outside this assembly could reach, still carrying instructions for a form nobody is shown —
+/// which is the shape a stale public surface takes here, recorded once before and found again by lens 3.
+/// </remarks>
+internal sealed record ItemOutcome(
+    string Id,
+    string Outcome,
+    string Text,
+    string? Blocker = null,
+    string[]? Sources = null)
 {
     /// <summary>Renders this into the stored payload shape.</summary>
     /// <returns>The outcome as SPEC.md §5.3 stores it.</returns>

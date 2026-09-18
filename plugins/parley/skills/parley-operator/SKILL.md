@@ -19,7 +19,8 @@ binary. Reaching them means running this program.
 Run these when the person asks for them. Do not run them to get around the protocol.
 
 - `force-conclude` closes a discussion the participants have not agreed to close. It is not a
-  way past a gate an agent is waiting on. If a question is blocked, the answer is to answer it.
+  way past something an agent is waiting on. If a request is blocked on an answer, the answer is to
+  give it.
 - `export` prints every message in a discussion, across agents. That is exactly the context
   Parley keeps apart, so it is for a person reading back a decision - not a way to hand one
   agent another's reasoning. Do not paste an export into an agent's session as a shortcut for

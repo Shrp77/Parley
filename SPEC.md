@@ -1543,12 +1543,20 @@ CREATE INDEX ix_instructions_agent ON instructions(agent, issued_utc);
 -- The floor on the ask is emptiness alone. A twenty-character floor on a done_when did real work,
 -- because "n/a" satisfies a presence check and says nothing about when to stop; here the field *is*
 -- the message, and a sender with nothing to say has nothing to send.
+--
+-- **Blank is spelled out, because SQL's one-argument trim() removes the space character and nothing
+-- else.** Left at that, an ask of one tab or one no-break space is admitted -- a Request that says
+-- nothing, which is what this trigger exists to refuse. The set is Unicode's whitespace less U+200B,
+-- which is not whitespace and is not treated as blank anywhere here.
 CREATE TRIGGER tr_request_is_well_formed BEFORE INSERT ON messages
 WHEN NEW.type = 'request' AND json_valid(NEW.payload_json)
 BEGIN
   SELECT RAISE(ABORT, 'a request carries an ask')
    WHERE json_type(NEW.payload_json, '$.ask') IS NOT 'text'
-      OR length(trim(json_extract(NEW.payload_json, '$.ask'))) = 0;
+      OR length(trim(json_extract(NEW.payload_json, '$.ask'),
+                     char(9, 10, 11, 12, 13, 32, 133, 160, 5760,
+                          8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202,
+                          8232, 8233, 8239, 8287, 12288))) = 0;
 END;
 
 -- A Result (§5.3) carries an outcome per item; a blocked item names its kind of blocker; every
