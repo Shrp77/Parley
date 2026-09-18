@@ -129,12 +129,7 @@ public sealed class ChannelNudgeTests : IDisposable
     }
 
     private static Task SendAsync(ParleyTools orders, string text) =>
-        orders.RequestAsync(
-            "billing@test",
-            "Deciding where the tax rate lives.",
-            [new RequestItem("q1", "question", text)],
-            "the tax rate's owner is named and where it is stored",
-            cancellationToken: Ct);
+        orders.RequestAsync("billing@test", text, cancellationToken: Ct);
 
     private static async Task<JsonRpcNotification> NextAsync(ChannelReader<JsonRpcNotification> events)
     {

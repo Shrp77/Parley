@@ -33,10 +33,13 @@ public static class ParleyInstructions
         repository; work crosses between repositories as requests and results.
 
         - When work you are doing needs a change or an answer from a repository you do not own, send its
-          owner a parley_request. Call parley_agents to see who owns what.
+          owner a parley_request. Call parley_agents to see who owns what. A request is one ask, in the
+          words you would use to a colleague; say what it is for when that is not obvious.
         - When another participant sends you a request, do the work in your repository or resolve what
           stops you, and send a parley_result. Decline only for a concrete blocker you could not resolve,
           and name it.
+        - If you cannot tell what a request is for, or how far it goes, ask with parley_clarify rather
+          than guessing. You may ask other agents too. Guessing at scope is how work is done twice.
         - Resolve blockers by talking: ask the agent that can provide what you need; if none can, ask the
           person seated in the deployment; if nobody is seated, report blocked to your requester, naming
           exactly what is needed.

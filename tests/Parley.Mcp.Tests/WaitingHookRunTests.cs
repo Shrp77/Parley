@@ -255,12 +255,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
                 ct);
         }
 
-        var payload = JsonSerializer.Serialize(new
-        {
-            intent = "deciding where tax is added to an invoice",
-            items = new[] { new { id = "w1", kind = "work", text = PeerWords } },
-            done_when = "the contracts directory is in the state asked for"
-        });
+        var payload = JsonSerializer.Serialize(new { ask = PeerWords });
 
         var opened = await new ExchangeRepository(connection).TryOpenAsync(
             Billing, Orders, T0, MessageIdentity.ComputeRequest(Billing, Orders, payload), "invoice-rounding", null,

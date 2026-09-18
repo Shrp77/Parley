@@ -30,7 +30,7 @@ public sealed class FlagsOverTheWireTests : IAsyncDisposable
     private const string Model = "some-model-9";
 
     private const string Request =
-        """{"intent":"where does price live","items":[{"id":"q1","kind":"question","text":"gross or net?"}],"done_when":"the price is stated as gross or net of tax"}""";
+        """{"ask":"Where does price live, and is it gross or net?"}""";
 
     private readonly SqliteConnection _connection;
     private readonly LoopbackOperator _broker;
@@ -71,7 +71,7 @@ public sealed class FlagsOverTheWireTests : IAsyncDisposable
 
         Assert.True((await broker.ResultAsync(
             sent.Exchange!.Id, Billing, Model,
-            """{"outcomes":[{"id":"q1","outcome":"answered","text":"net"}]}""",
+            """{"outcomes":[{"id":"request","outcome":"answered","text":"net"}]}""",
             T0.AddMinutes(3), cancellationToken: ct)).Succeeded);
 
         var flag = Assert.Single((await new BrokerClient(_broker.Operators).FlagsAsync(ct)).Exchanges);

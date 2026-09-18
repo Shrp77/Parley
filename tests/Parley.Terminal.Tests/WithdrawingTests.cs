@@ -340,7 +340,7 @@ public sealed class WithdrawingTests : IAsyncDisposable
             Billing,
             Orders,
             "model-a",
-            """{"intent":"deciding","items":[{"id":"q1","kind":"question","text":"which"}],"done_when":"this decides which of two paths is taken here"}""",
+            """{"ask":"Which of the two paths is taken here?"}""",
             T0.AddMinutes(1),
             "owed",
             ct);

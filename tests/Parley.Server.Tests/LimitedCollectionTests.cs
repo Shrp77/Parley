@@ -31,12 +31,7 @@ public sealed class LimitedCollectionTests
             From = "billing@alpha",
             To = "orders@alpha",
             ResponderModel = "test",
-            PayloadJson = new JsonObject
-            {
-                ["intent"] = "deciding whether to move the field",
-                ["items"] = new JsonArray(new JsonObject { ["id"] = "q1", ["kind"] = "question", ["text"] = text }),
-                ["done_when"] = "the field is either moved or kept, with the reason"
-            }.ToJsonString(),
+            PayloadJson = new JsonObject { ["ask"] = text }.ToJsonString(),
             ConversationId = "c1"
         };
 

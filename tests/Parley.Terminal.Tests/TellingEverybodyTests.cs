@@ -90,14 +90,12 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
         AgentName name, AgentStatus status = AgentStatus.Active, string adapter = "mcp") =>
         new(name, adapter, AgentTier.Pull, null, null, null, false, status);
 
-    /// <summary>Fills the composer with a Request rule 8.1 accepts.</summary>
+    /// <summary>Fills the composer with a Request the surface accepts.</summary>
     /// <param name="form">The composer.</param>
-    /// <param name="item">What is being asked for.</param>
-    private static void Written(FormDialog form, string item)
+    /// <param name="ask">What is being asked for.</param>
+    private static void Written(FormDialog form, string ask)
     {
-        form.Fill(0, "deciding whether to move the schema");
-        form.Fill(1, item);
-        form.Fill(3, "every reader of orders.total is named, or none is");
+        form.Fill(0, ask);
     }
 
     private async Task<IReadOnlyList<string>> PickerRowsAsync(Driving.Session driving, Shell shell)

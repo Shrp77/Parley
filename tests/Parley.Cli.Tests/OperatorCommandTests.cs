@@ -27,10 +27,10 @@ public sealed class OperatorCommandTests : IAsyncDisposable
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private const string Request =
-        """{"intent":"where does price live","items":[{"id":"q1","kind":"question","text":"gross or net?"}],"done_when":"the price is stated gross or net of tax"}""";
+        """{"ask":"Where does price live, and is it gross or net of tax?"}""";
 
     private const string Result =
-        """{"outcomes":[{"id":"q1","outcome":"answered","text":"net"}]}""";
+        """{"outcomes":[{"id":"request","outcome":"answered","text":"net"}]}""";
 
     private readonly SqliteConnection _connection;
     private readonly AgentRepository _agents;
@@ -231,7 +231,7 @@ public sealed class OperatorCommandTests : IAsyncDisposable
 
         // The payload as stored, not the envelope of §13. An envelope marks a peer's words as
         // data inside another agent's context, and there is no agent here.
-        Assert.Contains("gross or net?", Printed, StringComparison.Ordinal);
+        Assert.Contains("gross or net of tax?", Printed, StringComparison.Ordinal);
         Assert.Contains("some-model-9", Printed, StringComparison.Ordinal);
         Assert.DoesNotContain("begin peer payload", Printed, StringComparison.Ordinal);
 
@@ -267,7 +267,7 @@ public sealed class OperatorCommandTests : IAsyncDisposable
         // Nothing new may be sent it.
         var refused = await broker.RequestAsync(
             Orders, Billing, "some-model-9",
-            """{"intent":"and refunds","items":[{"id":"q1","kind":"question","text":"and refunds?"}],"done_when":"refunds are stated gross or net of tax"}""",
+            """{"ask":"And refunds — gross or net of tax?"}""",
             T0.AddMinutes(2), cancellationToken: Ct);
 
         Assert.Equal(RequestRejection.ReceiverRetired, refused.Admission.Rejection);
@@ -298,7 +298,7 @@ public sealed class OperatorCommandTests : IAsyncDisposable
         // reaching for.
         var reopened = await broker.RequestAsync(
             Orders, Billing, "some-model-9",
-            """{"intent":"and refunds","items":[{"id":"q1","kind":"question","text":"and refunds?"}],"done_when":"refunds are stated gross or net of tax"}""",
+            """{"ask":"And refunds — gross or net of tax?"}""",
             T0.AddMinutes(3), "pricing", Ct);
 
         Assert.Equal(RequestRejection.ConversationClosed, reopened.Admission.Rejection);

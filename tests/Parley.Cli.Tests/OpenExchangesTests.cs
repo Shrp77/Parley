@@ -70,7 +70,7 @@ public sealed class OpenExchangesTests : IAsyncDisposable
             // it. A shorter one here fails as a CHECK constraint rather than as a review comment,
             // which is the point.
             """
-            {"intent":"where does price live","items":[{"id":"q1","kind":"question","text":"gross or net?"}],"done_when":"the invoice total is stated gross or net"}
+            {"ask":"Where does price live, and is the invoice total gross or net?"}
             """,
             T0.AddMinutes(1),
             // In a conversation, because that is what this command lists. An exchange opened
@@ -149,7 +149,7 @@ public sealed class OpenExchangesTests : IAsyncDisposable
             Billing,
             "some-model-9",
             """
-            {"intent":"HERRING-INTENT","items":[{"id":"q1","kind":"work","text":"HERRING-ITEM"}],"done_when":"HERRING-DONE and enough characters to pass"}
+            {"ask":"HERRING-INTENT HERRING-ITEM HERRING-DONE"}
             """,
             T0.AddMinutes(1),
             conversationId: "pricing",

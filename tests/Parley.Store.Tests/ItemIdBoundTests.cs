@@ -9,12 +9,16 @@ namespace Parley.Store.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="MessageLimits.LongestItemId"/> decides which of a Request's ids a Result is held to, and the schema holds
-/// the same number twice: once refusing a Request carrying a longer id, once refusing a Result recording one. If the
-/// constant moved past the schema, the broker would require ids storage then refused to record, and a Request would
-/// be unanswerable again — the defect the review gate found through a migrated 0.4 question (lens 1 run 1.15). The
-/// constant was written with this check, the way <c>The_cap_the_schema_enforces_is_the_one_the_code_states</c> binds
-/// the message cap.
+/// <see cref="MessageLimits.LongestItemId"/> decides which of a stored Request's ids a Result may echo, and the schema
+/// holds the same number in <c>result_items</c>. If the constant moved past the schema, the broker would require ids
+/// storage then refused to record, and an exchange would be unanswerable — the defect the review gate found through a
+/// migrated 0.4 question (lens 1 run 1.15).
+/// </para>
+/// <para>
+/// <b>Only the Result side is storage's now.</b> A 0.7 Request carries no items (§5.1), so the schema no longer bounds
+/// an id on the way in; what it still bounds is what a Result records, which is the half that made a Request
+/// unanswerable. The reader that leaves an over-long id out of what a Result must answer is
+/// <c>PayloadShape.ItemIds</c>, and <c>ItemIdsTests</c> holds it to the same constant.
 /// </para>
 /// </remarks>
 public sealed class ItemIdBoundTests : IDisposable
@@ -37,14 +41,14 @@ public sealed class ItemIdBoundTests : IDisposable
     public void Dispose() => _connection.Dispose();
 
     [Fact]
-    public async Task A_request_is_held_to_the_bound_the_code_states()
+    public async Task A_request_carries_no_ids_for_the_bound_to_hold()
     {
+        // The ask is the whole of it, so an id of any length is simply text inside it: nothing to refuse, and nothing
+        // that could make the exchange unanswerable. Both are admitted, which is the non-vacuous half of the pair below.
         var ct = TestContext.Current.CancellationToken;
 
         await Work.OpenAsync(_connection, Orders, Billing, T0, Work.RequestOf("longest", Longest), cancellationToken: ct);
-
-        await Assert.ThrowsAsync<SqliteException>(() =>
-            Work.OpenAsync(_connection, Orders, Billing, T0, Work.RequestOf("over", Over), cancellationToken: ct));
+        await Work.OpenAsync(_connection, Orders, Billing, T0, Work.RequestOf("over", Over), cancellationToken: ct);
     }
 
     [Fact]

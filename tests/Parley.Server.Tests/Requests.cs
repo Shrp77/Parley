@@ -13,19 +13,10 @@ namespace Parley.Server.Tests;
 /// </remarks>
 internal static class Requests
 {
-    /// <summary>A <c>done_when</c> long enough for rule 8.1.</summary>
-    public const string DoneWhen = "the owner is named, or the reason nobody owns it is stated";
-
-    /// <summary>A Request payload with one question item.</summary>
-    /// <param name="text">What the item asks. Varying it is how a test makes two Requests distinct.</param>
+    /// <summary>A Request payload: the ask, and nothing else (SPEC.md §5.1).</summary>
+    /// <param name="text">What it asks. Varying it is how a test makes two Requests distinct.</param>
     /// <returns>The payload.</returns>
-    public static string Payload(string text) =>
-        new JsonObject
-        {
-            ["intent"] = text,
-            ["items"] = new JsonArray(new JsonObject { ["id"] = "q1", ["kind"] = "question", ["text"] = text }),
-            ["done_when"] = DoneWhen
-        }.ToJsonString();
+    public static string Payload(string text) => new JsonObject { ["ask"] = text }.ToJsonString();
 
     /// <summary>A Request on the wire.</summary>
     /// <param name="from">The requester.</param>
@@ -43,7 +34,7 @@ internal static class Requests
             ConversationId = conversation ?? string.Empty
         };
 
-    /// <summary>A Result answering <c>q1</c>.</summary>
+    /// <summary>A Result answering the exchange whole, under the one item §5.3 reserves.</summary>
     /// <param name="from">The receiver.</param>
     /// <param name="exchangeId">The exchange.</param>
     /// <param name="outcome">What came of it.</param>
@@ -56,7 +47,8 @@ internal static class Requests
             ResponderModel = "claude-opus-5",
             PayloadJson = new JsonObject
             {
-                ["outcomes"] = new JsonArray(new JsonObject { ["id"] = "q1", ["outcome"] = outcome, ["text"] = "billing owns it" })
+                ["outcomes"] = new JsonArray(
+                    new JsonObject { ["id"] = "request", ["outcome"] = outcome, ["text"] = "billing owns it" })
             }.ToJsonString()
         };
 }

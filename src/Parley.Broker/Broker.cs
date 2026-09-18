@@ -179,8 +179,7 @@ public sealed class Broker
     /// <param name="to">The receiver.</param>
     /// <param name="responderModel">What produced the Request (§11.3).</param>
     /// <param name="payloadJson">
-    /// The Request document: items, intent and <c>done_when</c>. Storage refuses one without a
-    /// <c>done_when</c>, with no items, or with a gate on a later item (§9.3).
+    /// The Request document: the ask (§5.1). Storage refuses one that carries none (§9.3).
     /// </param>
     /// <param name="nowUtc">The instant of the Request.</param>
     /// <param name="conversationId">
@@ -399,10 +398,11 @@ public sealed class Broker
     /// under an exchange recorded complete would make §15 describe a deployment that does not exist.
     /// </para>
     /// <para>
-    /// <b>Every item gets exactly one outcome, checked against the stored Request.</b> Answering some
-    /// items closes the exchange as firmly as answering all of them, and the rest would be gone with no
-    /// record they were skipped. The refusal names the items expected, so the sender can correct it in
-    /// one move.
+    /// <b>What the Result must answer is checked against the stored Request.</b> Since 0.7 that is one outcome
+    /// for the ask, recorded under <see cref="PayloadShape.WholeRequest"/>. A Request stored under 0.5 or 0.6
+    /// carried items and is still answered by all of them: answering some would close the exchange as firmly as
+    /// answering all, and the rest would be gone with no record they were skipped. The refusal names what is
+    /// expected, so the sender can correct it in one move.
     /// </para>
     /// </remarks>
     public async Task<SayOutcome> ResultAsync(
@@ -495,9 +495,9 @@ public sealed class Broker
             var readable = PayloadShape.ItemIds(request?.PayloadJson);
 
             // A Request none of whose items a Result can name is answered as a whole, under PayloadShape.WholeRequest
-            // (SPEC.md §5.1), as a person's close answers it. Ids too long to store are not among those read, so they
-            // are never required. The pruner keeps every message of an open exchange, so this is reached only by a
-            // question 0.4 wrote.
+            // (SPEC.md §5.1), as a person's close answers it. That is every Request written under 0.7, which carries no
+            // items at all -- and it was already the path for a question 0.4 wrote, which is why the change needed
+            // nothing here. Ids too long to store are not among those read, so they are never required.
             //
             // **Required, not merely allowed.** The first version accepted any ids here, and an agent's natural reply —
             // the question's own ids — was then refused by storage with no expected_items to say what to send instead.

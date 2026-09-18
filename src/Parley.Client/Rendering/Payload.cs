@@ -20,9 +20,9 @@ public sealed record PayloadPoint(
 /// <summary>
 /// A message's payload, read for a person rather than for a model.
 /// </summary>
-/// <param name="Said">The intent of a Request, or the words of a clarification. May be empty.</param>
-/// <param name="Points">A Request's items, or a Result's outcomes.</param>
-/// <param name="DoneWhen">What counts as finished, per rule 8.1, or null when absent.</param>
+/// <param name="Said">The ask of a Request, or the words of a clarification. May be empty.</param>
+/// <param name="Points">A Result's outcomes, and the items of a Request stored before 0.7.</param>
+/// <param name="DoneWhen">What a Request stored before 0.7 said counted as finished, or null.</param>
 /// <param name="Raw">The document exactly as stored, for when it is not a shape this can read.</param>
 /// <remarks>
 /// <para>
@@ -64,7 +64,15 @@ public sealed record Payload(
                 return new Payload(string.Empty, [], null, json);
             }
 
-            var said = Text(root, "intent");
+            // The ask first, then the shapes earlier versions stored: a 0.7 Request carries `ask` (§5.1), 0.5 and
+            // 0.6 carried `intent` beside their items, and a clarification has always been `text`. A stored message
+            // still renders with everything it was written with; nothing here fills in a field it did not find.
+            var said = Text(root, "ask");
+
+            if (said.Length == 0)
+            {
+                said = Text(root, "intent");
+            }
 
             if (said.Length == 0)
             {

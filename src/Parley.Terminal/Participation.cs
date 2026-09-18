@@ -11,7 +11,7 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The refusals are <see cref="SeatVoice"/>'s and are not copied here. It checks rule 8.1 and rule 8.5
+/// The refusals are <see cref="SeatVoice"/>'s and are not copied here. It checks rule 8.1 and rule 8.4
 /// before anything goes on the wire and returns the sentence to show, so this collects text and reports
 /// what it is told.
 /// </para>
@@ -189,12 +189,13 @@ internal static class Participation
     internal static string SaidLabel(string id) =>
         Safe.Text($"{id} — say what was done, the answer, or what blocks it:");
 
-    /// <summary>The Request as it was sent, with everything rule 8.1 required of the requester.</summary>
+    /// <summary>The Request as it was sent, whole.</summary>
     /// <param name="owed">The delivered message.</param>
     /// <returns>The text to show above the Result form.</returns>
     /// <remarks>
-    /// Intent and <c>done_when</c> included, because a Result written without reading them is a Result for a
-    /// narrower piece of work than was asked for.
+    /// Everything the Request carried, because a Result written without reading it is a Result for a narrower piece
+    /// of work than was asked for. A Request stored before 0.7 carried an intent, items and a <c>done_when</c>, and
+    /// they are all shown; one written since carries the ask.
     /// </remarks>
     internal static string Asked(Delivered owed)
     {
@@ -232,26 +233,6 @@ internal static class Participation
         string.IsNullOrWhiteSpace(said)
             ? "Say what came of it. An empty Result closes the exchange while telling them nothing."
             : ProseProblem(said);
-
-    /// <summary>What is wrong with the <c>done_when</c> somebody has typed.</summary>
-    /// <param name="said">What is in the field.</param>
-    /// <returns>The reason, or null when there is none.</returns>
-    /// <remarks>
-    /// Checked as it is typed as well as by <see cref="SeatVoice"/> at the send, because a person meeting the
-    /// length rule only on submission has already written everything else.
-    /// </remarks>
-    internal static string? DoneWhenProblem(string said) =>
-        (said ?? string.Empty).Trim().Length < SeatVoice.MinimumDoneWhen
-            ? $"At least {SeatVoice.MinimumDoneWhen} characters: {Framing.DoneWhen.ToLowerInvariant()}."
-            : ProseProblem(said ?? string.Empty);
-
-    /// <summary>What is wrong with the kind of item somebody has typed.</summary>
-    /// <param name="said">What is in the field.</param>
-    /// <returns>The reason, or null when there is none.</returns>
-    internal static string? KindProblem(string said) =>
-        SeatVoice.Kinds.Any(k => string.Equals(k.Value, said.Trim(), StringComparison.Ordinal))
-            ? null
-            : $"One of: {string.Join(", ", SeatVoice.Kinds.Select(k => k.Value))}";
 
     /// <summary>What is wrong with a line that simply has to be there.</summary>
     /// <param name="said">What is in the field.</param>

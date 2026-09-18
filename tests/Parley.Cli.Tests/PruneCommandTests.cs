@@ -29,10 +29,10 @@ public sealed class PruneCommandTests : IAsyncDisposable
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private const string Request =
-        """{"intent":"where does price live","items":[{"id":"q1","kind":"question","text":"gross or net?"}],"done_when":"the price is stated gross or net of tax"}""";
+        """{"ask":"Where does price live, and is it gross or net of tax?"}""";
 
     private const string Result =
-        """{"outcomes":[{"id":"q1","outcome":"answered","text":"net"}]}""";
+        """{"outcomes":[{"id":"request","outcome":"answered","text":"net"}]}""";
 
     private const string Model = "some-model-9";
 

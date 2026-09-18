@@ -31,7 +31,7 @@ public sealed class ResultsAndFlagsReportTests : IAsyncDisposable
     private const string Model = "some-model-9";
 
     private const string Request =
-        """{"intent":"where does price live","items":[{"id":"q1","kind":"question","text":"gross or net?"},{"id":"w1","kind":"work","text":"stamp the rate on refunds"}],"done_when":"the price is stated and refunds carry the rate"}""";
+        """{"ask":"Where does price live — gross or net? And stamp the rate on refunds."}""";
 
     private readonly SqliteConnection _connection;
     private readonly StringWriter _output = new();
@@ -96,8 +96,20 @@ public sealed class ResultsAndFlagsReportTests : IAsyncDisposable
 
         Assert.True((await broker.ResultAsync(
             exchange, Billing, Model,
-            """{"outcomes":[{"id":"q1","outcome":"answered","text":"net"},{"id":"w1","outcome":"blocked","blocker":"missing_information","text":"HERRING-TEXT: which refund table is canonical"}]}""",
+            """{"outcomes":[{"id":"request","outcome":"blocked","blocker":"missing_information","text":"HERRING-TEXT: which refund table is canonical"}]}""",
             T0.AddMinutes(2), cancellationToken: Ct)).Succeeded);
+
+        // A second exchange, answered, so the report has two kinds to tell apart. Under 0.7 one Result carries one
+        // outcome, so two kinds means two exchanges — which is also what the report will meet in a real deployment.
+        var second = (await broker.RequestAsync(
+            Orders, Billing, Model, """{"ask":"And refunds — gross or net?"}""",
+            T0.AddMinutes(3), "pricing", Ct)).Exchange!.Id;
+
+        await broker.DrainInboxAsync(Billing, T0.AddMinutes(4), cancellationToken: Ct);
+
+        Assert.True((await broker.ResultAsync(
+            second, Billing, Model, """{"outcomes":[{"id":"request","outcome":"answered","text":"net"}]}""",
+            T0.AddMinutes(5), cancellationToken: Ct)).Succeeded);
 
         Assert.Equal(0, await _commands.ResultsAsync(Ct));
 
@@ -150,7 +162,7 @@ public sealed class ResultsAndFlagsReportTests : IAsyncDisposable
 
         Assert.True((await broker.ResultAsync(
             exchange, Billing, Model,
-            """{"outcomes":[{"id":"q1","outcome":"answered","text":"net"},{"id":"w1","outcome":"done","text":"stamped"}]}""",
+            """{"outcomes":[{"id":"request","outcome":"done","text":"stated, and stamped"}]}""",
             T0.AddMinutes(3), cancellationToken: Ct)).Succeeded);
 
         Assert.Equal(0, await _commands.FlagsAsync(Ct));

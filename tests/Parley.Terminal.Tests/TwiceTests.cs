@@ -171,7 +171,7 @@ public sealed class TwiceTests : IAsyncDisposable
             Orders,
             seated.Seat.Name,
             "model-a",
-            """{"intent":"deciding","items":[{"id":"q1","kind":"question","text":"is it safe"}],"done_when":"a release goes out or does not, with the reason"}""",
+            """{"ask":"Is it safe to release?"}""",
             T0.AddMinutes(1),
             "chat",
             cancellationToken);

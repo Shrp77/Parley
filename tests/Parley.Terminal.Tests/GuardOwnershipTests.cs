@@ -12,8 +12,8 @@ namespace Parley.Terminal.Tests;
 /// <para>
 /// Lens 2 of the review gate, run 2.4. A surface that re-implements a protocol rule has a second
 /// opinion about it, and the one that disagrees is always the one that lets something through.
-/// Three rules are visible on these screens and none of them is this surface's: rule 8.1's intent
-/// and done_when, rule 8.5's size cap, and §5.3's outcomes.
+/// Three rules are visible on these screens and none of them is this surface's: that an ask is
+/// said at all, rule 8.4's size cap, and §5.3's outcomes.
 /// </para>
 /// <para>
 /// <b>The one that matters most is the outcome list.</b> §5.3 reserves <c>closed</c> for the
@@ -35,20 +35,17 @@ public sealed class GuardOwnershipTests
     }
 
     [Fact]
-    public void The_done_when_rule_is_quoted_from_the_client_rather_than_written_here()
+    public void An_ask_is_held_to_being_said_at_all_and_to_no_length_this_surface_invented()
     {
-        // The number is SeatVoice's, so raising or lowering it there changes what this refuses
-        // without anybody remembering to look here.
-        var short_ = new string('a', SeatVoice.MinimumDoneWhen - 1);
-        var exact = new string('a', SeatVoice.MinimumDoneWhen);
+        // The floor that used to live here was `done_when`'s twenty characters, and it went with the
+        // field in 0.7: §5.1 asks for the ask and nothing else, and a receiver that cannot scope one
+        // sends a Clarify. So the only rule left is that something was typed -- and a short ask is
+        // admitted, which is the half worth pinning. A surface that grew its own minimum back would
+        // be refusing what the protocol accepts, and nothing but this would notice.
+        Assert.NotNull(Participation.RequiredProblem(string.Empty));
+        Assert.NotNull(Participation.RequiredProblem("   "));
 
-        Assert.NotNull(Participation.DoneWhenProblem(short_));
-        Assert.Null(Participation.DoneWhenProblem(exact));
-
-        Assert.Contains(
-            SeatVoice.MinimumDoneWhen.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            Participation.DoneWhenProblem(short_),
-            StringComparison.Ordinal);
+        Assert.Null(Participation.RequiredProblem("why?"));
     }
 
     [Fact]

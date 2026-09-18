@@ -81,23 +81,6 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     [BindProperty]
     public string? Says { get; set; }
 
-    /// <summary>Why the person is asking, when they send a Request from a seat.</summary>
-    /// <remarks>
-    /// Only reached from a seat. §8 rule 1 is enforced in the schema, so a Request without it is refused
-    /// by a trigger — this asks for it in the form instead, where the answer is a sentence rather than a
-    /// debugging session.
-    /// </remarks>
-    [BindProperty]
-    public string? Intent { get; set; }
-
-    /// <summary>Whether the item is work to do or a question to answer.</summary>
-    [BindProperty]
-    public string? Kind { get; set; }
-
-    /// <summary>What counts as finished, when they send a Request from a seat.</summary>
-    [BindProperty]
-    public string? DoneWhen { get; set; }
-
     /// <summary>The seat this person holds in this project, or null if they hold none.</summary>
     /// <remarks>
     /// What decides whether the composer speaks or instructs. A person without a seat has no
@@ -409,7 +392,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
             if (voice is not null)
             {
                 sent.Add((target, await voice
-                    .RequestAsync(agent, Intent, Says, Kind, DoneWhen, Id, token)
+                    .RequestAsync(agent, Says, Id, token)
                     .ConfigureAwait(false)));
 
                 continue;

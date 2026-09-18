@@ -15,15 +15,11 @@ public sealed class SecondSessionTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);
 
-    private const string DoneWhen = "the tax rate's owner is named and where it is stored";
-
     private static async Task<long> RequestAsync(ParleyTools orders, CancellationToken ct)
     {
         var sent = await orders.RequestAsync(
             to: "billing@test",
-            intent: "Deciding where the tax rate lives.",
-            items: [new RequestItem("q1", "question", "Does an invoice carry the rate at time of sale?")],
-            doneWhen: DoneWhen,
+            ask: "Does an invoice carry the tax rate at time of sale?",
             cancellationToken: ct);
 
         return sent["exchange_id"]!.GetValue<long>();
@@ -31,7 +27,7 @@ public sealed class SecondSessionTests
 
     private static Task<JsonNode> ResultAsync(ParleyTools billing, long exchangeId, CancellationToken ct) =>
         billing.ResultAsync(
-            exchangeId, [new ItemOutcome("q1", "answered", "Yes. invoice_lines.tax_rate is stamped at issue.")],
+            exchangeId, "answered", "Yes. invoice_lines.tax_rate is stamped at issue.",
             cancellationToken: ct);
 
     [Fact]

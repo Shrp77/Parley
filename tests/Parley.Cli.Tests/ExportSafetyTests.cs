@@ -116,15 +116,46 @@ public sealed class ExportSafetyTests : IAsyncDisposable
         Assert.Equal(2, lines.Length);
     }
 
-    /// <summary>A well-formed Request whose one item says <paramref name="text"/>.</summary>
-    /// <param name="text">What the item says, verbatim.</param>
+    /// <summary>A well-formed Request whose ask says <paramref name="text"/>.</summary>
+    /// <param name="text">What the ask says, verbatim.</param>
     /// <returns>The payload, serialised the way an adapter serialises one.</returns>
     private static string RequestSaying(string text) =>
-        new System.Text.Json.Nodes.JsonObject
+        new System.Text.Json.Nodes.JsonObject { ["ask"] = text }.ToJsonString();
+
+    [Fact]
+    public async Task A_conversation_written_under_0_6_exports_with_every_field_it_carries()
+    {
+        // FR-009 on the surface that is most often read long after the fact. The export flattens a payload onto
+        // one line rather than deriving anything from it, so what this actually pins is that the flattening never
+        // learned the shape — a reader that had been taught 0.7's would drop three fields here and print a line
+        // that still looks like an export.
+        //
+        // Written straight into the store, because this build's broker will not accept the old shape: migration
+        // 011 replaced the trigger, and that is the whole of what changed for a stored message.
+        var ct = TestContext.Current.CancellationToken;
+
+        var broker = new Broker.Broker(_connection, BrokerOptions.Default);
+        await broker.StartAsync(Orders, T0, ct);
+
+        Assert.NotNull((await broker.RequestAsync(
+            Orders, Billing, "some-model-9", RequestSaying("a placeholder this test replaces"),
+            T0.AddMinutes(1), "history", ct)).Exchange);
+
+        using (var rewrite = _connection.CreateCommand())
         {
-            ["intent"] = "checking what an export does with this",
-            ["items"] = new System.Text.Json.Nodes.JsonArray(
-                new System.Text.Json.Nodes.JsonObject { ["id"] = "q1", ["kind"] = "question", ["text"] = text }),
-            ["done_when"] = "the export shows the text and nothing acts on it"
-        }.ToJsonString();
+            rewrite.CommandText = "UPDATE messages SET payload_json = $payload WHERE conversation_id = 'history';";
+            rewrite.Parameters.AddWithValue(
+                "$payload",
+                """{"intent":"deciding where tax is added","items":[{"id":"r1","kind":"work","text":"use the order's price"}],"done_when":"invoices show the order's price"}""");
+            rewrite.ExecuteNonQuery();
+        }
+
+        Assert.Equal(0, await _commands.ExportAsync("history", ct));
+
+        var printed = _output.ToString();
+
+        Assert.Contains("deciding where tax is added", printed, StringComparison.Ordinal);
+        Assert.Contains("use the order's price", printed, StringComparison.Ordinal);
+        Assert.Contains("invoices show the order's price", printed, StringComparison.Ordinal);
+    }
 }

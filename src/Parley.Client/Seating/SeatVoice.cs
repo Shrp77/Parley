@@ -44,19 +44,6 @@ public sealed record Answered(bool Closed, string Says);
 /// <param name="seat">Whose voice this is.</param>
 public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 {
-    /// <summary>The shortest <c>done_when</c> storage accepts, per SPEC.md §8 rule 1.</summary>
-    /// <remarks>
-    /// The same floor the adapter holds agents to. A person requesting work is not exempt from the rule the
-    /// rest of the protocol leans on.
-    /// </remarks>
-    public const int MinimumDoneWhen = 20;
-
-    /// <summary>The kinds of item a person may send.</summary>
-    public static IReadOnlyList<(string Value, string Says)> Kinds { get; } =
-    [
-        ("work", "Work to do in their repository"),
-        ("question", "Something they know")
-    ];
 
     /// <summary>The outcomes a person may give an item they were asked for.</summary>
     /// <remarks>
@@ -78,12 +65,9 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
     private readonly Seat _seat = seat ?? throw new ArgumentNullException(nameof(seat));
 
-    /// <summary>Sends one participant a Request with one item.</summary>
+    /// <summary>Sends one participant a Request: the ask, and the conversation it belongs to.</summary>
     /// <param name="to">Who is being asked.</param>
-    /// <param name="intent">Why the person wants this.</param>
-    /// <param name="item">The work or the question.</param>
-    /// <param name="kind"><c>work</c> or <c>question</c>.</param>
-    /// <param name="doneWhen">What counts as finished.</param>
+    /// <param name="ask">What is wanted, in the person's own words (§5.1).</param>
     /// <param name="conversationId">
     /// The conversation it belongs to, or <see langword="null"/> to start a new one the broker names. A person
     /// may always start one (principle 2.10).
@@ -91,24 +75,21 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>A sentence saying what happened.</returns>
     /// <remarks>
-    /// One item rather than a list: a person composing several in one text box composes something they
-    /// cannot then read the outcomes against. Sending twice is clearer than sending once ambiguously.
+    /// One ask rather than a list: a person composing several in one text box composes something they cannot then
+    /// read one outcome against. Sending twice is clearer than sending once ambiguously.
     /// </remarks>
     public async Task<string> RequestAsync(
         AgentName to,
-        string? intent,
-        string? item,
-        string? kind,
-        string? doneWhen,
+        string? ask,
         string? conversationId,
         CancellationToken cancellationToken = default)
     {
-        if (Unsendable(intent, item, kind, doneWhen, conversationId) is { } wrong)
+        if (Unsendable(ask, conversationId) is { } wrong)
         {
             return wrong;
         }
 
-        var payload = Framed(intent!, item!, kind!, doneWhen!);
+        var payload = Framed(ask!);
 
         if (TooLong(payload) is { } refused)
         {
@@ -137,10 +118,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// <summary>Sends every participant given the same Request, each as its own exchange.</summary>
     /// <param name="hold">The seat to send under, re-read before every send.</param>
     /// <param name="peers">Who to send it to, resolved by the surface from its own roster.</param>
-    /// <param name="intent">Why the person wants this.</param>
-    /// <param name="item">The work or the question.</param>
-    /// <param name="kind"><c>work</c> or <c>question</c>.</param>
-    /// <param name="doneWhen">What counts as finished.</param>
+    /// <param name="ask">What is wanted, in the person's own words (§5.1).</param>
     /// <param name="conversationId">The conversation they all belong to, or <see langword="null"/> for a new one.</param>
     /// <param name="cancellationToken">Cancels the sends.</param>
     /// <returns>A sentence saying what happened, in counts.</returns>
@@ -163,10 +141,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     public async Task<string> RequestEveryoneAsync(
         SeatHold hold,
         IReadOnlyList<AgentName> peers,
-        string? intent,
-        string? item,
-        string? kind,
-        string? doneWhen,
+        string? ask,
         string? conversationId,
         CancellationToken cancellationToken = default)
     {
@@ -178,12 +153,12 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             return NobodyToAsk;
         }
 
-        if (Unsendable(intent, item, kind, doneWhen, conversationId) is { } wrong)
+        if (Unsendable(ask, conversationId) is { } wrong)
         {
             return wrong;
         }
 
-        var payload = Framed(intent!, item!, kind!, doneWhen!);
+        var payload = Framed(ask!);
 
         if (TooLong(payload) is { } refused)
         {
@@ -353,50 +328,25 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     internal const string Left = "Your seat was released part way through, so the rest were not sent.";
 
     /// <summary>What is wrong with a Request before any of it goes on the wire.</summary>
-    /// <param name="intent">Why the person wants this.</param>
-    /// <param name="item">The work or the question.</param>
-    /// <param name="kind">Its kind.</param>
-    /// <param name="doneWhen">What counts as finished.</param>
+    /// <param name="ask">What is wanted.</param>
     /// <param name="conversationId">The conversation named, or null.</param>
     /// <returns>The refusal, or null when there is none.</returns>
     /// <remarks>
-    /// Shared by the single and plural forms so rule 8.1 is applied once, in the order a person should fix
-    /// things: what they want before why, and why before when it is finished.
+    /// Shared by the single and plural forms. What was checked here until 0.7 — an intent, a kind, and a finish line
+    /// of at least twenty characters — went with the fields: a receiver that cannot scope an ask sends a Clarify
+    /// (§5.2), which is a question the receiver is in a position to ask and the sender is not.
     /// </remarks>
-    private static string? Unsendable(string? intent, string? item, string? kind, string? doneWhen, string? conversationId)
+    private static string? Unsendable(string? ask, string? conversationId)
     {
-        if (string.IsNullOrWhiteSpace(item))
+        if (string.IsNullOrWhiteSpace(ask))
         {
             return "Nothing was asked for, so nothing was sent.";
-        }
-
-        if (kind is not ("work" or "question"))
-        {
-            return "Say whether this is work to do in their repository or something they know.";
-        }
-
-        if (string.IsNullOrWhiteSpace(intent))
-        {
-            return "Say why you want this. The receiver uses it to do the right thing when the literal request "
-                 + "would not achieve it.";
-        }
-
-        if (doneWhen is null || doneWhen.Trim().Length < MinimumDoneWhen)
-        {
-            return $"Say what counts as finished, in at least {MinimumDoneWhen} characters. That is SPEC.md §8 "
-                 + "rule 1: it tells them when to stop, and it is what their Result is checked against.";
         }
 
         return conversationId is null ? null : ConversationName.Problem(conversationId);
     }
 
-    private static string Framed(string intent, string item, string kind, string doneWhen) =>
-        new JsonObject
-        {
-            ["intent"] = intent,
-            ["items"] = new JsonArray(new JsonObject { ["id"] = "r1", ["kind"] = kind, ["text"] = item }),
-            ["done_when"] = doneWhen
-        }.ToJsonString();
+    private static string Framed(string ask) => new JsonObject { ["ask"] = ask }.ToJsonString();
 
     private Wire.OpenRequest Open(string to, string payload, string? conversationId) => new()
     {

@@ -26,7 +26,7 @@ public sealed class ArchiveTests : IDisposable
     private int _hashes;
 
     private const string Payload =
-        @"{""intent"":""who owns it"",""items"":[{""id"":""q1"",""kind"":""question"",""text"":""who owns it""}],""done_when"":""if it is yours I will ask you to change it, and if it is not I will look elsewhere""}";
+        @"{""ask"":""who owns the invoice total, and does it include tax?""}";
 
     /// <summary>The unit separator the pair key's CHECK requires. See DestroyTests.</summary>
     private const string Separator = "\u001F";

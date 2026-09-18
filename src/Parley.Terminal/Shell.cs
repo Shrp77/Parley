@@ -3115,7 +3115,7 @@ internal sealed class Shell : Window
         void Open(AgentName? peer, IReadOnlyList<AgentName>? all)
         {
         // **Everything that is prose is a long field, and the name is not.** Rule 8.1's three parts
-        // are sentences and a request's text may run to the whole of rule 8.5's cap — the
+        // are sentences and a request's text may run to the whole of rule 8.4's cap — the
         // owner wrote a long one into a field one row tall and could see about sixty characters of
         // it. A conversation name stays one line: it is a token that has to survive being written
         // down and read back, and Enter in it is how every form on this surface is finished.
@@ -3125,31 +3125,16 @@ internal sealed class Shell : Window
         // the send — and the owner met that by naming one `tell everybody test`, writing the
         // message, and being told the rule with the form closed and their words gone.
         //
-        // **No examples in these labels, where the console has them.** Five fields, what is wrong with
-        // each and the buttons already fill a twenty-four row terminal at one row a field; the examples
-        // took five more, and a form taller than the screen opens with its first field off the top.
-        // done_when keeps its reason, because it is the field people skip and the one a Result is
-        // checked against.
+        // **Two fields, since 0.7.** There were five — an intent, the item, its kind, a done_when and the
+        // conversation — and the owner, composing one, read the first four as the same thing asked four times.
+        // §5.1 is now the ask and its conversation; a receiver that cannot scope it sends a Clarify. The ask keeps
+        // its second line, because what a good one contains is worth saying where somebody is writing it.
         var fields = new List<FormField>
         {
             new(
-                Framing.Intent,
+                $"{Framing.Ask}. {Framing.AskWhy}",
                 string.Empty,
                 Participation.RequiredProblem,
-                Long: true),
-            new(
-                Framing.Item,
-                string.Empty,
-                Participation.RequiredProblem,
-                Long: true),
-            new(
-                $"Work or question? ({string.Join(" / ", SeatVoice.Kinds.Select(k => k.Value))})",
-                SeatVoice.Kinds[0].Value,
-                Participation.KindProblem),
-            new(
-                $"{Framing.DoneWhen}. {Framing.DoneWhenWhy}",
-                string.Empty,
-                Participation.DoneWhenProblem,
                 Long: true),
             new(
                 "Conversation name — " + ConversationName.Rule,
@@ -3199,11 +3184,9 @@ internal sealed class Shell : Window
                     // one send per recipient with the idle sweep running throughout: it re-reads the
                     // seat before each one and stops rather than finishing under a released name.
                     ({ } everybody, _) => await speaking.RequestEveryoneAsync(
-                        holding, everybody, values[0], values[1], values[2].Trim(), values[3], values[4],
-                        cancellationToken).ConfigureAwait(false),
+                        holding, everybody, values[0], values[1], cancellationToken).ConfigureAwait(false),
 
-                    (_, { } one) => await speaking.RequestAsync(
-                        one, values[0], values[1], values[2].Trim(), values[3], values[4], cancellationToken)
+                    (_, { } one) => await speaking.RequestAsync(one, values[0], values[1], cancellationToken)
                         .ConfigureAwait(false),
 
                     _ => Participation.Gone,

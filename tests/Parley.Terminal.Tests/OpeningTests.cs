@@ -176,7 +176,7 @@ public sealed class OpeningTests : IAsyncDisposable
 
         await broker.RequestAsync(
             Orders, Billing, "model-a",
-            $$"""{"intent":"telling","items":[{"id":"r1","kind":"question","text":"{{said}}"}],"done_when":"billing has acknowledged it"}""",
+            $$"""{"ask":"{{said}}"}""",
             T0.AddMinutes(1), conversation, ct);
     }
 

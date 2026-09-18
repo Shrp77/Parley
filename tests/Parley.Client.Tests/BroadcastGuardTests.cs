@@ -11,8 +11,8 @@ namespace Parley.Client.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A loop is where a rule applied once quietly becomes a rule applied never. Rule 8.5's cap, rule 8.1's
-/// framing, and the seat check the sends happen under are each checked here rather than assumed to survive
+/// A loop is where a rule applied once quietly becomes a rule applied never. Rule 8.4's cap, rule 8.1's
+/// ask, and the seat check the sends happen under are each checked here rather than assumed to survive
 /// the plural case.
 /// </para>
 /// <para>
@@ -35,12 +35,8 @@ public sealed class BroadcastGuardTests
         AgentName.Create("inventory@test"),
     ];
 
-    /// <summary>A Request that satisfies rule 8.1, so the guards under test are the only thing refusing it.</summary>
-    private const string Intent = "deciding whether to move the schema";
-
-    private const string Item = "does anything here read orders.total?";
-
-    private const string DoneWhen = "every reader of orders.total is named, or none is";
+    /// <summary>The ask these send, so the guards under test are the only thing that can refuse them.</summary>
+    private const string Ask = "does anything here read orders.total, and can it move?";
 
     /// <summary>
     /// A client that holds an attachment open and refuses every send.
@@ -143,7 +139,7 @@ public sealed class BroadcastGuardTests
         var voice = new SeatVoice(agents, taken.Hold!.Seat);
 
         var said = await voice.RequestEveryoneAsync(
-            taken.Hold!, Peers, Intent, Item, "question", DoneWhen, "c1", token);
+            taken.Hold!, Peers, Ask, "c1", token);
 
         Assert.Equal(0, agents.Calls);
         Assert.Contains("Sent to 0 of 3", said, StringComparison.Ordinal);
@@ -162,7 +158,7 @@ public sealed class BroadcastGuardTests
         var voice = new SeatVoice(agents, Seated("arvind"));
 
         var said = await voice.RequestEveryoneAsync(
-            Hold(), Peers, Intent, new string('x', MessageLimits.MaxPayloadCharacters + 100), "work", DoneWhen, "c1", token);
+            Hold(), Peers, new string('x', MessageLimits.MaxPayloadCharacters + 100), "c1", token);
 
         Assert.Equal(0, agents.Calls);
         Assert.DoesNotContain("Sent to", said, StringComparison.Ordinal);
@@ -177,7 +173,7 @@ public sealed class BroadcastGuardTests
         var agents = new Refusing();
         var voice = new SeatVoice(agents, Seated("arvind"));
 
-        var said = await voice.RequestEveryoneAsync(Hold(), Peers, Intent, "   ", "question", DoneWhen, "c1", token);
+        var said = await voice.RequestEveryoneAsync(Hold(), Peers, "   ", "c1", token);
 
         Assert.Equal(0, agents.Calls);
         Assert.Contains("Nothing was asked for", said, StringComparison.Ordinal);
@@ -191,27 +187,27 @@ public sealed class BroadcastGuardTests
         var agents = new Refusing();
         var voice = new SeatVoice(agents, Seated("arvind"));
 
-        var said = await voice.RequestEveryoneAsync(Hold(), [], Intent, Item, "question", DoneWhen, "c1", token);
+        var said = await voice.RequestEveryoneAsync(Hold(), [], Ask, "c1", token);
 
         Assert.Equal(0, agents.Calls);
         Assert.Equal(SeatVoice.NobodyToAsk, said);
     }
 
     [Theory]
-    [InlineData("", Item, "question", DoneWhen)]
-    [InlineData(Intent, Item, "task", DoneWhen)]
-    [InlineData(Intent, Item, "question", "too short")]
-    public async Task Rule_one_is_applied_before_anybody_is_sent_anything(
-        string intent, string item, string kind, string doneWhen)
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public async Task What_the_single_send_refuses_is_refused_before_anybody_is_sent_anything(string? ask)
     {
-        // Rule 8.1 once, before the loop, in the single send's own words — so a Request the single form
-        // refuses cannot reach nineteen people through the plural one.
+        // Checked once, before the loop, in the single send's own words — so a Request the single form refuses
+        // cannot reach nineteen people through the plural one. Since 0.7 there is one thing to refuse: an ask that
+        // says nothing.
         var token = TestContext.Current.CancellationToken;
 
         var agents = new Refusing();
         var voice = new SeatVoice(agents, Seated("arvind"));
 
-        var said = await voice.RequestEveryoneAsync(Hold(), Peers, intent, item, kind, doneWhen, "c1", token);
+        var said = await voice.RequestEveryoneAsync(Hold(), Peers, ask, "c1", token);
 
         Assert.Equal(0, agents.Calls);
         Assert.DoesNotContain("Sent to", said, StringComparison.Ordinal);
@@ -227,7 +223,7 @@ public sealed class BroadcastGuardTests
         var agents = new Refusing();
         var voice = new SeatVoice(agents, Seated("arvind"));
 
-        var said = await voice.RequestEveryoneAsync(Hold(), Peers, Intent, Item, "question", DoneWhen, "c1", token);
+        var said = await voice.RequestEveryoneAsync(Hold(), Peers, Ask, "c1", token);
 
         Assert.Equal(3, agents.Calls);
         Assert.Contains("Sent to 0 of 3", said, StringComparison.Ordinal);

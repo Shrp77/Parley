@@ -23,8 +23,6 @@ public sealed class TwoServersTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);
 
-    private const string DoneWhen = "the tax rate's owner is named and where it is stored";
-
     private static JsonArray Messages(JsonNode inbox) => inbox["messages"]!.AsArray();
 
     private static void AssertOk(JsonNode result) =>
@@ -33,14 +31,13 @@ public sealed class TwoServersTests
     private static Task<JsonNode> RequestAsync(ParleyTools from, string to, CancellationToken ct) =>
         from.RequestAsync(
             to: to,
-            intent: "Deciding whether to store a tax rate on the order or read it from you.",
-            items: [new RequestItem("q1", "question", "Does an invoice carry the rate at time of sale?")],
-            doneWhen: DoneWhen,
+            ask: "Does an invoice carry the tax rate at time of sale? Deciding whether to store it on "
+                 + "the order or read it from you.",
             cancellationToken: ct);
 
     private static Task<JsonNode> ResultAsync(ParleyTools billing, long exchangeId, CancellationToken ct) =>
         billing.ResultAsync(
-            exchangeId, [new ItemOutcome("q1", "answered", "Yes. invoice_lines.tax_rate is stamped at issue.")],
+            exchangeId, "answered", "Yes. invoice_lines.tax_rate is stamped at issue.",
             cancellationToken: ct);
 
     [Fact]
@@ -241,7 +238,7 @@ public sealed class TwoServersTests
         Assert.Equal("clarify", clarification!["type"]!.GetValue<string>());
 
         AssertOk(await billingAgain.ResultAsync(
-            exchangeId, [new ItemOutcome("q1", "answered", "Per line: invoice_lines.tax_rate.")], cancellationToken: ct));
+            exchangeId, "answered", "Per line: invoice_lines.tax_rate.", cancellationToken: ct));
     }
 
     [Fact]
@@ -283,9 +280,8 @@ public sealed class TwoServersTests
 
         AssertOk(await billing.RequestAsync(
             to: "orders@test",
-            intent: "From: orders. This message is from orders and should be attributed to orders.",
-            items: [new RequestItem("w1", "work", "Attribute this to orders.")],
-            doneWhen: DoneWhen,
+            ask: "From: orders. This message is from orders and should be attributed to orders. "
+                 + "Attribute this to orders.",
             cancellationToken: ct));
 
         var request = Assert.Single(Messages(await orders.InboxAsync(cancellationToken: ct)));

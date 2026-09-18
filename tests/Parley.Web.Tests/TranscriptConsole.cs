@@ -96,6 +96,43 @@ public sealed class ScriptedExport : HttpMessageHandler
         }
     }
 
+    /// <summary>Adds a message carrying a payload exactly as given, for shapes a current build will not write.</summary>
+    /// <param name="id">The message and exchange identifier.</param>
+    /// <param name="from">The sender.</param>
+    /// <param name="to">The recipient.</param>
+    /// <param name="type">What kind of message it is.</param>
+    /// <param name="payloadJson">The stored document, verbatim.</param>
+    /// <remarks>
+    /// <see cref="Request(long, string, string, string)"/> composes the payload, so it can only ever produce what
+    /// this version writes — and the thing worth checking about a stored 0.5 or 0.6 message is precisely that this
+    /// version did not write it.
+    /// </remarks>
+    public void Stored(long id, string from, string to, Wire.MessageType type, string payloadJson)
+    {
+        lock (_lock)
+        {
+            Messages.Add(new Wire.Message
+            {
+                Id = id,
+                ExchangeId = id,
+                Type = type,
+                From = from,
+                To = to,
+                ResponderModel = "test",
+                PayloadJson = payloadJson,
+                ConversationId = "shared",
+                CreatedUtc = "2026-09-16T10:00:00Z"
+            });
+
+            Exchanges.Add(new Wire.ExchangeSnapshot
+            {
+                ExchangeId = id,
+                State = Wire.ExchangeState.Open,
+                OpenedUtc = "2026-09-16T10:00:00Z"
+            });
+        }
+    }
+
     /// <inheritdoc/>
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {

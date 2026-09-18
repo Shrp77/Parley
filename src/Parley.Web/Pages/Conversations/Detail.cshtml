@@ -136,36 +136,17 @@ else
     <textarea name="Says" rows="3" required
               placeholder="@(Model.Seat is null
                   ? "What do you want them to do, or to know?"
-                  : Framing.ItemExample)">@Model.Says</textarea>
+                  : Framing.AskExample)">@Model.Says</textarea>
 
     @if (Model.Seat is not null)
     {
-        @* Every message is answered (principle 2.7), so there is one thing to send from a seat and it
-           carries its framing. §8 rule 1 is enforced in storage: a request with no intent or a short
-           done-when comes back as a trigger error, which is the worst possible answer to a mistake
-           about thinking. Asking here costs a sentence and turns that into a form field. *@
+        @* One field since 0.7. The composer asked for an intent, a kind and a done_when beside the ask,
+           and §5.1 removed all three: the reason for an ask is the ask, and a receiver that cannot scope
+           one sends a Clarify rather than being handed a form to fill in on the requester's behalf. What
+           is left is a note saying what this costs, which is the thing a person cannot see. *@
         <div class="framing">
             <p class="composer-note">A request — @Owing.Requesting.</p>
-
-            <label for="intent">@Framing.Intent</label>
-            <input id="intent" name="Intent" value="@Model.Intent"
-                   placeholder="@Framing.IntentExample" />
-
-            <label for="kind">Work or question?</label>
-            <select id="kind" name="Kind">
-                @foreach (var (value, says) in SeatVoice.Kinds)
-                {
-                    <option value="@value" selected="@(Model.Kind == value)">@says</option>
-                }
-            </select>
-
-            <label for="donewhen">
-                @Framing.DoneWhen
-                (at least @SeatVoice.MinimumDoneWhen characters)
-            </label>
-            <p class="composer-note">@Framing.DoneWhenWhy.</p>
-            <textarea id="donewhen" name="DoneWhen" rows="2"
-                      placeholder="@Framing.DoneWhenExample">@Model.DoneWhen</textarea>
+            <p class="composer-note">@Framing.AskWhy.</p>
         </div>
     }
 

@@ -57,7 +57,7 @@ public sealed class WakeDuringCollectionTests
 
         // Its claim survives the collection that did not read it, so nothing else is needed for the turn to come.
         Assert.True(broker.Runtime.AttentionPending(Orders));
-        Assert.Equal(2, await node.CountCommandsAsync(Settle));
+        Assert.Equal(2, await node.CountCommandsAsync(2, Settle));
     }
 
     [Fact]

@@ -108,7 +108,7 @@ public sealed class SchemaIntegrityTests : IDisposable
         // A Request must say what done looks like (rule 8.1), and most of these tests are about
         // something else entirely, so the default satisfies that rule rather than making every
         // caller restate it. A test about rule 8.1 itself is in AdmissionGuardTests.
-        string payload = """{"intent":"x","items":[{"id":"q1","kind":"question","text":"x"}],"done_when":"if yes I drop the column; if no I add a snapshot"}""",
+        string payload = """{"ask":"is the invoice total gross or net of tax?"}""",
         object? contentHash = null,
         string? createdUtc = null) => Execute(
         """

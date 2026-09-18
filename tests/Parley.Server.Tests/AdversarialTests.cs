@@ -245,7 +245,7 @@ public sealed class AdversarialTests
     [InlineData("0.3")]
     [InlineData("0.4")]
     [InlineData("0.5")]
-    [InlineData("0.7")]
+    [InlineData("0.6")]
     [InlineData("1.0")]
     [InlineData("")]
     public async Task An_adapter_speaking_another_protocol_is_refused(string announced)

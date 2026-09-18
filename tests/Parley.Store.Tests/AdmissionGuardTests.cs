@@ -18,8 +18,6 @@ public sealed class AdmissionGuardTests : IDisposable
     private const string Stamp = "2026-01-01T00:00:00.0000000+00:00";
     private const string Hash = "0000000000000000000000000000000000000000000000000000000000000000";
 
-    private const string DoneWhen = "json_object('done_when','the invoice total is stated as gross or net')";
-
     private readonly SqliteConnection _connection;
     private int _hashes;
 
@@ -53,7 +51,12 @@ public sealed class AdmissionGuardTests : IDisposable
       + (++_hashes).ToString("x64", System.Globalization.CultureInfo.InvariantCulture)
       + "', conversation_id, '" + Stamp + "' FROM exchanges ORDER BY id LIMIT 1;");
 
-    private static string Items(string itemsSql) => "json_patch(" + DoneWhen + ", json_object('items', " + itemsSql + "))";
+    private string Scalar(string sql)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = sql;
+        return command.ExecuteScalar()?.ToString() ?? string.Empty;
+    }
 
     private static string Outcomes(string outcomesSql) => "json_object('outcomes', " + outcomesSql + ")";
 
@@ -127,95 +130,79 @@ public sealed class AdmissionGuardTests : IDisposable
     // ---- the shape of a Request (rule 8.1) ----
 
     [Fact]
-    public void A_request_that_does_not_say_what_done_looks_like_is_refused()
+    public void A_request_with_no_ask_is_refused()
     {
+        // The whole of a Request's shape since 0.7 (§5.1). What stood here before — a done_when floor, an items
+        // array, a kind on every item, distinct ids of 1 to 64 characters, and gates naming only earlier items —
+        // enforced a shape the protocol no longer has. The rows written under them are still stored and still
+        // read, which is what RequestIsTheAskMigrationTests proves.
+        InsertExchange("q");
+
+        Refused(
+            () => InsertMessage("request", "orders@test", "billing@test", "json_object('intent','x')"),
+            "carries an ask");
+    }
+
+    [Fact]
+    public void An_empty_ask_is_refused_and_so_is_one_that_is_only_spaces()
+    {
+        // A message with nothing in it is a turn spent on nothing at the other end.
+        InsertExchange("q");
+
+        Refused(
+            () => InsertMessage("request", "orders@test", "billing@test", "json_object('ask','')"),
+            "carries an ask");
+
+        Refused(
+            () => InsertMessage("request", "orders@test", "billing@test", "json_object('ask','   ')"),
+            "carries an ask");
+    }
+
+    [Fact]
+    public void An_ask_that_is_not_text_is_refused()
+    {
+        // A number, an object or an array in the field would be a payload no reader could render as the ask.
+        InsertExchange("q");
+
+        Refused(
+            () => InsertMessage("request", "orders@test", "billing@test", "json_object('ask',7)"),
+            "carries an ask");
+
+        Refused(
+            () => InsertMessage("request", "orders@test", "billing@test",
+                "json_object('ask', json_array('who owns it'))"),
+            "carries an ask");
+    }
+
+    [Fact]
+    public void The_old_shape_is_refused_now_even_though_it_was_once_required()
+    {
+        // The malicious case rather than the careless one: an adapter built against 0.6, or a second
+        // implementation reading an old copy of the document, writing exactly what storage used to demand.
         InsertExchange("q");
 
         Refused(
             () => InsertMessage("request", "orders@test", "billing@test",
-                "json_object('items', json_array(json_object('id','q1','kind','work','text','x')))"),
-            "what done looks like");
-
-        Refused(
-            () => InsertMessage("request", "orders@test", "billing@test",
-                "json_object('done_when','soon', 'items', json_array(json_object('id','q1','kind','work','text','x')))"),
-            "what done looks like");
+                "json_object('intent','deciding where tax is added', "
+                + "'items', json_array(json_object('id','q1','kind','work','text','x')), "
+                + "'done_when','the invoice total is stated as gross or net')"),
+            "carries an ask");
     }
 
     [Fact]
-    public void A_request_with_no_items_is_refused()
+    public void An_ask_beside_the_old_fields_is_admitted_and_kept_whole()
     {
-        InsertExchange("q");
-
-        Refused(() => InsertMessage("request", "orders@test", "billing@test", Items("json_array()")), "at least one item");
-    }
-
-    [Fact]
-    public void An_item_that_is_neither_work_nor_a_question_is_refused()
-    {
-        InsertExchange("q");
-
-        Refused(
-            () => InsertMessage("request", "orders@test", "billing@test",
-                Items("json_array(json_object('id','q1','kind','notice','text','x'))")),
-            "work or a question");
-    }
-
-    [Fact]
-    public void Two_items_sharing_an_id_are_refused()
-    {
-        // A Result gives one outcome per id, so two items under one id could never both be reported on.
-        InsertExchange("q");
-
-        Refused(
-            () => InsertMessage("request", "orders@test", "billing@test",
-                Items("json_array(json_object('id','q1','kind','work','text','x'), json_object('id','q1','kind','question','text','y'))")),
-            "its own id");
-    }
-
-    [Fact]
-    public void An_item_id_no_result_could_record_is_refused()
-    {
-        // Found by the review gate. A 65-character id was admitted, and every Result for it then failed
-        // result_items' own bound: the receiver could never report on the work, since a Result must echo the
-        // ids exactly, and only a person closing the conversation ended it. A number is refused for the same
-        // reason — it is not an id a Result can name.
-        InsertExchange("q");
-
-        Refused(
-            () => InsertMessage("request", "orders@test", "billing@test",
-                Items($"json_array(json_object('id','{new string('r', 65)}','kind','work','text','x'))")),
-            "1 to 64 characters");
-
-        Refused(
-            () => InsertMessage("request", "orders@test", "billing@test",
-                Items("json_array(json_object('id',1,'kind','work','text','x'))")),
-            "1 to 64 characters");
-
-        InsertMessage("request", "orders@test", "billing@test",
-            Items($"json_array(json_object('id','{new string('r', 64)}','kind','work','text','x'))"));
-    }
-
-    [Fact]
-    public void A_gate_naming_a_later_item_is_refused()
-    {
-        // Requiring a gate to name an earlier item makes the dependencies a DAG by construction, so a cycle
-        // cannot be expressed rather than being detected and rejected.
-        InsertExchange("q");
-
-        Refused(
-            () => InsertMessage("request", "orders@test", "billing@test",
-                Items("json_array(json_object('id','q1','kind','work','text','x','gate',json_object('on','q2')), json_object('id','q2','kind','work','text','y'))")),
-            "earlier item");
-    }
-
-    [Fact]
-    public void A_gate_naming_an_earlier_item_is_admitted()
-    {
+        // Storage bounds the ask and is otherwise blind to the document (§13): a sender that carries something
+        // this version does not define is not refused for it, and what it wrote is what is stored.
         InsertExchange("q");
 
         InsertMessage("request", "orders@test", "billing@test",
-            Items("json_array(json_object('id','q1','kind','question','text','x'), json_object('id','q2','kind','work','text','y','gate',json_object('on','q1')))"));
+            "json_object('ask','who owns the invoice total?', 'intent','left over from an older adapter')");
+
+        Assert.Contains(
+            "left over from an older adapter",
+            Scalar("SELECT payload_json FROM messages WHERE type = 'request';"),
+            StringComparison.Ordinal);
     }
 
     // ---- the shape of a Result (§5.3) ----

@@ -16,6 +16,12 @@ namespace Parley.Core;
 /// minor carries breaking changes.
 /// </para>
 /// <para>
+/// <b>0.7 made a Request the ask.</b> The intent, the items with their kinds, identifiers and gates, and the
+/// <c>done_when</c> are gone: a Request carries one ask and its conversation, and a Result answers the exchange
+/// whole under the item <c>request</c>. A receiver that cannot tell how far an ask goes sends a Clarify, which
+/// the protocol has always had. Messages stored under earlier versions keep their own fields and still read.
+/// </para>
+/// <para>
 /// <b>0.6 lets files cross between repositories.</b> An agent places a <c>.md</c> or <c>.txt</c> file in
 /// the file location beside the store and another fetches it onto disk in its own repository; the broker
 /// computes each file's SHA-256, and an agent that fetched a file finds a change notice in its inbox when
@@ -40,5 +46,5 @@ namespace Parley.Core;
 public static class ProtocolVersion
 {
     /// <summary>The protocol version, as SPEC.md declares it.</summary>
-    public const string Current = "0.6";
+    public const string Current = "0.7";
 }

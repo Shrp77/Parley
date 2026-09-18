@@ -100,7 +100,7 @@ public sealed class AgentVerbTests : IDisposable
         // The failure this method exists to prevent. As two commits, the exchange would be committed when the
         // Request was refused, and the person would be shown work waiting on a receiver never asked — in a
         // conversation minted by failing.
-        await Assert.ThrowsAsync<SqliteException>(() => Send(Requests.Request(doneWhen: "soon"), conversationId: "invented"));
+        await Assert.ThrowsAsync<SqliteException>(() => Send(Requests.Request("   "), conversationId: "invented"));
 
         Assert.Empty(await _exchanges.GetOpenAsync(cancellationToken: Ct));
         Assert.Empty(await _messages.GetPendingAsync(Billing, cancellationToken: Ct));
@@ -120,7 +120,7 @@ public sealed class AgentVerbTests : IDisposable
 
         for (var i = 0; i < cap + 1; i++)
         {
-            await Assert.ThrowsAsync<SqliteException>(() => Send(Requests.Request($"attempt {i}", doneWhen: "n/a"), broker: broker));
+            await Assert.ThrowsAsync<SqliteException>(() => Send(Requests.Request(string.Empty), broker: broker));
         }
 
         var admitted = await Send(broker: broker);
@@ -141,13 +141,13 @@ public sealed class AgentVerbTests : IDisposable
     }
 
     [Fact]
-    public async Task A_request_differing_only_in_what_counts_as_done_is_a_different_request()
+    public async Task A_request_whose_ask_differs_is_a_different_request()
     {
-        // The whole payload is hashed. The same words with a different finish line ask the receiver for a
-        // different piece of work.
+        // The whole payload is hashed, which since 0.7 is the ask. Different words are a different piece of work,
+        // and the distinctness rule of §7.1 admits the second.
         Assert.True((await Send()).Succeeded);
 
-        Assert.True((await Send(Requests.Request(doneWhen: "the import either proceeds or fails with a reason"))).Succeeded);
+        Assert.True((await Send(Requests.Request("does the import proceed or fail with a reason?"))).Succeeded);
     }
 
     [Fact]
@@ -266,28 +266,30 @@ public sealed class AgentVerbTests : IDisposable
     }
 
     [Fact]
-    public async Task The_rolled_up_outcome_is_derived_from_the_items_and_not_supplied()
+    public async Task The_rolled_up_outcome_is_derived_from_the_result_and_not_supplied()
     {
-        // A sender reporting an item blocked under an exchange recorded complete would make §15 describe a
-        // deployment that does not exist.
-        var sent = await Send(Requests.RequestOf("totals", "q1", "q2"));
+        // A sender reporting blocked under an exchange recorded complete would make §15 describe a deployment that
+        // does not exist.
+        var sent = await Send();
 
-        Assert.True((await Result(sent.Exchange!.Id, Requests.Result(("q1", "done"), ("q2", "blocked:missing_information")))).Succeeded);
+        Assert.True((await Result(
+            sent.Exchange!.Id,
+            Requests.Result((PayloadShape.WholeRequest, "blocked:missing_information")))).Succeeded);
 
         Assert.Equal(ExchangeOutcome.Blocked, (await _exchanges.GetAsync(sent.Exchange.Id, cancellationToken: Ct))!.Outcome);
     }
 
     [Fact]
-    public async Task A_result_must_give_every_item_exactly_one_outcome_and_is_told_which()
+    public async Task A_result_answers_the_ask_and_is_told_so_when_it_names_something_else()
     {
-        // Reporting on some items closes the exchange as firmly as reporting on all of them, and the rest
-        // would be gone with no record they were skipped.
-        var sent = await Send(Requests.RequestOf("totals", "q1", "q2"));
+        // A Request is answered whole (§5.3), under the identifier the protocol already used for one carrying no
+        // items a Result could name. A Result naming anything else is refused and told what to send.
+        var sent = await Send();
 
-        var partial = await Result(sent.Exchange!.Id, Requests.Result(("q1", "done")));
+        var elsewhere = await Result(sent.Exchange!.Id, Requests.Result(("q1", "done")));
 
-        Assert.Equal(TransitionError.OutcomesDoNotMatchItems, partial.Error);
-        Assert.Equal(["q1", "q2"], partial.ExpectedItems.Order(StringComparer.Ordinal));
+        Assert.Equal(TransitionError.OutcomesDoNotMatchItems, elsewhere.Error);
+        Assert.Equal([PayloadShape.WholeRequest], elsewhere.ExpectedItems);
         Assert.Equal(ExchangeState.Open, (await _exchanges.GetAsync(sent.Exchange.Id, cancellationToken: Ct))!.State);
     }
 
@@ -309,7 +311,7 @@ public sealed class AgentVerbTests : IDisposable
         // abandoned work read as ended.
         var sent = await Send();
 
-        var forged = await Result(sent.Exchange!.Id, Requests.Result(("q1", "closed")));
+        var forged = await Result(sent.Exchange!.Id, Requests.Result((PayloadShape.WholeRequest, "closed")));
 
         Assert.Equal(TransitionError.ClosedIsTheBrokers, forged.Error);
         Assert.Equal(ExchangeState.Open, (await _exchanges.GetAsync(sent.Exchange.Id, cancellationToken: Ct))!.State);
@@ -322,7 +324,7 @@ public sealed class AgentVerbTests : IDisposable
         // the Result, so the requester learned its work was settled with no way to discover how.
         var sent = await Send();
 
-        var tooLong = $$"""{"outcomes":[{"id":"q1","outcome":"answered","text":"{{new string('x', MessageLimits.MaxPayloadCharacters)}}"}]}""";
+        var tooLong = $$"""{"outcomes":[{"id":"request","outcome":"answered","text":"{{new string('x', MessageLimits.MaxPayloadCharacters)}}"}]}""";
 
         await Assert.ThrowsAsync<SqliteException>(() => Result(sent.Exchange!.Id, tooLong));
 

@@ -722,7 +722,7 @@ public sealed class FilesOverTheWireTests
                 ResponderModel = "claude-opus-5",
                 ConversationId = conversation,
                 PayloadJson =
-                    $$"""{"intent":"deciding where tax is added","items":[{"id":"q1","kind":"question","text":"{{question}}"}],"done_when":"you have said which, and why it is so in your repository"}"""
+                    $$"""{"ask":"{{question}}"}"""
             },
             cancellationToken: Ct);
 

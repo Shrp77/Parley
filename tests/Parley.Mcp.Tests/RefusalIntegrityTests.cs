@@ -17,7 +17,6 @@ public sealed class RefusalIntegrityTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);
 
-    private const string DoneWhen = "the tax rate's owner is named and where it is stored";
 
     [Fact]
     public async Task A_refused_call_writes_nothing_at_all()
@@ -32,20 +31,17 @@ public sealed class RefusalIntegrityTests
         var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
         await fixture.LaunchAsync("billing@test", ct);
 
-        var one = new RequestItem("q1", "question", "Does an invoice carry the rate at time of sale?");
+        const string One = "Does an invoice carry the rate at time of sale?";
 
-        await orders.RequestAsync("Billing", "intent", [one], DoneWhen, cancellationToken: ct);
-        await orders.RequestAsync("billing@test", "intent", [], DoneWhen, cancellationToken: ct);
-        await orders.RequestAsync("billing@test", "intent", [one, new RequestItem("q1", "work", "and again")], DoneWhen, cancellationToken: ct);
-        await orders.RequestAsync("billing@test", "intent",
-            [new RequestItem("q1", "question", "a", GateOn: "q9", GateEquals: "done")], DoneWhen, cancellationToken: ct);
-        await orders.RequestAsync("billing@test", "intent", [one], DoneWhen, "../bad", cancellationToken: ct);
-        await orders.RequestAsync("billing@test", "intent", [one], DoneWhen, responderModel: "parley:broker", cancellationToken: ct);
-        await orders.RequestAsync("billing@test", "intent", [one], "n/a", cancellationToken: ct);
-        await orders.RequestAsync("orders@test", "intent", [one], DoneWhen, cancellationToken: ct);
-        await orders.RequestAsync("billing@test", "intent",
-            [new RequestItem("q1", "question", new string('x', MessageLimits.MaxPayloadCharacters + 1000))],
-            DoneWhen, cancellationToken: ct);
+        await orders.RequestAsync("Billing", One, cancellationToken: ct);
+        await orders.RequestAsync("billing@test", string.Empty, cancellationToken: ct);
+        await orders.RequestAsync("billing@test", "   ", cancellationToken: ct);
+        await orders.RequestAsync("billing@test", One, "../bad", cancellationToken: ct);
+        await orders.RequestAsync("billing@test", One, responderModel: "parley:broker", cancellationToken: ct);
+        await orders.RequestAsync("billing@test", One, responderModel: "not a model", cancellationToken: ct);
+        await orders.RequestAsync("orders@test", One, cancellationToken: ct);
+        await orders.RequestAsync(
+            "billing@test", new string('x', MessageLimits.MaxPayloadCharacters + 1000), cancellationToken: ct);
 
         var connection = fixture.Connection;
 
@@ -66,8 +62,8 @@ public sealed class RefusalIntegrityTests
     {
         // The guards are layered, so the risk is not that one of them is wrong but that together
         // they refuse something the protocol allows. This uses every optional feature in one
-        // exchange: work and a question, a gate, a named conversation, a slash in a model
-        // identifier, a human responder, a blocker and a source.
+        // exchange: a named conversation, a slash in a model identifier, a human responder, a
+        // blocker and a source.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
@@ -77,13 +73,7 @@ public sealed class RefusalIntegrityTests
 
         var sent = await orders.RequestAsync(
             to: "billing@test",
-            intent: "Deciding where the tax rate lives.",
-            items:
-            [
-                new RequestItem("q1", "question", "Is the rate stamped at time of sale?"),
-                new RequestItem("w1", "work", "Stamp it on refunds too.", GateOn: "q1", GateEquals: "answered")
-            ],
-            doneWhen: DoneWhen,
+            ask: "Is the tax rate stamped at time of sale? If so, stamp it on refunds too.",
             conversationId: "tax-rate",
             responderModel: "some-org/some-model-9",
             cancellationToken: ct);
@@ -95,11 +85,11 @@ public sealed class RefusalIntegrityTests
 
         var resolved = await billing.ResultAsync(
             exchangeId,
-            [
-                new ItemOutcome("q1", "answered", "Yes. invoice_lines.tax_rate is stamped at issue.", Sources: ["inventory@test"]),
-                new ItemOutcome("w1", "blocked", "Refunds are written by a job I have no access to; need write on refunds_job.",
-                    Blocker: "permission")
-            ],
+            "blocked",
+            "Stamped at issue in invoice_lines.tax_rate. Refunds are written by a job I have no access to; "
+            + "need write on refunds_job.",
+            blocker: "permission",
+            sources: ["inventory@test"],
             responderModel: "human:on-call",
             cancellationToken: ct);
 
@@ -118,15 +108,13 @@ public sealed class RefusalIntegrityTests
         var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var sent = await orders.RequestAsync(
-            "billing@test", "Deciding where the tax rate lives.",
-            [new RequestItem("q1", "question", "Is the rate stamped at time of sale?")],
-            DoneWhen, cancellationToken: ct);
+            "billing@test", "Is the tax rate stamped at time of sale?", cancellationToken: ct);
 
         await billing.InboxAsync(cancellationToken: ct);
 
         var refused = await billing.ResultAsync(
             sent["exchange_id"]!.GetValue<long>(),
-            [new ItemOutcome("q1", "answered", "Yes.", Sources: ["billing@test"])],
+            "answered", "Yes.", sources: ["billing@test"],
             cancellationToken: ct);
 
         Assert.False(refused["ok"]!.GetValue<bool>(), refused.ToJsonString());
@@ -145,15 +133,13 @@ public sealed class RefusalIntegrityTests
         var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var sent = await orders.RequestAsync(
-            "billing@test", "Deciding where the tax rate lives.",
-            [new RequestItem("q1", "question", "Is the rate stamped at time of sale?")],
-            DoneWhen, cancellationToken: ct);
+            "billing@test", "Is the tax rate stamped at time of sale?", cancellationToken: ct);
 
         await billing.InboxAsync(cancellationToken: ct);
 
         var refused = await billing.ResultAsync(
             sent["exchange_id"]!.GetValue<long>(),
-            [new ItemOutcome("q1", "answered", "Inventory says yes.", Sources: ["inventory@test"])],
+            "answered", "Inventory says yes.", sources: ["inventory@test"],
             cancellationToken: ct);
 
         Assert.False(refused["ok"]!.GetValue<bool>(), refused.ToJsonString());
@@ -163,7 +149,7 @@ public sealed class RefusalIntegrityTests
         // And still resolvable, so the refusal is a correction rather than a dead end.
         var second = await billing.ResultAsync(
             sent["exchange_id"]!.GetValue<long>(),
-            [new ItemOutcome("q1", "answered", "Yes, at issue.")],
+            "answered", "Yes, at issue.",
             cancellationToken: ct);
 
         Assert.True(second["ok"]!.GetValue<bool>(), second.ToJsonString());

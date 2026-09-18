@@ -421,7 +421,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         }
         catch (Microsoft.Data.Sqlite.SqliteException exception) when (exception.SqliteErrorCode == 19)
         {
-            // A storage constraint refused the write — a Request without done_when, a source that is not
+            // A storage constraint refused the write — a Request with no ask, a source that is not
             // registered. Nothing was written. Reported as invalid with the constraint's own words, which
             // name the rule, rather than as a fault in the broker.
             throw new RpcException(new Status(StatusCode.InvalidArgument, exception.Message, exception));

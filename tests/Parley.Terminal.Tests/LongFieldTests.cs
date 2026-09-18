@@ -1,6 +1,5 @@
 using Parley.Client;
 using Parley.Client.Rendering;
-using Parley.Client.Seating;
 using Parley.Core;
 using Terminal.Gui.Input;
 using Terminal.Gui.Views;
@@ -14,7 +13,7 @@ namespace Parley.Terminal.Tests;
 /// <remarks>
 /// <para>
 /// <b>Asked for by the owner after writing a long notification.</b> Every field on this surface was
-/// one row tall, which shows about sixty characters — and rule 8.5 lets a notification carry eight
+/// one row tall, which shows about sixty characters — and rule 8.4 lets a notification carry eight
 /// thousand. Somebody writing a paragraph could not see the paragraph they were writing.
 /// </para>
 /// <para>
@@ -240,33 +239,19 @@ public sealed class LongFieldTests
     [InlineData(40)]
     public void The_request_form_this_surface_actually_opens_fits_on_opening(int height)
     {
-        // **The labels the composer really carries, rather than a stand-in for them.** The parts
-        // of rule 8.1 each name an example, because the owner could not tell the intent from the
-        // request when both were asked abstractly — and labels of three rows are tall enough to
-        // overflow a screen on their own, which no stand-in label would have shown.
+        // **The labels the composer really carries, rather than a stand-in for them.** Two fields
+        // since 0.7, where there were five — and the check is worth keeping at two: the ask's label
+        // carries a second sentence, so it is still tall enough to overflow a short screen on its
+        // own, which no stand-in label would have shown.
         using var driving = Driving.Open(width: 100, height: height);
 
         var form = new FormDialog(
             Participation.RequestTitle,
             [
                 new FormField(
-                    Framing.Intent,
+                    $"{Framing.Ask}. {Framing.AskWhy}",
                     string.Empty,
                     Participation.RequiredProblem,
-                    Long: true),
-                new FormField(
-                    Framing.Item,
-                    string.Empty,
-                    Participation.RequiredProblem,
-                    Long: true),
-                new FormField(
-                    $"Work or question? ({string.Join(" / ", SeatVoice.Kinds.Select(k => k.Value))})",
-                    SeatVoice.Kinds[0].Value,
-                    Participation.KindProblem),
-                new FormField(
-                    $"{Framing.DoneWhen}. {Framing.DoneWhenWhy}",
-                    string.Empty,
-                    Participation.DoneWhenProblem,
                     Long: true),
                 new FormField(
                     "Conversation name — " + ConversationName.Rule,

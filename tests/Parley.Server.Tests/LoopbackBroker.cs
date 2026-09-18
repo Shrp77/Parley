@@ -462,6 +462,42 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
         }
     }
 
+    /// <summary>Waits for a number of commands to arrive, then counts what is there after a settling window.</summary>
+    /// <param name="expected">How many are owed.</param>
+    /// <param name="settle">How long to keep listening once they have, for ones that should not come.</param>
+    /// <param name="within">How long to wait for the expected ones.</param>
+    /// <returns>How many arrived in total.</returns>
+    /// <remarks>
+    /// <b>What <see cref="CountCommandsAsync(TimeSpan)"/> alone cannot do, and the flake it caused.</b> That waits a fixed
+    /// window and counts, so under a loaded suite a command still in flight is indistinguishable from one never
+    /// sent — and the assertion fails saying nothing was started when the real answer was "not yet". Seen as one
+    /// failure in three full runs of this suite, passing every time the class ran alone.
+    /// <para>
+    /// So the two halves are separated: wait generously for the commands that are owed, then listen a little
+    /// longer for ones that are not. The second half is what the count was always for, and it is the half a
+    /// fixed sleep does correctly.
+    /// </para>
+    /// </remarks>
+    public async Task<int> CountCommandsAsync(int expected, TimeSpan settle, TimeSpan? within = null)
+    {
+        var deadline = DateTime.UtcNow + (within ?? TimeSpan.FromSeconds(5));
+
+        while (DateTime.UtcNow < deadline)
+        {
+            lock (_commands)
+            {
+                if (_commands.Count >= expected)
+                {
+                    break;
+                }
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(20)).ConfigureAwait(false);
+        }
+
+        return await CountCommandsAsync(settle).ConfigureAwait(false);
+    }
+
     /// <summary>Waits for a command to arrive.</summary>
     /// <param name="within">How long to wait before giving up.</param>
     /// <returns>The command.</returns>

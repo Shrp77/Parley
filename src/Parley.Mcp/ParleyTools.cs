@@ -37,21 +37,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
     private readonly ServerOptions _options = options ?? throw new ArgumentNullException(nameof(options));
 
-    /// <summary>The shortest <c>done_when</c> storage accepts, per §8 rule 1.</summary>
-    /// <remarks>
-    /// The floor does the work: requiring only that the field exist admits "n/a", which satisfies a check
-    /// and says nothing about when to stop.
-    /// </remarks>
-    private const int MinimumDoneWhen = 20;
-
-    /// <summary>The longest item id storage admits (SPEC.md §5.1), which every Result must echo exactly.</summary>
-    private const int LongestItemId = MessageLimits.LongestItemId;
-
     /// <summary>Sends a Request.</summary>
     /// <param name="to">A whole agent name, or a role.</param>
-    /// <param name="intent">Why the requester wants this.</param>
-    /// <param name="items">The work and questions.</param>
-    /// <param name="doneWhen">What counts as finished.</param>
+    /// <param name="ask">What is wanted, in the sender's own words (SPEC.md section 5.1).</param>
     /// <param name="conversationId">The conversation, where the sender must or may name one.</param>
     /// <param name="responderModel">What produced the Request, if the caller says.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
@@ -72,12 +60,13 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         about a change, send a request for an acknowledgement: nothing is sent without being answered.
 
         RULES:
-        - Say what done looks like (done_when). It scopes the work and tells the receiver when to stop.
+        - Ask for one thing, plainly, in the words you would use to a colleague. Say what it is for when
+          that is not obvious, so the receiver can do the right thing when the literal request would not.
+        - If you cannot tell how far a request you received goes, ask with parley_clarify rather than
+          guessing — and expect the same of whoever you ask.
         - Send what the receiver needs for its part: the contract, the interface, the package and
           version, the entry point, the reason. Not your session history, not file contents it could be
           pointed at.
-        - Batch. One request with several items costs the receiver one context load.
-        - Gate explicitly: if an item only applies given another item's outcome, say so in its gate.
         - Each agent changes only its own repository. Ask the owner to make a change there.
         - Stay in the conversation. While you hold a request, what you send goes into its conversation
           and the broker assigns it. Name conversation_id only when you hold requests from several
@@ -88,14 +77,10 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             "Who: one agent by its whole name (billing@server-b), or a role (billing) to send the request " +
             "to every agent registered under it. parley_agents lists who exists and what each owns.")]
         string to,
-        [Description("Why you want this, in a sentence — so the receiver can do the right thing if the literal request would not achieve it.")]
-        string intent,
         [Description(
-            "The work and questions. Each has a unique id, a kind of \"work\" or \"question\", and text; add " +
-            "gateOn/gateEquals when it only applies given an earlier item's outcome.")]
-        RequestItem[] items,
-        [Description("What counts as finished, specifically enough to check a Result against. Required.")]
-        string doneWhen,
+            "What you want, in your own words. One ask: what you need, and what it is for when that is not " +
+            "obvious. The receiver asks you with parley_clarify if it cannot tell how far it goes.")]
+        string ask,
         [Description(
             "Optional. The conversation this belongs to. Leave it out while you hold requests from one " +
             "conversation — the broker assigns that one. Letters, digits, '.', '_' and '-'.")]
@@ -129,31 +114,12 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 return badConversation;
             }
 
-            if (string.IsNullOrWhiteSpace(intent))
+            if (string.IsNullOrWhiteSpace(ask))
             {
-                return Malformed(
-                    "Say why you want this, in a sentence. The receiver uses it to do the right thing when " +
-                    "the literal request would not achieve it, and so do you when the Result arrives.");
+                return Malformed("Say what you want. A request with no ask is nothing for the receiver to act on.");
             }
 
-            if (string.IsNullOrWhiteSpace(doneWhen) || doneWhen.Trim().Length < MinimumDoneWhen)
-            {
-                return Malformed(
-                    $"Say what done looks like, in at least {MinimumDoneWhen} characters: what the receiver " +
-                    "checks its Result against and when it stops. \"n/a\" and \"done\" say nothing.");
-            }
-
-            if (BadItems(items) is { } badItems)
-            {
-                return badItems;
-            }
-
-            var payload = new JsonObject
-            {
-                ["intent"] = intent,
-                ["items"] = new JsonArray([.. items.Select(i => (JsonNode?)i.ToJson())]),
-                ["done_when"] = doneWhen
-            };
+            var payload = new JsonObject { ["ask"] = ask };
 
             var json = payload.ToJsonString();
 
@@ -243,7 +209,10 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
     /// <summary>Reports what a Request came to, closing its exchange.</summary>
     /// <param name="exchangeId">The exchange.</param>
-    /// <param name="outcomes">One outcome per item of the Request.</param>
+    /// <param name="outcome">How the request came out.</param>
+    /// <param name="text">What was done, the answer, or what blocks it.</param>
+    /// <param name="blocker">The kind of blocker, when blocked.</param>
+    /// <param name="sources">The agents whose Results were relied on.</param>
     /// <param name="responderModel">What produced this, if the caller says.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>Confirmation, or the refusal.</returns>
@@ -254,9 +223,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     [McpServerTool(Name = "parley_result")]
     [Description(
         """
-        Report what a request came to, and close its exchange. One outcome for every item you were asked.
+        Report what a request came to, and close its exchange. One outcome, answering the request whole.
 
-        - "done": the work is finished in your repository and meets done_when.
+        - "done": the work you were asked for is finished in your repository.
         - "answered": the question is answered.
         - "acknowledged": received and understood; nothing further to do or say.
         - "blocked": a concrete blocker remains after you tried to resolve it. Set blocker to
@@ -276,7 +245,10 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         """)]
     public async Task<JsonNode> ResultAsync(
         [Description("The exchange id, from your inbox.")] long exchangeId,
-        [Description("One entry per item you were asked.")] ItemOutcome[] outcomes,
+        [Description("One of: done, answered, acknowledged, blocked.")] string outcome,
+        [Description("What was done, the answer, or exactly what blocks it and what you tried.")] string text,
+        [Description("Only when blocked: missing_information, conflict, or permission.")] string? blocker = null,
+        [Description("Optional. The agents whose Results you relied on.")] string[]? sources = null,
         [Description("Optional. The model that produced this.")] string? responderModel = null,
         CancellationToken cancellationToken = default)
     {
@@ -287,42 +259,84 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 return badResponder;
             }
 
-            if (BadOutcomes(outcomes) is { } badOutcomes)
+            var answer = new ItemOutcome(PayloadShape.WholeRequest, outcome, text, blocker, sources);
+
+            if (BadOutcomes([answer]) is { } badOutcomes)
             {
                 return badOutcomes;
             }
 
-            if (await UnknownSourcesAsync(outcomes, cancellationToken).ConfigureAwait(false) is { } badSources)
+            if (await UnknownSourcesAsync([answer], cancellationToken).ConfigureAwait(false) is { } badSources)
             {
                 return badSources;
             }
 
-            var json = new JsonObject
-            {
-                ["outcomes"] = new JsonArray([.. outcomes.Select(o => (JsonNode?)o.ToJson())])
-            }.ToJsonString();
+            var sent = await SendResultAsync([answer], exchangeId, responderModel, cancellationToken)
+                .ConfigureAwait(false);
 
-            if (await TooLongAsync(json, MessageType.Result, cancellationToken).ConfigureAwait(false) is { } refused)
+            // **An exchange opened under 0.5 or 0.6 is still owed its own items**, and nothing times out, so one
+            // can outlive the upgrade by weeks. The broker names what it expected (SPEC.md §5.3), which is the
+            // one move that turns this into an answer rather than a refusal the model has to decode: the same
+            // answer is recorded against each id the stored Request declared. Honest, because what those ids
+            // divided is now one ask.
+            if (sent.Reply is { Ok: false } stale
+                && stale.Refusal == Wire.TransitionError.OutcomesDoNotMatchItems
+                && stale.ExpectedItems.Count > 0
+                && !(stale.ExpectedItems.Count == 1 && stale.ExpectedItems[0] == PayloadShape.WholeRequest))
             {
-                return refused;
+                sent = await SendResultAsync(
+                    [.. stale.ExpectedItems.Select(id => answer with { Id = id })],
+                    exchangeId,
+                    responderModel,
+                    cancellationToken).ConfigureAwait(false);
             }
 
-            var outcome = await _link.Agents.ResultAsync(
-                new Wire.ResultRequest
-                {
-                    From = _options.Agent.Value,
-                    ExchangeId = exchangeId,
-                    ResponderModel = Responder(responderModel),
-                    PayloadJson = json
-                },
-                cancellationToken: cancellationToken);
-
-            return outcome.Ok ? new JsonObject { ["ok"] = true, ["closed"] = true } : Refusal(outcome);
+            return sent.Refused
+                ?? (sent.Reply!.Ok ? new JsonObject { ["ok"] = true, ["closed"] = true } : Refusal(sent.Reply));
         }
         catch (RpcException failure)
         {
             return Unreachable(failure);
         }
+    }
+
+    /// <summary>Writes the outcomes into a Result and sends it.</summary>
+    /// <param name="outcomes">What to record, already checked.</param>
+    /// <param name="exchangeId">The exchange being closed.</param>
+    /// <param name="responderModel">What produced this.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The broker's reply, or the refusal that stopped it being sent at all.</returns>
+    /// <remarks>
+    /// Separate so the 0.6 retry above assembles and measures its payload the same way the first attempt did.
+    /// A second copy of this would be a second opinion about the cap.
+    /// </remarks>
+    private async Task<(Wire.SayReply? Reply, JsonNode? Refused)> SendResultAsync(
+        IReadOnlyList<ItemOutcome> outcomes,
+        long exchangeId,
+        string? responderModel,
+        CancellationToken cancellationToken)
+    {
+        var json = new JsonObject
+        {
+            ["outcomes"] = new JsonArray([.. outcomes.Select(o => (JsonNode?)o.ToJson())])
+        }.ToJsonString();
+
+        if (await TooLongAsync(json, MessageType.Result, cancellationToken).ConfigureAwait(false) is { } refused)
+        {
+            return (null, refused);
+        }
+
+        var reply = await _link.Agents.ResultAsync(
+            new Wire.ResultRequest
+            {
+                From = _options.Agent.Value,
+                ExchangeId = exchangeId,
+                ResponderModel = Responder(responderModel),
+                PayloadJson = json
+            },
+            cancellationToken: cancellationToken);
+
+        return (reply, null);
     }
 
     /// <summary>Collects what is waiting, and any closure poll outstanding.</summary>
@@ -1161,67 +1175,6 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             "parley_agents to see who exists.");
     }
 
-    /// <summary>Validates the items of a Request.</summary>
-    /// <param name="items">What the caller supplied.</param>
-    /// <returns>A refusal, or <see langword="null"/> if they are usable.</returns>
-    /// <remarks>
-    /// Ids have to be present and distinct because a Result answers them by id, kinds have to be work or
-    /// question, and a gate has to name an earlier item because storage holds the dependency acyclic by
-    /// construction (§9.3).
-    /// </remarks>
-    private static JsonNode? BadItems(RequestItem[]? items)
-    {
-        var given = items ?? [];
-
-        if (given.Length == 0)
-        {
-            return Malformed("A request needs at least one item: the work you want done, or what you need to know.");
-        }
-
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var item in given)
-        {
-            if (string.IsNullOrWhiteSpace(item.Id))
-            {
-                return Malformed("Every item needs an id, such as r1.");
-            }
-
-            if (item.Id.Length > LongestItemId)
-            {
-                return Malformed(
-                    $"Item id '{item.Id[..16]}...' is {item.Id.Length} characters. Use a short id, such as r1: " +
-                    $"at most {LongestItemId}, because the Result answers each item by it.");
-            }
-
-            if (item.Kind is not ("work" or "question"))
-            {
-                return Malformed(
-                    $"Item '{item.Id}' has kind '{item.Kind}'. Use \"work\" for something to do in the receiver's " +
-                    "repository, or \"question\" for something it knows.");
-            }
-
-            if (string.IsNullOrWhiteSpace(item.Text))
-            {
-                return Malformed($"Item '{item.Id}' says nothing. Say what the work or the question is.");
-            }
-
-            if (!string.IsNullOrWhiteSpace(item.GateOn) && !seen.Contains(item.GateOn))
-            {
-                return Malformed(
-                    $"Item '{item.Id}' is gated on '{item.GateOn}', which is not an earlier item. A gate names an " +
-                    "item that comes before it.");
-            }
-
-            if (!seen.Add(item.Id))
-            {
-                return Malformed($"Two items share the id '{item.Id}'. Results answer items by id, so ids have to differ.");
-            }
-        }
-
-        return null;
-    }
-
     /// <summary>Validates the outcomes of a Result.</summary>
     /// <param name="outcomes">What the caller supplied.</param>
     /// <returns>A refusal, or <see langword="null"/> if they are usable.</returns>
@@ -1668,40 +1621,6 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         }
 
         return refusal;
-    }
-}
-
-/// <summary>One item of a Request, per SPEC.md §5.1.</summary>
-/// <param name="Id">A short identifier, unique within the Request. Results refer to it.</param>
-/// <param name="Kind"><c>work</c> or <c>question</c>.</param>
-/// <param name="Text">The work to do, or the question.</param>
-/// <param name="GateOn">The id of an earlier item this depends on, if any.</param>
-/// <param name="GateEquals">The outcome of <paramref name="GateOn"/> that makes this apply.</param>
-/// <remarks>
-/// The gate is two flat fields rather than a nested object, because a tool schema a model fills in
-/// reliably is worth more than one mirroring the stored shape. It is nested again on the way into storage.
-/// </remarks>
-public sealed record RequestItem(
-    [property: Description("Short unique id, such as r1.")] string Id,
-    [property: Description("\"work\" for something to do in the receiver's repository, or \"question\" for something it knows.")]
-    string Kind,
-    [property: Description("The work or the question.")] string Text,
-    [property: Description("Optional. The id of an earlier item this depends on.")] string? GateOn = null,
-    [property: Description("Optional. The outcome of GateOn that makes this item apply, such as \"done\".")]
-    string? GateEquals = null)
-{
-    /// <summary>Renders this into the stored payload shape.</summary>
-    /// <returns>The item as SPEC.md §5.1 stores it.</returns>
-    internal JsonObject ToJson()
-    {
-        var json = new JsonObject { ["id"] = Id, ["kind"] = Kind, ["text"] = Text };
-
-        if (!string.IsNullOrWhiteSpace(GateOn))
-        {
-            json["gate"] = new JsonObject { ["on"] = GateOn, ["equals"] = GateEquals };
-        }
-
-        return json;
     }
 }
 

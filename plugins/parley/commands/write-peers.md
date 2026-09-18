@@ -98,8 +98,9 @@ placed, so code travels as `Name.cs.txt`.
   whether an order can be fulfilled.
 
 **Do not guess at what these repositories do, and do not edit them.** When you need work done
-in one, or something it knows, send its agent a `parley_request` saying why and what done
-looks like. Do the work other agents request of this repository.
+in one, or something it knows, send its agent a `parley_request` saying what you want, and what
+it is for when that is not obvious. If a request you receive is unclear, ask with
+`parley_clarify` rather than guessing. Do the work other agents request of this repository.
 ```
 
 Keep it to a line per peer. This block is in context for every turn of every session, so it is

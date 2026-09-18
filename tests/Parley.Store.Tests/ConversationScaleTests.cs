@@ -35,7 +35,7 @@ public sealed class ConversationScaleTests : IDisposable
 
     /// <summary>A payload the schema accepts, kept out of the interpolation.</summary>
     private const string Payload =
-        @"{""intent"":""who owns it"",""items"":[{""id"":""q1"",""kind"":""question"",""text"":""who owns it""}],""done_when"":""if it is yours I will ask you to change it, and if it is not I will look elsewhere""}";
+        @"{""ask"":""who owns the invoice total, and does it include tax?""}";
 
     public ConversationScaleTests()
     {

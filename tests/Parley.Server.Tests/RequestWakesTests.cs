@@ -33,12 +33,7 @@ public sealed class RequestWakesTests
             From = from,
             To = to,
             ResponderModel = "test",
-            PayloadJson = new JsonObject
-            {
-                ["intent"] = "deciding whether to move the field",
-                ["items"] = new JsonArray(new JsonObject { ["id"] = "q1", ["kind"] = "question", ["text"] = text }),
-                ["done_when"] = "the field is either moved or kept, with the reason"
-            }.ToJsonString(),
+            PayloadJson = new JsonObject { ["ask"] = text }.ToJsonString(),
             ConversationId = conversation
         };
 
@@ -218,7 +213,7 @@ public sealed class RequestWakesTests
                 From = "billing@alpha",
                 ExchangeId = sent.ExchangeId,
                 ResponderModel = "test",
-                PayloadJson = """{"outcomes":[{"id":"q1","outcome":"answered","text":"nothing reads it"}]}"""
+                PayloadJson = """{"outcomes":[{"id":"request","outcome":"answered","text":"nothing reads it"}]}"""
             },
             cancellationToken: token);
 
@@ -262,7 +257,7 @@ public sealed class RequestWakesTests
                 From = "billing@alpha",
                 ExchangeId = sent.ExchangeId,
                 ResponderModel = "test",
-                PayloadJson = """{"outcomes":[{"id":"q1","outcome":"answered","text":"nothing reads it"}]}"""
+                PayloadJson = """{"outcomes":[{"id":"request","outcome":"answered","text":"nothing reads it"}]}"""
             },
             cancellationToken: token);
 
@@ -335,7 +330,7 @@ public sealed class RequestWakesTests
                 From = from,
                 ExchangeId = exchangeId,
                 ResponderModel = "test",
-                PayloadJson = """{"outcomes":[{"id":"q1","outcome":"answered","text":"yes"}]}"""
+                PayloadJson = """{"outcomes":[{"id":"request","outcome":"answered","text":"yes"}]}"""
             };
     }
 }

@@ -45,7 +45,7 @@ public sealed class FullDiscussionTests : IDisposable
 
         // Orders asks billing for work, naming the conversation.
         var sent = await broker.RequestAsync(
-            Orders, Billing, Model, Requests.Request("state the price as gross or net", "work"), T0.AddMinutes(1), Conversation, ct);
+            Orders, Billing, Model, Requests.Request("state the price as gross or net"), T0.AddMinutes(1), Conversation, ct);
         Assert.True(sent.Succeeded, $"expected admission, got {sent.Rejection}");
 
         // Billing collects it, and needs detail, so the turn goes back.
@@ -66,7 +66,7 @@ public sealed class FullDiscussionTests : IDisposable
         Assert.True((await restarted.ClarifyAsync(sent.Exchange.Id, Orders, Model, Requests.Clarify("of VAT."), back.AddMinutes(2), ct)).Succeeded);
 
         // Billing does the work and sends the Result, which reaches orders with its own Request beside it.
-        Assert.True((await restarted.ResultAsync(sent.Exchange.Id, Billing, Model, Requests.Result(("q1", "done")), back.AddMinutes(3), ct)).Succeeded);
+        Assert.True((await restarted.ResultAsync(sent.Exchange.Id, Billing, Model, Requests.Result((PayloadShape.WholeRequest, "done")), back.AddMinutes(3), ct)).Succeeded);
 
         var result = Assert.Single((await restarted.DrainInboxAsync(Orders, back.AddMinutes(4), cancellationToken: ct)).Messages);
         Assert.Equal(MessageType.Result, result.Message.Type);

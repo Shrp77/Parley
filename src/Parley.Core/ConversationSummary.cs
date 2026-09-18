@@ -74,7 +74,7 @@ public sealed record ConversationPage(
 /// </param>
 /// <remarks>
 /// Paged from the first version rather than bounded later. The message log grows for as long as a
-/// deployment runs, and SPEC.md §10.2 makes the same argument rule 8.5 makes about message size,
+/// deployment runs, and SPEC.md §10.2 makes the same argument rule 8.4 makes about message size,
 /// one level up: an unbounded operator query is the mistake the cap exists to prevent, and a bound
 /// retrofitted is a bound nobody applies. The broker enforces its own ceiling rather than trusting
 /// the caller's number.

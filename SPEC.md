@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.6
+**Version:** 0.7
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -483,46 +483,45 @@ Work worth resuming after a conversation closed is new work, and starts a new co
 {
   "type": "request",
   "to": "billing",
-  "intent": "Adding tax-inclusive pricing, so invoices show exactly what the order charged.",
-  "items": [
-    { "id": "r1", "kind": "work",
-      "text": "Stop recomputing line-item price at invoice time. Use the price the order supplies." },
-    { "id": "r2", "kind": "question", "gate": { "on": "r1", "equals": "done" },
-      "text": "Which invoice version is the first to use the supplied price?" }
-  ],
-  "done_when": "Invoices for orders created after the change show the order's price unchanged, and r2 names the version."
+  "ask": "Stop recomputing the line-item price at invoice time — use the price the order supplies — and tell me which invoice version is the first to do it."
 }
 ```
 
-A Request carries one or more **items**, each either a piece of **work** in the receiver's
-repository or a **question** about something the receiver holds. Mixing them is ordinary:
-work usually comes with something the requester needs to know about it.
+A Request carries **one ask**: what the sender wants, in its own words, bounded by rule 8.4's cap.
+It opens one exchange, and its conversation is decided by §5.0 rather than carried in the payload.
 
-Each item has an **`id`**: text of 1 to 64 characters, unique within the Request. The Result
-answers every item by its id (§5.3), so the schema refuses a Request whose ids it could not
-record against a Result — one admitted with a longer id would be work its receiver could never
-report on. A question 0.4 wrote was held to no such bound and is carried forward by migration
-(§18): an id of it longer than 64 characters is not an item a Result answers, and a Request left
-with none is answered as a whole, under the item `request`, as a person's close answers it.
+**The ask is the whole of it, and that is a decision rather than an omission.** Until 0.7 a Request
+also carried an intent, a list of items each marked *work* or *question* and each with an identifier,
+gates between those items, and a `done_when` of at least twenty characters. Every one of them said
+the same thing again in a different place: the reason for the ask is the ask, and a receiver that
+cannot tell how far the work goes has a question rather than a missing field. §18 records what went
+and why; the fields survive in messages already stored, which still read exactly as they were written.
 
-Three fields do the heavy lifting:
+**What replaced them is already here.** A receiver that needs the scope, the reason, or anything else
+sends a Clarify (§5.2) and the turn goes back; it may also send other agents Requests of its own in
+the same conversation. That is the protocol working as people do, and it is the reason §5.2 is
+uncapped by default.
 
-- **`intent`** — why the requester wants this. It lets the receiver do the right thing when the
-  literal request would not achieve it, and say so.
-- **`done_when`** — what counts as finished. This is the highest-leverage field in the
-  protocol: it scopes the work, it tells the receiver when to stop, and it is what the receiver
-  checks its own Result against. A Request without one is refused by the schema (§9.3), because
-  a request with no finish line is one nobody can complete.
-- **`gate`** — dependencies between items are **syntactic**. A gate names an earlier item and
-  the outcome it must reach. A model handed an implicitly conditional item will act on it
-  anyway, confidently, in a world that does not exist; if the gate is not machine-readable,
-  there is no gate.
+**A Request is answered whole.** The Result closes the exchange with one outcome (§5.3), because
+there is one thing to answer. A Request written under an earlier version carried items, and its
+Result still answers each of them by identifier — nothing times out (§14), so an exchange opened
+before the change may still be open after it.
+
+**A Request to a role opens one exchange per registered agent** under that role, each carrying this
+same ask (§5.5). Nothing about the ask changes with the number of receivers.
 
 ### 5.2 Clarify
 
 The receiver cannot proceed without something from **the requester** specifically. A Clarify
 does not open a new exchange. It flips `owed_by` and stays in place, and the requester's reply
 flips it back.
+
+**Clarify is where scope is settled.** A Request carries one ask and nothing else (§5.1), so a
+receiver that cannot tell what the ask is for, how far it goes, or when to stop asks — and the
+requester answers in the same exchange. That is the move a form cannot make: the receiver knows what
+it is missing and the requester does not, so the question is the receiver's to put. A receiver that
+guesses instead is acting in a world it invented, which is the failure §5.1's removed fields were
+reaching for and never fixed.
 
 **A Clarify is for the requester; anyone else gets a Request.** When what the receiver needs is
 held by a third participant — another agent, or the person seated in the deployment — it sends
@@ -544,22 +543,27 @@ asked for; it does not open a round.
 
 ### 5.3 Result
 
-Closes the exchange. Carries an outcome for every item:
+Closes the exchange. Carries **one outcome**, for the ask as a whole:
 
 | `outcome` | Meaning | Written by |
 |---|---|---|
-| `done` | The work is finished in the receiver's repository and meets `done_when` | the receiver |
-| `answered` | The question is answered | the receiver |
+| `done` | The work asked for is finished in the receiver's repository | the receiver |
+| `answered` | What was asked for is given | the receiver |
 | `acknowledged` | Received and understood; nothing further to do or say | the receiver |
 | `blocked` | A concrete blocker remains after the receiver tried to resolve it | the receiver |
 | `closed` | The person running the deployment closed the conversation first | the broker, for the person |
+
+The outcome is recorded against the item `request`, which is the identifier a Request answered as a
+whole has always used — a person's close writes it too. **A Request stored under 0.5 or 0.6 carried
+items, and its Result answers each of them by identifier**, as it did then; the receiver is told which
+identifiers the Request it holds carried.
 
 **Pursue; do not refer.** When another agent owns part of the work or holds part of what the
 receiver needs, the receiver sends that agent a Request in the same conversation, waits for its
 Result, and does its own part with it (principle 2.6). It does not answer "not mine" and stop,
 and it does not send the requester off to ask someone else.
 
-**A Result names its sources.** Where an item's outcome relied on another participant's Result,
+**A Result names its sources.** Where the outcome relied on another participant's Result,
 `sources` lists who. Every one of those exchanges is in the same conversation under its own
 author's identity (§11.3), so the person running the deployment can see exactly whose claim is
 whose, how confident each was, and where two disagreed — which is what a relayed answer used to
@@ -570,10 +574,8 @@ lose. A source must name a registered participant, and the schema enforces it (�
   "type": "result",
   "exchange_id": 47,
   "outcomes": [
-    { "id": "r1", "outcome": "done",
-      "text": "Invoice now takes the order's price as given. Merged as billing@4f1c2e0." },
-    { "id": "r2", "outcome": "answered", "sources": ["inventory"],
-      "text": "Invoice schema 12. Inventory confirmed it reports the same price from schema 12 on." }
+    { "id": "request", "outcome": "answered", "sources": ["inventory"],
+      "text": "Invoice takes the order's price as given, merged as billing@4f1c2e0. First version to use it is invoice schema 12; inventory confirmed it reports the same price from 12 on." }
   ]
 }
 ```
@@ -595,9 +597,10 @@ concrete blocker it could not resolve, and it must say what the blocker is and w
 `blocked` never means "this is too big", "someone else should decide", or "I was not told I
 could". Those are not blockers.
 
-**The exchange carries one rolled-up outcome** (§9.2): `blocked` or `closed` if any item was,
-otherwise complete. It is what survives once retention prunes the message text (§9.4), so it
-is deliberately the least favourable reading.
+**The exchange carries one rolled-up outcome** (§9.2): `blocked` or `closed` if the outcome was —
+or, for an exchange opened before 0.7, if any of its items was — otherwise complete. It is what
+survives once retention prunes the message text (§9.4), so it is deliberately the least favourable
+reading.
 
 ### 5.4 Announcements are requests
 
@@ -882,27 +885,30 @@ here that an agent could read as a reason to stop doing requested work is a defe
 enforce mechanically should not be left to the model's good judgement, and §11.4 says advisory
 rules decay worst on headless agents, which receive them as a prompt rather than as tool
 descriptions re-read on every call. So the list is annotated with what actually holds each one,
-and six of the eleven are held by storage, the API or the broker rather than requested.
+and five of the ten are held by storage, the API or the broker rather than requested.
 
 | | Rule | Held by |
 |---|---|---|
-| 1 | Say what done looks like | schema (§9.3) |
-| 2 | Gate explicitly or not at all | schema (§9.3) |
-| 3 | Send what the receiver needs, not what you know | the model, with the size cap of rule 5 behind it |
-| 4 | Batch | the model |
-| 5 | Hard size cap | schema |
-| 6 | Report outcomes truthfully | the model — except `closed`, which only the broker writes (§9.3) |
-| 7 | Decisions go into the repository they govern | the model |
-| 8 | Never wait on your turn | the API, which offers no blocking call |
-| 9 | Pursue; do not refer | the model, with sources checked against the registry by schema (§9.3) |
-| 10 | Stay in the conversation | the broker (§5.0) |
-| 11 | Resolve blockers by talking to whoever can resolve them | the model |
+| 1 | Ask for one thing, plainly | schema (§9.3), which refuses a Request with no ask |
+| 2 | Ask when you cannot tell how far it goes | the model, with §5.2 offering the move and no cap on it |
+| 3 | Send what the receiver needs, not what you know | the model, with the size cap of rule 4 behind it |
+| 4 | Hard size cap | schema |
+| 5 | Report outcomes truthfully | the model — except `closed`, which only the broker writes (§9.3) |
+| 6 | Decisions go into the repository they govern | the model |
+| 7 | Never wait on your turn | the API, which offers no blocking call |
+| 8 | Pursue; do not refer | the model, with sources checked against the registry by schema (§9.3) |
+| 9 | Stay in the conversation | the broker (§5.0) |
+| 10 | Resolve blockers by talking to whoever can resolve them | the model |
 
-1. **Say what done looks like.** Every Request states `done_when` — what counts as finished.
-   Enforced: a Request without it is refused by the schema, not discouraged. It is the field
-   that tells the receiver when to stop, and the one it checks its own Result against.
-2. **Gate explicitly or not at all.** Implicit dependencies between items are forbidden.
-   Enforced: a gate must name an earlier item of the same Request.
+1. **Ask for one thing, plainly.** A Request is the ask (§5.1): say what you want in the words you
+   would use to a colleague who owns that repository, including what it is for when that is not
+   obvious from the ask itself. Enforced only to the extent that an empty ask is refused — the rest
+   is judgement, and a form cannot have it for you. One ask per Request; two unrelated things are
+   two Requests, and the receiver answers each as it finishes it.
+2. **Ask when you cannot tell how far it goes.** A receiver that cannot scope the work, or cannot
+   tell what the requester is really after, sends a Clarify (§5.2) and the turn goes back. It does
+   not guess, and it does not answer half of it and call that done. Asking costs one message;
+   guessing costs the work.
 3. **Send what the receiver needs, not what you know.** A Request or a Result carries what the
    other party needs for its part: the contract, the interface, the package and version, the
    entry point, the result, the reason. It does not carry session history, file contents it
@@ -910,10 +916,7 @@ and six of the eleven are held by storage, the API or the broker rather than req
    Integration work needs real detail — "use package `Billing.Pricing` 3.2 and call
    `PriceSnapshot.From(order)`" is exactly the kind of thing to send — and withholding it in the
    name of isolation is how a request for work turns into a round of questions.
-4. **Batch.** One Request with five items costs the receiver one context load; five Requests
-   cost it five. Nothing is serialised (§4.2), so this is not about round trips — it is about the
-   context spent on the other end.
-5. **Hard size cap.** 8,000 characters per message, enforced by the broker. Truncation is a
+4. **Hard size cap.** 8,000 characters per message, enforced by the broker. Truncation is a
    protocol error, not a warning.
 
    **This is the first value here that was measured.** What the cap defends is how much of one
@@ -929,29 +932,29 @@ and six of the eleven are held by storage, the API or the broker rather than req
    direction, and nothing but the participants converging stops it. That is the intended trade:
    principle 2.8 rules out cutting a line of work off before it is finished. A deployment that
    observes exchanges running away sets a clarification cap from that observation.
-6. **Report outcomes truthfully.** `done` only when the work is finished in your repository and
-   meets `done_when`. `answered` only from what your repository holds. `acknowledged` only when
-   the Request genuinely needs nothing more from you. `blocked` only after rule 11, naming the
+5. **Report outcomes truthfully.** `done` only when the work asked for is finished in your
+   repository. `answered` only from what your repository holds. `acknowledged` only when
+   the Request genuinely needs nothing more from you. `blocked` only after rule 10, naming the
    blocker and what you tried (§5.3). A confident `done` the requester then builds on is the
    most expensive mistake in a line of work, because it is wrong *and* attributed to you.
-7. **Decisions go into the repository they govern.** A decision reached in a conversation is
+6. **Decisions go into the repository they govern.** A decision reached in a conversation is
    written — as a contract change, a decision record, or the code — by the agent that owns that
    repository, and its Result says where. A decision that lives only in a conversation is
    re-derived weeks later at full cost, which is the failure this protocol exists to prevent.
-8. **Never wait on your turn.** Sending a Request returns an identifier, not a Result (§4.2).
+7. **Never wait on your turn.** Sending a Request returns an identifier, not a Result (§4.2).
    Carry on with whatever does not depend on it; the Result arrives in your inbox with the
    Request attached. Holding a turn open polling for it wastes the tokens the asynchrony exists
    to save, and the receiver may legitimately take hours.
-9. **Pursue; do not refer.** When another agent owns part of the work or holds part of what you
+8. **Pursue; do not refer.** When another agent owns part of the work or holds part of what you
    need, send it a Request in the same conversation and use its Result (§5.3). Do not answer
    "not mine" and stop, and do not send the requester off to ask someone else. Name every
    participant your Result relied on in `sources`, so the person reading the conversation can
    see whose claim each part is.
-10. **Stay in the conversation.** Everything a Request causes stays in its conversation
+9. **Stay in the conversation.** Everything a Request causes stays in its conversation
     (principle 2.10). Held by the broker, which assigns the conversation from what you hold and
     refuses a Request that tries to start or name another (§5.0) — so this is a rule an agent
     cannot break rather than one it must remember.
-11. **Resolve blockers by talking to whoever can resolve them.** Missing information: work out
+10. **Resolve blockers by talking to whoever can resolve them.** Missing information: work out
     who can provide it and ask them; if no agent in the project can, ask the person seated in
     the deployment; if nobody is seated, send `blocked` to your requester naming exactly what is
     needed, so it can pursue it in turn. A conflict: resolve it, including by asking other agents
@@ -1503,7 +1506,7 @@ CREATE TABLE instructions (
   issued_utc   TEXT    NOT NULL,
   settled_utc  TEXT,
 
-  -- The same bound as a message (rule 8.5), and deliberately the same number rather than a
+  -- The same bound as a message (rule 8.4), and deliberately the same number rather than a
   -- second one. What the cap defends is how much of somebody else's context one piece of text
   -- can fill, and an instruction fills the same context a question does. Two numbers would also
   -- mean two arguments the next time evidence says move it.
@@ -1528,51 +1531,24 @@ CREATE INDEX ix_instructions_agent ON instructions(agent, issued_utc);
 -- SQLite compiles a trigger against a table that must already exist, so the document's order is
 -- the order a database is built in, not a reading order.
 
--- Rules 1 and 2 (§8): a Request says what done looks like, carries items of work or questions,
--- and gates only on an earlier item. A trigger because reaching into an array needs json_each,
--- which is a subquery, and CHECK forbids those.
+-- Rule 1 (§8): a Request carries an ask, and that is the whole of its shape.
 --
--- The done_when floor does real work. Requiring only that the key be present admits "n/a", which
--- satisfies a check and says nothing about when to stop.
+-- **What was here until 0.7, and why it went.** A Request had to carry a done_when of at least twenty
+-- characters, an items array, a kind of 'work' or 'question' on every item, distinct ids of 1 to 64
+-- characters, and gates naming only earlier items -- which made the dependency graph acyclic by
+-- construction. Every one of them enforced a shape §5.1 no longer has. Messages written under them are
+-- still stored exactly as they were and are still read: a trigger fires on insert and a message is
+-- never updated, so removing these changed nothing already written.
 --
--- Requiring a gate to name an *earlier* item makes the dependency graph acyclic by construction:
--- a gate on a missing item, a gate on itself, and two items each waiting on the other are all
--- the same failure and cannot be expressed. Uniqueness is checked first, because without it "the
--- earlier item named r1" is not a single thing.
+-- The floor on the ask is emptiness alone. A twenty-character floor on a done_when did real work,
+-- because "n/a" satisfies a presence check and says nothing about when to stop; here the field *is*
+-- the message, and a sender with nothing to say has nothing to send.
 CREATE TRIGGER tr_request_is_well_formed BEFORE INSERT ON messages
 WHEN NEW.type = 'request' AND json_valid(NEW.payload_json)
 BEGIN
-  SELECT RAISE(ABORT, 'a request must say what done looks like')
-   WHERE json_type(NEW.payload_json, '$.done_when') IS NOT 'text'
-      OR length(trim(json_extract(NEW.payload_json, '$.done_when'))) < 20;
-
-  SELECT RAISE(ABORT, 'a request carries at least one item')
-   WHERE json_type(NEW.payload_json, '$.items') IS NOT 'array'
-      OR json_array_length(NEW.payload_json, '$.items') = 0;
-
-  SELECT RAISE(ABORT, 'every item is work or a question')
-   WHERE EXISTS (SELECT 1 FROM json_each(NEW.payload_json, '$.items')
-                  WHERE json_extract(value, '$.kind') IS NULL
-                     OR json_extract(value, '$.kind') NOT IN ('work', 'question'));
-
-  SELECT RAISE(ABORT, 'every item id is text of 1 to 64 characters')
-   WHERE EXISTS (SELECT 1 FROM json_each(NEW.payload_json, '$.items')
-                  WHERE json_type(value, '$.id') IS NOT 'text'
-                     OR length(json_extract(value, '$.id')) NOT BETWEEN 1 AND 64);
-
-  SELECT RAISE(ABORT, 'every item has its own id')
-   WHERE (SELECT count(*) FROM json_each(NEW.payload_json, '$.items'))
-      <> (SELECT count(DISTINCT json_extract(value, '$.id'))
-            FROM json_each(NEW.payload_json, '$.items'));
-
-  SELECT RAISE(ABORT, 'a gate must reference an earlier item')
-   WHERE EXISTS (
-     SELECT 1 FROM json_each(NEW.payload_json, '$.items') q
-      WHERE json_extract(q.value, '$.gate.on') IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM json_each(NEW.payload_json, '$.items') p
-           WHERE p.key < q.key
-             AND json_extract(p.value, '$.id') = json_extract(q.value, '$.gate.on')));
+  SELECT RAISE(ABORT, 'a request carries an ask')
+   WHERE json_type(NEW.payload_json, '$.ask') IS NOT 'text'
+      OR length(trim(json_extract(NEW.payload_json, '$.ask'))) = 0;
 END;
 
 -- A Result (§5.3) carries an outcome per item; a blocked item names its kind of blocker; every
@@ -1852,7 +1828,7 @@ CREATE TABLE file_notices (
 -- A collection takes the oldest first (§9.5), so a burst of new changes cannot hold an old one back.
 CREATE INDEX ix_file_notices_collection ON file_notices(agent, changed_utc);
 
--- Placements counted per agent, so a size limit can be set from evidence as rule 8.5's cap was. Not
+-- Placements counted per agent, so a size limit can be set from evidence as rule 8.4's cap was. Not
 -- a key to agents: the evidence outlives a purge.
 CREATE TABLE file_placements (
   agent      TEXT    NOT NULL PRIMARY KEY,
@@ -1871,14 +1847,11 @@ survives bugs in the broker.
 the document defines while the schema refuses it is a divergence that surfaces on the one write
 that needed it; an enumeration written as prose has already decayed.
 
-- **A Request says what done looks like, and its items are well formed.** The trigger above.
-  Rule 8.1 was advisory once and therefore weakest on the tier §11.2 calls the important one,
-  since Headless agents receive the rules as a decaying preamble rather than as tool descriptions
-  re-read on every call. It is now impossible rather than discouraged.
-- **Gates are syntactic, unambiguous and acyclic.** The same trigger. §5.1 requires gates to be
-  machine-readable because a model handed an implicitly conditional item acts on it anyway, and
-  a gate naming something that is not there is that failure wearing correct syntax.
-- **A Result carries an outcome per item, and a `blocked` item names its blocker.** The trigger
+- **A Request carries an ask.** The trigger above. It is the whole of a Request's shape (§5.1), and
+  an empty one is refused rather than discouraged — a message with nothing in it is a turn spent on
+  nothing at the other end. Until 0.7 this trigger also required a `done_when`, items, kinds, ids and
+  gates; §18 records why they went, and messages carrying them are still stored and still read.
+- **A Result carries an outcome, and a `blocked` outcome names its blocker.** The trigger
   above. `blocked` is the last resort (§5.3), and one that does not say what blocks it gives
   nobody anything to resolve.
 - **A source names a registered participant, never the sender.** The same trigger. §5.3 has a
@@ -1909,7 +1882,7 @@ that needed it; an enumeration written as prose has already decayed.
   resume and went over until a second trigger was added.
 - **`pair_key` is genuinely derived from its participants.** Every rule built on it would
   otherwise see two unrelated pairs as one.
-- **Message size cap.** Terseness is the context-poisoning defence (rule 8.5), so 8,000
+- **Message size cap.** Terseness is the context-poisoning defence (rule 8.4), so 8,000
   characters is a constraint rather than a guideline. A refusal is counted (§10.2), because a
   limit nobody measures is a limit that gets changed on the strength of whoever complains most
   recently.
@@ -2148,7 +2121,7 @@ the conversations holding an ambiguous name, with a count of the rest; and one r
 removes or prunes, when its conversation is destroyed, when an agent that took part in its conversation
 is purged (§14), or with the store. Placements are counted per agent — how many, and how many bytes —
 because this version sets no size limit, and a limit set later should be set from evidence, as rule
-8.5's cap was.
+8.4's cap was.
 
 ## 10. Operations
 
@@ -2162,9 +2135,9 @@ else's. §10.2 is what the person running the deployment may do, which is everyt
 | Operation | Description |
 |---|---|
 | `agents()` | List registered agents: what each one owns (§17 q10), their adapters, and liveness. |
-| `request(to, intent, items, done_when, conversation_id?)` | Send a Request (§5.1). `to` is a full name or a bare role (§5.5). Returns, per exchange opened, its identifier and the conversation the broker assigned it to (§5.0), or a refusal (§7.3). Never returns a Result. |
+| `request(to, ask, conversation_id?)` | Send a Request (§5.1): one ask, and nothing else. `to` is a full name or a bare role (§5.5). Returns, per exchange opened, its identifier and the conversation the broker assigned it to (§5.0), or a refusal (§7.3). Never returns a Result. |
 | `clarify(exchange_id, text)` | Hand the turn on an open exchange to the other participant: ask what was meant, or answer what you were asked (§5.2). |
-| `result(exchange_id, outcomes)` | Close an exchange you received, with one outcome per item of its Request (§5.3). |
+| `result(exchange_id, outcome)` | Close an exchange you received, with one outcome for its ask (§5.3). An exchange opened before 0.7 carries items, and is answered by them. |
 | `inbox()` | Drain pending messages, debts first (§7.3). Results arrive here, carrying the identifier `request` returned and the Request they close (§4.2, §13). Also surfaces any closure poll outstanding for the caller (§5.0), and change notices about files the caller fetched, at most 200 at once with a count of the rest (§9.5). |
 | `conclude(conversation_id, finished)` | Say whether you are finished with a discussion. The first call opens a poll; later calls answer one. |
 | `file_place(name, bytes, conversation_id?)` | Place a file from the caller's own repository in a conversation's folder of the file location (§9.5). The conversation is assigned as a Request's is (§5.0), and placing makes the caller a participant. Returns the conversation, the name placed and, when characters outside the set renamed it, the name asked for, the size and the broker's content hash, and whether the file was placed, replaced, or already current; or a refusal naming, where one exists, the agent that placed the name, or the file a renamed placement collides with. |
@@ -2258,8 +2231,8 @@ other could.
 | `instruct(agent, text)` | Give an agent an instruction from the operator, delivered as a turn by the machine that holds it. Returns an identifier, what became of it — taken, declined, undeliverable, failed or still running — and whatever the agent said in reply. Recorded as the operator's own, never as a peer's. A turn may outlast any wait a caller can reasonably be held for, so *still running* is an ordinary answer rather than a fault, and `instructions()` is how the rest of it is collected. |
 | `instructions(agent?, id?, page)` | What became of the instructions this operator gave, most recent first: the agent, the instruction's own words, the outcome, whatever the agent said, when it was issued and when it settled. Narrowable to one agent or one instruction. Paged, and the broker bounds the page whatever is asked for. The reply is disclosed to the operator who asked for it, which needs no argument — but the *text* is disclosed too, and that is deliberate: they are a person's own words to their own agent, on a surface no agent can reach, and a reply with no question beside it is half a transcript. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
-| `refusals()` | Report what the size cap of rule 8.5 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
-| `clarifications()` | Report the clarify depth distribution of §5.2, how often a cap was reached where one is set, and how often a Result gives its items different outcomes. The evidence §17 question 4 asks for. |
+| `refusals()` | Report what the size cap of rule 8.4 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
+| `clarifications()` | Report the clarify depth distribution of §5.2, how often a cap was reached where one is set, and, for exchanges opened before 0.7, how often a Result gave their items different outcomes. The evidence §17 question 4 asks for. |
 | `results()` | Report what Results said (§15): item outcomes per receiver and responder, the blockers named and their kinds, which participants were relied on as sources, and how each participant's conversations ended — by consensus or by the person. Read from tables retention never touches, so it covers the whole life of the deployment. |
 | `waiting()` | Say who is waiting on whom: one edge per open exchange, naming the agent that owes the next move and the agent waiting for it. An operator operation because that is the only vantage it is visible from — inside a pair, a question nobody will answer looks exactly like one not yet answered, and telling them apart needs every open exchange at once. Derived from the open set rather than stored, so an exchange that closes is simply absent from the next read. |
 | `flags()` | Report the open work that needs the person (§6): Requests not collected past their uncollected threshold, exchanges whose owing participant has sent nothing past their stalled threshold, work held by a retired agent, participants a closure poll is waiting on once nothing else is (§5.0), whose flags name a conversation and carry no exchange, and the cycles recorded at admission (§7.2). Derived when read, so work that moves is simply absent from the next read. Nothing in the protocol times out, so this is how stalled work reaches anybody. |
@@ -2295,7 +2268,7 @@ conversation is named by whoever started it or given an identifier by the broker
 is how a person reaches one they did not start.
 
 It is paged from the first version rather than bounded later. The message log grows for as long as
-a deployment runs, and an unbounded operator query is the mistake the message cap of rule 8.5
+a deployment runs, and an unbounded operator query is the mistake the message cap of rule 8.4
 prevents one level up: a bound retrofitted is a bound nobody applies. The broker enforces its own
 ceiling rather than trusting the caller's number, for the same reason it enforces every other one.
 
@@ -2817,7 +2790,7 @@ the person's machine by being opened.
 Additional controls, annotated with what actually holds each one — the same discipline §8 applies to
 its rules, and for the same reason:
 
-- **Message size cap.** Held: rule 8.5's cap is a schema constraint, and it always applies. The request
+- **Message size cap.** Held: rule 8.4's cap is a schema constraint, and it always applies. The request
   cap of §7.1 and the clarification cap of §5.2 are held by storage wherever a deployment sets them;
   both are off by default.
 - **Deduplication of byte-identical messages within a short window.** Held: §13.1, a unique index. It
@@ -3149,7 +3122,7 @@ would go on working on something the person had ended.
 
 **The notice says who closed it and nothing a participant wrote.** It names the conversation, the exchange,
 and that the person running the deployment closed it, with the person's reason if one was given. It carries
-no participant's text, so it cannot exceed rule 8.5's cap by quoting one; a reason that would is shortened
+no participant's text, so it cannot exceed rule 8.4's cap by quoting one; a reason that would is shortened
 rather than failing the close, because a close that cannot be stored is a close nobody is told about.
 
 **A message is not delivered once its exchange has ended.** A Request asks for work, and an exchange that is
@@ -3314,7 +3287,7 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
 
    Probed rather than argued, under the old types: sixty notifications differing by one digit, from
    one agent to one peer, were all accepted in a tenth of a second, putting about 29,000 characters
-   into the recipient's next turn — seven times what rule 8.5 permits in one message, arriving in one
+   into the recipient's next turn — seven times what rule 8.4 permits in one message, arriving in one
    collection. Nothing refused anything and nothing was misbehaving. As Requests they would also be
    sixty pieces of work owed.
 
@@ -3435,7 +3408,7 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
 
    **Three things the cap was quietly doing are done by nothing now, and they are the open part.**
 
-   - It bounded a channel. A Clarify reaches the requester with up to 8,000 characters (rule 8.5) and
+   - It bounded a channel. A Clarify reaches the requester with up to 8,000 characters (rule 8.4) and
      takes no request slot, so without a cap one exchange can put an unbounded amount in front of a
      requester. Question 1 is the same problem by the main door.
    - It guarded the Headless tier, where agents clarify with nobody watching and every turn costs money
@@ -3552,9 +3525,10 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
     the same conversation — but it is still one copy of the same
     ownership map per repository, drifting independently.
 
-11. Should a Clarify say what turns on it? A Request must say what done looks like (rule 8.1), on the
-    ground that a receiver who knows what the work is for does better work. A Clarify is the receiver
-    asking the requester for something it needs, and the same argument applies to it unchanged: a
+11. Should a Clarify say what turns on it? A Request used to be made to say what done looks like — a
+    `done_when`, removed at 0.7 (§18) — on the ground that a receiver who knows what the work is for
+    does better work. A Clarify is the receiver asking the requester for something it needs, and the
+    same argument applies to it unchanged: a
     requester told *if the price is tax-inclusive I change the invoice, otherwise I change the report*
     gives a better reply than one asked a bare question.
 
@@ -3862,6 +3836,34 @@ across the boundary or is not a protocol change at all. **While the major is zer
 carries breaking changes.** Two implementations whose minors differ do not interoperate, and
 §4.0's `Attach` refuses the pairing rather than discovering it later.
 
+### 0.7 — a request is the ask
+
+**A Request carried four things where one was meant.** Until this version it had an `intent`, an
+`items` array whose every element was marked `work` or `question` and carried an identifier, optional
+`gate`s between those items, and a `done_when` of at least twenty characters that storage refused a
+Request without. The owner met all four in one composer and read them as the same thing asked four
+times, which they were: the reason for an ask is the ask; *work* and *question* are both work the
+receiver does; and a receiver that cannot tell how far the work goes has a question rather than a
+missing field — and the protocol has had the move for asking since 0.1.
+
+What a second implementation will observe:
+
+- **A Request carries `ask`**, one text bounded by rule 8.4's cap, and nothing else (§5.1). One
+  carrying the removed fields is refused by storage (§9.3).
+- **A Result carries one outcome** for the exchange, recorded against the item `request` — the
+  identifier the protocol already used for a Request answered as a whole (§5.3). The outcome set,
+  `sources` and the blocker rules are unchanged.
+- **Clarify is unchanged**, and is where an unclear or unbounded ask is settled (§5.2). It was
+  already uncapped by default.
+- **§8 has ten rules where it had eleven**, and they renumbered: *say what done looks like* and *gate
+  explicitly* are gone, *ask when you cannot tell how far it goes* is new, *batch* went with the
+  items it batched, and the size cap is rule 8.4 where it was rule 8.5.
+- **Nothing stored changes.** A message is never updated, so the storage rules that went applied only
+  to what is written next. A Request written under 0.5 or 0.6 keeps its intent, items and `done_when`,
+  still renders whole, and — since nothing times out (§14) — an exchange it opened may still be open,
+  and is still answered by its own item identifiers.
+- **Schema 11** replaces one trigger and rewrites no row.
+
 ### 0.6 — files cross between repositories
 
 **What crosses between agents gains files, and still never contexts** (§1, principle 2.2). Work product
@@ -3972,7 +3974,8 @@ silence, which is the half of this that is not about waking at all.
 
 ### 0.3 — the message cap
 
-**Rule 8.5's cap is 8,000 characters, having been 4,000.** No mechanism moved: no service, no
+**The message cap is 8,000 characters, having been 4,000.** (It is rule 8.4 today; it was rule 8.5
+when this version shipped, and §8 was renumbered at 0.7.) No mechanism moved: no service, no
 message, no field. What moved is a number two implementations have to agree about, because it
 decides what one will accept from the other — and a build that refuses at 4,000 while its peer
 accepts 8,000 is precisely the disagreement this version exists to make impossible. It is the

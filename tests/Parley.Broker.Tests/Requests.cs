@@ -18,29 +18,22 @@ internal static class Requests
     /// <summary>The responder every test message claims.</summary>
     public const string Model = "claude-opus-5";
 
-    /// <summary>A <c>done_when</c> long enough for rule 8.1.</summary>
-    public const string DoneWhen = "the price is stated as gross or net of tax";
-
-    /// <summary>A Request with one item.</summary>
-    /// <param name="text">What the item asks. Varying it is how a test makes two Requests distinct.</param>
-    /// <param name="kind">Work or a question.</param>
-    /// <param name="id">The item's identifier.</param>
-    /// <param name="doneWhen">What counts as finished.</param>
+    /// <summary>A Request: the ask, and nothing else (§5.1).</summary>
+    /// <param name="text">What is asked. Varying it is how a test makes two Requests distinct.</param>
     /// <returns>The payload.</returns>
-    public static string Request(
-        string text = "is the price gross or net?", string kind = "question", string id = "q1", string doneWhen = DoneWhen) =>
-        new JsonObject
-        {
-            ["intent"] = "deciding where tax is added to an invoice",
-            ["items"] = new JsonArray(new JsonObject { ["id"] = id, ["kind"] = kind, ["text"] = text }),
-            ["done_when"] = doneWhen
-        }.ToJsonString();
+    public static string Request(string text = "is the price gross or net?") =>
+        new JsonObject { ["ask"] = text }.ToJsonString();
 
-    /// <summary>A Request with several question items.</summary>
+    /// <summary>A Request in the shape 0.5 and 0.6 stored, for the tests that answer one by its items.</summary>
     /// <param name="subject">What it is about, which keeps two distinct.</param>
     /// <param name="ids">The items' identifiers, in order.</param>
-    /// <returns>The payload.</returns>
-    public static string RequestOf(string subject, params string[] ids)
+    /// <returns>The payload as it was stored then.</returns>
+    /// <remarks>
+    /// Storage refuses this from schema 11 on, so a test using it writes into a store built at 10 and migrates, or
+    /// puts it straight into a fixture that does not go through the trigger. What it is for is the half of §5.3 that
+    /// did not change: an exchange opened before 0.7 is still answered by the identifiers its Request carried.
+    /// </remarks>
+    public static string OldRequestOf(string subject, params string[] ids)
     {
         var items = new JsonArray();
 
@@ -53,7 +46,7 @@ internal static class Requests
         {
             ["intent"] = "deciding where tax is added to an invoice",
             ["items"] = items,
-            ["done_when"] = DoneWhen
+            ["done_when"] = "the price is stated as gross or net of tax"
         }.ToJsonString();
     }
 
@@ -64,7 +57,7 @@ internal static class Requests
     {
         var entries = new JsonArray();
 
-        foreach (var (id, outcome) in outcomes.Length == 0 ? [("q1", "answered")] : outcomes)
+        foreach (var (id, outcome) in outcomes.Length == 0 ? [(PayloadShape.WholeRequest, "answered")] : outcomes)
         {
             var parts = outcome.Split(':', 2);
             var entry = new JsonObject { ["id"] = id, ["outcome"] = parts[0], ["text"] = "net of tax" };

@@ -80,9 +80,9 @@ public static class TrustEnvelope
     /// </para>
     /// <para>
     /// A Result carries its Request back because the requester's context will have moved on (§4.2):
-    /// exchange 47 means nothing to a model that no longer remembers sending it, and the
-    /// <c>done_when</c> it wrote is its own note about what it was waiting for. It is delimited with the
-    /// same token, since it is still text a participant wrote.
+    /// exchange 47 means nothing to a model that no longer remembers sending it, and the ask it wrote is its
+    /// own note about what it was waiting for. It is delimited with the same token, since it is still text a
+    /// participant wrote.
     /// </para>
     /// </remarks>
     public static string Wrap(

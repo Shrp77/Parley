@@ -4,7 +4,7 @@ package parley.v1;
 
 option csharp_namespace = "Parley.Transport";
 
-// The Parley wire contract, per SPEC.md section 4.0. Protocol 0.6.
+// The Parley wire contract, per SPEC.md section 4.0. Protocol 0.7.
 //
 // SPEC.md is the authority and this file is not. A message defined here and absent there is a
 // defect here; a rule stated there and unrepresentable here is a defect here too -- the same
@@ -121,7 +121,7 @@ message OpenRequest {
   string from = 1;
   string to = 2;                 // a whole name, or a bare role
   string responder_model = 3;
-  string payload_json = 4;       // intent, items, done_when -- section 5.1
+  string payload_json = 4;       // the ask -- section 5.1
 
   // The conversation the sender names, or empty. Whether it may name one, and which, depends on the
   // Requests it holds (section 5.0); the broker refuses the rest and says what it may name.
@@ -171,9 +171,10 @@ message ResultRequest {
   int64 exchange_id = 2;
   string responder_model = 3;
 
-  // An outcome for every item of the Request (section 5.3). The exchange's rolled-up outcome is
-  // derived by the broker from this and is deliberately not a field: a sender that could state it
-  // separately could state one its own items contradict.
+  // One outcome for the exchange (section 5.3), recorded against the item "request"; a Request stored under
+  // 0.5 or 0.6 carried items and is answered by them. The exchange's rolled-up outcome is derived by the
+  // broker from this and is deliberately not a field: a sender that could state it separately could state one
+  // its own outcome contradicts.
   string payload_json = 4;
 }
 
@@ -183,9 +184,9 @@ message SayReply {
   bool deduplicated = 3;
   int64 message_id = 4;
 
-  // On OUTCOMES_DO_NOT_MATCH_ITEMS, the item ids the Result must answer, so the sender can correct it
-  // in one move: the Request's ids of 1 to 64 characters, or the single id "request" when it carried
-  // none a Result can name (a question carried from protocol 0.4) -- section 5.1.
+  // On OUTCOMES_DO_NOT_MATCH_ITEMS, what the Result must answer, so the sender can correct it in one move:
+  // the single id "request" for a Request written under 0.7, and the stored ids of one written earlier --
+  // section 5.1.
   repeated string expected_items = 5;
 }
 

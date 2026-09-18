@@ -94,7 +94,7 @@ public sealed class ResponderIdentityTests : IDisposable
         var sent = await SendAs("claude-opus-5");
 
         await Assert.ThrowsAsync<ArgumentException>(() => _broker.ResultAsync(
-            sent.Exchange!.Id, Billing, Responder.Broker, Requests.Result(("q1", "closed")), T0.AddMinutes(2), Ct));
+            sent.Exchange!.Id, Billing, Responder.Broker, Requests.Result((PayloadShape.WholeRequest, "closed")), T0.AddMinutes(2), Ct));
 
         // And the refusal leaves the exchange alone, rather than closing it unattributed.
         Assert.Equal(ExchangeState.Open, (await new ExchangeRepository(_connection).GetAsync(sent.Exchange!.Id, cancellationToken: Ct))!.State);

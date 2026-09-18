@@ -1,21 +1,28 @@
 using System.Text.Json.Nodes;
+using Dapper;
 using Xunit;
 
 namespace Parley.Mcp.Tests;
 
 /// <summary>
-/// The two rules that decide whether an exchange was worth opening, and whether it was finished.
+/// What the adapter asks an agent for, and what it writes on the agent's behalf.
 /// </summary>
 /// <remarks>
-/// SPEC.md §8 rule 1 — a Request states why it is wanted and what counts as done — and §5.3 — one
-/// outcome per item asked. Both are quality rules rather than safety ones, and both reached agents
-/// as SQL or not at all, which is the same thing from where the agent is standing.
+/// <para>
+/// SPEC.md §5.1 — a Request is the ask — and §5.3 — a Result answers it. Until 0.7 this file checked an
+/// intent and a twenty-character finish line, both of which a model had to compose before it could ask
+/// anybody anything, and both of which reached it as SQL when it got them wrong. They are gone; what is
+/// left is that something was actually asked.
+/// </para>
+/// <para>
+/// <b>The last test here is the one worth reading.</b> An exchange opened under 0.6 is still owed its own
+/// item identifiers, and nothing times out, so one can outlive the upgrade indefinitely — while the tool
+/// no longer lets a model type an identifier at all. The adapter closes that itself.
+/// </para>
 /// </remarks>
 public sealed class RequestFramingTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);
-
-    private const string DoneWhen = "the tax rate's owner is named and where it is stored";
 
     private static void AssertMalformed(JsonNode result, params string[] mustMention)
     {
@@ -31,52 +38,39 @@ public sealed class RequestFramingTests
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    [InlineData("n/a")]
-    [InlineData("done")]
-    [InlineData("when it works.")]
-    public async Task A_request_that_does_not_say_what_done_looks_like_is_refused(string doneWhen)
+    public async Task A_request_that_asks_nothing_is_refused(string ask)
     {
-        // Rule 1 is enforced by a length floor rather than by requiring the field, because "n/a"
-        // satisfies a presence check and says nothing about when the receiver stops. Enforced in
-        // the schema it arrived as a CHECK naming json_extract — the worst place to answer with
-        // SQL, because the agent has not made a syntax mistake. It has failed to say what finished is.
+        // The only framing rule left. It is refused here rather than in the schema for the reason the
+        // others were: storage answers with a trigger name, and an agent that asked for nothing has not
+        // made a syntax mistake.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
         var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
         await fixture.LaunchAsync("billing@test", ct);
 
-        AssertMalformed(
-            await orders.RequestAsync(
-                "billing@test", "Deciding where the tax rate lives.",
-                [new RequestItem("q1", "question", "Is the rate stamped at time of sale?")],
-                doneWhen, cancellationToken: ct),
-            "what done looks like");
+        AssertMalformed(await orders.RequestAsync("billing@test", ask, cancellationToken: ct), "say what you want");
     }
 
     [Fact]
-    public async Task A_request_with_no_stated_intent_is_refused()
+    public async Task A_short_ask_is_sent_rather_than_held_to_a_length_nobody_set()
     {
+        // 0.7's argument, as a check: the sender is not the one who can say how far an ask goes, so there
+        // is no floor. A receiver that cannot scope this sends a Clarify.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
         var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
         await fixture.LaunchAsync("billing@test", ct);
 
-        AssertMalformed(
-            await orders.RequestAsync(
-                "billing@test", "  ",
-                [new RequestItem("q1", "question", "Is the rate stamped at time of sale?")],
-                DoneWhen, cancellationToken: ct),
-            "why you want this");
+        var sent = await orders.RequestAsync("billing@test", "gross or net?", cancellationToken: ct);
+
+        Assert.True(sent["ok"]!.GetValue<bool>(), sent.ToJsonString());
     }
 
     [Fact]
-    public async Task A_result_that_leaves_an_item_without_an_outcome_is_refused()
+    public async Task A_result_closes_the_exchange_without_anybody_naming_an_item()
     {
-        // The likelier half of §5.3, and the one that costs most. Resolving the first of two
-        // closes the exchange exactly as firmly as resolving both — so the second item is gone,
-        // with nothing recording that it was skipped rather than done.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
@@ -84,63 +78,19 @@ public sealed class RequestFramingTests
         var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var sent = await orders.RequestAsync(
-            "billing@test", "Deciding where the tax rate lives.",
-            [
-                new RequestItem("q1", "question", "Is the rate stamped at time of sale?"),
-                new RequestItem("q2", "work", "Stamp it on refunds too.")
-            ],
-            DoneWhen, cancellationToken: ct);
-
-        var exchangeId = sent["exchange_id"]!.GetValue<long>();
-        await billing.InboxAsync(cancellationToken: ct);
-
-        var partial = await billing.ResultAsync(
-            exchangeId, [new ItemOutcome("q1", "answered", "Yes, at issue.")], cancellationToken: ct);
-
-        Assert.False(partial["ok"]!.GetValue<bool>(), partial.ToJsonString());
-        Assert.Equal("outcomesdonotmatchitems", partial["refused"]!.GetValue<string>());
-        Assert.Equal(["q1", "q2"], partial["expected_items"]!.AsArray().Select(i => i!.GetValue<string>()));
-
-        // Both, and it lands — the refusal is a correction rather than a dead end.
-        var complete = await billing.ResultAsync(
-            exchangeId,
-            [
-                new ItemOutcome("q1", "answered", "Yes, at issue."),
-                new ItemOutcome("q2", "done", "Refunds carry invoice_lines.tax_rate as of this commit.")
-            ],
-            cancellationToken: ct);
-
-        Assert.True(complete["ok"]!.GetValue<bool>(), complete.ToJsonString());
-    }
-
-    [Fact]
-    public async Task Giving_one_item_two_outcomes_is_refused()
-    {
-        // The mirror of two items sharing an id, which is refused when the Request is sent.
-        // Stored, it is a self-contradiction — "answered" and "blocked" against the same id — and
-        // the roll-up would quietly take one, so the exchange stops describing what was said.
-        var ct = TestContext.Current.CancellationToken;
-        await using var fixture = new ServerFixture(T0);
-
-        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
-        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
-
-        var sent = await orders.RequestAsync(
-            "billing@test", "Deciding where the tax rate lives.",
-            [new RequestItem("q1", "question", "Is the rate stamped at time of sale?")],
-            DoneWhen, cancellationToken: ct);
+            "billing@test", "Is the rate stamped at time of sale?", cancellationToken: ct);
 
         await billing.InboxAsync(cancellationToken: ct);
 
-        AssertMalformed(
-            await billing.ResultAsync(
-                sent["exchange_id"]!.GetValue<long>(),
-                [
-                    new ItemOutcome("q1", "answered", "Yes, at issue."),
-                    new ItemOutcome("q1", "blocked", "Actually I am not sure.", Blocker: "missing_information")
-                ],
-                cancellationToken: ct),
-            "q1", "more than one");
+        var answered = await billing.ResultAsync(
+            sent["exchange_id"]!.GetValue<long>(), "answered", "Yes, at issue.", cancellationToken: ct);
+
+        Assert.True(answered["ok"]!.GetValue<bool>(), answered.ToJsonString());
+
+        // And it is stored under the one spelling §5.3 reserves, rather than an identifier invented here.
+        Assert.Equal(
+            "request",
+            fixture.Connection.ExecuteScalar<string>("SELECT item FROM result_items;"));
     }
 
     [Fact]
@@ -158,16 +108,13 @@ public sealed class RequestFramingTests
         var (_, inventory) = await fixture.LaunchAsync("inventory@test", ct);
 
         var sent = await orders.RequestAsync(
-            "billing@test", "Deciding where the rate lives.",
-            [new RequestItem("migrate-payments-elsewhere", "question", "Is the rate stamped at sale?")],
-            DoneWhen, cancellationToken: ct);
+            "billing@test", "Is the rate stamped at sale, for migrate-payments-elsewhere?",
+            cancellationToken: ct);
 
         await billing.InboxAsync(cancellationToken: ct);
 
         var refused = await inventory.ResultAsync(
-            sent["exchange_id"]!.GetValue<long>(),
-            [new ItemOutcome("anything", "answered", "Nothing to do with me.")],
-            cancellationToken: ct);
+            sent["exchange_id"]!.GetValue<long>(), "answered", "Nothing to do with me.", cancellationToken: ct);
 
         Assert.False(refused["ok"]!.GetValue<bool>(), refused.ToJsonString());
         Assert.Equal("notaparticipant", refused["refused"]!.GetValue<string>());
@@ -175,10 +122,14 @@ public sealed class RequestFramingTests
     }
 
     [Fact]
-    public async Task A_result_for_an_item_nobody_asked_is_refused()
+    public async Task An_exchange_opened_under_0_6_is_answered_by_its_own_items_without_the_model_naming_them()
     {
-        // Stored, it would close the exchange complete while the requester's real item went
-        // unresolved, so §15 would count work done that had not been.
+        // **The upgrade's loose end.** A 0.6 Request declared `q1` and `w1`, the broker still requires
+        // exactly those, and `parley_result` no longer has an argument for an identifier — so without
+        // this the receiver could never close the exchange, and nothing times out to release it.
+        //
+        // The broker names what it expected on the refusal (§5.3), so the adapter answers again with the
+        // one answer recorded against each. Honest for a Request that is now one ask.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
@@ -186,19 +137,39 @@ public sealed class RequestFramingTests
         var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
 
         var sent = await orders.RequestAsync(
-            "billing@test", "Deciding where the tax rate lives.",
-            [new RequestItem("q1", "question", "Is the rate stamped at time of sale?")],
-            DoneWhen, cancellationToken: ct);
+            "billing@test", "Is the rate stamped at time of sale?", cancellationToken: ct);
+
+        var exchangeId = sent["exchange_id"]!.GetValue<long>();
+
+        // Stands in for a message written before migration 011 ran. The trigger is stood down for the one
+        // insert rather than the row being edited afterwards, because a stored payload is never updated —
+        // which is the property migration 011 rests on, and writing it any other way here would be
+        // testing against a store this build cannot produce.
+        fixture.Connection.Execute(
+            """
+            DROP TRIGGER tr_request_is_well_formed;
+            UPDATE messages
+               SET payload_json = json('{"intent":"where tax lives","items":[{"id":"q1","kind":"question","text":"gross or net?"},{"id":"w1","kind":"work","text":"stamp refunds"}],"done_when":"the rate is named and refunds carry it"}')
+             WHERE type = 'request';
+            CREATE TRIGGER tr_request_is_well_formed BEFORE INSERT ON messages
+            WHEN NEW.type = 'request' AND json_valid(NEW.payload_json)
+            BEGIN
+              SELECT RAISE(ABORT, 'a request carries an ask')
+               WHERE json_type(NEW.payload_json, '$.ask') IS NOT 'text'
+                  OR length(trim(json_extract(NEW.payload_json, '$.ask'))) = 0;
+            END;
+            """);
 
         await billing.InboxAsync(cancellationToken: ct);
 
-        var refused = await billing.ResultAsync(
-            sent["exchange_id"]!.GetValue<long>(),
-            [new ItemOutcome("q99", "answered", "An answer to nothing.")],
-            cancellationToken: ct);
+        var answered = await billing.ResultAsync(
+            exchangeId, "answered", "Net, and refunds now carry it.", cancellationToken: ct);
 
-        Assert.False(refused["ok"]!.GetValue<bool>(), refused.ToJsonString());
-        Assert.Equal("outcomesdonotmatchitems", refused["refused"]!.GetValue<string>());
-        Assert.Equal(["q1"], refused["expected_items"]!.AsArray().Select(i => i!.GetValue<string>()));
+        Assert.True(answered["ok"]!.GetValue<bool>(), answered.ToJsonString());
+
+        Assert.Equal(
+            "q1:answered|w1:answered",
+            fixture.Connection.ExecuteScalar<string>(
+                "SELECT group_concat(item || ':' || outcome, '|') FROM (SELECT item, outcome FROM result_items ORDER BY item);"));
     }
 }

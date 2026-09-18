@@ -549,7 +549,7 @@ public sealed class FileEdgesOverTheWireTests
                 ResponderModel = "claude-opus-5",
                 ConversationId = conversation,
                 PayloadJson =
-                    """{"intent":"deciding where tax is added","items":[{"id":"q1","kind":"question","text":"net or gross?"}],"done_when":"you have said which, and why it is so in your repository"}"""
+                    """{"ask":"Is tax added net or gross, and why is it so in your repository?"}"""
             },
             cancellationToken: Ct);
 

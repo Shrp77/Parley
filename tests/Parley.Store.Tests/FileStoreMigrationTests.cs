@@ -36,6 +36,9 @@ public sealed class FileStoreMigrationTests : IDisposable
                 AgentName.Create("orders@test"),
                 AgentName.Create("billing@test"),
                 new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero),
+
+                // The shape 0.5 stored, because this store is at schema 8: the ask arrived at 11.
+                Work.OldRequest(),
                 conversationId: "tax-inclusive-pricing",
                 cancellationToken: CancellationToken.None)
             .GetAwaiter().GetResult();

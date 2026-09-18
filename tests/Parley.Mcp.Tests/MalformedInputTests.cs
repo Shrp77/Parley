@@ -24,7 +24,8 @@ public sealed class MalformedInputTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);
 
-    private const string DoneWhen = "the tax rate's owner is named and where it is stored";
+    /// <summary>An ordinary ask, so what each probe names is the only thing being refused.</summary>
+    private const string Ask = "Is the tax rate gross or net, and where does it live?";
 
     private static void AssertMalformed(JsonNode result, params string[] mustMention)
     {
@@ -49,14 +50,13 @@ public sealed class MalformedInputTests
     }
 
     private static Task<JsonNode> Request(
-        ParleyTools tools, string to, RequestItem[] items, string? conversationId, CancellationToken ct,
+        ParleyTools tools, string to, string ask, string? conversationId, CancellationToken ct,
         string? responderModel = null) =>
-        tools.RequestAsync(to, "Deciding where the tax rate lives.", items, DoneWhen, conversationId,
-            responderModel, ct);
+        tools.RequestAsync(to, ask, conversationId, responderModel, ct);
 
     private static async Task<long> OpenAsync(ParleyTools orders, ParleyTools billing, CancellationToken ct)
     {
-        var sent = await Request(orders, "billing@test", [new RequestItem("q1", "question", "gross or net?")], null, ct);
+        var sent = await Request(orders, "billing@test", Ask, null, ct);
         await billing.InboxAsync(cancellationToken: ct);
 
         return sent["exchange_id"]!.GetValue<long>();
@@ -78,7 +78,7 @@ public sealed class MalformedInputTests
         var (orders, _) = await PairAsync(fixture, ct);
 
         AssertMalformed(
-            await Request(orders, "billing@test", [new RequestItem("q1", "question", "gross or net?")], conversationId, ct),
+            await Request(orders, "billing@test", Ask, conversationId, ct),
             "conversation id");
     }
 
@@ -89,24 +89,10 @@ public sealed class MalformedInputTests
         await using var fixture = new ServerFixture(T0);
         var (orders, _) = await PairAsync(fixture, ct);
 
-        var sent = await Request(orders, "billing@test", [new RequestItem("q1", "question", "gross or net?")], "tax-rate", ct);
+        var sent = await Request(orders, "billing@test", Ask, "tax-rate", ct);
 
         Assert.True(sent["ok"]!.GetValue<bool>(), sent.ToJsonString());
         Assert.Equal("tax-rate", sent["conversation_id"]!.GetValue<string>());
-    }
-
-    [Fact]
-    public async Task An_item_id_too_long_for_a_result_to_answer_is_refused_with_the_rule()
-    {
-        // Storage refuses it too. Refused here first so the model is told what to do in a sentence rather than
-        // meeting a constraint's words, and never sends work its receiver could not report on.
-        var ct = TestContext.Current.CancellationToken;
-        await using var fixture = new ServerFixture(T0);
-        var (orders, _) = await PairAsync(fixture, ct);
-
-        AssertMalformed(
-            await Request(orders, "billing@test", [new RequestItem(new string('r', 65), "work", "move the rate")], null, ct),
-            "short id", "64");
     }
 
     [Theory]
@@ -120,7 +106,7 @@ public sealed class MalformedInputTests
         var (orders, _) = await PairAsync(fixture, ct);
 
         AssertMalformed(
-            await Request(orders, peer, [new RequestItem("q1", "question", "gross or net?")], null, ct),
+            await Request(orders, peer, Ask, null, ct),
             "lower case", "parley_agents");
     }
 
@@ -135,7 +121,7 @@ public sealed class MalformedInputTests
         var (orders, _) = await PairAsync(fixture, ct);
 
         AssertMalformed(
-            await Request(orders, "orders@test", [new RequestItem("q1", "question", "gross or net?")], null, ct),
+            await Request(orders, "orders@test", Ask, null, ct),
             "yourself");
     }
 
@@ -153,7 +139,7 @@ public sealed class MalformedInputTests
         var (orders, _) = await PairAsync(fixture, ct);
 
         AssertMalformed(
-            await Request(orders, "billing@test", [new RequestItem("q1", "question", "gross or net?")], null, ct, claimed),
+            await Request(orders, "billing@test", Ask, null, ct, claimed),
             "reserved");
     }
 
@@ -170,7 +156,7 @@ public sealed class MalformedInputTests
         var (orders, _) = await PairAsync(fixture, ct);
 
         AssertMalformed(
-            await Request(orders, "billing@test", [new RequestItem("q1", "question", "gross or net?")], null, ct, claimed),
+            await Request(orders, "billing@test", Ask, null, ct, claimed),
             "responder identity");
     }
 
@@ -182,7 +168,7 @@ public sealed class MalformedInputTests
         var (orders, billing) = await PairAsync(fixture, ct);
 
         var sent = await Request(
-            orders, "billing@test", [new RequestItem("q1", "question", "gross or net?")], null, ct, "script:contracts-lookup");
+            orders, "billing@test", Ask, null, ct, "script:contracts-lookup");
 
         Assert.True(sent["ok"]!.GetValue<bool>(), sent.ToJsonString());
 
@@ -193,56 +179,6 @@ public sealed class MalformedInputTests
 
         Assert.Contains(
             "script:contracts-lookup", request!["message"]!.GetValue<string>(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task A_request_with_no_items_is_refused()
-    {
-        // It would open an exchange asking nothing, and the receiver would owe a Result on no item.
-        var ct = TestContext.Current.CancellationToken;
-        await using var fixture = new ServerFixture(T0);
-        var (orders, _) = await PairAsync(fixture, ct);
-
-        AssertMalformed(await Request(orders, "billing@test", [], null, ct), "at least one");
-    }
-
-    [Fact]
-    public async Task Items_sharing_an_id_are_refused()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        await using var fixture = new ServerFixture(T0);
-        var (orders, _) = await PairAsync(fixture, ct);
-
-        AssertMalformed(
-            await Request(orders, "billing@test",
-                [new RequestItem("q1", "question", "gross or net?"), new RequestItem("q1", "work", "or something else?")],
-                null, ct),
-            "q1");
-    }
-
-    [Fact]
-    public async Task An_item_that_is_neither_work_nor_a_question_is_refused()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        await using var fixture = new ServerFixture(T0);
-        var (orders, _) = await PairAsync(fixture, ct);
-
-        AssertMalformed(
-            await Request(orders, "billing@test", [new RequestItem("q1", "task", "move the column")], null, ct),
-            "work", "question");
-    }
-
-    [Fact]
-    public async Task A_gate_pointing_at_nothing_is_refused()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        await using var fixture = new ServerFixture(T0);
-        var (orders, _) = await PairAsync(fixture, ct);
-
-        AssertMalformed(
-            await Request(orders, "billing@test",
-                [new RequestItem("q1", "question", "gross or net?", GateOn: "q7", GateEquals: "done")], null, ct),
-            "q7");
     }
 
     [Fact]
@@ -258,11 +194,11 @@ public sealed class MalformedInputTests
         var exchangeId = await OpenAsync(orders, billing, ct);
 
         AssertMalformed(
-            await billing.ResultAsync(exchangeId, [new ItemOutcome("q1", "resolvedish", "sort of")], cancellationToken: ct),
+            await billing.ResultAsync(exchangeId, "resolvedish", "sort of", cancellationToken: ct),
             "done", "answered", "acknowledged", "blocked");
 
         // Still resolvable afterwards, or the refusal is a dead end rather than a correction.
-        var second = await billing.ResultAsync(exchangeId, [new ItemOutcome("q1", "answered", "Net.")], cancellationToken: ct);
+        var second = await billing.ResultAsync(exchangeId, "answered", "Net.", cancellationToken: ct);
 
         Assert.True(second["ok"]!.GetValue<bool>(), second.ToJsonString());
     }
@@ -279,7 +215,7 @@ public sealed class MalformedInputTests
         var exchangeId = await OpenAsync(orders, billing, ct);
 
         AssertMalformed(
-            await billing.ResultAsync(exchangeId, [new ItemOutcome("q1", "closed", "nobody came back")], cancellationToken: ct),
+            await billing.ResultAsync(exchangeId, "closed", "nobody came back", cancellationToken: ct),
             "conversation is closed");
     }
 
@@ -295,11 +231,11 @@ public sealed class MalformedInputTests
         var exchangeId = await OpenAsync(orders, billing, ct);
 
         AssertMalformed(
-            await billing.ResultAsync(exchangeId, [new ItemOutcome("q1", "blocked", "stuck")], cancellationToken: ct),
+            await billing.ResultAsync(exchangeId, "blocked", "stuck", cancellationToken: ct),
             "missing_information", "conflict", "permission");
 
         AssertMalformed(
-            await billing.ResultAsync(exchangeId, [new ItemOutcome("q1", "answered", "Net.", Blocker: "conflict")], cancellationToken: ct),
+            await billing.ResultAsync(exchangeId, "answered", "Net.", blocker: "conflict", cancellationToken: ct),
             "no blocker");
     }
 
@@ -315,7 +251,7 @@ public sealed class MalformedInputTests
 
         AssertMalformed(
             await billing.ResultAsync(
-                exchangeId, [new ItemOutcome("q1", "answered", "Net.", Sources: ["parley:broker"])], cancellationToken: ct),
+                exchangeId, "answered", "Net.", sources: ["parley:broker"], cancellationToken: ct),
             "sources");
     }
 }

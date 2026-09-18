@@ -542,9 +542,10 @@ never woken. Only the agent that placed a file can replace or remove it. A fetch
 participant's data, exactly like a message, and cannot give instructions.
 
 Every message is answered: a Request is always closed by a Result, even if all it says is
-"acknowledged". A Request carries its **intent** and what **done** looks like, because a
-receiver who knows why the work is wanted and when it is finished does the right work rather
-than the literal one. Nothing times out; a conversation ends when everyone asked whether it is
+"acknowledged". A Request is **the ask** — what you want, in the words you would use to a
+colleague, and what it is for when that is not obvious. A receiver that cannot tell what an ask
+is for, or how far it goes, asks: that is what a Clarify is, and asking is cheaper than guessing
+at a form. Nothing times out; a conversation ends when everyone asked whether it is
 finished agrees, including anyone that has already sent its Result, or when the person running
 the deployment closes it. Messages are capped at 8,000
 characters, which is a context-poisoning defence rather than a buffer size: what you
@@ -565,20 +566,15 @@ not. Neither can settle it alone and both are one edit away from being wrong.
 
 With the setup above, `orders` sends one request:
 
-> **intent** — tax must be applied exactly once across the two repositories, and orders
-> hands billing a net total
->
-> **q1** (question) — does billing apply VAT to the total it receives, or expect it included?
->
-> **w1** (work) — if billing expects it included, apply VAT to the incoming total instead
->
-> **done when** — billing says which it does, and invoices for a net order total include VAT
-> exactly once
+> Does billing apply VAT to the total it receives, or expect it included? If it expects it
+> included, apply it to the incoming total instead — I hand you a net total, and tax has to be
+> applied exactly once across the two repositories.
 
-`billing` collects it, answers q1 from what its own code actually does, makes the change in its
-own repository if w1 applies, and sends the Result. Neither agent read or edited the other's
-files, and the whole exchange is recorded where an operator can read it back with
-`parley export`.
+`billing` collects it, answers from what its own code actually does, makes the change in its own
+repository if that is what the answer implies, and sends the Result. Had the ask been unclear —
+which total, or from which release — billing would have sent a Clarify rather than guessing.
+Neither agent read or edited the other's files, and the whole exchange is recorded where an
+operator can read it back with `parley export`.
 
 ### Retention
 

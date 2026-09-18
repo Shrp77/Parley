@@ -158,9 +158,7 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
     private static void Written(FormDialog form)
     {
         form.Fill(0, "still typing when the sweep came");
-        form.Fill(1, "whatever was being asked for");
-        form.Fill(3, "they have acknowledged the message");
-        form.Fill(4, "underneath");
+        form.Fill(1, "underneath");
     }
 
     [Fact]

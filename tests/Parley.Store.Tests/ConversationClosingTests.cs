@@ -65,8 +65,10 @@ public sealed class ConversationClosingTests : IDisposable
         using var payload = JsonDocument.Parse(notices[0].Payload);
         var outcomes = payload.RootElement.GetProperty("outcomes").EnumerateArray().ToList();
 
-        // One closed outcome per item the Request carried, so a requester reading it can tell what was not done.
-        Assert.Equal(["q1", "q2"], outcomes.Select(o => o.GetProperty("id").GetString()));
+        // One closed outcome for the ask, under the identifier a Request answered as a whole has always used
+        // (§5.3). Until 0.7 a Request carried items and this was one outcome per item; a Request stored then is
+        // still closed that way, which MigratedItemIdTests holds.
+        Assert.Equal(["request"], outcomes.Select(o => o.GetProperty("id").GetString()));
         Assert.All(outcomes, o => Assert.Equal("closed", o.GetProperty("outcome").GetString()));
         Assert.Contains("superseded by the pricing rewrite", outcomes[0].GetProperty("text").GetString(), StringComparison.Ordinal);
         Assert.Equal("person", payload.RootElement.GetProperty("closed_by").GetString());

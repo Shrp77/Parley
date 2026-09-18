@@ -53,7 +53,8 @@ public sealed class FileNameSetMigrationTests : IDisposable
             ("@umlaut", "Übersicht.md"),
             ("@umlautKey", "ÜBERSICHT.MD"));
 
-        Assert.Equal(1, SchemaMigrator.Migrate(_connection));
+        // From 9 to whatever this build carries: 010 is the one under test, and 011 followed it.
+        Assert.Equal(SchemaMigrator.LatestVersion - 9, SchemaMigrator.Migrate(_connection));
     }
 
     public void Dispose() => _connection.Dispose();

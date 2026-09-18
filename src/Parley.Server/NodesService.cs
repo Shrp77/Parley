@@ -54,7 +54,7 @@ public sealed class NodesService : Wire.Nodes.NodesBase
         ArgumentNullException.ThrowIfNull(context);
 
         // **Fitted to the cap before it is stored, and the schema refuses anything larger.** This
-        // was unbounded: the instruction's own text has carried rule 8.5's cap for two migrations
+        // was unbounded: the instruction's own text has carried rule 8.4's cap for two migrations
         // and the agent's answer carried nothing, so anything able to reach the broker and claim to
         // be a node — which §16 says is anything on the network — could write an arbitrarily large
         // blob into the operator's record. Found by the review gate with a 200,000-character reply

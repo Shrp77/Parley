@@ -9,7 +9,7 @@ namespace Parley.Store.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The cap of rule 8.5 was a number nobody had evidence for — two thousand because that sounded
+/// The cap of rule 8.4 was a number nobody had evidence for — two thousand because that sounded
 /// like enough, then four thousand for a reason of the same quality. This record is what made the
 /// next change measured, and it did: eight thousand was set from forty-three refusals across six
 /// agents (SPEC.md §17 question 16). So the checks here are about whether the record can answer
@@ -61,7 +61,7 @@ public sealed class SizeRefusalTests : IDisposable
     /// <remarks>
     /// The schema refuses a refusal that is not over the cap — <c>CHECK (worst &gt; cap)</c> —
     /// so these sizes are relative rather than literal. They were literals tuned to a cap of
-    /// four thousand, and every one of them failed the day rule 8.5's number moved. That is the
+    /// four thousand, and every one of them failed the day rule 8.4's number moved. That is the
     /// right failure arriving for the wrong reason: nothing was wrong with the store.
     /// </remarks>
     private static int Over(int by) => MessageLimits.MaxPayloadCharacters + by;

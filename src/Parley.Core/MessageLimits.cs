@@ -49,7 +49,7 @@ public static class MessageLimits
     /// <para>
     /// <b>It bounds a message, not an exchange.</b> With no clarification cap by default, an
     /// exchange that goes back and forth fifty times can carry fifty messages of this size in each
-    /// direction, and SPEC.md rule 8.5 says so. Moving this number moves the size of every one of
+    /// direction, and SPEC.md rule 8.4 says so. Moving this number moves the size of every one of
     /// them, which is the thing to reason about before moving it again.
     /// </para>
     /// <para>

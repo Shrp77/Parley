@@ -25,11 +25,7 @@ public sealed class MessageCapTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);
 
-    private const string DoneWhen = "the tax rate's owner is named and where it is stored";
-
-    /// <summary>
-    /// Room left for the Request around one item's text: the intent, <c>done_when</c> and the JSON.
-    /// </summary>
+    /// <summary>Room left for the Request around the ask: since 0.7, the JSON and one key.</summary>
     /// <remarks>
     /// The cap counts the stored payload, so an item's text can never be the whole of it. Generous on
     /// purpose; what is checked near the boundary is searched for rather than assumed from this.
@@ -39,9 +35,7 @@ public sealed class MessageCapTests
     private static string Long(int characters) => new('x', characters);
 
     private static Task<JsonNode> RequestAsync(ParleyTools tools, string text, CancellationToken ct) =>
-        tools.RequestAsync(
-            "billing@test", "Deciding where the tax rate lives.", [new RequestItem("q1", "question", text)], DoneWhen,
-            cancellationToken: ct);
+        tools.RequestAsync("billing@test", text, cancellationToken: ct);
 
     private static void AssertRefusedForLength(JsonNode result)
     {
@@ -86,11 +80,11 @@ public sealed class MessageCapTests
         Assert.Single((await billing.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
 
         AssertRefusedForLength(await billing.ResultAsync(
-            exchangeId, [new ItemOutcome("q1", "answered", Long(MessageLimits.MaxPayloadCharacters))], cancellationToken: ct));
+            exchangeId, "answered", Long(MessageLimits.MaxPayloadCharacters), cancellationToken: ct));
 
         // Shorter, and it lands. The refusal has to be recoverable or it is just a dead end.
         var second = await billing.ResultAsync(
-            exchangeId, [new ItemOutcome("q1", "answered", "Yes. invoice_lines.tax_rate is stamped at issue.")],
+            exchangeId, "answered", "Yes. invoice_lines.tax_rate is stamped at issue.",
             cancellationToken: ct);
 
         Assert.True(second["ok"]?.GetValue<bool>() ?? false, second.ToJsonString());
@@ -245,7 +239,7 @@ public sealed class MessageCapTests
 
         await RequestAsync(orders, oversized, ct).WaitAsync(TimeSpan.FromSeconds(15), ct);
         await orders.ClarifyAsync(1, oversized, cancellationToken: ct).WaitAsync(TimeSpan.FromSeconds(15), ct);
-        await orders.ResultAsync(1, [new ItemOutcome("q1", "answered", oversized)], cancellationToken: ct)
+        await orders.ResultAsync(1, "answered", oversized, cancellationToken: ct)
             .WaitAsync(TimeSpan.FromSeconds(15), ct);
 
         // And the session still works afterwards, which is what says the gate was released.

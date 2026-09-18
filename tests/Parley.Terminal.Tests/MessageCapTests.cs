@@ -74,8 +74,7 @@ public sealed class MessageCapTests : IAsyncDisposable
         var token = TestContext.Current.CancellationToken;
         var voice = await SeatedAsync(token);
 
-        var said = await voice.RequestAsync(
-            Recipient, Intent, Fill(Room()), Kind, DoneWhen, Conversation, token);
+        var said = await voice.RequestAsync(Recipient, Fill(Room()), Conversation, token);
 
         // `StartsWith`, because a send now also reports what became of the recipient. What this
         // test is about is the row below: that a payload the surface accepted reached the store.
@@ -94,8 +93,7 @@ public sealed class MessageCapTests : IAsyncDisposable
         var token = TestContext.Current.CancellationToken;
         var voice = await SeatedAsync(token);
 
-        var refusal = await voice.RequestAsync(
-            Recipient, Intent, Fill(Room() + 1), Kind, DoneWhen, Conversation, token);
+        var refusal = await voice.RequestAsync(Recipient, Fill(Room() + 1), Conversation, token);
 
         Assert.Contains("the limit is", refusal, StringComparison.Ordinal);
 
@@ -108,31 +106,18 @@ public sealed class MessageCapTests : IAsyncDisposable
         Assert.Equal(0, Rows());
     }
 
-    /// <summary>Why the person is sending, satisfying rule 8.1 so length is the only thing refused.</summary>
-    private const string Intent = "checking the cap from both sides";
-
-    /// <summary>The kind of item sent.</summary>
-    private const string Kind = "question";
-
-    /// <summary>What counts as finished, long enough for rule 8.1.</summary>
-    private const string DoneWhen = "the message is stored or refused for length";
-
-    /// <summary>How much item text fits once the rest of the Request is counted.</summary>
+    /// <summary>How much of the ask fits once the rest of the Request is counted.</summary>
     /// <returns>The number of characters of text that exactly fills the cap.</returns>
     /// <remarks>
     /// Derived rather than hard-coded, and built in the shape the seat sends. A literal here would
     /// silently stop testing the boundary the day the payload grew a field, which is the way a
-    /// boundary test quietly becomes a test of the middle of the range.
+    /// boundary test quietly becomes a test of the middle of the range. Since 0.7 the framing is
+    /// one key, so this is nearly the whole cap — which is the point of the change and not a
+    /// reason to stop deriving it.
     /// </remarks>
     private static int Room()
     {
-        var framing = new System.Text.Json.Nodes.JsonObject
-        {
-            ["intent"] = Intent,
-            ["items"] = new System.Text.Json.Nodes.JsonArray(
-                new System.Text.Json.Nodes.JsonObject { ["id"] = "r1", ["kind"] = Kind, ["text"] = string.Empty }),
-            ["done_when"] = DoneWhen
-        }.ToJsonString().Length;
+        var framing = new System.Text.Json.Nodes.JsonObject { ["ask"] = string.Empty }.ToJsonString().Length;
 
         return MessageLimits.MaxPayloadCharacters - framing;
     }

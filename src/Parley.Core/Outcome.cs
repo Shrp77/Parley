@@ -18,7 +18,7 @@ namespace Parley.Core;
 /// </remarks>
 public enum Outcome
 {
-    /// <summary>The work is finished in the receiver's repository and meets <c>done_when</c>.</summary>
+    /// <summary>The work the ask called for is finished in the receiver's repository.</summary>
     Done = 0,
 
     /// <summary>The question is answered.</summary>

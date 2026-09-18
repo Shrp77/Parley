@@ -166,7 +166,7 @@ public sealed record InstructionRecord(
 /// </param>
 /// <remarks>
 /// <para>
-/// Bounded by the broker whatever the caller asked for. SPEC.md §10.2 makes rule 8.5's argument one
+/// Bounded by the broker whatever the caller asked for. SPEC.md §10.2 makes rule 8.4's argument one
 /// level up: an unbounded operator query is the mistake the message cap exists to prevent, and a
 /// caller's number is a caller's number.
 /// </para>

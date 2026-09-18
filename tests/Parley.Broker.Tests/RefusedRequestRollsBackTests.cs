@@ -7,12 +7,14 @@ using Xunit;
 namespace Parley.Broker.Tests;
 
 /// <summary>
-/// That a Request carrying an item id no Result could name leaves nothing behind when storage refuses it.
+/// That a Request storage refuses leaves nothing behind.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lens 2 run 2.14. The adapter refuses such an id before sending and storage refuses it on insert, but only the adapter
-/// is tested for the first and only the store for the second. Anything else reaching the broker — a surface, another
+/// Lens 2 run 2.14, written when the refusal under test was an item id no Result could name; 0.7 removed item ids and
+/// the case it guards is unchanged, so the payload is now one storage refuses for having no ask. The adapter refuses
+/// such a payload before sending and storage refuses it on insert, but only the adapter is tested for the first and
+/// only the store for the second. Anything else reaching the broker — a surface, another
 /// adapter — meets the storage refusal in the middle of an operation that has already opened the exchange. Were that not
 /// rolled back with it, the result would be an open exchange with no Request: owed, unanswerable, and holding its
 /// conversation open.
@@ -22,7 +24,7 @@ namespace Parley.Broker.Tests;
 /// next Request was admitted.
 /// </para>
 /// </remarks>
-public sealed class OverlongItemIdTests
+public sealed class RefusedRequestRollsBackTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
     private static readonly AgentName Billing = AgentName.Create("billing@test");
@@ -30,8 +32,8 @@ public sealed class OverlongItemIdTests
 
     private const string Model = "claude-opus-5";
 
-    private static string RequestWith(string id) =>
-        $$"""{"intent":"x","items":[{"id":"{{id}}","kind":"work","text":"move the rate"}],"done_when":"the rate is moved to the invoice line"}""";
+    /// <summary>A payload storage refuses: it carries no ask (§5.1).</summary>
+    private const string NoAsk = """{"intent":"x","text":"move the rate"}""";
 
     [Fact]
     public async Task A_refused_request_opens_nothing_and_the_next_one_is_admitted()
@@ -50,15 +52,15 @@ public sealed class OverlongItemIdTests
         await broker.StartAsync(Orders, T0, ct);
 
         var refused = await Assert.ThrowsAsync<SqliteException>(() => broker.RequestAsync(
-            Orders, Billing, Model, RequestWith(new string('r', MessageLimits.LongestItemId + 1)), T0, "pricing", ct));
+            Orders, Billing, Model, NoAsk, T0, "pricing", ct));
 
-        Assert.Contains("1 to 64 characters", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("carries an ask", refused.Message, StringComparison.Ordinal);
 
         Assert.Equal(0, connection.ExecuteScalar<long>("SELECT count(*) FROM exchanges;"));
         Assert.Equal(0, connection.ExecuteScalar<long>("SELECT count(*) FROM messages;"));
         Assert.Equal(0, connection.ExecuteScalar<long>("SELECT count(*) FROM conversations;"));
 
-        var admitted = await broker.RequestAsync(Orders, Billing, Model, RequestWith("r1"), T0.AddMinutes(1), "pricing", ct);
+        var admitted = await broker.RequestAsync(Orders, Billing, Model, Requests.Request("move the rate to the invoice line"), T0.AddMinutes(1), "pricing", ct);
 
         Assert.NotNull(admitted.Exchange);
     }

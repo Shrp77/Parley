@@ -59,13 +59,13 @@ public sealed class FollowingOverTheWireTests : IDisposable
 
         var voice = Voice(directory, shell);
 
-        await voice.RequestAsync(Orders, "telling", "the first thing", "question", "they have acknowledged it", Conversation, ct);
+        await voice.RequestAsync(Orders, "the first thing", Conversation, ct);
 
         await ReadingAsync(shell, directory, ct);
 
         Assert.Contains("the first thing", shell.Transcript.Written, StringComparison.Ordinal);
 
-        await voice.RequestAsync(Orders, "telling", "the second thing", "question", "they have acknowledged it", Conversation, ct);
+        await voice.RequestAsync(Orders, "the second thing", Conversation, ct);
 
         await Eventually.UntilAsync(
             () => shell.Transcript.Written.Contains("the second thing", StringComparison.Ordinal),
@@ -88,7 +88,7 @@ public sealed class FollowingOverTheWireTests : IDisposable
 
         var voice = Voice(directory, shell);
 
-        await voice.RequestAsync(Orders, "telling", "the first thing", "question", "they have acknowledged it", Conversation, ct);
+        await voice.RequestAsync(Orders, "the first thing", Conversation, ct);
 
         await ReadingAsync(shell, directory, ct);
 
@@ -96,7 +96,7 @@ public sealed class FollowingOverTheWireTests : IDisposable
 
         var written = shell.Transcript.Written;
 
-        await voice.RequestAsync(Orders, "telling", "sent after leaving", "question", "they have acknowledged it", Conversation, ct);
+        await voice.RequestAsync(Orders, "sent after leaving", Conversation, ct);
 
         await Task.Delay(Quickly * 6, ct);
         await shell.Settled;
@@ -117,7 +117,7 @@ public sealed class FollowingOverTheWireTests : IDisposable
         using var seats = new SeatBook(directory.AgentsFor);
         using var shell = await SeatedAsync(driving, directory, seats);
 
-        await Voice(directory, shell).RequestAsync(Orders, "telling", "the first thing", "question", "they have acknowledged it", Conversation, ct);
+        await Voice(directory, shell).RequestAsync(Orders, "the first thing", Conversation, ct);
 
         await ReadingAsync(shell, directory, ct);
 

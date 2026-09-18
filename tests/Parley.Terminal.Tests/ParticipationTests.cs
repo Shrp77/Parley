@@ -53,7 +53,7 @@ public sealed class ParticipationTests : IAsyncDisposable
 
     /// <summary>A Request a peer sends a seat, satisfying rule 8.1.</summary>
     private const string Request =
-        """{"intent":"deciding","items":[{"id":"q1","kind":"question","text":"is it safe"}],"done_when":"a release goes out or does not, with the reason"}""";
+        """{"ask":"Is it safe to release?"}""";
 
     [Fact]
     public async Task A_person_can_send_the_result_of_a_request_a_peer_sent_them()
@@ -152,8 +152,7 @@ public sealed class ParticipationTests : IAsyncDisposable
         // message is answered, so a Result is the one kind a person holds without owing anything back.
         Assert.StartsWith(
             "Sent.",
-            await voice.RequestAsync(Orders, "checking the release", "is the build green", "question",
-                "the build is said to be green or not", "chat", ct),
+            await voice.RequestAsync(Orders, "Is the build green? Asking before I cut the release.", "chat", ct),
             StringComparison.Ordinal);
 
         long mine;
@@ -168,7 +167,7 @@ public sealed class ParticipationTests : IAsyncDisposable
         await broker.DrainInboxAsync(Orders, T0.AddMinutes(2), cancellationToken: ct);
 
         Assert.True((await broker.ResultAsync(
-            mine, Orders, "model-a", """{"outcomes":[{"id":"r1","outcome":"answered","text":"green"}]}""",
+            mine, Orders, "model-a", """{"outcomes":[{"id":"request","outcome":"answered","text":"green"}]}""",
             T0.AddMinutes(3), ct)).Succeeded);
 
         await voice.TakeDeliveryAsync(seated, ct);

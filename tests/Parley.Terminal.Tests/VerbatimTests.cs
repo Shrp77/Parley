@@ -75,10 +75,10 @@ public sealed class VerbatimTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_request_carries_its_intent_and_done_when_word_for_word()
+    public async Task A_request_carries_its_ask_word_for_word()
     {
-        // §8.1's parts, each of them a place a quote lands. A request refused for shape is the
-        // failure this catches at the other end: the broker checks the payload it is handed.
+        // The ask and the conversation name, each of them a place a quote lands. A request refused for
+        // shape is the failure this catches at the other end: the broker checks the payload it is handed.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var seats = new SeatBook(directory.AgentsFor);
@@ -86,10 +86,8 @@ public sealed class VerbatimTests : IAsyncDisposable
 
         var form = await Composing.WithAsync(
             driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
-        form.Fill(0, "deciding whether " + Hostile);
-        form.Fill(1, "is " + Hostile + " true?");
-        form.Fill(3, "when it is said whether " + Hostile + " holds");
-        form.Fill(4, "verbatim");
+        form.Fill(0, "deciding whether " + Hostile + ": is " + Hostile + " true?");
+        form.Fill(1, "verbatim");
         form.Finish(taken: true);
 
         await shell.Settled;
@@ -143,10 +141,8 @@ public sealed class VerbatimTests : IAsyncDisposable
 
         var form = await Composing.WithAsync(
             driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
-        form.Fill(0, "telling them something");
-        form.Fill(1, "   ");
-        form.Fill(3, "they have acknowledged the message");
-        form.Fill(4, "verbatim");
+        form.Fill(0, "   ");
+        form.Fill(1, "verbatim");
 
         Assert.NotNull(Participation.RequiredProblem("   "));
 
@@ -161,10 +157,8 @@ public sealed class VerbatimTests : IAsyncDisposable
     {
         var form = await Composing.WithAsync(
             driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
-        form.Fill(0, "telling them something");
-        form.Fill(1, words);
-        form.Fill(3, "they have acknowledged the message");
-        form.Fill(4, "verbatim");
+        form.Fill(0, words);
+        form.Fill(1, "verbatim");
         form.Finish(taken: true);
 
         await shell.Settled;

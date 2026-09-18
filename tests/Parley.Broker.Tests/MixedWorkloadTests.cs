@@ -49,14 +49,17 @@ public sealed class MixedWorkloadTests : IDisposable
 
         var peers = await _broker.ListAgentsAsync(ct);
 
-        var sent = await _broker.RequestAsync(Orders, Billing, Requests.Model, Requests.RequestOf("pricing", "q1", "q2"), T0.AddMinutes(1), "pricing", ct);
+        var sent = await _broker.RequestAsync(
+            Orders, Billing, Requests.Model, Requests.Request("is the price gross or net, and which version says so?"),
+            T0.AddMinutes(1), "pricing", ct);
         var onward = await _broker.RequestAsync(Billing, Inventory, Requests.Model, Requests.Request("how much stock?"), T0.AddMinutes(2), cancellationToken: ct);
 
         var billingInbox = await _broker.DrainInboxAsync(Billing, T0.AddMinutes(3), cancellationToken: ct);
 
         await _broker.ResultAsync(onward.Exchange!.Id, Inventory, Requests.Model, Requests.Result(), T0.AddMinutes(4), ct);
         await _broker.ResultAsync(
-            sent.Exchange!.Id, Billing, Requests.Model, Requests.Result(("q1", "answered"), ("q2", "acknowledged")), T0.AddMinutes(5), ct);
+            sent.Exchange!.Id, Billing, Requests.Model, Requests.Result((PayloadShape.WholeRequest, "answered")),
+            T0.AddMinutes(5), ct);
 
         await _broker.ConcludeAsync("pricing", Orders, true, T0.AddMinutes(6), ct);
 

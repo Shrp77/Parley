@@ -22,8 +22,6 @@ public sealed class BrokerAwayTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 4, 1, 9, 0, 0, TimeSpan.Zero);
 
-    private const string DoneWhen = "the owner of tax is named, with where it is computed";
-
     [Fact]
     public async Task Every_tool_says_so_rather_than_failing_opaquely()
     {
@@ -43,9 +41,7 @@ public sealed class BrokerAwayTests
             ("parley_inbox", () => tools.InboxAsync(cancellationToken: ct)),
             ("parley_request", () => tools.RequestAsync(
                 to: "billing@test",
-                intent: "who owns tax",
-                items: [new RequestItem("q1", "question", "Gross or net?")],
-                doneWhen: DoneWhen,
+                ask: "Is the tax rate gross or net?",
                 cancellationToken: ct)),
         })
         {

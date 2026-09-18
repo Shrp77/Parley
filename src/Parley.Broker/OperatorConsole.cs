@@ -128,7 +128,7 @@ public sealed class OperatorConsole
     public async Task<IReadOnlyList<AgentRecord>> DescribeRegistryAsync(CancellationToken cancellationToken = default) =>
         await _agents.GetAllAsync(cancellationToken).ConfigureAwait(false);
 
-    /// <summary>Reports what the size cap of rule 8.5 refused (§10.2).</summary>
+    /// <summary>Reports what the size cap of rule 8.4 refused (§10.2).</summary>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>One entry per agent and message type that has ever been refused.</returns>
     /// <remarks>No refused text is stored anywhere, so none can be returned.</remarks>

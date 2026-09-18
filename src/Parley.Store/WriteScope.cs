@@ -17,8 +17,9 @@ namespace Parley.Store;
 /// </para>
 /// <para>
 /// The alternative was to validate before writing, which is worse. The rules that reject a
-/// Request live in the schema deliberately — rule 8.5's length cap and rule 8.1's done_when floor
-/// are there so no code path can route around them — and a broker that re-implemented them to
+/// Request live in the schema deliberately — rule 8.4's length cap, and §5.1's requirement that a
+/// Request carry an ask, are there so no code path can route around them — and a broker that re-implemented
+/// them to
 /// pre-check would be the second copy those constraints exist to avoid.
 /// </para>
 /// <para>

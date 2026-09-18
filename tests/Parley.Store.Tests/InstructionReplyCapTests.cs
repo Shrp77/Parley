@@ -9,7 +9,7 @@ namespace Parley.Store.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>instructions.text</c> has carried rule 8.5's cap since 003 and <c>instructions.reply</c>
+/// <c>instructions.text</c> has carried rule 8.4's cap since 003 and <c>instructions.reply</c>
 /// carried nothing, so anything able to reach the broker and claim to be the node reporting — which
 /// SPEC.md §16 says is anything on the network — could write an arbitrarily large blob into the
 /// operator's own record.

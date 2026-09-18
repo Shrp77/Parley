@@ -85,8 +85,9 @@ public static class MessageIdentity
     /// would make every hash unique and silently disable the distinctness index.
     /// </para>
     /// <para>
-    /// The whole payload is hashed — intent, every item and <c>done_when</c>. The same words with a
-    /// different finish line ask the receiver for a different piece of work.
+    /// The whole payload is hashed, which since 0.7 is the ask (§5.1). Two Requests are the same Request when
+    /// their asks are the same words; a payload written under an earlier version hashes everything it carried,
+    /// and its hash is unchanged — nothing rewrote it.
     /// </para>
     /// </remarks>
     public static string ComputeRequest(AgentName from, AgentName to, string payloadJson) =>

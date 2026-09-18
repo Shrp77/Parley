@@ -545,11 +545,12 @@ from an agent — so this agent must not run `parley results`, `parley flags` or
 command, and does not need to. It is told which peers are due and sends them a request through
 Parley like any other.
 
-Send it as a real request, because it is one, and rule 8.1 applies here as much as anywhere:
+Send it as a real request, because it is one, and rule 8.1 applies here as much as anywhere — one
+ask, plainly, with what it is for:
 
-> *Intent:* deciding whether Parley should bound how many requests one agent may send another.
-> *q1 (question):* Of the requests you have received, roughly how many were worth the work?
-> *Done when:* you have said how many were worth it and, if any were not, what made them so.
+> Of the requests you have received through Parley, roughly how many were worth the work, and what
+> made the others not? I am asking because SPEC.md §17 question 1 leaves request volume unbounded,
+> and whether that should change can only be decided from what receivers say.
 
 Ask again as the volume grows. The same agent's answer changing as the count rises is the finding,
 which no counter can tell you.
@@ -599,18 +600,44 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/016-request-is-the-ask/` — **specified and planned, nothing built.** Protocol 0.7, schema 11.
-  A Request becomes the conversation it belongs to and the ask; `intent`, `items`, item ids, work-or-question, gates and
-  `done_when` leave the protocol, and a Result answers the exchange whole. The owner's call on 2026-09-17, made while
-  composing one in the terminal: the fields were the same thing asked four times, and a receiver that cannot tell how far
-  an ask goes has a question — which is what Clarify (§5.2) is. Nothing replaces them.
+- **Current plan**: `specs/016-request-is-the-ask/` — **0.29.0, protocol 0.7, schema 11. Built; the review gate is
+  outstanding.** A Request is the conversation it belongs to and the ask; `intent`, `items`, item ids,
+  work-or-question, gates and `done_when` left the protocol, and a Result answers the exchange whole. The owner's call
+  on 2026-09-17, made while composing one in the terminal: the fields were the same thing asked four times, and a
+  receiver that cannot tell how far an ask goes has a question — which is what Clarify (§5.2) is. Nothing replaces them.
 
-  **It rests on a path already built**: a Request whose items a Result cannot name is already answered as a whole under
-  the item `request` (`Broker.cs:495-505`, there for 0.4's carried-forward questions), so a flat `ask` needs no new
-  machinery and `result_items`, the flags and the health reports are untouched. **Migration 011 replaces two triggers and
-  rewrites no row**: messages are never updated, so what changes is what may be written next, and every 0.5 and 0.6
-  conversation still reads whole — which is FR-009 and the cheapest thing to get wrong. `research.md` carries ten
-  decisions, `contracts/surfaces.md` what each composer asks for after, and `quickstart.md` the walk.
+  **It rested on a path already built**: a Request whose items a Result cannot name was already answered as a whole
+  under the item `request` (there for 0.4's carried-forward questions), so a flat `ask` needed no new machinery and
+  `result_items`, the flags and the health reports are untouched. **Migration 011 replaces one trigger and rewrites no
+  row** — the plan said two, and reading them found `tr_result_is_well_formed` never named an item identifier, so it
+  was left exactly as it was. Messages are never updated, so what changed is what may be written next, and every 0.5 and
+  0.6 conversation still reads whole. That is FR-009 and the cheapest thing to get wrong.
+
+  **What building it taught that the plan did not know:**
+
+  - **The reader change was one line, and the renderers needed none.** A 0.7 ask slots into the same field a 0.6
+    `intent` occupied, and every surface already drew items and a finish line conditionally — so a 0.7 message renders
+    with nothing to draw and a 0.6 one renders whole, on all three surfaces, by construction rather than by a branch.
+    The tests were written anyway, because "by construction" is a property of today's templates.
+  - **`parley_result` lost the argument that made an old exchange answerable, and had to get it back another way.** A
+    0.6 exchange is still owed its own item identifiers, nothing times out, and the tool no longer lets a model type
+    one. The broker already names what it expected on the refusal, so the adapter answers again with the one answer
+    recorded against each identifier — honest for a Request that is now one ask, and invisible to the model.
+  - **The terminal's `MessageCapTests` derives the room left for the ask**, which is now nearly the whole cap. Kept
+    derived rather than replaced with a literal, for the reason it was derived in the first place.
+  - **A pre-existing flake was found and fixed, not caused by this change.** `WakeDuringCollectionTests` counted node
+    commands after a fixed 250 ms sleep: one full-suite run in three failed saying nothing had been started, when the
+    answer was "not yet". Its neighbour had already worked around exactly this. `CountCommandsAsync` now waits for what
+    is owed and then listens for what is not.
+  - **`Parley.Server.Tests` may not open a `SqliteConnection`**, which this file says and which a first draft of
+    `AnsweringAnOldExchangeTests` broke. It lives in `Parley.Broker.Tests`, where the matching it probes belongs.
+  - **Standing in for a pre-migration message needs the trigger stood down, not the row edited afterwards.** A stored
+    payload is never rewritten in service — that is the property 011 rests on — so there is no other route to the state
+    an upgraded store is actually in, and the two tests that need one say so where they do it.
+
+  Also corrected in passing: §18's 0.3 entry named "rule 8.5's cap", which after §8's renumbering pointed at a different
+  rule; it names 8.4 and says when it moved. `research.md` carries ten decisions, `contracts/surfaces.md` what each
+  composer asks for after, and `quickstart.md` the walk.
 
 - **Previous plan**: `specs/015-file-store/` — 0.27.0 to 0.28.2, **protocol 0.6**, schema 9, then 10. **0.27.1 built, gated and committed, not yet pushed** (`3cf9e48`, then `1f302bd`); **0.28.0 built and uncommitted, its review gate not yet run.** Files cross
   between agents: an agent places a file from its repository into its conversation's folder in the project's file
@@ -1199,7 +1226,7 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   abbreviated after four, and the same abbreviation applied to the *waiting for* list beside it,
   which had the identical problem and no report yet.
 
-  **Every field was one row tall, and rule 8.5's cap is eight thousand characters.** Fields that hold
+  **Every field was one row tall, and rule 8.4's cap is eight thousand characters.** Fields that hold
   prose are several rows deep and grow and shrink under what is written into them; a name, a path or
   a project stays one line, because Enter in those is how every form here is finished and a line
   break in a project name is a value that will not survive a manifest. `TextView` is deprecated in
@@ -1437,7 +1464,7 @@ below in the form Spec Kit's checks read; this file remains the authority when t
     exists to remove, reintroduced through a door nobody had checked, by the person writing that
     sentence.** The mechanism is gone; a turn whose node has gone stays *still running* until the
     sweep presumes it dead. The cost of waiting is a delay and the cost of guessing is a loss.
-  - **An agent's reply had no bound at all.** `instructions.text` has carried rule 8.5's cap since
+  - **An agent's reply had no bound at all.** `instructions.text` has carried rule 8.4's cap since
     003; `reply` carried no CHECK and the reporting path applied none, so anything able to reach the
     broker and claim to be a node could write an arbitrary blob into the operator's record. Two
     hundred thousand characters were stored and read back whole. Always possible, not always

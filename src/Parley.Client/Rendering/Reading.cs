@@ -16,7 +16,7 @@ public enum LineKind
     /// <summary>One numbered item of a Request, or its outcome in a Result.</summary>
     Point = 2,
 
-    /// <summary>What counts as finished, per rule 8.1.</summary>
+    /// <summary>What a Request stored before 0.7 said counted as finished.</summary>
     DoneWhen = 3,
 
     /// <summary>The surface's own note about who was not party to a message.</summary>
