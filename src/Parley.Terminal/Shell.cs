@@ -196,6 +196,8 @@ internal sealed class Shell : Window
     private CancellationTokenSource? _following;
     private int _followQueued;
     private string? _followFailed;
+    private CancellationTokenSource? _watchingMail;
+    private int _mailQueued;
 
     private bool _stacked;
 
@@ -463,6 +465,11 @@ internal sealed class Shell : Window
     /// </remarks>
     private void Relay() => Arrange();
 
+    /// <summary>The action the waiting count points at, so the line and the pane cannot name different keys.</summary>
+    /// <returns>Taking delivery.</returns>
+    private RegionAction DeliveryAction() =>
+        new('w', Participation.DeliveryTitle, TakeDelivery);
+
     /// <summary>Puts the current view's panes on screen and takes the others off.</summary>
     private void Arrange()
     {
@@ -683,19 +690,28 @@ internal sealed class Shell : Window
         // carries it whatever the width.
         var build = "  " + VersionLabel;
 
+        // **What is waiting, and it outranks everything on this line but where you are.** A person looking
+        // straight at this surface was being told nothing while work sat in their inbox, and the remedy was a
+        // key inside a transcript they had no reason to open. So it survives every rung the focus survives:
+        // it is the one thing here that is about them rather than about the screen.
+        var mail = Mail is { Certain: true, Waiting: > 0 } held
+            ? $"  {held.Waiting} waiting ({Caption(DeliveryAction())})"
+            : string.Empty;
+
         // Beside every rung that still names the ways out, not only the widest: on the projects view the actions alone are
         // wider than two hundred columns, so a build said only beside all of them was said on no terminal anybody has.
         _status.Text = Fits(
             room,
-            placed + back + quit + about + listed + menu + build,
-            placed + back + quit + about + listed + menu,
-            placed + back + quit + about + menu + build,
-            placed + back + quit + about + menu,
-            placed + back + quit + menu + build,
-            placed + back + quit + menu,
-            placed + menu,
-            focus + menu,
-            focus + brief,
+            placed + mail + back + quit + about + listed + menu + build,
+            placed + mail + back + quit + about + listed + menu,
+            placed + mail + back + quit + about + menu + build,
+            placed + mail + back + quit + about + menu,
+            placed + mail + back + quit + menu + build,
+            placed + mail + back + quit + menu,
+            placed + mail + menu,
+            focus + mail + menu,
+            focus + mail + brief,
+            focus + mail,
             focus);
     }
 
@@ -917,6 +933,14 @@ internal sealed class Shell : Window
                 : Held is null
                     ? [new RegionAction('j', AgentsRegion.JoinTitle, Join)]
                     : new[] { new RegionAction('l', LeaveSeatTitle, LeaveSeat) },
+
+            // **Taking delivery lives here as well as in a transcript, and that is the correction.** It
+            // was offered only inside a conversation, so collecting what you had been sent meant opening
+            // one -- and what is waiting is frequently in a conversation you have never seen, which is
+            // exactly the one you would not think to open. This pane is where the seat is.
+            .. Held is not null
+                ? new[] { new RegionAction('w', Participation.DeliveryTitle, TakeDelivery) }
+                : Array.Empty<RegionAction>(),
         ],
 
         // The conversations half of a project view. Sorting and the archived toggle are view
@@ -1045,7 +1069,26 @@ internal sealed class Shell : Window
     }
 
     /// <summary>The seat this person holds, if they hold one.</summary>
-    internal SeatHold? Held { get; private set; }
+    /// <remarks>
+    /// **Letting go of a seat drops its count with it**, here rather than at each of the three places a seat is
+    /// set. One of them forgot, and a driven test caught the result: the number stayed on the status line after
+    /// the seat had gone, which is somebody else's mail under nobody's name. A property that cannot be set
+    /// without the count following cannot forget.
+    /// </remarks>
+    internal SeatHold? Held
+    {
+        get;
+
+        private set
+        {
+            field = value;
+
+            if (value is null)
+            {
+                Mail = null;
+            }
+        }
+    }
 
     /// <summary>
     /// Who this person is, which is not the same question as whether they are seated here.
@@ -1098,7 +1141,14 @@ internal sealed class Shell : Window
             Me = null;
         }
 
+        var was = Held;
         Held = held;
+
+        // The count belongs to the seat, so the watch starts with one; setting Held drops it again.
+        if (held is not null && was is null)
+        {
+            WatchMail();
+        }
     }
 
     /// <summary>Where seats are held, or null when this surface cannot seat anybody.</summary>
@@ -1558,6 +1608,36 @@ internal sealed class Shell : Window
     /// </remarks>
     internal TimeSpan? FollowEvery { get; set; } = TimeSpan.FromSeconds(3);
 
+    /// <summary>How often a held seat asks what is waiting for it, or null not to ask.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Because the terminal told nobody.</b> Taking delivery reported what it found, and finding out
+    /// meant pressing a key inside a transcript — so a person sitting in front of this surface could be
+    /// owed work for an hour and see nothing, which is what the owner met an hour after 0.29.1 fixed the
+    /// same fault in the console. A surface that knows who you are and will not say what is waiting is
+    /// the one that wastes the most of somebody's time, because they are looking straight at it.
+    /// </para>
+    /// <para>
+    /// <b>Asked, never accumulated.</b> The console learned this and <c>SeatHold</c> carries the scar: a
+    /// notice arrives when something lands and never when something is collected, so a count kept from
+    /// the stream only ever climbs and ends up contradicting the screen underneath it. This asks the
+    /// broker, which is the only thing that knows.
+    /// </para>
+    /// <para>
+    /// A seam for the reason <see cref="FollowEvery"/> is one, and separate from it: following belongs
+    /// to a conversation on screen, and this belongs to a seat wherever its holder has navigated to.
+    /// </para>
+    /// </remarks>
+    internal TimeSpan? MailEvery { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>What is waiting for the seat, and whether the broker could be asked.</summary>
+    /// <remarks>
+    /// Null until a seat has been taken and the first read has come back, so the status line says nothing
+    /// rather than saying zero: "none waiting" and "not asked yet" are different facts, and only one of
+    /// them means stop looking. The same rule the console's own count is held to.
+    /// </remarks>
+    internal (int Waiting, bool Certain)? Mail { get; private set; }
+
     /// <summary>What is said when an open transcript could not be read again.</summary>
     /// <param name="problem">What the read reported, which is a broker's words and neutralised.</param>
     /// <returns>The sentence.</returns>
@@ -1705,6 +1785,116 @@ internal sealed class Shell : Window
         finally
         {
             _ = Interlocked.Exchange(ref _followQueued, 0);
+        }
+    }
+
+    /// <summary>Asks what is waiting for the held seat, every <see cref="MailEvery"/>, until it is let go.</summary>
+    /// <remarks>
+    /// Started when a seat is taken and ended when it is released or the surface closes. One ask at a time,
+    /// for the reason following takes one read at a time: a broker slower than the interval would otherwise
+    /// stack an ask per tick in front of every action somebody took.
+    /// </remarks>
+    private void WatchMail()
+    {
+        if (MailEvery is not { } every)
+        {
+            return;
+        }
+
+        CancellationToken stop;
+
+        lock (_followGate)
+        {
+            _watchingMail?.Cancel();
+            _watchingMail?.Dispose();
+
+            try
+            {
+                _watchingMail = CancellationTokenSource.CreateLinkedTokenSource(_reading.Token);
+            }
+            catch (ObjectDisposedException)
+            {
+                _watchingMail = null;
+
+                return;
+            }
+
+            stop = _watchingMail.Token;
+        }
+
+        _ = WatchMailAsync(every, stop);
+    }
+
+    /// <summary>Queues an ask every interval while a seat is held.</summary>
+    /// <param name="every">The interval.</param>
+    /// <param name="stop">Ended by the seat going or the surface closing.</param>
+    /// <returns>When watching has stopped.</returns>
+    private async Task WatchMailAsync(TimeSpan every, CancellationToken stop)
+    {
+        try
+        {
+            while (true)
+            {
+                if (Held is null)
+                {
+                    Mail = null;
+
+                    return;
+                }
+
+                if (Interlocked.CompareExchange(ref _mailQueued, 1, 0) == 0)
+                {
+                    Queue(MailOnceAsync);
+                }
+
+                await Task.Delay(every, stop).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The seat was let go, or the surface is closing. This is how it ends.
+        }
+    }
+
+    /// <summary>Asks once what is waiting for the seat.</summary>
+    /// <param name="cancellationToken">Cancels the ask.</param>
+    /// <returns>When the count has been read and the screen told.</returns>
+    private async Task MailOnceAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            // **Through `Voice()` rather than built here**, which `ClientSeparationTests` insists on and was
+            // right to: the agents client is the one that can speak as a person, and every path to it goes
+            // through the seat the book granted. A first version of this constructed its own and tripped the
+            // guard -- the property held, since the seat was the held one, but a rule that has to be re-argued
+            // at each call site is the rule that eventually is not.
+            if (Voice() is not { } voice)
+            {
+                Mail = null;
+
+                return;
+            }
+
+            var read = await BrokerDirectory.ReadAsync(async () =>
+                await voice.WaitingAsync(cancellationToken).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            // Held again rather than assumed: the sweep can release a seat while this was in flight, and a
+            // count left on the status line under nobody's name is the console's own released-seat fault.
+            if (Held is null)
+            {
+                Mail = null;
+
+                return;
+            }
+
+            Mail = read.Problem is null ? (read.Value.Messages, true) : (0, false);
+
+            Relay();
+        }
+        finally
+        {
+            _ = Interlocked.Exchange(ref _mailQueued, 0);
         }
     }
 
@@ -2081,9 +2271,16 @@ internal sealed class Shell : Window
         var (hold, said) = await AgentsRegion.JoinAsync(
             Seats!, project, registry.Value, name, cancellationToken).ConfigureAwait(false);
 
+        var first = Held is null && hold is not null;
+
         Held = hold ?? Held;
         Me = hold?.Seat ?? Me;
         Said = said;
+
+        if (first)
+        {
+            WatchMail();
+        }
 
         await SelectAsync(project, cancellationToken).ConfigureAwait(false);
     }
@@ -2305,6 +2502,11 @@ internal sealed class Shell : Window
         Said = AgentsRegion.Leave(Seats, Held.Seat);
         Held = null;
         Me = null;
+
+        // Redrawn here rather than left to the next thing that happens. Clearing the count is not enough on its
+        // own: the status line is only rebuilt when something asks it to, so leaving a seat on a surface with no
+        // project selected left the number on screen under a seat that had gone.
+        Relay();
 
         if (Projects.Selected is { } project)
         {

@@ -601,7 +601,7 @@ The constitution in `.specify/memory/constitution.md` restates the standing cons
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
 - **Current plan**: `specs/016-request-is-the-ask/` — **0.29.0, protocol 0.7, schema 11. Built, gated on all three
-  lenses, walked, installed, and not yet pushed. 0.29.1 is the first thing real use found.** A Request is the conversation it belongs to and the ask; `intent`, `items`, item ids,
+  lenses, walked, installed, and not yet pushed. 0.29.1 and 0.29.2 are what real use found.** A Request is the conversation it belongs to and the ask; `intent`, `items`, item ids,
   work-or-question, gates and `done_when` left the protocol, and a Result answers the exchange whole. The owner's call
   on 2026-09-17, made while composing one in the terminal: the fields were the same thing asked four times, and a
   receiver that cannot tell how far an ask goes has a question — which is what Clarify (§5.2) is. Nothing replaces them.
@@ -667,6 +667,23 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   waiting, nothing waiting, and the brokers could not be asked, which is the rule the frame's count has been held
   to since it was written. `AwayFromTheSeatTests` drives all three against a broker that answers only `Waiting`;
   five of its six fail against the old pages.
+
+  **0.29.2: the terminal had the same fault, and 0.29.1's reasoning for leaving it alone was wrong.** The owner,
+  an hour later: *"where do I go to see what's waiting on me?"* The answer was to take a seat, open a conversation
+  — any conversation — and press a key inside the transcript, which reported what it found. Nothing on the screen
+  ever said there was anything to find, and what is waiting is frequently in a conversation nobody has opened,
+  which is exactly the one somebody would not think to open. 0.29.1 argued the console's fix did not apply here
+  because the terminal remembers no name between runs; that is true only until somebody takes a seat, which is the
+  whole of the case that matters.
+
+  A held seat asks the broker every `MailEvery` and the count goes on the status line with the key that collects
+  it, high enough on the ladder to survive every rung the focus survives — it is the one thing on that line about
+  the person rather than the screen. **Taking delivery is offered in the agents pane as well**, where the seat is,
+  rather than only inside a transcript. Asked and never accumulated, for the reason `SeatHold` carries a scar
+  about: a notice arrives when something lands and never when something is collected, so a count kept from the
+  stream only ever climbs. `Held` drops the count in its own setter, because one of the three places that release
+  a seat forgot to — and leaving one now redraws, since clearing a number is not the same as taking it off the
+  screen.
 
   **`quickstart.md` was walked on 2026-09-21** against tools packed and installed into a scratch path, with a
   broker on its own store and port, so the live deployment was left alone: 51 checks across its six steps, all
