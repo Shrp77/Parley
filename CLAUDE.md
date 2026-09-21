@@ -601,7 +601,7 @@ The constitution in `.specify/memory/constitution.md` restates the standing cons
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
 - **Current plan**: `specs/016-request-is-the-ask/` — **0.29.0, protocol 0.7, schema 11. Built, gated on all three
-  lenses, committed and not yet pushed.** A Request is the conversation it belongs to and the ask; `intent`, `items`, item ids,
+  lenses, walked, installed, and not yet pushed. 0.29.1 is the first thing real use found.** A Request is the conversation it belongs to and the ask; `intent`, `items`, item ids,
   work-or-question, gates and `done_when` left the protocol, and a Result answers the exchange whole. The owner's call
   on 2026-09-17, made while composing one in the terminal: the fields were the same thing asked four times, and a
   receiver that cannot tell how far an ask goes has a question — which is what Clarify (§5.2) is. Nothing replaces them.
@@ -650,6 +650,23 @@ below in the form Spec Kit's checks read; this file remains the authority when t
 
   Migration 011 was edited rather than followed by a 012, on the one ground that permits it: 0.29.0 is installed
   nowhere, so it had been applied in no store outside a test process.
+
+  **0.29.1: the console could only tell you mail was waiting while you were sitting at it.** Reported by the owner
+  within the hour of installing 0.29.0, and it is a defect rather than a missing feature: the inbox said *"You are
+  seated nowhere, so nothing can be waiting"* while two Results waited for the name whose seat the upgrade's own
+  broker restart had taken. **A seat is how mail is collected, not where it waits** — messages queue against the
+  name in the store, and releasing a seat moves none of them. The frame suppressed its count on the same
+  reasoning, so the one moment the count exists to serve, having been away while something arrived, was the one
+  moment it was withheld.
+
+  The count is asked for whether or not a seat is held, through the Agents service's `Waiting`, which the proto
+  already describes as being for a caller that holds no stream: it marks nothing delivered, starts no working
+  window and opens no attachment. **The seat mark still needs a live attachment and must** — a dot beside a name
+  because a browser remembered one would be the console deciding somebody is present — so the count rides on Join,
+  names whose mail it is, and claims nothing about presence. The inbox now tells the three states apart: what is
+  waiting, nothing waiting, and the brokers could not be asked, which is the rule the frame's count has been held
+  to since it was written. `AwayFromTheSeatTests` drives all three against a broker that answers only `Waiting`;
+  five of its six fail against the old pages.
 
   **`quickstart.md` was walked on 2026-09-21** against tools packed and installed into a scratch path, with a
   broker on its own store and port, so the live deployment was left alone: 51 checks across its six steps, all

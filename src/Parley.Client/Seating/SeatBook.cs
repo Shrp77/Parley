@@ -322,6 +322,63 @@ public sealed class SeatBook : IDisposable
         return (total, certain);
     }
 
+    /// <summary>How much is waiting for a name nobody is currently seated under.</summary>
+    /// <param name="seat">The name, as the person last used it.</param>
+    /// <param name="projects">The projects to ask. Each is asked independently.</param>
+    /// <param name="cancellationToken">Cancels the reads.</param>
+    /// <returns>How many messages are waiting, and whether every project could be asked.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="projects"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>A seat is how mail is collected, not where it waits.</b> Messages queue against the agent name in the
+    /// broker's store, so a name with no attachment can have plenty waiting — which is exactly the state somebody
+    /// is in when they come back: the idle sweep released their seat twenty minutes after they walked away, or the
+    /// broker restarted under an upgrade and took every attachment with it.
+    /// </para>
+    /// <para>
+    /// <b>Reported by the owner, who sent four requests, got two answers, and was told nothing.</b> The console
+    /// could only count while a seat was held, so the one moment the count exists to serve — having been away
+    /// while something arrived — was the one moment it was suppressed. The inbox went further and said "you are
+    /// seated nowhere, so nothing can be waiting", which is not a missing feature but a false sentence: it reads
+    /// the absence of a collector as the absence of mail.
+    /// </para>
+    /// <para>
+    /// <see cref="Wire.Agents.AgentsClient"/>'s <c>Waiting</c> is built for precisely this caller — the proto
+    /// describes it as being for one that holds no stream — and it marks nothing delivered, starts no working
+    /// window and opens no attachment. So this counts without making the person present, which is the line the
+    /// frame must not cross: a count is a reason to come back, never a claim that somebody already has.
+    /// </para>
+    /// </remarks>
+    public async Task<(int Waiting, bool Certain)> WaitingUnseatedAsync(
+        Seat seat,
+        IReadOnlyList<ProjectSettings> projects,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(projects);
+
+        var total = 0;
+        var certain = true;
+
+        foreach (var project in projects)
+        {
+            var read = await BrokerDirectory.ReadAsync(async () =>
+                await new SeatVoice(_agents(project), seat)
+                    .WaitingAsync(cancellationToken).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            if (read.Problem is null)
+            {
+                total += read.Value.Messages;
+            }
+            else
+            {
+                certain = false;
+            }
+        }
+
+        return (total, certain);
+    }
+
     /// <summary>Records that this person is still at the console.</summary>
     /// <param name="seat">Who was seen.</param>
     /// <param name="now">The current instant.</param>

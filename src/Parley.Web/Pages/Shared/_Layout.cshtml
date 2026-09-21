@@ -6,6 +6,7 @@
     message, so they are carried as text and never by colour alone (FR-029, FR-030).
 *@
 @inject Parley.Client.Seating.SeatBook Seats
+@inject Parley.Client.BrokerDirectory Directory
 @{
     // Read here rather than passed in by every page, because the frame is the one thing every
     // page has and a seat shown on some pages and not others is worse than one shown on none.
@@ -43,9 +44,23 @@
     //
     // A count nobody could confirm shows nothing at all rather than a zero, because "no messages"
     // and "could not ask" are different things and only one of them means stop looking.
-    var waiting = here is null
-        ? (Waiting: 0, Certain: false)
-        : await Seats.WaitingAsync(here, Context.RequestAborted);
+    // **Asked whether or not a seat is held, and that is the correction.** A seat is how mail is
+    // collected; it is not where mail waits. Messages queue against the agent name in the store, so
+    // the count is suppressed by having no seat only if you believe the two are the same thing.
+    //
+    // Reported by the owner: four requests sent, two answered, and a console that said nothing --
+    // because the broker had restarted under an upgrade and taken the attachment with it, which is
+    // one of the two ordinary ways to be holding no seat. The other is walking away for twenty
+    // minutes. Both are exactly when somebody needs telling that an answer came back.
+    //
+    // The seat mark above still depends on a live attachment and must: putting a dot beside a name
+    // because a browser remembered one would be the console deciding somebody is present. A count
+    // beside Join claims nothing about presence -- it is the reason to come back.
+    var waiting = here is not null
+        ? await Seats.WaitingAsync(here, Context.RequestAborted)
+        : named is not null
+            ? await Seats.WaitingUnseatedAsync(named, Directory.Projects, Context.RequestAborted)
+            : (Waiting: 0, Certain: false);
 
     var joinLink = "/Join?Then="
         + Uri.EscapeDataString(Context.Request.Path + Context.Request.QueryString);
@@ -1164,7 +1179,17 @@
             <a href="/">Projects</a>
             @if (here is null)
             {
-                <a class="seat-join" href="@joinLink">Join</a>
+                @* The count rides on Join because Join is what makes it collectable. It says whose
+                   mail it is: somebody coming back to a shared machine must not read a number and
+                   assume it is theirs. *@
+                <a class="seat-join" href="@joinLink">
+                    Join
+                    @if (named is not null && waiting is { Certain: true, Waiting: > 0 })
+                    {
+                        <span class="seat-waiting">@waiting.Waiting<span class="visually-hidden">
+                            messages waiting for @named.Person</span></span>
+                    }
+                </a>
             }
             else
             {

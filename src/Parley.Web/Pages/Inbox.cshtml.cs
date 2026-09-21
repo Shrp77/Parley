@@ -43,6 +43,16 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
     /// <summary>What is waiting in each project this person is seated in.</summary>
     public IReadOnlyList<Pending> Projects { get; private set; } = [];
 
+    /// <summary>How much is waiting for this name while no seat is held, and whether every project answered.</summary>
+    /// <remarks>
+    /// Only read when <see cref="Projects"/> is empty, which is the state this page used to describe as "you are
+    /// seated nowhere, so nothing can be waiting". That sentence read the absence of a collector as the absence of
+    /// mail, and the owner met the case that proves them different: two Results waiting for a name whose seat a
+    /// broker restart had taken. Counted without opening an attachment, so reading the page still does not make
+    /// anybody present.
+    /// </remarks>
+    public (int Waiting, bool Certain) Away { get; private set; }
+
     /// <summary>What became of taking delivery, or of sending.</summary>
     public string? Outcome { get; private set; }
 
@@ -248,5 +258,10 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
         }
 
         Projects = pending;
+
+        if (pending.Count == 0)
+        {
+            Away = await seats.WaitingUnseatedAsync(Me!, directory.Projects, token).ConfigureAwait(false);
+        }
     }
 }

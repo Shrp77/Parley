@@ -174,9 +174,35 @@
 
 @if (Model.Projects.Count == 0)
 {
-    <p class="unreachable">
-        You are seated nowhere, so nothing can be waiting. <a href="/Join">Join</a> first.
-    </p>
+    @* **This said "you are seated nowhere, so nothing can be waiting", and that was false.** A seat
+       is how mail is collected, not where it waits: messages queue against the name in the broker's
+       store, so a released seat leaves them exactly where they were. The owner met the proof --
+       four requests sent, two answered, and this page reporting that nothing could be. *@
+    @if (Model.Away is { Certain: true, Waiting: > 0 })
+    {
+        <p class="unreachable">
+            You are seated nowhere, and @Model.Away.Waiting
+            @(Model.Away.Waiting == 1 ? "message is" : "messages are") waiting for
+            <strong>@Model.Me!.Person</strong>. <a href="/Join">Join</a> to collect
+            @(Model.Away.Waiting == 1 ? "it" : "them").
+        </p>
+    }
+    else if (!Model.Away.Certain)
+    {
+        @* "Nothing waiting" and "could not ask" are different facts, and only one of them means
+           stop looking -- the same rule the frame's count is held to. *@
+        <p class="unreachable">
+            You are seated nowhere, and the brokers could not be asked what is waiting for
+            <strong>@Model.Me!.Person</strong>. <a href="/Join">Join</a> to look.
+        </p>
+    }
+    else
+    {
+        <p class="unreachable">
+            You are seated nowhere, and nothing is waiting for <strong>@Model.Me!.Person</strong>.
+            <a href="/Join">Join</a> to take part.
+        </p>
+    }
 }
 else if (waiting == 0 && held == 0)
 {
