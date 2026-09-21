@@ -132,7 +132,7 @@ transcript.
 - [X] T048 Bump `VersionPrefix` in `Directory.Build.props` in the same change (0.29.0: the minor moves on a breaking change)
 - [X] T049 Search the repository for `done_when`, `doneWhen`, `intent`, `kind`, `gate` and `RequestItem`, and confirm every remaining occurrence is the migration, SPEC.md §18's history, `PayloadShape`'s reader of stored messages, or the record of this change (SC-004)
 - [X] T050 Run every suite from its own host executable, as CLAUDE.md requires, and record the counts
-- [ ] T051 Walk `quickstart.md` end to end against a throwaway project and a store holding 0.6 traffic, and record the result in `REVIEW-LEDGER.md`
+- [X] T051 Walk `quickstart.md` end to end against a throwaway project and a store holding 0.6 traffic, and record the result in `REVIEW-LEDGER.md`
 - [X] T052 Run the review gate: three lenses, three consecutive clean runs each, probing rather than reading, logged in `REVIEW-LEDGER.md`
 - [X] T053 Write the CLAUDE.md record of what the gate found, and what building it taught that the plan did not know
 

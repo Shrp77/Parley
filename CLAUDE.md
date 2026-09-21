@@ -651,6 +651,18 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   Migration 011 was edited rather than followed by a 012, on the one ground that permits it: 0.29.0 is installed
   nowhere, so it had been applied in no store outside a test process.
 
+  **`quickstart.md` was walked on 2026-09-21** against tools packed and installed into a scratch path, with a
+  broker on its own store and port, so the live deployment was left alone: 51 checks across its six steps, all
+  passed. **The store was built at schema 10 first and holds traffic no 0.29.0 build can write**, so the walk
+  performed the upgrade rather than describing it — and the exchange left open under 0.6 was then answered through
+  a tool that has no argument for an item identifier, recording `q1:done|w1:done` against the identifiers that
+  Request declared. Step 5 was walked with a genuinely old binary: the machine's installed `parley-mcp` 0.28.1
+  pointed at the 0.7 broker exited 78 before answering `initialize`, naming both versions and the remedy.
+  **Step 1 could not be driven and is recorded rather than claimed**: the terminal refuses a redirected terminal
+  by design, and the console resolves the manifest through the platform's known-folder API, so it cannot be
+  pointed at a throwaway deployment at all — `parley serve` has `--config` and the console has no equivalent.
+  The ledger has each check.
+
   Also corrected in passing: §18's 0.3 entry named "rule 8.5's cap", which after §8's renumbering pointed at a
   different rule; `ItemOutcome` was left public carrying tool descriptions for a form nobody is shown; and a second
   pre-existing flake went with the first — `WakeDuringCollectionTests` counted node commands after a fixed sleep and
