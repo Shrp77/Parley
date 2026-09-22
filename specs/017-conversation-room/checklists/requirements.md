@@ -67,15 +67,33 @@ requirement:
   destructive operation to one file carrying its own door, a description and the subject's name typed back. A
   generic dispatcher is exactly the shape that erodes that, and it would erode it invisibly.
 
-**Two decisions are the owner's and are open:**
+**Both open decisions were settled by the owner on 2026-09-21, and each changed a requirement:**
 
-1. **What `/` means at the start of an ask that is not a command.** "Is `/etc/hosts` readable from your
-   container?" begins with a slash. FR-020 refuses an unrecognised identifier rather than sending it, which is
-   safe but not sufficient — a person needs a way to say "this is prose". The options are an escape, a rule about
-   what follows the slash, or requiring commands to be completed from the picker rather than typed blind.
-2. **Whether destructive operations may appear in the command table at all.** FR-024 says a command may not skip
-   an existing door; the stronger position is that such operations simply are not commands, which keeps
-   `SurfaceTests` able to prove it by reading one file.
+**1. An unrecognised `/something` is text, and a command is `/` plus an identifier with no second `/`**
+(FR-020, FR-021). Better than the refusal the first draft specified, and for a reason worth keeping: the two rules
+together decide `/etc/hosts` without reference to what any command is called, so the set of paths a person may ask
+about never has to be reconciled with the set of commands that exist. Nothing is refused for not being a command,
+because the identifiers somebody might type are not a closed set they can be expected to know.
+
+**What it costs, and what pays for it.** The failure mode inverts: it is no longer "my command was refused" but
+"my command was sent". `/ad @billing` becomes an ask that every participant must answer — real turns spent on a
+typo. FR-022 is the mitigation and it is the design's own idiom rather than a new mechanism: the line already says
+what Enter will do, so it says *sending as text* when a draft starts with `/` and did not resolve. Visible before
+Enter beats refused after it, and it keeps prose sendable.
+
+**2. Commands may be destructive, and more operations are expected to become commands** (FR-026 to FR-028,
+FR-031). So the requirement is not that commands stay away from guarded operations but that they arrive at the
+same door: a description of what will go, and the subject's own name typed back. A destructive command declares
+its door beside its identifier, so the door is part of what the command *is* rather than something a handler
+remembers.
+
+**The consequence the owner should know about.** `SurfaceTests` proves the door exists today by holding each
+operation's name to exactly one file which must contain its prompt. As operations move into commands, that check
+keeps passing while meaning less — the name now lives in a declaration and the dispatch is generic. FR-028 says
+the guarantee must stay mechanically checkable, which means that test is rewritten to read the command
+declarations rather than deleted or left to pass vacuously. It is the same failure this repository has recorded
+twice: a guard that cannot see the thing it was written about (`SetupSurfaceTests` and a nested public type; the
+terminal's store-freedom before it had a project of its own).
 
 **One thing the plan will have to settle that the spec deliberately does not**: what the input line does with a
 person who holds no seat but is reading as an operator. FR-016 forbids sending under a seat nobody holds, which

@@ -134,10 +134,11 @@ exchange was opened and that no payload contains the picker's syntax.
   a name the book no longer holds.
 - **A message is over the size cap.** Refused before anything is sent, with what was written kept.
 - **`@` matches nothing**, or matches an agent that is not a participant and was not added.
-- **An ask that genuinely begins with `/`** — a path, a route, a flag somebody is asking about. The line must have
-  a way to say "this is a message" that does not require knowing which words happen to be command identifiers.
-- **A command identifier that is not one**, mistyped or from a newer build: refused and never sent as prose, so a
-  typo does not become a Request somebody has to answer.
+- **An ask that begins with `/`** — `/etc/hosts`, a route, a flag somebody is asking about. Decided by FR-020: a
+  second `/` makes it text, whatever any command is called.
+- **A mistyped command**, `/ad` for `/add`. It is text by FR-021, so it sends — which means a typo becomes an ask
+  that every participant must answer. FR-022 is what makes that survivable: the line says it is sending as text
+  before Enter, and the preview already says how many exchanges that opens.
 - **A command given the wrong parameters** — none where one is required, an agent that does not exist, more than
   it takes.
 - **A draft command pressed alone**, which cannot act, and an acting command pressed with text beside it, which
@@ -200,24 +201,41 @@ exchange was opened and that no payload contains the picker's syntax.
   spelled.
 - **FR-019**: `/` alone MUST list the available commands with what each takes, so that no command exists only as
   something a person has to already know.
-- **FR-020**: An identifier that is not a command MUST be refused, naming what was not recognised, and MUST NOT be
-  sent as a message. What was written MUST be kept (FR-011).
-- **FR-021**: A command missing a parameter it requires, or given one it does not take, MUST be refused before
-  anything is sent, and MUST say what it expected.
-- **FR-022**: Commands MUST be told apart by whether they change the draft or perform an act, and a command that
+- **FR-020**: A command is `/` at the start of the line followed by an identifier containing no further `/`.
+  Anything else beginning with `/` is text: `/etc/hosts` is a path somebody is asking about, not a mistyped
+  command, and the rule decides that without knowing what any command is called.
+- **FR-021**: An identifier that is not a command MUST be treated as text and sent as written. Nothing is refused
+  for not being a command, because the identifiers a person might type are not a closed set they can be expected
+  to know.
+- **FR-022**: Where a draft begins with `/` and is being treated as text, the line MUST say so before Enter, so
+  that a mistyped command is visible as a message about to be sent rather than discovered in somebody's inbox.
+- **FR-023**: A recognised command missing a parameter it requires, or given one it does not take, MUST be refused
+  before anything is sent, and MUST say what it expected. This is not FR-021's case: the identifier resolved, so
+  the person meant a command and the line owes them the reason it could not run.
+- **FR-024**: Commands MUST be told apart by whether they change the draft or perform an act, and a command that
   changes the draft MUST NOT be sendable on its own.
-- **FR-023**: `/add <agent>` MUST be a draft command: it widens the recipients to an agent that is not yet a
+- **FR-025**: `/add <agent>` MUST be a draft command: it widens the recipients to an agent that is not yet a
   participant. It is not sendable alone, because membership is derived (§5.0) — an agent joins by being party to an
   exchange, so adding with nothing to say would have to invent a Request, and every message is answered.
-- **FR-024**: A command MUST NOT be a second route to an operation that a surface already guards. Anything
-  destructive keeps the door it has — a description first and the subject's own name typed back — and a command
-  that reached it without that door would be that guard removed.
+- **FR-026**: A command MAY perform a destructive operation, and the intention is that more operations become
+  commands over time. What it MUST NOT do is reach one without the door that operation already has: a description
+  of what will go, and the subject's own name typed back. The command is a way to arrive at the door, never a way
+  past it.
+- **FR-027**: A destructive command MUST declare its door alongside its identifier and parameters, so that the
+  door is part of what the command *is* rather than something its handler remembers to open.
+- **FR-028**: The guarantee that every destructive operation is reachable only through its door MUST remain
+  mechanically checkable as operations move into commands. It is checked today by holding each operation's name to
+  one file containing its prompt; a command table is a second route, so the check MUST read the declarations too,
+  or it will keep passing while meaning less.
 
 **Scope**
 
-- **FR-025**: The views above a conversation — the projects list and the project view — MUST be unchanged.
-- **FR-026**: Every operation reachable from the conversation view before this change MUST remain reachable after
+- **FR-029**: The views above a conversation — the projects list and the project view — MUST be unchanged.
+- **FR-030**: Every operation reachable from the conversation view before this change MUST remain reachable after
   it, so that the surface loses nothing by being rearranged.
+- **FR-031**: Where an operation is reachable both as a command and as a region's key, the two MUST perform the
+  same act behind the same door. Two routes that drifted would be the disagreement `DriftTests` exists to catch
+  between surfaces, arriving inside one.
 
 ### Key Entities
 
@@ -252,8 +270,10 @@ exchange was opened and that no payload contains the picker's syntax.
 - **SC-009**: Every command is discoverable from the line itself, takes its parameters the same way, and is
   refused the same way when given the wrong ones — with no command that behaves unlike the others because it was
   added separately.
-- **SC-010**: A mistyped command is never delivered to anybody as a message.
-- **SC-011**: No command reaches a destructive operation without the door that operation already has.
+- **SC-010**: Before pressing Enter, a person can always tell whether a line beginning with `/` will run as a
+  command or be sent as text.
+- **SC-011**: No command reaches a destructive operation without the door that operation already has, and that
+  remains true by a check rather than by review as more operations become commands.
 
 ## Assumptions
 
