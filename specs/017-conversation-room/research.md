@@ -121,3 +121,30 @@ changing any of them.
 **Why it is a research decision and not a task**: getting this wrong in either direction is expensive. Carrying a
 description forward means fighting a test that describes a design nobody wants; deleting a guard means losing a
 property that was found the hard way, and several of these were found by probe rather than by inspection.
+
+## R11 — The room is built around the existing transcript, not in place of it
+
+**Decision**: the Conversation view gains two regions — the narrow column and the input line — around the
+`TranscriptRegion` that is already there. The transcript itself is not rewritten. The four participation keys stay
+reachable while the line is proven, and are retired in their own change once it is.
+
+**Why, and this reverses the spec's word "replaces"** (FR-038 is unaffected; the views above a conversation were
+never in question). Forty-nine test files in `tests/Parley.Terminal.Tests` reference the conversation view.
+Reading them, almost all are about the *transcript* rather than about the view's arrangement: the column-zero rule
+that stops a payload forging a header, agent-written text escaped on the way to the screen, wrapping, reflow,
+copying, the refill race, colour surviving being stripped. Every one of those is a property found the hard way —
+several by probe rather than by inspection — and a rewrite that reimplemented the transcript would put all of them
+at risk at once to deliver a layout change.
+
+Keeping the transcript means those guards keep passing **by construction rather than by care**, which is the only
+form of preservation worth anything at this scale. What has to change is the handful of tests that assert the
+arrangement — the layout ladder, the narrow-terminal rule, resize, and which panes exist — and those are the ones
+that genuinely describe the design being replaced.
+
+**What it costs**: two routes to the same acts for one release, which FR-040 already governs — they must perform
+the same act behind the same door. That is a real cost and it is bounded: the keys go when the line has been
+used.
+
+**The alternative rejected**: replacing the view wholesale in one change. It would have been a multi-hour rewrite
+whose largest risk, per this plan's own risk table, was quietly losing a guard — and it would have delivered the
+same feature.
