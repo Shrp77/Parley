@@ -64,7 +64,7 @@ public sealed class ExportStaysUtcTests
         var zone = TimeZoneInfo.CreateCustomTimeZone(
             "test-plus-five", TimeSpan.FromHours(5), "test +5", "test +5");
 
-        var screen = Reading.Lines([Message(12)], null, zone)
+        var screen = Reading.Lines([Message(12)], zone)
             .First(l => l.Kind == LineKind.Header).Text;
 
         var export = Transcript.Write("alpha", "some-project", [Message(12)], []);
@@ -81,7 +81,7 @@ public sealed class ExportStaysUtcTests
         var zone = TimeZoneInfo.CreateCustomTimeZone(
             "test-plus-five", TimeSpan.FromHours(5), "test +5", "test +5");
 
-        var header = Reading.Lines([Message(12)], null, zone)
+        var header = Reading.Lines([Message(12)], zone)
             .First(l => l.Kind == LineKind.Header).Text;
 
         Assert.StartsWith(

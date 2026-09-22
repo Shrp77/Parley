@@ -501,7 +501,7 @@ public sealed class CompletingTests : IAsyncDisposable
         var export = await new BrokerClient(_broker.Operators).ExportAsync(Conversation, ct);
         var message = Assert.Single(export!.Messages);
 
-        var lines = Parley.Client.Rendering.Reading.Lines(export.Messages, export.Exchanges);
+        var lines = Parley.Client.Rendering.Reading.Lines(export.Messages);
 
         Assert.Contains(lines, line => line.Message == message.Id && line.Kind == LineKind.Header);
         Assert.Contains(lines, line => line.Message == message.Id && line.Kind == LineKind.Body);

@@ -1,3 +1,4 @@
+using Parley.Client.Seating;
 using Parley.Client;
 using Parley.Configuration;
 using Parley.Core;
@@ -56,26 +57,32 @@ public sealed class ColourTests
     }
 
     [Fact]
-    public void Who_did_not_see_a_message_is_carried_as_text()
+    public void Who_a_message_is_going_to_is_carried_as_text()
     {
-        // The annotation a reader trusts, and the one thing on a transcript that cannot be
-        // recovered from anywhere else on the screen. Three participants and a pairwise message
-        // means exactly one of them was not party to it, and their name has to appear.
-        var region = new TranscriptRegion();
+        // **This test was about the visibility annotation and is about the checklist now.** That sentence
+        // left the screen when the owner asked for it -- the header names one sender and one recipient, and
+        // this column lists every participant -- and the rule it stood for found a better instance on the way
+        // out: who a message is about to be sent to is exactly the kind of fact that must not be a highlight.
+        var room = new RoomRegion();
+        var billing = AgentName.Create("billing@here");
+        var orders = AgentName.Create("orders@here");
 
-        region.Show(
-            "threeway",
-            "alpha",
-            new ConversationExport(
-                [
-                    Message("orders@here", "billing@here", 1),
-                    Message("orders@here", "inventory@here", 2),
-                ],
-                []),
-            null);
+        room.Show(
+            [new PairState(billing, null, Turn.Nobody), new PairState(orders, 7, Turn.Mine)],
+            [],
+            seated: true,
+            AgentName.Create("arvind@here"),
+            [billing]);
 
-        Assert.Contains("inventory@here", region.Written, StringComparison.Ordinal);
-        Assert.Contains("did not see this", region.Written, StringComparison.Ordinal);
+        Assert.Contains(
+            room.Written,
+            row => row.StartsWith(RoomRegion.Addressed, StringComparison.Ordinal)
+                && row.Contains(billing.Value, StringComparison.Ordinal));
+
+        Assert.Contains(
+            room.Written,
+            row => row.StartsWith(RoomRegion.NotAddressed, StringComparison.Ordinal)
+                && row.Contains(orders.Value, StringComparison.Ordinal));
     }
 
     [Fact]

@@ -85,9 +85,7 @@ public sealed class AgreementTests : IAsyncDisposable
         var console = Transcript.Write("threeway", "alpha", export.Messages, export.Exchanges);
         var terminal = Terminal(export);
 
-        // The annotation itself, on every message that carries one. Asked of the shared
-        // derivation and then asserted of both outputs -- if either surface dropped it, or
-        // computed its own, this is where the two would part company.
+        // The annotation itself, on every message that carries one, asked of the shared derivation.
         var participants = Visibility.Participants(export.Messages);
         var annotations = export.Messages
             .Select(m => Visibility.Describe(m, participants))
@@ -98,8 +96,13 @@ public sealed class AgreementTests : IAsyncDisposable
 
         foreach (var annotation in annotations)
         {
+            // **The export carries it and the screen deliberately does not, which is a change and not a
+            // drift.** The owner read a broadcast in the room and asked for the list of everyone who did not
+            // see each message to go: the header above it already names one sender and one recipient, and the
+            // room column beside it lists every participant, so on screen it restated twice over what was
+            // already there. A file read somewhere else has neither, which is why the export keeps it.
             Assert.Contains(annotation, console, StringComparison.Ordinal);
-            Assert.Contains(annotation, terminal, StringComparison.Ordinal);
+            Assert.DoesNotContain(annotation, terminal, StringComparison.Ordinal);
         }
     }
 

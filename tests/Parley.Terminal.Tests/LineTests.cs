@@ -200,9 +200,14 @@ public sealed class LineTests : IAsyncDisposable
         // this surface says, which ends a sentence with a full stop.
         Assert.Contains(LineRegion.NoSeat, shell.Line.Preview, StringComparison.Ordinal);
 
-        // Focused on the line rather than the transcript it opens on, because what is asserted is what the
-        // line offers somebody with no seat.
+        // **And the seat is offered in the room rather than here**, which is where its key can actually
+        // arrive: a focused box wins every printable key, so `j` in this pane types a `j`. 0.28.2's rule is
+        // what still holds -- never hide a thing from a seatless person -- and only the pane changed.
         shell.Focus(shell.Panes.ToList().FindIndex(p => p is LineRegion));
+
+        Assert.DoesNotContain(shell.Actions(), a => a.Label == AgentsRegion.JoinTitle);
+
+        shell.Focus(shell.Panes.ToList().FindIndex(p => p is RoomRegion));
 
         Assert.Contains(shell.Actions(), a => a.Label == AgentsRegion.JoinTitle);
     }

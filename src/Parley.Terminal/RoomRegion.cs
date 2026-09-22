@@ -36,6 +36,31 @@ internal sealed class RoomRegion : FrameView
     /// <summary>The heading the participants are listed under.</summary>
     internal const string Participants = "in this conversation";
 
+    /// <summary>The heading the person's own seat is listed under.</summary>
+    /// <remarks>
+    /// <b>On its own line, above the agents, because a person is not one of them.</b> The owner asked for it
+    /// after taking a seat and then hunting for where it said so: every other row here is somebody they might
+    /// send to, and the one row that is them was indistinguishable in the middle of that list.
+    /// </remarks>
+    internal const string You = "you";
+
+    /// <summary>What marks a participant this message is addressed to.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Written, never a colour or a highlight.</b> `ColourTests` strips every attribute and asserts nothing
+    /// is lost, and who a message is about to go to is exactly the fact that must survive that.
+    /// </para>
+    /// <para>
+    /// Square brackets rather than a tick glyph: this column is drawn in whatever terminal somebody has, and a
+    /// box-drawing character that renders as a question mark would make the check unreadable on the machine
+    /// least able to fix it.
+    /// </para>
+    /// </remarks>
+    internal const string Addressed = "[x] ";
+
+    /// <summary>What marks a participant this message is not addressed to.</summary>
+    internal const string NotAddressed = "[ ] ";
+
     /// <summary>The heading what this person owes is listed under.</summary>
     internal const string ToAddress = "waiting on you";
 
@@ -44,6 +69,10 @@ internal sealed class RoomRegion : FrameView
 
     /// <summary>What is said before a seat has been taken.</summary>
     internal const string NoSeat = "take a seat to take part";
+
+    /// <summary>What is said when somebody tries to exclude the last recipient left.</summary>
+    internal const string LastOne =
+        "That is the only agent this is addressed to. Include another before excluding this one.";
 
     /// <summary>What is said where a row cannot be shown in the transcript beside it.</summary>
     /// <remarks>
@@ -55,6 +84,15 @@ internal sealed class RoomRegion : FrameView
     private readonly GuardedList _list = Lists.Filling(Colours.Agents);
 
     private List<Row> _rows = [];
+
+    // What the last read said, so the ticks can be redrawn when somebody changes who they are addressing
+    // without asking a broker anything. A column that had to be re-read to change a checkbox would put a
+    // network round trip between a keystroke and the mark it makes.
+    private IReadOnlyList<PairState> _pairs = [];
+    private IReadOnlyList<OutstandingItem> _outstanding = [];
+    private IReadOnlyList<AgentName> _addressed = [];
+    private AgentName? _me;
+    private bool _seated;
 
     internal RoomRegion()
     {
@@ -68,6 +106,16 @@ internal sealed class RoomRegion : FrameView
         // `contracts/views.md` means by nothing existing only as a key.
         _list.Accepting += (_, args) =>
         {
+            // **Enter does what the row under it is for**, which is FR-031 read at the level of a list: a
+            // participant is somebody you are addressing or not, and a thing owed is something to go and read.
+            if (SelectedPeer is { } peer)
+            {
+                args.Handled = true;
+                Toggling?.Invoke(this, peer);
+
+                return;
+            }
+
             if (Selected is not { } item)
             {
                 return;
@@ -81,6 +129,9 @@ internal sealed class RoomRegion : FrameView
     /// <summary>Raised when somebody activated something they owe, to be read where it was said.</summary>
     internal event EventHandler<OutstandingItem>? Reading;
 
+    /// <summary>Raised when somebody included or excluded a participant from what they are writing.</summary>
+    internal event EventHandler<AgentName>? Toggling;
+
     /// <summary>What the list is showing, for a test to read without the screen.</summary>
     internal IReadOnlyList<string> Written => [.. _rows.Select(r => r.Text)];
 
@@ -88,54 +139,117 @@ internal sealed class RoomRegion : FrameView
     internal GuardedList List => _list;
 
     /// <summary>The outstanding item under the cursor, or null when the cursor is not on one.</summary>
-    internal OutstandingItem? Selected =>
-        _list.SelectedItem is int at && at >= 0 && at < _rows.Count ? _rows[at].Item : null;
+    internal OutstandingItem? Selected => Under?.Item;
+
+    /// <summary>The participant under the cursor, or null when the cursor is not on one.</summary>
+    internal AgentName? SelectedPeer => Under?.Peer;
+
+    /// <summary>The row under the cursor, or null when there is none.</summary>
+    private Row? Under =>
+        _list.SelectedItem is int at && at >= 0 && at < _rows.Count ? _rows[at] : null;
+
+    /// <summary>Includes or excludes the participant under the cursor.</summary>
+    /// <remarks>
+    /// Raises the same event the row's own Enter raises rather than changing anything itself. This column
+    /// draws who a message is going to; it does not decide it.
+    /// </remarks>
+    internal void Toggle()
+    {
+        if (SelectedPeer is { } peer)
+        {
+            Toggling?.Invoke(this, peer);
+        }
+    }
+
+    /// <summary>Redraws the ticks for a different set of recipients, without re-reading anything.</summary>
+    /// <param name="addressed">Who the message being written is going to.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="addressed"/> is null.</exception>
+    internal void Address(IReadOnlyList<AgentName> addressed)
+    {
+        ArgumentNullException.ThrowIfNull(addressed);
+
+        Show(_pairs, _outstanding, _seated, _me, addressed);
+    }
 
     /// <summary>Shows a conversation's participants and what this person owes in it.</summary>
     /// <param name="pairs">The pair state for every participant, or empty with no seat.</param>
     /// <param name="outstanding">What this person must address.</param>
     /// <param name="seated">Whether a seat is held.</param>
+    /// <param name="me">The name the person holds a seat under, or null when they hold none.</param>
+    /// <param name="addressed">Who what is being written goes to, or null for every participant.</param>
     /// <remarks>
     /// Headings are rows rather than decoration, for the reason the agents list groups by state: a row does not
     /// wrap, and a heading said once is shorter than a qualifier repeated on every row.
     /// </remarks>
-    internal void Show(IReadOnlyList<PairState> pairs, IReadOnlyList<OutstandingItem> outstanding, bool seated)
+    internal void Show(
+        IReadOnlyList<PairState> pairs,
+        IReadOnlyList<OutstandingItem> outstanding,
+        bool seated,
+        AgentName? me = null,
+        IReadOnlyList<AgentName>? addressed = null)
     {
         ArgumentNullException.ThrowIfNull(pairs);
         ArgumentNullException.ThrowIfNull(outstanding);
 
+        _pairs = pairs;
+        _outstanding = outstanding;
+        _seated = seated;
+        _me = me;
+        _addressed = addressed ?? [.. pairs.Select(pair => pair.Peer)];
+
         var rows = new List<Row>
         {
-            new(Participants, null, null),
+            new(You, null, null, null),
+            new(
+                "  " + (me is { } held ? Safe.Text(held.Value) : NoSeat),
+                null,
+                me is { } mine ? Palette.SlotFor(mine) : null,
+                null),
+            new(string.Empty, null, null, null),
+            new(Participants, null, null, null),
         };
 
         foreach (var pair in pairs)
         {
-            rows.Add(new Row("  " + Safe.Text(pair.Peer.Value) + Standing(pair), null, Palette.SlotFor(pair.Peer)));
+            rows.Add(new Row(
+                Mark(pair.Peer) + Safe.Text(pair.Peer.Value) + Standing(pair),
+                null,
+                Palette.SlotFor(pair.Peer),
+                pair.Peer));
         }
 
-        rows.Add(new Row(string.Empty, null, null));
-        rows.Add(new Row(ToAddress, null, null));
+        rows.Add(new Row(string.Empty, null, null, null));
+        rows.Add(new Row(ToAddress, null, null, null));
 
         if (!seated)
         {
-            rows.Add(new Row("  " + NoSeat, null, null));
+            rows.Add(new Row("  " + NoSeat, null, null, null));
         }
         else if (outstanding.Count == 0)
         {
-            rows.Add(new Row("  " + NothingOwed, null, null));
+            rows.Add(new Row("  " + NothingOwed, null, null, null));
         }
         else
         {
             foreach (var item in outstanding)
             {
-                rows.Add(new Row("  " + Safe.Text(item.Says), item, Palette.SlotFor(item.Peer)));
+                rows.Add(new Row("  " + Safe.Text(item.Says), item, Palette.SlotFor(item.Peer), null));
             }
         }
 
         _rows = rows;
         _list.Replace([.. rows.Select(r => r.Text)], _list.SelectedItem);
     }
+
+    /// <summary>Whether what is being written goes to this participant.</summary>
+    /// <param name="peer">The participant.</param>
+    /// <returns>The mark that goes in front of the name.</returns>
+    /// <remarks>
+    /// The indent the unchecked mark occupies is the same width as the checked one, so the names stay in one
+    /// column — a list whose rows shift sideways as they are ticked is harder to read than one that does not.
+    /// </remarks>
+    private string Mark(AgentName peer) =>
+        _addressed.Contains(peer) ? Addressed : NotAddressed;
 
     /// <summary>What is said beside a participant about what stands between them and this person.</summary>
     /// <param name="pair">The pair state.</param>
@@ -158,8 +272,17 @@ internal sealed class RoomRegion : FrameView
         ? Colours.Slot(slot)
         : null;
 
-    /// <summary>One row: what it says, what it refers to, and which colour it takes.</summary>
-    private sealed record Row(string Text, OutstandingItem? Item, int? Slot);
+    /// <summary>One row: what it says, what it refers to, which colour it takes, and whose it is.</summary>
+    /// <param name="Text">What is drawn.</param>
+    /// <param name="Item">The thing owed this row activates, or null.</param>
+    /// <param name="Slot">The colour slot, or null for a heading.</param>
+    /// <param name="Peer">The participant this row is a checkbox for, or null.</param>
+    /// <remarks>
+    /// <b>At most one of <paramref name="Item"/> and <paramref name="Peer"/> is ever set</b>, and which one
+    /// decides what Enter does. A row that was both would be a keystroke whose meaning depended on the order
+    /// two branches were written in.
+    /// </remarks>
+    private sealed record Row(string Text, OutstandingItem? Item, int? Slot, AgentName? Peer);
 }
 
 /// <summary>

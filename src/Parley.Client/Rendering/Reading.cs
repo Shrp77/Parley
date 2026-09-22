@@ -96,24 +96,34 @@ public static class Reading
 
     /// <summary>Lays out one conversation.</summary>
     /// <param name="messages">Its messages, in the order the broker recorded them.</param>
-    /// <param name="exchanges">The state of every exchange those messages belong to.</param>
     /// <param name="zone">The zone to render times in, or null for the machine's own.</param>
     /// <returns>The lines, in order.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="messages"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>A header is a time, a sender and a recipient, and nothing else.</b> It carried the message type, the
+    /// state of its exchange and whether it had been collected, and the owner read all three in the room and
+    /// asked for all three to go: <i>"Humans just talk; we do not begin by saying 'Inquiry' and 'Response'."</i>
+    /// </para>
+    /// <para>
+    /// <b>Each was removed for its own reason, and the facts they carried are still somewhere.</b> The type is
+    /// derivable from the conversation and is never what a reader is short of. The exchange's state is what the
+    /// room column says per peer, in the form somebody can act on — "waiting on you", "owes you" — rather than
+    /// as a word beside every line. And <i>collected</i> was actively misleading here: it means the recipient
+    /// drained its inbox, which for a person is a key they press, so an answer somebody was reading on screen
+    /// was labelled "not collected yet" and read as a fault. The export still records all of it (see
+    /// <see cref="Transcript"/>), which is where a fact for somebody else, somewhere else, belongs.
+    /// </para>
+    /// <para>
+    /// The exchange states were a parameter and are one no longer. Leaving it would have been a lying
+    /// signature: callers would go on gathering and passing something nothing read.
+    /// </para>
+    /// </remarks>
     public static IReadOnlyList<TranscriptLine> Lines(
         IReadOnlyList<Message> messages,
-        IReadOnlyList<ExchangeSnapshot>? exchanges = null,
         TimeZoneInfo? zone = null)
     {
         ArgumentNullException.ThrowIfNull(messages);
-
-        var participants = Visibility.Participants(messages);
-        var states = new Dictionary<long, ExchangeSnapshot>();
-
-        foreach (var exchange in exchanges ?? [])
-        {
-            states[exchange.ExchangeId] = exchange;
-        }
 
         var lines = new List<TranscriptLine>();
 
@@ -125,7 +135,7 @@ public static class Reading
             }
 
             lines.Add(new TranscriptLine(
-                Header(message, states, zone),
+                Header(message, zone),
                 LineKind.Header,
                 Palette.SlotFor(message.From),
                 message.Id));
@@ -133,13 +143,6 @@ public static class Reading
             foreach (var line in Body(message.PayloadJson))
             {
                 lines.Add(line with { Message = message.Id });
-            }
-
-            var absent = Visibility.Describe(message, participants);
-
-            if (absent.Length > 0)
-            {
-                lines.Add(new TranscriptLine(Pad(absent), LineKind.Annotation, null, message.Id));
             }
         }
 
@@ -168,14 +171,17 @@ public static class Reading
             };
     }
 
-    private static string Header(Message message, IReadOnlyDictionary<long, ExchangeSnapshot> states, TimeZoneInfo? zone)
-    {
-        var state = states.TryGetValue(message.ExchangeId, out var snapshot) ? $", {State(snapshot)}" : string.Empty;
-
-        return $"{LocalTime.Write(message.CreatedUtc, zone)}  "
-            + $"{message.From.Value} -> {message.To.Value}  "
-            + $"({message.Type}{state}, {Delivery.Of(message, zone)})";
-    }
+    /// <summary>Who said this to whom, and when.</summary>
+    /// <param name="message">The message.</param>
+    /// <param name="zone">The zone to render the time in.</param>
+    /// <returns>The header line.</returns>
+    /// <remarks>
+    /// <b>The recipient stays, where the type and the state went.</b> A conversation is a set of pairwise
+    /// exchanges (SPEC.md §5.0), so one line said to three agents is three messages — and which of them a
+    /// message is addressed to is the one thing a reader cannot work out from the words.
+    /// </remarks>
+    private static string Header(Message message, TimeZoneInfo? zone) =>
+        $"{LocalTime.Write(message.CreatedUtc, zone)}  {message.From.Value} -> {message.To.Value}";
 
     /// <summary>The words of a message, broken as its author wrote them.</summary>
     /// <param name="payloadJson">The payload, as the store holds it.</param>

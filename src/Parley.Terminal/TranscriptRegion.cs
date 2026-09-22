@@ -51,7 +51,19 @@ internal sealed class TranscriptRegion : FrameView
     /// </remarks>
     internal const string Destroyed = "That conversation was destroyed.";
 
+    /// <summary>What the region is called while it is showing headers only.</summary>
+    /// <remarks>
+    /// **On the frame rather than left to the rows.** A transcript with its bodies hidden looks like a
+    /// transcript of very short messages, and a reader who does not know a fold is on reads missing words as
+    /// missing messages. The title is on screen whatever the width and survives colour being stripped.
+    /// </remarks>
+    internal const string FoldedTitle = "Transcript (folded — Enter opens one)";
+
     private readonly GuardedList _lines = Lists.Filling(Colours.Transcript);
+
+    // Which messages are open while the transcript is folded. Identifiers rather than row numbers, because
+    // the rows are rebuilt on every read and a remembered row would open whatever had moved into it.
+    private readonly HashSet<long> _opened = [];
 
     private string _written = Nothing;
     private IReadOnlyList<TranscriptLine> _marked = [];
@@ -62,9 +74,15 @@ internal sealed class TranscriptRegion : FrameView
     // that can fall out of step with what is on screen, and this one decides where a reader is sent.
     private List<long?> _owners = [];
 
+    // What is actually on screen, which a fold makes different from what is written. Swapped with the rows
+    // under the list's own guard, like the colours and the owners beside it.
+    private List<string> _drawn = [];
+
     // Set only for the length of one redraw by Follow, when the reader was on the last row: they are
     // reading the conversation as it arrives, so the new last row is where they belong.
     private bool _followEnd;
+
+    private bool _folded;
 
     internal TranscriptRegion()
     {
@@ -251,7 +269,7 @@ internal sealed class TranscriptRegion : FrameView
         // colour until a dump of the screen put the two side by side.
         new TranscriptLine(new string(' ', Reading.Indent) + LocalTime.Note(), LineKind.Body, null),
         new TranscriptLine(string.Empty, LineKind.Blank, null),
-        .. Reading.Lines(export.Messages, export.Exchanges ?? []),
+        .. Reading.Lines(export.Messages),
     ];
 
     /// <summary>Puts one line on screen, and nothing else.</summary>
@@ -288,6 +306,81 @@ internal sealed class TranscriptRegion : FrameView
     /// opinion about it -- and the thing worth checking is that this region and the reader agree.
     /// </remarks>
     internal IReadOnlyList<long?> Rows => _owners;
+
+    /// <summary>Whether the transcript is showing headers only.</summary>
+    internal bool Folded => _folded;
+
+    /// <summary>The rows on screen, which a fold makes fewer than what is written.</summary>
+    /// <remarks>
+    /// <b>Distinct from <see cref="Written"/> on purpose, and that decides what copying does.</b> Written is the
+    /// whole conversation however much of it is on screen, and copying takes that: a fold is a way of looking
+    /// at a transcript, not a way of shortening it, and somebody who folded it to find a message and then
+    /// copied it would not expect the bodies to have gone.
+    /// </remarks>
+    internal IReadOnlyList<string> Drawn => _drawn;
+
+    /// <summary>
+    /// Shows headers only, or everything again.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Asked for so the flow of a conversation can be read.</b> A broadcast to nineteen agents is nineteen
+    /// pairwise messages (SPEC.md §5.0) carrying one person's sentence, so the shape of an exchange — who
+    /// spoke, to whom, in what order — is buried under its own content on exactly the conversations where it
+    /// matters most.
+    /// </para>
+    /// <para>
+    /// Individual messages stay open across a fold and an unfold, because a person who opened two of them to
+    /// compare has said something about those two that closing the fold should not throw away.
+    /// </para>
+    /// </remarks>
+    internal void Fold()
+    {
+        _folded = !_folded;
+        Title = _folded ? FoldedTitle : RegionTitle;
+
+        Redraw();
+
+        // **Folding puts the cursor on the first message when it is nowhere.** A reader who has not moved is
+        // deliberately on no row (`FollowingTests`), and folding is a deliberate act that says the next thing
+        // wanted is a message -- so Enter would otherwise do nothing on the keystroke straight after it.
+        //
+        // **The first row that is a message, which is not row zero.** A transcript opens with its own
+        // preamble -- the conversation, the project, the zone the times are in -- and those rows belong to no
+        // message, so landing on one would be a cursor sitting where Enter does nothing.
+        if (_folded && _lines.SelectedItem is null && _owners.FindIndex(owner => owner is not null) is >= 0 and var first)
+        {
+            _lines.SelectedItem = first;
+        }
+    }
+
+    /// <summary>Expands or re-folds one message while the transcript is folded.</summary>
+    /// <param name="message">Which message.</param>
+    /// <returns><see langword="true"/> when the fold is on and something changed.</returns>
+    /// <remarks>
+    /// False when nothing is folded, so the caller can leave Enter meaning whatever it means unfolded rather
+    /// than swallowing it to no effect.
+    /// </remarks>
+    internal bool Expand(long message)
+    {
+        if (!_folded)
+        {
+            return false;
+        }
+
+        if (!_opened.Remove(message))
+        {
+            _opened.Add(message);
+        }
+
+        Redraw();
+
+        return true;
+    }
+
+    /// <summary>The message the cursor is on, or null when it is on none.</summary>
+    internal long? Under =>
+        _lines.SelectedItem is int at && at >= 0 && at < _owners.Count ? _owners[at] : null;
 
     /// <summary>Puts one message in front of the reader, with what came before it still visible.</summary>
     /// <param name="message">The message to reach.</param>
@@ -445,7 +538,7 @@ internal sealed class TranscriptRegion : FrameView
         var owners = new List<long?>();
         var room = width > 0 ? Math.Max(1, width - Reading.Indent) : width;
 
-        foreach (var line in _marked)
+        foreach (var line in _marked.Where(Shown))
         {
             var tint = Tint(line);
 
@@ -469,14 +562,39 @@ internal sealed class TranscriptRegion : FrameView
         // two threads by two routes rather than one: `Show` arrives from a read that finished on
         // the pool, and `OnViewportChanged` arrives from the draw itself.
         // Where the reader left it, unless following is carrying them to the end.
-        var selected = _followEnd && wrapped.Count > 0 ? wrapped.Count - 1 : _lines.SelectedItem;
+        //
+        // **Clamped, because the rows can get fewer.** Folding is the first thing that shrinks a transcript
+        // on purpose, and the toolkit refuses a selection past the end outright rather than clamping it
+        // itself -- so without this, folding a conversation whose cursor was near the bottom threw.
+        // **No selection stays no selection, which the first version of this clamp threw away.** A reader who
+        // has never moved the cursor is left at the top and is not on a row; turning that into row zero makes
+        // the surface claim they are reading something, and `FollowingTests` says so in as many words.
+        int? selected = _followEnd && wrapped.Count > 0
+            ? wrapped.Count - 1
+            : _lines.SelectedItem is { } at && wrapped.Count > 0
+                ? Math.Clamp(at, 0, wrapped.Count - 1)
+                : null;
 
         _lines.Replace(wrapped, selected, also: () =>
         {
             _tints = tints;
             _owners = owners;
+            _drawn = wrapped;
         });
     }
+
+    /// <summary>Whether a line is drawn as things stand.</summary>
+    /// <param name="line">The line.</param>
+    /// <returns><see langword="true"/> when it belongs on screen.</returns>
+    /// <remarks>
+    /// Folded, a message is its header until somebody opens it. The blank line between messages goes with the
+    /// bodies: a fold exists to fit the shape of a conversation on one screen, and spacing every other row
+    /// would give half of that back.
+    /// </remarks>
+    private bool Shown(TranscriptLine line) =>
+        !_folded
+        || line.Kind == LineKind.Header
+        || (line.Message is { } message && _opened.Contains(message));
 
     /// <summary>What colour a line is drawn in.</summary>
     /// <param name="line">The line.</param>

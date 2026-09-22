@@ -116,15 +116,34 @@ public sealed class SeenAndCollectedTests
     }
 
     [Fact]
-    public void The_header_carries_it_so_the_transcript_answers_the_question_it_is_asked()
+    public void The_screen_header_is_a_time_a_sender_and_a_recipient_and_nothing_else()
     {
-        // On the header rather than on a line of its own: one short fact per message, and a
-        // transcript with two annotation lines per message would be mostly annotation.
-        var lines = Reading.Lines([Notice("orders@test")], [], TimeZoneInfo.Utc);
+        // **This asserted the opposite until the owner read one in the room.** The header carried the
+        // message type, the state of its exchange and whether it had been collected, and all three went:
+        // "Humans just talk; we do not begin by saying 'Inquiry' and 'Response'."
+        //
+        // Collected was the worst of the three here. It means the recipient drained its inbox, which for a
+        // person is a key they press -- so an answer somebody was reading on screen said "not collected yet"
+        // and read as a fault in the deployment rather than as a fact about a keystroke.
+        var lines = Reading.Lines([Notice("orders@test")], TimeZoneInfo.Utc);
         var header = lines.First(line => line.Kind == LineKind.Header);
 
-        Assert.Contains(Delivery.Waiting, header.Text, StringComparison.Ordinal);
         Assert.Contains("arvind@test -> orders@test", header.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain(Delivery.Waiting, header.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Notify", header.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("open", header.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void And_nothing_on_screen_says_who_was_not_party_to_a_message()
+    {
+        // The owner's first note of the morning: the list of everyone who did not see a broadcast is
+        // superfluous beside a header that already names one sender and one recipient -- and beside a room
+        // column that lists every participant. The export keeps it, which is where it earns its keep: a file
+        // read somewhere else has no column beside it.
+        var lines = Reading.Lines([Notice("orders@test")], TimeZoneInfo.Utc);
+
+        Assert.DoesNotContain(lines, line => line.Kind == LineKind.Annotation);
     }
 
     [Fact]

@@ -600,7 +600,7 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/017-conversation-room/` — **0.30.1, built whole and green across every suite; the
+- **Current plan**: `specs/017-conversation-room/` — **0.30.2, built whole and green across every suite; the
   review gate is owed and nothing is pushed.** The terminal's
   conversation view becomes a room: participants, outstanding work and agent status down a narrow column; the
   transcript above one input line in a wide one. The owner's call on 2026-09-21, after using it — it should read
@@ -724,6 +724,45 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   transcript refilled since the column was drawn is an ordinary race; and the owners are read as one snapshot
   of the reference rather than under `GuardedList`'s guard, which is private on purpose -- the list is replaced
   wholesale, so a reader sees the rows as they were or as they now are and never a half-swapped pair.
+
+  **0.30.2 is the owner's first morning using the room, and six things they asked for.** Four are about a
+  transcript saying more than a person needs and two are about a column that could not be acted on.
+
+  - **A header is a time, a sender and a recipient, and nothing else.** It carried the message type, the state
+    of its exchange and whether it had been collected: *"Humans just talk; we do not begin by saying 'Inquiry'
+    and 'Response'."* The type is derivable from the conversation; the state is what the room column already
+    says per peer in the form somebody can act on. **And *collected* was actively misleading**, which is what
+    made this a defect rather than a preference: it means the recipient drained its inbox, which for a person
+    is a key they press — so an answer being read on screen was labelled "not collected yet", and read as a
+    fault in the deployment rather than as a fact about a keystroke nobody had pressed.
+  - **The list of everybody who did not see a message left the screen too.** 0.25.3 added it, and its argument
+    was right then: it was the only statement that somebody in the conversation was not party to a message.
+    The room column now lists every participant beside the transcript, so on screen it restated what was
+    already there twice over. **The export keeps it**, which is where it earns its keep: a file read somewhere
+    else has neither a header naming one recipient nor a column beside it. `AgreementTests` holds exactly that
+    now — the export carries every annotation and the screen carries none — so a surface that quietly grew it
+    back, or an export that quietly lost it, still fails.
+  - **The transcript folds to one line per message** (`f`), and Enter opens one. A broadcast to nineteen agents
+    is nineteen pairwise messages carrying one sentence, so the shape of an exchange is buried under its own
+    content on exactly the conversations where that shape matters most. **What is folded is a view and not a
+    shortening**: `Written` stays the whole conversation, so copying takes all of it, and `Drawn` is what is on
+    screen. Folding puts the cursor on the first row that is a *message*, because a transcript opens with its
+    own preamble and landing on one of those rows would be a cursor where Enter does nothing.
+  - **The participants are a checklist that filters what is about to be sent.** Space or Enter ticks one; the
+    preview above the box agrees because it is the same draft — `@` and this column are two ways at one set,
+    and two ideas of who a message is going to is one of them being sent. The last recipient cannot be unticked
+    and the refusal says why.
+  - **Taking a seat moved to the room, and that is my own defect from the night before.** It was offered on the
+    line pane alone — and a focused box wins every printable key, so `j` typed a `j`. The one place Join was
+    offered was the one place its key could not arrive. This pane is a list, so a letter means what it says.
+  - **The person is on their own line above the agents**, because a person is not one of them: every other row
+    is somebody they might send to, and the one row that was them was in the middle of that list.
+
+  Two things the suite found on the way: a clamp added for folding turned "no selection" into row zero, which
+  is the state `FollowingTests` exists to protect — a reader who has not moved is on no row, and saying they
+  are on the first one is the surface claiming they are reading something. And the driven fixture was copied
+  in two files and about to be in four, so it is one `Seated` now; a copy per file is how two of them come to
+  seat somebody differently and disagree about what the room should show.
 
   Commands are a surface rather than `/add` with a special case: `/` plus an identifier with no second `/`, each
   declaring what it takes and whether it changes the draft or acts; an unrecognised identifier is text, so

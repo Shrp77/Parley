@@ -44,14 +44,10 @@ public sealed class NarrowTerminalTests
         Assert.Contains("question", Wrapped(width), StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public void The_visibility_sentence_wraps_rather_than_vanishing()
-    {
-        // Carried in words and never by colour, so it has to survive a narrow terminal for the
-        // same reason it has to survive a colourless one: it is the only statement that somebody
-        // in the conversation did not see this message.
-        Assert.Contains("did not see", Wrapped(Narrow), StringComparison.Ordinal);
-    }
+    // **There was a test here about the visibility sentence surviving a narrow terminal.** The sentence is
+    // no longer on the screen: the owner asked for it to go, because the header above it names one sender and
+    // one recipient and the room column beside it lists every participant. The export still carries it and
+    // `AgreementTests` holds that, which is where a narrow terminal has nothing to do with it.
 
     [Fact]
     public void The_check_is_looking_at_something()
@@ -62,7 +58,6 @@ public sealed class NarrowTerminalTests
 
         Assert.Contains("billing", wide, StringComparison.Ordinal);
         Assert.Contains("question", wide, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("did not see", wide, StringComparison.Ordinal);
     }
 
     [Fact]

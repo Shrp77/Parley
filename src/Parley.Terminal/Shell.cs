@@ -109,6 +109,23 @@ internal sealed class Shell : Window
     /// <summary>What the line's send is called.</summary>
     internal const string SendTitle = "Send what you wrote";
 
+    /// <summary>What including or excluding a participant is called.</summary>
+    internal const string IncludeTitle = "Include or exclude this agent";
+
+    /// <summary>Includes or excludes the participant under the cursor.</summary>
+    /// <returns>When the column has been redrawn.</returns>
+    /// <remarks>
+    /// The same act Enter on that row performs, raised through the same event, so the two routes cannot come
+    /// to mean different things -- which is what `contracts/views.md` asks for when it says a pointer reaches
+    /// whatever a key does.
+    /// </remarks>
+    private Task ToggleOne()
+    {
+        Room.Toggle();
+
+        return Task.CompletedTask;
+    }
+
     /// <summary>What taking the other side of the one choice is called.</summary>
     internal const string OtherTitle = "Answer, or ask back instead";
 
@@ -388,6 +405,36 @@ internal sealed class Shell : Window
         return Task.CompletedTask;
     }
 
+    /// <summary>What showing headers only is called.</summary>
+    internal const string FoldTitle = "Fold to one line per message";
+
+    /// <summary>What showing everything again is called.</summary>
+    /// <remarks>
+    /// Two labels rather than one that says "toggle": a status line is read at a glance, and a person wants
+    /// to know what the key will do rather than that it has two states.
+    /// </remarks>
+    internal const string UnfoldTitle = "Show the messages again";
+
+    /// <summary>The key that folds and unfolds the transcript.</summary>
+    /// <remarks>
+    /// <c>f</c> is taken by nothing on this pane. Not a chord, because this pane is a list: every letter is
+    /// free here, which is exactly what the input line beside it cannot say.
+    /// </remarks>
+    internal const char FoldKey = 'f';
+
+    /// <summary>Shows headers only, or everything again.</summary>
+    /// <returns>When the transcript has been redrawn.</returns>
+    /// <remarks>
+    /// The status line changes with it, because its own label is what says which way the key now goes.
+    /// </remarks>
+    private Task Fold()
+    {
+        Transcript.Fold();
+        Relay();
+
+        return Task.CompletedTask;
+    }
+
     /// <summary>What copying the open conversation is called.</summary>
     internal const string CopyTitle = "Copy this conversation to the clipboard";
 
@@ -535,6 +582,48 @@ internal sealed class Shell : Window
         // **Enter on something owed reads it where it was said.** The primary action of the active control
         // (FR-031): in this list, activating a row. A row that points at no message does nothing rather than
         // moving the reader somewhere arbitrary, and says so.
+        // **The checklist is the draft's recipients, drawn.** `@` and this column are two ways at one thing,
+        // so neither may keep its own idea of who a message is going to -- the preview above the box and the
+        // ticks beside it would be two answers to one question, and only one of them would be sent.
+        Room.Toggling += (_, peer) =>
+        {
+            if (Held is null)
+            {
+                Said = RoomRegion.NoSeat;
+
+                return;
+            }
+
+            if (Drafting is not { } draft)
+            {
+                return;
+            }
+
+            if (!draft.Recipients.Contains(peer))
+            {
+                draft.Narrow(peer);
+            }
+            else if (draft.Recipients.Count == 1)
+            {
+                // **Refused rather than allowed to empty**, because a message addressed to nobody is not a
+                // state worth being in: the box would go on saying there is nobody in this conversation while
+                // somebody typed into it.
+                Said = RoomRegion.LastOne;
+
+                return;
+            }
+            else
+            {
+                draft.AddressTo([.. draft.Recipients.Where(addressed => addressed != peer)]);
+            }
+
+            Room.Address(draft.Recipients);
+
+            // Guarded for the reason the seat's own setter is: this is wired before the line exists, and the
+            // compiler cannot see that nothing raises it until somebody presses a key.
+            Line?.Show(draft, seated: true, Near());
+        };
+
         Room.Reading += (_, item) =>
         {
             if (item.At is not { } at)
@@ -1391,6 +1480,19 @@ internal sealed class Shell : Window
         // is not, since every letter there belongs to the text. No action on this surface exists only as a key.
         RoomRegion =>
         [
+            // **Taking a seat lives here, and that is a correction.** It was offered on the line pane alone,
+            // where every letter belongs to the text -- so pressing `j` to join typed a `j` into the message.
+            // This pane is a list, so a letter means what it says, and it is also where the seat is drawn.
+            .. Held is null
+                ? new[] { new RegionAction('j', AgentsRegion.JoinTitle, Join) }
+                : Array.Empty<RegionAction>(),
+
+            // Offered only on a row that is a participant, because that is the only row it would do anything
+            // to -- and a key named where it does nothing is the fault this surface keeps a rule about.
+            .. Held is not null && Room.SelectedPeer is not null
+                ? new[] { new RegionAction(default, IncludeTitle, ToggleOne, null, Key.Space) }
+                : Array.Empty<RegionAction>(),
+
             .. Drafting is { } drafted && drafted.Plan().Any(a => a.Choosable)
                 ? new[] { new RegionAction('a', OtherTitle, FlipOne) }
                 : Array.Empty<RegionAction>(),
@@ -1400,7 +1502,7 @@ internal sealed class Shell : Window
         [
             .. Held is not null
                 ? new[] { new RegionAction('\r', SendTitle, SendLine, Owing.Requesting) }
-                : new[] { new RegionAction('j', AgentsRegion.JoinTitle, Join) },
+                : Array.Empty<RegionAction>(),
 
             // **Offered only where the choice applies**, which is the rule this surface keeps about every key:
             // an action advertised where it would do nothing is a key named and unbound. A chord rather than a
@@ -1463,7 +1565,11 @@ internal sealed class Shell : Window
                 : Array.Empty<RegionAction>(),
 
             .. Transcript.Open is not null
-                ? new[] { new RegionAction(CopyKey, CopyTitle, Copy) }
+                ? new[]
+                {
+                    new RegionAction(CopyKey, CopyTitle, Copy),
+                    new RegionAction(FoldKey, Transcript.Folded ? UnfoldTitle : FoldTitle, Fold),
+                }
                 : Array.Empty<RegionAction>(),
         ],
 
@@ -3103,6 +3209,17 @@ internal sealed class Shell : Window
             return true;
         }
 
+        // **Enter in a folded transcript opens the message under the cursor**, which is the primary action of
+        // the active control read at the level of a fold: a folded header is a message somebody is asking to
+        // see. Unfolded it does nothing and is left alone, rather than swallowed to no effect.
+        if (key == Key.Enter
+            && Panes[FocusedRegion] is TranscriptRegion
+            && Transcript.Under is { } message
+            && Transcript.Expand(message))
+        {
+            return true;
+        }
+
         // **Enter on a seat takes it**, which is what somebody expects of a row carrying their own
         // name. The agents list raises no `Accepting` of its own, so there is nothing here to
         // preempt -- the reason the projects view is singled out above does not apply to it.
@@ -3658,8 +3775,6 @@ internal sealed class Shell : Window
 
         var pairs = Pairing.From(export, waiting.Value ?? [], hold.Seat.Name);
 
-        Room.Show(pairs, Outstanding(pairs, export), seated: true);
-
         // Rebuilt from the pair state that was just read, keeping whichever answer-or-ask-back choices the
         // person had already made about peers that are still in the same state.
         var was = Drafting;
@@ -3689,6 +3804,10 @@ internal sealed class Shell : Window
             }
         }
 
+        // **The column is drawn after the draft, because its ticks are the draft's recipients.** Drawing it
+        // first would show the set from the previous read until the next one finished, which is the whole of
+        // what a checklist must never do.
+        Room.Show(pairs, Outstanding(pairs, export), seated: true, hold.Seat.Name, Drafting.Recipients);
         Line.Show(Drafting, seated: true, Near());
     }
 
