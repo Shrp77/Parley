@@ -145,14 +145,18 @@ const string Help = """
     signed in wants a system service instead, and that does need privilege.
 
     enroll configures several repositories at once: `scan` writes a manifest, you fill in what
-    each one owns, `plan` says what would change and `apply` changes it. It never composes an
+    each one owns, `plan` says what would change and `apply` changes it. `scan` needs no project
+    and is not asked to choose one -- it surveys a directory and writes a file, which is the step
+    you want most on a machine naming several. `plan` and `apply` do need one, because the key
+    they write into each repository is `parley-<project>`. It never composes an
     owns line and never rewrites a `## Peers` section it did not write. Reading the roster is
     still /parley:write-peers, run once per repository after the last one has registered --
     every agent that registers makes every block already written stale.
 
     project names deployments so that a machine running more than one stops being told its paths
-    a flag at a time. Each project carries a store, an endpoint and optionally a node catalogue;
-    a command acts on the project --project names, or PARLEY_PROJECT (which `parley use <name>`
+    a flag at a time. Each project carries a store and an endpoint. What this machine can start is
+    not one of them: there is one catalogue per machine, and every project starts from it.
+    A command acts on the project --project names, or PARLEY_PROJECT (which `parley use <name>`
     prints the line to set, for one terminal), or the one the repository it runs in names -- when
     exactly one of those is a project this machine has -- or the only project there is, and refuses
     rather than guesses. Where several are configured it says on standard error which it acted on.
@@ -176,9 +180,11 @@ const string Help = """
 
     up runs until you stop it. It tells the broker this machine is here, which is what makes the
     agents registered to it startable rather than stranded, and starts one when a question
-    arrives for it. What it can start comes from --node-config, PARLEY_NODE_CONFIG, the selected
-    project, or node.json in the working directory, in that order — the broker never holds a
-    command line for a machine it is not on. Ctrl+C stops the node and every agent it started.
+    arrives for it. What it can start comes from --node-config, PARLEY_NODE_CONFIG, or node.json
+    beside the manifest, in that order — the broker never holds a command line for a machine it
+    is not on. One catalogue for the machine, whatever project is asking: a checkout answering in
+    two projects is one startable thing, and it was the per-project file that let it be startable
+    in one and stranded in the other. Ctrl+C stops the node and every agent it started.
 
     The web UI is installed by default, because that is how a person takes part rather than only
     watches: an agent attached through somebody's own editor window is the one thing nothing can
@@ -188,11 +194,11 @@ const string Help = """
 
     A broker and a node are two processes and one deployment, so `serve --with-node` runs both in
     one, and that is what `autostart install` installs: one entry that brings a machine all the
-    way up. With several projects it hosts each one's node from the catalogue that project's
-    entry names (`parley project set <name> --node-config <path>`), because a supervisor starts
-    a process with no working directory worth relying on; a machine with one project also
-    honours PARLEY_NODE_CONFIG, as `parley up` does. A project whose entry names none gets a
-    broker alone, and the entry says so.
+    way up. However many projects it serves, it hosts from the one catalogue this machine has —
+    named with `--node-config <path>` on that command, or found beside the manifest. It is not
+    read from PARLEY_NODE_CONFIG, because a supervisor starts a process with no shell environment
+    and a variable that will not be set at logon is not an answer; `autostart status` prints the
+    path the entry will actually use.
 
     These are never available to an agent. parley-mcp, the server an MCP client launches, binds
     the Agents service, which has no method that retires anybody.
@@ -978,7 +984,27 @@ if (!ProjectResolution.TrySelect(
     var explicitBroker = !string.IsNullOrWhiteSpace(brokerAddress)
         || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(BrokerEndpoint.Variable));
 
-    if (!(string.IsNullOrWhiteSpace(projectName) && string.IsNullOrWhiteSpace(projectFromVariable) && explicitBroker))
+    // **`enroll scan` acts on no deployment, so naming none cannot be an error.** It walks one
+    // directory, decides which subdirectories are git repositories, and writes a file for a person
+    // to edit — no broker, no catalogue, no launch configuration, and nothing anywhere in it that
+    // names a project. `plan` and `apply` genuinely need one, because the key they write into each
+    // `.mcp.json` is `parley-<project>`; the refusal was applied to the verb rather than to the
+    // subcommand, so all three were held to the requirement of the two.
+    //
+    // What that cost is the wrong way round: the one step whose whole job is to survey a machine
+    // was the one step that could not be run on a machine with several projects on it — which is
+    // the machine worth surveying. Found by the owner trying to re-enrol nineteen repositories.
+    //
+    // A project *named* and not described by the manifest is still refused, exactly as it is for
+    // an explicit address below: this exempts a command from having to choose, never from being
+    // told a name that is wrong.
+    var scanning = verb == "enroll"
+        && rest is ["scan", ..]
+        && string.IsNullOrWhiteSpace(projectName)
+        && string.IsNullOrWhiteSpace(projectFromVariable);
+
+    if (!scanning
+        && !(string.IsNullOrWhiteSpace(projectName) && string.IsNullOrWhiteSpace(projectFromVariable) && explicitBroker))
     {
         await Console.Error.WriteLineAsync(selectionProblem).ConfigureAwait(false);
         return Config;

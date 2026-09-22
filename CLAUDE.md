@@ -658,11 +658,56 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   `Shell.Opener` and `Shell.Copier`, and resolved once by whoever builds the shell. **Reading ambient state
   from the bottom of a call stack is what made it unreachable from the top.**
 
+  **0.31.1: the installer's own output still named a catalogue per project, and the broker two lines below
+  it named a different file.** Found by the owner on the first real install of 0.31.0 — `autostart install`
+  printed `catalogue: ...\billing-catalogue.json` under one of two projects, and the broker's
+  log said it was hosting from `node.json`. Both were read from the same manifest; only one of them was
+  still true. `ServedProjects` went on reading `node_config`, which nothing else does any more (T027 has not
+  removed the field), so it reported a path that is genuinely in the file and genuinely decides nothing.
+  **The output is the last place a per-project catalogue survived, and it is the place somebody checks their
+  deployment against what they meant.** It is said once for the machine now, on `install` and on `status`,
+  and `parley --help`'s three paragraphs describing the per-project rule went with it.
+
+  **The path reported is resolved with no environment, and that is the load-bearing half.** A supervisor
+  starts the broker at logon where nothing has set `PARLEY_NODE_CONFIG` — the refusal a few lines above says
+  exactly that about what an entry serves — so reporting what *this shell* resolves would name a file the
+  logon broker will never open, looking right to the one person who checks. Proved by mutation rather than
+  argued: swapping `_ => null` back to `Environment.GetEnvironmentVariable` fails two tests, and what comes
+  back is the developer's own live `node.json`. **018's live-file incident from the other side** — ambient
+  state read at the bottom of a call stack wrote into a real deployment; here it would be read at the top and
+  describe one that does not exist.
+
+  **And running the suite to check this found that 018's own "CLI 857/857" was untrue.**
+  `ProjectManifestTests.Two_projects_cannot_share_one_node_catalogue` asserts the catalogue-collision rule
+  018 deleted, and has been red in every run since — under a commit whose message records the suite as
+  green. The number came from a run against a build made before the last edits, which is the trap this file
+  already records twice: *a run recorded as green was measuring a build without the new file in it*, and
+  the `dotnet test` entry says the same thing from the other side. **A count is evidence only about the
+  binary that produced it.** The test now asserts the opposite, which is the state 018 made ordinary — one
+  catalogue per machine means sharing is the only arrangement there is.
+
+  Beside it, `Collisions` still carried the whole paragraph explaining the removed rule, sitting exactly
+  where the check used to be. Rewritten rather than deleted: a comment left standing over a rule that has
+  gone is how the next reader concludes the check was lost by accident.
+
+  **And `enroll scan` could not be run at all on a machine naming several projects.** The refusal to choose
+  between them is applied to the *verb*, before the subcommand is read, so all three of `scan`, `plan` and
+  `apply` were held to the requirement of two. `plan` and `apply` do need a project — the key they write
+  into each repository is `parley-<project>`. **`scan` acts on no deployment whatever**: it walks one
+  directory, decides which subdirectories are git repositories, and writes a file for a person to edit,
+  with no project named anywhere in what it produces. So the one step whose whole job is to survey a
+  machine was the one step that could not be run on the machine worth surveying — found by the owner
+  trying to re-enrol nineteen repositories after 018 made every catalogue entry unreadable. Exempt from
+  having to *choose* a project and not from being told a wrong one, which is the line the explicit-address
+  exemption beside it already holds. Driven through the real binary, because an in-process call never
+  reaches the entry point — the same reason `FilesCommand.OwnOptions` is tested that way.
+
   `research.md` carries eight decisions, `contracts/catalogue.md` the two file shapes and every refusal, and
   `quickstart.md` the walk that measures the two claims worth doubting: one checkout starts from either
   project, and two projects asking at once produce one process. **Still owed:** `ProjectSettings.NodeConfig`
-  and its readers (T027), the surfaces and installers that still name a per-project catalogue (T029–T031),
-  US4's telling a person when this machine cannot start an agent (T032–T037), and the review gate.
+  and its readers (T027) — `project add` and `project set` still offer `--node-config`, which now writes a
+  field nothing reads — the remaining surfaces and installers (T029–T031), US4's telling a person when this
+  machine cannot start an agent (T032–T037), and the review gate.
 
 - **Previous plan**: `specs/017-conversation-room/` — **0.30.7, built whole and green across every suite; the
   review gate is owed and nothing is pushed.** The terminal's
