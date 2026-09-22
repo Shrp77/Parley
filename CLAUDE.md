@@ -600,7 +600,29 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/016-request-is-the-ask/` — **0.29.0, protocol 0.7, schema 11. Built, gated on all three
+- **Current plan**: `specs/017-conversation-room/` — **specified and planned; being built.** The terminal's
+  conversation view becomes a room: participants, outstanding work and agent status down a narrow column; the
+  transcript above one input line in a wide one. The owner's call on 2026-09-21, after using it — it should read
+  like Claude Code with a layout.
+
+  **The input line is the whole of it.** One box, and the protocol has four acts, so the act is derived per
+  recipient from who owes whom: a Result where they asked and this person holds it, a Clarify where this person
+  asked and is waiting, a Request where nothing is open. One line to three agents may be three acts, each
+  correct. The composer shows what Enter will do and what it costs before it is pressed, which is the first time
+  this surface has made §5.5's plural ask visible before it is paid for. One case is never guessed: holding a
+  Request, typing may be the answer, which closes the exchange, or a question first, which hands the turn back.
+
+  **It needs no protocol, schema or wire change**, which was the load-bearing discovery: `ExchangeSnapshot`
+  carries no parties, and reconstructing them from the messages would put the broker's turn logic in a client.
+  Joining `Export`'s exchange identifiers with `DescribeWaiting`'s `waiter`/`waited_on` edges gives the pair state
+  from two operator reads the surface already makes (`research.md` R1).
+
+  Commands are a surface rather than `/add` with a special case: `/` plus an identifier with no second `/`, each
+  declaring what it takes and whether it changes the draft or acts; an unrecognised identifier is text, so
+  `/etc/hosts` needs no escape. Destructive commands are allowed and expected to grow, each declaring the door it
+  must pass — which means `SurfaceTests` has to read declarations or it will keep passing while meaning less.
+
+- **Previous plan**: `specs/016-request-is-the-ask/` — **0.29.0, protocol 0.7, schema 11. Built, gated on all three
   lenses, walked, installed, and not yet pushed. 0.29.1 and 0.29.2 are what real use found.** A Request is the conversation it belongs to and the ask; `intent`, `items`, item ids,
   work-or-question, gates and `done_when` left the protocol, and a Result answers the exchange whole. The owner's call
   on 2026-09-17, made while composing one in the terminal: the fields were the same thing asked four times, and a
