@@ -25,6 +25,16 @@ public enum Act
 /// <param name="Choosable">Whether this recipient's act is the one the person may take the other side of.</param>
 public sealed record Addressed(AgentName Peer, Act Act, long? Exchange, bool Choosable);
 
+/// <summary>What became of a send.</summary>
+/// <param name="Count">How many recipients got it.</param>
+/// <param name="Says">The sentence to put in front of the person.</param>
+/// <remarks>
+/// The count is here because a sentence cannot be tested for success without matching its words, and a caller
+/// that matched words would clear somebody's unsent line the first time one of them changed. What a surface
+/// needs to know is whether anything went.
+/// </remarks>
+public sealed record Sent(int Count, string Says);
+
 /// <summary>What a send would cost, in the units the protocol counts.</summary>
 /// <param name="Opens">How many exchanges it opens, each owing a Result.</param>
 /// <param name="Closes">How many it closes.</param>

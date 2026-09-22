@@ -69,9 +69,29 @@ internal sealed class LineRegion : FrameView
             Width = Dim.Fill(2),
         };
 
+        // **Enter reaches the field before any handler on this region**, which is how the first version of
+        // the conversations list quietly did nothing. The field's own accept is the one thing that runs, and
+        // it is the primary action of the active control (FR-031): in the box, that is sending.
+        _field.Accepting += (_, args) =>
+        {
+            args.Handled = true;
+            Sending?.Invoke(this, EventArgs.Empty);
+        };
+
+        // The preview is a function of what is written, so it is recomputed as it is written. Held instead, it
+        // would describe a draft somebody had already edited -- and the whole promise of the preview is that
+        // what it names is what Enter does.
+        _field.TextChanged += (_, _) => Typing?.Invoke(this, EventArgs.Empty);
+
         Add(_preview);
         Add(_field);
     }
+
+    /// <summary>Raised when Enter was pressed in the box.</summary>
+    internal event EventHandler? Sending;
+
+    /// <summary>Raised whenever what is written changed.</summary>
+    internal event EventHandler? Typing;
 
     /// <summary>What is written but not sent. Named to avoid hiding the toolkit's own Text.</summary>
     /// <remarks>
@@ -84,20 +104,42 @@ internal sealed class LineRegion : FrameView
         set => _field.Text = value;
     }
 
+    /// <summary>Presses Enter in the box, as a person does.</summary>
+    /// <remarks>
+    /// A seam for a driven test. The field takes Enter before this region sees it, so a test that called the
+    /// shell's send directly would pass over the one thing worth checking -- that the key arrives at all.
+    /// </remarks>
+    internal void Accept() => Sending?.Invoke(this, EventArgs.Empty);
+
     /// <summary>What the preview is saying, for a test to read without the screen.</summary>
     internal string Preview => _preview.Text;
 
     /// <summary>Puts the plan for the current draft above the line.</summary>
-    /// <param name="draft">The draft, or null with no seat.</param>
+    /// <param name="draft">The draft, or null when there is not one yet.</param>
+    /// <param name="seated">Whether a seat is held.</param>
     /// <remarks>
+    /// <para>
     /// Every recipient is named rather than counted, because the case worth seeing is one line doing three
     /// different things — which a count would hide.
+    /// </para>
+    /// <para>
+    /// <b>No seat and no draft yet are different facts, and were one for an afternoon.</b> A single nullable
+    /// draft made them the same, so a seated person whose conversation had not been read yet was told to take
+    /// a seat they already had. The same class of mistake as reporting "none waiting" for "could not ask".
+    /// </para>
     /// </remarks>
-    internal void Show(Draft? draft)
+    internal void Show(Draft? draft, bool seated)
     {
-        if (draft is null)
+        if (!seated)
         {
             _preview.Text = NoSeat;
+
+            return;
+        }
+
+        if (draft is null)
+        {
+            _preview.Text = Empty;
 
             return;
         }

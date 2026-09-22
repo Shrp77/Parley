@@ -600,7 +600,8 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/017-conversation-room/` — **specified and planned; being built.** The terminal's
+- **Current plan**: `specs/017-conversation-room/` — **0.30.0, built through phase 4 and green; the review gate is
+  owed and the completion list is not yet drawn.** The terminal's
   conversation view becomes a room: participants, outstanding work and agent status down a narrow column; the
   transcript above one input line in a wide one. The owner's call on 2026-09-21, after using it — it should read
   like Claude Code with a layout.
@@ -616,6 +617,33 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   carries no parties, and reconstructing them from the messages would put the broker's turn logic in a client.
   Joining `Export`'s exchange identifiers with `DescribeWaiting`'s `waiter`/`waited_on` edges gives the pair state
   from two operator reads the surface already makes (`research.md` R1).
+
+  **Built around the existing transcript rather than in place of it, and that decision paid for itself**
+  (`research.md` R11). Forty-nine test files in `tests/Parley.Terminal.Tests` drive this view, and reading them
+  showed almost all are about the *transcript* — the column-zero rule that stops a payload forging a header,
+  agent-written text escaped on the way to the screen, wrapping, reflow, copying, the refill race, colour
+  surviving being stripped. Every one of those was found the hard way and several by probe. Keeping the transcript
+  meant they kept passing by construction: **six tests failed out of 733**, and the sort is recorded in
+  `tasks.md` — four were descriptions of the arrangement (pane counts of 1 and 4, now 2 and 5) and two were
+  guards reached through `Focus(0)`, which silently became a different region.
+
+  **What building it found, each caught by a test rather than by reading:**
+
+  - **Arriving at a conversation did not read it.** The place and the read were two acts and the conversations
+    list happened to do both, so any other route in left the room and the line describing whatever was last read.
+    Going there reads it now, and the list no longer reads it first — two reads on one keystroke is one wasted
+    export and two chances to disagree.
+  - **Enter had to be taken from the field**, which receives it before any handler on the region. A send wired
+    only to a region action would never have run, which is how the conversations list once did nothing at all.
+    `LineTests` presses it over a real socket for exactly that reason.
+  - **A cap refusal cleared the line.** The first version decided "did anything send" by matching the report's
+    opening words, which is not that question. `SeatVoice.SendAsync` returns a count now, and 0.25.1 records
+    what getting it wrong costs: the cap was enforced after the form closed and took the message with it.
+  - **No seat and nothing read yet were one state** in a single nullable draft, so a seated person whose
+    conversation had not been read was told to take a seat they already had — the same class of mistake as
+    reporting "none waiting" for "could not ask".
+  - **`DeadSurfaceTests` earned its keep again**, reporting three of the room's own constants as named only in
+    their own file. Writing the tests is what answered it rather than making them private.
 
   Commands are a surface rather than `/add` with a special case: `/` plus an identifier with no second `/`, each
   declaring what it takes and whether it changes the draft or acts; an unrecognised identifier is text, so

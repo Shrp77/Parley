@@ -600,7 +600,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// <param name="draft">What was written, who it goes to, and what Enter was said to do.</param>
     /// <param name="conversationId">The conversation the room is showing.</param>
     /// <param name="cancellationToken">Cancels the sends.</param>
-    /// <returns>A sentence saying what happened, naming whoever did not get it.</returns>
+    /// <returns>How many recipients got it, and a sentence saying what happened.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="hold"/> or <paramref name="draft"/> is null.</exception>
     /// <remarks>
     /// <para>
@@ -620,7 +620,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// may be recorded under a name the book no longer holds.
     /// </para>
     /// </remarks>
-    public async Task<string> SendAsync(
+    public async Task<Sent> SendAsync(
         SeatHold hold,
         Draft draft,
         string conversationId,
@@ -631,14 +631,14 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
         if (string.IsNullOrWhiteSpace(draft.Text))
         {
-            return NothingWritten;
+            return new Sent(0, NothingWritten);
         }
 
         var plan = draft.Plan();
 
         if (plan.Count == 0)
         {
-            return NobodyToAsk;
+            return new Sent(0, NobodyToAsk);
         }
 
         // Every payload measured first. A draft that fits one act and not another would otherwise send in part.
@@ -649,7 +649,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
                 await RecordAsync(Wire.MessageType.Request, draft.Text.Length, cancellationToken)
                     .ConfigureAwait(false);
 
-                return refused;
+                return new Sent(0, refused);
             }
         }
 
@@ -701,7 +701,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             _ = report.Append(' ').Append(Left);
         }
 
-        return report.ToString();
+        return new Sent(done.Count, report.ToString());
     }
 
     /// <summary>What is said when Enter was pressed on an empty line.</summary>

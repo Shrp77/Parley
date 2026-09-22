@@ -142,14 +142,15 @@ internal sealed class Shell : Window
                 return;
             }
 
-            var said = await voice.SendAsync(hold, draft, conversation, token).ConfigureAwait(false);
+            var sent = await voice.SendAsync(hold, draft, conversation, token).ConfigureAwait(false);
 
-            Said = said;
+            Said = sent.Says;
 
-            // Cleared only on a send that reached somebody. A refusal keeps what was written, which 0.25.1
-            // recorded the cost of getting wrong: the cap was enforced after the form closed and took the
-            // message with it.
-            if (said.StartsWith("Sent to 0", StringComparison.Ordinal))
+            // **Cleared only on a send that reached somebody**, and decided by the count rather than by the
+            // words. A first version matched the report's opening -- which is not the same question, and it
+            // cleared an over-long draft the cap had refused. 0.25.1 records what that costs: the cap was
+            // enforced after the form closed and took the message with it.
+            if (sent.Count == 0)
             {
                 return;
             }
@@ -163,6 +164,24 @@ internal sealed class Shell : Window
         });
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>Redraws the preview for what is written now.</summary>
+    /// <remarks>
+    /// The text is read from the box rather than tracked beside it, so there is one copy of what somebody typed.
+    /// Two would eventually disagree and the wrong one would be what got sent.
+    /// </remarks>
+    private void Retyped()
+    {
+        if (Drafting is not { } draft)
+        {
+            Line.Show(null, Held is not null);
+
+            return;
+        }
+
+        draft.Text = Line.Written;
+        Line.Show(draft, seated: true);
     }
 
     /// <summary>Takes the other side of the one choice a draft offers.</summary>
@@ -184,7 +203,7 @@ internal sealed class Shell : Window
             draft.Flip(addressed.Peer);
         }
 
-        Line.Show(draft);
+        Line.Show(draft, seated: true);
         Relay();
 
         return Task.CompletedTask;
@@ -363,7 +382,10 @@ internal sealed class Shell : Window
                 return;
             }
 
-            await OpenAsync(project, conversation.Id, token).ConfigureAwait(false);
+            // Going there reads it, so this does not read it first: two reads on one keystroke is one
+            // wasted export and two chances for them to disagree.
+            _ = project;
+
             await GoAsync(_place.Viewing == Viewing.Project
                 ? _place.Into(conversation.Id)
                 : _place).ConfigureAwait(false);
@@ -395,6 +417,12 @@ internal sealed class Shell : Window
         Add(Transcript);
         Add(Room);
         Add(Line);
+
+        // Enter in the box sends, and the preview follows what is written. Subscribed here rather than in the
+        // region, which knows nothing about seats or brokers.
+        Line.Show(null, seated: false);
+        Line.Sending += (_, _) => _ = SendLine();
+        Line.Typing += (_, _) => Retyped();
 
         Lay(Threshold);
         Focus(0);
@@ -980,6 +1008,14 @@ internal sealed class Shell : Window
         // the furniture.
         Focus(Opening(place));
 
+        // **Arriving at a conversation reads it.** The place and the read used to be two acts, and the
+        // conversations list happened to do both -- so any other route in left the room and the line
+        // describing whatever was last read. Now the view cannot be on a conversation it has not read.
+        if (place.Viewing == Viewing.Conversation && place.Title is { } conversation && Current is { } project)
+        {
+            Queue(token => OpenAsync(project, conversation, token));
+        }
+
         return Task.CompletedTask;
     }
 
@@ -1234,7 +1270,12 @@ internal sealed class Shell : Window
             if (value is null)
             {
                 Mail = null;
+                Drafting = null;
             }
+
+            // The line says what it needs the moment the seat changes, rather than at the next read. A person
+            // who has just lost a seat must not be looking at a preview of what Enter would have done.
+            Line?.Show(Drafting, field is not null);
         }
     }
 
@@ -3311,7 +3352,7 @@ internal sealed class Shell : Window
             }
         }
 
-        Line.Show(Drafting);
+        Line.Show(Drafting, seated: true);
     }
 
     /// <summary>What this person must address in the conversation on screen.</summary>
