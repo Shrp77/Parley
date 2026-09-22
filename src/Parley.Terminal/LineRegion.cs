@@ -95,7 +95,7 @@ internal sealed class LineRegion : FrameView
         _list.X = 1;
         _list.Y = Pos.Bottom(_preview);
         _list.Width = Dim.Fill(2);
-        _list.Height = 1;
+        _list.Height = 0;
         _list.Visible = false;
         _list.CanFocus = false;
 
@@ -218,6 +218,14 @@ internal sealed class LineRegion : FrameView
     /// <summary>How many rows this region wants, given what it is showing.</summary>
     internal int Rows => _rows;
 
+    /// <summary>How many rows the box itself was given once the screen was laid out.</summary>
+    /// <remarks>
+    /// <b>Read by a test, because the box having no rows is a state nothing else could see.</b> The text went
+    /// in, the completion list opened, every assertion on what was written passed — and there was no cursor
+    /// and nothing on the screen, because a closed list was still taking the row the box was to be drawn in.
+    /// </remarks>
+    internal int BoxRows => _field.View.Frame.Height;
+
     /// <summary>Puts a completion list on screen, or takes it off.</summary>
     /// <param name="completion">What is being completed, which may be closed.</param>
     /// <exception cref="ArgumentNullException"><paramref name="completion"/> is null.</exception>
@@ -240,7 +248,12 @@ internal sealed class LineRegion : FrameView
             : [];
 
         _list.Visible = _offering.Count > 0;
-        _list.Height = Math.Max(_offering.Count, 1);
+        // **Nought rows when it is closed, not one.** The rows between the preview and the box are the box's,
+        // and a closed list that went on reserving one took the last row the box had: the region asked for
+        // exactly the rows it needed, the list ate one of them, and `Dim.Fill()` gave the box nothing. No
+        // cursor, nothing drawn, and typing still worked — the completion list opened on `@` while the
+        // characters themselves were invisible.
+        _list.Height = _offering.Count;
 
         // **Null rather than nought on an empty list**, which the toolkit refuses outright: a selection of zero
         // rows is not row zero. Closing the list is the commonest thing that happens to it, so this threw on

@@ -600,7 +600,7 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/017-conversation-room/` — **0.30.4, built whole and green across every suite; the
+- **Current plan**: `specs/017-conversation-room/` — **0.30.5, built whole and green across every suite; the
   review gate is owed and nothing is pushed.** The terminal's
   conversation view becomes a room: participants, outstanding work and agent status down a narrow column; the
   transcript above one input line in a wide one. The owner's call on 2026-09-21, after using it — it should read
@@ -814,6 +814,19 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   for and is named on the status line with its fallback in the menu — and the fallback is not decoration:
   several terminals deliver Ctrl+Enter, Shift+Enter and a bare Enter as the same bytes, so the spelling that
   cannot be taken away is two ordinary keys.
+
+  **0.30.5: the box had no rows, and four suites of tests said it was fine.** A closed completion list went
+  on reserving the row between the preview and the box, and the box takes what is left -- so the region asked
+  for exactly the rows it needed and the list ate the last one. No cursor, nothing drawn, and **typing still
+  worked**: the owner pressed `@` and got the list of agents while the characters themselves were invisible.
+  A closed list is nought rows now, not one.
+
+  **This is the fourth time this repository has recorded the same shape**, and the first three are all in this
+  file: `Shell.Said` written in twenty places and read by nothing, a terminal with no colour under a passing
+  `ColourTests`, and the line pane with no size at all last week. **A property the suite holds to and the
+  screen never shows.** Every test of this box read what was written; none looked at the screen.
+  `TypingIsVisibleTests` is the screen, and it was checked against the defect before the fix went in -- it
+  fails there, which is the only thing that makes it a test rather than a second statement of the code.
 
   Commands are a surface rather than `/add` with a special case: `/` plus an identifier with no second `/`, each
   declaring what it takes and whether it changes the draft or acts; an unrecognised identifier is text, so
