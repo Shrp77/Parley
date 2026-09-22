@@ -60,10 +60,11 @@ public sealed class ViewRaceTests
         // two of them, which is what a half-applied change of place would leave.
         var place = shell.Place;
 
-        // Two panes on either view since 0.30.0: a conversation is its room and its transcript, a project
-        // is its agents and its conversations. What this asserts is that they are not a mixture of the two,
-        // which is what a half-applied change of place would leave.
-        Assert.Equal(2, shell.Panes.Count);
+        // Two panes on a project view -- its agents and its conversations -- and three on a conversation,
+        // which is its room, its transcript and the line under it. What this asserts is that the panes are
+        // the ones the place it landed on has, and not a mixture of two views, which is what a half-applied
+        // change of place would leave.
+        Assert.Equal(place.Viewing == Viewing.Conversation ? 3 : 2, shell.Panes.Count);
 
         Assert.True(shell.FocusedRegion < shell.Panes.Count);
     }

@@ -24,6 +24,13 @@ namespace Parley.Terminal;
 /// when a form opened and went on speaking under a name the book had released; the rule since is that the send
 /// asks.
 /// </para>
+/// <para>
+/// <b>The completion list is drawn between the preview and the box, and the box keeps focus while it shows.</b>
+/// That is FR-032, and it is what makes Enter answerable without looking at the screen: what Enter does is decided
+/// by what is active, and the list is never active. Up and down move its selection, Tab completes it, Enter sends
+/// — which is the owner's own description of it, and the reason a wrong guess was corrected twice while this was
+/// being specified.
+/// </para>
 /// </remarks>
 internal sealed class LineRegion : FrameView
 {
@@ -39,11 +46,25 @@ internal sealed class LineRegion : FrameView
     /// <summary>What the preview says with an empty line.</summary>
     internal const string Empty = "type to say something";
 
-    /// <summary>The key that takes the other side of the one choice a draft offers.</summary>
-    internal const char Other = '\t';
+    /// <summary>
+    /// The most rows this region takes, however much there is to say.
+    /// </summary>
+    /// <remarks>
+    /// A floor for the transcript rather than a ceiling for the preview: the transcript is what somebody opened a
+    /// conversation to read, and a line addressing nineteen agents must not push it off the screen. Past this the
+    /// preview scrolls within its own rows.
+    /// </remarks>
+    internal const int MostRows = 12;
+
+    /// <summary>The fewest rows this region takes: a border, the preview's first row, and the box.</summary>
+    internal const int LeastRows = 4;
 
     private readonly TextField _field;
     private readonly Plain _preview;
+    private readonly GuardedList _list;
+
+    private IReadOnlyList<string> _offering = [];
+    private int _rows = LeastRows;
 
     internal LineRegion()
     {
@@ -59,6 +80,16 @@ internal sealed class LineRegion : FrameView
             Height = Dim.Fill(1),
             Text = Empty,
         };
+
+        // Between the preview and the box, because that is where what it is completing is: a list below the box
+        // would put the thing being changed above the thing describing it.
+        _list = Lists.Filling(Colours.Conversations);
+        _list.X = 1;
+        _list.Y = Pos.AnchorEnd(2);
+        _list.Width = Dim.Fill(2);
+        _list.Height = 1;
+        _list.Visible = false;
+        _list.CanFocus = false;
 
         // The line sits against the bottom so the preview above it grows upward as recipients are added,
         // rather than pushing the thing somebody is typing off its own region.
@@ -84,6 +115,7 @@ internal sealed class LineRegion : FrameView
         _field.TextChanged += (_, _) => Typing?.Invoke(this, EventArgs.Empty);
 
         Add(_preview);
+        Add(_list);
         Add(_field);
     }
 
@@ -92,6 +124,13 @@ internal sealed class LineRegion : FrameView
 
     /// <summary>Raised whenever what is written changed.</summary>
     internal event EventHandler? Typing;
+
+    /// <summary>Raised when this region wants a different number of rows.</summary>
+    /// <remarks>
+    /// The heights alone, and never a rearrangement: a rearrangement ends by taking focus, and this fires while
+    /// somebody is typing. That is the same reason the message line changes heights rather than arranging.
+    /// </remarks>
+    internal event EventHandler? Resized;
 
     /// <summary>What is written but not sent. Named to avoid hiding the toolkit's own Text.</summary>
     /// <remarks>
@@ -104,6 +143,16 @@ internal sealed class LineRegion : FrameView
         set => _field.Text = value;
     }
 
+    /// <summary>Whether the box has focus, so a printable key is somebody writing rather than an action.</summary>
+    /// <remarks>
+    /// <b>Every action on this surface is a letter, which makes this the whole of a text field's safety.</b> The
+    /// shell takes a region's action key in its own key handler, so without this a person typing a question mark
+    /// into an ask would get the actions menu and a person typing <c>x</c> would clear the message line. `Lists`
+    /// records the same collision from the other side: a list's type-to-find was eating every letter the status
+    /// line advertised.
+    /// </remarks>
+    internal bool Editing => _field.HasFocus;
+
     /// <summary>Presses Enter in the box, as a person does.</summary>
     /// <remarks>
     /// A seam for a driven test. The field takes Enter before this region sees it, so a test that called the
@@ -114,9 +163,48 @@ internal sealed class LineRegion : FrameView
     /// <summary>What the preview is saying, for a test to read without the screen.</summary>
     internal string Preview => _preview.Text;
 
+    /// <summary>What the completion list is showing, top to bottom. Empty when it is closed.</summary>
+    internal IReadOnlyList<string> Offering => _offering;
+
+    /// <summary>How many rows this region wants, given what it is showing.</summary>
+    internal int Rows => _rows;
+
+    /// <summary>Puts a completion list on screen, or takes it off.</summary>
+    /// <param name="completion">What is being completed, which may be closed.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="completion"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>Nothing matching closes the list rather than showing an empty one.</b> An empty list is a box saying
+    /// "here are your options" over no options; a closed one says what is true, which is that this is text now.
+    /// </para>
+    /// <para>
+    /// Each row carries what the thing is, not only its name. A command's one line is the whole reason a person
+    /// can use a command they have not read the documentation for.
+    /// </para>
+    /// </remarks>
+    internal void Offer(Completion completion)
+    {
+        ArgumentNullException.ThrowIfNull(completion);
+
+        _offering = completion.Open
+            ? [.. completion.Matches.Select(m => Row(completion.Which, m))]
+            : [];
+
+        _list.Visible = _offering.Count > 0;
+        _list.Height = Math.Max(_offering.Count, 1);
+
+        // **Null rather than nought on an empty list**, which the toolkit refuses outright: a selection of zero
+        // rows is not row zero. Closing the list is the commonest thing that happens to it, so this threw on
+        // the first keystroke of every test in the file.
+        _list.Replace(_offering, _offering.Count == 0 ? null : completion.Selected);
+
+        Measure();
+    }
+
     /// <summary>Puts the plan for the current draft above the line.</summary>
     /// <param name="draft">The draft, or null when there is not one yet.</param>
     /// <param name="seated">Whether a seat is held.</param>
+    /// <param name="note">Something to say above the plan, or null.</param>
     /// <remarks>
     /// <para>
     /// Every recipient is named rather than counted, because the case worth seeing is one line doing three
@@ -127,47 +215,86 @@ internal sealed class LineRegion : FrameView
     /// draft made them the same, so a seated person whose conversation had not been read yet was told to take
     /// a seat they already had. The same class of mistake as reporting "none waiting" for "could not ask".
     /// </para>
+    /// <para>
+    /// The note is where a near miss is said (FR-033). It goes above the plan rather than into the message line
+    /// because it is about what is written now and stops being true on the next keystroke, while the message line
+    /// holds a record of what happened and is cleared only deliberately.
+    /// </para>
     /// </remarks>
-    internal void Show(Draft? draft, bool seated)
+    internal void Show(Draft? draft, bool seated, string? note = null)
     {
+        var lines = new List<string>();
+
+        if (!string.IsNullOrEmpty(note))
+        {
+            lines.Add(Safe.Text(note));
+        }
+
         if (!seated)
         {
-            _preview.Text = NoSeat;
-
-            return;
+            lines.Add(NoSeat);
         }
-
-        if (draft is null)
+        else if (draft is null)
         {
-            _preview.Text = Empty;
-
-            return;
+            lines.Add(Empty);
         }
-
-        if (draft.Recipients.Count == 0)
+        else if (draft.Recipients.Count == 0)
         {
-            _preview.Text = Nobody;
-
-            return;
+            lines.Add(Nobody);
         }
-
-        var plan = draft.Plan();
-        var cost = draft.Costs();
-
-        var lines = new List<string>
+        else
         {
-            "to: " + Safe.Text(string.Join(", ", plan.Select(a => a.Peer.Value))),
-        };
+            var plan = draft.Plan();
 
-        foreach (var addressed in plan)
-        {
-            lines.Add("  " + Safe.Text(addressed.Peer.Value) + "  " + Says(addressed));
+            lines.Add("to: " + Safe.Text(string.Join(", ", plan.Select(a => a.Peer.Value))));
+
+            foreach (var addressed in plan)
+            {
+                lines.Add("  " + Safe.Text(addressed.Peer.Value) + "  " + Says(addressed));
+            }
+
+            lines.Add(Counted(draft.Costs()));
         }
-
-        lines.Add(Counted(cost));
 
         _preview.Text = Reports.Sentences(lines);
+
+        Measure();
     }
+
+    /// <summary>Asks for the rows this region now needs, and says so only when the number changed.</summary>
+    /// <remarks>
+    /// Only on a change, because every keystroke calls this and a layout pass per keystroke is a surface that
+    /// stutters under somebody typing.
+    /// </remarks>
+    private void Measure()
+    {
+        var preview = _preview.Text.Split('\n').Length;
+        var wanted = Math.Clamp(3 + preview + _offering.Count, LeastRows, MostRows);
+
+        if (wanted == _rows)
+        {
+            return;
+        }
+
+        _rows = wanted;
+        Resized?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>One row of the completion list.</summary>
+    /// <param name="which">Which sigil is being completed.</param>
+    /// <param name="match">The candidate.</param>
+    /// <returns>What the row says.</returns>
+    private static string Row(Sigil which, string match) => which == Sigil.Command
+        ? "/" + match + Beside(match)
+        : "@" + Safe.Text(match);
+
+    /// <summary>What a command says about itself, beside its identifier.</summary>
+    /// <param name="id">The identifier.</param>
+    /// <returns>The clause, or nothing for a command that is not in the table.</returns>
+    private static string Beside(string id) =>
+        Commands.Table.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase)) is { } found
+            ? "  " + found.Says
+            : string.Empty;
 
     /// <summary>What one recipient will get, and how to take the other side where there is one.</summary>
     /// <param name="addressed">The recipient and its act.</param>
@@ -178,8 +305,8 @@ internal sealed class LineRegion : FrameView
     /// </remarks>
     private static string Says(Addressed addressed) => addressed.Act switch
     {
-        Act.Answer => "answer — closes the exchange (Tab: ask back instead)",
-        Act.AskBack => "asks them back — the turn goes to them (Tab: answer instead)",
+        Act.Answer => $"answer — closes the exchange ({Shell.OtherKey}: ask back instead)",
+        Act.AskBack => $"asks them back — the turn goes to them ({Shell.OtherKey}: answer instead)",
         Act.Clarify => "clarifies your open request",
         _ => "new request — they will owe a result",
     };

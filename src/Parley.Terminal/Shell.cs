@@ -1,4 +1,4 @@
-﻿using Parley.Setup;
+using Parley.Setup;
 using System.Drawing;
 using System.Text;
 using Parley.Client;
@@ -112,6 +112,26 @@ internal sealed class Shell : Window
     /// <summary>What taking the other side of the one choice is called.</summary>
     internal const string OtherTitle = "Answer, or ask back instead";
 
+    /// <summary>
+    /// The key that takes the other side of the one choice a draft offers.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A chord rather than a letter</b>, for <see cref="BrowserKey"/>'s reason and one more: this region holds
+    /// a box somebody types prose into, so every letter belongs to the text. There is nowhere in this pane for a
+    /// letter to mean anything else.
+    /// </para>
+    /// <para>
+    /// <b>It was Tab for an afternoon, and Tab cannot have it.</b> This surface takes Tab for "the next region"
+    /// in its own key handler, before any region sees one — so the alternative was advertised in the preview
+    /// ("Tab: ask back instead") and bound to a key that moved focus away instead. A key named on screen and
+    /// doing something else is the fault <c>Lists</c> was written about, reached from the other side. Tab's one
+    /// exception is completing an open list (FR-030), which the owner asked for by name and which is visible on
+    /// screen while it applies.
+    /// </para>
+    /// </remarks>
+    internal static Key OtherKey => Key.F2;
+
     /// <summary>Sends what is written, as the preview said it would.</summary>
     /// <returns>When the send has been queued.</returns>
     /// <remarks>
@@ -120,11 +140,21 @@ internal sealed class Shell : Window
     /// that the send asks. The plan is the draft's own, not recomputed: a second derivation between the preview
     /// and the send would be a second opinion about what was promised.
     /// </remarks>
-    internal Task SendLine()
+    private Task SendLine()
     {
         if (Held is not { } hold || Drafting is not { } draft || _place.Title is not { } conversation)
         {
             Said = Released;
+
+            return Task.CompletedTask;
+        }
+
+        // **A command still in the box at Enter is one that nothing consumed.** Completing an agent takes the
+        // command and its parameter out of the text, so the ordinary path never reaches here with one; what does
+        // is somebody who typed it out by hand, and they are owed either the act or the reason (FR-023).
+        if (Commands.Resolve(Line.Written) is { Command: { } command } written)
+        {
+            Said = Ran(command, written.Rest);
 
             return Task.CompletedTask;
         }
@@ -166,13 +196,81 @@ internal sealed class Shell : Window
         return Task.CompletedTask;
     }
 
-    /// <summary>Redraws the preview for what is written now.</summary>
+    /// <summary>Runs a command typed out by hand, and says what came of it.</summary>
+    /// <param name="command">The command the identifier resolved to.</param>
+    /// <param name="rest">What followed it.</param>
+    /// <returns>The sentence to put in front of the person.</returns>
     /// <remarks>
+    /// <para>
+    /// <b>A <c>Draft</c> command is not sendable alone</b> (FR-024), and the reason is the protocol's rather than
+    /// this surface's: membership is derived (SPEC.md §5.0) and an agent joins by being party to an exchange, so
+    /// <c>/add</c> with nothing to say would have to invent a Request — and every message is answered.
+    /// </para>
+    /// <para>
+    /// The box is never cleared on this path. The command is still what somebody wrote, and a refusal that took
+    /// it away would be 0.25.1 again.
+    /// </para>
+    /// <para>
+    /// The parameter type is qualified because <c>Terminal.Gui.Input.Command</c> is a different thing of the same
+    /// name — the toolkit's bindable action. The same collision as 017's <c>Owing</c>, and the same answer: say
+    /// which one.
+    /// </para>
+    /// </remarks>
+    private string Ran(Parley.Client.Seating.Command command, string rest)
+    {
+        var given = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        if (Commands.Wrong(command, given.Length) is { } wrong)
+        {
+            return wrong;
+        }
+
+        if (command.Kind == Does.Draft && Drafting is { } draft && command.Id == Adds)
+        {
+            if (!AgentName.TryCreate(given[0], out var peer))
+            {
+                return $"{Safe.Text(given[0])} is not an agent name, so nothing was added.";
+            }
+
+            draft.Widen(peer);
+            Line.Written = string.Empty;
+            Line.Show(draft, seated: true);
+
+            return $"{peer.Value} will get this as well. Type what you want to say.";
+        }
+
+        return $"/{command.Id} changes what is about to be sent and sends nothing of its own. "
+             + "Write something to go with it.";
+    }
+
+    /// <summary>The one command this surface reads by name, because widening a draft is not a send.</summary>
+    /// <remarks>
+    /// Named once rather than spelled at each of its three uses. Every other command runs through the table, and
+    /// this one has to be recognised before it is run: what it offers to complete, and what its completion does,
+    /// are both decided before there is anything to send.
+    /// </remarks>
+    private const string Adds = "add";
+
+    /// <summary>What the box is completing now, derived from what is written.</summary>
+    private Completion _listing = Completion.Read(string.Empty, [], []);
+
+    /// <summary>Redraws the preview and the completion list for what is written now.</summary>
+    /// <remarks>
+    /// <para>
     /// The text is read from the box rather than tracked beside it, so there is one copy of what somebody typed.
     /// Two would eventually disagree and the wrong one would be what got sent.
+    /// </para>
+    /// <para>
+    /// <b>The list is recomputed here and never remembered</b>, which is the whole of FR-034: deleting back into
+    /// a match brings it back because nothing was dismissed. A flag saying somebody had closed it would be
+    /// 0.29.1's cached waiting count in a new place.
+    /// </para>
     /// </remarks>
     private void Retyped()
     {
+        _listing = Completion.Read(Line.Written, Commands.Ids, Completable(), _listing.Selected);
+        Line.Offer(_listing);
+
         if (Drafting is not { } draft)
         {
             Line.Show(null, Held is not null);
@@ -181,7 +279,88 @@ internal sealed class Shell : Window
         }
 
         draft.Text = Line.Written;
-        Line.Show(draft, seated: true);
+        Line.Show(draft, seated: true, Near());
+    }
+
+    /// <summary>
+    /// What <c>@</c> offers, which depends on what the line is already doing.
+    /// </summary>
+    /// <returns>The names, in the order they are offered.</returns>
+    /// <remarks>
+    /// <b>Two candidate sets, because the two questions are different.</b> A bare <c>@</c> narrows the message to
+    /// somebody already in the conversation, so it offers the participants and <c>all</c>. <c>/add @</c> widens it
+    /// to somebody who is not, so it offers the rest of the project's roster — and offering a participant there
+    /// would be an add that adds nobody.
+    /// </remarks>
+    private IReadOnlyList<string> Completable()
+    {
+        var participants = Drafting is { } draft
+            ? draft.Pairs.Select(p => p.Peer.Value).ToList()
+            : [];
+
+        if (Commands.Resolve(Line.Written).Command is { Id: Adds })
+        {
+            return [.. Peers().Except(participants, StringComparer.Ordinal)];
+        }
+
+        return [Draft.All, .. participants];
+    }
+
+    /// <summary>The near miss to put above the plan, or null.</summary>
+    /// <returns>The note.</returns>
+    /// <remarks>
+    /// FR-033. An identifier that did not resolve is text and is sent as written (FR-021), so the only defence
+    /// against a typo is that it is visible before Enter rather than in somebody's inbox afterwards.
+    /// </remarks>
+    private string? Near() =>
+        Commands.Resolve(Line.Written).NearMiss is { } nearly
+            ? $"this is text, not a command — did you mean /{nearly}?"
+            : null;
+
+    /// <summary>Puts the completion list's selection into the box, and resolves it if it was an agent.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A chosen agent leaves the text and becomes a recipient.</b> That is what the specification means by a
+    /// chip: nothing is parsed out of prose when Enter is pressed, so a semicolon in an ask is just a semicolon
+    /// and §13's envelope never carries a routing directive it exists to have ignored. What shows somebody their
+    /// chips is the preview's own <c>to:</c> line.
+    /// </para>
+    /// <para>
+    /// <c>/add</c> goes with its parameter, because the command's whole purpose was to carry it. What is left in
+    /// the box after a completion is always prose.
+    /// </para>
+    /// </remarks>
+    private void Complete()
+    {
+        var chosen = _listing.Completes();
+        var filled = _listing.Fills(Line.Written);
+
+        if (_listing.Which == Sigil.Agent && chosen is not null && Drafting is { } draft)
+        {
+            var adding = Commands.Resolve(Line.Written).Command is { Id: Adds };
+
+            if (string.Equals(chosen, Draft.All, StringComparison.Ordinal))
+            {
+                draft.AddressEveryone();
+            }
+            else if (AgentName.TryCreate(chosen, out var peer))
+            {
+                if (adding)
+                {
+                    draft.Widen(peer);
+                }
+                else
+                {
+                    draft.Narrow(peer);
+                }
+            }
+
+            // The sigil, what was typed, and the command that carried it all leave the box together.
+            filled = adding ? string.Empty : filled[..(filled.Length - chosen.Length - 2)];
+        }
+
+        Line.Written = filled;
+        Retyped();
     }
 
     /// <summary>Takes the other side of the one choice a draft offers.</summary>
@@ -191,7 +370,7 @@ internal sealed class Shell : Window
     /// there is no cursor among them to mean "this one". A person who wants them to differ sends twice, which is
     /// also what makes each send readable against its own outcome.
     /// </remarks>
-    internal Task FlipOne()
+    private Task FlipOne()
     {
         if (Drafting is not { } draft)
         {
@@ -382,13 +561,20 @@ internal sealed class Shell : Window
                 return;
             }
 
-            // Going there reads it, so this does not read it first: two reads on one keystroke is one
+            // **Going there reads it, so this does not read it first**: two reads on one keystroke is one
             // wasted export and two chances for them to disagree.
-            _ = project;
-
-            await GoAsync(_place.Viewing == Viewing.Project
-                ? _place.Into(conversation.Id)
-                : _place).ConfigureAwait(false);
+            //
+            // **Which means the place has to name the conversation, and it did not from two of the three
+            // views.** This passed `_place` unchanged unless it was a project view, and read the conversation
+            // itself — so from the projects view nothing named it, and from a conversation the place went on
+            // naming the *previous* one while the transcript showed the new one. Tolerable while the place was
+            // not what read; a defect the moment it is.
+            await GoAsync(_place.Viewing switch
+            {
+                Viewing.Project => _place.Into(conversation.Id),
+                Viewing.Conversation => _place.Back().Into(conversation.Id),
+                _ => ViewPlace.Into(project.Name).Into(conversation.Id),
+            }).ConfigureAwait(false);
         });
 
         // A bar rather than a line in the terminal's own colours, and the one place this surface
@@ -422,6 +608,17 @@ internal sealed class Shell : Window
         // region, which knows nothing about seats or brokers.
         Line.Show(null, seated: false);
         Line.Sending += (_, _) => _ = SendLine();
+
+        // Heights alone, for the message line's reason: this fires on a keystroke, and a rearrangement ends by
+        // taking focus away from the box somebody is typing in.
+        Line.Resized += (_, _) =>
+        {
+            lock (_screen)
+            {
+                HeightsLocked();
+            }
+        };
+
         Line.Typing += (_, _) => Retyped();
 
         Lay(Threshold);
@@ -691,17 +888,65 @@ internal sealed class Shell : Window
             panes[0].Width = _place.Viewing == Viewing.Conversation
                 ? Dim.Absolute(Narrow)
                 : Dim.Percent(40);
-            panes[0].Height = Dim.Fill(1 + _messageRows);
 
             panes[1].X = Pos.Right(panes[0]);
             panes[1].Y = 0;
             panes[1].Width = Dim.Fill();
-            panes[1].Height = Dim.Fill(1 + _messageRows);
+
+            // **The third pane is the line, under the transcript rather than beside it.** A conversation is a
+            // room: the narrow column on the left, and on the right the transcript with one line to speak from
+            // across the bottom of it. The line takes the rows it needs and the transcript takes the rest,
+            // which is the arrangement the owner described -- Claude Code, in a layout.
+            if (panes.Count > 2)
+            {
+                panes[2].X = Pos.Right(panes[0]);
+                panes[2].Y = Pos.Bottom(panes[1]);
+                panes[2].Width = Dim.Fill();
+            }
         }
+
+        HeightsLocked();
 
         _arranged = true;
 
         Focus(FocusedRegion);
+    }
+
+    /// <summary>
+    /// Gives each pane on screen its height, with the screen already held.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>One place, because two callers need it and one of them must not arrange.</b> The message line changes
+    /// heights when it grows, and a full rearrangement ends by taking focus — which a message arriving while
+    /// somebody types in a dialog must never do. So it asks for heights alone, and this is what it asks.
+    /// </para>
+    /// <para>
+    /// It was a loop over the panes assigning one expression, which is why it had to become a method: the room's
+    /// line pane is not <c>Fill</c>, so the loop would have flattened the arrangement the first time a message
+    /// grew to two rows — a layout that came apart on the second thing that happened rather than the first.
+    /// </para>
+    /// </remarks>
+    private void HeightsLocked()
+    {
+        var panes = Panes;
+        var below = 1 + _messageRows;
+
+        if (panes.Count > 2 && !_stacked)
+        {
+            var rows = Line.Rows;
+
+            panes[0].Height = Dim.Fill(below);
+            panes[1].Height = Dim.Fill(below + rows);
+            panes[2].Height = Dim.Absolute(rows);
+
+            return;
+        }
+
+        foreach (var pane in panes)
+        {
+            pane.Height = Dim.Fill(below);
+        }
     }
 
     /// <summary>How wide the room's own column is, in columns.</summary>
@@ -934,7 +1179,7 @@ internal sealed class Shell : Window
     /// the entry the person chose back against the action by this string, so two spellings would
     /// be a menu whose entries silently do nothing.
     /// </remarks>
-    private static string Caption(RegionAction action) => $"{action.Key}: {action.Label}";
+    private static string Caption(RegionAction action) => $"{action.Stroke}: {action.Label}";
 
     /// <summary>How the menu names an action, which is with what it costs.</summary>
     /// <param name="action">The action.</param>
@@ -988,7 +1233,7 @@ internal sealed class Shell : Window
     /// Enter -- because a suite that only ever arrived by this route could not tell that the route a
     /// person takes had stopped working.
     /// </remarks>
-    internal Task GoAsync(ViewPlace place)
+    internal async Task GoAsync(ViewPlace place)
     {
         lock (_screen)
         {
@@ -1011,12 +1256,15 @@ internal sealed class Shell : Window
         // **Arriving at a conversation reads it.** The place and the read used to be two acts, and the
         // conversations list happened to do both -- so any other route in left the room and the line
         // describing whatever was last read. Now the view cannot be on a conversation it has not read.
+        //
+        // **Awaited rather than queued, which the suite settled.** The first version queued it, and every
+        // caller of this is already on the work queue -- so the read was appended behind the item that asked
+        // for it, and a test awaiting `Settled` got a task that did not include it. The transcript was empty
+        // where it had been filled, in a test about escape sequences that had nothing to do with any of this.
         if (place.Viewing == Viewing.Conversation && place.Title is { } conversation && Current is { } project)
         {
-            Queue(token => OpenAsync(project, conversation, token));
+            await OpenAsync(project, conversation, Reading).ConfigureAwait(false);
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>Which pane a view opens focused on.</summary>
@@ -1116,15 +1364,28 @@ internal sealed class Shell : Window
                 : Array.Empty<RegionAction>(),
         ],
 
+        // **The room column, and the flip lives here as well as on F2.** The rows this pane lists are what an
+        // answer-or-ask-back choice is about, and a list is somewhere a letter is free — which the box beside it
+        // is not, since every letter there belongs to the text. No action on this surface exists only as a key.
+        RoomRegion =>
+        [
+            .. Drafting is { } drafted && drafted.Plan().Any(a => a.Choosable)
+                ? new[] { new RegionAction('a', OtherTitle, FlipOne) }
+                : Array.Empty<RegionAction>(),
+        ],
+
         LineRegion =>
         [
             .. Held is not null
-                ? new[]
-                {
-                    new RegionAction('\r', SendTitle, SendLine, Owing.Requesting),
-                    new RegionAction('\t', OtherTitle, FlipOne),
-                }
+                ? new[] { new RegionAction('\r', SendTitle, SendLine, Owing.Requesting) }
                 : new[] { new RegionAction('j', AgentsRegion.JoinTitle, Join) },
+
+            // **Offered only where the choice applies**, which is the rule this surface keeps about every key:
+            // an action advertised where it would do nothing is a key named and unbound. A chord rather than a
+            // letter because every letter in this pane belongs to the text somebody is typing.
+            .. Held is not null && Drafting is { } writing && writing.Plan().Any(a => a.Choosable)
+                ? new[] { new RegionAction(default, OtherTitle, FlipOne, null, OtherKey) }
+                : Array.Empty<RegionAction>(),
         ],
 
         // The conversations half of a project view. Sorting and the archived toggle are view
@@ -1649,10 +1910,7 @@ internal sealed class Shell : Window
                 // The heights alone, rather than a whole rearrangement: the panes on screen are
                 // the right panes already, and `ArrangeLocked` ends by taking focus — which a
                 // message must not do, since one can arrive while somebody is typing in a dialog.
-                foreach (var pane in Panes)
-                {
-                    pane.Height = Dim.Fill(1 + _messageRows);
-                }
+                HeightsLocked();
             }
 
             // The captions change with the message: clearing is offered only while there is
@@ -2736,9 +2994,30 @@ internal sealed class Shell : Window
         // visit eight places to reach four.
         Touched();
 
+        // **Tab completes an open list, and otherwise means what it means everywhere else on this surface.**
+        // The owner asked for Tab by name — "hitting tab will complete the selected item from the list" — and
+        // the one thing that makes it unambiguous is that the list is on screen while it applies. With no list
+        // showing there is nothing to complete and Tab is the next region, which is what it is in every pane.
+        if (key == Key.Tab && Line.Editing && Line.Offering.Count > 0)
+        {
+            Complete();
+
+            return true;
+        }
+
         if (key == Key.Tab)
         {
             Move(forwards: true);
+
+            return true;
+        }
+
+        // Up and down move the list's selection while the box keeps focus (FR-032), which is what keeps Enter
+        // answerable: what Enter does is decided by what is active, and the list is never active.
+        if ((key == Key.CursorUp || key == Key.CursorDown) && Line.Editing && Line.Offering.Count > 0)
+        {
+            _listing = _listing.Move(key == Key.CursorDown ? 1 : -1);
+            Line.Offer(_listing);
 
             return true;
         }
@@ -2817,6 +3096,27 @@ internal sealed class Shell : Window
             return true;
         }
 
+        // **A box somebody types into wins every printable key, and that is not a nicety.**
+        //
+        // Every action on this surface is a letter, and this handler takes a region's letter before the focused
+        // view sees it — so without this, typing a question mark into an ask opens the actions menu and typing
+        // `x` clears the message line. Nobody had met it because the box was not on screen: the three-pane
+        // arrangement was never written, so the line region had no size and drew nothing, while `LineTests`
+        // set its text in memory and passed. **A property the suite holds to and the screen never shows**, which
+        // is the third time this repository has recorded that shape — `Shell.Said` shown to nobody, and a
+        // terminal with no colour under a passing `ColourTests`.
+        //
+        // `Lists` records the same collision from the other side: a list's own type-to-find was eating every
+        // letter the status line advertised. One of the two has to yield, and while a text box has focus the
+        // answer is obvious.
+        //
+        // Below the keys above rather than above them: Tab, Escape, the quit chord, F8 and F2 keep working
+        // while somebody types, because none of them is a character and leaving a box must not need the mouse.
+        if (Line.Editing && !key.IsCtrl && !key.IsAlt && key.AsRune.Value != 0)
+        {
+            return base.OnKeyDown(key);
+        }
+
         // The letter shown beside an action in the status line takes it, when its region has focus.
         // Every one of them is also a menu entry or a button the mouse reaches: contracts/surface.md
         // is explicit that no action exists only as a key.
@@ -2829,7 +3129,7 @@ internal sealed class Shell : Window
 
         foreach (var action in Actions())
         {
-            if (Typed(key, action.Key))
+            if (action.Answers(key))
             {
                 _ = action.Run();
 
@@ -2842,7 +3142,7 @@ internal sealed class Shell : Window
         // wherever it was added later — silently, and only on the screens that had it.
         foreach (var action in Messaging())
         {
-            if (Typed(key, action.Key))
+            if (action.Answers(key))
             {
                 _ = action.Run();
 
@@ -3350,9 +3650,24 @@ internal sealed class Shell : Window
             {
                 Drafting.Flip(peer.Peer);
             }
+
+            // **And the addressing, which is the person's own decision and not the deployment's.** The
+            // transcript follows every three seconds, so a draft narrowed to one agent would otherwise widen
+            // itself back to the room while somebody was still typing to them.
+            if (was.Narrowed)
+            {
+                Drafting.AddressTo([.. was.Recipients]);
+            }
+            else
+            {
+                foreach (var added in was.Recipients.Except(pairs.Select(pair => pair.Peer)))
+                {
+                    Drafting.Widen(added);
+                }
+            }
         }
 
-        Line.Show(Drafting, seated: true);
+        Line.Show(Drafting, seated: true, Near());
     }
 
     /// <summary>What this person must address in the conversation on screen.</summary>
@@ -3898,6 +4213,9 @@ internal sealed class Shell : Window
 /// <param name="Key">The letter shown in the status line.</param>
 /// <param name="Label">What it is called, in the same words the dialog uses.</param>
 /// <param name="Run">Doing it.</param>
+/// <param name="Chord">
+/// The keystroke that takes it where a letter cannot, or <see langword="null"/> for an ordinary letter.
+/// </param>
 /// <param name="Costs">
 /// What taking it costs whoever it reaches, or null when it costs nobody anything.
 /// </param>
@@ -3914,5 +4232,29 @@ internal sealed class Shell : Window
 /// line is fifty columns that push every action behind <c>?</c> at any ordinary width. A menu is a
 /// list somebody reads; a status line is a reminder of what they already know.
 /// </para>
+/// <para>
+/// <b><see cref="Chord"/> is for an action whose key cannot be a letter</b>, which the room's input line made
+/// necessary: every letter in that pane belongs to the text somebody is typing. Where it is set it is both what
+/// dispatches the action and how the action is written, and <see cref="Key"/> is unused — one field would have
+/// been better, and taking one would mean changing forty call sites and <c>Typed</c>'s cross-driver care with
+/// it. What matters is that a chord action is still an action: it has a label, so it reaches the status line and
+/// the menu, and `EveryKeyIsOfferedTests` holds this surface to naming every key a person could press.
+/// </para>
 /// </remarks>
-internal sealed record RegionAction(char Key, string Label, Func<Task> Run, string? Costs = null);
+internal sealed record RegionAction(
+    char Key,
+    string Label,
+    Func<Task> Run,
+    string? Costs = null,
+    Key? Chord = null)
+{
+    /// <summary>How this action's key is written, wherever it is offered.</summary>
+    public string Stroke => Chord?.ToString() ?? Key.ToString();
+
+    /// <summary>Whether a keystroke takes this action.</summary>
+    /// <param name="key">What arrived.</param>
+    /// <returns><see langword="true"/> when it does.</returns>
+    public bool Answers(Key key) => Chord is { } chord
+        ? key == chord
+        : !key.IsCtrl && !key.IsAlt && key.AsRune == new Rune(Key);
+}

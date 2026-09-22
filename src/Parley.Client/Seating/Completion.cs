@@ -107,6 +107,39 @@ public sealed record Completion
     /// <returns>The selected match, or null when the list is closed.</returns>
     public string? Completes() => Open ? Matches[Math.Clamp(Selected, 0, Matches.Count - 1)] : null;
 
+    /// <summary>The line with the selection in place of what was typed.</summary>
+    /// <param name="text">The line the completion was read from.</param>
+    /// <returns>The line completed, or unchanged where there is nothing to complete.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>One rule over both sigils</b>, for the reason the narrowing is one: what was typed is the tail of the
+    /// line, so the sigil is at <c>Length - Typed.Length - 1</c> whichever sigil it is. A second implementation
+    /// per sigil would be two ways to edit one input line.
+    /// </para>
+    /// <para>
+    /// A trailing space, because a sigil followed by a space is finished (<see cref="Read"/>) — so completing
+    /// closes the list rather than leaving it open over a match it has already made.
+    /// </para>
+    /// <para>
+    /// It refuses a line that is no longer the one it read. The completion is derived on every keystroke and
+    /// consumed at once, so this cannot normally happen; what it must never do is splice into a different line,
+    /// which would rewrite words nobody asked it to touch.
+    /// </para>
+    /// </remarks>
+    public string Fills(string? text)
+    {
+        var line = text ?? string.Empty;
+
+        if (Completes() is not { } match || line.Length < Typed.Length + 1)
+        {
+            return line;
+        }
+
+        var before = line[..(line.Length - Typed.Length)];
+
+        return line.EndsWith(Typed, StringComparison.Ordinal) ? before + match + " " : line;
+    }
+
     /// <summary>Moves the highlight, wrapping at each end.</summary>
     /// <param name="by">How far, and which way.</param>
     /// <returns>The list with the highlight moved.</returns>

@@ -192,4 +192,98 @@ public sealed class ComposingTests
 
         Assert.Equal("  /etc/hosts — is it readable?\n\nsecond paragraph  ", draft.Text);
     }
+
+    [Fact]
+    public void Every_participant_is_addressed_until_somebody_narrows_it()
+    {
+        var draft = Over(
+            new PairState(Billing, null, Turn.Nobody),
+            new PairState(Orders, 7, Turn.Mine));
+
+        Assert.Equal([Billing, Orders], draft.Recipients);
+        Assert.False(draft.Narrowed);
+    }
+
+    [Fact]
+    public void The_first_at_sign_replaces_and_the_rest_add()
+    {
+        // The owner's own example: `@billing, @inventory; I want this` targets those two, so the second sigil
+        // cannot be a second replacement. Nothing means "and everyone else as well", because addressing
+        // somebody in particular is the act of not addressing the room.
+        var draft = Over(
+            new PairState(Billing, null, Turn.Nobody),
+            new PairState(Orders, 7, Turn.Mine),
+            new PairState(Inventory, null, Turn.Nobody));
+
+        draft.Narrow(Billing);
+
+        Assert.Equal([Billing], draft.Recipients);
+        Assert.True(draft.Narrowed);
+
+        draft.Narrow(Inventory);
+
+        Assert.Equal([Billing, Inventory], draft.Recipients);
+    }
+
+    [Fact]
+    public void Narrowing_to_the_same_agent_twice_addresses_it_once()
+    {
+        var draft = Over(new PairState(Billing, null, Turn.Nobody));
+
+        draft.Narrow(Billing);
+        draft.Narrow(Billing);
+
+        Assert.Equal([Billing], draft.Recipients);
+    }
+
+    [Fact]
+    public void All_addresses_every_participant_again_and_never_the_project()
+    {
+        // Every participant, never every agent in the project: membership is derived (SPEC.md 5.0) and this
+        // word is typed inside one conversation.
+        var draft = Over(
+            new PairState(Billing, null, Turn.Nobody),
+            new PairState(Orders, 7, Turn.Mine));
+
+        draft.Narrow(Orders);
+        draft.AddressEveryone();
+
+        Assert.Equal([Billing, Orders], draft.Recipients);
+        Assert.False(draft.Narrowed);
+    }
+
+    [Fact]
+    public void Adding_widens_without_narrowing_and_the_added_agent_gets_a_request()
+    {
+        // What `/add` does. An agent that is not a participant has no pair state, so it gets a Request, which
+        // is how an agent joins a conversation at all.
+        var draft = Over(new PairState(Billing, null, Turn.Nobody));
+
+        draft.Widen(Inventory);
+
+        Assert.Equal([Billing, Inventory], draft.Recipients);
+        Assert.False(draft.Narrowed);
+
+        var added = Assert.Single(draft.Plan(), addressed => addressed.Peer == Inventory);
+
+        Assert.Equal(Act.Ask, added.Act);
+        Assert.Null(added.Exchange);
+    }
+
+    [Fact]
+    public void Narrowing_does_not_change_what_any_recipient_act_is()
+    {
+        // The act is the pair's own answer, so who is addressed and what each gets are two independent facts.
+        var draft = Over(
+            new PairState(Billing, null, Turn.Nobody),
+            new PairState(Orders, 7, Turn.Mine));
+
+        draft.Narrow(Orders);
+
+        var plan = Assert.Single(draft.Plan());
+
+        Assert.Equal(Act.Answer, plan.Act);
+        Assert.Equal(7, plan.Exchange);
+        Assert.Equal(new Cost(0, 1, 0), draft.Costs());
+    }
 }

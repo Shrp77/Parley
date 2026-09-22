@@ -47,7 +47,7 @@ public sealed class RoomTests
     }
 
     [Fact]
-    public async Task The_conversation_view_is_two_panes_with_the_room_beside_the_transcript()
+    public async Task The_conversation_view_is_three_panes_with_the_room_beside_the_transcript()
     {
         using var driving = Driving.Open(width: 120, height: 40);
         using var directory = Directory();
@@ -56,9 +56,10 @@ public sealed class RoomTests
         driving.Show(shell);
         await Walking.GoAsync(shell, Viewing.Conversation, "pricing");
 
-        Assert.Equal(2, shell.Panes.Count);
+        Assert.Equal(3, shell.Panes.Count);
         Assert.IsType<RoomRegion>(shell.Panes[0]);
         Assert.IsType<TranscriptRegion>(shell.Panes[1]);
+        Assert.IsType<LineRegion>(shell.Panes[2]);
     }
 
     [Fact]

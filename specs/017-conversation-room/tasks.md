@@ -32,8 +32,8 @@ The feature's core, fully testable before any layout exists.
 - [X] T015 Write `src/Parley.Terminal/LineRegion.cs`: the input line and the preview block
 - [X] T016 Wire Enter to the active control, Tab to the answer-or-ask-back alternative, and the send through `SeatVoice`
 - [X] T017 Re-check the seat at the send, not when the line was focused
-- [ ] T018 [P] Write `tests/Parley.Terminal.Tests/LineTests.cs`: the preview names every recipient and its act; Enter sends; the seat going mid-draft refuses and keeps the text; over the cap refuses and keeps the text
-- [ ] T019 Run the terminal and client suites
+- [X] T018 [P] Write `tests/Parley.Terminal.Tests/LineTests.cs`: the preview names every recipient and its act; Enter sends; the seat going mid-draft refuses and keeps the text; over the cap refuses and keeps the text
+- [X] T019 Run the terminal and client suites
 
 ## Phase 4: Completion and commands (US4)
 
@@ -41,10 +41,10 @@ The feature's core, fully testable before any layout exists.
 - [X] T021 Write `src/Parley.Client/Seating/Commands.cs`: the declaration, the table, and `/add`
 - [X] T022 [P] Write `tests/Parley.Client.Tests/CompletionTests.cs`: narrowing, closing when nothing matches, reopening on delete, prefix versus exact
 - [X] T023 [P] Write `tests/Parley.Client.Tests/CommandTableTests.cs`: declarations parsed; a draft command not sendable alone; a missing parameter refused; an unrecognised identifier is text; `/etc/hosts` is text
-- [ ] T024 Draw the completion list in `LineRegion`, over both sigils, with up/down and Tab
-- [ ] T025 Resolve `@` into recipients and `/add` into a widened recipient set, with nothing reaching the payload
-- [ ] T026 The near-miss note: identifier unresolved but a prefix of one that would resolve
-- [ ] T027 Run the terminal and client suites
+- [X] T024 Draw the completion list in `LineRegion`, over both sigils, with up/down and Tab
+- [X] T025 Resolve `@` into recipients and `/add` into a widened recipient set, with nothing reaching the payload
+- [X] T026 The near-miss note: identifier unresolved but a prefix of one that would resolve
+- [X] T027 Run the terminal and client suites
 
 ## Phase 5: Outstanding items and context (US3)
 
@@ -56,9 +56,9 @@ The feature's core, fully testable before any layout exists.
 
 ## Phase 6: Delivery
 
-- [ ] T033 Bump `VersionPrefix` to 0.30.0 — a new surface, and the minor moves on a breaking change while the major is zero
-- [ ] T034 Hygiene grep for the originating project's names over everything added
-- [ ] T035 Run every suite from its own host executable and record the counts
+- [X] T033 Bump `VersionPrefix` to 0.30.0 — a new surface, and the minor moves on a breaking change while the major is zero
+- [X] T034 Hygiene grep for the originating project's names over everything added
+- [X] T035 Run every suite from its own host executable and record the counts
 - [ ] T036 Install with `-Force` (the owner's instruction, given while this was being planned)
 - [ ] T037 Write the morning report: what is built, what is tested, what is outstanding, and every decision taken without asking
 

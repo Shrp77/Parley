@@ -645,6 +645,45 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   - **`DeadSurfaceTests` earned its keep again**, reporting three of the room's own constants as named only in
     their own file. Writing the tests is what answered it rather than making them private.
 
+  **Phase 4 put the box on screen, and that is where the defects were.** Three of them, none visible from
+  inside the suite, and the first is the reason the other two had never been met:
+
+  - **The line pane had no size at all.** The arrangement handles one pane, stacked panes, and two side by
+    side; the conversation view has three, and the third was never placed. So the region existed, was visible,
+    held text, and drew nothing. `LineTests` set its text in memory, read it back and passed. **A property the
+    suite holds to and the screen never shows** -- the third time this repository has recorded that shape,
+    after `Shell.Said` being written in twenty places and read by nothing, and the terminal having no colour
+    under a passing `ColourTests`. The heights now come from one method, because the message line assigns them
+    too and its loop would have flattened the arrangement the first time a message grew to two rows.
+  - **Every printable key belonged to an action, including inside the box.** The shell takes a region's letter
+    in its own key handler, before the focused view sees it -- so typing a question mark into an ask opened the
+    actions menu and `x` cleared the message line. A box with focus wins every character now; Tab, Escape, the
+    quit chord, F8 and F2 still work, because leaving a box must not need the mouse. `Lists` records the same
+    collision from the other side, a list's type-to-find eating every letter the status line advertised: one of
+    the two has to yield, and while a text box has focus the answer is obvious.
+  - **The answer-or-ask-back alternative was advertised on a key this surface consumes.** The preview said
+    "Tab: ask back instead" while Tab means "the next region" everywhere here, taken before any region sees
+    one. It is **F2** now, with a second route under `a` in the room column -- whose rows are what the choice
+    is about, and which is a list, so a letter is free there. Tab keeps one exception, which the owner asked
+    for by name: it completes an open list, and the list is on screen while that applies.
+
+  **An agent completion is a chip and not text, which is what keeps routing out of the payload.** Completing
+  `@ord` resolves the agent, records it as a recipient, and takes the sigil out of the line; `/add @bill` takes
+  the command with it. What is left in the box is always prose, so nothing is parsed at send time, a semicolon
+  in an ask is just a semicolon, and §13's envelope never carries a directive it exists to have ignored. What
+  shows a person their chips is the preview's own `to:` line. A command still in the box at Enter is therefore
+  one nothing consumed -- somebody typed it by hand -- and it is run or refused with a reason, never sent.
+
+  **The narrowing carries across a refresh**, because the transcript follows every three seconds and a draft
+  narrowed to one agent would otherwise widen itself back to the room while somebody was still typing to them.
+  The same reason the answer-or-ask-back choices are carried.
+
+  Two smaller things, each found by a test rather than by reading: a closed list was passed a selection of row
+  zero, which the toolkit refuses outright -- nothing selected is null, not nought -- and it threw on the first
+  keystroke of every test in the file; and a frame is only true after a layout pass, so reading the screen is
+  not enough to measure one. The room's fixed width resolved without a parent and everything derived from the
+  space left over was nought, which is 0.25.1's probe-read-the-screen trap in a new place.
+
   Commands are a surface rather than `/add` with a special case: `/` plus an identifier with no second `/`, each
   declaring what it takes and whether it changes the draft or acts; an unrecognised identifier is text, so
   `/etc/hosts` needs no escape. Destructive commands are allowed and expected to grow, each declaring the door it

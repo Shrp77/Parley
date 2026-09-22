@@ -196,7 +196,9 @@ public sealed class LineTests : IAsyncDisposable
         await shell.RefreshAsync(ct);
         await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
 
-        Assert.Equal(LineRegion.NoSeat, shell.Line.Preview);
+        // Contained rather than equal: the preview goes through `Reports.Sentences` like everything else
+        // this surface says, which ends a sentence with a full stop.
+        Assert.Contains(LineRegion.NoSeat, shell.Line.Preview, StringComparison.Ordinal);
 
         // Focused on the line rather than the transcript it opens on, because what is asserted is what the
         // line offers somebody with no seat.

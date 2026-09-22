@@ -71,7 +71,17 @@ public sealed record Cost(int Opens, int Closes, int HandsBack);
 /// </remarks>
 public sealed class Draft
 {
+    /// <summary>What <c>@</c> completes to in order to mean every participant of this conversation.</summary>
+    /// <remarks>
+    /// Every participant, never every agent in the project. A conversation's membership is derived (SPEC.md §5.0)
+    /// and this word appears in a conversation's own input line, so reading it as the project's roster would make
+    /// one keystroke open an exchange with agents the person was not talking to.
+    /// </remarks>
+    public const string All = "all";
+
     private readonly Dictionary<AgentName, bool> _answering = [];
+
+    private bool _narrowed;
 
     /// <summary>Creates a draft over a conversation's pair states.</summary>
     /// <param name="pairs">The pair state for every participant, from <see cref="Pairing.From"/>.</param>
@@ -105,6 +115,49 @@ public sealed class Draft
         ArgumentNullException.ThrowIfNull(recipients);
 
         Recipients = [.. recipients.Distinct()];
+        _narrowed = true;
+    }
+
+    /// <summary>Whether the recipients have been narrowed from the conversation's own participants.</summary>
+    public bool Narrowed => _narrowed;
+
+    /// <summary>Addresses one participant, or adds to the set already narrowed to.</summary>
+    /// <param name="peer">The resolved agent.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>The first <c>@</c> replaces and the rest add</b>, which is what the owner's own example means:
+    /// <c>@billing, @inventory; I want this</c> targets those two, so the second sigil cannot be a second
+    /// replacement. Nothing says "and everyone else as well", because addressing somebody in particular is the
+    /// act of not addressing the room.
+    /// </para>
+    /// <para>
+    /// <b>A resolved agent, and the sigil leaves the text.</b> The completion removes what was typed and this
+    /// records who it meant, so no name is parsed out of prose when Enter is pressed and a semicolon in an ask is
+    /// just a semicolon. What shows a person their chips is the preview's own <c>to:</c> line.
+    /// </para>
+    /// </remarks>
+    public void Narrow(AgentName peer)
+    {
+        Recipients = _narrowed ? [.. Recipients.Append(peer).Distinct()] : [peer];
+        _narrowed = true;
+    }
+
+    /// <summary>Adds a recipient without narrowing, for an agent that is not a participant yet.</summary>
+    /// <param name="peer">The resolved agent.</param>
+    /// <remarks>
+    /// What <c>/add</c> does. It widens whatever is addressed rather than replacing it, and it does not count as
+    /// narrowing: a person who adds an agent to a message meant for the room means the room and that agent. The
+    /// added agent has no pair state, so <see cref="Plan"/> gives it a Request — which is exactly right, since
+    /// membership is derived (§5.0) and an agent joins by being party to an exchange.
+    /// </remarks>
+    public void Widen(AgentName peer) => Recipients = [.. Recipients.Append(peer).Distinct()];
+
+    /// <summary>Addresses every participant again, undoing any narrowing.</summary>
+    /// <remarks>What <c>@all</c> does. Derived from the pair state rather than remembered, so it cannot go stale.</remarks>
+    public void AddressEveryone()
+    {
+        Recipients = [.. Pairs.Select(p => p.Peer)];
+        _narrowed = false;
     }
 
     /// <summary>Whether a recipient in the answer-or-ask-back state will be answered rather than asked back.</summary>

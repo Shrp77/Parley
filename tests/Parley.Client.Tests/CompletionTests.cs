@@ -151,4 +151,52 @@ public sealed class CompletionTests
         Assert.Equal(Sigil.None, Read(string.Empty).Which);
         Assert.Equal(Sigil.None, Completion.Read(null, Ids, Agents).Which);
     }
+
+    [Fact]
+    public void Completing_puts_the_selection_in_place_of_what_was_typed()
+    {
+        // One rule over both sigils, which is the reason the narrowing is one: what was typed is the tail of
+        // the line, so where it starts is arithmetic rather than a case per sigil.
+        Assert.Equal("/add ", Read("/a").Fills("/a"));
+        Assert.Equal("@billing@test ", Read("@bil").Fills("@bil"));
+    }
+
+    [Fact]
+    public void Completing_leaves_the_words_in_front_of_the_sigil_alone()
+    {
+        // Addressing is something a person does part way through a sentence, so this must never be a rewrite
+        // of the line -- only of the token being completed.
+        Assert.Equal(
+            "and what about @billing@test ",
+            Read("and what about @bil").Fills("and what about @bil"));
+    }
+
+    [Fact]
+    public void Completing_a_closed_list_changes_nothing()
+    {
+        Assert.Equal("/zzz", Read("/zzz").Fills("/zzz"));
+        Assert.Equal("ordinary words", Read("ordinary words").Fills("ordinary words"));
+    }
+
+    [Fact]
+    public void Completing_refuses_a_line_it_did_not_read()
+    {
+        // It cannot normally happen -- the list is derived on every keystroke and consumed at once -- and what
+        // it must never do is splice into a different line, rewriting words nobody asked it to touch.
+        var list = Read("@bil");
+
+        Assert.Equal("something else entirely", list.Fills("something else entirely"));
+        Assert.Equal(string.Empty, list.Fills(string.Empty));
+        Assert.Equal(string.Empty, list.Fills(null));
+    }
+
+    [Fact]
+    public void The_trailing_space_is_what_closes_the_list()
+    {
+        // A sigil followed by a space is finished, so completing cannot leave a list open over a match it has
+        // already made -- which would be a list that never goes away.
+        var filled = Read("/a").Fills("/a");
+
+        Assert.Equal(Sigil.None, Completion.Read(filled, Ids, Agents).Which);
+    }
 }

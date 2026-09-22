@@ -1,0 +1,422 @@
+using Grpc.Net.Client;
+using Microsoft.Data.Sqlite;
+using Parley.Cli.Tests;
+using Parley.Client;
+using Parley.Client.Seating;
+using Parley.Client.Views;
+using Parley.Core;
+using Parley.Store;
+using Terminal.Gui.Input;
+using Xunit;
+
+namespace Parley.Terminal.Tests;
+
+/// <summary>
+/// The completion list on screen, and what the keys do while it is there.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Driven, because every question here is about a key arriving.</b> The narrowing itself is covered headless in
+/// <c>Parley.Client.Tests</c>; what only a driven test can answer is whether Tab reaches the box at all, whether a
+/// printable key reaches the text or is taken by a region's action, and whether the pane has any size to draw in.
+/// Each of those was wrong when this file was written.
+/// </para>
+/// <para>
+/// <c>Lists</c> records why: <i>a key tested only in the negative is a key nobody has pressed.</i>
+/// </para>
+/// </remarks>
+public sealed class CompletingTests : IAsyncDisposable
+{
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
+    private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    private const string Conversation = "room";
+
+    private readonly SqliteConnection _connection;
+    private readonly LoopbackOperator _broker;
+
+    private IReadOnlyList<IDisposable> _held = [];
+
+    public CompletingTests()
+    {
+        _connection = ParleyDatabase.OpenInMemory();
+
+        var agents = new AgentRepository(_connection);
+
+        foreach (var agent in new[] { Orders, Billing })
+        {
+            agents.UpsertAsync(
+                new AgentRecord(agent, "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active),
+                TestContext.Current.CancellationToken).GetAwaiter().GetResult();
+        }
+
+        _broker = LoopbackOperator.Start(_connection);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // The driven session, the directory and the seat book, which the fixture below opens and each test holds
+        // for its whole run. Kept in one list rather than three fields because none of them is read by a test.
+        foreach (var held in _held)
+        {
+            held.Dispose();
+        }
+
+        await _broker.DisposeAsync();
+
+        _connection.Dispose();
+    }
+
+    [Fact]
+    public async Task The_line_pane_has_a_size_and_the_transcript_keeps_the_rest()
+    {
+        // **The whole feature was invisible until this passed.** The three-pane arrangement was never written,
+        // so the line region kept its default size -- nothing -- while its text was set, read and asserted in
+        // memory. A property the suite holds to and the screen never shows.
+        var (shell, driving) = await SeatedAsync(TestContext.Current.CancellationToken);
+
+        using var _ = shell;
+
+        // **Laid out first, because the harness never pumps the loop.** 0.25.1 records a probe that reported a
+        // list not scrolling by reading a screen nothing had redrawn; a frame is only true after a layout pass,
+        // and reading the text is not one -- the room got its fixed width, which resolves without a parent, and
+        // everything derived from the space left over was nought.
+        driving.App.LayoutAndDraw(true);
+
+        var where = $"room={shell.Room.Frame} transcript={shell.Transcript.Frame} line={shell.Line.Frame} "
+            + $"wanted={shell.Line.Rows} panes={shell.Panes.Count} visible={shell.Line.Visible}";
+
+        Assert.True(shell.Line.Frame.Height >= LineRegion.LeastRows, where);
+        Assert.True(shell.Line.Frame.Width > 0, "the line got no width");
+
+        // Under the transcript, not beside it, and starting where the transcript ends.
+        Assert.Equal(shell.Transcript.Frame.Bottom, shell.Line.Frame.Y);
+        Assert.Equal(shell.Transcript.Frame.X, shell.Line.Frame.X);
+
+        // And the room's column is to the left of both.
+        Assert.Equal(0, shell.Room.Frame.X);
+        Assert.True(shell.Room.Frame.Right <= shell.Line.Frame.X);
+        Assert.True(shell.Transcript.Frame.Height > shell.Line.Frame.Height, "the transcript kept the rest");
+    }
+
+    [Fact]
+    public async Task A_printable_key_reaches_the_text_rather_than_a_region_action()
+    {
+        // **Every action on this surface is a letter.** `?` opens the actions menu and `x` clears the message
+        // line, and both are taken in the shell's own key handler before the focused view sees them -- so a box
+        // somebody types prose into has to win while it has focus, or an ask cannot contain a question mark.
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        foreach (var key in "does x work? ")
+        {
+            shell.NewKeyDownEvent(new Key(key));
+        }
+
+        await shell.Settled;
+
+        Assert.Equal("does x work? ", shell.Line.Written);
+    }
+
+    [Fact]
+    public async Task A_slash_opens_the_command_list_and_narrows_as_it_is_typed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        shell.Line.Written = "/";
+
+        await shell.Settled;
+
+        Assert.Contains(shell.Line.Offering, row => row.StartsWith("/add", StringComparison.Ordinal));
+
+        // Each row says what the command is for, which is what makes a command usable unread.
+        Assert.Contains(shell.Line.Offering, row => row.Contains("not in this conversation", StringComparison.Ordinal));
+
+        // Nothing matching closes the list rather than showing an empty one.
+        shell.Line.Written = "/zzz";
+
+        await shell.Settled;
+
+        Assert.Empty(shell.Line.Offering);
+
+        // And deleting back into a match brings it back, because the list is derived and never remembered.
+        shell.Line.Written = "/a";
+
+        await shell.Settled;
+
+        Assert.Contains(shell.Line.Offering, row => row.StartsWith("/add", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Tab_completes_the_selection_and_Enter_still_sends()
+    {
+        // The owner's own correction, twice: "Clause code send on enter, it doesn't auto complete on enter",
+        // then "it executes the primary function of the control that's active". The box is what is active.
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        shell.Line.Written = "/a";
+
+        await shell.Settled;
+
+        shell.NewKeyDownEvent(Key.Tab);
+
+        await shell.Settled;
+
+        Assert.Equal("/add ", shell.Line.Written);
+    }
+
+    [Fact]
+    public async Task With_no_list_Tab_still_moves_to_the_next_region()
+    {
+        // **Tab's surface-wide meaning is kept, which is why the flip moved off it.** It was advertised in the
+        // preview as taking the answer-or-ask-back alternative and bound to a key this surface consumes for
+        // navigation -- a key named on screen and doing something else.
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        var before = shell.FocusedRegion;
+
+        shell.NewKeyDownEvent(Key.Tab);
+
+        await shell.Settled;
+
+        Assert.NotEqual(before, shell.FocusedRegion);
+    }
+
+    [Fact]
+    public async Task An_at_sign_completes_into_a_recipient_and_leaves_the_text()
+    {
+        // **A chip, not text.** Nothing is parsed out of prose at send time, so a semicolon in an ask is just a
+        // semicolon -- and §13's envelope never carries a routing directive it exists to have ignored.
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        shell.Line.Written = "@ord";
+
+        await shell.Settled;
+
+        Assert.Contains(shell.Line.Offering, row => row.Contains(Orders.Value, StringComparison.Ordinal));
+
+        shell.NewKeyDownEvent(Key.Tab);
+
+        await shell.Settled;
+
+        Assert.Equal(string.Empty, shell.Line.Written);
+        Assert.Equal([Orders], shell.Drafting?.Recipients);
+        Assert.Contains(Orders.Value, shell.Line.Preview, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Add_widens_the_recipients_to_somebody_who_is_not_a_participant()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        // Billing is in the project's roster and not in this conversation, so `/add` is what reaches it.
+        Assert.DoesNotContain(Billing, shell.Drafting?.Recipients ?? []);
+
+        shell.Line.Written = $"/{"add"} @bill";
+
+        await shell.Settled;
+
+        Assert.Contains(shell.Line.Offering, row => row.Contains(Billing.Value, StringComparison.Ordinal));
+
+        shell.NewKeyDownEvent(Key.Tab);
+
+        await shell.Settled;
+
+        Assert.Equal(string.Empty, shell.Line.Written);
+        Assert.Contains(Billing, shell.Drafting!.Recipients);
+        Assert.Contains(Orders, shell.Drafting!.Recipients);
+
+        // An agent that is not a participant has no pair state, so it gets a Request -- which is how an agent
+        // joins a conversation at all, membership being derived (§5.0).
+        Assert.Contains(
+            shell.Drafting!.Plan(),
+            addressed => addressed.Peer == Billing && addressed.Act == Act.Ask);
+    }
+
+    [Fact]
+    public async Task A_draft_command_sends_nothing_on_its_own_and_says_why()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        shell.Line.Written = "/add";
+        shell.Line.Accept();
+
+        await shell.Settled;
+
+        var export = await new BrokerClient(_broker.Operators).ExportAsync(Conversation, ct);
+
+        Assert.Single(export?.Messages ?? []);
+        Assert.Contains("needs 1 thing", shell.Said, StringComparison.Ordinal);
+        Assert.Equal("/add", shell.Line.Written);
+    }
+
+    [Fact]
+    public async Task An_unresolved_slash_is_text_and_a_near_miss_is_named_before_Enter()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        shell.Line.Written = "/ad";
+
+        await shell.Settled;
+
+        Assert.Contains("did you mean /add", shell.Line.Preview, StringComparison.Ordinal);
+
+        // A path is text with no near miss at all, decided without reference to what any command is called.
+        shell.Line.Written = "/etc/hosts";
+
+        await shell.Settled;
+
+        Assert.DoesNotContain("did you mean", shell.Line.Preview, StringComparison.Ordinal);
+        Assert.Empty(shell.Line.Offering);
+    }
+
+    [Fact]
+    public async Task F2_takes_the_other_side_of_the_one_choice_a_draft_offers()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        // The fixture's peer asked this person something, so the default is to answer.
+        Assert.Contains("closes the exchange", shell.Line.Preview, StringComparison.Ordinal);
+
+        shell.NewKeyDownEvent(Shell.OtherKey);
+
+        await shell.Settled;
+
+        Assert.Contains("asks them back", shell.Line.Preview, StringComparison.Ordinal);
+        Assert.Contains(Shell.OtherKey.ToString(), shell.Line.Preview, StringComparison.Ordinal);
+    }
+
+    /// <summary>Puts the cursor in the box, which is where every key in this file is pressed.</summary>
+    /// <param name="shell">The surface.</param>
+    private static void Focus(Shell shell)
+    {
+        shell.Focus(shell.Panes.ToList().FindIndex(pane => pane is LineRegion));
+
+        Assert.True(shell.Line.Editing, "the box did not take focus");
+    }
+
+    private BrokerDirectory Directory() =>
+        new(
+            [new ProjectSettings(Walking.Alpha, "unused.db", _broker.Address, null, null)],
+            _ => GrpcChannel.ForAddress(_broker.Address));
+
+    private async Task<(Shell Shell, Driving.Session Driving)> SeatedAsync(CancellationToken ct)
+    {
+        var driving = Driving.Open(width: 140, height: 40);
+        var directory = Directory();
+        var seats = new SeatBook(directory.AgentsFor);
+        var shell = new Shell(directory) { Seats = seats, MailEvery = null, FollowEvery = null };
+
+        driving.Show(shell);
+        await shell.RefreshAsync(ct);
+        await shell.Settled;
+
+        await Walking.GoAsync(shell, Viewing.Project);
+        await shell.Join();
+
+        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
+
+        driving.Type("arvind");
+        dialog.Finish(taken: true);
+
+        await shell.Settled;
+
+        // Seeded from a peer, because membership is derived: a conversation with no traffic has no participants.
+        var broker = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await broker.StartAsync(Orders, T0, ct);
+
+        var sent = await broker.RequestAsync(
+            Orders, shell.Held!.Seat.Name, "model-a", """{"ask":"is the build green?"}""",
+            T0.AddMinutes(1), Conversation, ct);
+
+        Assert.True(sent.Exchange is not null, $"the fixture's request was refused: {sent.Admission.Rejection}");
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+
+        _held = [driving, directory, seats];
+
+        return (shell, driving);
+    }
+
+    [Fact]
+    public async Task Both_of_the_line_pane_actions_are_offered_where_a_person_would_look_for_them()
+    {
+        // `contracts/views.md`: no action exists only as a key, and whatever a key does a pointer reaches too.
+        // The flip is a chord because every letter in this pane belongs to the text, and a chord that reached
+        // the menu under no name would be exactly the promise this holds the surface to.
+        var (shell, _) = await SeatedAsync(TestContext.Current.CancellationToken);
+
+        using var held = shell;
+
+        Focus(shell);
+
+        var offered = shell.Actions();
+
+        Assert.Contains(offered, action => action.Label == Shell.SendTitle);
+
+        var flip = Assert.Single(offered, action => action.Label == Shell.OtherTitle);
+
+        Assert.Equal(Shell.OtherKey.ToString(), flip.Stroke);
+    }
+
+    [Fact]
+    public async Task The_line_never_takes_more_than_its_share_however_much_it_has_to_say()
+    {
+        // A floor for the transcript rather than a ceiling for the preview: the transcript is what somebody
+        // opened a conversation to read, and a line addressing nineteen agents must not push it off the screen.
+        var (shell, driving) = await SeatedAsync(TestContext.Current.CancellationToken);
+
+        using var held = shell;
+
+        Focus(shell);
+
+        shell.Line.Written = "/";
+
+        await shell.Settled;
+
+        driving.App.LayoutAndDraw(true);
+
+        Assert.True(
+            shell.Line.Rows <= LineRegion.MostRows,
+            $"the line wanted {shell.Line.Rows} rows of {LineRegion.MostRows}");
+        Assert.True(shell.Transcript.Frame.Height > 0, "the transcript was pushed off the screen");
+    }
+}

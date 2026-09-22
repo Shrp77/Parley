@@ -35,7 +35,13 @@ public sealed class EveryKeyIsOfferedTests
     /// <c>Tab</c> outright when there is more than one; Enter opens what is highlighted, which is
     /// the one gesture a list already means.
     /// </remarks>
-    private static readonly string[] Navigation = ["Key.Tab", "Key.Tab.WithShift", "Key.Enter"];
+    /// <remarks>
+    /// The arrow keys joined the list at 0.30.0. They move the selection in the input line's completion list,
+    /// which is what an arrow key means in every list on this surface -- and 0.20.3 is the record of what a
+    /// list that cannot be left in one direction costs, so this is the one gesture nobody has to be told.
+    /// </remarks>
+    private static readonly string[] Navigation =
+        ["Key.Tab", "Key.Tab.WithShift", "Key.Enter", "Key.CursorUp", "Key.CursorDown"];
 
     private static BrokerDirectory Directory() =>
         new(
