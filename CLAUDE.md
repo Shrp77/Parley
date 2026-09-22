@@ -600,7 +600,7 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/017-conversation-room/` — **0.30.2, built whole and green across every suite; the
+- **Current plan**: `specs/017-conversation-room/` — **0.30.3, built whole and green across every suite; the
   review gate is owed and nothing is pushed.** The terminal's
   conversation view becomes a room: participants, outstanding work and agent status down a narrow column; the
   transcript above one input line in a wide one. The owner's call on 2026-09-21, after using it — it should read
@@ -763,6 +763,26 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   are on the first one is the surface claiming they are reading something. And the driven fixture was copied
   in two files and about to be in four, so it is one `Seated` now; a copy per file is how two of them come to
   seat somebody differently and disagree about what the room should show.
+
+  **0.30.3: a completion fills the name in, because one that makes text vanish reads as a broken key.**
+  Reported as *"hitting tab does not auto-fill the name of the agent"*, and the probe found Tab working
+  perfectly: it resolved `@ord` to the agent, recorded it as a recipient, and **deleted what had been typed**.
+  Correct, invisible, and indistinguishable from a key that does nothing — what a person is looking at when
+  they press Tab is the thing they typed.
+
+  **The chip idea survives; only where it is drawn changed.** `Draft.Chip` records the exact spelling the
+  surface itself wrote and `Draft.Says` takes it back out at the send, so addressing still never reaches a
+  payload §13 tells the receiver to treat as inert data — and, because the removal is by that record rather
+  than by hunting prose for anything that looks like a name, an agent's name written by hand in the middle of
+  a sentence stays in the sentence. `/add` leaves its chip and takes only the command with it, which it has to:
+  a command left in the box is one nothing consumed at the next Enter.
+
+  **And the test that sent it found the defect that mattered.** Setting the field's text leaves the cursor
+  where it was, so completing `@ord` into `@orders@test` left it at the fourth character and the next thing
+  typed landed inside the name: the message went out as `@ordthe build is greeners@test`, with the chip no
+  longer spelled the way it was recorded and so no longer taken back out. **Both halves are why the assertion
+  is on what the broker recorded rather than on what the box says** — a test that stopped at the screen would
+  have passed.
 
   Commands are a surface rather than `/add` with a special case: `/` plus an identifier with no second `/`, each
   declaring what it takes and whether it changes the draft or acts; an unrecognised identifier is text, so

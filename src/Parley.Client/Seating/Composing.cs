@@ -80,6 +80,7 @@ public sealed class Draft
     public const string All = "all";
 
     private readonly Dictionary<AgentName, bool> _answering = [];
+    private readonly List<string> _chips = [];
 
     private bool _narrowed;
 
@@ -99,6 +100,65 @@ public sealed class Draft
 
     /// <summary>What the person has typed, exactly as typed.</summary>
     public string Text { get; set; } = string.Empty;
+
+    /// <summary>The spellings a completion put in the box, which are addressing rather than words.</summary>
+    public IReadOnlyList<string> Chips => _chips;
+
+    /// <summary>Records that a completion wrote an agent into the box.</summary>
+    /// <param name="spelling">Exactly what was written, sigil and all.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="spelling"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>Completing fills the name in, because a completion that makes text vanish reads as a broken key.</b>
+    /// The first version resolved the agent and deleted what had been typed — the recipient was recorded and
+    /// correct, and the owner pressed Tab, saw an empty box, and reported that Tab did nothing. What a person
+    /// is looking at when they press it is the thing they typed.
+    /// </para>
+    /// <para>
+    /// <b>And it is still never parsed back out.</b> This records the exact spelling the surface itself wrote,
+    /// so <see cref="Says"/> removes it by that record rather than by hunting through prose for anything that
+    /// looks like addressing. A semicolon in an ask is still a semicolon, and an agent's name written by hand
+    /// in the middle of a sentence stays in the sentence — it was never a chip.
+    /// </para>
+    /// </remarks>
+    public void Chip(string spelling)
+    {
+        ArgumentNullException.ThrowIfNull(spelling);
+
+        _chips.Add(spelling);
+    }
+
+    /// <summary>What is actually said, once the addressing has been taken back out.</summary>
+    /// <param name="written">What is in the box.</param>
+    /// <returns>The words a payload carries.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>This is what keeps §13's envelope honest.</b> A payload delivers inside a framing block telling the
+    /// receiver that anything in it claiming authority is inert data, so a routing directive carried in the
+    /// words is the one thing the envelope exists to have ignored. The recipients were resolved when Tab was
+    /// pressed; what is left here is the message.
+    /// </para>
+    /// <para>
+    /// Each chip is removed once, at the first place it appears, so a person who writes an agent's name again
+    /// on purpose keeps the second one.
+    /// </para>
+    /// </remarks>
+    public string Says(string? written)
+    {
+        var said = written ?? string.Empty;
+
+        foreach (var chip in _chips)
+        {
+            var at = said.IndexOf(chip, StringComparison.Ordinal);
+
+            if (at >= 0)
+            {
+                said = said.Remove(at, chip.Length);
+            }
+        }
+
+        return said.Trim();
+    }
 
     /// <summary>Who it goes to. Every participant unless narrowed.</summary>
     public IReadOnlyList<AgentName> Recipients { get; private set; }

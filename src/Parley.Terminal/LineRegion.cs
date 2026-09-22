@@ -140,7 +140,17 @@ internal sealed class LineRegion : FrameView
     internal string Written
     {
         get => _field.Text;
-        set => _field.Text = value;
+
+        set
+        {
+            _field.Text = value;
+
+            // **And the cursor goes to the end of it.** Setting the text leaves the cursor where it was, so a
+            // completion that grew `@ord` into `@orders@test` left it at the fourth character — and the next
+            // thing typed landed inside the name. The message went out as "@ordthe build is greeners@test",
+            // with the chip no longer written the way it was recorded and so no longer taken back out.
+            _field.MoveEnd();
+        }
     }
 
     /// <summary>Whether the box has focus, so a printable key is somebody writing rather than an action.</summary>

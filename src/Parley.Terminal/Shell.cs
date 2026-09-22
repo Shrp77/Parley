@@ -178,7 +178,11 @@ internal sealed class Shell : Window
 
         // An empty line is not checked here. The send answers it without reaching a broker, and one sentence
         // about it in one place cannot come to disagree with itself.
-        draft.Text = Line.Written;
+        //
+        // **What is sent is what is left once the addressing is taken out**, by the record of what a
+        // completion wrote rather than by reading the words: nothing routes into a payload §13 tells the
+        // receiver to treat as inert data.
+        draft.Text = draft.Says(Line.Written);
 
         Queue(async token =>
         {
@@ -295,7 +299,7 @@ internal sealed class Shell : Window
             return;
         }
 
-        draft.Text = Line.Written;
+        draft.Text = draft.Says(Line.Written);
         Line.Show(draft, seated: true, Near());
     }
 
@@ -372,8 +376,14 @@ internal sealed class Shell : Window
                 }
             }
 
-            // The sigil, what was typed, and the command that carried it all leave the box together.
-            filled = adding ? string.Empty : filled[..(filled.Length - chosen.Length - 2)];
+            // **The name stays in the box, and only the command that carried it goes.** `/add` has done its
+            // work the moment the agent is resolved, so leaving it there would be a command nothing consumed
+            // at the next Enter; the chip beside it is what says who was added.
+            var chip = "@" + chosen;
+
+            filled = adding ? chip + " " : filled;
+
+            draft.Chip(chip);
         }
 
         Line.Written = filled;

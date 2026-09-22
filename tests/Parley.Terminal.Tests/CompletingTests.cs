@@ -200,10 +200,11 @@ public sealed class CompletingTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task An_at_sign_completes_into_a_recipient_and_leaves_the_text()
+    public async Task An_at_sign_completes_the_name_into_the_box_and_resolves_the_recipient()
     {
-        // **A chip, not text.** Nothing is parsed out of prose at send time, so a semicolon in an ask is just a
-        // semicolon -- and §13's envelope never carries a routing directive it exists to have ignored.
+        // **The name is filled in, and the recipient is resolved.** The first version resolved the agent and
+        // deleted what had been typed: correct, invisible, and reported as Tab doing nothing. What a person is
+        // looking at when they press Tab is the thing they typed.
         var ct = TestContext.Current.CancellationToken;
         var (shell, _) = await SeatedAsync(ct);
         using var held = shell;
@@ -220,9 +221,12 @@ public sealed class CompletingTests : IAsyncDisposable
 
         await shell.Settled;
 
-        Assert.Equal(string.Empty, shell.Line.Written);
+        Assert.Equal($"@{Orders.Value} ", shell.Line.Written);
         Assert.Equal([Orders], shell.Drafting?.Recipients);
         Assert.Contains(Orders.Value, shell.Line.Preview, StringComparison.Ordinal);
+
+        // And it is addressing rather than words, so it never reaches a payload.
+        Assert.Equal(string.Empty, shell.Drafting!.Says(shell.Line.Written));
     }
 
     [Fact]
@@ -247,7 +251,10 @@ public sealed class CompletingTests : IAsyncDisposable
 
         await shell.Settled;
 
-        Assert.Equal(string.Empty, shell.Line.Written);
+        // **The command goes and the chip stays.** `/add` has done its work the moment the agent resolved,
+        // so leaving it in the box would be a command nothing consumed at the next Enter -- and the chip is
+        // what says who was added.
+        Assert.Equal($"@{Billing.Value} ", shell.Line.Written);
         Assert.Contains(Billing, shell.Drafting!.Recipients);
         Assert.Contains(Orders, shell.Drafting!.Recipients);
 
@@ -510,5 +517,94 @@ public sealed class CompletingTests : IAsyncDisposable
         Assert.All(
             lines.Where(line => line.Kind == LineKind.Blank),
             line => Assert.Null(line.Message));
+    }
+
+    [Fact]
+    public async Task Typing_an_at_sign_and_pressing_Tab_fills_the_name_in()
+    {
+        // **Typed rather than assigned, because that is how the report arrived.** Setting the text and
+        // pressing Tab passes over the whole path a person uses: the field receives every character, and this
+        // surface takes Tab before the field sees it.
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        foreach (var key in "@ord")
+        {
+            shell.NewKeyDownEvent(new Key(key));
+        }
+
+        await shell.Settled;
+
+        Assert.NotEmpty(shell.Line.Offering);
+
+        shell.NewKeyDownEvent(Key.Tab);
+
+        await shell.Settled;
+
+        Assert.Equal($"@{Orders.Value} ", shell.Line.Written);
+        Assert.Equal([Orders], shell.Drafting?.Recipients);
+    }
+
+    [Fact]
+    public async Task What_reaches_the_broker_is_the_words_and_never_the_addressing()
+    {
+        // §13 delivers a payload inside a framing block telling the receiver that anything in it claiming
+        // authority is inert data, so a routing directive in the words is the one thing the envelope exists to
+        // have ignored. The name is on screen; it is not in the message.
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        foreach (var key in "@ord")
+        {
+            shell.NewKeyDownEvent(new Key(key));
+        }
+
+        await shell.Settled;
+
+        shell.NewKeyDownEvent(Key.Tab);
+
+        await shell.Settled;
+
+        foreach (var key in "the build is green")
+        {
+            shell.NewKeyDownEvent(new Key(key));
+        }
+
+        await shell.Settled;
+
+        shell.Line.Accept();
+
+        await shell.Settled;
+
+        var export = await new BrokerClient(_broker.Operators).ExportAsync(Conversation, ct);
+        var said = Assert.Single(
+            export?.Messages ?? [],
+            m => m.PayloadJson.Contains("the build is green", StringComparison.Ordinal));
+
+        Assert.DoesNotContain("@", said.PayloadJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_name_written_by_hand_stays_in_the_sentence()
+    {
+        // Removed by the record of what a completion wrote, never by hunting prose for anything that looks
+        // like addressing. Somebody quoting an agent's name is quoting it.
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        shell.Line.Written = $"ask @{Orders.Value} about it";
+
+        await shell.Settled;
+
+        Assert.Equal($"ask @{Orders.Value} about it", shell.Drafting!.Says(shell.Line.Written));
     }
 }
