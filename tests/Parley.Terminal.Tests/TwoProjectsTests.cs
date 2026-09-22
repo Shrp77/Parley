@@ -79,7 +79,18 @@ public sealed class TwoProjectsTests : IAsyncDisposable
 
     private string LaunchFile => Path.Combine(Workspace, ".mcp.json");
 
-    private string CatalogueFor(string project) => Path.Combine(_root, project + "-node.json");
+    /// <summary>This machine's one catalogue, whichever project is asking (018).</summary>
+    /// <param name="project">Ignored, and kept so the call sites read as they did.</param>
+    /// <returns>The catalogue.</returns>
+    /// <remarks>
+    /// It was one file per project, named after it. That is what made a checkout startable in the
+    /// project whose file held it and unstartable in the other, while being addressable in both —
+    /// so the tests below that asserted "only the first project may start it" were describing the
+    /// defect rather than a guarantee.
+    /// </remarks>
+    private string CatalogueFor(string project) =>
+        project is null ? throw new ArgumentNullException(nameof(project))
+            : Path.Combine(_root, NodeCatalogue.DefaultFileName);
 
     /// <summary>Opens the surface on a manifest naming two projects, both catalogued.</summary>
     private async Task<Shell> OpenAsync(Driving.Session driving)
@@ -101,7 +112,10 @@ public sealed class TwoProjectsTests : IAsyncDisposable
                 project.NodeConfig!, "{\n  \"agents\": {}\n}\n", TestContext.Current.CancellationToken);
         }
 
-        var shell = TerminalCommand.Build(BrokerDirectory.FromManifest(ManifestPath), manifestPath: ManifestPath);
+        var shell = TerminalCommand.Build(
+            BrokerDirectory.FromManifest(ManifestPath),
+            manifestPath: ManifestPath,
+            cataloguePath: CatalogueFor("alpha"));
 
         driving.Show(shell);
 
@@ -172,13 +186,21 @@ public sealed class TwoProjectsTests : IAsyncDisposable
         await AddAsync(driving, shell, "alpha", "orders");
         await AddAsync(driving, shell, "beta", "orders");
 
-        var alpha = JsonNode.Parse(
+        // **This asserted that only the first project could start it, and that was the defect.** One
+        // catalogue per project meant the checkout was startable in whichever file happened to name it
+        // and unstartable in the other, while being addressable in both — so a message sent to the
+        // second name was accepted, queued, and waited for somebody to open the repository by hand.
+        //
+        // There is one entry now, keyed by the checkout's own identity, and both projects start from it.
+        var catalogue = JsonNode.Parse(
             await File.ReadAllTextAsync(CatalogueFor("alpha"), TestContext.Current.CancellationToken))!;
-        var beta = JsonNode.Parse(
-            await File.ReadAllTextAsync(CatalogueFor("beta"), TestContext.Current.CancellationToken))!;
 
-        Assert.NotNull(alpha["agents"]!["orders"]);
-        Assert.Null(beta["agents"]!["orders"]);
+        Assert.True(LaunchConfiguration.TryRead(Workspace, out var declared, out var problem), problem);
+
+        var entry = Assert.Single((JsonObject)catalogue["agents"]!);
+
+        Assert.Equal(declared.Identity.ToString(), entry.Key);
+        Assert.Equal(Workspace, entry.Value!["workspace"]!.GetValue<string>());
     }
 
     [Fact]
@@ -246,10 +268,13 @@ public sealed class TwoProjectsTests : IAsyncDisposable
         Assert.Null(launch["mcpServers"]!["parley-beta"]);
         Assert.NotNull(launch["mcpServers"]!["parley-alpha"]);
 
-        // And the project that starts it still does.
-        var alpha = JsonNode.Parse(await File.ReadAllTextAsync(CatalogueFor("alpha"), token))!;
+        // And this machine can still start it, because alpha still answers from this checkout. The
+        // entry is shared, so a withdrawal that took it would have stopped alpha being startable —
+        // which is the reach `WithdrawalReachTests` bounds, one file along.
+        var catalogue = JsonNode.Parse(await File.ReadAllTextAsync(CatalogueFor("alpha"), token))!;
 
-        Assert.NotNull(alpha["agents"]!["orders"]);
+        Assert.True(LaunchConfiguration.TryRead(Workspace, out var declared, out var problem), problem);
+        Assert.NotNull(catalogue["agents"]![declared.Identity.ToString()]);
     }
 
     [Fact]
@@ -297,12 +322,9 @@ public sealed class TwoProjectsTests : IAsyncDisposable
         }
     }
 
-    [Fact]
-    public void Nothing_else_starting_it_is_not_a_shared_workspace()
-    {
-        // The non-vacuous half. If `StartedElsewhere` answered null for everything, every test
-        // above would pass while describing an ordinary first enrolment.
-        Assert.Null(Enrolment.StartedElsewhere(null, Workspace, null));
-        Assert.Null(Enrolment.StartedElsewhere([], Workspace, null));
-    }
+    // **`Nothing_else_starting_it_is_not_a_shared_workspace` stood here and its subject is gone.** It
+    // was the non-vacuity half of FR-013's suite: `Enrolment.StartedElsewhere` had to answer "nobody" for
+    // an empty deployment, or every positive test above it would have been passing trivially. 018 removed
+    // the rule and the function, and a repository answering in two projects is the ordinary case rather
+    // than the one that needs permission.
 }

@@ -1,3 +1,4 @@
+using Parley.Configuration;
 using Parley.Setup;
 using System.Text.Json.Nodes;
 using Xunit;
@@ -96,8 +97,20 @@ public sealed class ProbeTwoTests : IDisposable
 
         foreach (var agent in accepted)
         {
+            // **Looked up by the identity its own checkout declares** (018). The catalogue is keyed by
+            // that rather than by the role, and the enrolment is what writes it into the repository —
+            // so this asks through the same two files a node would, and a run that wrote one and not
+            // the other fails here rather than passing on a key that matches nothing.
             Assert.True(
-                listed.ContainsKey(agent!),
+                LaunchConfiguration.TryRead(Workspace(agent!), out var declared, out var problem),
+                problem);
+
+            Assert.True(
+                declared.Identity.Known,
+                $"'{agent}' was told its enrolment succeeded and its repository declares no identity");
+
+            Assert.True(
+                listed.ContainsKey(declared.Identity.ToString()),
                 $"'{agent}' was told its enrolment succeeded and is not in the catalogue");
         }
     }

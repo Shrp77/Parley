@@ -130,13 +130,20 @@ public sealed class ProjectResolutionTests
     }
 
     [Fact]
-    public void A_project_beats_the_default()
+    public void The_manifest_decides_where_the_machines_catalogue_is()
     {
-        var resolved = ProjectResolution.NodeConfig(null, NoVariables, Project());
+        // **A project used to supply this and 018 took it away.** Its entry named a catalogue, which made
+        // "what this machine can start" a per-project fact — and a checkout answering in two projects was
+        // startable in whichever project's file named it and unstartable in the other, while being
+        // addressable in both. One catalogue per machine cannot express that, so there is no project in
+        // this resolution at all: what is left is the flag, the variable, and the manifest's own folder.
+        var resolved = ProjectResolution.NodeConfig(null, NoVariables, "/etc/parley/projects.json");
 
-        Assert.Equal("/srv/orders/node.json", resolved.Value);
-        Assert.Equal(ValueSource.Project, resolved.Source);
-        Assert.Equal("orders", resolved.Detail);
+        Assert.Equal(
+            Path.Combine(Path.GetFullPath("/etc/parley"), NodeCatalogue.DefaultFileName),
+            resolved.Value);
+
+        Assert.Equal(ValueSource.Default, resolved.Source);
     }
 
     [Fact]
@@ -148,15 +155,20 @@ public sealed class ProjectResolutionTests
 
         Assert.Equal(ValueSource.Project, ProjectResolution.Store(null, NoVariables, project).Source);
         Assert.Equal(ValueSource.Argument, ProjectResolution.Endpoint("http://given:2", NoVariables, project).Source);
-        Assert.Equal(ValueSource.Project, ProjectResolution.NodeConfig(null, NoVariables, project).Source);
+
+        // The catalogue is the machine's, so no project supplies it and the argument still wins.
+        Assert.Equal(
+            ValueSource.Argument,
+            ProjectResolution.NodeConfig("/given/node.json", NoVariables, null).Source);
     }
 
     [Fact]
-    public void A_project_without_a_catalogue_falls_back_rather_than_failing()
+    public void With_no_manifest_the_catalogue_is_the_name_the_node_falls_back_to()
     {
-        // A project may legitimately start nothing on this machine. That is not the same as a
-        // misconfigured one, and must not be treated as an error.
-        var resolved = ProjectResolution.NodeConfig(null, NoVariables, Project(node: null));
+        // A machine may legitimately name no projects, and §4.1 keeps that supported. The answer has to
+        // be the one the node itself would reach, or the two disagree about which file consent is
+        // written into — which is the defect this resolution exists to prevent.
+        var resolved = ProjectResolution.NodeConfig(null, NoVariables, null);
 
         Assert.Equal(NodeCatalogue.DefaultFileName, resolved.Value);
         Assert.Equal(ValueSource.Default, resolved.Source);
@@ -171,7 +183,7 @@ public sealed class ProjectResolutionTests
         // written consent into a catalogue nothing reads.
         Assert.Contains(
             "(project \"orders\")",
-            ProjectResolution.NodeConfig(null, NoVariables, Project()).ToString(),
+            ProjectResolution.Store(null, NoVariables, Project()).ToString(),
             StringComparison.Ordinal);
 
         Assert.Contains(

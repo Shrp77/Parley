@@ -1,12 +1,12 @@
-﻿using Parley.Cli.Tests;
-using Parley.Setup;
-using System.Text.Json.Nodes;
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
+using Parley.Cli.Tests;
 using Parley.Client.Views;
 using Parley.Client;
 using Parley.Configuration;
 using Parley.Core;
+using Parley.Setup;
 using Parley.Store;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
@@ -85,7 +85,14 @@ public sealed class AddingTests : IAsyncDisposable
         var catalogue = JsonNode.Parse(
             await File.ReadAllTextAsync(CataloguePath, TestContext.Current.CancellationToken))!;
 
-        Assert.Equal(Workspace, catalogue["agents"]!["orders"]!["workspace"]!.GetValue<string>());
+        // Keyed by the identity the enrolment minted and wrote into the repository, which is what a
+        // node reads it back by.
+        var identity = AgentIdentity.Read(
+            launch[LaunchConfiguration.IdentityMember]!.GetValue<string>());
+
+        Assert.Equal(
+            Workspace,
+            catalogue["agents"]![identity.ToString()]!["workspace"]!.GetValue<string>());
 
         Assert.Contains(Adding.Added, shell.Said, StringComparison.Ordinal);
         Assert.Contains(LaunchFile, shell.Said, StringComparison.Ordinal);
@@ -160,11 +167,14 @@ public sealed class AddingTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_project_naming_no_catalogue_gains_one_and_is_told_so()
+    public async Task A_machine_with_no_catalogue_gains_one_and_is_told_so()
     {
-        // FR-010. The catalogue is created beside the store and recorded on the project through
-        // the command that owns the manifest, and the restart it causes is said rather than left
-        // to be noticed as agents reconnecting.
+        // FR-010, narrowed by 018. The catalogue is created beside the manifest and **nothing is
+        // recorded on the project**, which is the half that went: it used to be written into the
+        // project's entry through the command that owns the manifest, and the serve watcher compares
+        // the manifest to decide whether a deployment is the same one — so adding the first agent to a
+        // project restarted its broker and dropped every agent attached to it. That restart was said
+        // out loud rather than left to be noticed, which was the best that could be done about it.
         using var driving = Driving.Open();
         using var shell = await OpenAsync(driving, catalogued: false);
 
@@ -172,10 +182,11 @@ public sealed class AddingTests : IAsyncDisposable
 
         Assert.True(File.Exists(CataloguePath), "no catalogue was created");
         Assert.Contains("Created", shell.Said, StringComparison.Ordinal);
-        Assert.Contains("broker restarts", shell.Said, StringComparison.Ordinal);
 
+        // And the manifest is untouched, so nothing restarts.
+        Assert.DoesNotContain("broker restarts", shell.Said, StringComparison.Ordinal);
         Assert.True(ProjectManifest.TryRead(ManifestPath, out var projects, out _));
-        Assert.Equal(CataloguePath, Assert.Single(projects).NodeConfig);
+        Assert.Null(Assert.Single(projects).NodeConfig);
     }
 
     [Theory]
@@ -351,14 +362,21 @@ public sealed class AddingTests : IAsyncDisposable
     {
         // Shown before anything is written, because this writes into a repository that is not the
         // one the person is looking at.
-        var said = Adding.Describe(Workspace, CataloguePath, "acme", already: null);
+        var said = Adding.Describe(Workspace, CataloguePath, "acme");
 
         Assert.Contains(Enrolment.LaunchPath(Workspace), said, StringComparison.Ordinal);
         Assert.Contains(CataloguePath, said, StringComparison.Ordinal);
         Assert.Contains("acme", said, StringComparison.Ordinal);
     }
 
-    private string CataloguePath => Path.Combine(_root, "acme-node.json");
+    /// <summary>This machine's one catalogue, which sits beside the manifest (018).</summary>
+    /// <remarks>
+    /// It was <c>acme-node.json</c>, named after the project whose entry pointed at it. Nothing points
+    /// at it now: a catalogue says how to start checkouts and says nothing about projects, so it is
+    /// resolved from the machine — the flag, the variable, then the manifest's own folder — and both the
+    /// node and this surface reach it the same way.
+    /// </remarks>
+    private string CataloguePath => Path.Combine(_root, NodeCatalogue.DefaultFileName);
 
     private async Task<string> CatalogueTextAsync() =>
         File.Exists(CataloguePath)
@@ -367,15 +385,20 @@ public sealed class AddingTests : IAsyncDisposable
 
     /// <summary>Opens the surface on a manifest naming one project.</summary>
     /// <param name="driving">The application.</param>
-    /// <param name="catalogued">Whether the project already names a catalogue.</param>
+    /// <param name="catalogued">Whether this machine already has a catalogue on disk.</param>
     /// <returns>The surface, with its projects read.</returns>
+    /// <remarks>
+    /// <b>The project no longer names one</b> (018), so what this flag chooses is whether the file is
+    /// already there — which is the only difference left between a machine that has enrolled somebody
+    /// before and one that has not.
+    /// </remarks>
     private async Task<Shell> OpenAsync(Driving.Session driving, bool catalogued)
     {
         var project = new ProjectSettings(
             ProjectName.Create("acme"),
             Store,
             _broker.Address,
-            catalogued ? CataloguePath : null,
+            null,
             null);
 
         ProjectManifest.Write(ManifestPath, [project]);
@@ -387,7 +410,8 @@ public sealed class AddingTests : IAsyncDisposable
         }
 
         var directory = BrokerDirectory.FromManifest(ManifestPath);
-        var shell = TerminalCommand.Build(directory, manifestPath: ManifestPath);
+        var shell = TerminalCommand.Build(
+            directory, manifestPath: ManifestPath, cataloguePath: CataloguePath);
 
         driving.Show(shell);
 

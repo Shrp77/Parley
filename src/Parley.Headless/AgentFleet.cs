@@ -127,11 +127,36 @@ public sealed class AgentFleet : IAsyncDisposable
                 break;
             }
 
+            // **The machine half is checked here, because the catalogue no longer knows about machines.**
+            // It used to be part of the key, so `billing` in this file meant `billing@thisMachine` and
+            // nothing else. An identity says nothing about machines, and a store holds agents on several --
+            // so without this, a local checkout claiming `billing` would be started for `billing@server-b`,
+            // which is a process launched on this machine under a name somebody else holds.
+            if (!string.Equals(candidate.Agent.Machine, NodeCatalogue.Machine, StringComparison.Ordinal))
+            {
+                actions.Add(Skip(candidate, "it is registered on another machine"));
+                continue;
+            }
+
             // Asked of this machine rather than read from the registry. The store holds no
             // executable command line (SPEC.md §4), so an agent registered here that this node
             // has not been told about is one it declines to start -- which is the honest
             // answer, and the same one it would give for an agent on another machine.
-            if (_catalogue.CommandFor(candidate.Agent) is not { } template)
+            // **Resolved through the name a repository claims, because the catalogue is keyed by identity.**
+            // This sweeper has no project of its own -- it polls one store -- so it accepts a claim from any,
+            // and two workspaces claiming one name resolve to neither: starting either would be guessing at
+            // identity, and the ambiguity is reported rather than picked between.
+            if (!_catalogue.TryResolve(candidate.Agent.Role, project: null, out var identity, out var contested))
+            {
+                actions.Add(Skip(
+                    candidate,
+                    contested.Count > 1
+                        ? $"two catalogued workspaces claim that name: {string.Join(", ", contested)}"
+                        : "this machine has no launch command for it"));
+                continue;
+            }
+
+            if (_catalogue.CommandFor(identity) is not { } template)
             {
                 actions.Add(Skip(candidate, "this machine has no launch command for it"));
                 continue;

@@ -1778,6 +1778,26 @@ internal sealed class Shell : Window
     /// </remarks>
     internal string? ManifestPath { get; init; }
 
+    /// <summary>
+    /// This machine's node catalogue, or null to work it out from the manifest.
+    /// </summary>
+    /// <remarks>
+    /// <b>Passed in rather than read from the environment, and that is a scar.</b> The first version
+    /// asked <c>PARLEY_NODE_CONFIG</c> for itself, deep inside the write — the node reads that variable,
+    /// so this has to agree with it or an agent is enrolled into a file nothing starts it from. But the
+    /// terminal's tests build this surface in process, so they inherited the developer's own setting and
+    /// every one of them enrolled its throwaway repository into the live deployment's catalogue. Thirty-five
+    /// junk entries went into a real machine's file before anybody noticed.
+    /// <para>
+    /// <c>ToolProcess</c> clears those variables before launching the tool as a child, which is the same
+    /// guard — it just could not cover a surface that never launches anything. So this joins
+    /// <see cref="Opener"/> and <see cref="Copier"/>: resolved once by whoever builds the shell, and
+    /// replaceable by a test. Reading ambient state from the bottom of a call stack is what made it
+    /// unreachable from the top.
+    /// </para>
+    /// </remarks>
+    internal string? CataloguePath { get; init; }
+
     /// <summary>What this machine's supervisor runs, or null for none or unknown.</summary>
     internal InstalledEntry? Installed { get; init; }
 
@@ -2139,7 +2159,7 @@ internal sealed class Shell : Window
             ? Adding.OpenAsync(
                 app,
                 project,
-                new Catalogue(ManifestPath),
+                new Catalogue(ManifestPath, CataloguePath),
                 // **The project is a parameter rather than the one on screen**, because the start
                 // does not always go to it: a repository another project already starts unattended
                 // is started through that one, which is the only node that names it.
@@ -3403,7 +3423,7 @@ internal sealed class Shell : Window
             _archivedOmitted = page.ArchivedOmitted;
         }
 
-        Agents.Show(registry.Value, Catalogue(project), registry.Problem);
+        Agents.Show(registry.Value, Catalogue(), registry.Problem);
         Conversations.Show(
             Ordered(conversations.Value?.Items), conversations.Problem, _archivedOmitted, _showArchived);
         Transcript.Clear();
@@ -3890,19 +3910,26 @@ internal sealed class Shell : Window
             .LastOrDefault();
 
     /// <summary>
-    /// Reads the project's catalogue, which is the one fact about a deployment the broker never
+    /// Reads this machine's catalogue, which is the one fact about a deployment the broker never
     /// sees.
     /// </summary>
-    /// <param name="project">The project.</param>
-    /// <returns>What this machine could start for it, or an empty catalogue.</returns>
+    /// <returns>What this machine could start, or an empty catalogue.</returns>
     /// <remarks>
+    /// <para>
     /// Read fresh on every draw rather than held. Somebody may edit it by hand while this is open,
     /// and an agents region showing a catalogue from a minute ago would report an agent that is no
     /// longer startable as though it were.
+    /// </para>
+    /// <para>
+    /// <b>It took a project and read that project's file</b> (018). One checkout may answer in
+    /// several, so the same repository showed as startable in the project whose file happened to
+    /// name it and unstartable everywhere else — which is the defect, drawn on screen. It is one
+    /// file per machine now, and the same one the write goes to.
+    /// </para>
     /// </remarks>
-    private static NodeCatalogue Catalogue(ProjectSettings project) =>
-        project.NodeConfig is { Length: > 0 } path
-            && NodeCatalogue.TryReadFrom(path, out var catalogue, out _)
+    private NodeCatalogue Catalogue() =>
+        NodeCatalogue.TryReadFrom(new Catalogue(ManifestPath, CataloguePath).Proposed(),
+            out var catalogue, out _)
             ? catalogue
             : NodeCatalogue.Empty;
 

@@ -1,4 +1,5 @@
 using Parley.Configuration;
+using Parley.Core;
 using Xunit;
 
 namespace Parley.Headless.Tests;
@@ -35,14 +36,51 @@ public sealed class NodeCatalogueTests : IDisposable
         }
     }
 
+    /// <summary>What a catalogue offers a project that accepts every claim.</summary>
+    /// <param name="catalogue">The catalogue.</param>
+    /// <returns>The names, which is what a node announces.</returns>
+    /// <remarks>
+    /// These tests asked for the catalogue's roles, and a catalogue has none: it is keyed by identity and
+    /// says nothing about what any project calls a checkout. The name comes back out of the repository, so
+    /// asking this way is also what exercises the lookup a node actually performs.
+    /// </remarks>
+    private static IReadOnlyList<string> Names(NodeCatalogue catalogue) =>
+        catalogue.Announceable(project: null).Names;
+
+    /// <summary>Writes a catalogue naming one checkout, and the checkout that answers to a name.</summary>
+    /// <param name="name">The catalogue file's name, inside this test's own directory.</param>
+    /// <param name="role">What the repository declares it is called.</param>
+    /// <returns>The catalogue file's path.</returns>
     private string Write(string name, string role)
     {
         var path = Path.Combine(_root, name);
+        var identity = AgentIdentity.Mint();
+        var workspace = Path.Combine(_root, "ws-" + role);
+
+        Directory.CreateDirectory(workspace);
+
+        File.WriteAllText(
+            Path.Combine(workspace, LaunchConfiguration.FileName),
+            $$"""
+            {
+              "mcpServers": {
+                "parley-alpha": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "{{role}}" } }
+              },
+              "{{LaunchConfiguration.IdentityMember}}": "{{identity}}"
+            }
+            """);
 
         File.WriteAllText(
             path,
             $$"""
-            { "agents": { "{{role}}": { "command": "claude", "workspace": "/srv/{{role}}" } } }
+            {
+              "agents": {
+                "{{identity}}": {
+                  "command": "claude",
+                  "workspace": {{System.Text.Json.JsonSerializer.Serialize(workspace)}}
+                }
+              }
+            }
             """);
 
         return path;
@@ -53,7 +91,7 @@ public sealed class NodeCatalogueTests : IDisposable
     {
         var catalogue = NodeCatalogue.ReadFrom(Write("named.json", "orders"));
 
-        Assert.Contains("orders", catalogue.Roles, StringComparer.Ordinal);
+        Assert.Contains("orders", Names(catalogue), StringComparer.Ordinal);
     }
 
     [Fact]
@@ -70,8 +108,8 @@ public sealed class NodeCatalogueTests : IDisposable
 
         var catalogue = NodeCatalogue.ReadFrom(named);
 
-        Assert.Contains("orders", catalogue.Roles, StringComparer.Ordinal);
-        Assert.DoesNotContain("billing", catalogue.Roles, StringComparer.Ordinal);
+        Assert.Contains("orders", Names(catalogue), StringComparer.Ordinal);
+        Assert.DoesNotContain("billing", Names(catalogue), StringComparer.Ordinal);
     }
 
     [Fact]
@@ -83,7 +121,8 @@ public sealed class NodeCatalogueTests : IDisposable
         // the file when it reports what it can start.
         var catalogue = NodeCatalogue.ReadFrom(Path.Combine(_root, "absent.json"));
 
-        Assert.Empty(catalogue.Roles);
+        Assert.Empty(catalogue.Identities);
+        Assert.Empty(Names(catalogue));
     }
 
     [Fact]
@@ -92,5 +131,25 @@ public sealed class NodeCatalogueTests : IDisposable
         // The one case where guessing would put the old defect back: a caller with nothing to
         // pass must be made to fix that, not quietly handed the working directory.
         _ = Assert.Throws<ArgumentException>(() => NodeCatalogue.ReadFrom("  "));
+    }
+
+    [Fact]
+    public void A_key_that_is_not_an_identity_is_reported_rather_than_swallowed()
+    {
+        // **The silence this feature exists to remove, in its newest form.** A catalogue written by a
+        // version that keyed by role reads as a machine that can start nothing -- and a machine that can
+        // start nothing joins successfully to say so, in a log nobody reads.
+        var path = Path.Combine(_root, "old.json");
+
+        File.WriteAllText(
+            path,
+            """
+            { "agents": { "orders": { "command": "claude", "workspace": "/srv/orders" } } }
+            """);
+
+        var catalogue = NodeCatalogue.ReadFrom(path);
+
+        Assert.Empty(catalogue.Identities);
+        Assert.Equal(["orders"], catalogue.Unreadable);
     }
 }

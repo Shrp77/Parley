@@ -1,4 +1,5 @@
 ﻿using System.Text.Json.Serialization;
+using Parley.Core;
 
 namespace Parley.Setup;
 
@@ -103,8 +104,18 @@ public sealed record EnrollmentManifest(
 /// <param name="LaunchConfiguration">New <c>.mcp.json</c> contents, or null when it is already correct.</param>
 /// <param name="Instructions">New standing-instructions contents, or null when the file is left alone.</param>
 /// <param name="AddsNodeEntry">Whether this repository would gain a <c>node.json</c> entry.</param>
+/// <param name="Identity">
+/// Which agent this repository is: the one it already declared, or the one this enrolment mints for it.
+/// </param>
+/// <remarks>
+/// <b><see cref="Identity"/> is reported rather than passed in, because the repository is where it lives</b>
+/// (018 R2). A checkout that already carries one keeps it — that is what makes a move or a rename cost
+/// nothing — and only a checkout carrying none gets a new one. The caller needs it because the catalogue is
+/// keyed by it, and deriving it a second time from the same file is how two readers come to disagree.
+/// </remarks>
 public sealed record RepositoryPlan(
     IReadOnlyList<string> Notes,
     string? LaunchConfiguration,
     string? Instructions,
-    bool AddsNodeEntry);
+    bool AddsNodeEntry,
+    AgentIdentity Identity = default);

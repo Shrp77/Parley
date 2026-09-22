@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Parley.Configuration;
 using Parley.Core;
 using Parley.Headless;
 using Xunit;
@@ -24,6 +25,47 @@ public sealed class NodeTurnTests : IDisposable
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    /// <summary>A catalogue naming this test's checkout, which answers to one name in one project.</summary>
+    /// <param name="role">What the checkout says it is called.</param>
+    /// <returns>The catalogue, and the identity it is keyed by.</returns>
+    /// <remarks>
+    /// These tests used to hand the node a table keyed by name. A resident is keyed by identity now, so a
+    /// turn has to be resolved through what a repository claims — which is the step that lets one process
+    /// answer to two projects' names, and therefore the step worth exercising here.
+    /// </remarks>
+    private (NodeCatalogue Catalogue, AgentIdentity Identity) Catalogued(string role)
+    {
+        var identity = AgentIdentity.Mint();
+
+        File.WriteAllText(
+            Path.Combine(_workspace, LaunchConfiguration.FileName),
+            $$"""
+            {
+              "mcpServers": {
+                "parley-alpha": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "{{role}}" } }
+              },
+              "{{LaunchConfiguration.IdentityMember}}": "{{identity}}"
+            }
+            """);
+
+        var path = Path.Combine(_workspace, "node.json");
+
+        File.WriteAllText(
+            path,
+            $$"""
+            {
+              "agents": {
+                "{{identity}}": {
+                  "command": "dotnet --info",
+                  "workspace": {{System.Text.Json.JsonSerializer.Serialize(_workspace)}}
+                }
+              }
+            }
+            """);
+
+        return (NodeCatalogue.ReadFrom(path), identity);
+    }
+
     [Fact]
     public async Task A_turn_for_an_agent_that_is_not_ours_is_silent()
     {
@@ -31,11 +73,16 @@ public sealed class NodeTurnTests : IDisposable
         // editor window is working perfectly well, driven by the person in front of it. There is
         // nothing a node can do to make one take a turn, and saying so on every question would
         // print a line per message about an agent that is not broken.
-        var residents = new ConcurrentDictionary<string, ResidentAgent>(StringComparer.Ordinal);
+        var (catalogue, _) = Catalogued("docs");
+        var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
         var reported = new StringWriter();
 
+        // Catalogued, and nothing running: a name this machine could start is still not a name it is
+        // currently holding a process for, and that is the case the broker asks a turn for.
         await NodeCommand.TurnAsync(
             new Wire.GiveTurn { Agent = "docs@alpha", Because = "orders asked it a question" },
+            catalogue,
+            "alpha",
             residents,
             reported,
             Ct);
@@ -50,14 +97,15 @@ public sealed class NodeTurnTests : IDisposable
         // close, so it asks for a turn rather than a start. Before this, the node checked that the
         // resident was alive and said nothing when it was not — which reads as correct and drops
         // the question, which is the whole defect in miniature.
-        var residents = new ConcurrentDictionary<string, ResidentAgent>(StringComparer.Ordinal);
+        var (catalogue, identity) = Catalogued("docs");
+        var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
         var reported = new StringWriter();
 
         var agent = AgentName.Create("docs@alpha");
         var dead = ResidentAgent.Start(
             agent, InvocationCommand.Parse("dotnet --info"), _workspace, TimeProvider.System);
 
-        residents[agent.Value] = dead;
+        residents[identity] = dead;
 
         // It is launched with the protocol's own arguments appended, which `dotnet --info` will
         // not accept, so it exits at once. All this test needs of it is that it has stopped.
@@ -70,6 +118,8 @@ public sealed class NodeTurnTests : IDisposable
 
         await NodeCommand.TurnAsync(
             new Wire.GiveTurn { Agent = agent.Value, Because = "orders asked it a question" },
+            catalogue,
+            "alpha",
             residents,
             reported,
             Ct);
@@ -89,11 +139,14 @@ public sealed class NodeTurnTests : IDisposable
     {
         // The wire carries a string. A node that threw on one would take a machine off the air
         // over a message it could simply decline to act on.
-        var residents = new ConcurrentDictionary<string, ResidentAgent>(StringComparer.Ordinal);
+        var (catalogue, _) = Catalogued("docs");
+        var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
         var reported = new StringWriter();
 
         await NodeCommand.TurnAsync(
             new Wire.GiveTurn { Agent = "Not A Valid Name", Because = "whatever" },
+            catalogue,
+            "alpha",
             residents,
             reported,
             Ct);

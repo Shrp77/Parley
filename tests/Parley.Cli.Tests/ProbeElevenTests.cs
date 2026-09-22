@@ -161,9 +161,31 @@ public sealed class ProbeElevenTests : IAsyncDisposable
         var command = await File.ReadAllTextAsync(
             Path.Combine(Workspace("byCommand"), ".mcp.json"), TestContext.Current.CancellationToken);
 
+        // **One field cannot be equal and must not be** (018). The identity is minted per repository
+        // and these are two, so comparing it would be asking two agents to be one. Both must carry one,
+        // which is asserted rather than assumed, and the rest of the file is compared as before —
+        // including where the member sits and how it is spelled, since those are what a diff shows.
         Assert.Equal(
-            terminal.Replace("byTerminal", "X", StringComparison.Ordinal),
-            command.Replace("byCommand", "X", StringComparison.Ordinal));
+            Standardised(terminal).Replace("byTerminal", "X", StringComparison.Ordinal),
+            Standardised(command).Replace("byCommand", "X", StringComparison.Ordinal));
+    }
+
+    /// <summary>One launch configuration with its minted identity replaced by a fixed one.</summary>
+    /// <param name="launch">The file's contents.</param>
+    /// <returns>The same file, comparable with another repository's.</returns>
+    /// <exception cref="Xunit.Sdk.XunitException">It carries no identity.</exception>
+    private static string Standardised(string launch)
+    {
+        var root = JsonNode.Parse(launch)!.AsObject();
+
+        Assert.True(
+            AgentIdentity.TryRead(
+                root[LaunchConfiguration.IdentityMember]?.GetValue<string>(), out _),
+            "the writer left the repository with no identity, so nothing can start it");
+
+        root[LaunchConfiguration.IdentityMember] = "00000000-0000-0000-0000-000000000000";
+
+        return root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
     }
 
     [Fact]

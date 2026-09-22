@@ -600,7 +600,71 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/017-conversation-room/` — **0.30.7, built whole and green across every suite; the
+- **Current plan**: `specs/018-agent-identity/` — **0.31.0, built through T028 and green across every suite.
+  The review gate is owed, the manifest still carries a field nothing reads, and nothing is pushed.** An agent
+  is an identity, not a name: a stable identifier keys one catalogue per machine, and a name is what a project
+  calls it. The owner's model, stated on 2026-09-22 after a message reached one agent and not another — one
+  checkout enrolled in two projects, startable in the one whose catalogue named it and unstartable in the
+  other, because the catalogue is keyed by a per-project name and there is one per project. **The defect is
+  not the catalogue's contents; it is that the arrangement can express that state at all.**
+
+  It takes 012's **D2** (one catalogue per machine, not keyed by a name) and **D3** (membership lives in the
+  repository) and leaves D4 to D9 where they are. **No wire change to how a message is addressed, no schema
+  change, and no migration** — the owner was explicit that existing data does not matter. What it deletes is
+  the per-project catalogue, the manifest's binding for it, the machine-wide enrolment gate, the
+  cross-project scan, 009's documented deviation from Principle V, and the rule that a second project gets no
+  catalogue line.
+
+  **The identity lives in the repository and the catalogue is keyed by it.** `.mcp.json` gains
+  `parleyAgentId`, minted once by enrolment and never derived from a path or a name, so a checkout that moves
+  or is renamed is the same agent afterwards and nothing needs repairing. `node.json` says how to start that
+  identity and where, and says nothing about projects — so what a project calls a checkout is read back out
+  of the checkout, and two workspaces claiming one name resolve to neither and are reported.
+
+  **What building it found, each caught by a test rather than by reading:**
+
+  - **`Parley.Headless.Tests` had been eighteen red since 016** and nobody knew. Its fixture still wrote 0.6
+    Request payloads, which schema 11 refuses outright, so every test that opened an exchange threw before it
+    reached the fleet. Invisible because `dotnet test` reports nothing on this machine and the branch has
+    never reached CI — the entry above about that trap says the same thing from the other side.
+  - **The machine half of the catalogue key vanished with the rekey.** A key used to be a role and a lookup
+    carried a machine, so `billing` here meant `billing@thisMachine`. An identity says nothing about machines
+    and a store holds agents on several, so a local checkout claiming `billing` would have been started for
+    `billing@server-b`. The check moved to `AgentFleet`, which is the one place left that compares a name to
+    a machine.
+  - **The launch-key rule grew a second implementation.** This project needed its own reader of `.mcp.json`,
+    and it spelled `parley` and `parley-` itself — for one build the rule had two implementations that
+    happened to agree. `KeyRuleTests` reported it by path, which is exactly what it was written to do, and
+    `LaunchKey` moved to `Parley.Configuration` where both readers can see it.
+  - **The copied-repository refusal was enforced on one of the two writers.** `AddAsync` had it and
+    `enroll apply` did not, which is this repository's recorded shape for that mistake. One implementation
+    now, asked of every row before a bulk run writes any of it.
+  - **The catalogue's fallback resolved against the working directory.** Survivable while every manifest
+    entry named an absolute path; the ordinary case once that entry went, and a broker started by a logon
+    entry starts wherever the scheduler put it. It is beside the manifest now, and the node and the enrolment
+    reach it the same way — writing consent into a file the supervisor does not read is the defect this whole
+    feature exists to remove.
+  - **Creating a catalogue restarted a broker.** The terminal recorded the new path on the project through
+    the command that owns the manifest, and the serve watcher compares the manifest to decide whether a
+    deployment is the same one — so adding the first agent to a project dropped every agent attached to it.
+    Nothing is recorded on a project any more.
+
+  **And one defect reached a real machine, which is why the seam exists.** `Catalogue.Proposed` read
+  `PARLEY_NODE_CONFIG` for itself, deep inside the write. The terminal's tests build the surface in process,
+  so they inherited the developer's own setting and enrolled their temporary repositories into the live
+  deployment's catalogue — thirty-five junk entries in a file somebody's agents are started from.
+  `ToolProcess` clears those variables before launching the tool as a child, which is the same guard; it
+  simply could not cover a surface that never launches anything. The path is passed in now, beside
+  `Shell.Opener` and `Shell.Copier`, and resolved once by whoever builds the shell. **Reading ambient state
+  from the bottom of a call stack is what made it unreachable from the top.**
+
+  `research.md` carries eight decisions, `contracts/catalogue.md` the two file shapes and every refusal, and
+  `quickstart.md` the walk that measures the two claims worth doubting: one checkout starts from either
+  project, and two projects asking at once produce one process. **Still owed:** `ProjectSettings.NodeConfig`
+  and its readers (T027), the surfaces and installers that still name a per-project catalogue (T029–T031),
+  US4's telling a person when this machine cannot start an agent (T032–T037), and the review gate.
+
+- **Previous plan**: `specs/017-conversation-room/` — **0.30.7, built whole and green across every suite; the
   review gate is owed and nothing is pushed.** The terminal's
   conversation view becomes a room: participants, outstanding work and agent status down a narrow column; the
   transcript above one input line in a wide one. The owner's call on 2026-09-21, after using it — it should read

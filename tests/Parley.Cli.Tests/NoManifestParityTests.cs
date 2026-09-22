@@ -77,7 +77,7 @@ public sealed class NoManifestParityTests : IDisposable
 
         Assert.Null(ProjectResolution.Store(null, NoVariables, project).Value);
         Assert.Equal(BrokerEndpoint.Default, ProjectResolution.Endpoint(null, NoVariables, project).Value);
-        Assert.Equal(NodeCatalogue.DefaultFileName, ProjectResolution.NodeConfig(null, NoVariables, project).Value);
+        Assert.Equal(NodeCatalogue.DefaultFileName, ProjectResolution.NodeConfig(null, NoVariables, null).Value);
     }
 
     [Theory]
@@ -118,15 +118,12 @@ public sealed class NoManifestParityTests : IDisposable
     }
 
     [Fact]
-    public void A_value_a_project_does_not_supply_falls_back_rather_than_failing()
+    public void A_machine_with_no_manifest_still_resolves_a_catalogue()
     {
-        // A project may legitimately start nothing on this machine, so its node catalogue is
-        // absent rather than wrong. Treating a partially specified project as broken would make
-        // the optional fields mandatory, which is the same mistake as reporting the missing file.
-        var project = new ProjectSettings(
-            ProjectName.Create("orders"), "/srv/orders.db", "http://127.0.0.1:51801", null, null);
-
-        var node = ProjectResolution.NodeConfig(null, NoVariables, project);
+        // A machine may legitimately name no projects, and §4.1 keeps that supported. The catalogue is
+        // the machine's rather than any project's since 018, so there is nothing for a project to fail
+        // to supply — what has to hold is that the answer is still the one the node reaches.
+        var node = ProjectResolution.NodeConfig(null, NoVariables, null);
 
         Assert.Equal(NodeCatalogue.DefaultFileName, node.Value);
         Assert.Equal(ValueSource.Default, node.Source);

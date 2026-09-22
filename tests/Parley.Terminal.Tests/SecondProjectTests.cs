@@ -1,6 +1,5 @@
 using Parley.Client;
 using Parley.Core;
-using Parley.Setup;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
@@ -18,54 +17,29 @@ namespace Parley.Terminal.Tests;
 /// rule that was never about it.
 /// </para>
 /// <para>
-/// <b>A different name cannot help and must not.</b> The rule is keyed on the workspace, because
-/// the hazard is a node starting a client with that workspace as its working directory — two of
-/// them is two models editing one checkout, and renaming the agent does not make it two checkouts.
-/// So what changes is what gets written, not what gets compared.
+/// <b>018 removed the rule, and three of the tests that were here went with it.</b> They asserted that
+/// the second project was told it got no catalogue line, which project held the unattended start, and
+/// that the description did not read as a refusal. There is one catalogue per machine keyed by the
+/// agent's identity now: every project shares the one entry, so a second project is told nothing special
+/// because nothing special happens to it. What replaced them is
+/// <c>tests/Parley.Cli.Tests/EnrollingTwiceTests.cs</c>, which asserts the behaviour rather than the
+/// sentence that used to explain its absence.
+/// </para>
+/// <para>
+/// <b>A different name could not have helped, and the reasoning is worth keeping.</b> FR-013 was keyed on
+/// the workspace, because the hazard is a node starting a client with that workspace as its working
+/// directory — two of them is two models editing one checkout, and renaming the agent does not make it
+/// two checkouts. That hazard is closed by construction now: residents are keyed by identity and shared
+/// across every project one process hosts, so the second ask finds the first one's process.
 /// </para>
 /// </remarks>
 public sealed class SecondProjectTests
 {
-    private static Enrolment.Shared Already => new("alpha", "orders");
-
-    [Fact]
-    public void The_second_project_is_told_it_gets_no_catalogue_line()
-    {
-        var said = Adding.Describe("C:/repo", "C:/store/beta-node.json", "beta", Already);
-
-        // The launch entry, which is the whole of what makes it answer in this project.
-        Assert.Contains(".mcp.json", said, StringComparison.Ordinal);
-
-        // And not the catalogue, which is the one thing it may not have twice.
-        Assert.DoesNotContain("beta-node.json", said, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void It_says_which_project_holds_the_unattended_start()
-    {
-        var said = Adding.Describe("C:/repo", "C:/store/beta-node.json", "beta", Already);
-
-        // Actionable rather than merely true. Somebody who wants this project to be the one that
-        // starts it has to know which project to take it away from.
-        Assert.Contains("alpha", said, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void It_says_the_agent_still_ends_up_registered_here()
-    {
-        // The half that makes this worth doing rather than a documented limitation. One working
-        // directory has one launch configuration and a client brings up every server in it, so a
-        // start through the other project registers the agent in both.
-        var said = Adding.Describe("C:/repo", "C:/store/beta-node.json", "beta", Already);
-
-        Assert.Contains("registers", said, StringComparison.Ordinal);
-    }
-
     [Fact]
     public void An_ordinary_first_enrolment_still_names_both_files()
     {
         // The change must not cost the common case its description.
-        var said = Adding.Describe("C:/repo", "C:/store/alpha-node.json", "alpha", already: null);
+        var said = Adding.Describe("C:/repo", "C:/store/alpha-node.json", "alpha");
 
         Assert.Contains(".mcp.json", said, StringComparison.Ordinal);
         Assert.Contains("alpha-node.json", said, StringComparison.Ordinal);
@@ -84,34 +58,22 @@ public sealed class SecondProjectTests
         const string Nasty = "al\u001b[2Jpha";
 
         var described = Adding.Describe(
-            "C:/work/or\u001b[2Jders", "C:/store/no\u001b[2Jde.json", Nasty, already: null);
-
-        var shared = Adding.Describe(
-            "C:/work/orders", "C:/store/node.json", "beta", new Enrolment.Shared(Nasty, "orders"));
+            "C:/work/or\u001b[2Jders", "C:/store/no\u001b[2Jde.json", Nasty);
 
         Assert.DoesNotContain('\u001b', described);
-        Assert.DoesNotContain('\u001b', shared);
     }
 
     [Fact]
-    public void The_shared_description_does_not_read_as_a_refusal()
-    {
-        // It is not one. The repository is being added, and every word suggesting otherwise sends
-        // somebody looking for a problem to fix.
-        var said = Adding.Shared(Already, "beta");
-
-        foreach (var wrong in new[] { "cannot", "refused", "failed", "not allowed" })
-        {
-            Assert.DoesNotContain(wrong, said, StringComparison.OrdinalIgnoreCase);
-        }
-    }
-
-    [Fact]
-    public async Task A_start_through_the_other_project_looks_for_the_new_name_in_this_one()
+    public async Task A_start_looks_for_the_new_name_in_the_project_it_was_added_to()
     {
         // Reported by the owner with a screenshot: a repository one project already runs was added to another, and the
         // message line said it registered and could be asked now while the agents list beside it did not show it. The
         // check had asked the starting project about the role the repository has there, which was always yes.
+        //
+        // **The start goes to the project being added to now** (018). It used to be dispatched through whichever
+        // project held the consent, because only that project's node could launch the checkout; every project's node
+        // reads the same catalogue, so there is no longer another project to go through. The asking half — which is
+        // what the defect was — is unchanged, and is what this still holds.
         var alpha = new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null, null);
         var beta = new ProjectSettings(ProjectName.Create("beta"), string.Empty, "http://127.0.0.1:2", null, null);
         var asked = new List<(string Project, string Agent)>();
@@ -130,11 +92,10 @@ public sealed class SecondProjectTests
             },
             "inventory",
             beta,
-            Already,
             [alpha, beta],
             TestContext.Current.CancellationToken);
 
-        Assert.Equal([("alpha", "orders@" + MachineName.Current)], started);
+        Assert.Equal([("beta", "inventory@" + MachineName.Current)], started);
         Assert.NotEmpty(asked);
         Assert.All(asked, one => Assert.Equal(("beta", "inventory@" + MachineName.Current), one));
         Assert.Contains("It can be asked and told now", said, StringComparison.Ordinal);

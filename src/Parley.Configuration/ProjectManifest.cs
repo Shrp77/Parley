@@ -384,7 +384,6 @@ public static class ProjectManifest
         // — and the consent that says a repository may run with nobody watching stops being per
         // project, which is the one thing SPEC.md §4.1's isolation cannot supply from storage
         // because the catalogue is not in the store.
-        var catalogues = new Dictionary<string, int>(PathComparer);
 
         for (var index = 0; index < projects.Count; index++)
         {
@@ -407,16 +406,10 @@ public static class ProjectManifest
                 Claim(endpoints, project.Endpoint, index, "an endpoint", "only one broker can hold a port");
             }
 
-            if (!string.IsNullOrEmpty(project.NodeConfig))
-            {
-                Claim(
-                    catalogues,
-                    Canonical(project.NodeConfig),
-                    index,
-                    "a node catalogue",
-                    "consent to run unattended is per project because the catalogue is, and one " +
-                    "file cannot be two projects' answer");
-            }
+            // **Two projects sharing a catalogue was refused here, and 018 removed the reason.** The
+            // rule read: consent to run unattended is per project because the catalogue is, and one file
+            // cannot be two projects' answer. The catalogue belongs to the machine now and every project
+            // on it reads the same file, so sharing one is the ordinary case rather than a collision.
         }
 
         return problems;

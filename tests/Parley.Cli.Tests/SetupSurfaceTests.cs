@@ -64,11 +64,14 @@ public sealed class SetupSurfaceTests
                 "Enrolment",
 
                 // Nested, and invisible to this check until lens 3 widened it. `Outcome` is what
-                // every write here returns and has been public since the split; `Shared` says which
-                // project already starts a repository, so a surface can describe what it is about
-                // to write before it writes it rather than finding out by being refused.
+                // every write here returns and has been public since the split.
+                //
+                // `Enrolment.Shared` was beside it and 018 removed it: it said which project already
+                // started a repository, so a surface could describe the launch entry it was about to
+                // write and the catalogue line it was not. One catalogue per machine keyed by the
+                // agent's identity means every project shares the one entry, so there is no second
+                // shape to describe.
                 "Enrolment.Outcome",
-                "Enrolment.Shared",
                 "InstalledEntry",
                 "InterruptedEnrolment",
                 "ProjectCommand",
@@ -79,6 +82,8 @@ public sealed class SetupSurfaceTests
                 // A command's project comes from its context, and `parley` reads which projects the repository it runs
                 // in names. Here rather than in the CLI because the terminal enrols repositories through this assembly
                 // and the key rule it reads -- `parley-<project>` -- is `LaunchKey`'s, which must not be written twice.
+                // `LaunchKey` itself moved to Parley.Configuration in 018, where a node's own reader of that file can
+                // see it; this assembly still reads it from there rather than keeping a second spelling.
                 "RepositoryProjects",
                 "RepositorySelection",
                 "Resolved",

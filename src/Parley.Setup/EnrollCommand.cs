@@ -877,41 +877,18 @@ public static class EnrollCommand
 
         var problems = new List<string>(EnrollmentPlan.Validate(entries, Directory.Exists));
 
-        // **FR-013 belongs here and was in the writing loop, which is a different promise.** This
-        // command refuses a half-enrolled set on principle -- everything is validated before
-        // anything is written, because "the repository that missed out is indistinguishable from one
-        // you never meant to enroll". A refusal raised while writing undoes exactly that: the
-        // repositories before it in the list are on disk and the run reports a failure. Found by
-        // probe, in the gate, after the check had been written into the wrong phase.
-        foreach (var entry in entries.Where(row => row.Unattended))
-        {
-            var already = Catalogues.Elsewhere(
-                deployment,
-                entry.Workspace,
-                ResolveNodeConfig(manifest?.NodeConfig, nodeConfig.Value),
-                out var unseen);
-
-            if (already is not null)
-            {
-                // **The way out, said here rather than in the refusal itself.** `Catalogues.Refusal`
-                // is shared with `Enrolment.AddAsync`, which the terminal reaches — and there the
-                // advice would be wrong, because that surface has no manifest row to edit and makes
-                // the same choice for the person. The rule belongs in one place and the remedy
-                // belongs where it can be acted on.
-                //
-                // The owner met this from the terminal, where it was a dead end. It never was one
-                // here, and saying nothing about the flag that opens it made it look like one.
-                problems.Add(
-                    $"{entry.Agent}: {Catalogues.Refusal(already)} Set \"unattended\": false on "
-                    + "this row to enroll it here anyway: it answers in this project and is started "
-                    + "by the other one, which brings up every parley server in its launch "
-                    + "configuration.");
-            }
-            else if (unseen is not null)
-            {
-                problems.Add($"{entry.Agent}: {unseen}");
-            }
-        }
+        // **FR-013's check was here, and 018 removed the rule it enforced.**
+        //
+        // It refused a row whose workspace another project already catalogued for unattended start, because
+        // two nodes launching one working directory is two models editing one checkout. The check belonged
+        // in this phase and not in the writing loop, which is the note that used to sit here: this command
+        // refuses a half-enrolled set on principle, and a refusal raised while writing leaves the
+        // repositories before it on disk.
+        //
+        // The catalogue is one file keyed by the agent's identity now, so one checkout has one entry however
+        // many projects name it, and "catalogued twice" cannot be written down. What the check prevented is
+        // prevented by the shape of the file; what it cost — three routes to "I could not read that
+        // catalogue", each granting the second start silently — is gone with it.
 
         // **Asked here, among every other reason to refuse the whole run**, because enrolment now
         // depends on the answer: it must leave each agent registered, registering is the agent
@@ -995,6 +972,43 @@ public static class EnrollCommand
             await error.WriteLineAsync(
                 $"{nodePath} has an \"agents\" entry that is not an object. Fix or move it first:\n" +
                 "enrolling would replace it.").ConfigureAwait(false);
+
+            return Config;
+        }
+
+        // **The copied-repository refusal, asked of every row before any of them is written** (018). It is
+        // the one refusal left that cannot be decided from the manifest alone: it needs the catalogue,
+        // which is read here and not in the validation phase above. Asked in this loop rather than in the
+        // writing one for that phase's own reason — a refusal raised while writing leaves the repositories
+        // before it on disk, and this command refuses a half-enrolled set on principle.
+        //
+        // `Enrolment.AddAsync` applies the same rule for the single-repository path. One rule enforced on
+        // one of two writers is this repository's recorded shape, and the probe that found it here was
+        // asking a different question.
+        var copies = new List<string>();
+
+        foreach (var entry in entries)
+        {
+            var declared = Enrolment.CopyRefusal(listed, entry.Workspace);
+
+            if (declared is not null)
+            {
+                copies.Add($"{entry.Workspace}: {declared}");
+            }
+        }
+
+        if (copies.Count > 0)
+        {
+            await error.WriteLineAsync("This manifest is not usable yet:\n").ConfigureAwait(false);
+
+            foreach (var copy in copies)
+            {
+                await error.WriteLineAsync($"  - {copy}").ConfigureAwait(false);
+            }
+
+            await error.WriteLineAsync(
+                "\nNothing was written. A half-enrolled set is worse than none: the repository that " +
+                "\nmissed out is indistinguishable from one you never meant to enroll.").ConfigureAwait(false);
 
             return Config;
         }
@@ -1140,11 +1154,11 @@ public static class EnrollCommand
 
             if (plan.AddsNodeEntry)
             {
-                // FR-013 is checked in the validation phase above, with every other reason to refuse
-                // the whole run. Checking it here as well would be a second answer to one question,
-                // and the version that lived here produced the half-applied set this command exists
-                // to prevent.
-                Enrolment.List(listed, entry.Agent, entry.Workspace);
+                // **Keyed by the identity the plan decided**, which is the one the repository now carries.
+                // FR-013 used to be checked in the validation phase above rather than here, so that one
+                // answer to one question could refuse the whole run before anything was half-applied; the
+                // rule is gone and the shape is kept — nothing about the catalogue is decided in this loop.
+                Enrolment.List(listed, plan.Identity, entry.Workspace);
                 nodeChanged = true;
             }
         }

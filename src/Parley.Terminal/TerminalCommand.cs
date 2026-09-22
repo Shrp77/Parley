@@ -99,8 +99,12 @@ public static class TerminalCommand
         // Read once here rather than on every draw: the entry changes when somebody runs
         // `autostart install`, which is not something done from inside this surface, and reading a
         // scheduled task on every keystroke is a wait a person notices.
+        // Resolved here, once, where the environment is the machine's own rather than a test host's.
+        var catalogue = ProjectResolution.NodeConfig(
+            null, Environment.GetEnvironmentVariable, manifestPath).Value;
+
         return await DriveAsync(
-            app, directory, seats, manifestPath, InstalledEntry.Installed(), cancellationToken)
+            app, directory, seats, manifestPath, InstalledEntry.Installed(), catalogue, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -115,6 +119,13 @@ public static class TerminalCommand
     /// and a surface that offered a different action according to what the developer's own
     /// scheduler holds would be a test that behaves differently on somebody else's machine.
     /// </param>
+    /// <param name="cataloguePath">
+    /// This machine's node catalogue, or null to work it out from the manifest. Passed rather than read
+    /// here, for the reason <paramref name="installed"/> is — and this one is a scar: it was read from
+    /// the environment inside the write, so the tests that drive this surface in process inherited the
+    /// developer's own <c>PARLEY_NODE_CONFIG</c> and enrolled their temporary repositories into a live
+    /// deployment's catalogue.
+    /// </param>
     /// <param name="cancellationToken">Stops the surface.</param>
     /// <returns>The process exit code.</returns>
     internal static async Task<int> DriveAsync(
@@ -123,11 +134,12 @@ public static class TerminalCommand
         SeatBook seats,
         string? manifestPath = null,
         InstalledEntry? installed = null,
+        string? cataloguePath = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        using var shell = Build(directory, seats, manifestPath, installed);
+        using var shell = Build(directory, seats, manifestPath, installed, cataloguePath);
 
         await shell.RefreshAsync(cancellationToken).ConfigureAwait(false);
 
@@ -141,6 +153,7 @@ public static class TerminalCommand
     /// <param name="seats">Where a person's seat is held.</param>
     /// <param name="manifestPath">The manifest, for the screens that write to it.</param>
     /// <param name="installed">What this machine's supervisor runs, or null.</param>
+    /// <param name="cataloguePath">This machine's node catalogue, or null to take it from the manifest.</param>
     /// <returns>The surface.</returns>
     /// <remarks>
     /// Separated from <see cref="DriveAsync"/> because a test drives the surface without a run
@@ -151,12 +164,14 @@ public static class TerminalCommand
         BrokerDirectory directory,
         SeatBook? seats = null,
         string? manifestPath = null,
-        InstalledEntry? installed = null) =>
+        InstalledEntry? installed = null,
+        string? cataloguePath = null) =>
         new(directory)
         {
             Seats = seats,
             ManifestPath = manifestPath,
             Installed = installed,
+            CataloguePath = cataloguePath,
         };
 
     /// <summary>Whether there is a terminal to draw on at all.</summary>

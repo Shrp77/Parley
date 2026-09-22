@@ -1,5 +1,6 @@
-using System.Reflection;
 using Parley.Configuration;
+using Parley.Core;
+using System.Reflection;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
@@ -29,12 +30,14 @@ public sealed class ProbeTwoTests
     public async Task A_catalogue_being_written_is_never_half_read()
     {
         var path = Path.Combine(Path.GetTempPath(), $"parley-cat-{Guid.NewGuid():N}.json");
-        var full = new[] { "orders", "billing", "inventory", "shipping", "returns" };
+        // Keyed by identity, because a catalogue is (018). A role-keyed fixture reads as a machine that
+        // can start nothing, which would leave this probe watching a torn read of an empty answer.
+        var full = Enumerable.Range(0, 5).Select(_ => AgentIdentity.Mint()).ToArray();
 
         string Whole() =>
             "{\"agents\":{"
-            + string.Join(",", full.Select(role =>
-                $"\"{role}\":{{\"command\":\"claude\",\"workspace\":\"/srv/{role}\"}}"))
+            + string.Join(",", full.Select(agent =>
+                $"\"{agent}\":{{\"command\":\"claude\",\"workspace\":\"/srv/{agent}\"}}"))
             + "}}";
 
         File.WriteAllText(path, Whole());
@@ -82,15 +85,15 @@ public sealed class ProbeTwoTests
                     {
                         Interlocked.Increment(ref reads);
 
-                        var roles = catalogue.Roles.ToArray();
+                        var found = catalogue.Identities.ToArray();
 
                         // Success must mean the whole file. A prefix that happened to close its
                         // braces would be the defect this probe exists for.
-                        if (roles.Length != 0 && roles.Length != full.Length)
+                        if (found.Length != 0 && found.Length != full.Length)
                         {
                             lock (torn)
                             {
-                                torn.Add(string.Join(",", roles));
+                                torn.Add(string.Join(",", found));
                             }
                         }
 
@@ -147,66 +150,15 @@ public sealed class ProbeTwoTests
     /// key. The probe writes the keys somebody would use to get around it — a role already
     /// carrying a machine, and one carrying this machine — and asks for both spellings back.
     /// </remarks>
-    [Fact]
-    public void A_catalogue_speaks_only_for_its_own_machine()
-    {
-        var here = NodeCatalogue.Machine;
-        var path = Path.Combine(Path.GetTempPath(), $"parley-cat-{Guid.NewGuid():N}.json");
+    // **`A_catalogue_speaks_only_for_its_own_machine` stood here, and 018 removed what it probed.** The
+    // catalogue was keyed by role, so a lookup had to carry a machine and refuse one that was not this
+    // one — otherwise an entry for `orders` here would have answered for `orders@server-b`, and this node
+    // would start a process for a repository that is not on it under a name somebody else holds. It is
+    // keyed by identity now, and an identity says nothing about machines, so there is nothing here to
+    // check. **The property itself is not gone and is not free**: it moved to the one place that still
+    // compares a name to a machine, and `AgentFleetTests.An_agent_on_another_machine_is_never_started_from_here`
+    // is where it is now held.
 
-        try
-        {
-            File.WriteAllText(
-                path,
-                "{\"agents\":{"
-                + "\"orders\":{\"command\":\"claude\",\"workspace\":\"/srv/orders\"},"
-                + $"\"billing@{here}\":{{\"command\":\"planted\",\"workspace\":\"/srv/x\"}},"
-                + "\"inventory@elsewhere\":{\"command\":\"planted\",\"workspace\":\"/srv/y\"},"
-                + "\"shipping\":{\"workspace\":\"/srv/z\"},"
-                + "\"returns\":{\"command\":\"\",\"workspace\":\"/srv/w\"}"
-                + "}}");
-
-            Assert.True(NodeCatalogue.TryReadFrom(path, out var catalogue, out _));
-
-            // The plain entry is startable here and nowhere else.
-            Assert.NotNull(catalogue.CommandFor(Parley.Core.AgentName.Create("orders@" + here)));
-            Assert.Null(catalogue.CommandFor(Parley.Core.AgentName.Create("orders@elsewhere")));
-
-            // A key that already carries a machine does not become that agent. The role of
-            // billing@here is "billing", and no entry is keyed "billing".
-            Assert.Null(catalogue.CommandFor(Parley.Core.AgentName.Create("billing@" + here)));
-            Assert.Null(catalogue.CommandFor(Parley.Core.AgentName.Create("inventory@elsewhere")));
-            Assert.Null(catalogue.CommandFor(Parley.Core.AgentName.Create("inventory@" + here)));
-
-            // An entry with no usable command is not an entry, so it cannot supply a workspace
-            // either -- a start with a directory and nothing to run in it is the worse failure.
-            Assert.Null(catalogue.CommandFor(Parley.Core.AgentName.Create("shipping@" + here)));
-            Assert.Null(catalogue.WorkspaceFor(Parley.Core.AgentName.Create("shipping@" + here)));
-            Assert.Null(catalogue.CommandFor(Parley.Core.AgentName.Create("returns@" + here)));
-            Assert.Null(catalogue.WorkspaceFor(Parley.Core.AgentName.Create("returns@" + here)));
-
-            // Nothing planted is reachable by any spelling.
-            foreach (var role in catalogue.Roles)
-            {
-                if (!Parley.Core.AgentName.TryCreate(role + "@" + here, out var name))
-                {
-                    continue;
-                }
-
-                Assert.NotEqual("planted", catalogue.CommandFor(name));
-            }
-        }
-        finally
-        {
-            File.Delete(path);
-        }
-    }
-
-    /// <summary>Lens 3: the move changed the reader's address and nothing else.</summary>
-    /// <remarks>
-    /// A move is the one change where the surface is supposed to be identical, so it is the one
-    /// change where an addition rides along unnoticed. The list is written out rather than
-    /// counted, so adding a member is a decision somebody makes here.
-    /// </remarks>
     [Fact]
     public void The_reader_carries_the_surface_it_had()
     {
@@ -224,19 +176,28 @@ public sealed class ProbeTwoTests
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
 
+        // **Written out rather than counted, which is what makes it a decision.** 018 replaced `Roles`
+        // with five members, and every one of them is a choice about what a catalogue is for: it is keyed
+        // by identity (`Identities`), it says nothing about what anything is called, so the names come
+        // back out of the repositories (`Workspaces`, `TryResolve`, `Announceable`), and a key that is
+        // not an identity is reported rather than swallowed (`Unreadable`).
         Assert.Equal(
             [
+                "Announceable",
                 "CommandFor",
                 "DefaultFileName",
                 "Empty",
+                "Identities",
                 "Machine",
                 "PathVariable",
                 "Read",
                 "ReadFrom",
-                "Roles",
                 "ToString",
                 "TryReadFrom",
+                "TryResolve",
+                "Unreadable",
                 "WorkspaceFor",
+                "Workspaces",
             ],
             surface);
 

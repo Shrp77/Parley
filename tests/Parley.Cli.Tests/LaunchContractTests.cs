@@ -1,6 +1,7 @@
+using Parley.Configuration;
 using Parley.Setup;
-using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json;
 using Xunit;
 
 namespace Parley.Cli.Tests;

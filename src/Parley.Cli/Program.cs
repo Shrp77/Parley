@@ -1,4 +1,5 @@
-﻿using System.ComponentModel;
+﻿using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using Parley.Setup;
@@ -8,6 +9,7 @@ using Parley.Cli;
 using Parley.Client;
 using Parley.Configuration;
 using Parley.Core;
+using Parley.Headless;
 using Wire = Parley.Transport;
 
 // The operator's way in, and the broker's. SPEC.md §10.2 operations, plus the two processes a
@@ -565,44 +567,25 @@ if (verb == "serve" && rest.Length == 0)
     // waiting on CancellationToken.None never heard about it. Pressing Ctrl+C again could not
     // help either, because the handler stayed registered and kept cancelling the signal.
     //
-    // A catalogue belongs to a project (SPEC.md §4.1), so one named on the command line needs
-    // the project it is for. With several served, each hosts a node from its own manifest entry
-    // and an explicit catalogue has nowhere to go -- refused with the fix in it, because the
-    // alternative is a machine silently joined to whichever deployment happened to be listed
-    // first.
-    if (hostNode && serving.Count > 1 && nodeConfigPath is not null)
-    {
-        var serves = string.Create(
-            CultureInfo.InvariantCulture,
-            $"--node-config names one catalogue, and this process would serve {serving.Count} projects.");
-
-        await Console.Error.WriteLineAsync(
-            serves + " A catalogue belongs to a project (SPEC.md §4.1): put it in the project's " +
-            "manifest entry with `parley project add <name> ... --node-config <path>`, or name " +
-            "the one deployment it is for with --project.").ConfigureAwait(false);
-
-        return Config;
-    }
-
+    // **`--node-config` with several projects was refused here, and 018 removed the reason.** A
+    // catalogue belonged to a project, so one named on the command line had nowhere to go when several
+    // were served -- and admitting it would have joined the machine to whichever deployment happened to
+    // be listed first. There is one catalogue per machine now and the flag names exactly that, so it
+    // applies to every project this process serves and there is nothing to disambiguate.
     var hostedCatalogue = ProjectResolution.NodeConfig(
-        nodeConfigPath,
-        Environment.GetEnvironmentVariable,
-        serving.Count == 1 ? serving[0] : null);
+        nodeConfigPath, Environment.GetEnvironmentVariable, manifestPath);
 
     var hostedFrom = hostedCatalogue.Value ?? NodeCatalogue.DefaultFileName;
 
-    // The one project this machine serves alone, by name. By name and not by identity, because the watcher restarts a
-    // project on a changed entry as a new record -- and a lone project whose catalogue is in PARLEY_NODE_CONFIG was, by
-    // identity, a different project after that restart, told it named no catalogue, and silently stopped starting
-    // agents. Found by probing.
+    // **A "lone project" was tracked here and 018 removed the question it answered.** One project served
+    // alone hosted its node from `PARLEY_NODE_CONFIG` while several hosted each from its own manifest
+    // entry, so the machine had to know which case it was in -- and by *name* rather than by identity,
+    // because the watcher restarts a project on a changed entry as a new record, and a lone project
+    // recognised by identity became a different one after the restart, was told it named no catalogue,
+    // and silently stopped starting agents. Both of those were found by probing.
     //
-    // **A machine that was waiting has a lone project too: the first one named, while it is the only one.** Without it
-    // the same one-project manifest hosted its node from the entry's catalogue when the project was named while this ran,
-    // and from PARLEY_NODE_CONFIG at the next start -- a different set of startable agents after a restart. Found by the
-    // gate over the installer change. A second project named later is a manifest being served, whatever came first.
-    string? lone = serving.Count == 1 ? serving[0].Name.Value : null;
-    var loneUndecided = serving.Count == 0;
-    var loneGate = new object();
+    // There is one catalogue per machine now, resolved the same way whether this process serves one
+    // project or six, so neither the count nor the restart can change which file a node reads.
 
     // With several projects there are several such handlers, so the interrupt is owned once here,
     // above all of them, and one press must stop every broker started.
@@ -619,6 +602,21 @@ if (verb == "serve" && rest.Length == 0)
     // to nothing.
     return await UntilInterrupted(token =>
     {
+        // **One table of running agents for this whole process, keyed by identity** (018 R5). A node is
+        // hosted per broker and each used to keep its own, so two projects asking for one checkout started
+        // two processes in one working directory — the hazard the per-project catalogue was partitioned to
+        // avoid, reached by the route the partition created. Shared, the second ask finds the first's
+        // process. Passed rather than static, because test classes run in parallel.
+        var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
+
+        // **One catalogue for this machine, whatever project is asking** (018 R6, FR-003). It was resolved
+        // per project, from the entry that named it — which is what made a checkout startable in one project
+        // and not another, since only one project's file could hold it. The entry's binding is gone; what
+        // resolves it is the flag, the variable, and then the file beside the manifest.
+        var machineCatalogue = ProjectResolution.NodeConfig(
+            nodeConfigPath, Environment.GetEnvironmentVariable, manifestPath).Value
+            ?? NodeCatalogue.DefaultFileName;
+
         async Task<int> HostingNode(
             IReadOnlyList<string> addresses, TextWriter reporting, CancellationToken stopping)
         {
@@ -628,86 +626,21 @@ if (verb == "serve" && rest.Length == 0)
             using var channel = GrpcChannel.ForAddress(addresses[0]);
 
             return await NodeCommand.RunAsync(
-                channel, addresses[0], hostedFrom, reporting, stopping).ConfigureAwait(false);
+                channel, addresses[0], hostedFrom, reporting, null, residents, stopping)
+                .ConfigureAwait(false);
         }
 
-        // One project keeps every resolution `up` has -- the flag, the variable, the project, the
-        // file in the working directory -- because that is a person at a terminal. Several is a
-        // manifest being served, usually by a supervisor, and there the only catalogue a project
-        // can have is the one its entry names.
+        // **Every project hosts from the same catalogue, and announces what the repositories say it may
+        // start for that project.** The lone-project dance that used to be here decided which of several
+        // resolutions a single project was allowed — it existed because a catalogue belonged to a project,
+        // and nothing belongs to a project any more.
         async Task<int> HostingNodeFor(
             ProjectSettings project,
             IReadOnlyList<string> addresses,
             TextWriter reporting,
             CancellationToken stopping)
         {
-            bool alone;
-
-            lock (loneGate)
-            {
-                if (loneUndecided)
-                {
-                    // Decided once, by the first project hosted: alone when the manifest names nothing else. Read a few
-                    // times, because a read refused while `parley project add` replaces the file would otherwise decide
-                    // "not alone" for good on a sharing violation rather than on what the manifest says.
-                    for (var attempt = 0; attempt < 5 && loneUndecided; attempt++)
-                    {
-                        if (ProjectManifest.TryRead(manifestPath, out var nowNamed, out _))
-                        {
-                            loneUndecided = false;
-
-                            if (nowNamed.Count == 1
-                                && string.Equals(nowNamed[0].Name.Value, project.Name.Value, StringComparison.Ordinal))
-                            {
-                                lone = project.Name.Value;
-                            }
-                        }
-                        else
-                        {
-                            Thread.Sleep(50);
-                        }
-                    }
-
-                    loneUndecided = false;
-                }
-
-                alone = string.Equals(lone, project.Name.Value, StringComparison.Ordinal);
-            }
-
-            if (alone)
-            {
-                // Resolved each time rather than once at the start, so a lone project named after the start resolves
-                // exactly as one present at it, and one whose entry changed hosts from what its entry says now.
-                var loneCatalogue = ProjectResolution.NodeConfig(
-                    nodeConfigPath, Environment.GetEnvironmentVariable, project);
-
-                await reporting.WriteLineAsync($"Hosting this machine's node, from {loneCatalogue}.")
-                    .ConfigureAwait(false);
-
-                using var loneChannel = GrpcChannel.ForAddress(addresses[0]);
-
-                return await NodeCommand.RunAsync(
-                    loneChannel,
-                    addresses[0],
-                    loneCatalogue.Value ?? NodeCatalogue.DefaultFileName,
-                    reporting,
-                    stopping).ConfigureAwait(false);
-            }
-
-            if (project.NodeConfig is not { Length: > 0 } catalogue)
-            {
-                // Said per project, because a manifest in which nothing is catalogued looks
-                // exactly like one in which everything is, until a question to a repository
-                // nobody has open waits out its window.
-                await reporting.WriteLineAsync(
-                    $"{project.Name}: names no catalogue, so this machine starts nothing for it. "
-                    + "`parley project add` with --node-config says what it may start.")
-                    .ConfigureAwait(false);
-
-                return 0;
-            }
-
-            var from = Path.GetFullPath(catalogue);
+            var from = Path.GetFullPath(machineCatalogue);
 
             await reporting.WriteLineAsync(
                 $"{project.Name}: hosting this machine's node, from {from}.").ConfigureAwait(false);
@@ -715,7 +648,8 @@ if (verb == "serve" && rest.Length == 0)
             using var channel = GrpcChannel.ForAddress(addresses[0]);
 
             return await NodeCommand.RunAsync(
-                channel, addresses[0], from, reporting, stopping).ConfigureAwait(false);
+                channel, addresses[0], from, reporting, project.Name.Value, residents, stopping)
+                .ConfigureAwait(false);
         }
 
         // **Started as a child process, not hosted here, and that is the change.** The web UI is
@@ -996,7 +930,7 @@ if (verb == "autostart" && rest.Length == 1)
     // word, missing file included -- it may be written before the next logon, and refusing would
     // make installing depend on the order two setup steps were done in.
     var entryCatalogue = ProjectResolution.NodeConfig(
-        nodeConfigPath, Environment.GetEnvironmentVariable, named);
+        nodeConfigPath, Environment.GetEnvironmentVariable, manifestPath);
 
     var hostFrom = servesManifest
         ? null
@@ -1060,7 +994,8 @@ if (project is not null && configuredProjects.Count > 1)
 
 var resolvedStore = ProjectResolution.Store(databasePath, Environment.GetEnvironmentVariable, project);
 var resolvedEndpoint = ProjectResolution.Endpoint(brokerAddress, Environment.GetEnvironmentVariable, project);
-var resolvedNodeConfig = ProjectResolution.NodeConfig(nodeConfigPath, Environment.GetEnvironmentVariable, project);
+var resolvedNodeConfig = ProjectResolution.NodeConfig(
+    nodeConfigPath, Environment.GetEnvironmentVariable, manifestPath);
 
 // Beside `serve` and `autostart` because it is not a client either. It writes launch
 // configurations, node entries and the placeholder peers block — files on this machine, against
@@ -1399,6 +1334,8 @@ async Task<int> UpAsync() =>
             endpoint,
             resolvedNodeConfig.Value ?? NodeCatalogue.DefaultFileName,
             Console.Out,
+            project?.Name.Value,
+            null,
             token)).ConfigureAwait(false);
 
 // Runs something that would otherwise never return, and gives the terminal back on Ctrl+C.

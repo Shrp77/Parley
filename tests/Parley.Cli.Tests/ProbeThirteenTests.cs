@@ -102,14 +102,14 @@ public sealed class ProbeThirteenTests : IDisposable
     {
         // A refusal that scrolls its own reason off the screen has refused nothing, and every value in
         // one of these comes out of a file whose length nobody here chose.
-        var refusal = Catalogues.Refusal(
-            new Consent(new string('a', 4000), new string('b', 4000), new string('c', 4000)));
+        var refusal = Catalogues.Copied(new string('a', 4000), new string('b', 4000));
 
         Assert.True(
             refusal.Length < 1000,
             $"a refusal ran to {refusal.Length} characters, so its reason is off the screen");
 
-        Assert.Contains("unattended by only one", refusal, StringComparison.Ordinal);
+        // The half that says what to do about it, which is the half a long value would bury.
+        Assert.Contains("One agent is one checkout", refusal, StringComparison.Ordinal);
     }
 
     [Theory]

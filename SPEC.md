@@ -243,8 +243,8 @@ projects.json
 
 **Where that list lives is a property of the machine, not of the protocol.** It is one
 file per user, at the platform's conventional configuration location, naming each project
-with its store, its endpoint, and the catalogue of agents this machine may start for it.
-Nothing in it is ever read by a broker, sent over the transport, or stored: it exists so
+with its store and its endpoint. Nothing in it is ever read by a broker, sent over the
+transport, or stored: it exists so
 that a person, and the tools a person runs, can say *which deployment* they mean without
 repeating three paths and without inferring any of them from a working directory. A
 deployment that names no projects is configured entirely by explicit paths, exactly as
@@ -260,6 +260,15 @@ It also means agent names collide freely across projects. Two projects may each 
 `orders` agent, because they are different files. A single shared registry would have
 forced a global naming convention across unrelated codebases, which is exactly the
 coupling §1 exists to prevent.
+
+**The manifest used to bind each project to its own catalogue of startable agents, and no
+longer does.** That binding made "which agents this machine can start" a per-project fact, and
+one checkout may answer in several projects under a different name in each — so a checkout was
+startable in whichever project's catalogue named it and unstartable in the others, while being
+addressable in all of them. A request to the unstartable name was accepted, queued, and waited
+for a person to open that repository, and nothing on any screen said so. There is one catalogue
+per machine now, keyed as §12 describes; the manifest names stores and endpoints and says
+nothing about starting anything.
 
 **One process may host many brokers.** Separate databases do not imply separate
 processes. A single service constructs one broker per configured project, each with its
@@ -2251,7 +2260,7 @@ other could.
 | `archive(conversation)` | Put a conversation out of the way. It stops appearing in `conversations()` unless the caller asks for archived ones, and nothing else about it changes: messages are still delivered, exchanges still open and close, and no agent is told. A view decision, made durable so every operator and every client sees the same one. |
 | `unarchive(conversation)` | Reverse it. |
 | `destroy(conversation)` | Delete a conversation and every message, exchange and file belonging to it, for every participant. Destroys its peers' side too and cannot be undone. Leaves the record of §14, which holds facts and no content. Named apart from `purge`, which takes an agent: two operations on different subjects sharing one name is how the wrong one gets bound. |
-| `start(agent)` | Ask the node whose catalogue names this agent's role to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. |
+| `start(agent)` | Ask a node that can resolve this agent's name to a catalogued checkout (§12) to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. |
 | `list_shared_files(conversation_id?, page)` | Every file in the location, with its conversation, size, content hash, placer and when, totals per conversation and overall, how many placements and bytes each agent has made, and how many files in the folders listed are not listed because their names break §9.5's rules. Paged, and the broker bounds the page whatever is asked for. Named apart from §10.1's `file_list`, which does not report placement counts. |
 | `remove_files(files)` | Remove any files, whichever agent placed them (§9.5). A name held by several conversations must name one; names not present are reported without preventing the rest. Named apart from §10.1's `file_remove`, which removes only the caller's own. |
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
@@ -2585,19 +2594,39 @@ persists nor logs what it resolved.
 ```yaml
 agents:
   # The common case: the CLI is already authenticated. Nothing to register.
-  - name: orders
+  - id: 7f3a1c92-0b4d-4e88-9a15-2c6e0d3b5471
     adapter: <vendor-cli>
     workspace: /src/acme-orders
 
   # Headless: the broker makes the call, so the broker needs the key.
-  - name: inventory
+  - id: c41e8b07-52da-4f19-83b6-9e2740ac1d5f
     adapter: <vendor-api>
+    workspace: /src/acme-inventory
     config:
       model: <model-identifier>
       endpoint: https://api.example.invalid
     credentials:
       api_key: env:VENDOR_API_KEY
 ```
+
+**One catalogue per machine, keyed by an identifier, saying nothing about projects.** An entry
+says how to start one checkout and where; it does not say what anything is called, because a name
+is what one project calls an agent (§4.1) and this file has no projects in it. The identifier does
+not collide across any boundary and is not derived from a path or a name, so a checkout that moves
+or is renamed is the same agent afterwards and nothing has to be repaired.
+
+**What a project calls a checkout is declared by the checkout.** A node serving a project reads
+each catalogued workspace's own launch configuration — the same file §13 requires to fix the
+identity an adapter attaches under — and announces the names declared there for that project. A
+start resolves the name to an identifier and the identifier to a command and a workspace. A name
+claimed by two catalogued workspaces resolves to neither and is reported: an agent's name is the
+one thing this protocol makes unforgeable, and starting either would be guessing at identity.
+
+**This entails one running process per identifier.** Two projects asking at once for a checkout
+both name find the process the first ask started, rather than launching a second in the same
+working directory. Entries used to be keyed by the role and held one file per project, which made
+"one working directory, two launched processes" reachable and had to be forbidden by a rule;
+keying by the checkout removes the state rather than the permission.
 
 Supported reference schemes: `env:`, `file:` (a path readable only by the broker's user),
 and `keychain:` (an OS credential store — declared, but see §12.2).

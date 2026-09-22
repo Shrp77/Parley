@@ -50,9 +50,12 @@ public sealed class NodeCatalogue
     /// <summary>The file name looked for beside the store when nothing names one.</summary>
     public const string DefaultFileName = "node.json";
 
-    private readonly Dictionary<string, Entry> _agents;
+    private readonly Dictionary<AgentIdentity, Entry> _agents;
 
-    private NodeCatalogue(Dictionary<string, Entry> agents) => _agents = agents;
+    private NodeCatalogue(Dictionary<AgentIdentity, Entry> agents) => _agents = agents;
+
+    /// <summary>Keys in the file that are not identities, for a node to report rather than swallow.</summary>
+    public IReadOnlyList<string> Unreadable { get; private init; } = [];
 
     /// <summary>One agent this machine can start.</summary>
     /// <param name="Command">How to start it.</param>
@@ -190,10 +193,22 @@ public sealed class NodeCatalogue
                 return true;
             }
 
-            var entries = new Dictionary<string, Entry>(StringComparer.Ordinal);
+            var entries = new Dictionary<AgentIdentity, Entry>();
+            var strange = new List<string>();
 
             foreach (var entry in agents.EnumerateObject())
             {
+                // **The key is an identity, and one that is not is reported rather than dropped.** A
+                // hand-edited catalogue, or one written by a version that keyed by role, would otherwise
+                // read as a machine that can start nothing — and a machine that can start nothing joins
+                // successfully to say so, which is the silence this whole feature exists to remove.
+                if (!AgentIdentity.TryRead(entry.Name, out var identity))
+                {
+                    strange.Add(entry.Name);
+
+                    continue;
+                }
+
                 if (entry.Value.ValueKind == JsonValueKind.Object
                     && entry.Value.TryGetProperty("command", out var command)
                     && command.GetString() is { Length: > 0 } text)
@@ -208,11 +223,11 @@ public sealed class NodeCatalogue
                         ? directory.GetString()
                         : null;
 
-                    entries[entry.Name] = new Entry(text, workspace);
+                    entries[identity] = new Entry(text, workspace);
                 }
             }
 
-            catalogue = new NodeCatalogue(entries);
+            catalogue = new NodeCatalogue(entries) { Unreadable = strange };
 
             return true;
         }
@@ -228,37 +243,160 @@ public sealed class NodeCatalogue
     /// <summary>
     /// How to start one agent, if this machine knows.
     /// </summary>
-    /// <param name="agent">The agent.</param>
+    /// <param name="identity">Which agent.</param>
     /// <returns>Its launch command, or <see langword="null"/>.</returns>
     /// <remarks>
-    /// <para>
-    /// Keyed by role, and the machine half is checked rather than ignored. A catalogue describes
-    /// one machine, so an entry for <c>infra</c> here means <c>infra@thisMachine</c> and nothing
-    /// else — quietly matching <c>infra@server-b</c> would have this node start a process for an
-    /// agent that lives somewhere else, under a name already taken.
-    /// </para>
+    /// <b>Keyed by identity, where this was keyed by role.</b> A role is what one project calls an agent, and
+    /// a checkout enrolled in two projects answers to a different one in each — so keyed by role, the same
+    /// checkout was startable in the project whose catalogue named it and unstartable in the other. The
+    /// machine half went with it: a catalogue is one machine's file, and an identity says nothing about
+    /// machines, so there is no longer anything to check.
     /// </remarks>
-    public string? CommandFor(AgentName agent) => Find(agent)?.Command;
+    public string? CommandFor(AgentIdentity identity) =>
+        _agents.TryGetValue(identity, out var entry) ? entry.Command : null;
 
     /// <summary>
     /// Where to start one agent, if this machine says.
     /// </summary>
-    /// <param name="agent">The agent.</param>
+    /// <param name="identity">Which agent.</param>
     /// <returns>Its directory, or <see langword="null"/> if the catalogue does not say.</returns>
     /// <remarks>
     /// Local configuration, like the command beside it. See the note where it is read for why it
     /// is not taken from the registry.
     /// </remarks>
-    public string? WorkspaceFor(AgentName agent) => Find(agent)?.Workspace;
+    public string? WorkspaceFor(AgentIdentity identity) =>
+        _agents.TryGetValue(identity, out var entry) ? entry.Workspace : null;
 
-    private Entry? Find(AgentName agent) =>
-        string.Equals(agent.Machine, Machine, StringComparison.Ordinal)
-            && _agents.TryGetValue(agent.Role, out var entry)
-                ? entry
-                : null;
+    /// <summary>Every agent this machine can start.</summary>
+    public IReadOnlyCollection<AgentIdentity> Identities => _agents.Keys;
 
-    /// <summary>The roles this machine can start.</summary>
-    public IReadOnlyCollection<string> Roles => _agents.Keys;
+    /// <summary>
+    /// What each catalogued workspace says it is called, in each project it answers in.
+    /// </summary>
+    /// <returns>One entry per identity, with what its repository declares and why it could not be read.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The names come from the repositories, not from here</b> (018 R3). A catalogue entry says how to
+    /// start a checkout and nothing about projects, so the node asks each workspace what it answers to — and
+    /// because that travels in the folder, a moved or renamed checkout needs no repair beyond repointing the
+    /// one entry.
+    /// </para>
+    /// <para>
+    /// Read on demand rather than held, because the node re-reads when the catalogue changes and a cached
+    /// answer would be a second thing to keep in step with the files it was read from.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<CataloguedWorkspace> Workspaces()
+    {
+        var found = new List<CataloguedWorkspace>();
+
+        foreach (var (identity, entry) in _agents)
+        {
+            var read = LaunchConfiguration.TryRead(entry.Workspace, out var declared, out var problem);
+
+            found.Add(new CataloguedWorkspace(
+                identity,
+                entry.Workspace,
+                read ? declared.Memberships : [],
+                problem));
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// Which agent a project means by a name.
+    /// </summary>
+    /// <param name="role">The agent half of the name, as the broker asks for it.</param>
+    /// <param name="project">The project asking, or null to accept any.</param>
+    /// <param name="identity">Which agent, when this returns true.</param>
+    /// <param name="ambiguous">The workspaces that both claim it, when two do.</param>
+    /// <returns><see langword="true"/> when exactly one catalogued workspace claims that name.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Names resolve to identities and never the other way.</b> A name is a project's word for something
+    /// and this file has no projects, so nothing here is keyed by one — the names come from the repositories
+    /// (018 R3) and this is where they are turned back into the thing that can be started.
+    /// </para>
+    /// <para>
+    /// <b>Two claimants is refused rather than resolved</b> (018 R4). It is either a copied repository or an
+    /// enrolment mistake, and an agent's name is the one thing Parley makes unforgeable — starting either
+    /// would be guessing at identity, which Principle III exists to prevent. "First one wins" was rejected
+    /// because the winner would depend on the order a dictionary was walked.
+    /// </para>
+    /// <para>
+    /// A null project accepts a claim from any, which is what a supervisor with no project of its own needs.
+    /// It narrows nothing else: two workspaces claiming one name are still two claimants.
+    /// </para>
+    /// </remarks>
+    public bool TryResolve(
+        string role,
+        string? project,
+        out AgentIdentity identity,
+        out IReadOnlyList<string> ambiguous)
+    {
+        var claimed = Workspaces()
+            .Where(workspace => workspace.Memberships.Any(membership =>
+                string.Equals(membership.Name, role, StringComparison.Ordinal)
+                && (project is null
+                    || membership.Project is null
+                    || string.Equals(membership.Project, project, StringComparison.Ordinal))))
+            .ToList();
+
+        if (claimed.Count == 1)
+        {
+            identity = claimed[0].Identity;
+            ambiguous = [];
+
+            return true;
+        }
+
+        identity = default;
+        ambiguous = [.. claimed.Select(workspace => workspace.Workspace ?? workspace.Identity.ToString())];
+
+        return false;
+    }
+
+    /// <summary>Every name this catalogue can start for a project, and what is in the way.</summary>
+    /// <param name="project">The project, or null for any.</param>
+    /// <returns>The names, and the workspaces that could not be read or that claim one name twice.</returns>
+    /// <remarks>
+    /// What a node announces. A name claimed by two workspaces is left out of the names and reported, so a
+    /// person addressing it is told rather than started against whichever entry was walked first.
+    /// </remarks>
+    public (IReadOnlyList<string> Names, IReadOnlyList<string> Contested, IReadOnlyList<CataloguedWorkspace> Unread)
+        Announceable(string? project)
+    {
+        var claims = new Dictionary<string, int>(StringComparer.Ordinal);
+        var unread = new List<CataloguedWorkspace>();
+
+        foreach (var workspace in Workspaces())
+        {
+            if (workspace.Problem is not null)
+            {
+                unread.Add(workspace);
+
+                continue;
+            }
+
+            foreach (var membership in workspace.Memberships)
+            {
+                if (project is not null
+                    && membership.Project is not null
+                    && !string.Equals(membership.Project, project, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                claims[membership.Name] = claims.GetValueOrDefault(membership.Name) + 1;
+            }
+        }
+
+        return (
+            [.. claims.Where(claim => claim.Value == 1).Select(claim => claim.Key).Order(StringComparer.Ordinal)],
+            [.. claims.Where(claim => claim.Value > 1).Select(claim => claim.Key).Order(StringComparer.Ordinal)],
+            unread);
+    }
 
     /// <summary>Describes this catalogue, for a supervisor's start-up line.</summary>
     /// <returns>The machine and how many agents it can start.</returns>

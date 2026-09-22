@@ -86,19 +86,45 @@ public sealed class AgentFleetTests : IDisposable
 
         if (invokeCommand is not null)
         {
-            _catalogue[AgentName.Create(name).Role] = invokeCommand;
+            var role = AgentName.Create(name).Role;
+            var workspace = Workspace(name);
+            var identity = AgentIdentity.Mint();
+
+            // **Two files, because 018 split what they say.** The catalogue entry says how to start a
+            // checkout and is keyed by an identity; what any project calls it is declared by the checkout
+            // itself. A fixture that wrote only the first would describe a machine that can start something
+            // nothing can name.
+            File.WriteAllText(
+                Path.Combine(workspace, LaunchConfiguration.FileName),
+                $$"""
+                {
+                  "mcpServers": {
+                    "parley-alpha": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "{{role}}" } }
+                  },
+                  "{{LaunchConfiguration.IdentityMember}}": "{{identity}}"
+                }
+                """);
+
+            _catalogue[role] = new Catalogued(identity, invokeCommand, workspace);
         }
     }
 
-    /// <summary>What this machine has been told it can start, by role.</summary>
-    private readonly Dictionary<string, string> _catalogue = new(StringComparer.Ordinal);
+    /// <summary>One thing this machine has been told it can start.</summary>
+    /// <param name="Identity">Which agent it is, which is what the catalogue is keyed by.</param>
+    /// <param name="Command">How to start it.</param>
+    /// <param name="Workspace">Where, and where its own declaration of what it is called lives.</param>
+    private sealed record Catalogued(AgentIdentity Identity, string Command, string Workspace);
+
+    /// <summary>What this machine has been told it can start, held by role so a test can delist one.</summary>
+    private readonly Dictionary<string, Catalogued> _catalogue = new(StringComparer.Ordinal);
 
     /// <summary>Builds a catalogue file for the current fixture and reads it back.</summary>
     /// <returns>The catalogue the fleet consults.</returns>
     private NodeCatalogue Catalogue()
     {
-        var agents = string.Join(",", _catalogue.Select(e =>
-            $"\"{e.Key}\": {{ \"command\": {System.Text.Json.JsonSerializer.Serialize(e.Value)} }}"));
+        var agents = string.Join(",", _catalogue.Values.Select(entry =>
+            $"\"{entry.Identity}\": {{ \"command\": {System.Text.Json.JsonSerializer.Serialize(entry.Command)},"
+            + $" \"workspace\": {System.Text.Json.JsonSerializer.Serialize(entry.Workspace)} }}"));
 
         var path = Path.Combine(_root, "node.json");
         File.WriteAllText(path, $"{{ \"agents\": {{ {agents} }} }}");
@@ -122,8 +148,14 @@ public sealed class AgentFleetTests : IDisposable
         var now = DateTimeOffset.UtcNow;
 
         // Distinct per call, so a second Request between the same two agents is not refused as a duplicate.
+        //
+        // **A 0.7 Request is the ask and nothing else** (016). This wrote a 0.6 payload — `intent`, `items`
+        // and `done_when` — which schema 11 refuses outright with "a request carries an ask", so every test
+        // in this file that opened an exchange threw before it reached the fleet. Eighteen of them, since
+        // 0.29.0, on a branch that was never pushed: `dotnet test` reports zero tests on this machine, so
+        // nothing on it ran these, and CI never saw the branch.
         var payload =
-            $$"""{"intent":"deciding where tax is added","items":[{"id":"q1","kind":"question","text":"subject {{++_subjects}}"}],"done_when":"the invoice total is stated gross or net"}""";
+            $$"""{"ask":"is the invoice total stated gross or net? (subject {{++_subjects}})"}""";
 
         var opened = await new ExchangeRepository(_connection).TryOpenAsync(
             from, to, now, MessageIdentity.ComputeRequest(from, to, payload), "fleet", null, cancellationToken: Ct);
@@ -157,7 +189,7 @@ public sealed class AgentFleetTests : IDisposable
 
         _ = await new MessageRepository(_connection).AppendAsync(
             exchange.Id, MessageType.Result, exchange.Receiver, exchange.Requester, "some-model-9",
-            """{"outcomes":[{"id":"q1","outcome":"answered","text":"net of tax"}]}""", now, cancellationToken: Ct);
+            """{"outcomes":[{"id":"request","outcome":"answered","text":"net of tax"}]}""", now, cancellationToken: Ct);
 
         Assert.True(exchange.Close(exchange.Receiver, now, ExchangeOutcome.Complete).Succeeded);
         Assert.True(await new ExchangeRepository(_connection).SaveAsync(exchange, cancellationToken: Ct));
@@ -336,18 +368,26 @@ public sealed class AgentFleetTests : IDisposable
     }
 
     [Fact]
-    public void An_agent_on_another_machine_is_never_started_from_here()
+    public async Task An_agent_on_another_machine_is_never_started_from_here()
     {
-        // The check that stops a catalogue meaning more than it says. It describes one machine,
-        // so an entry for `billing` here means billing@thisMachine and nothing else — quietly
-        // matching billing@server-b would have this node start a process for a repository that is
-        // not on it, under a name somebody else holds.
-        _catalogue["billing"] = "runner";
+        // **The check moved here when the catalogue stopped knowing about machines.** It used to be part
+        // of the key: `billing` in that file meant billing@thisMachine and nothing else. An identity says
+        // nothing about machines and a store holds agents on several, so a local checkout claiming
+        // `billing` would otherwise be started for billing@server-b — a process launched here under a name
+        // somebody else holds.
+        Register("orders@test");
+        Register("billing@test", StubRunner.Answering(Workspace("billing@test")));
+        Register("billing@server-b");
 
-        var catalogue = Catalogue();
+        await OweAsync("orders@test", "billing@server-b");
 
-        Assert.NotNull(catalogue.CommandFor(AgentName.Create("billing@test")));
-        Assert.Null(catalogue.CommandFor(AgentName.Create("billing@server-b")));
+        await using var fleet = Fleet();
+
+        var action = Assert.Single(await fleet.TickAsync(Ct));
+
+        Assert.False(action.Started);
+        Assert.Contains("another machine", action.Skipped!, StringComparison.Ordinal);
+        Assert.Empty(fleet.Running);
     }
 
     [Fact]
@@ -356,8 +396,8 @@ public sealed class AgentFleetTests : IDisposable
         // The ordinary state of a machine somebody has only registered agents on. It must read
         // as "starts nothing" rather than as an error, or a supervisor could not run anywhere it
         // had not been configured first.
-        Assert.Null(NodeCatalogue.Empty.CommandFor(AgentName.Create("billing@test")));
-        Assert.Empty(NodeCatalogue.Empty.Roles);
+        Assert.False(NodeCatalogue.Empty.TryResolve("billing", project: null, out _, out _));
+        Assert.Empty(NodeCatalogue.Empty.Identities);
     }
 
     [Fact]

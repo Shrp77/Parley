@@ -1,10 +1,10 @@
-using Parley.Cli.Tests;
-using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
+using Parley.Cli.Tests;
 using Parley.Client;
 using Parley.Configuration;
 using Parley.Core;
 using Parley.Store;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
@@ -81,7 +81,11 @@ public sealed class WithdrawingTests : IAsyncDisposable
 
     private string ManifestPath => Path.Combine(_root, "projects.json");
 
-    private string CataloguePath => Path.Combine(_root, "acme-node.json");
+    /// <summary>This machine's one catalogue, which sits beside the manifest (018).</summary>
+    private string CataloguePath => Path.Combine(_root, NodeCatalogue.DefaultFileName);
+
+    /// <summary>Which agent the fixture catalogued, which is what a withdrawal removes by.</summary>
+    private AgentIdentity Catalogued { get; set; }
 
     private string LaunchFile => Path.Combine(Workspace, ".mcp.json");
 
@@ -117,7 +121,8 @@ public sealed class WithdrawingTests : IAsyncDisposable
         var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
 
         Assert.False(((JsonObject)launch["mcpServers"]!).ContainsKey("parley"));
-        Assert.DoesNotContain("orders@test", await CatalogueTextAsync(), StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            Catalogued.ToString(), await CatalogueTextAsync(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -324,7 +329,8 @@ public sealed class WithdrawingTests : IAsyncDisposable
             ((JsonObject)launch["mcpServers"]!).ContainsKey("parley"),
             "the launch configuration was withdrawn anyway");
 
-        Assert.Contains("orders@test", await CatalogueTextAsync(), StringComparison.Ordinal);
+        Assert.Contains(
+            Catalogued.ToString(), await CatalogueTextAsync(), StringComparison.Ordinal);
     }
 
     /// <summary>A request from billing that orders has not sent the result of.</summary>
@@ -362,26 +368,36 @@ public sealed class WithdrawingTests : IAsyncDisposable
                     null),
             ]);
 
+        // **Both files, keyed to each other** (018). The catalogue entry is keyed by the identity the
+        // repository declares, and the withdrawal finds it by reading that repository — so a fixture
+        // that wrote a role-keyed entry would describe a state no enrolment can produce, and the
+        // withdrawal would rightly leave it alone.
+        var identity = AgentIdentity.Mint();
+
         await File.WriteAllTextAsync(
             CataloguePath,
-            "{\n  \"agents\": {\n    \"orders@test\": { \"command\": \"claude\", \"workspace\": \""
+            "{\n  \"agents\": {\n    \"" + identity + "\": { \"command\": \"claude\", \"workspace\": \""
             + Workspace.Replace("\\", "\\\\", StringComparison.Ordinal) + "\" }\n  }\n}\n",
             ct);
 
         await File.WriteAllTextAsync(
             LaunchFile,
-            """
+            $$"""
             {
               "mcpServers": {
                 "parley": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "orders@test" } },
                 "other": { "command": "something" }
-              }
+              },
+              "{{LaunchConfiguration.IdentityMember}}": "{{identity}}"
             }
             """,
             ct);
 
+        Catalogued = identity;
+
         var directory = BrokerDirectory.FromManifest(ManifestPath);
-        var shell = TerminalCommand.Build(directory, manifestPath: ManifestPath);
+        var shell = TerminalCommand.Build(
+            directory, manifestPath: ManifestPath, cataloguePath: CataloguePath);
 
         driving.Show(shell);
 

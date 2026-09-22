@@ -59,22 +59,16 @@ public sealed class InjectionTests
     {
         // The catalogue is a local file, which makes it trusted in the sense that matters for
         // §13 — and not in this one. Somebody who edits it by hand can put anything in a key.
-        var path = Path.Combine(Path.GetTempPath(), "parley-injection-" + Path.GetRandomFileName() + ".json");
+        //
+        // **What a hand edit can put a hostile name into moved with 018.** A catalogue key is an
+        // identity, and one that is not parses as nothing and is reported rather than drawn — so the name
+        // this pane shows comes from the repository's own launch configuration, which is the file a hand
+        // edit reaches now. Same question, one file along.
+        using var machine = Catalogued.Offering("orders" + Hostile);
 
-        File.WriteAllText(
-            path,
-            "{\n  \"agents\": {\n    \"orders\\u001b[2J\": { \"command\": \"claude\" }\n  }\n}\n");
+        var row = Assert.Single(AgentsRegion.Join([], machine.Catalogue));
 
-        try
-        {
-            var row = Assert.Single(AgentsRegion.Join([], NodeCatalogue.ReadFrom(path)));
-
-            Assert.DoesNotContain(Hostile, row.Name, StringComparison.Ordinal);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
+        Assert.DoesNotContain(Hostile, row.Name, StringComparison.Ordinal);
     }
 
     [Fact]

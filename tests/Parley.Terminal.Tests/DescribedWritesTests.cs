@@ -63,7 +63,7 @@ public sealed class DescribedWritesTests : IDisposable
         await File.WriteAllTextAsync(catalogue, """{ "agents": {} }""", token);
 
         var before = Directory.GetFiles(workspace, "*", SearchOption.AllDirectories).ToHashSet();
-        var described = Adding.Describe(workspace, catalogue, "alpha", already: null);
+        var described = Adding.Describe(workspace, catalogue, "alpha");
 
         var entry = new EnrollmentEntry(workspace, "orders", "the orders service", Unattended: true)
         {
@@ -99,17 +99,10 @@ public sealed class DescribedWritesTests : IDisposable
         Assert.DoesNotContain("three", Adding.ConfirmTitle, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public void The_instructions_file_is_named_whichever_shape_the_enrolment_takes()
-    {
-        // It is written on both paths, so it is described on both. The catalogue is the only line
-        // that comes and goes.
-        foreach (var already in new Enrolment.Shared?[] { null, new("alpha", "orders") })
-        {
-            Assert.Contains(
-                Adding.Instructions,
-                Adding.Describe("C:/work/orders", "C:/store/beta-node.json", "beta", already),
-                StringComparison.Ordinal);
-        }
-    }
+    // **A test stood here that walked both shapes an enrolment could take, and 018 left one.** It
+    // described the same repository twice — once as a first enrolment and once as one into a project that
+    // already started it elsewhere — and asserted the standing-instructions file was named in both. There
+    // is one shape now: the catalogue is one file per machine keyed by the agent's identity, so a second
+    // project writes no catalogue line of its own and is told nothing special. What the deleted test
+    // asserted of the surviving shape is asserted by `EnrolmentOrderTests` and by `AddingTests`.
 }

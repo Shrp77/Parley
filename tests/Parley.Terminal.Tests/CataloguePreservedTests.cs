@@ -1,4 +1,6 @@
-﻿using Parley.Setup;
+﻿using Parley.Configuration;
+using Parley.Core;
+using Parley.Setup;
 using System.Text.Json.Nodes;
 using Xunit;
 
@@ -64,14 +66,16 @@ public sealed class CataloguePreservedTests : IDisposable
     [Fact]
     public async Task An_agent_added_beside_another_leaves_the_other_where_it_was()
     {
-        await WriteCatalogueAsync(("billing", "/srv/billing"));
+        var billing = AgentIdentity.Mint();
 
-        await AddAsync("orders");
+        await WriteCatalogueAsync((billing, "/srv/billing"));
+
+        var orders = await AddAsync("orders");
 
         var agents = await AgentsAsync();
 
-        Assert.True(agents.ContainsKey("orders"));
-        Assert.Equal("/srv/billing", agents["billing"]!["workspace"]!.GetValue<string>());
+        Assert.True(agents.ContainsKey(orders.ToString()));
+        Assert.Equal("/srv/billing", agents[billing.ToString()]!["workspace"]!.GetValue<string>());
     }
 
     [Fact]
@@ -79,16 +83,18 @@ public sealed class CataloguePreservedTests : IDisposable
     {
         // The interval that matters. The surface draws from this file and somebody may change it in
         // the next window; a write built from what was drawn would silently undo them.
+        var inventory = AgentIdentity.Mint();
+
         await WriteCatalogueAsync();
 
-        await WriteCatalogueAsync(("inventory@test", "/srv/inventory"));
+        await WriteCatalogueAsync((inventory, "/srv/inventory"));
 
-        await AddAsync("orders");
+        var orders = await AddAsync("orders");
 
         var agents = await AgentsAsync();
 
-        Assert.True(agents.ContainsKey("inventory@test"));
-        Assert.True(agents.ContainsKey("orders"));
+        Assert.True(agents.ContainsKey(inventory.ToString()));
+        Assert.True(agents.ContainsKey(orders.ToString()));
     }
 
     [Fact]
@@ -107,7 +113,7 @@ public sealed class CataloguePreservedTests : IDisposable
         await File.WriteAllTextAsync(
             CataloguePath, catalogue.ToJsonString(), TestContext.Current.CancellationToken);
 
-        await AddAsync("orders");
+        _ = await AddAsync("orders");
 
         var written = JsonNode.Parse(
             await File.ReadAllTextAsync(CataloguePath, TestContext.Current.CancellationToken))!;
@@ -126,7 +132,7 @@ public sealed class CataloguePreservedTests : IDisposable
 
         await WriteCatalogueAsync();
 
-        await AddAsync("orders");
+        _ = await AddAsync("orders");
 
         var launch = JsonNode.Parse(
             await File.ReadAllTextAsync(LaunchPath, TestContext.Current.CancellationToken))!;
@@ -152,7 +158,7 @@ public sealed class CataloguePreservedTests : IDisposable
 
         await WriteCatalogueAsync();
 
-        await AddAsync("orders");
+        _ = await AddAsync("orders");
 
         Assert.Equal(
             before,
@@ -178,7 +184,7 @@ public sealed class CataloguePreservedTests : IDisposable
 
         await WriteCatalogueAsync();
 
-        await AddAsync("orders");
+        _ = await AddAsync("orders");
 
         var after = await File.ReadAllTextAsync(InstructionsPath, TestContext.Current.CancellationToken);
 
@@ -186,7 +192,15 @@ public sealed class CataloguePreservedTests : IDisposable
         Assert.Contains(EnrollmentPlan.PeersHeading, after, StringComparison.Ordinal);
     }
 
-    private async Task AddAsync(string agent) =>
+    /// <summary>Enrols this repository, and says which agent the enrolment decided it is.</summary>
+    /// <param name="agent">What this project calls it.</param>
+    /// <returns>The identity the catalogue entry is keyed by.</returns>
+    /// <remarks>
+    /// The identity is read back out of the repository rather than returned by the call, because that is
+    /// where it lives (018 R2) and reading it from the file is what proves the enrolment wrote it there.
+    /// </remarks>
+    private async Task<AgentIdentity> AddAsync(string agent)
+    {
         await Enrolment.AddAsync(
             new EnrollmentEntry(Workspace, agent, null, true),
             "acme",
@@ -194,11 +208,25 @@ public sealed class CataloguePreservedTests : IDisposable
             InstructionsPath,
             TestContext.Current.CancellationToken);
 
+        Assert.True(LaunchConfiguration.TryRead(Workspace, out var declared, out var problem), problem);
+        Assert.True(declared.Identity.Known, "the enrolment left the repository with no identity");
+
+        return declared.Identity;
+    }
+
     private async Task<JsonObject> AgentsAsync() =>
         (JsonObject)JsonNode.Parse(
             await File.ReadAllTextAsync(CataloguePath, TestContext.Current.CancellationToken))!["agents"]!;
 
-    private Task WriteCatalogueAsync(params (string Agent, string Workspace)[] agents)
+    /// <summary>Writes a catalogue holding the agents given, each at its own path.</summary>
+    /// <param name="agents">Which agents, and where each is.</param>
+    /// <returns>A task that completes when the file is written.</returns>
+    /// <remarks>
+    /// Keyed by identity, because a catalogue is (018). A role-keyed fixture reads as a machine that can
+    /// start nothing, which would make every "it was left where it was" assertion below pass by having
+    /// nothing to leave.
+    /// </remarks>
+    private Task WriteCatalogueAsync(params (AgentIdentity Agent, string Workspace)[] agents)
     {
         var listed = new JsonObject();
 

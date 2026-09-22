@@ -48,7 +48,15 @@ public sealed class StartingEveryoneTests : IAsyncDisposable
         await _broker.DisposeAsync();
 
         _connection.Dispose();
+
+        foreach (var machine in _machines)
+        {
+            machine.Dispose();
+        }
     }
+
+    /// <summary>The checkouts this machine has been told it can start, kept until the test ends.</summary>
+    private readonly List<Catalogued> _machines = [];
 
     private ProjectSettings Project() =>
         new(Walking.Alpha, "unused.db", _broker.Address, null, null);
@@ -59,24 +67,22 @@ public sealed class StartingEveryoneTests : IAsyncDisposable
     private static AgentRecord Agent(AgentName name) =>
         new(name, "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active);
 
-    /// <summary>A catalogue naming roles this machine may start, written as the node reads one.</summary>
-    private static NodeCatalogue Catalogue(params string[] roles)
+    /// <summary>A catalogue naming checkouts this machine may start, written as enrolment writes one.</summary>
+    /// <param name="roles">What each checkout answers to.</param>
+    /// <returns>The catalogue.</returns>
+    /// <remarks>
+    /// **The checkouts have to exist and go on existing** (018). A catalogue entry is keyed by an
+    /// identity and says nothing about names, so the name a person sees in this pane comes back out of
+    /// the repository — and a fixture that wrote one role-keyed file and deleted it describes a machine
+    /// that can start nothing, which is what this pane would then correctly offer.
+    /// </remarks>
+    private NodeCatalogue Catalogue(params string[] roles)
     {
-        var path = Path.Combine(Path.GetTempPath(), "parley-start-" + Path.GetRandomFileName() + ".json");
+        var machine = Catalogued.Offering(roles);
 
-        var entries = roles.Select(role =>
-            $"    \"{role}\": {{ \"command\": \"claude\", \"workspace\": \"/srv/{role}\" }}");
+        _machines.Add(machine);
 
-        File.WriteAllText(path, "{\n  \"agents\": {\n" + string.Join(",\n", entries) + "\n  }\n}\n");
-
-        try
-        {
-            return NodeCatalogue.ReadFrom(path);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
+        return machine.Catalogue;
     }
 
     [Fact]

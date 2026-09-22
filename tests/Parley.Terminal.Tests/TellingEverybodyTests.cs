@@ -54,6 +54,11 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
     {
         await _broker.DisposeAsync();
 
+        foreach (var machine in _machines)
+        {
+            machine.Dispose();
+        }
+
         _connection.Dispose();
     }
 
@@ -308,32 +313,26 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
         Assert.Equal(Participation.Everyone(2), rows[0]);
     }
 
-    /// <summary>A catalogue naming some roles, written where one really lives.</summary>
-    /// <param name="roles">The roles this machine could start.</param>
+    /// <summary>The checkouts this machine has been told it can start, kept until the test ends.</summary>
+    private readonly List<Catalogued> _machines = [];
+
+    /// <summary>A catalogue naming some checkouts, written where they really live.</summary>
+    /// <param name="roles">What each checkout answers to.</param>
     /// <returns>The catalogue.</returns>
     /// <remarks>
-    /// Through a file rather than a constructed object, because there is no constructor that takes roles --
-    /// and building one for a test would be a second way to make a catalogue, which is how the reader and the
-    /// writer come to disagree about the shape.
+    /// Through files rather than a constructed object, because there is no constructor that takes these --
+    /// and building one for a test would be a second way to make a catalogue, which is how the reader and
+    /// the writer come to disagree about the shape. **Two files since 018**: an entry is keyed by an
+    /// identity and says nothing about names, so what this pane offers comes back out of the repository,
+    /// and a catalogue whose checkouts are gone offers nothing at all.
     /// </remarks>
-    private static NodeCatalogue Catalogue(params string[] roles)
+    private NodeCatalogue Catalogue(params string[] roles)
     {
-        var entries = string.Join(
-            ",",
-            roles.Select(role => $"\"{role}\": {{ \"command\": \"echo hi\" }}"));
+        var machine = Catalogued.Offering(roles);
 
-        var path = Path.Combine(Path.GetTempPath(), $"parley-catalogue-{Guid.NewGuid():N}.json");
+        _machines.Add(machine);
 
-        File.WriteAllText(path, $"{{ \"agents\": {{ {entries} }} }}");
-
-        try
-        {
-            return NodeCatalogue.ReadFrom(path);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
+        return machine.Catalogue;
     }
 
     /// <summary>How many Requests reached the store.</summary>

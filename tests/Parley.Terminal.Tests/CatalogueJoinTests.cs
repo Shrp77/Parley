@@ -21,8 +21,18 @@ namespace Parley.Terminal.Tests;
 /// <c>RegionTests</c> proves the region draws; this proves it draws the right thing.
 /// </para>
 /// </remarks>
-public sealed class CatalogueJoinTests
+public sealed class CatalogueJoinTests : IDisposable
 {
+    private readonly List<Catalogued> _machines = [];
+
+    public void Dispose()
+    {
+        foreach (var machine in _machines)
+        {
+            machine.Dispose();
+        }
+    }
+
     private static AgentRecord Agent(
         string name,
         string adapter = "mcp",
@@ -30,29 +40,30 @@ public sealed class CatalogueJoinTests
         AgentPresence presence = AgentPresence.Running) =>
         new(AgentName.Create(name), adapter, AgentTier.Pull, null, null, null, true, status, null, presence);
 
-    private static NodeCatalogue Catalogue(params string[] roles)
+    /// <summary>A machine that can start one checkout per name given.</summary>
+    /// <param name="roles">What each checkout answers to.</param>
+    /// <returns>Its catalogue.</returns>
+    /// <remarks>
+    /// **The names come out of the repositories now** (018), so the checkouts have to exist and have to
+    /// go on existing while this test runs: the catalogue says how to start an identity and nothing about
+    /// what anything is called. The helper this replaced wrote one role-keyed file and deleted it, which
+    /// against the current reader is a machine that can start nothing — and every assertion below about
+    /// what the join says would have passed by there being nothing to say it about.
+    /// </remarks>
+    private NodeCatalogue Catalogue(params string[] roles)
     {
-        var path = Path.Combine(Path.GetTempPath(), "parley-join-" + Path.GetRandomFileName() + ".json");
+        var machine = Catalogued.Offering(roles);
 
-        var entries = roles.Select(role =>
-            $"    \"{role}\": {{ \"command\": \"claude\", \"workspace\": \"/srv/{role}\" }}");
+        _machines.Add(machine);
 
-        File.WriteAllText(path, "{\n  \"agents\": {\n" + string.Join(",\n", entries) + "\n  }\n}\n");
-
-        try
-        {
-            return NodeCatalogue.ReadFrom(path);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
+        return machine.Catalogue;
     }
 
     [Fact]
     public void An_agent_in_both_reads_as_the_registry_says()
     {
-        var rows = AgentsRegion.Join([Agent("orders@test")], Catalogue("orders"));
+        var rows = AgentsRegion.Join(
+            [Agent("orders@test")], Catalogue("orders"), Catalogued.Project);
 
         Assert.Equal("running", Assert.Single(rows).State);
     }
@@ -63,7 +74,7 @@ public sealed class CatalogueJoinTests
         // What adding an agent from this surface produces, and the state SC-003 promises within
         // ten seconds. It cannot say `startable`: §14 defines that for an agent the registry
         // holds, and nothing here may register on a repository's behalf.
-        var rows = AgentsRegion.Join([], Catalogue("orders"));
+        var rows = AgentsRegion.Join([], Catalogue("orders"), Catalogued.Project);
 
         Assert.Equal(AgentsRegion.CataloguedOnly, Assert.Single(rows).State);
     }
@@ -75,7 +86,8 @@ public sealed class CatalogueJoinTests
         // this machine's node was never told it could start it, so nothing ever will.
         var rows = AgentsRegion.Join(
             [Agent("orders@test", presence: AgentPresence.Startable)],
-            Catalogue("billing"));
+            Catalogue("billing"),
+            Catalogued.Project);
 
         var orders = Assert.Single(rows, row => row.Name == "orders@test");
 
@@ -91,7 +103,8 @@ public sealed class CatalogueJoinTests
         // that is always correct.
         var rows = AgentsRegion.Join(
             [Agent("arvind@test", adapter: Seat.Adapter)],
-            Catalogue("orders"));
+            Catalogue("orders"),
+            Catalogued.Project);
 
         var seat = Assert.Single(rows, row => row.Name == "arvind@test");
 
@@ -108,7 +121,8 @@ public sealed class CatalogueJoinTests
         // one thing it certainly is not from the protocol's point of view.
         var rows = AgentsRegion.Join(
             [Agent("orders@test", status: AgentStatus.Retired)],
-            Catalogue("orders"));
+            Catalogue("orders"),
+            Catalogued.Project);
 
         Assert.Equal("retired", Assert.Single(rows).State);
     }
@@ -129,7 +143,11 @@ public sealed class CatalogueJoinTests
         // The probe. Dropping it would hide a hand-edited file's mistake in the one place somebody
         // would look for it, and the node refuses to start it for the same reason — so a surface
         // that showed nothing would leave them with a role that exists in a file and nowhere else.
-        var rows = AgentsRegion.Join([], Catalogue("not a name"));
+        //
+        // **A repository may still declare one**, which is where names come from since 018; what cannot
+        // happen any more is a catalogue *key* that is not an agent name, and that case is reported
+        // separately as unreadable rather than drawn as a row.
+        var rows = AgentsRegion.Join([], Catalogue("not a name"), Catalogued.Project);
 
         var row = Assert.Single(rows);
 
@@ -143,7 +161,8 @@ public sealed class CatalogueJoinTests
         // So that a refresh cannot reorder the list under somebody's hand as agents register.
         var rows = AgentsRegion.Join(
             [Agent("orders@test"), Agent("alpha@test")],
-            Catalogue("billing"));
+            Catalogue("billing"),
+            Catalogued.Project);
 
         // A registration is `role@machine` and a catalogue key is a role, so the two sources spell a
         // row differently — which is the inconsistency the owner met when the composer refused the

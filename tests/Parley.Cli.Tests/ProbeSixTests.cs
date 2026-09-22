@@ -1,3 +1,4 @@
+using Parley.Configuration;
 using Parley.Setup;
 using System.Diagnostics;
 using System.Text.Json.Nodes;
@@ -157,8 +158,21 @@ public sealed class ProbeSixTests : IDisposable
 
         foreach (var agent in accepted)
         {
+            // **Looked up by the identity its own checkout declares** (018). The catalogue is keyed by
+            // that rather than by the role, and the repository is where it is written — so this asks the
+            // same question through the same two files a node would, and a run that wrote one file and
+            // not the other fails here rather than passing on a key that matches nothing.
+            var repository = Path.Combine(Checkouts, $"repo{agent!["agent".Length..]}");
+
             Assert.True(
-                listed?.ContainsKey(agent!) == true,
+                LaunchConfiguration.TryRead(repository, out var declared, out var problem), problem);
+
+            Assert.True(
+                declared.Identity.Known,
+                $"'{agent}' was told its enrolment succeeded and its repository declares no identity");
+
+            Assert.True(
+                listed?.ContainsKey(declared.Identity.ToString()) == true,
                 $"'{agent}' was told its enrolment succeeded and is not in the catalogue "
                 + $"({listed?.Count ?? 0} of {accepted.Length} accepted are there)");
         }

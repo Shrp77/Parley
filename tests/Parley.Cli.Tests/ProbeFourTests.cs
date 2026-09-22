@@ -1,3 +1,4 @@
+using Parley.Configuration;
 using Parley.Core;
 using Parley.Setup;
 using System.Text.Json.Nodes;
@@ -53,46 +54,13 @@ public sealed class ProbeFourTests : IDisposable
             CatalogueFor(project),
             $$"""{ "agents": { "{{role}}": { "command": "claude", "workspace": "{{workspace}}" } } }""");
 
-    [Fact]
-    public void A_startable_role_is_a_consent_a_second_project_must_see()
-    {
-        var workspace = Workspace("inventory");
-
-        Catalogue("alpha", "inventory", workspace);
-
-        Assert.NotNull(Catalogues.Elsewhere([Project("alpha")], workspace, CatalogueFor("beta"), out _));
-    }
-
-    [Theory]
-    [InlineData("Inventory")]
-    [InlineData("inventory_two")]
-    [InlineData("inventory two")]
-    [InlineData("9inventory")]
-    public void A_role_no_agent_could_ever_be_called_is_not_a_consent_at_all(string role)
-    {
-        // **The probe expected this to be a hole and it is the rule.** The guard walks a catalogue's
-        // roles and skips any that is not a well-formed agent name, which looked like a blind spot:
-        // a hand-edited catalogue would hide its workspace and let a second project grant an
-        // unattended start over the same checkout.
-        //
-        // It is not, and the reason is worth keeping. FR-013 exists because two *nodes starting* one
-        // working tree is two models editing it. An entry keyed by a spelling no agent name can take
-        // is unstartable by construction: `NodesService.RequestStart` guards on
-        // `Startable.Contains(agent.Role)`, and `agent` is an `AgentName`, which cannot hold any of
-        // these. So such an entry is not a consent that could ever be acted on, and treating it as
-        // one would refuse a legitimate second project on the strength of a line that does nothing.
-        //
-        // Checked by reading the start path, not assumed: `NodeCommand` announces `catalogue.Roles`
-        // verbatim and the broker compares them against a parsed name.
-        var workspace = Workspace("inventory");
-
-        Catalogue("alpha", role, workspace);
-
-        Assert.Null(
-            Catalogues.Elsewhere([Project("alpha")], workspace, CatalogueFor("beta"), out var unreadable));
-
-        Assert.Null(unreadable);
-    }
+    // **Two probes stood here, and 018 removed the rule they probed rather than the probes.** They asked
+    // where `Catalogues.Elsewhere` stopped looking — whether a hand-edited catalogue could hide a workspace
+    // from FR-013's cross-project scan, and what a role no agent name can hold meant to it. The scan is
+    // gone: there is one catalogue per machine keyed by the agent's identity, so a second project grants
+    // no second consent and there is nothing to hide from. The question they were asking is worth keeping
+    // in mind and is asked of the new shape in `EnrollingTwiceTests`, where a copied repository is the one
+    // way left to point one identity at two working directories.
 
     [Fact]
     public async Task Withdrawing_twice_says_so_and_changes_nothing_the_second_time()

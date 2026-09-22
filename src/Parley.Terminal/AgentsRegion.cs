@@ -168,7 +168,8 @@ internal sealed class AgentsRegion : FrameView
     /// Joins a registry to a catalogue, keyed by agent name.
     /// </summary>
     /// <param name="registry">What the broker said, or null when it could not be asked.</param>
-    /// <param name="catalogue">What this project's catalogue names.</param>
+    /// <param name="catalogue">What this machine can start.</param>
+    /// <param name="project">Which project is asking, which decides what each identity is called.</param>
     /// <returns>One row per name in either, ordered by name.</returns>
     /// <remarks>
     /// A catalogue name that is not a well-formed agent name still gets a row, saying so. Dropping
@@ -177,12 +178,17 @@ internal sealed class AgentsRegion : FrameView
     /// </remarks>
     internal static IReadOnlyList<AgentRow> Join(
         IReadOnlyList<AgentRecord>? registry,
-        NodeCatalogue catalogue)
+        NodeCatalogue catalogue,
+        string? project = null)
     {
         ArgumentNullException.ThrowIfNull(catalogue);
 
         var rows = new List<AgentRow>();
-        var catalogued = new HashSet<string>(catalogue.Roles, StringComparer.Ordinal);
+
+        // **What this machine can start for this project, which the repositories decide** (018 R3). It was
+        // the catalogue's own keys, which were roles; they are identities now, and a role is what one
+        // project calls an agent.
+        var catalogued = new HashSet<string>(catalogue.Announceable(project).Names, StringComparer.Ordinal);
 
         foreach (var agent in registry ?? [])
         {
@@ -225,8 +231,8 @@ internal sealed class AgentsRegion : FrameView
             // A catalogue holds roles, so the machine has to be put back before this is a name.
             // Parsing the role alone never succeeded, which is why every catalogued agent showed no
             // workspace at all -- the one column saying where it would actually run.
-            var workspace = AgentName.TryCreate($"{role}@{NodeCatalogue.Machine}", out var qualified)
-                ? catalogue.WorkspaceFor(qualified)
+            var workspace = catalogue.TryResolve(role, project, out var identity, out _)
+                ? catalogue.WorkspaceFor(identity)
                 : null;
 
             rows.Add(new AgentRow(
@@ -245,10 +251,12 @@ internal sealed class AgentsRegion : FrameView
     /// <param name="registry">What the broker said, or null when it could not be asked.</param>
     /// <param name="catalogue">What this project's catalogue names.</param>
     /// <param name="problem">Why the broker could not be asked, or null when it could.</param>
+    /// <param name="project">Which project is being shown, which decides what names this machine can start.</param>
     internal void Show(
         IReadOnlyList<AgentRecord>? registry,
         NodeCatalogue catalogue,
-        string? problem)
+        string? problem,
+        string? project = null)
     {
         var keep = Selected?.Name;
 
@@ -256,10 +264,10 @@ internal sealed class AgentsRegion : FrameView
         // a draw landing between two of them would colour this list from one registry while
         // reading its rows from another -- and `Selected` would name an agent by an offset
         // belonging to the previous read, which in this region is what a purge acts on.
-        var rows = Join(registry, catalogue);
+        var rows = Join(registry, catalogue, project);
         var standing = Standing.Join(
             registry,
-            new HashSet<string>(catalogue.Roles, StringComparer.Ordinal),
+            new HashSet<string>(catalogue.Announceable(project).Names, StringComparer.Ordinal),
             Seat.Adapter,
             NodeCatalogue.Machine);
 

@@ -1,4 +1,6 @@
-﻿using Parley.Setup;
+﻿using Parley.Configuration;
+using Parley.Core;
+using Parley.Setup;
 using System.Text.Json.Nodes;
 using Xunit;
 
@@ -20,6 +22,13 @@ namespace Parley.Terminal.Tests;
 /// registry rows pointing at it, and the first row's withdrawal must not take the second row's
 /// entry with it. <c>PARLEY_AGENT</c> in that entry is the whole of the trust model per SPEC.md
 /// §16 — deleting somebody else's copy of it is a destructive act on an agent nobody named.
+/// </para>
+/// <para>
+/// <b>018 extended the same reasoning to the catalogue line, and reversed one of these tests.</b> That
+/// line used to be keyed by the agent's name, so it was unambiguously the withdrawn agent's and went with
+/// the withdrawal. It is keyed by the repository's identity now, and one entry serves every name the
+/// checkout answers to — so removing it because one of them was withdrawn takes the machine's only way of
+/// starting the others, which is the same destructive reach this file is about, one file along.
 /// </para>
 /// </remarks>
 public sealed class WithdrawalReachTests : IDisposable
@@ -53,7 +62,7 @@ public sealed class WithdrawalReachTests : IDisposable
         // The case a stale workspace produces. billing re-enrolled this repository; orders' registry
         // row still points at it. Withdrawing orders must not unhook billing.
         await WriteLaunchAsync("billing@test");
-        await WriteCatalogueAsync("orders@test", "billing@test");
+        _ = await WriteCatalogueAsync();
 
         var outcome = await Enrolment.WithdrawAsync(
             Workspace, "orders@test", "acme", CataloguePath, TestContext.Current.CancellationToken);
@@ -65,27 +74,51 @@ public sealed class WithdrawalReachTests : IDisposable
     }
 
     [Fact]
-    public async Task The_catalogue_line_still_goes_when_the_launch_file_stays()
+    public async Task The_catalogue_line_stays_while_the_repository_still_answers_to_somebody()
     {
-        // The two halves are separate facts. The catalogue line is keyed by the agent's own name, so
-        // it is unambiguously this agent's and goes; the file is shared and does not.
+        // **This asserted the opposite until 018, and the reversal is the point.** The catalogue line was
+        // keyed by the agent's name, so it was unambiguously the withdrawn agent's and went. It is keyed
+        // by the repository's identity now — one entry, however many names the checkout answers to — and
+        // billing is still one of them here, so taking it would leave billing registered, addressable, and
+        // impossible for this machine to start, with nothing saying why.
         await WriteLaunchAsync("billing@test");
-        await WriteCatalogueAsync("orders@test", "billing@test");
+
+        var mine = await WriteCatalogueAsync();
 
         await Enrolment.WithdrawAsync(
             Workspace, "orders@test", "acme", CataloguePath, TestContext.Current.CancellationToken);
 
         var catalogue = await File.ReadAllTextAsync(CataloguePath, TestContext.Current.CancellationToken);
 
-        Assert.DoesNotContain("orders@test", catalogue, StringComparison.Ordinal);
-        Assert.Contains("billing@test", catalogue, StringComparison.Ordinal);
+        Assert.Contains(mine.ToString(), catalogue, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_catalogue_line_goes_once_nothing_answers_from_the_repository()
+    {
+        // The other half, and what keeps the one above from being "never remove anything". The last
+        // parley entry left with this withdrawal, so the checkout is an agent nowhere and the machine has
+        // no reason left to be able to start it.
+        await WriteLaunchAsync("orders@test");
+
+        var mine = await WriteCatalogueAsync();
+
+        await Enrolment.WithdrawAsync(
+            Workspace, "orders@test", "acme", CataloguePath, TestContext.Current.CancellationToken);
+
+        var catalogue = await File.ReadAllTextAsync(CataloguePath, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(mine.ToString(), catalogue, StringComparison.Ordinal);
+
+        // And somebody else's entry is still there, which is the reach this file exists to bound.
+        Assert.Contains(Elsewhere.ToString(), catalogue, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task An_entry_that_names_this_agent_goes()
     {
         await WriteLaunchAsync("orders@test");
-        await WriteCatalogueAsync("orders@test");
+        _ = await WriteCatalogueAsync();
 
         var outcome = await Enrolment.WithdrawAsync(
             Workspace, "orders@test", "acme", CataloguePath, TestContext.Current.CancellationToken);
@@ -104,7 +137,7 @@ public sealed class WithdrawalReachTests : IDisposable
             """{"mcpServers":{"parley":{"command":"parley-mcp"}}}""",
             TestContext.Current.CancellationToken);
 
-        await WriteCatalogueAsync("orders@test");
+        _ = await WriteCatalogueAsync();
 
         var outcome = await Enrolment.WithdrawAsync(
             Workspace, "orders@test", "acme", CataloguePath, TestContext.Current.CancellationToken);
@@ -158,18 +191,38 @@ public sealed class WithdrawalReachTests : IDisposable
             TestContext.Current.CancellationToken);
     }
 
-    private Task WriteCatalogueAsync(params string[] agents)
+    /// <summary>Another machine-mate's checkout, which no withdrawal here may touch.</summary>
+    private static AgentIdentity Elsewhere { get; } = AgentIdentity.Mint();
+
+    /// <summary>Catalogues this repository, and one other, the way enrolment would have.</summary>
+    /// <returns>The identity this repository was catalogued under.</returns>
+    /// <remarks>
+    /// The identity is written into the repository as well as into the catalogue, because that is what a
+    /// withdrawal reads to decide which entry is this checkout's. A fixture that wrote only the catalogue
+    /// would describe a state enrolment cannot produce, and the withdrawal would rightly decline to act
+    /// on it.
+    /// </remarks>
+    private async Task<AgentIdentity> WriteCatalogueAsync()
     {
+        var mine = AgentIdentity.Mint();
         var listed = new JsonObject();
 
-        foreach (var agent in agents)
-        {
-            Enrolment.List(listed, agent, Workspace);
-        }
+        Enrolment.List(listed, mine, Workspace);
+        Enrolment.List(listed, Elsewhere, Path.Combine(_root, "somewhere-else"));
 
-        return File.WriteAllTextAsync(
+        await File.WriteAllTextAsync(
             CataloguePath,
             new JsonObject { ["agents"] = listed }.ToJsonString(),
             TestContext.Current.CancellationToken);
+
+        var launch = JsonNode.Parse(
+            await File.ReadAllTextAsync(LaunchPath, TestContext.Current.CancellationToken))!.AsObject();
+
+        launch[LaunchConfiguration.IdentityMember] = mine.ToString();
+
+        await File.WriteAllTextAsync(
+            LaunchPath, launch.ToJsonString(), TestContext.Current.CancellationToken);
+
+        return mine;
     }
 }

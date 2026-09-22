@@ -1,61 +1,59 @@
 using Parley.Configuration;
-using Parley.Core;
 
 namespace Parley.Setup;
 
-/// <summary>Where a machine has already consented to start a repository with nobody watching.</summary>
-/// <param name="Project">The project whose catalogue names it.</param>
-/// <param name="Catalogue">That catalogue's path.</param>
-/// <param name="Role">The role it is catalogued under there.</param>
-internal sealed record Consent(string Project, string Catalogue, string Role);
-
 /// <summary>
-/// The one asymmetry of this feature: many launch entries, at most one unattended start.
+/// The machine's one catalogue: who may write to it, and the one enrolment it refuses.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>A repository may answer in several projects and may be started unattended by only one.</b> The
-/// two halves are not the same risk. A launch entry does nothing at all until a person opens the
-/// repository in an editor, and a person opens one; a catalogue entry is standing consent for a
-/// machine to start a turn with nobody watching, and <c>ResidentAgent</c> starts one with its
-/// workspace as its working directory. Two nodes acting on that is two models editing one working
-/// tree, with no coordination and nobody there.
+/// <b>This held FR-013, and 018 deleted the rule rather than the file.</b> 009 allowed a repository to
+/// answer in several projects and to be started unattended by only one, because a catalogue belonged to a
+/// project and two of them consenting was two nodes launching one working directory — two models editing
+/// one checkout, with no coordination and nobody there. Enforcing it meant <c>Elsewhere</c>, a scan across
+/// every other project's catalogue, and 009 recorded the deviation from the constitution's fifth principle
+/// that the scan was: two projects are two databases by design, so there was no schema either could hold
+/// the constraint in.
 /// </para>
 /// <para>
-/// <b>Checked here rather than in <c>ProjectManifest.Validate</c>, which is where it looks like it
-/// belongs.</b> Validation is a pure function of the manifest and a workspace is not in the manifest —
-/// it is in each project's catalogue, a separate file per project. <c>ProjectManifest</c> already says
-/// why no store can carry this: <i>"the one thing SPEC.md §4.1's isolation cannot supply from storage
-/// because the catalogue is not in the store."</i> Two projects are two databases by design, so there
-/// is no schema either could hold the constraint in, and the constitution's fifth principle is
-/// deviated from here with that argument written down rather than assumed.
+/// <b>There is one catalogue now, keyed by the agent's identity, so "catalogued twice" cannot be written
+/// down.</b> The rule is a property of the file's shape rather than a scan somebody has to remember to
+/// run — which also removes the failure the scan kept having: three routes to "I could not read that
+/// catalogue", each of which granted the second start in silence.
 /// </para>
 /// <para>
-/// <b>The comparison is <see cref="WorkspacePath.SameRepository"/> and must be.</b> It is what
-/// SPEC.md §4.1.1 defines, it is textual, and it is explicitly forbidden from consulting a filesystem.
-/// A second comparison written here would be a second answer to one question, and the two would
-/// disagree first about the case that matters — the same checkout spelled two ways.
+/// <b>What replaces it is a narrower refusal, and it is about a copy rather than a project</b> (018 R2).
+/// One identifier is one startable thing, so a checkout copied to a second path carries an identifier
+/// already catalogued against the first — and cataloguing it again would point one identity at two
+/// working directories, which is the same hazard FR-013 was about, reached by the one route that is still
+/// open. It is refused naming both paths, because the person who did it is the only one who knows which
+/// of the two they meant.
 /// </para>
 /// </remarks>
 internal static class Catalogues
 {
-    /// <summary>Takes the machine-wide gate on granting an unattended start.</summary>
+    /// <summary>Takes the machine-wide gate on writing the catalogue.</summary>
     /// <param name="manifestPath">The machine's project manifest, or null when it has none.</param>
     /// <param name="cancellationToken">Stops the waiting.</param>
     /// <returns>The gate, held until it is disposed, or null when there is nothing to gate.</returns>
     /// <remarks>
     /// <para>
-    /// <b><see cref="Elsewhere"/> reads every other project's catalogue and its caller then writes a
-    /// different file, so no amount of holding the file being written can make the pair atomic.</b>
-    /// Two runs granting consent at the same moment each looked, saw nothing, and both wrote — found
-    /// by a probe that passed six times in isolation and failed on the third round under the load of
-    /// the full suite, which is the difference between a race being present and a race being visible.
+    /// <b>It was a scan across every other project's catalogue whose caller then wrote a different file,
+    /// so no amount of holding the file being written could make the pair atomic.</b> Two runs granting
+    /// consent at the same moment each looked, saw nothing, and both wrote — found by a probe that passed
+    /// six times in isolation and failed on the third round under the load of the full suite, which is the
+    /// difference between a race being present and a race being visible.
+    /// </para>
+    /// <para>
+    /// <b>018 deleted the scan and kept this</b>, which corrects 018's own research. There is one catalogue
+    /// now, so the pair this could not make atomic no longer exists — but the read-decide-write it guards
+    /// does: <see cref="Copied"/>'s refusal is decided from what the catalogue says a moment before the
+    /// entry is written into it. The lock goes when 012's D6 gives the catalogue a single long-lived owner,
+    /// and not before.
     /// </para>
     /// <para>
     /// <b>The manifest is what is held, because it is the one file every project on the machine
-    /// shares</b> — and it is never written here, only taken. Where there is no manifest there is
-    /// also no <c>deployment</c> to compare against, so the check is a no-op and the gate is nothing
-    /// to hold.
+    /// shares</b> — and it is never written here, only taken.
     /// </para>
     /// </remarks>
     public static async Task<IDisposable?> GateAsync(
@@ -89,140 +87,28 @@ internal static class Catalogues
         }
     }
 
-    /// <summary>Whether another project on this machine already starts this workspace.</summary>
-    /// <param name="deployment">Every project the machine's manifest names.</param>
-    /// <param name="workspace">The repository about to be catalogued.</param>
-    /// <param name="catalogue">The catalogue about to be written, which is not consulted.</param>
-    /// <param name="unreadable">
-    /// Why the machine could not be checked, or null when every other catalogue was read.
-    /// </param>
-    /// <returns>The consent that already exists, or null when there is none.</returns>
+    /// <summary>What to tell somebody enrolling a copy of a checkout this machine already starts.</summary>
+    /// <param name="catalogued">Where the catalogue says that identity lives.</param>
+    /// <param name="offered">Where this enrolment says it lives.</param>
+    /// <returns>One sentence, naming both paths and what to do about it.</returns>
     /// <remarks>
     /// <para>
-    /// <b>A catalogue that cannot be read comes back in <paramref name="unreadable"/>, and an earlier
-    /// version of this skipped it instead.</b> The remark here argued that skipping "says nothing
-    /// about a file it could not read, which is the honest half of the two" — and the caller has only
-    /// one place to put "nothing", which is the same place it puts "no". Three routes reached it: a
-    /// half-saved file, one another writer is holding with <c>FileShare.None</c> (which is what an
-    /// enrolment or a withdrawal in that project looks like from here), and a path naming a directory.
-    /// Each granted the second unattended start silently, which is the one outcome FR-013 exists to
-    /// prevent.
+    /// <b>Both paths, because neither this tooling nor anybody reading the message can tell which one was
+    /// meant.</b> A moved checkout and a copied one are the same two facts from here — an identifier
+    /// catalogued at one path, offered at another — and they want opposite repairs. Naming one would be
+    /// picking, and picking wrong silently repoints a machine's only way of starting that agent.
     /// </para>
     /// <para>
-    /// It is an <c>out</c> rather than a second method because the compiler then requires the caller
-    /// to receive both answers. A guard whose "I could not look" is optional to ask for is one that
-    /// fails open the first time somebody writes the obvious two lines.
+    /// <b>Both values came out of a file, and this is read in a terminal</b>, so both go through
+    /// <see cref="Quoting.Flat"/>. That matters more here than in most places, because the line around it
+    /// is a refusal — which is what somebody reads before deciding whether a path is safe to point a tool
+    /// at. This repository has fixed the shape twice before: the transcript's column-zero rule, and the
+    /// destroy dialog quoting a manifest's endpoint raw.
     /// </para>
     /// </remarks>
-    public static Consent? Elsewhere(
-        IReadOnlyList<ProjectSettings>? deployment,
-        string workspace,
-        string? catalogue,
-        out string? unreadable)
-    {
-        unreadable = null;
-
-        if (deployment is null || string.IsNullOrWhiteSpace(workspace))
-        {
-            return null;
-        }
-
-        var unseen = new List<string>();
-
-        foreach (var project in deployment)
-        {
-            if (project.NodeConfig is not { Length: > 0 } path || Same(path, catalogue))
-            {
-                continue;
-            }
-
-            // **A directory is not an absent file, and `File.Exists` cannot tell them apart.** It
-            // answers false for both, so `TryReadFrom` reports a path naming a directory as readable
-            // and empty — the one answer that means "nothing else starts this workspace". Asked
-            // before the read, because after it the two are indistinguishable.
-            if (Directory.Exists(path))
-            {
-                unseen.Add(Unseen(project.Name.Value, path, "it names a directory, not a file"));
-
-                continue;
-            }
-
-            if (!NodeCatalogue.TryReadFrom(path, out var read, out var problem))
-            {
-                unseen.Add(Unseen(project.Name.Value, path, problem));
-
-                continue;
-            }
-
-            foreach (var role in read.Roles)
-            {
-                // **A role no agent name can hold is skipped, and that is the rule rather than a
-                // gap.** It looks like a blind spot — a hand-edited catalogue hiding its workspace
-                // from this check — and a probe was written expecting exactly that. It is not:
-                // FR-013 exists because two nodes *starting* one working tree is two models editing
-                // it, and such an entry is unstartable by construction, since
-                // `NodesService.RequestStart` compares against `agent.Role` of a parsed `AgentName`.
-                // Refusing a second project on the strength of a line that can never be acted on
-                // would be the wrong answer, not a safer one.
-                if (!AgentName.TryCreate($"{role}@{NodeCatalogue.Machine}", out var agent))
-                {
-                    continue;
-                }
-
-                if (WorkspacePath.SameRepository(read.WorkspaceFor(agent), workspace))
-                {
-                    return new Consent(project.Name.Value, path, role);
-                }
-            }
-        }
-
-        // A consent that was found outranks a catalogue that could not be read: it is the more
-        // specific answer and names a file somebody can act on. The list is only reported where
-        // nothing definite was found, which is the only place it changes the outcome.
-        unreadable = unseen.Count > 0 ? string.Join(" ", unseen) : null;
-
-        return null;
-    }
-
-    /// <summary>What to tell somebody whose machine cannot currently be checked.</summary>
-    /// <param name="project">The project whose catalogue could not be read.</param>
-    /// <param name="catalogue">That catalogue's path.</param>
-    /// <param name="problem">Why it could not be read.</param>
-    /// <returns>One sentence, naming the file and what it cost.</returns>
-    private static string Unseen(string project, string catalogue, string? problem) =>
-        $"{Quoting.Quoted(project)} could not be checked: {Quoting.Flat(catalogue)} was not readable"
-        + (problem is { Length: > 0 } ? $" ({Quoting.Flat(problem)})" : string.Empty)
-        + ". A repository may be started unattended by only one project, and that cannot be granted "
-        + "from a catalogue nobody can open — the two things this run would otherwise be saying, "
-        + "'nothing else starts this workspace' and 'nobody can currently see what does', lead "
-        + "somewhere completely different. A file another run of this tool is holding reads a moment "
-        + "later.";
-
-    /// <summary>What to tell somebody whose repository is already started elsewhere.</summary>
-    /// <param name="consent">The consent that already exists.</param>
-    /// <returns>One sentence, naming both projects' worth of detail.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="consent"/> is null.</exception>
-    public static string Refusal(Consent consent)
-    {
-        ArgumentNullException.ThrowIfNull(consent);
-
-        // **Every one of these three came out of a file.** The project name is from the manifest, the
-        // role and the path are from a catalogue, and this sentence is read in a terminal — so a
-        // value able to move the cursor or reverse the reading direction can imitate the lines around
-        // it. That matters more here than in most places: the line around it is a refusal, which is
-        // what somebody reads before deciding whether a file is safe to point a tool at.
-        return $"{Quoting.Quoted(consent.Project)} already starts this workspace unattended, as "
-            + $"{Quoting.Quoted(consent.Role)} in {Quoting.Flat(consent.Catalogue)}. A repository may "
-            + "answer in several projects and may be started unattended by only one: a node starts an "
-            + "agent with its workspace as the working directory, so two of them is two models "
-            + "editing one checkout.";
-    }
-
-    /// <summary>Whether two catalogue paths are the same file.</summary>
-    private static bool Same(string left, string? right) =>
-        right is not null
-        && string.Equals(
-            Path.GetFullPath(left),
-            Path.GetFullPath(right),
-            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    public static string Copied(string? catalogued, string? offered) =>
+        $"this machine already starts that agent from {Quoting.Flat(catalogued)}, and this enrolment "
+        + $"offers {Quoting.Flat(offered)}. One agent is one checkout, so the two cannot both be it: if "
+        + "the repository moved, repoint the catalogue entry; if this is a copy, it is a different agent "
+        + "and needs its own identity.";
 }

@@ -1,6 +1,6 @@
 using Parley.Core;
 
-namespace Parley.Setup;
+namespace Parley.Configuration;
 
 /// <summary>
 /// The name a parley server sits under in a repository's launch configuration.
@@ -31,8 +31,16 @@ namespace Parley.Setup;
 /// already has. Reading it is permanent; it is never renamed in place, because the key is a component
 /// of every tool name the agent behind it already sees.
 /// </para>
+/// <para>
+/// <b>It lives in <c>Parley.Configuration</c> rather than beside the enrolment that writes it, and
+/// <c>KeyRuleTests</c> is what moved it.</b> 018 gave this project a reader of its own — a node has to
+/// ask each catalogued workspace what it answers to — and that reader needed the same two spellings, so
+/// for one build the rule had two implementations that happened to agree. The guard reported it by
+/// path, which is exactly what it was written to do; the answer is one implementation both readers can
+/// see, and this is the project both of them already reference.
+/// </para>
 /// </remarks>
-internal static class LaunchKey
+public static class LaunchKey
 {
     /// <summary>The key an enrolment that names no project writes.</summary>
     public const string Unnamed = "parley";

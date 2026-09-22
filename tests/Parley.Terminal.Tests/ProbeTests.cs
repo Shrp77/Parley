@@ -1,4 +1,5 @@
 using Parley.Configuration;
+using Parley.Core;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
@@ -29,17 +30,19 @@ public sealed class ProbeTests
     {
         var problems = new List<string>();
         var path = Path.Combine(Path.GetTempPath(), $"parley-cat-{Guid.NewGuid():N}.json");
+        var orders = AgentIdentity.Mint();
+        var billing = AgentIdentity.Mint();
 
         try
         {
             File.WriteAllText(
                 path,
-                """
+                $$"""
                 {
                   "agents": {
-                    "orders":    { "command": "claude", "workspace": "C:/repo/orders" },
-                    "billing":   { "command": "claude", "workspace": "C:/repo/billing" },
-                    "Not-A-Name": { "command": "claude", "workspace": "C:/repo/x" }
+                    "{{orders}}":  { "command": "claude", "workspace": "C:/repo/orders" },
+                    "{{billing}}": { "command": "claude", "workspace": "C:/repo/billing" },
+                    "Not-A-Name":  { "command": "claude", "workspace": "C:/repo/x" }
                   }
                 }
                 """);
@@ -50,21 +53,24 @@ public sealed class ProbeTests
             }
             else
             {
-                if (!catalogue.Roles.Contains("orders") || !catalogue.Roles.Contains("billing"))
+                if (!catalogue.Identities.Contains(orders) || !catalogue.Identities.Contains(billing))
                 {
-                    problems.Add($"roles lost: {string.Join(",", catalogue.Roles)}");
+                    problems.Add($"agents lost: {string.Join(",", catalogue.Identities)}");
                 }
 
-                // A role that is not a well-formed agent name still gets a row -- the reader's own
-                // remark says dropping it would hide a hand-edited mistake.
-                if (!catalogue.Roles.Contains("Not-A-Name"))
+                // A key that is not an identity is reported rather than dropped -- the reader's own
+                // remark says dropping it would hide a hand-edited mistake, and 018 moved where it is
+                // kept rather than whether it is. A catalogue written by a version that keyed by role
+                // reads as a machine that can start nothing, and such a machine joins successfully to
+                // say so, in a log nobody reads.
+                if (!catalogue.Unreadable.Contains("Not-A-Name"))
                 {
-                    problems.Add("a malformed role was dropped rather than kept");
+                    problems.Add("a key that is not an identity was dropped rather than reported");
                 }
             }
 
             // Empty is still empty, and still safe to ask anything of.
-            if (NodeCatalogue.Empty.Roles.Count != 0)
+            if (NodeCatalogue.Empty.Identities.Count != 0)
             {
                 problems.Add("Empty is not empty");
             }
@@ -75,13 +81,13 @@ public sealed class ProbeTests
             {
                 problems.Add("a missing catalogue was refused rather than read as empty");
             }
-            else if (absent.Roles.Count != 0 || missing is not null)
+            else if (absent.Identities.Count != 0 || missing is not null)
             {
                 problems.Add("a missing catalogue was read as something other than empty");
             }
 
             // A half-written one is the refusal, and it says why.
-            File.WriteAllText(path, "{ \"agents\": { \"orders\": ");
+            File.WriteAllText(path, $"{{ \"agents\": {{ \"{orders}\": ");
 
             if (NodeCatalogue.TryReadFrom(path, out _, out var torn))
             {
@@ -118,6 +124,7 @@ public sealed class ProbeTests
     {
         var escape = (char)27;
         var path = Path.Combine(Path.GetTempPath(), $"parley-cat-{Guid.NewGuid():N}.json");
+        var orders = AgentIdentity.Mint();
 
         try
         {
@@ -126,22 +133,21 @@ public sealed class ProbeTests
             // gets to it. This file parses, and carries the escape in the value.
             File.WriteAllText(
                 path,
-                "{\"agents\":{\"orders\":{\"command\":\"claude\\u001b[2J\","
+                "{\"agents\":{\"" + orders + "\":{\"command\":\"claude\\u001b[2J\","
                 + "\"workspace\":\"C:/repo\\u001b[31m\"}}}");
 
             Assert.True(NodeCatalogue.TryReadFrom(path, out var catalogue, out _));
 
             // The reader does not neutralise -- the surfaces do, as they draw. What matters is
             // that it does not *act* on it either: no execution, no interpretation, just text.
-            var command = catalogue.CommandFor(Parley.Core.AgentName.Create("orders@" + NodeCatalogue.Machine));
+            var command = catalogue.CommandFor(orders);
 
             Assert.NotNull(command);
             Assert.Contains(escape, command!);
 
             // And the surface that draws it makes it inert, which is where that belongs.
             Assert.DoesNotContain(escape, Parley.Terminal.Safe.Text(command!));
-            Assert.DoesNotContain(escape, Parley.Terminal.Safe.Text(catalogue.WorkspaceFor(
-                Parley.Core.AgentName.Create("orders@" + NodeCatalogue.Machine))!));
+            Assert.DoesNotContain(escape, Parley.Terminal.Safe.Text(catalogue.WorkspaceFor(orders)!));
         }
         finally
         {

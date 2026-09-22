@@ -129,9 +129,6 @@ internal static class Adding
     /// <param name="workspace">The repository.</param>
     /// <param name="catalogueFile">The project's catalogue.</param>
     /// <param name="project">The project it would join.</param>
-    /// <param name="already">
-    /// The project that already starts this workspace unattended, or null when none does.
-    /// </param>
     /// <returns>The paths, and what each would gain.</returns>
     /// <remarks>
     /// <b>No catalogue line when another project already starts this repository</b>, and that is
@@ -141,17 +138,15 @@ internal static class Adding
     /// gets the launch entry and the instructions section, and nothing in its catalogue.
     /// </remarks>
     internal static string Describe(
-        string workspace, string catalogueFile, string project, Enrolment.Shared? already) =>
+        string workspace, string catalogueFile, string project) =>
         $"{Safe.Text(Enrolment.LaunchPath(workspace))}{Environment.NewLine}"
         + $"    a parley server naming this repository, and the project '{Safe.Text(project)}'"
         + $"{Environment.NewLine}{Safe.Text(Path.Combine(workspace, Instructions))}{Environment.NewLine}"
         + $"    a '{EnrollmentPlan.PeersHeading}' section, if it has none, telling the agent how to "
         + "use Parley"
-        + (already is null
-            ? $"{Environment.NewLine}{Safe.Text(catalogueFile)}{Environment.NewLine}"
-              + "    a line saying this machine may start it when a question arrives for it"
-              + $"{Environment.NewLine}{Environment.NewLine}{Starts}"
-            : $"{Environment.NewLine}{Environment.NewLine}{Shared(already, project)}");
+        + $"{Environment.NewLine}{Safe.Text(catalogueFile)}{Environment.NewLine}"
+        + "    a line saying this machine may start it when a question arrives for it"
+        + $"{Environment.NewLine}{Environment.NewLine}{Starts}";
 
     /// <summary>The file in a repository that tells its agent how to work.</summary>
     /// <remarks>
@@ -164,36 +159,11 @@ internal static class Adding
     /// </remarks>
     internal const string Instructions = "CLAUDE.md";
 
-    /// <summary>What is said when another project already starts this repository.</summary>
-    /// <param name="already">The consent that exists.</param>
-    /// <param name="project">The project being joined.</param>
-    /// <returns>The sentences.</returns>
-    /// <remarks>
-    /// <b>This used to be a refusal with no way past it.</b> The terminal always enrolled for
-    /// unattended start, so a repository already catalogued by one project could not be added to a
-    /// second at all — reported by the owner, who tried a different name for it and met the same
-    /// wall, because the rule is keyed on the workspace and has to be: the hazard is two nodes
-    /// running one working directory, and renaming the agent does not make it two directories.
-    /// </remarks>
-    internal static string Shared(Enrolment.Shared already, string project)
-    {
-        ArgumentNullException.ThrowIfNull(already);
-
-        // **Neutralised like everything else this surface draws, and it was not.** The project name
-        // comes from the manifest and the role from a catalogue — two files a person edits — and
-        // this sentence stands between somebody and a write into a repository. 0.18.9 found exactly
-        // this in `Removing.Describe`, which quoted a manifest's endpoint, store and catalogue path
-        // raw; `Withdrawing` was given the same treatment, and this dialog was the one left out.
-        var starts = Safe.Text(already.Project);
-
-        return $"'{starts}' already starts this repository unattended, so nothing is "
-            + $"added to '{Safe.Text(project)}'s catalogue: a repository may answer in several "
-            + "projects and may be started unattended by only one."
-            + $"{Environment.NewLine}{Environment.NewLine}"
-            + $"It is still started once, through '{starts}', so that it registers here "
-            + "as well. One working directory has one launch configuration and a client brings up "
-            + "every server in it, so the entry about to be written is one of them.";
-    }
+    // **`Shared` was here, and 018 removed the state it described.** It explained why a second project got
+    // a launch entry and no catalogue line: FR-013 let a repository answer in several projects and be
+    // started unattended by only one, because two nodes launching one working directory is two models
+    // editing one checkout. The catalogue is one file keyed by the agent's identity now, so every project
+    // shares the one entry and there is no second case to explain.
 
     /// <summary>What is said about the process this is about to start.</summary>
     /// <remarks>
@@ -337,24 +307,16 @@ internal static class Adding
         var workspace = Path.GetFullPath(values[0].Trim());
         var role = values[1].Trim();
 
-        // **Asked here, before the description is written**, because it changes what the
-        // description says: a repository another project already starts gets one file rather than
-        // two. Read now rather than at the moment of writing for the reason the deployment itself
-        // is read now — a catalogue is a file, and what it says a second ago is what somebody is
-        // being asked to agree to.
-        var already = Enrolment.StartedElsewhere(
-            catalogue.Deployment(), workspace, Catalogue.Proposed(project));
-
         var asking = Prompting.Choose(
             ConfirmTitle,
-            Describe(workspace, Catalogue.Proposed(project), project.Name.Value, already)
+            Describe(workspace, catalogue.Proposed(), project.Name.Value)
             + Environment.NewLine
             + Environment.NewLine
-            + (Catalogue.Exists(project) || already is not null
+            + (catalogue.Exists()
                 ? string.Empty
-                : $"This project names no catalogue, so one is created at "
-                  + $"{Catalogue.Proposed(project)} and recorded on it. Its broker restarts to "
-                  + "host the node from it."),
+                : $"This machine has no catalogue yet, so one is created at "
+                  + $"{catalogue.Proposed()}. It is what starts every agent on this machine, in "
+                  + "every project."),
             [NotNow, Write]);
 
         var token = Prompting.Open(app, asking);
@@ -372,7 +334,7 @@ internal static class Adding
 
             queue(token2 => WriteAsync(
                 project, catalogue, workspace, role, values[2].Trim(), start, registered, token2,
-                done, remember, already));
+                done, remember));
         };
     }
 
@@ -381,9 +343,6 @@ internal static class Adding
     /// <param name="registered">Asks whether the registry holds it, or null when nothing can.</param>
     /// <param name="role">The role that was added.</param>
     /// <param name="project">The project it joined.</param>
-    /// <param name="already">
-    /// The project that starts this repository unattended, or null when this one does.
-    /// </param>
     /// <param name="deployment">Every project on the machine, so that one can be found.</param>
     /// <param name="cancellationToken">Stops the call.</param>
     /// <returns>What to say about it.</returns>
@@ -408,7 +367,6 @@ internal static class Adding
         Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? registered,
         string role,
         ProjectSettings project,
-        Enrolment.Shared? already,
         IReadOnlyList<ProjectSettings> deployment,
         CancellationToken cancellationToken)
     {
@@ -417,11 +375,10 @@ internal static class Adding
             return NotStarted;
         }
 
-        var (asking, named) = already is null
-            ? (project, role)
-            : (deployment.FirstOrDefault(one =>
-                string.Equals(one.Name.Value, already.Project, StringComparison.Ordinal)),
-                already.Role);
+        // **One catalogue entry now, so the start goes to the project being added to.** It used to be
+        // dispatched through whichever project held the consent, because only that project's node could
+        // launch the checkout. Every project's node reads the same catalogue.
+        var (asking, named) = (project, role);
 
         if (asking is null
             || !AgentName.TryCreate($"{named}@{MachineName.Current}", out var agent)
@@ -452,9 +409,7 @@ internal static class Adding
             TimeProvider.System,
             cancellationToken).ConfigureAwait(false);
 
-        var through = already is null
-            ? $"'{role}'"
-            : $"'{role}' through '{Safe.Text(already.Project)}', which is what starts this repository,";
+        var through = $"'{role}'";
 
         // **Three answers, not two, and the third is the one that misled somebody.** Nothing
         // started is the old sentence unchanged; started and registered is the only case that may
@@ -464,7 +419,6 @@ internal static class Adding
             { Launched: false } => $"{Safe.Text(was.Says)} {NotStarted}",
             { Registered: true } =>
                 $"Started {through} and it registered. It can be asked and told now.",
-            _ when already is not null => $"Started {through} — {Safe.Text(was.Says)}. {Later} {Reload}",
             _ => $"Started {through} — {Safe.Text(was.Says)}. {Later}",
         };
     }
@@ -529,22 +483,21 @@ internal static class Adding
         Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? registered,
         CancellationToken cancellationToken,
         Func<string, Task> done,
-        Action<string>? remember,
-        Enrolment.Shared? already)
+        Action<string>? remember)
     {
         var said = new List<string>();
         var deployment = catalogue.Deployment();
 
         try
         {
-            var file = await catalogue.EnsureAsync(project, said, cancellationToken).ConfigureAwait(false);
+            var file = await catalogue.EnsureAsync(said, cancellationToken).ConfigureAwait(false);
 
             // **Unattended only when nothing else starts this repository.** FR-013 admits the
             // repository into a second project and refuses it a second unattended start, and this
             // is where the difference is made: asking for one here is what used to make the whole
             // enrolment throw, with no way past it from this screen.
             var entry = new EnrollmentEntry(
-                workspace, role, owns.Length == 0 ? null : owns, Unattended: already is null)
+                workspace, role, owns.Length == 0 ? null : owns, Unattended: true)
             {
                 Enroll = true,
                 OwnsApproved = owns.Length > 0,
@@ -576,7 +529,7 @@ internal static class Adding
             //
             // Nothing here claims to be anybody. The start is a request; the registration is the
             // agent's own act.
-            said.Add(await StartAsync(start, registered, role, project, already, deployment, cancellationToken)
+            said.Add(await StartAsync(start, registered, role, project, deployment, cancellationToken)
                 .ConfigureAwait(false));
         }
         catch (InterruptedEnrolment interrupted)
@@ -606,18 +559,28 @@ internal static class Adding
 }
 
 /// <summary>
-/// A project's catalogue: where it is, and how one is made when the project names none.
+/// This machine's catalogue: where it is, and how one is made when there is none yet.
 /// </summary>
-/// <param name="ManifestPath">The manifest the project is named in, or null when there is none.</param>
+/// <param name="ManifestPath">The manifest this machine's projects are named in, or null.</param>
+/// <param name="Given">The catalogue somebody named, or null to work it out from the manifest.</param>
 /// <remarks>
-/// <b>Creating one is recorded on the project through the command that owns the manifest</b>, which
-/// is what <c>parley project set --node-config</c> does from a shell. The serve watcher compares
-/// the catalogue path as part of what makes a deployment the same one, so recording it restarts
-/// that project's broker and node within a couple of seconds — agents attached to it drop and
-/// reattach, which the seat book already survives. That is worth a sentence on screen and not worth
-/// a new mechanism: it happens once per project, the first time an agent is added.
+/// <para>
+/// <b>One catalogue per machine, beside the manifest</b> (018). It was one per project, recorded on the
+/// project through the command that owns the manifest — and that binding is what made a checkout
+/// startable in the project whose file named it and unstartable in every other, while being addressable
+/// in all of them. Nothing is recorded on a project any more, so creating one no longer rewrites the
+/// manifest and no longer restarts a broker.
+/// </para>
+/// <para>
+/// <b>Beside the manifest rather than beside a store</b>, which is where the per-project one went. A
+/// store belongs to one project and this file belongs to none of them; the manifest is the one file on
+/// the machine that every project already shares, which is the same reason the enrolment gate takes its
+/// lock. The node resolves it the same way, and it must: writing consent into a file the supervisor does
+/// not read is the defect this feature exists to remove, and changing one side of that resolution alone
+/// would reintroduce it in the opposite direction.
+/// </para>
 /// </remarks>
-internal sealed record Catalogue(string? ManifestPath)
+internal sealed record Catalogue(string? ManifestPath, string? Given = null)
 {
     /// <summary>Every project on this machine, or none when the manifest cannot be read.</summary>
     /// <returns>The projects.</returns>
@@ -633,60 +596,53 @@ internal sealed record Catalogue(string? ManifestPath)
             ? projects
             : [];
 
-    /// <summary>Whether the project already names a catalogue.</summary>
-    /// <param name="project">The project.</param>
-    /// <returns>Whether it does.</returns>
-    internal static bool Exists(ProjectSettings project)
-    {
-        ArgumentNullException.ThrowIfNull(project);
+    /// <summary>Whether this machine already has a catalogue.</summary>
+    /// <returns>Whether the file is there.</returns>
+    internal bool Exists() => File.Exists(Proposed());
 
-        return project.NodeConfig is { Length: > 0 };
-    }
-
-    /// <summary>Where a catalogue would go if the project needs one.</summary>
-    /// <param name="project">The project.</param>
-    /// <returns>Its catalogue, existing or proposed.</returns>
+    /// <summary>Where this machine's catalogue is, whether or not it has been written yet.</summary>
+    /// <returns>The path.</returns>
     /// <remarks>
-    /// Beside the store, named after it, for the reason a store is named after its project: a
-    /// machine that keeps its files somewhere has already decided where, and a second convention
-    /// is a second place to look.
+    /// What somebody named wins, then the file beside the manifest, then the bare name the node falls
+    /// back to when there is no manifest at all — so the two always agree about which file consent is
+    /// written into. **The environment is not read here**: whoever builds the surface resolves it and
+    /// passes it in, because reading it from inside this call is what let the terminal's own tests
+    /// enrol their temporary repositories into a real machine's catalogue.
     /// </remarks>
-    internal static string Proposed(ProjectSettings project)
+    internal string Proposed()
     {
-        ArgumentNullException.ThrowIfNull(project);
-
-        if (project.NodeConfig is { Length: > 0 } named)
+        if (Given is { Length: > 0 } named)
         {
             return named;
         }
 
-        var directory = Path.GetDirectoryName(Path.GetFullPath(project.Store));
-        var name = Path.GetFileNameWithoutExtension(project.Store);
+        if (ManifestPath is { Length: > 0 } manifest
+            && Path.GetDirectoryName(Path.GetFullPath(manifest)) is { Length: > 0 } directory)
+        {
+            return Path.Combine(directory, NodeCatalogue.DefaultFileName);
+        }
 
-        return Path.Combine(
-            string.IsNullOrEmpty(directory) ? "." : directory,
-            (string.IsNullOrEmpty(name) ? project.Name.Value : name) + "-node.json");
+        return NodeCatalogue.DefaultFileName;
     }
 
-    /// <summary>Makes sure the project has a catalogue, creating and recording one if not.</summary>
-    /// <param name="project">The project.</param>
+    /// <summary>Makes sure this machine has a catalogue, creating one if not.</summary>
     /// <param name="said">Appended to with what was done.</param>
     /// <param name="cancellationToken">Stops the write.</param>
     /// <returns>The catalogue file to write into.</returns>
+    /// <remarks>
+    /// <b>Creating one no longer records anything on a project</b> (018). It used to run
+    /// <c>project set --node-config</c>, which rewrote the manifest — and the serve watcher compares the
+    /// manifest to decide whether a deployment is the same one, so adding the first agent to a project
+    /// restarted its broker and dropped every agent attached to it. There is nothing to record: the node
+    /// resolves this file the same way this does, from the machine rather than from a row.
+    /// </remarks>
     internal async Task<string> EnsureAsync(
-        ProjectSettings project,
         List<string> said,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(said);
 
-        if (Exists(project))
-        {
-            return project.NodeConfig!;
-        }
-
-        var path = Proposed(project);
+        var path = Proposed();
 
         if (!File.Exists(path))
         {
@@ -697,30 +653,8 @@ internal sealed record Catalogue(string? ManifestPath)
                     ["agents"] = new System.Text.Json.Nodes.JsonObject(),
                 },
                 cancellationToken).ConfigureAwait(false);
-        }
 
-        if (ManifestPath is { Length: > 0 } manifest)
-        {
-            var output = new StringWriter();
-            var error = new StringWriter();
-
-            await ProjectCommand.RunAsync(
-                ["set", project.Name.Value],
-                manifest,
-                new ProjectFields(null, null, path, null),
-                output,
-                error,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            said.Add(
-                $"Created {path} and recorded it on '{project.Name.Value}'. Its broker restarts "
-                + "to host the node from it.");
-        }
-        else
-        {
-            said.Add(
-                $"Created {path}, but this surface was given its projects and has no manifest to "
-                + "record it on. Nothing will host a node from it until something does.");
+            said.Add($"Created {path}, which is what this machine starts its agents from.");
         }
 
         return path;

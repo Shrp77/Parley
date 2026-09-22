@@ -1,4 +1,6 @@
-﻿using Parley.Setup;
+﻿using Parley.Configuration;
+using Parley.Core;
+using Parley.Setup;
 using System.Text.Json.Nodes;
 using Xunit;
 
@@ -74,7 +76,7 @@ public sealed class WritingBoundaryTests : IDisposable
         var agents = (JsonObject)JsonNode.Parse(
             await File.ReadAllTextAsync(CataloguePath, TestContext.Current.CancellationToken))!["agents"]!;
 
-        var recorded = agents["orders"]!["workspace"]!.GetValue<string>();
+        var recorded = agents[IdentityOf(Workspace).ToString()]!["workspace"]!.GetValue<string>();
 
         Assert.Equal(
             Path.TrimEndingDirectorySeparator(Path.GetFullPath(Workspace)),
@@ -90,6 +92,9 @@ public sealed class WritingBoundaryTests : IDisposable
         await AddAsync(Workspace, "orders");
         await AddAsync(Other, "billing");
 
+        var mine = IdentityOf(Workspace);
+        var theirs = IdentityOf(Other);
+
         var untouched = await File.ReadAllTextAsync(
             Path.Combine(Other, ".mcp.json"), TestContext.Current.CancellationToken);
 
@@ -104,23 +109,31 @@ public sealed class WritingBoundaryTests : IDisposable
         var agents = (JsonObject)JsonNode.Parse(
             await File.ReadAllTextAsync(CataloguePath, TestContext.Current.CancellationToken))!["agents"]!;
 
-        Assert.False(agents.ContainsKey("orders"));
-        Assert.True(agents.ContainsKey("billing"), "the other agent's catalogue line went too");
+        Assert.False(agents.ContainsKey(mine.ToString()));
+        Assert.True(
+            agents.ContainsKey(theirs.ToString()), "the other agent's catalogue line went too");
     }
 
     [Fact]
-    public async Task Withdrawing_a_name_the_catalogue_holds_for_a_different_workspace_leaves_it()
+    public async Task Withdrawing_a_checkout_the_catalogue_holds_at_a_different_path_still_takes_its_line()
     {
         // A hand-edited catalogue, or one written before a repository moved. The line names a
-        // directory this withdrawal is not about, and removing it by name alone would take a
-        // startable agent out of the deployment because somebody removed a different one.
+        // directory this withdrawal is not about.
+        //
+        // **What decides which line goes is the identity the withdrawn checkout declares** (018), where
+        // it used to be the name typed. The entry is this checkout's however stale the path in it, so it
+        // goes — and the note still names the path, so a person can see it was not the one they were
+        // looking at. Removing by name alone was the weaker rule: a name is what one project calls
+        // something, and a second checkout can claim it.
         await AddAsync(Workspace, "orders");
 
-        // The catalogue now says 'orders' lives somewhere else entirely.
+        var mine = IdentityOf(Workspace);
+
+        // The catalogue now says this checkout lives somewhere else entirely.
         var catalogue = JsonNode.Parse(
             await File.ReadAllTextAsync(CataloguePath, TestContext.Current.CancellationToken))!;
 
-        catalogue["agents"]!["orders"]!["workspace"] = Other;
+        catalogue["agents"]![mine.ToString()]!["workspace"] = Other;
 
         await File.WriteAllTextAsync(
             CataloguePath, catalogue.ToJsonString(), TestContext.Current.CancellationToken);
@@ -160,6 +173,16 @@ public sealed class WritingBoundaryTests : IDisposable
         var relative = Path.GetRelativePath(Directory.GetCurrentDirectory(), Workspace);
 
         Assert.Null(Adding.WorkspaceProblem(relative));
+    }
+
+    /// <summary>Which agent a checkout says it is.</summary>
+    /// <param name="workspace">The checkout.</param>
+    /// <returns>Its identity.</returns>
+    private static AgentIdentity IdentityOf(string workspace)
+    {
+        Assert.True(LaunchConfiguration.TryRead(workspace, out var declared, out var problem), problem);
+
+        return declared.Identity;
     }
 
     private async Task AddAsync(string workspace, string role)

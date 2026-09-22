@@ -1,4 +1,5 @@
 using Parley.Configuration;
+using Parley.Core;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
@@ -30,15 +31,16 @@ public sealed class ProbeThreeTests
     public void A_thousand_draws_hold_nothing_open()
     {
         var path = Path.Combine(Path.GetTempPath(), $"parley-cat-{Guid.NewGuid():N}.json");
+        var orders = AgentIdentity.Mint();
 
         File.WriteAllText(
             path,
-            "{\"agents\":{\"orders\":{\"command\":\"claude\",\"workspace\":\"/srv/orders\"}}}");
+            "{\"agents\":{\"" + orders + "\":{\"command\":\"claude\",\"workspace\":\"/srv/orders\"}}}");
 
         for (var draw = 0; draw < 1_000; draw++)
         {
             Assert.True(NodeCatalogue.TryReadFrom(path, out var catalogue, out _));
-            Assert.Single(catalogue.Roles);
+            Assert.Single(catalogue.Identities);
         }
 
         // A handle still open refuses this on Windows, which is the point of doing it here rather
@@ -55,12 +57,12 @@ public sealed class ProbeThreeTests
         Parallel.For(0, 256, index =>
         {
             _ = index;
-            _ = empty.Roles.Count;
-            _ = empty.CommandFor(Parley.Core.AgentName.Create("orders@" + NodeCatalogue.Machine));
+            _ = empty.Identities.Count;
+            _ = empty.CommandFor(orders);
             _ = empty.ToString();
         });
 
-        Assert.Empty(empty.Roles);
+        Assert.Empty(empty.Identities);
 
         // And an absent file still resolves to that same object rather than a fresh empty one,
         // which is what makes the fallback free on a path taken once per frame.
@@ -94,9 +96,14 @@ public sealed class ProbeThreeTests
 
         try
         {
+            // **Keyed by an identity, or this file describes a machine that can start nothing** — and a
+            // start-up line reading "0 agent(s)" would satisfy every "does not disclose" assertion below
+            // by having nothing to disclose.
+            var orders = AgentIdentity.Mint();
+
             File.WriteAllText(
                 path,
-                "{\"agents\":{\"orders\":{\"command\":\"" + secret
+                "{\"agents\":{\"" + orders + "\":{\"command\":\"" + secret
                 + "\",\"workspace\":\"/srv/private-thing\"}}}");
 
             Assert.True(NodeCatalogue.TryReadFrom(path, out var catalogue, out _));

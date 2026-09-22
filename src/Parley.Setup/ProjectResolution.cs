@@ -278,21 +278,32 @@ public static class ProjectResolution
     }
 
     /// <summary>
-    /// Resolves the node catalogue a command should read or write.
+    /// Resolves this machine's node catalogue: the flag, then the variable, then beside the manifest.
     /// </summary>
     /// <param name="argument">A path given on the command line, or null.</param>
     /// <param name="variable">Reads an environment variable.</param>
-    /// <param name="project">The selected project, or null.</param>
+    /// <param name="manifestPath">The machine's project manifest, or null when it has none.</param>
     /// <returns>The value and its source.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="variable"/> is null.</exception>
     /// <remarks>
-    /// The fallback is deliberately <see cref="NodeCatalogue.DefaultFileName"/> — a bare name,
-    /// resolved against the working directory — because that is what the node itself does, and
-    /// parity matters more than tidiness. Writing consent into a file the supervisor does not read
-    /// is the defect this whole feature exists to remove; changing only one side of that
-    /// resolution would reintroduce it in the opposite direction.
+    /// <para>
+    /// <b>There is no project in this any more</b> (018). It used to take one and read its
+    /// <c>node_config</c>, which is what made "what this machine can start" a per-project fact — and a
+    /// checkout answering in two projects was startable in whichever one's file named it. One catalogue
+    /// per machine cannot express that.
+    /// </para>
+    /// <para>
+    /// <b>The fallback is beside the manifest rather than the bare file name.</b> A bare name resolves
+    /// against the working directory, and a broker started by a logon entry starts somewhere nobody
+    /// chose; that was survivable while every project's entry named an absolute path, and taking the
+    /// entry away made the fallback the ordinary case. The node resolves it the same way and must:
+    /// writing consent into a file the supervisor does not read is the defect this whole feature exists
+    /// to remove, and changing one side of the resolution alone would reintroduce it in the opposite
+    /// direction. With no manifest at all it is still the bare name, which is what the node falls back
+    /// to as well.
+    /// </para>
     /// </remarks>
-    public static Resolved NodeConfig(string? argument, Func<string, string?> variable, ProjectSettings? project)
+    public static Resolved NodeConfig(string? argument, Func<string, string?> variable, string? manifestPath)
     {
         ArgumentNullException.ThrowIfNull(variable);
 
@@ -300,10 +311,19 @@ public static class ProjectResolution
             argument,
             variable,
             NodeCatalogue.PathVariable,
-            project?.NodeConfig,
-            project?.Name.Value,
-            NodeCatalogue.DefaultFileName);
+            null,
+            null,
+            BesideTheManifest(manifestPath));
     }
+
+    /// <summary>Where this machine's catalogue sits when nothing names one.</summary>
+    /// <param name="manifestPath">The manifest, or null.</param>
+    /// <returns>The path.</returns>
+    private static string BesideTheManifest(string? manifestPath) =>
+        manifestPath is { Length: > 0 } manifest
+        && Path.GetDirectoryName(Path.GetFullPath(manifest)) is { Length: > 0 } directory
+            ? Path.Combine(directory, NodeCatalogue.DefaultFileName)
+            : NodeCatalogue.DefaultFileName;
 
     private static Resolved Choose(
         string? argument,
