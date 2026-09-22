@@ -2,6 +2,7 @@ using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
+using Parley.Client.Rendering;
 using Parley.Client.Seating;
 using Parley.Client.Views;
 using Parley.Core;
@@ -418,5 +419,96 @@ public sealed class CompletingTests : IAsyncDisposable
             shell.Line.Rows <= LineRegion.MostRows,
             $"the line wanted {shell.Line.Rows} rows of {LineRegion.MostRows}");
         Assert.True(shell.Transcript.Frame.Height > 0, "the transcript was pushed off the screen");
+    }
+
+    [Fact]
+    public async Task What_is_owed_is_listed_and_reading_it_moves_the_transcript_to_where_it_was_said()
+    {
+        // **A question is read in its context rather than in a list**, which is the whole reason this column
+        // names messages instead of restating them.
+        var (shell, driving) = await SeatedAsync(TestContext.Current.CancellationToken);
+
+        using var held = shell;
+
+        driving.App.LayoutAndDraw(true);
+
+        var owed = Assert.Single(shell.Room.Written, row => row.Contains(Orders.Value, StringComparison.Ordinal)
+            && row.Contains("answer or ask back", StringComparison.Ordinal));
+
+        Assert.NotEmpty(owed);
+
+        shell.Focus(shell.Panes.ToList().FindIndex(pane => pane is RoomRegion));
+        driving.Row(shell.Room.List, "answer or ask back");
+
+        var item = shell.Room.Selected;
+
+        Assert.NotNull(item);
+
+        // The message it points at is the peer's own, in the exchange this person holds.
+        Assert.NotNull(item!.At);
+
+        shell.Room.List.NewKeyDownEvent(Key.Enter);
+
+        await shell.Settled;
+
+        // **The cursor is on the message itself, not on the row used to scroll to it.** Reaching selects a
+        // couple of rows earlier first, so the list scrolls those into view and the message sits below them
+        // rather than against the top edge -- and the second selection is what must win.
+        Assert.Equal(shell.Panes.ToList().IndexOf(shell.Transcript), shell.FocusedRegion);
+
+        var at = shell.Transcript.List.SelectedItem;
+
+        Assert.NotNull(at);
+        Assert.Equal(
+            shell.Transcript.Rows.ToList().IndexOf(item.At!.Value),
+            at);
+
+        // And a message within the first few rows is still reachable, rather than being refused for having
+        // too little above it.
+        Assert.True(at < TranscriptRegion.Neighbours + 2, $"the fixture's only message was at row {at}");
+        Assert.Contains(
+            "is the build green?",
+            shell.Transcript.Written,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_row_pointing_at_nothing_says_so_rather_than_moving_the_reader()
+    {
+        // A transcript refilled since the column was drawn is an ordinary race. Scrolling somewhere arbitrary
+        // would answer "where was this said" with somewhere nothing was.
+        var (shell, driving) = await SeatedAsync(TestContext.Current.CancellationToken);
+
+        using var held = shell;
+
+        driving.App.LayoutAndDraw(true);
+
+        shell.Transcript.Clear();
+
+        Assert.False(shell.Transcript.Reach(1), "an empty transcript reached a message");
+    }
+
+    [Fact]
+    public async Task Every_row_of_the_transcript_knows_which_message_it_belongs_to()
+    {
+        // Carried on the line rather than worked out by counting messages, which would be a second opinion
+        // about a layout the renderer already decides.
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+
+        using var held = shell;
+
+        var export = await new BrokerClient(_broker.Operators).ExportAsync(Conversation, ct);
+        var message = Assert.Single(export!.Messages);
+
+        var lines = Parley.Client.Rendering.Reading.Lines(export.Messages, export.Exchanges);
+
+        Assert.Contains(lines, line => line.Message == message.Id && line.Kind == LineKind.Header);
+        Assert.Contains(lines, line => line.Message == message.Id && line.Kind == LineKind.Body);
+
+        // And a line this surface wrote itself belongs to no message, so nothing can scroll to it.
+        Assert.All(
+            lines.Where(line => line.Kind == LineKind.Blank),
+            line => Assert.Null(line.Message));
     }
 }

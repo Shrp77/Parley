@@ -33,7 +33,23 @@ public enum LineKind
 /// The sender's colour slot on a header, null everywhere else. Decoration only: every header names its
 /// sender in words, so a reader who sees no colour loses nothing.
 /// </param>
-public sealed record TranscriptLine(string Text, LineKind Kind, int? Colour);
+/// <param name="Message">
+/// The message this line belongs to, or <see langword="null"/> for a line the surface wrote itself.
+/// </param>
+/// <remarks>
+/// <para>
+/// <b><paramref name="Message"/> is what lets a surface put one message in front of a reader</b> — the room's
+/// "waiting on you" list names a thing owed and a person should read the question in its context rather than
+/// in a list. Carried on the line rather than worked out by counting messages, because a count would be a
+/// second opinion about the layout that this type already decides.
+/// </para>
+/// <para>
+/// Null on the blank line between messages and on the record §14 leaves behind: a line the surface wrote is
+/// not part of anybody's message, and answering "which message is this" with a guess would scroll a reader to
+/// somewhere nothing was said.
+/// </para>
+/// </remarks>
+public sealed record TranscriptLine(string Text, LineKind Kind, int? Colour, long? Message = null);
 
 /// <summary>
 /// A conversation laid out for somebody to read, rather than run together into one blob.
@@ -108,18 +124,22 @@ public static class Reading
                 lines.Add(new TranscriptLine(string.Empty, LineKind.Blank, null));
             }
 
-            lines.Add(new TranscriptLine(Header(message, states, zone), LineKind.Header, Palette.SlotFor(message.From)));
+            lines.Add(new TranscriptLine(
+                Header(message, states, zone),
+                LineKind.Header,
+                Palette.SlotFor(message.From),
+                message.Id));
 
             foreach (var line in Body(message.PayloadJson))
             {
-                lines.Add(line);
+                lines.Add(line with { Message = message.Id });
             }
 
             var absent = Visibility.Describe(message, participants);
 
             if (absent.Length > 0)
             {
-                lines.Add(new TranscriptLine(Pad(absent), LineKind.Annotation, null));
+                lines.Add(new TranscriptLine(Pad(absent), LineKind.Annotation, null, message.Id));
             }
         }
 

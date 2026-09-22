@@ -531,6 +531,28 @@ internal sealed class Shell : Window
         Conversations = new ConversationsRegion();
         Transcript = new TranscriptRegion();
         Room = new RoomRegion();
+
+        // **Enter on something owed reads it where it was said.** The primary action of the active control
+        // (FR-031): in this list, activating a row. A row that points at no message does nothing rather than
+        // moving the reader somewhere arbitrary, and says so.
+        Room.Reading += (_, item) =>
+        {
+            if (item.At is not { } at)
+            {
+                Said = RoomRegion.Unreachable;
+
+                return;
+            }
+
+            if (Transcript.Reach(at))
+            {
+                Focus(Panes.ToList().IndexOf(Transcript));
+            }
+            else
+            {
+                Said = RoomRegion.Unreachable;
+            }
+        };
         Line = new LineRegion();
 
         _regions = [Projects, Agents, Conversations, Transcript];
@@ -951,7 +973,7 @@ internal sealed class Shell : Window
 
     /// <summary>How wide the room's own column is, in columns.</summary>
     /// <remarks>
-    /// Wide enough for an agent name and the clause beside it -- "billing@matrixmaster -- waiting on you" is
+    /// Wide enough for an agent name and the clause beside it -- "billing@thismachine -- waiting on you" is
     /// what this column exists to say -- and no wider, because everything it does not take belongs to the
     /// transcript. Below the stacking threshold the panes stack and this does not apply.
     /// </remarks>
@@ -3636,7 +3658,7 @@ internal sealed class Shell : Window
 
         var pairs = Pairing.From(export, waiting.Value ?? [], hold.Seat.Name);
 
-        Room.Show(pairs, Outstanding(pairs), seated: true);
+        Room.Show(pairs, Outstanding(pairs, export), seated: true);
 
         // Rebuilt from the pair state that was just read, keeping whichever answer-or-ask-back choices the
         // person had already made about peers that are still in the same state.
@@ -3672,20 +3694,40 @@ internal sealed class Shell : Window
 
     /// <summary>What this person must address in the conversation on screen.</summary>
     /// <param name="pairs">The pair state for every participant.</param>
+    /// <param name="export">The conversation as it was read, for the message each row points at.</param>
     /// <returns>One item per thing owed, in the order the participants are listed.</returns>
     /// <remarks>
     /// Read from the same pair state the input line derives its acts from, so the column and the line cannot
     /// disagree about what is outstanding. Two sources for one fact is how a surface comes to promise something
     /// it will not do.
     /// </remarks>
-    private static IReadOnlyList<OutstandingItem> Outstanding(IReadOnlyList<PairState> pairs) =>
+    private static IReadOnlyList<OutstandingItem> Outstanding(
+        IReadOnlyList<PairState> pairs,
+        ConversationExport export) =>
         [.. pairs
             .Where(pair => pair.Turn == Turn.Mine && pair.OpenExchange is not null)
             .Select(pair => new OutstandingItem(
                 pair.Peer,
                 $"{pair.Peer.Value} — answer or ask back",
                 pair.OpenExchange!.Value,
-                null))];
+                Asked(export, pair)))];
+
+    /// <summary>The message that put this person on the hook, so the column can point at it.</summary>
+    /// <param name="export">The conversation as it was read.</param>
+    /// <param name="pair">The pair state.</param>
+    /// <returns>The message identifier, or null when the export does not carry one.</returns>
+    /// <remarks>
+    /// <b>The latest thing the peer said in that exchange, not the first.</b> An exchange can hold a Request
+    /// and then a Clarify on it, and what is actually owed an answer is the last question asked -- which is
+    /// also what somebody scrolling to it wants to read. Null rather than a guess where nothing matches: a
+    /// row that cannot point anywhere says so by doing nothing, which beats moving a reader somewhere
+    /// arbitrary.
+    /// </remarks>
+    private static long? Asked(ConversationExport export, PairState pair) =>
+        export.Messages
+            .Where(message => message.ExchangeId == pair.OpenExchange && message.From == pair.Peer)
+            .Select(message => (long?)message.Id)
+            .LastOrDefault();
 
     /// <summary>
     /// Reads the project's catalogue, which is the one fact about a deployment the broker never

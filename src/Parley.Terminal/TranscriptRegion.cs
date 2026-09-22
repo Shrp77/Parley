@@ -57,6 +57,11 @@ internal sealed class TranscriptRegion : FrameView
     private IReadOnlyList<TranscriptLine> _marked = [];
     private List<Color?> _tints = [];
 
+    // Which message each drawn row belongs to, in step with the rows themselves. Swapped with them under the
+    // list's own guard, for the reason the colours are: a parallel array kept separately is one more thing
+    // that can fall out of step with what is on screen, and this one decides where a reader is sent.
+    private List<long?> _owners = [];
+
     // Set only for the length of one redraw by Follow, when the reader was on the last row: they are
     // reading the conversation as it arrives, so the new last row is where they belong.
     private bool _followEnd;
@@ -277,6 +282,61 @@ internal sealed class TranscriptRegion : FrameView
         Redraw();
     }
 
+    /// <summary>Which message each drawn row belongs to, for a test to check where a reader was sent.</summary>
+    /// <remarks>
+    /// Read rather than recomputed, because a test that worked out the layout for itself would be a second
+    /// opinion about it -- and the thing worth checking is that this region and the reader agree.
+    /// </remarks>
+    internal IReadOnlyList<long?> Rows => _owners;
+
+    /// <summary>Puts one message in front of the reader, with what came before it still visible.</summary>
+    /// <param name="message">The message to reach.</param>
+    /// <returns><see langword="true"/> when it was on screen to reach.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The room's "waiting on you" list activates this</b>, because a question is read in its context
+    /// rather than in a list -- which is the whole reason that column names messages instead of restating
+    /// them.
+    /// </para>
+    /// <para>
+    /// <b>Two selections rather than one, and that is how the neighbours are guaranteed.</b> A list scrolls
+    /// its selection into view, so a single jump lands the row against whichever edge it came from -- the
+    /// message at the very top of the screen with nothing above it. Selecting a couple of rows earlier first
+    /// makes those rows the ones scrolled to, and the message then sits just below them. No viewport is
+    /// touched: this is the list's own behaviour, which is the part a headless test can hold.
+    /// </para>
+    /// <para>
+    /// False rather than a guess when the message is not among the rows. A transcript that had been refilled
+    /// since the column was drawn is an ordinary race, and scrolling somewhere arbitrary would answer "where
+    /// was this said" with somewhere nothing was.
+    /// </para>
+    /// </remarks>
+    internal bool Reach(long message)
+    {
+        // One snapshot of the reference, not the lock. `GuardedList` keeps its guard private on purpose --
+        // handing it out would let a caller take it for the rows and not the colours -- and it does not need
+        // handing out here: the list is replaced wholesale, so this read sees the rows as they were or as they
+        // now are, and never a half-swapped pair.
+        var at = _owners.IndexOf(message);
+
+        if (at < 0)
+        {
+            return false;
+        }
+
+        _lines.SelectedItem = Math.Max(0, at - Neighbours);
+        _lines.SelectedItem = at;
+
+        return true;
+    }
+
+    /// <summary>How many rows above a reached message are put on screen with it.</summary>
+    /// <remarks>
+    /// Two: enough that a message does not arrive against the top edge looking like the start of the
+    /// conversation, and few enough that the message itself is what somebody is looking at.
+    /// </remarks>
+    internal const int Neighbours = 2;
+
     /// <summary>Lays the transcript out again for a width.</summary>
     /// <param name="width">How many columns there are.</param>
     /// <remarks>
@@ -382,6 +442,7 @@ internal sealed class TranscriptRegion : FrameView
     {
         var wrapped = new List<string>();
         var tints = new List<Color?>();
+        var owners = new List<long?>();
         var room = width > 0 ? Math.Max(1, width - Reading.Indent) : width;
 
         foreach (var line in _marked)
@@ -399,6 +460,7 @@ internal sealed class TranscriptRegion : FrameView
                         : new string(' ', Reading.Indent) + pieces[piece]);
 
                     tints.Add(tint);
+                    owners.Add(line.Message);
                 }
             }
         }
@@ -409,7 +471,11 @@ internal sealed class TranscriptRegion : FrameView
         // Where the reader left it, unless following is carrying them to the end.
         var selected = _followEnd && wrapped.Count > 0 ? wrapped.Count - 1 : _lines.SelectedItem;
 
-        _lines.Replace(wrapped, selected, also: () => _tints = tints);
+        _lines.Replace(wrapped, selected, also: () =>
+        {
+            _tints = tints;
+            _owners = owners;
+        });
     }
 
     /// <summary>What colour a line is drawn in.</summary>

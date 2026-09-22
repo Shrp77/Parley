@@ -5,7 +5,7 @@ can see it / test it tomorrow morning?"* — so this is the handover, and the pa
 **[Decisions taken without asking](#decisions-taken-without-asking)** and
 **[What is not built](#what-is-not-built)**.
 
-Everything below is on branch `015-file-store`, at **0.30.0**, installed with `-Force` and verified: both
+Everything below is on branch `015-file-store`, at **0.30.1**, installed with `-Force` and verified: both
 projects serve, the registry answers, and the broker is registered to start at logon. The install warned that
 one conversation had an exchange still open and went ahead, which is what you authorised.
 
@@ -45,6 +45,7 @@ Tab to the **Say something** pane and type. Everything else follows from that.
 | Tab, no list | next pane, as everywhere else on this surface |
 | up / down, list showing | move the selection; the box keeps focus, so Enter still sends |
 | F2 | answer, or ask back instead — where that choice applies |
+| Enter, on a row in "waiting on you" | reads that question in the transcript, where it was said |
 | Escape | back out of the conversation |
 
 ## What the box does, which is the whole of the feature
@@ -103,7 +104,7 @@ Every suite from its own host executable (`dotnet test` reports "Zero tests ran"
 | Parley.Mcp.Tests | 197 | 0 |
 | Parley.Cli.Tests | 883 | 0 |
 
-**3,856 tests, none failing.**
+**3,859 tests, none failing.** Phases 1 to 5 are all built; the counts above are the run after phase 5.
 
 New for 017: `PairingTests` (9), `ComposingTests` (18), `CompletionTests` (20), `CommandTableTests` (18),
 `RoomTests` (10), `LineTests` (7), `CompletingTests` (12). The last is driven over a real socket, because every
@@ -183,9 +184,6 @@ Each of these is yours to reverse; they are listed because none was in the speci
 
 ## What is not built
 
-- **Phase 5 entirely** (T028–T032): selecting something in "waiting on you" does not yet scroll the transcript
-  to that message. The list is there and correct; activating a row does nothing. That needs the message
-  identifier carried on each transcript line, which is a change in `Reading.cs` and `TranscriptRegion`.
 - **The review gate for 017 has not been started.** Nine clean runs are owed. The code is green and unreviewed,
   which is exactly the state CLAUDE.md warns against calling done: *"A build that passes is not a review."*
 - **The web console does not match.** Scoped out deliberately; `DriftTests` holds the two surfaces to parity on

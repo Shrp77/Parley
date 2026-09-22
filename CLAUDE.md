@@ -600,8 +600,8 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/017-conversation-room/` — **0.30.0, built through phase 4 and green; the review gate is
-  owed and the completion list is not yet drawn.** The terminal's
+- **Current plan**: `specs/017-conversation-room/` — **0.30.1, built whole and green across every suite; the
+  review gate is owed and nothing is pushed.** The terminal's
   conversation view becomes a room: participants, outstanding work and agent status down a narrow column; the
   transcript above one input line in a wide one. The owner's call on 2026-09-21, after using it — it should read
   like Claude Code with a layout.
@@ -705,6 +705,25 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   it** -- a background run started before the file existed. The real first run with phases 3 and 4 in it failed
   six. The suite is 752, and the number moving is what gave it away; the entry above about `dotnet test`
   reporting nothing says the same thing from the other side.
+
+  **Phase 5 (0.30.1) makes the column point at the transcript beside it.** A `TranscriptLine` carries the
+  message it belongs to, so a surface can put one message in front of a reader rather than restating it in a
+  list -- which is the whole reason the "waiting on you" column names things instead of repeating them. Null on
+  a line the surface wrote itself, because answering "which message is this" with a guess would send a reader
+  somewhere nothing was said.
+
+  **Two selections rather than a viewport, and that is how the neighbours are guaranteed.** Terminal.Gui v2 has
+  no `TopItem`, and a list scrolls its selection into view -- so a single jump lands the row against whichever
+  edge it came from, with the message at the very top of the screen looking like the start of the conversation.
+  Selecting two rows earlier first makes *those* the rows scrolled to, and the message sits below them. No
+  viewport is touched, which is also the part a headless test can hold.
+
+  Three smaller decisions went with it: the row points at the **latest** thing the peer said in that exchange
+  rather than the first, since an exchange can hold a Request and then a Clarify and what is owed an answer is
+  the last question asked; a row that points at nothing says so rather than moving the reader, because a
+  transcript refilled since the column was drawn is an ordinary race; and the owners are read as one snapshot
+  of the reference rather than under `GuardedList`'s guard, which is private on purpose -- the list is replaced
+  wholesale, so a reader sees the rows as they were or as they now are and never a half-swapped pair.
 
   Commands are a surface rather than `/add` with a special case: `/` plus an identifier with no second `/`, each
   declaring what it takes and whether it changes the draft or acts; an unrecognised identifier is text, so

@@ -45,6 +45,13 @@ internal sealed class RoomRegion : FrameView
     /// <summary>What is said before a seat has been taken.</summary>
     internal const string NoSeat = "take a seat to take part";
 
+    /// <summary>What is said where a row cannot be shown in the transcript beside it.</summary>
+    /// <remarks>
+    /// Said rather than swallowed. A transcript refilled since this column was drawn is an ordinary race, and
+    /// a row that silently does nothing reads as the key being broken.
+    /// </remarks>
+    internal const string Unreachable = "That message is not in the transcript as it stands. Read it again.";
+
     private readonly GuardedList _list = Lists.Filling(Colours.Agents);
 
     private List<Row> _rows = [];
@@ -56,10 +63,29 @@ internal sealed class RoomRegion : FrameView
         SetScheme(Colours.Region(Colours.Agents));
         Add(_list);
         Lists.Tint(_list, Tint);
+
+        // The toolkit's own accept, so the key route and the pointer route are one code path -- which is what
+        // `contracts/views.md` means by nothing existing only as a key.
+        _list.Accepting += (_, args) =>
+        {
+            if (Selected is not { } item)
+            {
+                return;
+            }
+
+            args.Handled = true;
+            Reading?.Invoke(this, item);
+        };
     }
+
+    /// <summary>Raised when somebody activated something they owe, to be read where it was said.</summary>
+    internal event EventHandler<OutstandingItem>? Reading;
 
     /// <summary>What the list is showing, for a test to read without the screen.</summary>
     internal IReadOnlyList<string> Written => [.. _rows.Select(r => r.Text)];
+
+    /// <summary>The list itself, so a test drives this column the way it drives every other one.</summary>
+    internal GuardedList List => _list;
 
     /// <summary>The outstanding item under the cursor, or null when the cursor is not on one.</summary>
     internal OutstandingItem? Selected =>

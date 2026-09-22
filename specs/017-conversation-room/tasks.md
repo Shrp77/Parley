@@ -48,11 +48,11 @@ The feature's core, fully testable before any layout exists.
 
 ## Phase 5: Outstanding items and context (US3)
 
-- [ ] T028 Carry the message identifier on each transcript line in `Reading.cs`
-- [ ] T029 Give `TranscriptRegion` a way to put a message on screen with its neighbours visible
-- [ ] T030 Fill the room's outstanding list from the same pair state the acts come from, plus closure polls
-- [ ] T031 [P] Write the tests: an item per outstanding thing; activating one moves the transcript to it; nothing outstanding says so
-- [ ] T032 Run the terminal suite
+- [X] T028 Carry the message identifier on each transcript line in `Reading.cs`
+- [X] T029 Give `TranscriptRegion` a way to put a message on screen with its neighbours visible
+- [X] T030 Fill the room's outstanding list from the same pair state the acts come from, plus closure polls
+- [X] T031 [P] Write the tests: an item per outstanding thing; activating one moves the transcript to it; nothing outstanding says so
+- [X] T032 Run the terminal suite
 
 ## Phase 6: Delivery
 
