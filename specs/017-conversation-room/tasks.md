@@ -59,8 +59,8 @@ The feature's core, fully testable before any layout exists.
 - [X] T033 Bump `VersionPrefix` to 0.30.0 — a new surface, and the minor moves on a breaking change while the major is zero
 - [X] T034 Hygiene grep for the originating project's names over everything added
 - [X] T035 Run every suite from its own host executable and record the counts
-- [ ] T036 Install with `-Force` (the owner's instruction, given while this was being planned)
-- [ ] T037 Write the morning report: what is built, what is tested, what is outstanding, and every decision taken without asking
+- [X] T036 Install with `-Force` (the owner's instruction, given while this was being planned)
+- [X] T037 Write the morning report: what is built, what is tested, what is outstanding, and every decision taken without asking
 
 ## The test sort (T011)
 

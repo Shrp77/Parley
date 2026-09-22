@@ -5,7 +5,9 @@ can see it / test it tomorrow morning?"* — so this is the handover, and the pa
 **[Decisions taken without asking](#decisions-taken-without-asking)** and
 **[What is not built](#what-is-not-built)**.
 
-Everything below is on branch `015-file-store`, at **0.30.0**, installed with `-Force`.
+Everything below is on branch `015-file-store`, at **0.30.0**, installed with `-Force` and verified: both
+projects serve, the registry answers, and the broker is registered to start at logon. The install warned that
+one conversation had an exchange still open and went ahead, which is what you authorised.
 
 ## How to see it
 
@@ -94,16 +96,24 @@ Every suite from its own host executable (`dotnet test` reports "Zero tests ran"
 | Parley.Broker.Tests | 223 | 0 |
 | Parley.Server.Tests | 303 | 0 |
 | Parley.Client.Tests | 340 | 0 |
-| Parley.Terminal.Tests | see below | — |
+| Parley.Terminal.Tests | 752 | 0 |
 | Parley.Web.Tests | 194 | 0 |
 | Parley.WebUi.Tests | 8 | 0 |
 | Parley.Spec.Tests | 49 | 0 |
 | Parley.Mcp.Tests | 197 | 0 |
 | Parley.Cli.Tests | 883 | 0 |
 
+**3,856 tests, none failing.**
+
 New for 017: `PairingTests` (9), `ComposingTests` (18), `CompletionTests` (20), `CommandTableTests` (18),
-`RoomTests` (10), `LineTests` (7), `CompletingTests` (10). The last is driven over a real socket, because every
+`RoomTests` (10), `LineTests` (7), `CompletingTests` (12). The last is driven over a real socket, because every
 question in it is about a key arriving.
+
+**One thing to distrust in my own earlier reporting.** A run I recorded as "terminal suite green, 733 tests" was
+measuring a build that did not contain `LineTests` — a background run started before the file existed. The real
+first run with phases 3 and 4 in it failed six tests. The suite is 752 now, and the number moving is how I
+noticed. The lesson is this repository's own, written down twice already: a toolchain that discovers nothing and
+a suite that contains nothing produce the same summary.
 
 ## What building it found
 
@@ -119,9 +129,20 @@ met.
 3. **The answer-or-ask-back alternative was advertised on Tab**, which this surface consumes for pane
    navigation — a key named on screen and doing something else. It is F2 now.
 
-Plus: a closed completion list was handed a selection of row zero, which the toolkit refuses outright (nothing
-selected is null, not nought), and it threw on the first keystroke of every new test; and a frame is only true
-after a layout pass, so reading the screen is not enough to measure one.
+Then the suite found three more, none of which I would have reached by reading:
+
+4. **A closed completion list was handed a selection of row zero**, which the toolkit refuses outright —
+   nothing selected is null, not nought. It threw on the first keystroke of every test in the new file.
+5. **A frame is only true after a layout pass.** Reading the screen is not enough; the room's fixed width
+   resolved without a parent and everything derived from the space left over was nought. That is 0.25.1's
+   read-the-screen trap in a new place.
+6. **Opening a conversation from the projects view never named it in the place.** Arriving now performs the
+   read, so the place has to be authoritative — and it was not: from the projects view nothing named the
+   conversation, and from inside one the place went on naming the *previous* conversation while the transcript
+   showed the new one. Tolerable while the place was not what read; a defect the moment it is. Two tests that
+   had been passing on the list's own duplicate read caught it. A first fix queued the read, which put it
+   behind the item that asked for it, so a test awaiting the surface to settle got a task that did not include
+   it — the transcript came back empty in a test about escape sequences.
 
 ## Decisions taken without asking
 
@@ -149,6 +170,16 @@ Each of these is yours to reverse; they are listed because none was in the speci
    this surface does not ask which. `done` and `acknowledged` are not reachable from the box.
 9. **The room's column is 34 columns, fixed rather than a share.** It holds names and short clauses whatever
    the terminal is.
+10. **`RegionAction` can carry a chord as well as a letter.** F2 needed it: every key this surface answers must
+    be named where a person looks (`EveryKeyIsOfferedTests` caught F2 and the arrow keys naming nowhere), and
+    the status line renders an action's key. The record has two fields where one would be better; taking one
+    would mean touching forty call sites and `Typed`'s cross-driver care with them.
+11. **`SendLine` and `FlipOne` became private.** `DeadSurfaceTests` reported them as named only in their own
+    file, which was true: they are reached through the action table and the line's own events. The two labels
+    stayed internal and a test now asserts both are offered, which is the promise worth checking.
+12. **The arrow keys were added to `EveryKeyIsOfferedTests`' navigation list.** They move a selection, which is
+    what an arrow key means in every list here. That list exists so adding to it is a decision somebody makes
+    rather than the rule quietly weakening — so it is a decision, and this is it.
 
 ## What is not built
 

@@ -678,11 +678,33 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   narrowed to one agent would otherwise widen itself back to the room while somebody was still typing to them.
   The same reason the answer-or-ask-back choices are carried.
 
+  **And the place had to become authoritative for the read, which broke two tests that had been passing on the
+  duplicate.** Arriving at a conversation reads it now, so the place must name the conversation -- and it did
+  not from two of the three views: the conversations list passed the place through unchanged unless it was a
+  project view, so from the projects view nothing named the conversation, and from inside one the place went on
+  naming the *previous* conversation while the transcript showed the new one. Tolerable while the place was not
+  what read. **A first fix queued the read**, which put it behind the item that asked for it -- every caller is
+  already on the work queue -- so a test awaiting `Settled` got a task that did not include it, and a transcript
+  came back empty in a test about escape sequences. It is awaited inline.
+
   Two smaller things, each found by a test rather than by reading: a closed list was passed a selection of row
   zero, which the toolkit refuses outright -- nothing selected is null, not nought -- and it threw on the first
   keystroke of every test in the file; and a frame is only true after a layout pass, so reading the screen is
   not enough to measure one. The room's fixed width resolved without a parent and everything derived from the
   space left over was nought, which is 0.25.1's probe-read-the-screen trap in a new place.
+
+  **`RegionAction` learned a chord, because `EveryKeyIsOfferedTests` refused F2 and the arrow keys.** That guard
+  reads the keys out of `OnKeyDown` rather than carrying its own list, and it reported all three as answered by
+  the surface and named nowhere a person would look. The arrows joined its navigation list -- a decision the
+  list exists to make visible -- and F2 became an ordinary action of the line pane, which put it on the status
+  line and in the menu by construction. `DeadSurfaceTests` then reported `SendLine` and `FlipOne` as named only
+  in their own file, which was true: both are reached through the action table and the line's own events, so
+  both are private now, and the two labels a person reads are asserted instead.
+
+  **A run recorded as "the terminal suite is green, 733 tests" was measuring a build without `LineTests` in
+  it** -- a background run started before the file existed. The real first run with phases 3 and 4 in it failed
+  six. The suite is 752, and the number moving is what gave it away; the entry above about `dotnet test`
+  reporting nothing says the same thing from the other side.
 
   Commands are a surface rather than `/add` with a special case: `/` plus an identifier with no second `/`, each
   declaring what it takes and whether it changes the draft or acts; an unrecognised identifier is text, so
