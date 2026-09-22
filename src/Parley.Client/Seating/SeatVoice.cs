@@ -360,12 +360,16 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// <summary>Appends what the broker refused, grouped by why.</summary>
     /// <param name="said">The report so far.</param>
     /// <param name="turnedAway">Those the broker refused.</param>
+    /// <param name="what">What became of them, for a report about something other than a refusal.</param>
     /// <remarks>
     /// The count first, the reason next, the names last, and the groups bounded: a terminal shows this in one
     /// row, so what comes first is what survives, and a broker whose detail names the recipient gives one
     /// group each.
     /// </remarks>
-    private static void Turned(StringBuilder said, IReadOnlyList<TurnedAway> turnedAway)
+    private static void Turned(
+        StringBuilder said,
+        IReadOnlyList<TurnedAway> turnedAway,
+        string what = "Refused for")
     {
         var groups = turnedAway
             .GroupBy(refusal => Reason(refusal.Because), StringComparer.Ordinal)
@@ -374,7 +378,9 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
         foreach (var group in groups.Take(Causes))
         {
-            _ = said.Append(" Refused for ")
+            _ = said.Append(' ')
+                .Append(what)
+                .Append(' ')
                 .Append(group.Count())
                 .Append(": ")
                 .Append(group.Key)
@@ -655,6 +661,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
         var done = new List<string>();
         var turnedAway = new List<TurnedAway>();
+        var instead = new List<TurnedAway>();
         var stopped = false;
 
         foreach (var addressed in plan)
@@ -675,6 +682,26 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
                 {
                     done.Add(addressed.Peer.Value);
                 }
+                else if (addressed.Act != Act.Ask
+                    && await RequestAsync(addressed.Peer, draft.Text, conversationId, cancellationToken)
+                        .ConfigureAwait(false) is var retried
+                    && retried.StartsWith("Sent.", StringComparison.Ordinal))
+                {
+                    // **A message a person typed is delivered, whatever the bookkeeping says.**
+                    //
+                    // The acts of §5.1 to §5.3 are about whose turn it is, and this surface derives which one
+                    // applies from the wait-for graph and the transcript. When that derivation is wrong the
+                    // broker refuses — correctly — and the words were simply lost: the owner watched a message
+                    // to two agents reach neither, with two different reasons about turns and nothing said
+                    // about what to do instead.
+                    //
+                    // So a refused act becomes a Request, which opens an exchange of its own and is admissible
+                    // whatever stands between the two of them. It is said rather than hidden: a new exchange
+                    // is an obligation somebody now owes a Result on, and §5.5 is the reason this surface
+                    // shows the bill before Enter rather than after.
+                    done.Add(addressed.Peer.Value);
+                    instead.Add(new TurnedAway(addressed.Peer.Value, problem));
+                }
                 else
                 {
                     turnedAway.Add(new TurnedAway(addressed.Peer.Value, problem));
@@ -690,6 +717,13 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         // Grouped by reason through the same helper the broadcast uses, so one over-long report cannot
         // differ between the two places a person sends to several agents at once.
         var report = new StringBuilder($"Sent to {done.Count} of {plan.Count}.");
+
+        if (instead.Count > 0)
+        {
+            // Named, with the reason the derived act could not be used: a new exchange is an obligation, and
+            // this surface does not open one quietly.
+            Turned(report, instead, "Sent as a new request instead");
+        }
 
         if (turnedAway.Count > 0)
         {

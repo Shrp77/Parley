@@ -10,13 +10,30 @@ For each recipient, given the pair state between them and the seated person:
 
 | the peer… | act | on the wire | the exchange after |
 |---|---|---|---|
-| asked, and this person holds it | `Answer` (default) | Result | **closed** |
-| asked, and this person holds it | `AskBack` (chosen) | Clarify | open, turn with the peer |
-| is waiting on this person's ask | `Clarify` | Clarify | open, turn with the peer |
+| asked, and this person holds the move | `Answer` (default) | Result | **closed** |
+| asked, and this person holds the move | `AskBack` (chosen) | Clarify | open, turn with the peer |
+| was asked by this person and clarified, so the move is theirs to answer | `Clarify` | Clarify | open, turn with the peer |
+| holds the next move, either way | `Ask` | Request | **new**, peer owes a Result |
 | has nothing open with this person | `Ask` | Request | **new**, peer owes a Result |
 
 The only choice a person makes is between the first two, and only where that state holds. Everything else is the
 state's own answer.
+
+**Whose move it is does not decide which act; the role does, and an earlier draft of this table got that wrong.**
+It said that where this person asked and is waiting, typing is a `Clarify`, "because nobody may Result their own
+request". The second half is true (§5.3) and the remedy was not: SPEC.md §5.2 gives the Clarify to the *receiver*
+asking the requester for more, so a requester clarifying their own open request is refused — *"the other side
+holds the next move on that exchange"*. And a move owed on an exchange this person opened is the answer to a
+clarification, which is a Clarify and not a Result: a Result there is refused with *"you sent that request, so
+its receiver sends the Result"*.
+
+The owner met both in one send, to two agents, and the message reached neither. **So the pair state carries the
+role as well as the turn**: the wait-for graph answers whose move it is, and who opened the exchange is read from
+the transcript, the first message of an exchange being its Request.
+
+**And a refused act never loses the words.** Where the broker will not take the derived act, the surface sends
+the text as a Request instead and says so in the report. A new exchange is an obligation, so it is named rather
+than opened quietly — but a message somebody typed is delivered, whatever the bookkeeping says.
 
 ## What the preview says, before Enter
 

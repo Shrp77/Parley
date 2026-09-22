@@ -600,7 +600,7 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/017-conversation-room/` — **0.30.6, built whole and green across every suite; the
+- **Current plan**: `specs/017-conversation-room/` — **0.30.7, built whole and green across every suite; the
   review gate is owed and nothing is pushed.** The terminal's
   conversation view becomes a room: participants, outstanding work and agent status down a narrow column; the
   transcript above one input line in a wide one. The owner's call on 2026-09-21, after using it — it should read
@@ -844,6 +844,31 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   **This is the third defect in one pane found by use rather than by the suite**, and the sentence that keeps
   earning its place is that the box's rows are the one thing about this region the text in it cannot tell you.
   `BoxGrowthTests` and `TypingIsVisibleTests` read the laid-out screen.
+
+  **0.30.7 is the worst of them: a message the owner typed to two agents reached neither, and 017's own spec
+  is where the defect came from.** Both refusals were the broker's and both were right — *"the other side holds
+  the next move on that exchange"* and *"you sent that request, so its receiver sends the Result"*. What was
+  wrong is that this surface chose those acts.
+
+  **Whose move it is does not say which act to send.** The wait-for graph answers *whose*, and 017's spec read
+  that as the whole answer: *"a Clarify where this person asked and is waiting, because nobody may Result their
+  own request"*. The second half is true (§5.3) and the remedy was not — SPEC.md §5.2 gives the Clarify to the
+  *receiver* asking the requester for more, so a requester clarifying their own open request is refused. And a
+  move owed on an exchange this person opened is the answer to a clarification, which is a Clarify and not a
+  Result. Two states the derivation had collapsed into one. **`PairState` carries the role now as well as the
+  turn**: who opened an exchange is the sender of its first message, which is reading the transcript rather
+  than reconstructing the broker's turn logic in a client — the thing `research.md` R1 refused to do, and still
+  refused here.
+
+  **And a refused act no longer loses the words.** Where the broker will not take the derived act, the text is
+  sent as a Request instead and the report says so. A new exchange is an obligation, so it is named rather than
+  opened quietly — but the promise a person actually has is that what they typed is delivered, and a
+  derivation this surface got wrong twice is not a thing to stake that on.
+
+  **Which artifact was wrong was decided rather than assumed**, as this file requires: SPEC.md §5.2 is the
+  authority, the broker implements it, and `specs/017-conversation-room/contracts/composer.md` carries the
+  correction with what it cost. Three `ComposingTests` asserted the old rule and were replaced; each new one
+  was run against the old code first and fails there.
 
   Commands are a surface rather than `/add` with a special case: `/` plus an identifier with no second `/`, each
   declaring what it takes and whether it changes the draft or acts; an unrecognised identifier is text, so

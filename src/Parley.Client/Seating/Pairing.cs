@@ -21,7 +21,15 @@ public enum Turn
 /// <param name="Peer">The other participant.</param>
 /// <param name="OpenExchange">The open exchange between them, or <see langword="null"/> when there is none.</param>
 /// <param name="Turn">Whose move it is.</param>
-public sealed record PairState(AgentName Peer, long? OpenExchange, Turn Turn);
+/// <param name="Asked">Whether this person opened the exchange, rather than the peer.</param>
+/// <remarks>
+/// <b>Whose move it is does not say what to send, and getting that wrong lost the owner's messages.</b> A move
+/// owed by this person is a Result when the peer asked them and a Clarify when they asked the peer and the peer
+/// clarified — §5.3 gives the Result to the receiver alone, so the second one is refused with "you sent that
+/// request, so its receiver sends the Result". The wait-for graph answers *whose* move and cannot answer
+/// *which*: that is the role, and the role is in the transcript.
+/// </remarks>
+public sealed record PairState(AgentName Peer, long? OpenExchange, Turn Turn, bool Asked = false);
 
 /// <summary>
 /// The pair state for every participant of a conversation, from two reads the surface already makes.
@@ -81,7 +89,7 @@ public static class Pairing
 
             if (owed is not null)
             {
-                states.Add(new PairState(peer, owed.ExchangeId, Turn.Mine));
+                states.Add(new PairState(peer, owed.ExchangeId, Turn.Mine, Opened(export, owed.ExchangeId) == me));
 
                 continue;
             }
@@ -90,11 +98,23 @@ public static class Pairing
 
             states.Add(waited is null
                 ? new PairState(peer, null, Turn.Nobody)
-                : new PairState(peer, waited.ExchangeId, Turn.Theirs));
+                : new PairState(peer, waited.ExchangeId, Turn.Theirs, Opened(export, waited.ExchangeId) == me));
         }
 
         return states;
     }
+
+    /// <summary>Who opened an exchange.</summary>
+    /// <param name="export">The conversation.</param>
+    /// <param name="exchange">The exchange.</param>
+    /// <returns>The requester, or null when the conversation holds no message of it.</returns>
+    /// <remarks>
+    /// <b>The first message of an exchange is its Request</b> (§5.1), so its sender is the requester. This is
+    /// reading the transcript rather than reconstructing the broker's turn logic: who spoke first is a fact in
+    /// the messages, where whose move it is now is a judgement the broker publishes as the wait-for graph.
+    /// </remarks>
+    private static AgentName? Opened(ConversationExport export, long exchange) =>
+        export.Messages.FirstOrDefault(message => message.ExchangeId == exchange)?.From;
 
     /// <summary>Everyone party to a message in the conversation.</summary>
     /// <param name="export">The conversation.</param>

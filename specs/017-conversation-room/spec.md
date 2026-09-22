@@ -176,7 +176,9 @@ exchange was opened and that no payload contains the picker's syntax.
 **The line**
 
 - **FR-007**: For each recipient, the act MUST be derived from what is open between them and this person: a Result
-  where the recipient asked and this person holds it; a Clarify where this person asked and is waiting; a Request
+  where the recipient asked and this person holds the move; a Clarify where this person asked and the recipient
+  clarified, so the move owed is the answer to that; a Request where the recipient holds the next move or nothing
+  is open — see `contracts/composer.md`, which records the correction and what it cost. A Request
   where nothing is open.
 - **FR-008**: Where this person owes a Result, the surface MUST offer both answering — which closes the exchange —
   and asking back, and MUST show which it will do by default. It MUST NOT choose between them silently.

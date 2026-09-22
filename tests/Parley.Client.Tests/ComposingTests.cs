@@ -36,11 +36,29 @@ public sealed class ComposingTests
     }
 
     [Fact]
-    public void Waiting_on_them_is_a_clarify_and_never_a_result()
+    public void Waiting_on_them_opens_a_new_exchange_rather_than_clarifying_theirs()
     {
-        // Nobody may send a Result on their own request (§5.3), so this state has exactly one act and the
-        // surface must not offer a choice that would be refused.
+        // **This asserted a Clarify, and the broker refuses one.** 017's own spec said that where this person
+        // asked and is waiting, typing is a Clarify "because nobody may Result their own request" — which is
+        // true about the Result and wrong about the remedy. SPEC.md §5.2 gives the Clarify to the *receiver*
+        // asking the requester for more, so a requester clarifying their own open request is refused with
+        // "the other side holds the next move on that exchange". The owner met it as a message that reached
+        // nobody. There is nothing to add to an exchange whose next move is not yours, so typing opens one.
         var plan = Assert.Single(Over(new PairState(Orders, 7, Turn.Theirs)).Plan());
+
+        Assert.Equal(Act.Ask, plan.Act);
+        Assert.Null(plan.Exchange);
+        Assert.False(plan.Choosable);
+    }
+
+    [Fact]
+    public void And_a_move_owed_on_ones_own_request_is_a_clarify_rather_than_a_result()
+    {
+        // The other half of the same correction: whose move it is does not say which act. Where this person
+        // asked and the peer clarified, what is owed is the answer to that clarification — and §5.3 keeps the
+        // Result for the receiver, which is why a Result here came back as "you sent that request, so its
+        // receiver sends the Result".
+        var plan = Assert.Single(Over(new PairState(Orders, 7, Turn.Mine, Asked: true)).Plan());
 
         Assert.Equal(Act.Clarify, plan.Act);
         Assert.Equal(7, plan.Exchange);
@@ -101,13 +119,15 @@ public sealed class ComposingTests
         // three would be pressing Enter on something they had no way to predict.
         var draft = Over(
             new PairState(Billing, 3, Turn.Mine),
-            new PairState(Orders, 7, Turn.Theirs),
+            new PairState(Orders, 7, Turn.Mine, Asked: true),
             new PairState(Inventory, null, Turn.Nobody));
 
         draft.Text = "and refunds?";
 
         var plan = draft.Plan();
 
+        // Billing asked and this person holds it, so it closes. Orders was asked *by* this person and has
+        // clarified, so what is owed is the answer to that clarification. Inventory has nothing open.
         Assert.Equal(Act.Answer, plan.First(a => a.Peer == Billing).Act);
         Assert.Equal(Act.Clarify, plan.First(a => a.Peer == Orders).Act);
         Assert.Equal(Act.Ask, plan.First(a => a.Peer == Inventory).Act);
@@ -118,7 +138,7 @@ public sealed class ComposingTests
     {
         var draft = Over(
             new PairState(Billing, 3, Turn.Mine),
-            new PairState(Orders, 7, Turn.Theirs),
+            new PairState(Orders, 7, Turn.Mine, Asked: true),
             new PairState(Inventory, null, Turn.Nobody));
 
         var cost = draft.Costs();
@@ -126,6 +146,19 @@ public sealed class ComposingTests
         Assert.Equal(1, cost.Opens);
         Assert.Equal(1, cost.Closes);
         Assert.Equal(1, cost.HandsBack);
+    }
+
+    [Fact]
+    public void Waiting_on_a_peer_costs_a_new_exchange_rather_than_nothing()
+    {
+        // The bill has to say so: there is nothing to add to an exchange whose move is theirs, so typing to
+        // somebody who owes you opens a second one — which is an obligation, and §5.5 is why it is shown
+        // before Enter rather than found in `parley flags` the next day.
+        var cost = Over(new PairState(Orders, 7, Turn.Theirs)).Costs();
+
+        Assert.Equal(1, cost.Opens);
+        Assert.Equal(0, cost.Closes);
+        Assert.Equal(0, cost.HandsBack);
     }
 
     [Fact]

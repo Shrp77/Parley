@@ -244,14 +244,23 @@ public sealed class Draft
             var pair = Pairs.FirstOrDefault(p => p.Peer == peer)
                 ?? new PairState(peer, null, Turn.Nobody);
 
-            planned.Add(pair.Turn switch
+            // **Three states, not two, and the third is what lost the owner's messages.** A move owed by this
+            // person is a Result only where the peer asked: where this person asked and the peer clarified,
+            // the move owed is the answer to that clarification, which is a Clarify — §5.3 gives the Result to
+            // the receiver alone. And where the peer holds the move there is nothing to add to that exchange
+            // at all, so typing opens a new one rather than being refused with somebody's words in it.
+            planned.Add(pair switch
             {
-                Turn.Mine => new Addressed(
+                { Turn: Turn.Mine, Asked: false } => new Addressed(
                     peer,
                     Answering(peer) ? Act.Answer : Act.AskBack,
                     pair.OpenExchange,
                     Choosable: true),
-                Turn.Theirs => new Addressed(peer, Act.Clarify, pair.OpenExchange, Choosable: false),
+                { Turn: Turn.Mine, Asked: true } => new Addressed(
+                    peer,
+                    Act.Clarify,
+                    pair.OpenExchange,
+                    Choosable: false),
                 _ => new Addressed(peer, Act.Ask, null, Choosable: false),
             });
         }
