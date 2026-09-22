@@ -89,6 +89,10 @@ internal sealed class TranscriptRegion : FrameView
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Transcript));
+        // **It shows where you are in a conversation**, which the owner asked for beside the box's own: a
+        // transcript scrolls and nothing else on this screen said how much of it was above or below.
+        _lines.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
+
         Add(_lines);
         Lists.Tint(_lines, at => at >= 0 && at < _tints.Count ? _tints[at] : null);
         Say(Nothing, LineKind.Annotation);

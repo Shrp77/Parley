@@ -600,7 +600,7 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/017-conversation-room/` — **0.30.5, built whole and green across every suite; the
+- **Current plan**: `specs/017-conversation-room/` — **0.30.6, built whole and green across every suite; the
   review gate is owed and nothing is pushed.** The terminal's
   conversation view becomes a room: participants, outstanding work and agent status down a narrow column; the
   transcript above one input line in a wide one. The owner's call on 2026-09-21, after using it — it should read
@@ -827,6 +827,23 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   screen never shows.** Every test of this box read what was written; none looked at the screen.
   `TypingIsVisibleTests` is the screen, and it was checked against the defect before the fix went in -- it
   fails there, which is the only thing that makes it a test rather than a second statement of the code.
+
+  **0.30.6: what somebody is typing into cannot be the thing that gives way.** The box stopped growing at two
+  lines and then lost its cursor again, and the cause is the ordering: the preview names every recipient, so a
+  conversation of sixteen agents is a seventeen-row preview — and the box was given whatever the preview and
+  the list had not taken. The box is anchored to the bottom with the rows it needs now, the list sits above
+  it, and **the preview takes what is left**, bounded so that naming everybody cannot squeeze the message out
+  of its own box.
+
+  It grows to ten rows and then scrolls, both the owner's numbers, and **both the box and the transcript show
+  a scrollbar once there is more than fits** — asked for by name, and the reason is the rule this surface
+  already keeps about truncation: something hidden with nothing saying so is indistinguishable from nothing
+  being there. The cursor also stopped flickering, because the placement is only reassigned when a number
+  actually changed rather than on every keystroke.
+
+  **This is the third defect in one pane found by use rather than by the suite**, and the sentence that keeps
+  earning its place is that the box's rows are the one thing about this region the text in it cannot tell you.
+  `BoxGrowthTests` and `TypingIsVisibleTests` read the laid-out screen.
 
   Commands are a surface rather than `/add` with a special case: `/` plus an identifier with no second `/`, each
   declaring what it takes and whether it changes the draft or acts; an unrecognised identifier is text, so

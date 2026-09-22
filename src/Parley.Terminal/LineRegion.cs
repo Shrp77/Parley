@@ -61,6 +61,26 @@ internal sealed class LineRegion : FrameView
     /// <summary>The fewest rows this region takes: a border, the preview's first row, and the box.</summary>
     internal const int LeastRows = 4;
 
+    /// <summary>
+    /// The most rows the box itself grows to before it scrolls.
+    /// </summary>
+    /// <remarks>
+    /// The owner's number, and a bound rather than none: a message may be eight thousand characters, which is
+    /// more rows than any terminal has. Ten is a screenful of a paragraph with a conversation still above it.
+    /// </remarks>
+    internal const int MostBoxRows = 10;
+
+    /// <summary>
+    /// The most rows the preview takes before it counts the rest.
+    /// </summary>
+    /// <remarks>
+    /// <b>Bounded because it is what squeezed the box to nothing.</b> The preview names every recipient, so a
+    /// conversation of nineteen agents is a twenty-one row preview — and the box was given what was left,
+    /// which was nothing: no cursor, and text that went in and was never drawn. The recipients are still all
+    /// named on the first line; what this bounds is the line-per-recipient detail under it.
+    /// </remarks>
+    internal const int MostPreviewRows = 6;
+
     /// <summary>The character that turns the next Enter into a line break rather than a send.</summary>
     internal const string Breaking = @"\";
 
@@ -70,6 +90,9 @@ internal sealed class LineRegion : FrameView
 
     private IReadOnlyList<string> _offering = [];
     private int _rows = LeastRows;
+    private int _wants = LeastRows;
+    private int _box = -1;
+    private int _listed = -1;
 
     internal LineRegion()
     {
@@ -93,7 +116,6 @@ internal sealed class LineRegion : FrameView
         // would put the thing being changed above the thing describing it.
         _list = Lists.Filling(Colours.Conversations);
         _list.X = 1;
-        _list.Y = Pos.Bottom(_preview);
         _list.Width = Dim.Fill(2);
         _list.Height = 0;
         _list.Visible = false;
@@ -103,8 +125,6 @@ internal sealed class LineRegion : FrameView
         // field slid what somebody had written out of sight a character at a time, so the only way to read
         // your own message back was to walk the cursor through it.
         _field = Entry.Speaking();
-        _field.View.Y = Pos.Bottom(_list);
-        _field.View.Height = Dim.Fill();
 
         // The preview is a function of what is written, so it is recomputed as it is written. Held instead, it
         // would describe a draft somebody had already edited -- and the whole promise of the preview is that
@@ -148,6 +168,45 @@ internal sealed class LineRegion : FrameView
         Add(_preview);
         Add(_list);
         Add(_field.View);
+
+        Place();
+    }
+
+    /// <summary>
+    /// Gives the box the rows it needs, the list its own, and the preview whatever is left.
+    /// </summary>
+    /// <remarks>
+    /// <b>The box is anchored to the bottom and sized absolutely, and that ordering is the whole fix.</b> It
+    /// used to fill what the preview and the list had not taken, so a preview that grew with the recipients
+    /// took the rows the box was to be drawn in: the owner watched it stop growing at two lines and then lose
+    /// the cursor altogether. What somebody is typing into cannot be the thing that gives way.
+    /// </remarks>
+    private void Place()
+    {
+        var box = Math.Clamp(_field.Wants, 1, MostBoxRows);
+        var list = _offering.Count;
+
+        _wants = 2 + Math.Min(_preview.Text.Split('\n').Length, MostPreviewRows) + list + box;
+
+        // **Nothing is reassigned unless a number changed**, because this runs on every keystroke and every
+        // assignment here asks the toolkit to lay the region out again — with the cursor placed at the end of
+        // it each time. That is what made the cursor flicker while somebody typed.
+        if (box == _box && list == _listed)
+        {
+            return;
+        }
+
+        _box = box;
+        _listed = list;
+
+        _field.View.Y = Pos.AnchorEnd(box);
+        _field.View.Height = box;
+
+        _list.Y = Pos.AnchorEnd(box + list);
+        _list.Height = list;
+
+        _preview.Y = 0;
+        _preview.Height = Dim.Fill(box + list);
     }
 
     /// <summary>Raised when Enter was pressed in the box.</summary>
@@ -226,6 +285,9 @@ internal sealed class LineRegion : FrameView
     /// </remarks>
     internal int BoxRows => _field.View.Frame.Height;
 
+    /// <summary>How wide the box is, which is what its wrapping is measured against.</summary>
+    internal int BoxWidth => _field.View.Viewport.Width;
+
     /// <summary>Puts a completion list on screen, or takes it off.</summary>
     /// <param name="completion">What is being completed, which may be closed.</param>
     /// <exception cref="ArgumentNullException"><paramref name="completion"/> is null.</exception>
@@ -247,13 +309,10 @@ internal sealed class LineRegion : FrameView
             ? [.. completion.Matches.Select(m => Row(completion.Which, m))]
             : [];
 
+        // **Nought rows when it is closed, not one.** A closed list that went on reserving a row took one the
+        // box needed: no cursor, nothing drawn, and typing still working — the completion list opened on `@`
+        // while the characters themselves were invisible. `Place` gives it exactly what it is showing.
         _list.Visible = _offering.Count > 0;
-        // **Nought rows when it is closed, not one.** The rows between the preview and the box are the box's,
-        // and a closed list that went on reserving one took the last row the box had: the region asked for
-        // exactly the rows it needed, the list ate one of them, and `Dim.Fill()` gave the box nothing. No
-        // cursor, nothing drawn, and typing still worked — the completion list opened on `@` while the
-        // characters themselves were invisible.
-        _list.Height = _offering.Count;
 
         // **Null rather than nought on an empty list**, which the toolkit refuses outright: a selection of zero
         // rows is not row zero. Closing the list is the commonest thing that happens to it, so this threw on
@@ -330,11 +389,9 @@ internal sealed class LineRegion : FrameView
     /// </remarks>
     private void Measure()
     {
-        var preview = _preview.Text.Split('\n').Length;
+        Place();
 
-        _preview.Height = preview;
-
-        var wanted = Math.Max(LeastRows, 2 + preview + _offering.Count + _field.Wants);
+        var wanted = Math.Max(LeastRows, _wants);
 
         if (wanted == _rows)
         {

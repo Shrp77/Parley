@@ -112,13 +112,20 @@ internal sealed class Entry
     /// the project-wide <c>NoWarn</c> this file exists to avoid, arrived at one class at a time.
     /// </para>
     /// <para>
-    /// <b>Enter adds a line here and is never seen doing it.</b> The surface takes Enter before this view is
-    /// offered it and sends; what reaches this is the chord for a line break, forwarded as a plain Enter so
-    /// the toolkit's own line handling does the work. Tab is left alone for the same reason it is in a form.
+    /// <b>Enter adds a line here and is never seen doing it.</b> The region takes Enter on this view before
+    /// the binding runs and sends; what reaches the binding is the chord for a line break, forwarded as a
+    /// plain Enter so the toolkit's own line handling does the work. Tab is left alone for the same reason it
+    /// is in a form.
+    /// </para>
+    /// <para>
+    /// <b>It shows where you are once there is more than fits</b>, which the owner asked for by name: a box
+    /// that grows to a bound and then scrolls is a box that has hidden something, and a reader with no
+    /// scrollbar cannot tell that from having written less than they thought.
     /// </para>
     /// </remarks>
-    internal static Entry Speaking() =>
-        new(new TextView
+    internal static Entry Speaking()
+    {
+        var box = new TextView
         {
             X = 1,
             Width = Dim.Fill(2),
@@ -128,7 +135,12 @@ internal sealed class Entry
             WordWrap = true,
             EnterKeyAddsLine = true,
             TabKeyAddsTab = false,
-        });
+        };
+
+        box.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
+
+        return new Entry(box);
+    }
 
     /// <summary>The view itself.</summary>
     internal View View => (View?)_line ?? _paragraph!;
