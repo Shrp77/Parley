@@ -141,6 +141,11 @@ exchange was opened and that no payload contains the picker's syntax.
   before Enter, and the preview already says how many exchanges that opens.
 - **A command given the wrong parameters** — none where one is required, an agent that does not exist, more than
   it takes.
+- **The list is open with something selected when Enter is pressed.** Tab completes, so Enter has to mean
+  something else, and what it means is worth choosing rather than inheriting.
+- **Deleting back into a match**: `/added` matches nothing, and removing two characters makes `/add` offer itself
+  again. The list must come back, which it does only if it is derived rather than dismissed.
+- **A single `/` alone**, which is every command and no identifier.
 - **A draft command pressed alone**, which cannot act, and an acting command pressed with text beside it, which
   has to say which of the two it did.
 - **A conversation with one participant**, where "everyone" and "that agent" are the same set.
@@ -207,8 +212,10 @@ exchange was opened and that no payload contains the picker's syntax.
 - **FR-021**: An identifier that is not a command MUST be treated as text and sent as written. Nothing is refused
   for not being a command, because the identifiers a person might type are not a closed set they can be expected
   to know.
-- **FR-022**: Where a draft begins with `/` and is being treated as text, the line MUST say so before Enter, so
-  that a mistyped command is visible as a message about to be sent rather than discovered in somebody's inbox.
+- **FR-022**: Where a draft begins with `/` and is being treated as text, the line MUST say so before Enter. The
+  completion list closing is the first and continuous signal of this (FR-029 to FR-031); this is the backstop for
+  a draft that stopped matching long ago — `/ad hoc fix needed` has no list open by the time Enter is pressed, and
+  the leading slash is still there.
 - **FR-023**: A recognised command missing a parameter it requires, or given one it does not take, MUST be refused
   before anything is sent, and MUST say what it expected. This is not FR-021's case: the identifier resolved, so
   the person meant a command and the line owes them the reason it could not run.
@@ -228,12 +235,36 @@ exchange was opened and that no payload contains the picker's syntax.
   one file containing its prompt; a command table is a second route, so the check MUST read the declarations too,
   or it will keep passing while meaning less.
 
+**Completing a command**
+
+The list is not a convenience. Because an unrecognised identifier is sent as text (FR-021), a typed command that
+does not resolve costs somebody an ask they must answer — so the remedy is to make typing one blind the unusual
+path. Completing from a list is how a command is normally entered, which is what makes the sent-as-text case rare
+enough to be survivable rather than a trap standing open.
+
+- **FR-029**: Typing `/` at the start of the line MUST open a list of every command, which narrows as more is
+  typed to those whose identifiers still begin with what is there.
+- **FR-030**: While the list is open, up and down MUST move the selection and Tab MUST complete the selected
+  identifier. Neither may reach past the list to the transcript or to the surface's own navigation while it is
+  open, and both MUST return to what they did before once it closes.
+- **FR-031**: The list MUST be derived from what is written rather than remembered: it closes when nothing matches
+  any longer, and opens again if characters are deleted until something matches once more. No state says "the
+  person was completing a command" — there is only the text and what it matches.
+- **FR-032**: What decides command-or-text at send MUST be an exact match of the identifier — the text between `/`
+  and the first space — and not what the list happens to be showing. `/ad` is text even while the list offers
+  `add`, because nothing completed it; `/add @billing` is a command because the identifier resolved.
+- **FR-033**: Completing from the list MUST be the ordinary way to enter a command, and the surface MUST NOT
+  require anything to be typed in full that it could have completed.
+- **FR-034**: One completion mechanism MUST serve both sigils: `/` over the commands and `@` over the agents, with
+  the same narrowing, the same keys and the same behaviour when nothing matches. Two completion lists that were
+  built separately would eventually behave differently in the same input line.
+
 **Scope**
 
-- **FR-029**: The views above a conversation — the projects list and the project view — MUST be unchanged.
-- **FR-030**: Every operation reachable from the conversation view before this change MUST remain reachable after
+- **FR-035**: The views above a conversation — the projects list and the project view — MUST be unchanged.
+- **FR-036**: Every operation reachable from the conversation view before this change MUST remain reachable after
   it, so that the surface loses nothing by being rearranged.
-- **FR-031**: Where an operation is reachable both as a command and as a region's key, the two MUST perform the
+- **FR-037**: Where an operation is reachable both as a command and as a region's key, the two MUST perform the
   same act behind the same door. Two routes that drifted would be the disagreement `DriftTests` exists to catch
   between surfaces, arriving inside one.
 

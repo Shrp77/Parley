@@ -87,6 +87,27 @@ same door: a description of what will go, and the subject's own name typed back.
 its door beside its identifier, so the door is part of what the command *is* rather than something a handler
 remembers.
 
+**The completion list was the owner's answer to the cost of that, added the same afternoon** (FR-029 to FR-034):
+typing `/` opens every command, the list narrows by prefix, up and down select, Tab completes, and the list closes
+when nothing matches and returns if enough is deleted that something matches again. Their reasoning, in their
+words: *"this way accidental typos in commands are less likely."*
+
+That is why these are requirements rather than polish. FR-021 sends an unrecognised identifier as text, so a
+command typed blind and wrong costs somebody an ask they must answer — and the remedy is to make typing one blind
+the unusual path rather than to add a refusal back. Two details in it are load-bearing:
+
+- **The list is derived, never remembered** (FR-031). There is no flag saying somebody was completing a command;
+  there is the text and what it matches, which is the only way deleting back into a match can bring the list
+  back. The same discipline as the waiting count, which is asked rather than accumulated for the same reason.
+- **Prefix decides the list; exact match decides the send** (FR-032). Those are two different comparisons and
+  conflating them is a bug waiting: `/ad` is text even while the list is offering `add`, because nothing completed
+  it. The list is a suggestion; the identifier is the fact.
+
+**One question this opens and the plan should not guess at**: with the list open and something selected, Tab
+completes — so what does Enter do? Sending is what Enter means everywhere else in this design, but most fingers
+arriving from Claude Code expect Enter to accept the highlighted item. Either is defensible; picking by accident
+is not.
+
 **The consequence the owner should know about.** `SurfaceTests` proves the door exists today by holding each
 operation's name to exactly one file which must contain its prompt. As operations move into commands, that check
 keeps passing while meaning less — the name now lives in a declaration and the dispatch is generic. FR-028 says
