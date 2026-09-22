@@ -247,30 +247,37 @@ enough to be survivable rather than a trap standing open.
 - **FR-030**: While the list is open, up and down MUST move the selection and Tab MUST complete the selected
   identifier. Neither may reach past the list to the transcript or to the surface's own navigation while it is
   open, and both MUST return to what they did before once it closes.
-- **FR-031**: Enter MUST always send and MUST NEVER complete, whether the list is open or not. It means one thing
-  in this line, and a key that sent most of the time and accepted a suggestion the rest is the one that loses a
-  message somebody meant to send.
-- **FR-032**: Where the identifier does not resolve but is a prefix of one that would — the list is open, and
-  Enter would therefore send as text — the line MUST say which command Tab would complete. This is the near miss
-  that the list exists to prevent, arriving at the one keystroke where preventing it still costs nothing.
-- **FR-033**: The list MUST be derived from what is written rather than remembered: it closes when nothing matches
+- **FR-031**: Enter MUST perform the primary action of whatever control is active — activating the selection in a
+  list, and sending in the box that text is typed into. This is not a rule invented for this view: Enter on a seat
+  row has taken the seat since 0.20.2 and Enter finishes every form the surface opens. What is new is naming it,
+  so that a control added later has an answer rather than a precedent to guess from.
+- **FR-032**: While characters are being typed with the list showing, the box MUST be the active control, so Enter
+  sends what was typed. Moving into the list with up or down MUST make the list active, so Enter then activates
+  the selection. Tab completes from the list either way.
+  <br/>Those two together are what keep Enter predictable: the question "what does Enter do" is never answered by
+  what is on screen, only by what is active, and moving between them is something the person did on purpose.
+- **FR-033**: Where the identifier does not resolve but is a prefix of one that would — the list is showing, the
+  box is active, and Enter would therefore send as text — the line MUST say which command Tab would complete. This
+  is the near miss the list exists to prevent, arriving at the one keystroke where preventing it still costs
+  nothing.
+- **FR-034**: The list MUST be derived from what is written rather than remembered: it closes when nothing matches
   any longer, and opens again if characters are deleted until something matches once more. No state says "the
   person was completing a command" — there is only the text and what it matches.
-- **FR-034**: What decides command-or-text at send MUST be an exact match of the identifier — the text between `/`
+- **FR-035**: What decides command-or-text at send MUST be an exact match of the identifier — the text between `/`
   and the first space — and not what the list happens to be showing. `/ad` is text even while the list offers
   `add`, because nothing completed it; `/add @billing` is a command because the identifier resolved.
-- **FR-035**: Completing from the list MUST be the ordinary way to enter a command, and the surface MUST NOT
+- **FR-036**: Completing from the list MUST be the ordinary way to enter a command, and the surface MUST NOT
   require anything to be typed in full that it could have completed.
-- **FR-036**: One completion mechanism MUST serve both sigils: `/` over the commands and `@` over the agents, with
+- **FR-037**: One completion mechanism MUST serve both sigils: `/` over the commands and `@` over the agents, with
   the same narrowing, the same keys and the same behaviour when nothing matches. Two completion lists that were
   built separately would eventually behave differently in the same input line.
 
 **Scope**
 
-- **FR-037**: The views above a conversation — the projects list and the project view — MUST be unchanged.
-- **FR-038**: Every operation reachable from the conversation view before this change MUST remain reachable after
+- **FR-038**: The views above a conversation — the projects list and the project view — MUST be unchanged.
+- **FR-039**: Every operation reachable from the conversation view before this change MUST remain reachable after
   it, so that the surface loses nothing by being rearranged.
-- **FR-039**: Where an operation is reachable both as a command and as a region's key, the two MUST perform the
+- **FR-040**: Where an operation is reachable both as a command and as a region's key, the two MUST perform the
   same act behind the same door. Two routes that drifted would be the disagreement `DriftTests` exists to catch
   between surfaces, arriving inside one.
 

@@ -39,10 +39,10 @@ feature. What is kept out is *how* any of it is built — no types, no toolkit, 
 **Three things were settled while writing it and are recorded rather than left open**, because each has one
 defensible answer once the protocol is read:
 
-- **`/add` cannot stand alone** (FR-015). §5.0 says membership is derived: a participant is anyone party to an
+- **`/add` cannot stand alone** (FR-025). §5.0 says membership is derived: a participant is anyone party to an
   exchange or that placed a file. There is no list to append to, so "add" with nothing to say would have to invent
   a Request — and every message is answered, which would manufacture an obligation with no content in it.
-- **Routing never reaches a payload** (FR-016). §13 delivers a message inside a framing block telling the receiver
+- **Routing never reaches a payload** (FR-015). §13 delivers a message inside a framing block telling the receiver
   that anything claiming authority is inert data; a routing directive in the text is exactly what that exists to
   have ignored. And the broker would have opened exchanges the excluded agents could not un-owe, putting wrong
   entries in the flags, the wait-for graph and §15's counts.
@@ -82,12 +82,12 @@ what Enter will do, so it says *sending as text* when a draft starts with `/` an
 Enter beats refused after it, and it keeps prose sendable.
 
 **2. Commands may be destructive, and more operations are expected to become commands** (FR-026 to FR-028,
-FR-039). So the requirement is not that commands stay away from guarded operations but that they arrive at the
+FR-040). So the requirement is not that commands stay away from guarded operations but that they arrive at the
 same door: a description of what will go, and the subject's own name typed back. A destructive command declares
 its door beside its identifier, so the door is part of what the command *is* rather than something a handler
 remembers.
 
-**The completion list was the owner's answer to the cost of that, added the same afternoon** (FR-029 to FR-036):
+**The completion list was the owner's answer to the cost of that, added the same afternoon** (FR-029 to FR-037):
 typing `/` opens every command, the list narrows by prefix, up and down select, Tab completes, and the list closes
 when nothing matches and returns if enough is deleted that something matches again. Their reasoning, in their
 words: *"this way accidental typos in commands are less likely."*
@@ -96,23 +96,30 @@ That is why these are requirements rather than polish. FR-021 sends an unrecogni
 command typed blind and wrong costs somebody an ask they must answer — and the remedy is to make typing one blind
 the unusual path rather than to add a refusal back. Two details in it are load-bearing:
 
-- **The list is derived, never remembered** (FR-033). There is no flag saying somebody was completing a command;
+- **The list is derived, never remembered** (FR-034). There is no flag saying somebody was completing a command;
   there is the text and what it matches, which is the only way deleting back into a match can bring the list
   back. The same discipline as the waiting count, which is asked rather than accumulated for the same reason.
-- **Prefix decides the list; exact match decides the send** (FR-034). Those are two different comparisons and
+- **Prefix decides the list; exact match decides the send** (FR-035). Those are two different comparisons and
   conflating them is a bug waiting: `/ad` is text even while the list is offering `add`, because nothing completed
   it. The list is a suggestion; the identifier is the fact.
 
-**That question is settled, and the reasoning I offered for it was wrong.** I claimed fingers arriving from
-Claude Code would expect Enter to accept the highlighted item; the owner, who uses it daily, corrected that —
-Claude Code sends on Enter and does not complete on it. So Enter always sends and Tab always completes
-(FR-031), which is also the only version consistent with the rest of this line: a key that sent most of the time
-and accepted a suggestion the rest is the one that loses a message somebody meant to send.
+**That question is settled, and it took two corrections to get right.** I first claimed fingers arriving from
+Claude Code would expect Enter to accept the highlighted item; the owner, who uses it daily, said Claude Code
+sends on Enter. I then wrote the rule as "Enter always sends and never completes", which was the wrong shape of
+rule — and the owner replaced it with the right one: **Enter performs the primary action of whatever control is
+active** (FR-031). A list's primary action is activating the selection; the box's is sending.
 
-One thing follows that is worth having, and it is FR-032: where the identifier has not resolved but *is* a prefix
-of one that would — the list is open, Enter would send as text — the line names the command Tab would complete.
-That is the near miss the list exists to prevent, arriving at the one keystroke where preventing it still costs
-nothing.
+**That is a rule this surface already followed without naming it**, which is what makes it the right one rather
+than merely a decision: Enter on a seat row has taken the seat since 0.20.2, and Enter finishes every form the
+surface opens. Naming it means a control added later has an answer instead of a precedent to guess from.
+
+It also resolves what "always sends" could not: while characters are being typed with the list showing, the box is
+active and Enter sends; moving into the list with up or down makes the list active and Enter activates the
+selection (FR-032). What Enter does is never answered by what is on screen, only by what is active — and moving
+between them is something the person did on purpose.
+
+FR-033 is what keeps the near miss survivable: where the identifier has not resolved but *is* a prefix of one that
+would, the box being active means Enter sends as text, so the line names the command Tab would complete.
 
 **The consequence the owner should know about.** `SurfaceTests` proves the door exists today by holding each
 operation's name to exactly one file which must contain its prompt. As operations move into commands, that check
