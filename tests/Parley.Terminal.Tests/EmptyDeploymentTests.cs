@@ -95,7 +95,10 @@ public sealed class EmptyDeploymentTests
             named.Add(shell.Status);
         }
 
-        Assert.Equal(4, named.Count);
+        // Five panes across the three views since 0.30.0, where there were four: the conversation view
+        // gained the room beside its transcript. Counted rather than listed so that a pane added without a
+        // name in the status line fails here.
+        Assert.Equal(5, named.Count);
         Assert.Contains(named, said => said.Contains(ProjectsRegion.RegionTitle, StringComparison.Ordinal));
         Assert.Contains(named, said => said.Contains(AgentsRegion.RegionTitle, StringComparison.Ordinal));
         Assert.Contains(named, said => said.Contains(ConversationsRegion.RegionTitle, StringComparison.Ordinal));

@@ -98,7 +98,9 @@ public sealed class CopyingTests
 
         await OnAConversationAsync(driving, shell);
 
-        shell.Focus(0);
+        // Named rather than counted. The conversation view gained a second pane in 0.30.0 and an index
+        // silently became a different region; what this test is about is the transcript.
+        shell.Focus(shell.Panes.ToList().FindIndex(p => p is TranscriptRegion));
 
         Assert.Contains(shell.Actions(), action => action.Label == Shell.CopyTitle);
 
@@ -121,7 +123,9 @@ public sealed class CopyingTests
 
         await OnAConversationAsync(driving, shell);
 
-        shell.Focus(0);
+        // Named rather than counted. The conversation view gained a second pane in 0.30.0 and an index
+        // silently became a different region; what this test is about is the transcript.
+        shell.Focus(shell.Panes.ToList().FindIndex(p => p is TranscriptRegion));
 
         Assert.Null(shell.Held);
         Assert.Contains(shell.Actions(), action => action.Label == Shell.CopyTitle);
@@ -140,7 +144,9 @@ public sealed class CopyingTests
 
         shell.Transcript.Show("release-notes", "alpha", null, "the broker did not answer");
 
-        shell.Focus(0);
+        // Named rather than counted. The conversation view gained a second pane in 0.30.0 and an index
+        // silently became a different region; what this test is about is the transcript.
+        shell.Focus(shell.Panes.ToList().FindIndex(p => p is TranscriptRegion));
 
         Assert.DoesNotContain(shell.Actions(), action => action.Label == Shell.CopyTitle);
 

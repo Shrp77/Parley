@@ -20,27 +20,27 @@ The feature's core, fully testable before any layout exists.
 
 ## Phase 2: The room's layout (US1)
 
-- [ ] T009 Write `src/Parley.Terminal/RoomRegion.cs`: participants in their own colours, outstanding items, agent status
-- [ ] T010 Make the Conversation view three panes in `Shell.cs` — room, transcript, line — with the transcript unchanged
-- [ ] T011 Sort the conversation-view tests per research R10 and record each file's pile in this file before changing any of them
-- [ ] T012 Update the tests that assert the arrangement: the layout ladder, the narrow-terminal rule, resize, and which panes exist
-- [ ] T013 [P] Write `tests/Parley.Terminal.Tests/RoomTests.cs`: two columns at several widths, participants listed with colour, and every fact readable with colour stripped
-- [ ] T014 Run the terminal suite
+- [X] T009 Write `src/Parley.Terminal/RoomRegion.cs`: participants in their own colours, outstanding items, agent status
+- [X] T010 Make the Conversation view three panes in `Shell.cs` — room, transcript, line — with the transcript unchanged
+- [X] T011 Sort the conversation-view tests per research R10 and record each file's pile in this file before changing any of them
+- [X] T012 Update the tests that assert the arrangement: the layout ladder, the narrow-terminal rule, resize, and which panes exist
+- [X] T013 [P] Write `tests/Parley.Terminal.Tests/RoomTests.cs`: two columns at several widths, participants listed with colour, and every fact readable with colour stripped
+- [X] T014 Run the terminal suite
 
 ## Phase 3: The line (US1, US2)
 
-- [ ] T015 Write `src/Parley.Terminal/LineRegion.cs`: the input line and the preview block
-- [ ] T016 Wire Enter to the active control, Tab to the answer-or-ask-back alternative, and the send through `SeatVoice`
-- [ ] T017 Re-check the seat at the send, not when the line was focused
+- [X] T015 Write `src/Parley.Terminal/LineRegion.cs`: the input line and the preview block
+- [X] T016 Wire Enter to the active control, Tab to the answer-or-ask-back alternative, and the send through `SeatVoice`
+- [X] T017 Re-check the seat at the send, not when the line was focused
 - [ ] T018 [P] Write `tests/Parley.Terminal.Tests/LineTests.cs`: the preview names every recipient and its act; Enter sends; the seat going mid-draft refuses and keeps the text; over the cap refuses and keeps the text
 - [ ] T019 Run the terminal and client suites
 
 ## Phase 4: Completion and commands (US4)
 
-- [ ] T020 Write `src/Parley.Client/Seating/Completion.cs`: one narrowing list over a candidate set, derived from the text
-- [ ] T021 Write `src/Parley.Client/Seating/Commands.cs`: the declaration, the table, and `/add`
-- [ ] T022 [P] Write `tests/Parley.Client.Tests/CompletionTests.cs`: narrowing, closing when nothing matches, reopening on delete, prefix versus exact
-- [ ] T023 [P] Write `tests/Parley.Client.Tests/CommandTableTests.cs`: declarations parsed; a draft command not sendable alone; a missing parameter refused; an unrecognised identifier is text; `/etc/hosts` is text
+- [X] T020 Write `src/Parley.Client/Seating/Completion.cs`: one narrowing list over a candidate set, derived from the text
+- [X] T021 Write `src/Parley.Client/Seating/Commands.cs`: the declaration, the table, and `/add`
+- [X] T022 [P] Write `tests/Parley.Client.Tests/CompletionTests.cs`: narrowing, closing when nothing matches, reopening on delete, prefix versus exact
+- [X] T023 [P] Write `tests/Parley.Client.Tests/CommandTableTests.cs`: declarations parsed; a draft command not sendable alone; a missing parameter refused; an unrecognised identifier is text; `/etc/hosts` is text
 - [ ] T024 Draw the completion list in `LineRegion`, over both sigils, with up/down and Tab
 - [ ] T025 Resolve `@` into recipients and `/add` into a widened recipient set, with nothing reaching the payload
 - [ ] T026 The near-miss note: identifier unresolved but a prefix of one that would resolve
@@ -68,4 +68,8 @@ Filled in as it is done, so the next reader can tell a file that was considered 
 
 | file | pile | why |
 |---|---|---|
-| | | |
+| CopyingTests, SeatUnderneathTests | guard, route updated | copy offered without a seat, and a released seat speaking: both reached through `Focus(0)`, which silently became the room. They name the transcript now. |
+| ViewRaceTests, EmptyDeploymentTests | description of the arrangement | hard-coded pane counts, 1 for a conversation and 4 across the views. Updated to 2 and 5. |
+| ColumnZeroTests, VerbatimTests, WrappingTests, ReflowTests, InjectionTests, ReadableSurfaceTests, RefillRaceTests, PaintedTests, ColourTests, OldShapeOnScreenTests | guard, untouched | every one is a property of the transcript, which this change did not touch. They pass by construction, which is the whole reason the room was built around it (research R11). |
+| DeadSurfaceTests | guard, satisfied by the new tests | it reported `RoomRegion.NoSeat`, `NothingOwed` and `ToAddress` as named only in their own file. Writing `RoomTests` is what makes them alive rather than making them private. |
+| the remaining 40 files | untouched | projects, naming, enrolment, files, withdrawal, following, status line, layout ladder, narrow terminal, resize. None asserts the conversation view's arrangement. |

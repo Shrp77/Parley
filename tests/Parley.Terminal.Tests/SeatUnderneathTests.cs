@@ -75,7 +75,9 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         // Whatever it says, it says something, and the surface is still usable afterwards.
         Assert.NotNull(shell.Said);
 
-        shell.Focus(0);
+        // Named rather than counted. The conversation view gained a second pane in 0.30.0 and an index
+        // silently became a different region; what this test is about is the transcript.
+        shell.Focus(shell.Panes.ToList().FindIndex(p => p is TranscriptRegion));
 
         Assert.StartsWith(Shell.FocusPrefix, shell.Status, StringComparison.Ordinal);
     }

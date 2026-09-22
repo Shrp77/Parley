@@ -106,6 +106,90 @@ internal sealed class Shell : Window
     /// </remarks>
     internal const int LeastRegionRows = 6;
 
+    /// <summary>What the line's send is called.</summary>
+    internal const string SendTitle = "Send what you wrote";
+
+    /// <summary>What taking the other side of the one choice is called.</summary>
+    internal const string OtherTitle = "Answer, or ask back instead";
+
+    /// <summary>Sends what is written, as the preview said it would.</summary>
+    /// <returns>When the send has been queued.</returns>
+    /// <remarks>
+    /// <b>The seat is read here rather than when the line was focused.</b> 0.18.9 found three call sites that
+    /// captured it when a form opened and went on speaking under a name the book had released; the rule since is
+    /// that the send asks. The plan is the draft's own, not recomputed: a second derivation between the preview
+    /// and the send would be a second opinion about what was promised.
+    /// </remarks>
+    internal Task SendLine()
+    {
+        if (Held is not { } hold || Drafting is not { } draft || _place.Title is not { } conversation)
+        {
+            Said = Released;
+
+            return Task.CompletedTask;
+        }
+
+        // An empty line is not checked here. The send answers it without reaching a broker, and one sentence
+        // about it in one place cannot come to disagree with itself.
+        draft.Text = Line.Written;
+
+        Queue(async token =>
+        {
+            if (Voice() is not { } voice)
+            {
+                Said = Released;
+
+                return;
+            }
+
+            var said = await voice.SendAsync(hold, draft, conversation, token).ConfigureAwait(false);
+
+            Said = said;
+
+            // Cleared only on a send that reached somebody. A refusal keeps what was written, which 0.25.1
+            // recorded the cost of getting wrong: the cap was enforced after the form closed and took the
+            // message with it.
+            if (said.StartsWith("Sent to 0", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            Line.Written = string.Empty;
+
+            if (Projects.Selected is { } project)
+            {
+                await OpenAsync(project, conversation, token).ConfigureAwait(false);
+            }
+        });
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Takes the other side of the one choice a draft offers.</summary>
+    /// <returns>When the preview has been redrawn.</returns>
+    /// <remarks>
+    /// Applied to every recipient in that state rather than to one, because the line addresses them together and
+    /// there is no cursor among them to mean "this one". A person who wants them to differ sends twice, which is
+    /// also what makes each send readable against its own outcome.
+    /// </remarks>
+    internal Task FlipOne()
+    {
+        if (Drafting is not { } draft)
+        {
+            return Task.CompletedTask;
+        }
+
+        foreach (var addressed in draft.Plan().Where(a => a.Choosable))
+        {
+            draft.Flip(addressed.Peer);
+        }
+
+        Line.Show(draft);
+        Relay();
+
+        return Task.CompletedTask;
+    }
+
     /// <summary>What copying the open conversation is called.</summary>
     internal const string CopyTitle = "Copy this conversation to the clipboard";
 
@@ -248,6 +332,8 @@ internal sealed class Shell : Window
         Agents = new AgentsRegion();
         Conversations = new ConversationsRegion();
         Transcript = new TranscriptRegion();
+        Room = new RoomRegion();
+        Line = new LineRegion();
 
         _regions = [Projects, Agents, Conversations, Transcript];
 
@@ -307,6 +393,8 @@ internal sealed class Shell : Window
         Add(Agents);
         Add(Conversations);
         Add(Transcript);
+        Add(Room);
+        Add(Line);
 
         Lay(Threshold);
         Focus(0);
@@ -323,6 +411,20 @@ internal sealed class Shell : Window
 
     /// <summary>The transcript region.</summary>
     internal TranscriptRegion Transcript { get; }
+
+    /// <summary>The conversation's narrow column: who is here, and what is owed.</summary>
+    internal RoomRegion Room { get; }
+
+    /// <summary>The one line a person speaks from.</summary>
+    internal LineRegion Line { get; }
+
+    /// <summary>What is written and not yet sent, or null when there is no seat to send it under.</summary>
+    /// <remarks>
+    /// Rebuilt whenever the room is filled, because the acts it derives depend on who owes whom and that changes
+    /// under a reader: a peer answering while somebody types moves a Clarify to a Request. Held rather than
+    /// derived per keystroke only because the answer-or-ask-back choice is the person's and has to persist.
+    /// </remarks>
+    internal Draft? Drafting { get; private set; }
 
     /// <summary>Which pane of the current view has focus.</summary>
     internal int FocusedRegion { get; private set; }
@@ -349,7 +451,13 @@ internal sealed class Shell : Window
     internal IReadOnlyList<View> Panes => _place.Viewing switch
     {
         Viewing.Project => [Agents, Conversations],
-        Viewing.Conversation => [Transcript],
+        // **Two columns since 0.30.0, and the transcript is the one that did not change.** The room was
+        // built around it rather than in place of it: forty-nine test files in this suite drive the
+        // conversation view, and almost all of them are about the transcript -- the column-zero rule that
+        // stops a payload forging a header, agent-written text escaped on the way to the screen, wrapping,
+        // reflow, copying, the refill race. Every one of those was found the hard way and several by probe, so
+        // they keep passing by construction rather than by care.
+        Viewing.Conversation => [Room, Transcript, Line],
         _ => [Projects],
     };
 
@@ -545,9 +653,16 @@ internal sealed class Shell : Window
             // Two panes, side by side. Agents on the left because the question a project view
             // answers first is who is in it; conversations wider because they carry identifiers and
             // timestamps rather than short names.
+            //
+            // **The room's own column is narrower than that**, and by a fixed width rather than a share:
+            // it holds names and short clauses whatever the terminal is, while the transcript holds
+            // whatever a peer wrote and wants every column it can have. A share would widen the one that
+            // does not need it in step with the one that does.
             panes[0].X = 0;
             panes[0].Y = 0;
-            panes[0].Width = Dim.Percent(40);
+            panes[0].Width = _place.Viewing == Viewing.Conversation
+                ? Dim.Absolute(Narrow)
+                : Dim.Percent(40);
             panes[0].Height = Dim.Fill(1 + _messageRows);
 
             panes[1].X = Pos.Right(panes[0]);
@@ -560,6 +675,14 @@ internal sealed class Shell : Window
 
         Focus(FocusedRegion);
     }
+
+    /// <summary>How wide the room's own column is, in columns.</summary>
+    /// <remarks>
+    /// Wide enough for an agent name and the clause beside it -- "billing@matrixmaster -- waiting on you" is
+    /// what this column exists to say -- and no wider, because everything it does not take belongs to the
+    /// transcript. Below the stacking threshold the panes stack and this does not apply.
+    /// </remarks>
+    internal const int Narrow = 34;
 
     /// <summary>Moves focus to a region and says so.</summary>
     /// <param name="at">Which region, counted from the projects.</param>
@@ -850,10 +973,24 @@ internal sealed class Shell : Window
         // usual early return -- same arrangement, already built -- would leave the previous view on
         // screen while the status line said otherwise.
         Relay();
-        Focus(0);
+
+        // **A conversation opens on its transcript, not on the room beside it.** The room is context; the
+        // transcript is what somebody opened a conversation to read, and it is where every action on this
+        // view already lived. Focusing the left column because it is drawn first would put the cursor on
+        // the furniture.
+        Focus(Opening(place));
 
         return Task.CompletedTask;
     }
+
+    /// <summary>Which pane a view opens focused on.</summary>
+    /// <param name="place">The view being arrived at.</param>
+    /// <returns>The pane index.</returns>
+    /// <remarks>
+    /// Every view but one opens on its first pane, which is also its only list. A conversation opens on its
+    /// transcript, which is the second: the room is context beside it rather than the thing somebody came for.
+    /// </remarks>
+    private static int Opening(ViewPlace place) => place.Viewing == Viewing.Conversation ? 1 : 0;
 
     /// <summary>What the focused region can do, and the letter that does each.</summary>
     /// <returns>The actions, in the order the status line lists them.</returns>
@@ -941,6 +1078,17 @@ internal sealed class Shell : Window
             .. Held is not null
                 ? new[] { new RegionAction('w', Participation.DeliveryTitle, TakeDelivery) }
                 : Array.Empty<RegionAction>(),
+        ],
+
+        LineRegion =>
+        [
+            .. Held is not null
+                ? new[]
+                {
+                    new RegionAction('\r', SendTitle, SendLine, Owing.Requesting),
+                    new RegionAction('\t', OtherTitle, FlipOne),
+                }
+                : new[] { new RegionAction('j', AgentsRegion.JoinTitle, Join) },
         ],
 
         // The conversations half of a project view. Sorting and the archived toggle are view
@@ -3088,6 +3236,8 @@ internal sealed class Shell : Window
 
         Transcript.Show(conversationId, project.Name.Value, read.Value, read.Problem);
 
+        await FillRoomAsync(project, read.Value, cancellationToken).ConfigureAwait(false);
+
         // Followed only once it has been read. A conversation that could not be read already says why,
         // and asking a broker that did not answer every few seconds would say it again each time.
         if (read.Problem is null)
@@ -3095,6 +3245,91 @@ internal sealed class Shell : Window
             StartFollowing(project, conversationId);
         }
     }
+
+    /// <summary>Fills the room's column from the conversation and the broker's wait-for graph.</summary>
+    /// <param name="project">The project.</param>
+    /// <param name="export">The conversation, or null when it could not be read.</param>
+    /// <param name="cancellationToken">Stops the read.</param>
+    /// <returns>When the column has been drawn.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The wait-for graph is the second read, and it is what makes one input line possible.</b> An exchange
+    /// snapshot carries no parties, so whose move it is comes from the broker's own graph rather than from
+    /// reconstructing turn logic here (`research.md` R1).
+    /// </para>
+    /// <para>
+    /// A graph that could not be read leaves the participants listed and nothing owed, rather than an empty
+    /// column: who is in a conversation is known from the export alone, and losing that as well would report
+    /// less than was actually read.
+    /// </para>
+    /// </remarks>
+    private async Task FillRoomAsync(
+        ProjectSettings project,
+        ConversationExport? export,
+        CancellationToken cancellationToken)
+    {
+        if (export is null)
+        {
+            Room.Show([], [], Held is not null);
+
+            return;
+        }
+
+        if (Held is not { } hold)
+        {
+            // No seat, so there is no "you" for anything to be owed by. The participants are still worth
+            // showing, and the column says a seat is wanted.
+            Room.Show(
+                [.. Pairing.Participants(export).OrderBy(a => a.Value, StringComparer.Ordinal)
+                    .Select(a => new PairState(a, null, Turn.Nobody))],
+                [],
+                seated: false);
+
+            return;
+        }
+
+        var waiting = await BrokerDirectory.ReadAsync(async () =>
+            await new BrokerClient(_directory.ClientFor(project))
+                .WaitingAsync(cancellationToken).ConfigureAwait(false))
+            .ConfigureAwait(false);
+
+        var pairs = Pairing.From(export, waiting.Value ?? [], hold.Seat.Name);
+
+        Room.Show(pairs, Outstanding(pairs), seated: true);
+
+        // Rebuilt from the pair state that was just read, keeping whichever answer-or-ask-back choices the
+        // person had already made about peers that are still in the same state.
+        var was = Drafting;
+
+        Drafting = new Draft(pairs) { Text = Line.Written };
+
+        if (was is not null)
+        {
+            foreach (var peer in pairs.Where(pair => pair.Turn == Turn.Mine && !was.Answering(pair.Peer)))
+            {
+                Drafting.Flip(peer.Peer);
+            }
+        }
+
+        Line.Show(Drafting);
+    }
+
+    /// <summary>What this person must address in the conversation on screen.</summary>
+    /// <param name="pairs">The pair state for every participant.</param>
+    /// <returns>One item per thing owed, in the order the participants are listed.</returns>
+    /// <remarks>
+    /// Read from the same pair state the input line derives its acts from, so the column and the line cannot
+    /// disagree about what is outstanding. Two sources for one fact is how a surface comes to promise something
+    /// it will not do.
+    /// </remarks>
+    private static IReadOnlyList<OutstandingItem> Outstanding(IReadOnlyList<PairState> pairs) =>
+        [.. pairs
+            .Where(pair => pair.Turn == Turn.Mine && pair.OpenExchange is not null)
+            .Select(pair => new OutstandingItem(
+                pair.Peer,
+                $"{pair.Peer.Value} — answer or ask back",
+                pair.OpenExchange!.Value,
+                null))];
 
     /// <summary>
     /// Reads the project's catalogue, which is the one fact about a deployment the broker never
