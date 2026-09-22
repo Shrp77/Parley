@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -96,8 +97,64 @@ internal sealed class Entry
         return new Entry(paragraph);
     }
 
+    /// <summary>Builds the box a person speaks from in a conversation.</summary>
+    /// <returns>The box.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A paragraph rather than a line, because a message is one.</b> The owner asked for it after writing a
+    /// long one: a single-line field scrolls sideways, so what somebody had written slid out of sight a
+    /// character at a time and the only way to read their own message back was to walk the cursor through it.
+    /// Rule 8.4's cap is eight thousand characters and this is the box those are written in.
+    /// </para>
+    /// <para>
+    /// <b>Here rather than in the line region, so the deprecation stays suppressed in one file.</b> That was
+    /// the point of putting the suppression in a file of its own, and a second copy of it elsewhere would be
+    /// the project-wide <c>NoWarn</c> this file exists to avoid, arrived at one class at a time.
+    /// </para>
+    /// <para>
+    /// <b>Enter adds a line here and is never seen doing it.</b> The surface takes Enter before this view is
+    /// offered it and sends; what reaches this is the chord for a line break, forwarded as a plain Enter so
+    /// the toolkit's own line handling does the work. Tab is left alone for the same reason it is in a form.
+    /// </para>
+    /// </remarks>
+    internal static Entry Speaking() =>
+        new(new TextView
+        {
+            X = 1,
+            Width = Dim.Fill(2),
+
+            // Multiline first: the toolkit refuses word wrap on a single-line view.
+            Multiline = true,
+            WordWrap = true,
+            EnterKeyAddsLine = true,
+            TabKeyAddsTab = false,
+        });
+
     /// <summary>The view itself.</summary>
     internal View View => (View?)_line ?? _paragraph!;
+
+    /// <summary>How many rows the text needs at the width it has, however many that is.</summary>
+    /// <remarks>
+    /// <see cref="Rows"/>'s measurement without a form's bounds on it. A conversation's box is given what it
+    /// asks for up to whatever leaves the transcript standing, and that decision belongs to the surface that
+    /// knows how tall the screen is rather than to a constant here.
+    /// </remarks>
+    internal int Wants => _paragraph is null ? 1 : Math.Max(1, Deep(_paragraph));
+
+    /// <summary>Puts the cursor after everything written.</summary>
+    internal void MoveEnd()
+    {
+        _line?.MoveEnd();
+        _paragraph?.MoveEnd();
+    }
+
+    /// <summary>Adds a line break where the cursor is.</summary>
+    /// <remarks>
+    /// Forwarded as a plain Enter rather than an inserted character, so the toolkit does whatever it does
+    /// about wrapping, history and the cursor. A newline written straight into the text would be this
+    /// repository deciding what a line break means inside somebody else's editor.
+    /// </remarks>
+    internal void Break() => _paragraph?.NewKeyDownEvent(Key.Enter);
 
     /// <summary>The one-line field, or null when this is a paragraph.</summary>
     /// <remarks>
@@ -147,16 +204,29 @@ internal sealed class Entry
                 return 1;
             }
 
-            var width = _paragraph.Viewport.Width > 0 ? _paragraph.Viewport.Width : 60;
-            var rows = 0;
-
-            foreach (var line in _paragraph.Text.Split('\n'))
-            {
-                rows += Math.Max(1, (int)Math.Ceiling(line.TrimEnd('\r').Length / (double)width));
-            }
-
-            return Math.Clamp(rows, FormDialog.Opening, FormDialog.Deepest);
+            return Math.Clamp(Deep(_paragraph), FormDialog.Opening, FormDialog.Deepest);
         }
+    }
+
+    /// <summary>How many rows a paragraph's text takes at the width it has.</summary>
+    /// <param name="paragraph">The view.</param>
+    /// <returns>The rows, at least one.</returns>
+    /// <remarks>
+    /// Measured from the text rather than asked of the toolkit, because the answer is needed while deciding
+    /// the layout that would give the toolkit something to measure. The width used is the view's own once it
+    /// has been laid out and an estimate before that, self-correcting on the first real layout.
+    /// </remarks>
+    private static int Deep(TextView paragraph)
+    {
+        var width = paragraph.Viewport.Width > 0 ? paragraph.Viewport.Width : 60;
+        var rows = 0;
+
+        foreach (var line in paragraph.Text.Split('\n'))
+        {
+            rows += Math.Max(1, (int)Math.Ceiling(line.TrimEnd('\r').Length / (double)width));
+        }
+
+        return Math.Max(1, rows);
     }
 }
 

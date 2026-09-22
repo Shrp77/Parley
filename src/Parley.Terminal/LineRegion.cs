@@ -1,4 +1,5 @@
 using Parley.Client.Seating;
+using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -47,19 +48,23 @@ internal sealed class LineRegion : FrameView
     internal const string Empty = "type to say something";
 
     /// <summary>
-    /// The most rows this region takes, however much there is to say.
+    /// The fewest rows the transcript keeps, however long the message being written is.
     /// </summary>
     /// <remarks>
-    /// A floor for the transcript rather than a ceiling for the preview: the transcript is what somebody opened a
-    /// conversation to read, and a line addressing nineteen agents must not push it off the screen. Past this the
-    /// preview scrolls within its own rows.
+    /// <b>A floor for the transcript rather than a ceiling for the box.</b> The owner asked for the box to grow
+    /// so a whole message can be read back, and rule 8.4's cap is eight thousand characters — which is more
+    /// rows than any terminal has. So the box takes what it asks for until the transcript is down to this, and
+    /// scrolls after that: a conversation somebody is writing into is still a conversation they are reading.
     /// </remarks>
-    internal const int MostRows = 12;
+    internal const int TranscriptFloor = 6;
 
     /// <summary>The fewest rows this region takes: a border, the preview's first row, and the box.</summary>
     internal const int LeastRows = 4;
 
-    private readonly TextField _field;
+    /// <summary>The character that turns the next Enter into a line break rather than a send.</summary>
+    internal const string Breaking = @"\";
+
+    private readonly Entry _field;
     private readonly Plain _preview;
     private readonly GuardedList _list;
 
@@ -72,12 +77,15 @@ internal sealed class LineRegion : FrameView
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Conversations));
 
+        // **Stacked from the top rather than anchored to the bottom.** The box grows downward into whatever
+        // the region was given, so the preview and the list keep their rows and the thing being typed takes
+        // the rest — which is what lets the region ask for more rows and have them go to the message.
         _preview = new Plain
         {
             X = 1,
             Y = 0,
             Width = Dim.Fill(2),
-            Height = Dim.Fill(1),
+            Height = 1,
             Text = Empty,
         };
 
@@ -85,38 +93,61 @@ internal sealed class LineRegion : FrameView
         // would put the thing being changed above the thing describing it.
         _list = Lists.Filling(Colours.Conversations);
         _list.X = 1;
-        _list.Y = Pos.AnchorEnd(2);
+        _list.Y = Pos.Bottom(_preview);
         _list.Width = Dim.Fill(2);
         _list.Height = 1;
         _list.Visible = false;
         _list.CanFocus = false;
 
-        // The line sits against the bottom so the preview above it grows upward as recipients are added,
-        // rather than pushing the thing somebody is typing off its own region.
-        _field = new TextField
-        {
-            X = 1,
-            Y = Pos.AnchorEnd(1),
-            Width = Dim.Fill(2),
-        };
-
-        // **Enter reaches the field before any handler on this region**, which is how the first version of
-        // the conversations list quietly did nothing. The field's own accept is the one thing that runs, and
-        // it is the primary action of the active control (FR-031): in the box, that is sending.
-        _field.Accepting += (_, args) =>
-        {
-            args.Handled = true;
-            Sending?.Invoke(this, EventArgs.Empty);
-        };
+        // **A paragraph rather than a line, and it wraps rather than scrolling sideways.** A single-line
+        // field slid what somebody had written out of sight a character at a time, so the only way to read
+        // your own message back was to walk the cursor through it.
+        _field = Entry.Speaking();
+        _field.View.Y = Pos.Bottom(_list);
+        _field.View.Height = Dim.Fill();
 
         // The preview is a function of what is written, so it is recomputed as it is written. Held instead, it
         // would describe a draft somebody had already edited -- and the whole promise of the preview is that
         // what it names is what Enter does.
-        _field.TextChanged += (_, _) => Typing?.Invoke(this, EventArgs.Empty);
+        _field.Changed += () => Typing?.Invoke(this, EventArgs.Empty);
+
+        // **Enter is taken on the box, because that is where it lands.**
+        //
+        // A focused view is offered a key before the surface's own handler is, so what reaches the shell is
+        // only what this box declined: Tab arrives there because this box does not bind it, and Enter never
+        // arrives at all because it does. An arm in the shell for Enter is an arm that never runs — which is
+        // what it was for a morning, with the owner unable to send a message at all, and **nothing in the
+        // suite had ever pressed the key**: every test called the `Accept()` seam, which raises the same
+        // event from the other side. The one thing that seam exists to check was the one thing unchecked.
+        //
+        // `KeyDown` rather than `Accepting`, because this box adds a line on Enter and that is a binding
+        // rather than an accept: the key has to be taken before the binding runs.
+        _field.View.KeyDown += (_, key) =>
+        {
+            if (key != Key.Enter)
+            {
+                return;
+            }
+
+            key.Handled = true;
+
+            // **A trailing backslash makes it a line break instead**, which is the spelling that works in
+            // every terminal. A chord is what a person reaches for, and several terminals deliver Ctrl+Enter,
+            // Shift+Enter and a bare Enter as the same bytes — so the chord is offered beside it and this is
+            // the one that cannot be taken away.
+            if (Written.EndsWith(Breaking, StringComparison.Ordinal))
+            {
+                Written = Written[..^1] + "\n";
+
+                return;
+            }
+
+            Sending?.Invoke(this, EventArgs.Empty);
+        };
 
         Add(_preview);
         Add(_list);
-        Add(_field);
+        Add(_field.View);
     }
 
     /// <summary>Raised when Enter was pressed in the box.</summary>
@@ -161,7 +192,15 @@ internal sealed class LineRegion : FrameView
     /// records the same collision from the other side: a list's type-to-find was eating every letter the status
     /// line advertised.
     /// </remarks>
-    internal bool Editing => _field.HasFocus;
+    internal bool Editing => _field.View.HasFocus;
+
+    /// <summary>Adds a line break where the cursor is.</summary>
+    /// <remarks>
+    /// <b>Enter sends, so a line break needs a key of its own.</b> The chord is what a person reaches for and
+    /// what the owner asked about by name; <c>\</c> then Enter is the one that works in a terminal that cannot
+    /// tell a chord from a bare Enter, which several cannot.
+    /// </remarks>
+    internal void Break() => _field.Break();
 
     /// <summary>Presses Enter in the box, as a person does.</summary>
     /// <remarks>
@@ -279,7 +318,10 @@ internal sealed class LineRegion : FrameView
     private void Measure()
     {
         var preview = _preview.Text.Split('\n').Length;
-        var wanted = Math.Clamp(3 + preview + _offering.Count, LeastRows, MostRows);
+
+        _preview.Height = preview;
+
+        var wanted = Math.Max(LeastRows, 2 + preview + _offering.Count + _field.Wants);
 
         if (wanted == _rows)
         {

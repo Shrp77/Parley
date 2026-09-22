@@ -109,6 +109,21 @@ internal sealed class Shell : Window
     /// <summary>What the line's send is called.</summary>
     internal const string SendTitle = "Send what you wrote";
 
+    /// <summary>What adding a line break is called.</summary>
+    internal const string BreakTitle = "Start a new line";
+
+    /// <summary>The other way to add one, for a terminal that cannot tell the chord from a bare Enter.</summary>
+    internal const string BreakAlso = "or type a backslash and press Enter";
+
+    /// <summary>Adds a line break to what is being written.</summary>
+    /// <returns>When it has been added.</returns>
+    private Task BreakLine()
+    {
+        Line.Break();
+
+        return Task.CompletedTask;
+    }
+
     /// <summary>What including or excluding a participant is called.</summary>
     internal const string IncludeTitle = "Include or exclude this agent";
 
@@ -1055,7 +1070,14 @@ internal sealed class Shell : Window
 
         if (panes.Count > 2 && !_stacked)
         {
-            var rows = Line.Rows;
+            // **What the box asks for, until the transcript is down to its floor.** It was a constant twelve,
+            // which is a ceiling on the message rather than a floor under the conversation -- and the box is
+            // where an eight-thousand-character request is written.
+            var height = Viewport.Height > 0 ? Viewport.Height : 24;
+            var rows = Math.Clamp(
+                Line.Rows,
+                LineRegion.LeastRows,
+                Math.Max(LineRegion.LeastRows, height - below - LineRegion.TranscriptFloor));
 
             panes[0].Height = Dim.Fill(below);
             panes[1].Height = Dim.Fill(below + rows);
@@ -1511,7 +1533,11 @@ internal sealed class Shell : Window
         LineRegion =>
         [
             .. Held is not null
-                ? new[] { new RegionAction('\r', SendTitle, SendLine, Owing.Requesting) }
+                ? new[]
+                {
+                    new RegionAction('\r', SendTitle, SendLine, Owing.Requesting),
+                    new RegionAction(default, BreakTitle, BreakLine, BreakAlso, Key.Enter.WithCtrl),
+                }
                 : Array.Empty<RegionAction>(),
 
             // **Offered only where the choice applies**, which is the rule this surface keeps about every key:
@@ -3219,6 +3245,11 @@ internal sealed class Shell : Window
             return true;
         }
 
+        // **Enter from the box is not taken here, and finding out why cost the owner a morning.** A focused
+        // view is offered a key before this handler is, so what reaches here is what that view declined: Tab
+        // arrives because the box does not bind it, and Enter does not arrive at all because the box does.
+        // An arm here for Enter is an arm that never runs. `LineRegion` takes it on the box itself.
+        //
         // **Enter in a folded transcript opens the message under the cursor**, which is the primary action of
         // the active control read at the level of a fold: a folded header is a message somebody is asking to
         // see. Unfolded it does nothing and is left alone, rather than swallowed to no effect.

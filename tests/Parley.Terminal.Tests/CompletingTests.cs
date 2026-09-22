@@ -406,26 +406,52 @@ public sealed class CompletingTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task The_line_never_takes_more_than_its_share_however_much_it_has_to_say()
+    public async Task A_long_message_grows_the_box_rather_than_scrolling_sideways()
     {
-        // A floor for the transcript rather than a ceiling for the preview: the transcript is what somebody
-        // opened a conversation to read, and a line addressing nineteen agents must not push it off the screen.
+        // **The owner's report: a long message slid out of sight a character at a time.** A single-line field
+        // scrolls horizontally, so the only way to read your own message back was to walk the cursor through
+        // it. Rule 8.4's cap is eight thousand characters and this is the box those are written in.
         var (shell, driving) = await SeatedAsync(TestContext.Current.CancellationToken);
 
         using var held = shell;
 
         Focus(shell);
 
-        shell.Line.Written = "/";
+        driving.App.LayoutAndDraw(true);
+
+        var before = shell.Line.Rows;
+
+        shell.Line.Written = new string('a', 600);
 
         await shell.Settled;
 
         driving.App.LayoutAndDraw(true);
 
         Assert.True(
-            shell.Line.Rows <= LineRegion.MostRows,
-            $"the line wanted {shell.Line.Rows} rows of {LineRegion.MostRows}");
-        Assert.True(shell.Transcript.Frame.Height > 0, "the transcript was pushed off the screen");
+            shell.Line.Rows > before,
+            $"the box stayed at {shell.Line.Rows} rows for six hundred characters");
+    }
+
+    [Fact]
+    public async Task And_the_transcript_keeps_its_floor_however_long_the_message_is()
+    {
+        // A floor under the conversation rather than a ceiling on the message: somebody writing into a
+        // conversation is still somebody reading one.
+        var (shell, driving) = await SeatedAsync(TestContext.Current.CancellationToken);
+
+        using var held = shell;
+
+        Focus(shell);
+
+        shell.Line.Written = new string('a', MessageLimits.MaxPayloadCharacters);
+
+        await shell.Settled;
+
+        driving.App.LayoutAndDraw(true);
+
+        Assert.True(
+            shell.Transcript.Frame.Height >= LineRegion.TranscriptFloor,
+            $"the transcript was cut to {shell.Transcript.Frame.Height} rows");
     }
 
     [Fact]
@@ -606,5 +632,87 @@ public sealed class CompletingTests : IAsyncDisposable
         await shell.Settled;
 
         Assert.Equal($"ask @{Orders.Value} about it", shell.Drafting!.Says(shell.Line.Written));
+    }
+
+    [Fact]
+    public async Task Enter_actually_sends_when_the_key_is_pressed()
+    {
+        // **Nothing in the suite had ever pressed this key.** Every test called the `Accept()` seam, which
+        // raises the same event from the other side -- so the one thing that seam exists to check, that the
+        // key arrives at all, was the one thing unchecked. The owner reported the obvious consequence.
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        foreach (var key in "the build is green")
+        {
+            shell.NewKeyDownEvent(new Key(key));
+        }
+
+        await shell.Settled;
+
+        shell.NewKeyDownEvent(Key.Enter);
+
+        await shell.Settled;
+
+        var export = await new BrokerClient(_broker.Operators).ExportAsync(Conversation, ct);
+
+        Assert.Contains(
+            export?.Messages ?? [],
+            m => m.PayloadJson.Contains("the build is green", StringComparison.Ordinal));
+
+        Assert.Equal(string.Empty, shell.Line.Written);
+    }
+
+    [Fact]
+    public async Task A_backslash_then_Enter_adds_a_line_rather_than_sending()
+    {
+        // The spelling that works in every terminal. Several deliver Ctrl+Enter, Shift+Enter and a bare
+        // Enter as the same bytes, so the chord is offered and this is the one that cannot be taken away.
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        foreach (var key in "first" + LineRegion.Breaking)
+        {
+            shell.NewKeyDownEvent(new Key(key));
+        }
+
+        await shell.Settled;
+
+        shell.NewKeyDownEvent(Key.Enter);
+
+        await shell.Settled;
+
+        // The break itself, however the view spells a line ending, and the backslash gone with it.
+        Assert.StartsWith("first", shell.Line.Written, StringComparison.Ordinal);
+        Assert.DoesNotContain(LineRegion.Breaking, shell.Line.Written, StringComparison.Ordinal);
+        Assert.EndsWith("\n", shell.Line.Written.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+
+        var export = await new BrokerClient(_broker.Operators).ExportAsync(Conversation, ct);
+
+        // One message, the fixture's own: nothing was sent.
+        Assert.Single(export?.Messages ?? []);
+    }
+
+    [Fact]
+    public async Task The_chord_that_adds_a_line_is_named_where_a_person_would_look()
+    {
+        // `contracts/views.md`: no action exists only as a key. The other spelling is in the menu beside it,
+        // because a chord several terminals cannot deliver needs its fallback written down.
+        var (shell, _) = await SeatedAsync(TestContext.Current.CancellationToken);
+
+        using var held = shell;
+
+        Focus(shell);
+
+        var offered = Assert.Single(shell.Actions(), a => a.Label == Shell.BreakTitle);
+
+        Assert.Equal(Key.Enter.WithCtrl.ToString(), offered.Stroke);
+        Assert.Equal(Shell.BreakAlso, offered.Costs);
     }
 }

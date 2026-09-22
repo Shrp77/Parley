@@ -600,7 +600,7 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/017-conversation-room/` — **0.30.3, built whole and green across every suite; the
+- **Current plan**: `specs/017-conversation-room/` — **0.30.4, built whole and green across every suite; the
   review gate is owed and nothing is pushed.** The terminal's
   conversation view becomes a room: participants, outstanding work and agent status down a narrow column; the
   transcript above one input line in a wide one. The owner's call on 2026-09-21, after using it — it should read
@@ -783,6 +783,37 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   longer spelled the way it was recorded and so no longer taken back out. **Both halves are why the assertion
   is on what the broker recorded rather than on what the box says** — a test that stopped at the screen would
   have passed.
+
+  **0.30.4: the box is a paragraph, and Enter reaches it. The second half is the worst defect this feature
+  has had.** The owner could not send a message at all, and the reason is a sentence worth keeping:
+
+  > **A focused view is offered a key before the surface's own handler is.**
+
+  Every comment in this feature said the opposite — that the shell takes a region's key first — and the
+  evidence looked like it agreed, because Tab does arrive at the shell. It arrives because the box *declines*
+  it. What the shell receives is only what the focused view did not want, so an arm there for Enter is an arm
+  that never runs, and the moment the box became a paragraph that binds Enter for a line break, sending
+  stopped. `LineRegion` takes Enter on the box itself now, through `KeyDown` rather than `Accepting`, because
+  a binding runs after the key event and this has to come first.
+
+  **Nothing in the suite had ever pressed the key.** Every test called the `Accept()` seam, which raises the
+  same event from the other side — so the one thing that seam exists to check, that the key arrives at all,
+  was the one thing unchecked, in a file whose own summary said it was there to catch exactly that. `Lists`
+  has had the sentence since 0.20.3: **a key tested only through its own seam is a key nobody has pressed.**
+  The tests press it now, and assert on what the broker recorded.
+
+  **The box grows downward and wraps.** A single-line field scrolls horizontally, so a long message slid out
+  of sight a character at a time and the only way to read your own words back was to walk the cursor through
+  them — in the box an eight-thousand-character request is written in. It is `Entry.Speaking()`, which keeps
+  the `TextView` deprecation suppressed in the one file that already carries it rather than spreading a
+  second `#pragma` into a region. The region stacks from the top now, so the rows it is given go to the
+  message, and the clamp is **a floor under the transcript rather than a ceiling on the box**: it grows until
+  the conversation is down to `TranscriptFloor` rows and scrolls after that.
+
+  **Enter sends; a line break is Ctrl+Enter, or a backslash then Enter.** The chord is what a person reaches
+  for and is named on the status line with its fallback in the menu — and the fallback is not decoration:
+  several terminals deliver Ctrl+Enter, Shift+Enter and a bare Enter as the same bytes, so the spelling that
+  cannot be taken away is two ordinary keys.
 
   Commands are a surface rather than `/add` with a special case: `/` plus an identifier with no second `/`, each
   declaring what it takes and whether it changes the draft or acts; an unrecognised identifier is text, so
