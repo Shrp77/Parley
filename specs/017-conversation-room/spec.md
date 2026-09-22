@@ -213,7 +213,7 @@ exchange was opened and that no payload contains the picker's syntax.
   for not being a command, because the identifiers a person might type are not a closed set they can be expected
   to know.
 - **FR-022**: Where a draft begins with `/` and is being treated as text, the line MUST say so before Enter. The
-  completion list closing is the first and continuous signal of this (FR-029 to FR-031); this is the backstop for
+  completion list closing is the first and continuous signal of this (FR-033); this is the backstop for
   a draft that stopped matching long ago — `/ad hoc fix needed` has no list open by the time Enter is pressed, and
   the leading slash is still there.
 - **FR-023**: A recognised command missing a parameter it requires, or given one it does not take, MUST be refused
@@ -247,24 +247,30 @@ enough to be survivable rather than a trap standing open.
 - **FR-030**: While the list is open, up and down MUST move the selection and Tab MUST complete the selected
   identifier. Neither may reach past the list to the transcript or to the surface's own navigation while it is
   open, and both MUST return to what they did before once it closes.
-- **FR-031**: The list MUST be derived from what is written rather than remembered: it closes when nothing matches
+- **FR-031**: Enter MUST always send and MUST NEVER complete, whether the list is open or not. It means one thing
+  in this line, and a key that sent most of the time and accepted a suggestion the rest is the one that loses a
+  message somebody meant to send.
+- **FR-032**: Where the identifier does not resolve but is a prefix of one that would — the list is open, and
+  Enter would therefore send as text — the line MUST say which command Tab would complete. This is the near miss
+  that the list exists to prevent, arriving at the one keystroke where preventing it still costs nothing.
+- **FR-033**: The list MUST be derived from what is written rather than remembered: it closes when nothing matches
   any longer, and opens again if characters are deleted until something matches once more. No state says "the
   person was completing a command" — there is only the text and what it matches.
-- **FR-032**: What decides command-or-text at send MUST be an exact match of the identifier — the text between `/`
+- **FR-034**: What decides command-or-text at send MUST be an exact match of the identifier — the text between `/`
   and the first space — and not what the list happens to be showing. `/ad` is text even while the list offers
   `add`, because nothing completed it; `/add @billing` is a command because the identifier resolved.
-- **FR-033**: Completing from the list MUST be the ordinary way to enter a command, and the surface MUST NOT
+- **FR-035**: Completing from the list MUST be the ordinary way to enter a command, and the surface MUST NOT
   require anything to be typed in full that it could have completed.
-- **FR-034**: One completion mechanism MUST serve both sigils: `/` over the commands and `@` over the agents, with
+- **FR-036**: One completion mechanism MUST serve both sigils: `/` over the commands and `@` over the agents, with
   the same narrowing, the same keys and the same behaviour when nothing matches. Two completion lists that were
   built separately would eventually behave differently in the same input line.
 
 **Scope**
 
-- **FR-035**: The views above a conversation — the projects list and the project view — MUST be unchanged.
-- **FR-036**: Every operation reachable from the conversation view before this change MUST remain reachable after
+- **FR-037**: The views above a conversation — the projects list and the project view — MUST be unchanged.
+- **FR-038**: Every operation reachable from the conversation view before this change MUST remain reachable after
   it, so that the surface loses nothing by being rearranged.
-- **FR-037**: Where an operation is reachable both as a command and as a region's key, the two MUST perform the
+- **FR-039**: Where an operation is reachable both as a command and as a region's key, the two MUST perform the
   same act behind the same door. Two routes that drifted would be the disagreement `DriftTests` exists to catch
   between surfaces, arriving inside one.
 

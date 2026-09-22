@@ -51,19 +51,19 @@ defensible answer once the protocol is read:
   exchange closed on work that was not done is a record asserting it was.
 
 **The command surface was added on the owner's instruction** and is specified as a surface rather than as `/add`
-with a special case (FR-017 to FR-024): one form, `/` and an identifier; each command declares its identifier and
+with a special case (FR-017 to FR-028): one form, `/` and an identifier; each command declares its identifier and
 what parameters it takes, of what kind; and the line parses, completes, refuses and lists every command from that
 declaration. A command added later is a declaration, not another branch in the input line.
 
 Three things fell out of designing it that way rather than one command at a time, and each is recorded as a
 requirement:
 
-- **Commands divide into two kinds** (FR-022). `/add` changes the draft; a future `/close` would act. "Cannot be
+- **Commands divide into two kinds** (FR-024). `/add` changes the draft; a future `/close` would act. "Cannot be
   sent alone" is true of the first kind and false of the second, so an abstraction that assumed either would be
   wrong the moment the second arrived.
 - **Parameters are typed, not text** (FR-018). `/add` takes a resolved agent, through the same picker `@` uses —
   so the command receives an agent rather than a spelling, for the same reason recipients are chips.
-- **A command table must not become a second route to a guarded operation** (FR-024). `SurfaceTests` holds each
+- **A command table must not become a second route to a guarded operation** (FR-026). `SurfaceTests` holds each
   destructive operation to one file carrying its own door, a description and the subject's name typed back. A
   generic dispatcher is exactly the shape that erodes that, and it would erode it invisibly.
 
@@ -82,12 +82,12 @@ what Enter will do, so it says *sending as text* when a draft starts with `/` an
 Enter beats refused after it, and it keeps prose sendable.
 
 **2. Commands may be destructive, and more operations are expected to become commands** (FR-026 to FR-028,
-FR-031). So the requirement is not that commands stay away from guarded operations but that they arrive at the
+FR-039). So the requirement is not that commands stay away from guarded operations but that they arrive at the
 same door: a description of what will go, and the subject's own name typed back. A destructive command declares
 its door beside its identifier, so the door is part of what the command *is* rather than something a handler
 remembers.
 
-**The completion list was the owner's answer to the cost of that, added the same afternoon** (FR-029 to FR-034):
+**The completion list was the owner's answer to the cost of that, added the same afternoon** (FR-029 to FR-036):
 typing `/` opens every command, the list narrows by prefix, up and down select, Tab completes, and the list closes
 when nothing matches and returns if enough is deleted that something matches again. Their reasoning, in their
 words: *"this way accidental typos in commands are less likely."*
@@ -96,17 +96,23 @@ That is why these are requirements rather than polish. FR-021 sends an unrecogni
 command typed blind and wrong costs somebody an ask they must answer — and the remedy is to make typing one blind
 the unusual path rather than to add a refusal back. Two details in it are load-bearing:
 
-- **The list is derived, never remembered** (FR-031). There is no flag saying somebody was completing a command;
+- **The list is derived, never remembered** (FR-033). There is no flag saying somebody was completing a command;
   there is the text and what it matches, which is the only way deleting back into a match can bring the list
   back. The same discipline as the waiting count, which is asked rather than accumulated for the same reason.
-- **Prefix decides the list; exact match decides the send** (FR-032). Those are two different comparisons and
+- **Prefix decides the list; exact match decides the send** (FR-034). Those are two different comparisons and
   conflating them is a bug waiting: `/ad` is text even while the list is offering `add`, because nothing completed
   it. The list is a suggestion; the identifier is the fact.
 
-**One question this opens and the plan should not guess at**: with the list open and something selected, Tab
-completes — so what does Enter do? Sending is what Enter means everywhere else in this design, but most fingers
-arriving from Claude Code expect Enter to accept the highlighted item. Either is defensible; picking by accident
-is not.
+**That question is settled, and the reasoning I offered for it was wrong.** I claimed fingers arriving from
+Claude Code would expect Enter to accept the highlighted item; the owner, who uses it daily, corrected that —
+Claude Code sends on Enter and does not complete on it. So Enter always sends and Tab always completes
+(FR-031), which is also the only version consistent with the rest of this line: a key that sent most of the time
+and accepted a suggestion the rest is the one that loses a message somebody meant to send.
+
+One thing follows that is worth having, and it is FR-032: where the identifier has not resolved but *is* a prefix
+of one that would — the list is open, Enter would send as text — the line names the command Tab would complete.
+That is the near miss the list exists to prevent, arriving at the one keystroke where preventing it still costs
+nothing.
 
 **The consequence the owner should know about.** `SurfaceTests` proves the door exists today by holding each
 operation's name to exactly one file which must contain its prompt. As operations move into commands, that check
