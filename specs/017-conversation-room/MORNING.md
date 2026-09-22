@@ -188,7 +188,11 @@ Each of these is yours to reverse; they are listed because none was in the speci
   which is exactly the state CLAUDE.md warns against calling done: *"A build that passes is not a review."*
 - **The web console does not match.** Scoped out deliberately; `DriftTests` holds the two surfaces to parity on
   operations rather than on layout.
-- **Nothing is pushed.** `015-file-store` has no PR, and it now carries 0.27.0 through 0.30.0.
+- **Nothing is pushed.** `015-file-store` has no PR, and it now carries 0.27.0 through 0.30.1.
+- **Escape does not dismiss the completion list** (see decision 7). Worth a minute of your judgement: the
+  design says the list is derived from the text and never remembered, and a dismissal is the one piece of
+  remembered state that rejects — but dismissing a popup with Escape is a strong habit and Escape here backs
+  out of the conversation instead.
 - **`/add` is the only command.** The table exists so the next one is a row.
 
 ## The one thing to try first
