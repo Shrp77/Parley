@@ -1,16 +1,14 @@
 namespace Parley.Core;
 
 /// <summary>
-/// One agent waiting on another, for an operator to read.
+/// One participant waiting on another, for the person running the deployment to read.
 /// </summary>
-/// <param name="Waiter">The agent that asked and has not been answered.</param>
-/// <param name="WaitedOn">The agent that owes the answer.</param>
+/// <param name="Waiter">The participant waiting.</param>
+/// <param name="WaitedOn">The participant that owes the next move.</param>
 /// <param name="ExchangeId">The exchange they are waiting on.</param>
 /// <remarks>
-/// Deliberately not <see cref="WaitForGraph"/>. That type exists to answer one question — would
-/// this new question close a cycle — and it answers it without ever being read back, which is
-/// right for its purpose and wrong for this one. A display operation that returned it would hand
-/// a caller something it cannot enumerate, and the caller would end up rebuilding what it was
-/// given.
+/// Deliberately not <see cref="WaitForGraph"/>. That type answers whether a new Request closes a cycle
+/// and is never read back, which is right for its purpose and useless for showing somebody what is
+/// stuck.
 /// </remarks>
 public sealed record WaitingEdge(AgentName Waiter, AgentName WaitedOn, long ExchangeId);

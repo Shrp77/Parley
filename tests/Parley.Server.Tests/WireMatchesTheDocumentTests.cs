@@ -103,8 +103,8 @@ public sealed class WireMatchesTheDocumentTests
         ["describe_registry"] = "registry",
         ["describe_refusals"] = "refusals",
         ["describe_clarifications"] = "clarifications",
-        ["describe_referrals"] = "referrals",
-        ["describe_notifications"] = "notifications",
+        ["describe_results"] = "results",
+        ["describe_flags"] = "flags",
         ["describe_waiting"] = "waiting",
         ["list_conversations"] = "conversations",
     };

@@ -17,16 +17,8 @@ public sealed class WakeProbeTests
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan Settle = TimeSpan.FromMilliseconds(400);
 
-    private static Wire.NotifyRequest Notice(
-        string from, string to, string text, string conversation = "c1") =>
-        new()
-        {
-            From = from,
-            To = to,
-            ResponderModel = "test",
-            PayloadJson = $$"""{"text":"{{text}}"}""",
-            ConversationId = conversation
-        };
+    private static Wire.OpenRequest Notice(string from, string to, string text, string? conversation = null) =>
+        Requests.Open(from, to, text, conversation);
 
     private static async Task RegisterAndCloseAsync(
         LoopbackBroker broker, string name, CancellationToken token)
@@ -69,7 +61,7 @@ public sealed class WakeProbeTests
                     start.SignalAndWait(token);
 
                     // Distinct text per sender, so deduplication is not what bounds this.
-                    _ = await sender.Client.NotifyAsync(
+                    _ = await sender.Client.RequestAsync(
                         Notice($"peer{at}@alpha", "orders@alpha", $"from {at}"),
                         cancellationToken: token);
                 },
@@ -104,7 +96,7 @@ public sealed class WakeProbeTests
 
         for (var at = 0; at < 20; at++)
         {
-            _ = await sender.Client.NotifyAsync(
+            _ = await sender.Client.RequestAsync(
                 Notice("billing@alpha", "orders@alpha", $"notice {at}", $"conversation-{at}"),
                 cancellationToken: token);
         }
@@ -118,7 +110,7 @@ public sealed class WakeProbeTests
         // **The loop worth checking for.** An agent that can wake itself, and whose own drain is
         // what frees the next wake, has a cycle whose every revolution is a model taking a turn on
         // somebody's machine at somebody's expense. Nothing in §7's cycle detection covers it: that
-        // is about exchanges, and a notification opens none.
+        // admits cycles between participants, and says nothing about one participant alone.
         //
         // **The cycle is closed one step earlier than expected, and that is the finding.** The
         // broker refuses an agent addressing itself at all, so the loop cannot start — the probe
@@ -135,7 +127,7 @@ public sealed class WakeProbeTests
             broker, "orders@alpha", cancellationToken: token);
 
         var refused = await Assert.ThrowsAsync<Grpc.Core.RpcException>(
-            async () => await orders.Client.NotifyAsync(
+            async () => await orders.Client.RequestAsync(
                 Notice("orders@alpha", "orders@alpha", "round 0"), cancellationToken: token));
 
         Assert.Equal(Grpc.Core.StatusCode.InvalidArgument, refused.StatusCode);
@@ -226,10 +218,10 @@ public sealed class WakeProbeTests
         await using var sender = await AttachedClient.AttachAsync(
             broker, "billing@alpha", cancellationToken: token);
 
-        var reply = await sender.Client.NotifyAsync(
+        var reply = await sender.Client.RequestAsync(
             Notice("billing@alpha", "orders@alpha", "gone"), cancellationToken: token);
 
-        Assert.False(reply.Ok);
+        Assert.False(Assert.Single(reply.Outcomes).Ok);
         Assert.False(broker.Runtime.AttentionPending(Parley.Core.AgentName.Create("orders@alpha")));
     }
 }

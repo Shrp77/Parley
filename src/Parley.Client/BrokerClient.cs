@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using Parley.Core;
 using Wire = Parley.Transport;
 
@@ -9,16 +9,12 @@ namespace Parley.Client;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The console holds one of these per project and no other route to a broker. What it may do is
-/// what the interface says, which is what makes SPEC.md §10.2 a contract rather than a
-/// description — a page that needed something not on here would be a page asking for something no
-/// broker promises.
+/// A surface holds one of these per project and no other route to a broker. What it may do is what the
+/// interface says, which is what makes SPEC.md §10.2 a contract rather than a description.
 /// </para>
 /// <para>
 /// Mapping the wire to the domain is done here rather than shared with the server. The server's
-/// conversions run in the process that owns the store; this runs in a process that must never
-/// see one, and a shared assembly would be a path between the two that §4 spends its length
-/// denying.
+/// conversions run in the process that owns the store; this runs in a process that must never see one.
 /// </para>
 /// </remarks>
 /// <param name="operators">The operator client for one project's broker.</param>
@@ -30,18 +26,14 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     /// <inheritdoc/>
     public async Task<string> ImplementsAsync(CancellationToken cancellationToken = default)
     {
-        var said = await _operators
-            .ImplementsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
-
+        var said = await _operators.ImplementsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
         return said.ProtocolVersion;
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<AgentRecord>> RegistryAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<AgentRecord>> RegistryAsync(CancellationToken cancellationToken = default)
     {
-        var reply = await _operators
-            .DescribeRegistryAsync(new Wire.Empty(), cancellationToken: cancellationToken);
+        var reply = await _operators.DescribeRegistryAsync(new Wire.Empty(), cancellationToken: cancellationToken);
 
         return [.. reply.Rows.Select(row => new AgentRecord(
             AgentName.Create(row.Name),
@@ -74,8 +66,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             IncludeArchived = includeArchived
         };
 
-        var reply = await _operators
-            .ListConversationsAsync(request, cancellationToken: cancellationToken);
+        var reply = await _operators.ListConversationsAsync(request, cancellationToken: cancellationToken);
 
         var conversations = reply.Conversations.Select(row => new ConversationSummary(
             row.ConversationId,
@@ -93,45 +84,36 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
-    public async Task<bool> ArchiveAsync(
-        string conversationId, CancellationToken cancellationToken = default)
+    public async Task<bool> ArchiveAsync(string conversationId, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.ArchiveAsync(
-            new Wire.ConversationRequest { ConversationId = conversationId },
-            cancellationToken: cancellationToken);
+            new Wire.ConversationRequest { ConversationId = conversationId }, cancellationToken: cancellationToken);
 
         return reply.Changed;
     }
 
     /// <inheritdoc/>
-    public async Task<bool> UnarchiveAsync(
-        string conversationId, CancellationToken cancellationToken = default)
+    public async Task<bool> UnarchiveAsync(string conversationId, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.UnarchiveAsync(
-            new Wire.ConversationRequest { ConversationId = conversationId },
-            cancellationToken: cancellationToken);
+            new Wire.ConversationRequest { ConversationId = conversationId }, cancellationToken: cancellationToken);
 
         return reply.Changed;
     }
 
     /// <inheritdoc/>
-    public async Task<DestroyOutcome> DestroyAsync(
-        string conversationId, CancellationToken cancellationToken = default)
+    public async Task<DestroyOutcome> DestroyAsync(string conversationId, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.DestroyAsync(
-            new Wire.ConversationRequest { ConversationId = conversationId },
-            cancellationToken: cancellationToken);
+            new Wire.ConversationRequest { ConversationId = conversationId }, cancellationToken: cancellationToken);
 
         return new DestroyOutcome(
-            reply.Verdict == Wire.DestroyVerdict.Gone
-                ? DestroyVerdict.Gone
-                : DestroyVerdict.NoSuchConversation,
+            reply.Verdict == Wire.DestroyVerdict.Gone ? DestroyVerdict.Gone : DestroyVerdict.NoSuchConversation,
             [.. reply.Destroyed.Select(d => new PurgeToll(d.Table, d.Rows))]);
     }
 
     /// <inheritdoc/>
-    public async Task<bool> StartAsync(
-        AgentName agent, string because, CancellationToken cancellationToken = default)
+    public async Task<bool> StartAsync(AgentName agent, string because, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.StartAsync(
             new Wire.StartRequest { Agent = agent.Value, Because = because ?? string.Empty },
@@ -141,12 +123,10 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
-    public async Task<ConversationExport> ExportAsync(
-        string conversationId, CancellationToken cancellationToken = default)
+    public async Task<ConversationExport> ExportAsync(string conversationId, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.ExportAsync(
-            new Wire.ExportRequest { ConversationId = conversationId },
-            cancellationToken: cancellationToken);
+            new Wire.ExportRequest { ConversationId = conversationId }, cancellationToken: cancellationToken);
 
         var destroyed = reply.Destroyed is { } gone
             ? new DestroyedConversation(
@@ -158,42 +138,45 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
 
         var messages = reply.Messages.Select(m => new Message(
             m.Id,
-            m.ExchangeId == 0 ? null : m.ExchangeId,
+            m.ExchangeId,
             Type(m.Type),
             AgentName.Create(m.From),
             AgentName.Create(m.To),
             m.ResponderModel,
             m.PayloadJson,
-            string.IsNullOrEmpty(m.ConversationId) ? null : m.ConversationId,
+            m.ConversationId,
             Read(m.CreatedUtc) ?? DateTimeOffset.MinValue,
             Read(m.DeliveredUtc)));
 
         var exchanges = reply.Exchanges.Select(e => new ExchangeSnapshot(
             e.ExchangeId,
-            State(e.State),
+            e.State == Wire.ExchangeState.Open ? ExchangeState.Open : ExchangeState.Closed,
             Read(e.OpenedUtc) ?? DateTimeOffset.MinValue,
-            Read(e.ClosedUtc)));
+            Read(e.ClosedUtc),
+            e.Outcome switch
+            {
+                Wire.ExchangeOutcome.Complete => ExchangeOutcome.Complete,
+                Wire.ExchangeOutcome.Blocked => ExchangeOutcome.Blocked,
+                Wire.ExchangeOutcome.Closed => ExchangeOutcome.Closed,
+                _ => null
+            }));
 
         return new ConversationExport([.. messages], [.. exchanges], destroyed);
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<WaitingEdge>> WaitingAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<WaitingEdge>> WaitingAsync(CancellationToken cancellationToken = default)
     {
-        var reply = await _operators
-            .DescribeWaitingAsync(new Wire.Empty(), cancellationToken: cancellationToken);
+        var reply = await _operators.DescribeWaitingAsync(new Wire.Empty(), cancellationToken: cancellationToken);
 
         return [.. reply.Edges.Select(e => new WaitingEdge(
             AgentName.Create(e.Waiter), AgentName.Create(e.WaitedOn), e.ExchangeId))];
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<SizeRefusal>> RefusalsAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SizeRefusal>> RefusalsAsync(CancellationToken cancellationToken = default)
     {
-        var reply = await _operators
-            .DescribeRefusalsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
+        var reply = await _operators.DescribeRefusalsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
 
         return [.. reply.Refusals.Select(r => new SizeRefusal(
             AgentName.Create(r.Agent),
@@ -206,44 +189,59 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
-    public async Task<ClarifyReport> ClarificationsAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<ClarifyReport> ClarificationsAsync(CancellationToken cancellationToken = default)
     {
-        var reply = await _operators
-            .DescribeClarificationsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
+        var reply = await _operators.DescribeClarificationsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
 
         return new ClarifyReport(
             [.. reply.Distribution.Select(b => new ClarifyDepthBucket(b.Depth, b.Exchanges))],
             reply.ExchangesAtCap,
             reply.LowestCapInForce,
             reply.HighestCapInForce,
-            reply.Answers,
-            reply.AnswersResolvingSubQuestionsDifferently);
+            reply.Results,
+            reply.ResultsWithMixedOutcomes);
     }
 
     /// <inheritdoc/>
-    public async Task<ReferralReport> ReferralsAsync(CancellationToken cancellationToken = default)
+    public async Task<ResultsReport> ResultsAsync(CancellationToken cancellationToken = default)
     {
-        var reply = await _operators
-            .DescribeReferralsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
+        var reply = await _operators.DescribeResultsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
 
-        return new ReferralReport(
-            [.. reply.Pairs.Select(p => new ReferralPair(
-                p.Asker, p.Answerer, p.Closed, p.OutOfScope))],
-            [.. reply.Targets.Select(t => new ReferralTarget(
-                t.Asker, t.Answerer, t.RedirectedTo, t.Referrals, t.LastUtc))]);
+        return new ResultsReport(
+            [.. reply.Outcomes
+                .Where(o => o.Outcome != Wire.Outcome.Unspecified)
+                .Select(o => new OutcomeCount(o.Agent, o.ResponderModel, Outcome(o.Outcome), o.Items))],
+            [.. reply.Blockers
+                .Where(b => b.Kind != Wire.BlockerKind.Unspecified)
+                .Select(b => new BlockerCount(b.Agent, Blocker(b.Kind), b.Items))],
+            [.. reply.Sources.Select(s => new SourceCount(s.Agent, s.Source, s.Items))],
+            [.. reply.Closures.Select(c => new ClosureCount(c.Agent, c.ByConsensus, c.ByPerson))]);
     }
 
     /// <inheritdoc/>
-    public async Task<NotifyVolumeReport> NotificationsAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<FlagReport> FlagsAsync(CancellationToken cancellationToken = default)
     {
-        var reply = await _operators
-            .DescribeNotificationsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
+        var reply = await _operators.DescribeFlagsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
 
-        return new NotifyVolumeReport(
-            [.. reply.Flows.Select(f => new NotifyFlow(
-                f.From, f.To, f.Sent, f.Characters, f.Largest, f.FirstUtc, f.LastUtc))]);
+        return new FlagReport(
+            [.. reply.Flags.Select(f => new Flag(
+                f.Kind switch
+                {
+                    Wire.FlagKind.NoProgress => FlagKind.NoProgress,
+                    Wire.FlagKind.Retired => FlagKind.Retired,
+                    Wire.FlagKind.NotVoted => FlagKind.NotVoted,
+                    _ => FlagKind.NotCollected
+                },
+                f.ExchangeId,
+                f.ConversationId,
+                AgentName.Create(f.WaitingOn),
+                AgentName.Create(f.Waiting),
+                Read(f.SinceUtc) ?? DateTimeOffset.MinValue))],
+            [.. reply.Cycles.Select(c => new RecordedCycle(
+                c.ExchangeId,
+                c.ConversationId,
+                [.. c.Path.Where(name => AgentName.TryCreate(name, out _)).Select(AgentName.Create)],
+                Read(c.RecordedUtc) ?? DateTimeOffset.MinValue))]);
     }
 
     /// <inheritdoc/>
@@ -269,55 +267,43 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 i.Id,
                 AgentName.Create(i.Agent),
                 i.Text,
-                Outcome(i.Outcome),
+                Instruction(i.Outcome),
                 string.IsNullOrEmpty(i.Reply) ? null : i.Reply,
                 DateTimeOffset.Parse(i.IssuedUtc, CultureInfo.InvariantCulture),
-                string.IsNullOrEmpty(i.SettledUtc)
-                    ? null
-                    : DateTimeOffset.Parse(i.SettledUtc, CultureInfo.InvariantCulture)))],
+                string.IsNullOrEmpty(i.SettledUtc) ? null : DateTimeOffset.Parse(i.SettledUtc, CultureInfo.InvariantCulture)))],
             string.IsNullOrEmpty(reply.NextPageToken) ? null : reply.NextPageToken);
     }
 
     /// <inheritdoc/>
-    public async Task<InstructionResult> InstructAsync(
-        AgentName agent, string text, CancellationToken cancellationToken = default)
+    public async Task<InstructionResult> InstructAsync(AgentName agent, string text, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.InstructAsync(
-            new Wire.InstructRequest { Agent = agent.Value, Text = text },
-            cancellationToken: cancellationToken);
+            new Wire.InstructRequest { Agent = agent.Value, Text = text }, cancellationToken: cancellationToken);
 
         return new InstructionResult(
-            Outcome(reply.Outcome),
+            Instruction(reply.Outcome),
             string.IsNullOrEmpty(reply.Reply) ? null : reply.Reply,
             reply.InstructionId);
     }
 
     /// <inheritdoc/>
-    public async Task<bool> RetireAsync(
-        AgentName agent, CancellationToken cancellationToken = default)
+    public async Task<bool> RetireAsync(AgentName agent, CancellationToken cancellationToken = default)
     {
-        var reply = await _operators.RetireAsync(
-            new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
-
+        var reply = await _operators.RetireAsync(new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
         return reply.Changed;
     }
 
     /// <inheritdoc/>
-    public async Task<bool> ReinstateAsync(
-        AgentName agent, CancellationToken cancellationToken = default)
+    public async Task<bool> ReinstateAsync(AgentName agent, CancellationToken cancellationToken = default)
     {
-        var reply = await _operators.ReinstateAsync(
-            new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
-
+        var reply = await _operators.ReinstateAsync(new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
         return reply.Changed;
     }
 
     /// <inheritdoc/>
-    public async Task<PurgeOutcome> PurgeAsync(
-        AgentName agent, CancellationToken cancellationToken = default)
+    public async Task<PurgeOutcome> PurgeAsync(AgentName agent, CancellationToken cancellationToken = default)
     {
-        var reply = await _operators.PurgeAsync(
-            new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
+        var reply = await _operators.PurgeAsync(new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
 
         return new PurgeOutcome(
             reply.Verdict == Wire.PurgeVerdict.Gone ? PurgeVerdict.Gone : PurgeVerdict.NotRegistered,
@@ -326,10 +312,10 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
 
     /// <inheritdoc/>
     public async Task<bool> ForceConcludeAsync(
-        string conversationId, CancellationToken cancellationToken = default)
+        string conversationId, string? reason = null, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.ForceConcludeAsync(
-            new Wire.ForceConcludeRequest { ConversationId = conversationId },
+            new Wire.ForceConcludeRequest { ConversationId = conversationId, Reason = reason ?? string.Empty },
             cancellationToken: cancellationToken);
 
         return reply.Changed;
@@ -338,28 +324,141 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     /// <inheritdoc/>
     public async Task<PruneResult> PruneAsync(CancellationToken cancellationToken = default)
     {
-        var reply = await _operators
-            .PruneAsync(new Wire.Empty(), cancellationToken: cancellationToken);
+        var reply = await _operators.PruneAsync(new Wire.Empty(), cancellationToken: cancellationToken);
 
-        return new PruneResult(
-            reply.Removed, reply.HeldByFloor, reply.Contended, reply.Capped,
-            reply.InstructionsRemoved);
+        return new PruneResult(reply.Removed, reply.HeldByFloor, reply.Contended, reply.Capped, reply.InstructionsRemoved);
     }
 
-    /// <summary>Renders an instant for the wire, where empty means absent.</summary>
-    /// <param name="instant">The instant, or null.</param>
-    /// <returns>The rendered form, or an empty string.</returns>
+    /// <inheritdoc/>
+    public async Task<SharedFileListing> ListSharedFilesAsync(
+        string? conversationId = null,
+        int pageSize = 0,
+        string? pageToken = null,
+        CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.ListSharedFilesAsync(
+            new Wire.ListFilesRequest
+            {
+                ConversationId = conversationId ?? string.Empty,
+                PageSize = pageSize,
+                PageToken = pageToken ?? string.Empty
+            },
+            cancellationToken: cancellationToken);
+
+        return new SharedFileListing(
+            new SharedFilePage(
+                [.. reply.Files.Select(SharedFileOf)],
+                [.. reply.Totals.Select(t => new ConversationFilesTotal(t.ConversationId, t.Files, t.Bytes))],
+                reply.TotalFiles,
+                reply.TotalBytes,
+                string.IsNullOrEmpty(reply.NextPageToken) ? null : reply.NextPageToken),
+            [.. reply.Placements.Select(p => new FilePlacementCount(
+                p.Agent, p.Placements, p.Bytes, Read(p.LastUtc) ?? DateTimeOffset.MinValue))],
+            Math.Max(0, reply.FilesNotListed));
+    }
+
+    /// <inheritdoc/>
+    public async Task<RemoveFilesOutcome> RemoveFilesAsync(
+        IReadOnlyList<FileRef> files, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(files);
+
+        var request = new Wire.RemoveFilesRequest();
+        request.Files.AddRange(files.Select(f => new Wire.FileRef { ConversationId = f.ConversationId ?? string.Empty, Name = f.Name }));
+
+        var reply = await _operators.RemoveFilesAsync(request, cancellationToken: cancellationToken);
+
+        return new RemoveFilesOutcome(
+            [.. reply.Removed.Select(r => new FileRef(Blank(r.ConversationId), r.Name))],
+            [.. reply.Refused.Select(RefusalOf)],
+            reply.BytesFreed,
+            RejectionOf(reply.Rejection));
+    }
+
+    /// <inheritdoc/>
+    public async Task<PruneFilesOutcome> PruneFilesAsync(CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.PruneFilesAsync(new Wire.Empty(), cancellationToken: cancellationToken);
+
+        return new PruneFilesOutcome(reply.FilesRemoved, reply.BytesFreed);
+    }
+
+    /// <inheritdoc/>
+    public async Task<FileLocationAnswer> DescribeFileLocationAsync(
+        string? conversationId = null,
+        string? name = null,
+        CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.DescribeFileLocationAsync(
+            new Wire.FileLocationRequest { ConversationId = conversationId ?? string.Empty, Name = name ?? string.Empty },
+            cancellationToken: cancellationToken);
+
+        return reply.Ok
+            ? new FileLocationAnswer(new FileLocation(reply.Machine, reply.Path), null)
+            : new FileLocationAnswer(null, RefusalOf(reply.Refusal ?? new Wire.FileRefusal()));
+    }
+
+    /// <summary>Reads a shared file from the wire.</summary>
+    /// <param name="view">The wire view.</param>
+    /// <returns>The file.</returns>
+    /// <exception cref="InvalidOperationException">The broker sent a name or hash no file can have.</exception>
+    /// <remarks>
+    /// Refused rather than shown, because a name the rules refuse is text this surface did not validate, reaching a
+    /// screen through the one field meant to carry a checked name.
+    /// </remarks>
+    private static SharedFile SharedFileOf(Wire.SharedFileView view) =>
+        new(
+            view.ConversationId,
+            view.Folder,
+            SharedFileName.TryCreate(view.Name, out var name)
+                ? name
+                : throw new InvalidOperationException("The broker listed a file under a name no file can have."),
+            view.SizeBytes,
+            ContentHash.TryParse(view.Sha256, out var hash)
+                ? hash
+                : throw new InvalidOperationException("The broker listed a file with a hash that is not one."),
+            string.IsNullOrEmpty(view.PlacedBy) ? null : AgentName.Create(view.PlacedBy),
+            Read(view.PlacedUtc) ?? DateTimeOffset.MinValue,
+            Read(view.ChangedUtc) ?? DateTimeOffset.MinValue);
+
+    private static FileRefusal RefusalOf(Wire.FileRefusal refusal) =>
+        new(
+            new FileRef(Blank(refusal.File?.ConversationId), refusal.File?.Name ?? string.Empty),
+            RejectionOf(refusal.Rejection),
+            Blank(refusal.PlacedBy),
+            [.. refusal.Conversations],
+            refusal.ConversationsMore,
+            Blank(refusal.Detail));
+
+    private static FileRejection RejectionOf(Wire.FileRejection rejection) => rejection switch
+    {
+        Wire.FileRejection.None => FileRejection.None,
+        Wire.FileRejection.BadName => FileRejection.BadName,
+        Wire.FileRejection.NamePlacedByAnother => FileRejection.NamePlacedByAnother,
+        Wire.FileRejection.NoSuchFile => FileRejection.NoSuchFile,
+        Wire.FileRejection.AmbiguousName => FileRejection.AmbiguousName,
+        Wire.FileRejection.ConversationNotAssignable => FileRejection.ConversationNotAssignable,
+        Wire.FileRejection.ConversationClosed => FileRejection.ConversationClosed,
+        Wire.FileRejection.Changed => FileRejection.Changed,
+        Wire.FileRejection.Incomplete => FileRejection.Incomplete,
+        Wire.FileRejection.NoSpace => FileRejection.NoSpace,
+        Wire.FileRejection.ExtensionNotAllowed => FileRejection.ExtensionNotAllowed,
+        Wire.FileRejection.NotFetched => FileRejection.NotFetched,
+        Wire.FileRejection.TooManyNames => FileRejection.TooManyNames,
+        Wire.FileRejection.SafeNameTaken => FileRejection.SafeNameTaken,
+        _ => throw new InvalidOperationException(
+            $"The broker refused a file operation for a reason this build does not know ({rejection}). It speaks a different protocol.")
+    };
+
+    private static string? Blank(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
     private static string Render(DateTimeOffset? instant) =>
         instant?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) ?? string.Empty;
 
-    /// <summary>Reads an instant from the wire, where empty means absent.</summary>
-    /// <param name="value">The rendered instant, or empty.</param>
-    /// <returns>The instant, or null.</returns>
     private static DateTimeOffset? Read(string value) =>
         string.IsNullOrEmpty(value)
             ? null
-            : DateTimeOffset.TryParse(
-                value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed)
+            : DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed)
                 ? parsed
                 : null;
 
@@ -371,11 +470,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         _ => AgentTier.Pull
     };
 
-    private static AgentStatus Status(Wire.AgentStatus status) => status switch
-    {
-        Wire.AgentStatus.Retired => AgentStatus.Retired,
-        _ => AgentStatus.Active
-    };
+    private static AgentStatus Status(Wire.AgentStatus status) =>
+        status == Wire.AgentStatus.Retired ? AgentStatus.Retired : AgentStatus.Active;
 
     private static AgentPresence Presence(Wire.AgentPresence presence) => presence switch
     {
@@ -384,23 +480,40 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         _ => AgentPresence.Stranded
     };
 
-    private static MessageType Type(Wire.MessageType type) => type switch
+    /// <summary>Reads a message type from the wire.</summary>
+    /// <param name="type">The wire value.</param>
+    /// <returns>The type.</returns>
+    /// <exception cref="InvalidOperationException">The broker sent a type this build does not know.</exception>
+    /// <remarks>
+    /// Refused rather than defaulted: a surface that rendered an unknown message as some known kind would
+    /// be putting words into the transcript that nobody wrote.
+    /// </remarks>
+    internal static MessageType Type(Wire.MessageType type) => type switch
     {
-        Wire.MessageType.Question => MessageType.Question,
+        Wire.MessageType.Request => MessageType.Request,
         Wire.MessageType.Clarify => MessageType.Clarify,
-        Wire.MessageType.Answer => MessageType.Answer,
-        Wire.MessageType.Notify => MessageType.Notify,
-        _ => MessageType.Ghost
+        Wire.MessageType.Result => MessageType.Result,
+        _ => throw new InvalidOperationException(
+            $"The broker sent a message type this build does not know ({type}). It speaks a different protocol.")
     };
 
-    private static ExchangeState State(Wire.ExchangeState state) => state switch
+    private static Outcome Outcome(Wire.Outcome outcome) => outcome switch
     {
-        Wire.ExchangeState.Open => ExchangeState.Open,
-        Wire.ExchangeState.Orphaned => ExchangeState.Orphaned,
-        _ => ExchangeState.Closed
+        Wire.Outcome.Done => Core.Outcome.Done,
+        Wire.Outcome.Answered => Core.Outcome.Answered,
+        Wire.Outcome.Acknowledged => Core.Outcome.Acknowledged,
+        Wire.Outcome.Blocked => Core.Outcome.Blocked,
+        _ => Core.Outcome.Closed
     };
 
-    private static InstructionOutcome Outcome(Wire.InstructionOutcome outcome) => outcome switch
+    private static BlockerKind Blocker(Wire.BlockerKind kind) => kind switch
+    {
+        Wire.BlockerKind.Conflict => BlockerKind.Conflict,
+        Wire.BlockerKind.Permission => BlockerKind.Permission,
+        _ => BlockerKind.MissingInformation
+    };
+
+    private static InstructionOutcome Instruction(Wire.InstructionOutcome outcome) => outcome switch
     {
         Wire.InstructionOutcome.Taken => InstructionOutcome.Taken,
         Wire.InstructionOutcome.Declined => InstructionOutcome.Declined,

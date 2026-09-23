@@ -11,7 +11,7 @@
 
     A project of its own for the reason Parley.Configuration is one, and in nearly the same words:
     two programs do this and cannot otherwise share one implementation. `parley` does it from a
-    shell and `parley-top` does it from a screen, and the terminal does not reimplement it: it
+    shell and `parley-terminal` does it from a screen, and the terminal does not reimplement it: it
     runs the same commands in process and prints what they said, so a machine configured from a
     screen is configured exactly as one configured from a shell.
 

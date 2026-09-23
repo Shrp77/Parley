@@ -290,6 +290,86 @@ public sealed class ProjectDestroyTests : IDisposable
         Assert.Empty(left);
     }
 
+    [Fact]
+    public async Task A_store_a_broker_still_holds_is_not_touched_at_all()
+    {
+        // The lock is deleted first because it is the check: a broker this command did not stop
+        // -- one a terminal restored at logon -- still holds it, and everything after it must stay.
+        // Windows-only for the reason the test above gives: elsewhere a held file can be unlinked,
+        // and destroy already waits for the endpoint to stop answering before it gets here.
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Skip("a held file can be deleted on this platform, so there is no refusal to report");
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+
+        var project = Project("held-lock", null);
+
+        ProjectManifest.Write(Manifest, [project]);
+        await File.WriteAllTextAsync(project.Store, string.Empty, ct);
+        await File.WriteAllTextAsync(project.Store + "-wal", string.Empty, ct);
+
+        // Held the way a serving broker holds it.
+        using var broker = new FileStream(
+            project.Store + StoreFiles.Lock, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+
+        var (code, _, error) = await RemoveAsync("held-lock", destroy: true);
+
+        Assert.Equal(69, code);
+        Assert.Contains("a broker is still serving", error, StringComparison.Ordinal);
+        Assert.Contains("Nothing was deleted", error, StringComparison.Ordinal);
+        Assert.True(File.Exists(project.Store), "the store was deleted from under a broker holding it");
+        Assert.True(File.Exists(project.Store + "-wal"), "the store's journal was deleted from under a broker holding it");
+    }
+
+    [Fact]
+    public async Task Destroying_removes_the_lock_and_the_owner_record()
+    {
+        // Left behind, they would be the one trace of a destroyed project in its directory -- and
+        // an owner record naming a process that has since exited is harmless but untrue.
+        var ct = TestContext.Current.CancellationToken;
+
+        var project = Project("with-lock", null);
+
+        ProjectManifest.Write(Manifest, [project]);
+        await File.WriteAllTextAsync(project.Store, string.Empty, ct);
+        await File.WriteAllTextAsync(project.Store + StoreFiles.Lock, string.Empty, ct);
+        await File.WriteAllTextAsync(project.Store + StoreFiles.Owner, "pid=1", ct);
+
+        var (code, _, _) = await RemoveAsync("with-lock", destroy: true);
+
+        Assert.Equal(0, code);
+        Assert.False(File.Exists(project.Store + StoreFiles.Lock));
+        Assert.False(File.Exists(project.Store + StoreFiles.Owner));
+        Assert.False(File.Exists(project.Store));
+    }
+
+    [Fact]
+    public async Task Destroying_removes_the_file_location_and_its_staging_directory()
+    {
+        // The files agents placed belong to the store (SPEC.md §9.5). A project destroyed while they stayed
+        // would leave every file anybody placed on disk under a name nothing refers to any more.
+        var ct = TestContext.Current.CancellationToken;
+
+        var project = Project("with-files", null);
+
+        ProjectManifest.Write(Manifest, [project]);
+        await File.WriteAllTextAsync(project.Store, string.Empty, ct);
+
+        var folder = Path.Combine(project.Store + StoreFiles.Files, "pricing");
+        Directory.CreateDirectory(folder);
+        await File.WriteAllTextAsync(Path.Combine(folder, "price-snapshot.md"), "net of tax", ct);
+        Directory.CreateDirectory(project.Store + StoreFiles.FilesIncoming);
+
+        var (code, output, _) = await RemoveAsync("with-files", destroy: true);
+
+        Assert.Equal(0, code);
+        Assert.False(Directory.Exists(project.Store + StoreFiles.Files));
+        Assert.False(Directory.Exists(project.Store + StoreFiles.FilesIncoming));
+        Assert.Contains(StoreFiles.Files, output, StringComparison.Ordinal);
+    }
+
     private async Task<(int Code, string Out, string Error)> RemoveAsync(string name, bool destroy)
     {
         var output = new StringWriter();

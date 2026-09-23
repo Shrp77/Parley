@@ -11,7 +11,7 @@ namespace Parley.Cli.Tests;
 /// <para>
 /// <b>Every case here is a different answer to "does a live agent's vocabulary change".</b> A client
 /// namespaces an MCP server's tools by its key, so an entry moved from <c>parley</c> to
-/// <c>parley-alpha</c> turns <c>mcp__parley__parley_ask</c> into <c>mcp__parley-alpha__parley_ask</c>
+/// <c>parley-alpha</c> turns <c>mcp__parley__parley_request</c> into <c>mcp__parley-alpha__parley_request</c>
 /// in a repository nobody asked to change. The precedence exists so that never happens by accident,
 /// and each case is named for the situation rather than numbered, because the numbering is an
 /// implementation detail and the situation is what somebody debugging is looking at.

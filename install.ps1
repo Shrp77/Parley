@@ -19,29 +19,12 @@
     successful install from a silent no-op.
 
     It then registers the broker to start when you log in, starts it, and checks that it answers.
+    The broker serves every project this machine names. A machine that names none yet is served
+    too, waiting for the first: this never asks where a store goes, because a project says that,
+    and a project is named in `parley terminal` or with `parley project add`.
     Installing the tools is not the same as having Parley working: the broker is a separate
     process that owns the store, and until one is running every agent fails to attach with "No
     broker is listening" -- a message that arrives in an editor, days later, rather than here.
-
-.PARAMETER Store
-    Named Store rather than Db because `-Db` cannot exist here: CmdletBinding adds the common
-    parameters, `-Debug` carries `db` as an alias, and PowerShell rejects the whole script at
-    parse time for the conflict. It is also the word the broker itself uses.
-
-    The SQLite store the broker owns. One file for the whole machine, outside every repository,
-    because every agent on it reaches that file through the one broker process.
-
-    Asked for if it is not given, defaulting to a .parley folder in your home directory. It does
-    not need to exist: the broker creates it on first run.
-
-.PARAMETER NodeConfig
-    The catalogue of agents this machine may start on demand, passed to the autostart entry as
-    --node-config.
-
-    Read back from the entry being replaced when it is not given, because an entry registered
-    without one starts the broker alone -- and a machine reinstalling over a working deployment
-    would lose the half that starts its agents, with the loss arriving days later as a question
-    that waits out its window and is ghosted.
 
 .PARAMETER Uninstall
     Removes every tool in the table above and the autostart entry, and stops. -Surfaces is not
@@ -65,7 +48,7 @@
 
 .PARAMETER Only
     Install exactly these tools, by command name, and leave every other one alone. This is what
-    SC-001 is about: -Only parley-top replaces the terminal and does not stop the broker, because
+    SC-001 is about: -Only parley-terminal replaces the terminal and does not stop the broker, because
     the broker's binary is not among the files being unlinked.
 
     That matters more than it sounds. SPEC.md section 12 says three things end a resident agent,
@@ -96,9 +79,6 @@
     .\install.ps1
 
 .EXAMPLE
-    .\install.ps1 -Store D:\parley\parley.db
-
-.EXAMPLE
     .\install.ps1 -Force
 
 .EXAMPLE
@@ -107,8 +87,6 @@
 
 [CmdletBinding()]
 param(
-    [string] $Store,
-    [string] $NodeConfig,
     [switch] $Uninstall,
     [switch] $Force,
     [string] $Surfaces,
@@ -129,9 +107,14 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $tools = @(
     @{ Package = 'Parley.Cli'; Project = 'src\Parley.Cli\Parley.Cli.csproj'; Command = 'parley';     Surface = '' }
     @{ Package = 'Parley.Mcp'; Project = 'src\Parley.Mcp\Parley.Mcp.csproj'; Command = 'parley-mcp'; Surface = '' }
-    @{ Package = 'Parley.Top'; Project = 'src\Parley.Top\Parley.Top.csproj'; Command = 'parley-top'; Surface = 'terminal' }
+    @{ Package = 'Parley.Terminal'; Project = 'src\Parley.Terminal\Parley.Terminal.csproj'; Command = 'parley-terminal'; Surface = 'terminal' }
     @{ Package = 'Parley.WebUi'; Project = 'src\Parley.WebUi\Parley.WebUi.csproj'; Command = 'parley-web-ui'; Surface = 'web-ui' }
 )
+
+# The terminal's tool was `parley-top`, in a package called Parley.Top, until 0.27.0 renamed it. A machine that
+# installed it before still has it, and nothing would ever remove it: the table above no longer names it. So it is
+# removed wherever the terminal is installed and by -Uninstall, and a running one holds files like any other tool.
+$retiredTerminal = @{ Package = 'Parley.Top'; Command = 'parley-top' }
 
 # Which surfaces this machine wants, resolved once. Windows takes both; anything else takes the
 # web UI alone, because a terminal surface on a machine nobody has a session on is a package
@@ -185,20 +168,6 @@ function Wanted([hashtable] $tool) {
 # rather than asked for, because the one command that could report it is the one this script
 # may be in the middle of deleting.
 $task = 'parley-broker'
-
-# What the entry being replaced was registered with, read before anything touches it. The only
-# reason this is needed is the catalogue: `autostart install` is given the store on the command
-# line and would otherwise drop this machine's agents from the arrangement, which is a loss
-# nobody sees until a question goes unanswered days later.
-$existingArguments = ''
-
-try {
-    $existing = Get-ScheduledTask -TaskName $task -ErrorAction Stop
-    $existingArguments = ($existing.Actions | ForEach-Object { $_.Arguments }) -join ' '
-}
-catch {
-    # No entry yet. An ordinary first install, and nothing to carry over.
-}
 
 # The command the broker runs as, so the pre-flight below can leave it out of the adapters and
 # recognise it afterwards.
@@ -301,46 +270,6 @@ function Remove-Holders([object[]] $running) {
     return @(Get-Process -Name $names -ErrorAction SilentlyContinue)
 }
 
-<#
-.SYNOPSIS
-    Settles where the broker's store goes.
-.DESCRIPTION
-    Given on the command line, asked for otherwise, and defaulted when there is nobody to ask.
-
-    The default is under the home directory rather than beside this checkout, and that is the
-    whole reason this is a question rather than a constant. The store outlives any one clone --
-    it holds every exchange the deployment has ever had -- so putting it inside a repository
-    means `git clean` destroys the history of twenty agents, and putting it inside *this* one
-    means Parley's own working copy is load-bearing for machines that do not have it.
-#>
-function Resolve-Store([string] $given) {
-    $default = Join-Path $env:USERPROFILE '.parley\parley.db'
-
-    if ($given) { return [IO.Path]::GetFullPath($given) }
-
-    # Prompting needs somebody to answer. Redirected input is a script or a CI job running this,
-    # and Read-Host there returns empty at best and blocks at worst, so the default is taken and
-    # said out loud instead -- a silent choice of where a database lives is worse than a loud one.
-    if ([Console]::IsInputRedirected) {
-        Write-Note "nothing to prompt (input is redirected); using $default"
-        return $default
-    }
-
-    Write-Host ''
-    Write-Host '  The broker owns one SQLite file, and every agent on this machine reaches it'
-    Write-Host '  through that one process. It belongs outside every repository, because it is'
-    Write-Host '  shared by all of them and outlives any one clone.'
-    Write-Host ''
-
-    $answer = Read-Host "  Store [$default]"
-
-    if ([string]::IsNullOrWhiteSpace($answer)) { return $default }
-
-    # Expanded here rather than passed through. A relative path would be resolved against
-    # whatever directory the supervisor happens to start in at logon, which is not this one.
-    return [IO.Path]::GetFullPath($answer.Trim())
-}
-
 # ---------------------------------------------------------------- uninstall --
 
 if ($Uninstall) {
@@ -399,6 +328,11 @@ if ($Uninstall) {
         # Failure is not fatal here: stopping at the first one would leave the second installed,
         # and somebody running this to clean up wants both attempted.
         & dotnet tool uninstall -g $tool.Package 2>&1 | Out-Null
+    }
+
+    if ((& dotnet tool list -g 2>$null) -match '^parley\.top\s') {
+        Write-Step "Removing $($retiredTerminal.Package), the terminal's old name"
+        & dotnet tool uninstall -g $retiredTerminal.Package 2>&1 | Out-Null
     }
 
     # The same check the install does, for the same reason. Every step above can report success
@@ -509,6 +443,8 @@ $adapters = @($tools |
     Where-Object { $_.Command -ne $broker -and (Wanted $_) } |
     ForEach-Object { $_.Command })
 
+if (Wanted ($tools | Where-Object { $_.Command -eq 'parley-terminal' })) { $adapters += $retiredTerminal.Command }
+
 $holders = @(Get-Process -Name $adapters -ErrorAction SilentlyContinue)
 
 if ($holders.Count -gt 0) {
@@ -545,7 +481,7 @@ $(($survived | ForEach-Object { "      $($_.ProcessName), pid $($_.Id)" }) -join
             $kinds += 'an adapter belongs to an editor session with Parley configured; close the session'
         }
 
-        if ($holders | Where-Object { $_.ProcessName -eq 'parley-top' }) {
+        if ($holders | Where-Object { $_.ProcessName -in 'parley-terminal', $retiredTerminal.Command }) {
             $kinds += 'a terminal is a window somebody has open; Ctrl+Q leaves it'
         }
 
@@ -590,13 +526,35 @@ if ($replacingBroker) {
     # them is not this script's job.
     $parleyOnPath = Get-Command parley -ErrorAction SilentlyContinue
 
+    # **Asked of each project, because `parley open` refuses to choose between several.** On a machine naming more than
+    # one, a bare `parley open` could never answer, so this said it could not ask on exactly the machines with the most in
+    # flight -- found by reinstalling one. Names come from `parley project list`, whose first column is the name and whose
+    # second is the endpoint; a machine naming none is asked once, of the broker it would default to.
+    $inFlight = @()
+    $unasked = @()
+    $asked = $false
+
     if ($parleyOnPath) {
-        $inFlight = & parley open 2>$null
-        $asked = $LASTEXITCODE -eq 0
-    }
-    else {
-        $inFlight = $null
-        $asked = $false
+        $names = @(& parley project list 2>$null | ForEach-Object { if ("$_" -match '^([a-z][a-z0-9-]*)\s+\S+://') { $Matches[1] } })
+
+        if ($names.Count -eq 0) {
+            $inFlight = @(& parley open 2>$null)
+            $asked = $LASTEXITCODE -eq 0
+        }
+        else {
+            $asked = $true
+
+            foreach ($name in $names) {
+                $said = @(& parley --project $name open 2>$null)
+
+                if ($LASTEXITCODE -ne 0) {
+                    $unasked += $name
+                    continue
+                }
+
+                $inFlight += @($said | Where-Object { $_ -is [string] -and $_.Trim() } | ForEach-Object { "${name}: $_" })
+            }
+        }
     }
 
     if (-not $asked) {
@@ -604,7 +562,11 @@ if ($replacingBroker) {
         # so: the two readings look identical from here and lead somewhere completely different.
         Write-Warning 'Could not ask the broker what is open, so this cannot say what stopping it will interrupt. That is not the same as nothing being in flight.'
     }
-    elseif ($inFlight) {
+    else {
+        if ($unasked.Count -gt 0) {
+            Write-Warning "Could not ask $($unasked -join ', ') what is open, so this cannot say what stopping the broker will interrupt there. That is not the same as nothing being in flight."
+        }
+
         $lines = @($inFlight | Where-Object { $_ -is [string] -and $_.Trim() })
 
         if ($lines.Count -gt 0) {
@@ -629,7 +591,11 @@ else {
 # started by hand, which Stop-Broker deliberately leaves alone -- and which holds parley.exe just
 # as firmly. Caught here rather than by the uninstall, which would report a denied path and leave
 # the tools half replaced.
-$strays = @(Get-Process -Name ($tools | Where-Object { Wanted $_ } | ForEach-Object { $_.Command }) -ErrorAction SilentlyContinue)
+$replacingCommands = @($tools | Where-Object { Wanted $_ } | ForEach-Object { $_.Command })
+
+if ($replacingCommands -contains 'parley-terminal') { $replacingCommands += $retiredTerminal.Command }
+
+$strays = @(Get-Process -Name $replacingCommands -ErrorAction SilentlyContinue)
 
 if ($strays.Count -gt 0) {
     $listed = ($strays | ForEach-Object { "      $($_.ProcessName), pid $($_.Id)" }) -join "`n"
@@ -686,6 +652,11 @@ foreach ($tool in $tools) {
     # and the version has not moved on every rebuild that fixed something without shipping new
     # behaviour. Removing first makes the install unconditional.
     & dotnet tool uninstall -g $tool.Package 2>&1 | Out-Null
+
+    if ($tool.Command -eq 'parley-terminal' -and ((& dotnet tool list -g 2>$null) -match '^parley\.top\s')) {
+        & dotnet tool uninstall -g $retiredTerminal.Package 2>&1 | Out-Null
+        $outcomes += @{ Command = $retiredTerminal.Command; Said = 'removed: the terminal is parley-terminal now' }
+    }
 
     $said = & dotnet tool install -g --add-source $source $tool.Package --version $built 2>&1
 
@@ -745,9 +716,13 @@ foreach ($tool in $tools) {
     if (-not (Wanted $tool)) { continue }
 
     $binary = Join-Path $shims ($tool.Command + '.exe')
-    $says = & $binary --version
 
-    if ($says -notmatch [regex]::Escape($built)) {
+    # Joined into one string, and a non-zero exit is a failure on its own. A tool that printed no version used to
+    # leave an empty array here, `-notmatch` over an empty array is empty, and empty is false -- so the check passed
+    # on a tool that had said nothing. parley-mcp did exactly that until it answered --version itself.
+    $says = (& $binary --version | Out-String).Trim()
+
+    if ($LASTEXITCODE -ne 0 -or $says -notmatch [regex]::Escape($built)) {
         Write-Error "Installed $built but $($tool.Command) reports '$says'. Something older is still there; run this with -Uninstall and try again."
     }
 
@@ -781,35 +756,25 @@ if (-not $replacingBroker) {
     exit 0
 }
 
-# A machine that names projects gets an entry that serves them all, and is not asked for a store
-# at all: every project's store and port are in the manifest, and SPEC.md 4.1 says one process
-# may host every one of them. Asked of the tool rather than by looking for the file, because
-# where the manifest lives is the tool's to know. An entry already serving the manifest counts
-# too, so a reinstall does not quietly narrow it back to one store.
+# **Every machine's entry serves the manifest**: every project this machine names, each on its own store and port, and
+# a project named later started within seconds. A machine that names none yet gets the same entry, waiting for the
+# first -- so this never asks where a store goes. That is a project's to say, and a project is named in `parley terminal`
+# or with `parley project add`, where everything else it needs is said at the same time.
+#
+# This used to ask for a store when nothing was named and register one deployment by explicit paths, and to register
+# that same narrow entry over a working manifest when it was given -Store: a reinstall that stopped serving every
+# project but one. Both went with the parameter.
+$listed = & $parley project list 2>$null
+$listedExit = $LASTEXITCODE
 $manifest = $null
 
-if (-not $Store) {
-    $listed = & $parley project list 2>$null
+if ($listedExit -eq 0) {
+    $line = $listed | Where-Object { $_ -match '^manifest:\s+(.+)$' } | Select-Object -Last 1
 
-    if ($LASTEXITCODE -eq 0 -and ($listed -join "`n") -notmatch 'No projects configured') {
-        $line = $listed | Where-Object { $_ -match '^manifest:\s+(.+)$' } | Select-Object -Last 1
-
-        if ($line -match '^manifest:\s+(.+)$') { $manifest = $Matches[1].Trim() }
-    }
-    elseif ($existingArguments -match "--config\s+`"?([^`"]+?)`"?(\s|$)") {
-        $manifest = $Matches[1]
-    }
+    if ($line -match '^manifest:\s+(.+)$') { $manifest = $Matches[1].Trim() }
 }
 
-$store = if ($manifest) { $null } else { Resolve-Store $Store }
-
-# Asked before registering anything, and only because the check at the end cannot tell one
-# broker from another. Stop-Broker has already stopped the one an autostart entry started, so
-# anything answering now was started by hand -- and it holds the port, which means the entry
-# about to be registered will not bind until that process goes. The final check would pass
-# against it and report a store that nothing is actually serving.
-& $parley registry 2>&1 | Out-Null
-$foreign = $LASTEXITCODE -eq 0
+$named = $listedExit -eq 0 -and ($listed -join "`n") -notmatch 'No projects configured'
 
 Write-Step 'Registering the broker to start at logon'
 
@@ -818,68 +783,48 @@ Write-Step 'Registering the broker to start at logon'
 # refuses the same registration from the same shell.
 if ($manifest) {
     Write-Host "  serving every project in $manifest"
-
-    if ($NodeConfig) {
-        Write-Note '-NodeConfig is not used by an entry that serves the manifest: each project names its own catalogue'
-    }
-
-    & $parley autostart install
-}
-else {
-    # Carried over rather than dropped. `autostart install` registers a broker-alone entry when
-    # it is given no catalogue, and a machine reinstalling over a working deployment would
-    # silently lose the half that starts its agents -- the loss arriving days later, on a machine
-    # nobody is signed into, as a question that waits out its window and is ghosted. The command
-    # says so loudly, but the operator ran this script and is reading its output, not that one.
-    #
-    # Read back from the entry being replaced when it was not given, because somebody
-    # reinstalling has not asked to reconfigure anything.
-    $catalogue = $NodeConfig
-
-    if (-not $catalogue -and $existingArguments -match "--node-config\s+`"?([^`"]+?)`"?(\s|$)") {
-        $catalogue = $Matches[1]
-        Write-Host "  keeping this machine's agent catalogue: $catalogue"
-    }
-
-    if ($catalogue) {
-        & $parley autostart install --db $store --node-config $catalogue
-    }
-    else {
-        & $parley autostart install --db $store
-    }
 }
 
-if ($LASTEXITCODE -ne 0) {
-    $byHand = if ($manifest) { 'parley serve' } else { "parley serve --db $store" }
-    Write-Error "Could not set the broker to start automatically. The tools are installed, so running '$byHand' by hand will say why."
+# What the command says is shown as it is and read for two things: where the broker logs, and where the web UI it
+# starts listens. Read rather than assumed, because both are the command's to decide.
+$registered = @(& $parley autostart install)
+$registeredExit = $LASTEXITCODE
+
+$registered | ForEach-Object { Write-Host $_ }
+
+if ($registeredExit -ne 0) {
+    Write-Error "Could not set the broker to start automatically. The tools are installed, so running 'parley serve' by hand will say why."
 }
+
+$log = $registered | Where-Object { $_ -match '^\s*logs:\s+(.+)$' } | ForEach-Object { $Matches[1].Trim() } | Select-Object -First 1
+$webUi = $registered | Where-Object { $_ -match '--web-ui\s+"?([^\s"]+)' } | ForEach-Object { $Matches[1] } | Select-Object -First 1
 
 # ----------------------------------------------------------------- prove ----
 
 Write-Step 'Checking that it answers'
 
-# Asked of the broker, not of the supervisor. "The task is registered" and "an agent can attach"
-# are different claims, and the second is the one this script is making -- so the check is a
-# client. With one store, `parley registry` connects over the transport and exits 69 when
-# nothing is listening; with a manifest, `parley project list` asks every project's broker and
-# says which are reachable, and the claim is that all of them are.
-$log = if ($manifest) { Join-Path (Split-Path -Parent $manifest) 'parley-broker.log' } else { Join-Path (Split-Path -Parent $store) 'parley-broker.log' }
+# Asked of the broker, not of the supervisor. "The task is registered" and "an agent can attach" are different claims.
+# With projects named, `parley project list` asks every project's broker and says which are reachable, and the claim
+# is that all of them are. With none named there is no broker to ask yet -- the entry is waiting -- so what is checked
+# is that the process it started is running, and the person is told how to name the first project.
 $deadline = (Get-Date).AddSeconds(20)
 $answering = $false
 
 do {
-    if ($manifest) {
-        $listed = (& $parley project list 2>$null) -join "`n"
+    $listed = (& $parley project list 2>$null) -join "`n"
 
-        if ($LASTEXITCODE -eq 0 -and $listed -match '(?m)\sreachable$' -and $listed -notmatch 'not reachable') {
+    if ($LASTEXITCODE -eq 0) {
+        if ($listed -match 'No projects configured') {
+            if (Get-Process -Name $broker -ErrorAction SilentlyContinue) {
+                $answering = $true
+                break
+            }
+        }
+        elseif ($listed -match '(?m)\sreachable$' -and $listed -notmatch 'not reachable') {
             $answering = $true
+            $named = $true
             break
         }
-    }
-    else {
-        & $parley registry 2>&1 | Out-Null
-
-        if ($LASTEXITCODE -eq 0) { $answering = $true; break }
     }
 
     Start-Sleep -Milliseconds 250
@@ -890,15 +835,36 @@ if (-not $answering) {
     Write-Error "Registered, but the broker is not answering. It writes its own log, and $log is where it says why."
 }
 
-if ($manifest) { Write-Note "serves: every project in $manifest" } else { Write-Note "store: $store" }
+if ($manifest) { Write-Note "serves: every project in $manifest" }
 Write-Note "log:   $log"
-
-if ($foreign -and -not $manifest) {
-    Write-Warning "A broker that this did not start was already listening, and it is the one answering. It is serving its own store, not $store. Stop it and log out and in, or run 'parley serve --db $store' yourself."
-}
 
 Write-Host ''
 Write-Host 'The broker is running, and starts again when you log in.' -ForegroundColor Green
 Write-Host ''
+
+if (-not $named) {
+    # The first thing a person does on a machine just installed, said as the next step rather than left to be found.
+    Write-Host 'No project is named yet, so nothing is being served. Name the first one:' -ForegroundColor White
+
+    if (Get-Command parley-terminal -ErrorAction SilentlyContinue) {
+        Write-Host '  parley terminal                                   and create a project on its first screen' -ForegroundColor White
+    }
+
+    Write-Host '  parley project add <name> --db <path> --listen <url>' -ForegroundColor White
+    Write-Host 'The broker starts it within seconds.' -ForegroundColor White
+
+    if ($webUi) {
+        Write-Host "The web UI shows it once it is named: $webUi" -ForegroundColor White
+    }
+
+    Write-Host ''
+}
+elseif ($webUi) {
+    Write-Host "The web UI:                                       $webUi" -ForegroundColor White
+}
+
 Write-Host 'Next, in each repository you want an agent in:   /parley:setup' -ForegroundColor White
-Write-Host 'Restart the editor there, then check it arrived:  parley registry' -ForegroundColor White
+# `parley registry` refuses to choose between several projects, so the check it names says which to pass.
+$projectCount = @(& $parley project list 2>$null | Where-Object { "$_" -match '^[a-z][a-z0-9-]*\s+\S+://' }).Count
+$check = if ($projectCount -gt 1) { 'parley --project <name> registry' } else { 'parley registry' }
+Write-Host "Restart the editor there, then check it arrived:  $check" -ForegroundColor White

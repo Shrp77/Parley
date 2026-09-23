@@ -7,7 +7,7 @@ namespace Parley.Cli;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The surfaces are separate tools now, and <c>parley top</c> still works.</b> Windows cannot
+/// <b>The surfaces are separate tools now, and <c>parley terminal</c> still works.</b> Windows cannot
 /// replace a running executable, so while the terminal lived in this binary every terminal change
 /// required stopping the broker — which SPEC.md §12 makes expensive: the node stops, tells every
 /// agent it started to quit, and the process is what held everything each agent had learned. The
@@ -30,7 +30,7 @@ namespace Parley.Cli;
 public static class Forwarding
 {
     /// <summary>What to say when the tool providing a command is not installed.</summary>
-    /// <param name="command">The command as somebody typed it, such as <c>parley top</c>.</param>
+    /// <param name="command">The command as somebody typed it, such as <c>parley terminal</c>.</param>
     /// <param name="tool">The executable that provides it.</param>
     /// <param name="package">The package to install.</param>
     /// <returns>The sentence.</returns>

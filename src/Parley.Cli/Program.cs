@@ -1,4 +1,5 @@
-﻿using System.ComponentModel;
+﻿using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using Parley.Setup;
@@ -8,6 +9,7 @@ using Parley.Cli;
 using Parley.Client;
 using Parley.Configuration;
 using Parley.Core;
+using Parley.Headless;
 using Wire = Parley.Transport;
 
 // The operator's way in, and the broker's. SPEC.md §10.2 operations, plus the two processes a
@@ -31,17 +33,20 @@ using Wire = Parley.Transport;
 const string Help = """
     parley — the broker, this machine's node, and the operator operations of SPEC.md 10.2.
 
-      parley serve [--db <path>] [--listen <url>]      run the broker: the one process that
-                   [--log <path>] [--with-node]         opens the store, and what everything
-                   [--with-web-ui [--web-ui <url>]]     else connects to. --with-node also runs
-                                                       this machine's node in it, and
-                                                       --with-web-ui starts the web UI beside it
+      parley serve [--listen <url>] [--log <path>]     run the broker: the one process that
+                   [--with-node]                        opens the store, and what everything
+                   [--with-web-ui [--web-ui <url>]]     else connects to. It serves every
+                   [--db <path>]                        project this machine names. --with-node
+                                                       also runs this machine's node in it, and
+                                                       --with-web-ui starts the web UI beside
+                                                       it. --db serves one store by hand and
+                                                       is for testing only
 
-      parley top                                       a deployment from this terminal: the
+      parley terminal                                  a deployment from this terminal: the
                                                        projects, who is in each, and their
                                                        conversations as transcripts. Needs a
                                                        terminal, not a browser. Provided by
-                                                       the parley-top tool, installed
+                                                       the parley-terminal tool, installed
                                                        separately so that changing it does
                                                        not stop the broker
 
@@ -54,15 +59,20 @@ const string Help = """
                                                        separately so that changing it does
                                                        not stop the broker
 
-      parley autostart install [--db <path>]           start the broker when you log in, with
-                               [--node-config <path>]  this machine's node and the web UI.
-                               [--web-ui <url>]        With projects named and no --db, the
-                               [--no-web-ui]           entry serves every project in the
-                                                       manifest, each with its own node.
-                                                       --no-web-ui leaves the web UI out
+      parley autostart install [--web-ui <url>]        start the broker when you log in, with
+                               [--no-web-ui]           the web UI. The entry serves every
+                               [--db <path>]           project in the manifest, each with its
+                               [--node-config <path>]  own node, including one named later.
+                                                       --no-web-ui leaves the web UI out.
+                                                       --db and --node-config register one
+                                                       store by hand and are for testing only
       parley autostart remove                          stop doing that
       parley autostart status                          say whether it is set up, and what it
                                                        was registered to run
+
+      parley use [<project>] [--shell <name>]          choose the project this terminal's commands act
+                 [--clear]                             on: prints the line that sets PARLEY_PROJECT, or
+                                                       with no project says which one is in use and why
 
       parley project list                              what this machine is configured for
       parley project add <name> --db <path>            name a deployment, so commands stop
@@ -93,17 +103,36 @@ const string Help = """
       parley reinstate <agent>                         withdraw a retirement
       parley purge <agent>                             DESTROY an agent and its conversations
       parley export <conversation>                     emit every message in a discussion
-      parley force-conclude <conv>                     close a discussion over its votes
+      parley force-conclude <conv> [<reason>]          close a conversation now; every open request
+                                                       in it is closed and its holders are told why
       parley prune                                     apply the retention policy now
+      parley instruct <agent> <words>                  give an agent your words as a turn; it may decline
+      parley start <agent>                             ask the machine that holds an agent to start it
+      parley archive <conversation>                    take a conversation off the list; deletes nothing
+      parley unarchive <conversation>                  put an archived conversation back
+      parley destroy <conversation>                    DESTROY a conversation and every message in it
+      parley files list [--conversation <id>]          the files agents placed: name, size, sha256,
+                        [--full]                       who placed each, totals and placements
+      parley files remove <name>... [--conversation <id>]  remove files whoever placed them;
+                        [--yes]                        describes them and asks first
+      parley files prune [--yes-remove-every-file]     REMOVE every file; asks for the project's name
+      parley files open <name>... [--conversation <id>]  open files in their editor on this
+                                                       machine, or say which machine holds them
+      parley files folder [--conversation <id>]        open a conversation's folder, or the whole
+                                                       location, or say which machine holds it
       parley refusals                                  what the message size cap refused
       parley clarifications                            the clarify depth distribution, and whether the cap binds
-      parley referrals                                 where questions are sent onward, and to whom
-      parley notifications                             how much Notify carries, and who has had enough to judge
+      parley results                                   what results reported: outcomes, blockers,
+                                                       who was relied on, how conversations ended
+      parley flags                                     open work nobody collected or nobody is
+                                                       moving, and requests that went in a circle
       parley open                                      every conversation with an exchange
                                                        still open, and who is in it. What a
                                                        broker restart would interrupt
 
-      parley waiting <agent>                           how many messages and polls await an agent
+      parley waiting <agent|role> [--with-files]       how many messages, polls and file notices
+                                                       await it; a bare role means that role on
+                                                       this machine
 
       parley instructions [<agent>]                    what you told your agents, what became of
                                                        each, and what they said back
@@ -116,34 +145,46 @@ const string Help = """
     signed in wants a system service instead, and that does need privilege.
 
     enroll configures several repositories at once: `scan` writes a manifest, you fill in what
-    each one owns, `plan` says what would change and `apply` changes it. It never composes an
+    each one owns, `plan` says what would change and `apply` changes it. `scan` needs no project
+    and is not asked to choose one -- it surveys a directory and writes a file, which is the step
+    you want most on a machine naming several. `plan` and `apply` do need one, because the key
+    they write into each repository is `parley-<project>`. It never composes an
     owns line and never rewrites a `## Peers` section it did not write. Reading the roster is
     still /parley:write-peers, run once per repository after the last one has registered --
     every agent that registers makes every block already written stale.
 
     project names deployments so that a machine running more than one stops being told its paths
-    a flag at a time. Each project carries a store, an endpoint and optionally a node catalogue;
-    --project picks one, and a machine with exactly one configured needs no flag. A machine with
-    no projects behaves exactly as it always has -- the manifest is optional and its absence is
-    never reported. Where it lives is `parley project list`; --config or PARLEY_CONFIG names a
-    different one. Explicit flags and environment variables still win over a project.
+    a flag at a time. Each project carries a store and an endpoint. What this machine can start is
+    not one of them: there is one catalogue per machine, and every project starts from it.
+    A command acts on the project --project names, or PARLEY_PROJECT (which `parley use <name>`
+    prints the line to set, for one terminal), or the one the repository it runs in names -- when
+    exactly one of those is a project this machine has -- or the only project there is, and refuses
+    rather than guesses. Where several are configured it says on standard error which it acted on.
+    A machine that
+    names none yet is waiting for its first: the logon entry serves the manifest regardless, and
+    starts a project within seconds of it being named. Where the manifest lives is `parley project
+    list`; --config or PARLEY_CONFIG names a different one, for a test rig or a second account.
+    Explicit flags and environment variables still win over a project.
 
     Every command except `serve`, `autostart`, `project` and `enroll` connects to a broker, at
-    --broker or PARLEY_BROKER, and
-    defaults to the local one. Nothing works until a broker is running: start one with
-    `parley serve`, as a service or a scheduled task if you want it there after a reboot.
+    --broker or PARLEY_BROKER, and defaults to the local one. Nothing works until a broker is
+    running: `parley autostart install` starts one at every logon, serving every project named.
 
-    serve reads --db, or PARLEY_DB, for the store it owns — and it is the only command that
-    touches a file. It migrates the schema, which nothing else does. prune applies the policy
-    the broker was started with, from PARLEY_RETENTION_IDLE_HOURS and
-    PARLEY_RETENTION_MAX_AGE_HOURS on the broker's machine; it removes text permanently, so
-    export first if you want to keep a discussion.
+    serve opens the stores its projects name — and it is the only command that touches a file.
+    --db, or PARLEY_DB, names one store instead of the manifest; that is for testing only, and a
+    machine's deployment names its stores with `parley project add`. PARLEY_DB never replaces a
+    manifest named with --config, which is how the logon entry names the one it serves. It migrates the schema,
+    which nothing else does. prune applies the policy the broker was started with, from
+    PARLEY_RETENTION_IDLE_HOURS and PARLEY_RETENTION_MAX_AGE_HOURS on the broker's machine; it
+    removes text permanently, so export first if you want to keep a discussion.
 
     up runs until you stop it. It tells the broker this machine is here, which is what makes the
     agents registered to it startable rather than stranded, and starts one when a question
-    arrives for it. What it can start comes from --node-config, PARLEY_NODE_CONFIG, the selected
-    project, or node.json in the working directory, in that order — the broker never holds a
-    command line for a machine it is not on. Ctrl+C stops the node and every agent it started.
+    arrives for it. What it can start comes from --node-config, PARLEY_NODE_CONFIG, or node.json
+    beside the manifest, in that order — the broker never holds a command line for a machine it
+    is not on. One catalogue for the machine, whatever project is asking: a checkout answering in
+    two projects is one startable thing, and it was the per-project file that let it be startable
+    in one and stranded in the other. Ctrl+C stops the node and every agent it started.
 
     The web UI is installed by default, because that is how a person takes part rather than only
     watches: an agent attached through somebody's own editor window is the one thing nothing can
@@ -153,9 +194,11 @@ const string Help = """
 
     A broker and a node are two processes and one deployment, so `serve --with-node` runs both in
     one, and that is what `autostart install` installs: one entry that brings a machine all the
-    way up. Give it --node-config, because a supervisor starts a process with no shell
-    environment and no working directory worth relying on, and the two fallbacks above are both
-    one of those. Without it the entry starts a broker alone and says so.
+    way up. However many projects it serves, it hosts from the one catalogue this machine has —
+    named with `--node-config <path>` on that command, or found beside the manifest. It is not
+    read from PARLEY_NODE_CONFIG, because a supervisor starts a process with no shell environment
+    and a variable that will not be set at logon is not an answer; `autostart status` prints the
+    path the entry will actually use.
 
     These are never available to an agent. parley-mcp, the server an MCP client launches, binds
     the Agents service, which has no method that retires anybody.
@@ -174,11 +217,18 @@ const int Unavailable = 69;    // EX_UNAVAILABLE
 
 var arguments = new List<string>(args);
 
+// **A surface's own flags are the surface's to answer.** `parley terminal` and `parley web-ui` forward the command line
+// to tools installed apart from this one, and the two questions below were answered here first -- so
+// `parley terminal --version` printed this tool's version, not the terminal's, which is the one fact somebody asks
+// when the two may have been installed at different times. Found by the gate over the rename, against the README's
+// promise that forwarding works identically.
+var forwarding = arguments.Count > 0 && arguments[0] is "terminal" or "web-ui";
+
 // Asked for rather than fallen into, so it goes to standard output and exits zero. Every other
 // path here prints the same text to standard error with a non-zero code, because there it is
 // the answer to a mistake. The distinction is what lets `parley --help | less` work while a
 // script can still tell a mistyped command from a request for the manual.
-if (arguments.Exists(a => a is "--help" or "-h"))
+if (!forwarding && arguments.Exists(a => a is "--help" or "-h"))
 {
     await Console.Out.WriteLineAsync(Help).ConfigureAwait(false);
     return 0;
@@ -189,7 +239,7 @@ if (arguments.Exists(a => a is "--help" or "-h"))
 // this speaks, and it is the one another implementation cares about — SPEC.md is the contract
 // and alternative implementations are expected, so "which Parley is this" cannot be answered
 // by a package version that moves for a typo in a help string.
-if (arguments.Exists(a => a is "--version" or "-v"))
+if (!forwarding && arguments.Exists(a => a is "--version" or "-v"))
 {
     // Trimmed of its source-control suffix by BuildIdentity, because what somebody typing this
     // wants is the number they can compare. The broker's startup line keeps the commit, and both
@@ -220,6 +270,9 @@ var brokerAddress = TakeOption("--broker", "-b");
 var logPath = TakeOption("--log", null);
 var webUiOn = TakeOption("--web-ui", null);
 var noWebUi = TakeFlag("--no-web-ui");
+var withFiles = TakeFlag("--with-files");
+var shellName = TakeOption("--shell", null);
+var clearProject = TakeFlag("--clear");
 
 // Resolved once. `serve --with-web-ui` and `autostart install` both need the address, and a
 // default written in two places is two answers to one question that agree only until somebody
@@ -251,7 +304,13 @@ if (Repeated() is { } repeated)
 // "--broker" as the conversation identifier and runs a real query against it. A flag in the
 // wrong place silently becoming data is the worst reading of a mistyped command, because it
 // succeeds.
-var stray = arguments.Find(a => a.StartsWith('-'));
+//
+// `parley files` reads its own options, which nothing else has, so exactly those are let through for it. A command line
+// forwarded to a surface is not searched at all: that tool has its own parser and refuses what it does not take.
+var stray = forwarding
+    ? null
+    : arguments.Find(a => a.StartsWith('-')
+        && !(arguments.Count > 0 && arguments[0] == "files" && FilesCommand.OwnOptions.Contains(a)));
 
 if (stray is not null)
 {
@@ -295,6 +354,24 @@ if (hostWebUi && verb != "serve")
         + $"web UI. `parley {verb}` accepts it no more than any other command it does not "
         + "have — and `autostart install` needs no flag to register one, only --web-ui to move "
         + "it or --no-web-ui to leave it out.").ConfigureAwait(false);
+
+    return Usage;
+}
+
+if (withFiles && verb != "waiting")
+{
+    await Console.Error.WriteLineAsync(
+        $"--with-files is only for `parley waiting`, where it adds the file change notices waiting as a third count. "
+        + $"`parley {verb}` has no count to add it to.").ConfigureAwait(false);
+
+    return Usage;
+}
+
+if ((shellName is not null || clearProject) && verb != "use")
+{
+    await Console.Error.WriteLineAsync(
+        "--shell and --clear are only for `parley use`, which prints the line that sets or clears a terminal's project. "
+        + $"`parley {verb}` takes neither.").ConfigureAwait(false);
 
     return Usage;
 }
@@ -359,6 +436,22 @@ if (destroy && verb != "project")
     return Usage;
 }
 
+// **`use` chooses the project a terminal's commands act on.** A process cannot change the environment of the shell that
+// started it, so it prints the line that does; `UseCommand` says why that and not a saved current project.
+if (verb == "use")
+{
+    return await UseCommand.RunAsync(
+        rest,
+        shellName,
+        clearProject,
+        projectName,
+        configuredProjects,
+        Environment.GetEnvironmentVariable(EnrollmentPlan.ProjectVariable),
+        RepositoryProjects.Read(Environment.CurrentDirectory),
+        Console.Out,
+        Console.Error).ConfigureAwait(false);
+}
+
 if (verb == "project")
 {
     return await ProjectCommand.RunAsync(
@@ -376,7 +469,7 @@ if (verb == "project")
 // stopping the broker to change a page, which SPEC.md §12 makes expensive.
 //
 // The raw command line minus the verb is passed on and nothing is parsed here, for the reason
-// `top` gives: one parser per tool rather than one and an imitation of it.
+// `terminal` gives: one parser per tool rather than one and an imitation of it.
 if (verb == "web-ui")
 {
     // Said rather than ignored. Every other command here acts on one deployment, so naming one is
@@ -399,7 +492,7 @@ if (verb == "web-ui")
         .ConfigureAwait(false);
 }
 
-// Beside `console` and for the same reason: `top` is not scoped to one project either — its
+// Beside `console` and for the same reason: `terminal` is not scoped to one project either — its
 // first screen is the list of them, and it re-reads the manifest while it runs so a project named
 // elsewhere appears without restarting it.
 //
@@ -417,14 +510,17 @@ if (verb == "web-ui")
 // taken. `--config` and `--broker` mean the same to both tools and there is one parser for them,
 // in the tool that uses them. Anything else is the child's to accept or refuse, including
 // `--project`, which it warns about in the words this branch used to.
-if (verb == "top")
+//
+// **It was `top` until 0.27.0, and the owner renamed it**: "top" names a Unix process monitor, not a
+// person's view of a deployment. Nothing had been released under the old name, so no alias is kept.
+if (verb == "terminal")
 {
     var forwarded = new List<string>(args);
 
-    forwarded.Remove("top");
+    forwarded.Remove("terminal");
 
     return await Forwarding
-        .RunAsync("parley-top", "Parley.Top", "parley top", forwarded, Console.Error)
+        .RunAsync("parley-terminal", "Parley.Terminal", "parley terminal", forwarded, Console.Error)
         .ConfigureAwait(false);
 }
 
@@ -439,6 +535,22 @@ if (verb == "serve" && rest.Length == 0)
 {
     var serving = new List<ProjectSettings>();
 
+    // **One store named explicitly is served instead of the manifest**, which is what the help and the README say --db and
+    // PARLEY_DB are for, by hand and for testing only. A machine whose manifest named projects served those and ignored
+    // the store it was told: a flag accepted and ignored, found by the gate when a probe that had not isolated its
+    // manifest served this machine's projects rather than its own store.
+    // Blank is unset. A launcher that clears a variable by giving it an empty value -- the suite's does -- would otherwise
+    // name a store called nothing, and every serve it started would refuse for want of one.
+    var fromEnvironment = Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable) is { } variable
+        && !string.IsNullOrWhiteSpace(variable)
+            ? variable
+            : null;
+    // **The variable never replaces a manifest named on the command line**, which is how the logon entry names the one it
+    // serves. A PARLEY_DB left in somebody's environment from a test would otherwise turn that entry into a broker for the
+    // test store at the next logon, and every project would stop being served -- which the first version of this rule
+    // did, found by the gate's next probe. The flag is typed for this run, so it wins over both.
+    var oneStore = databasePath is not null || (fromEnvironment is not null && configPath is null);
+
     if (!string.IsNullOrWhiteSpace(projectName))
     {
         if (!ProjectResolution.TrySelect(projectName, configuredProjects, out var named, out var whyNot))
@@ -449,7 +561,7 @@ if (verb == "serve" && rest.Length == 0)
 
         serving.Add(named!);
     }
-    else
+    else if (!oneStore)
     {
         serving.AddRange(configuredProjects);
     }
@@ -461,32 +573,25 @@ if (verb == "serve" && rest.Length == 0)
     // waiting on CancellationToken.None never heard about it. Pressing Ctrl+C again could not
     // help either, because the handler stayed registered and kept cancelling the signal.
     //
-    // A catalogue belongs to a project (SPEC.md §4.1), so one named on the command line needs
-    // the project it is for. With several served, each hosts a node from its own manifest entry
-    // and an explicit catalogue has nowhere to go -- refused with the fix in it, because the
-    // alternative is a machine silently joined to whichever deployment happened to be listed
-    // first.
-    if (hostNode && serving.Count > 1 && nodeConfigPath is not null)
-    {
-        var serves = string.Create(
-            CultureInfo.InvariantCulture,
-            $"--node-config names one catalogue, and this process would serve {serving.Count} projects.");
-
-        await Console.Error.WriteLineAsync(
-            serves + " A catalogue belongs to a project (SPEC.md §4.1): put it in the project's " +
-            "manifest entry with `parley project add <name> ... --node-config <path>`, or name " +
-            "the one deployment it is for with --project.").ConfigureAwait(false);
-
-        return Config;
-    }
-
+    // **`--node-config` with several projects was refused here, and 018 removed the reason.** A
+    // catalogue belonged to a project, so one named on the command line had nowhere to go when several
+    // were served -- and admitting it would have joined the machine to whichever deployment happened to
+    // be listed first. There is one catalogue per machine now and the flag names exactly that, so it
+    // applies to every project this process serves and there is nothing to disambiguate.
     var hostedCatalogue = ProjectResolution.NodeConfig(
-        nodeConfigPath,
-        Environment.GetEnvironmentVariable,
-        serving.Count == 1 ? serving[0] : null);
+        nodeConfigPath, Environment.GetEnvironmentVariable, manifestPath);
 
     var hostedFrom = hostedCatalogue.Value ?? NodeCatalogue.DefaultFileName;
-    var fromEnvironment = Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable);
+
+    // **A "lone project" was tracked here and 018 removed the question it answered.** One project served
+    // alone hosted its node from `PARLEY_NODE_CONFIG` while several hosted each from its own manifest
+    // entry, so the machine had to know which case it was in -- and by *name* rather than by identity,
+    // because the watcher restarts a project on a changed entry as a new record, and a lone project
+    // recognised by identity became a different one after the restart, was told it named no catalogue,
+    // and silently stopped starting agents. Both of those were found by probing.
+    //
+    // There is one catalogue per machine now, resolved the same way whether this process serves one
+    // project or six, so neither the count nor the restart can change which file a node reads.
 
     // With several projects there are several such handlers, so the interrupt is owned once here,
     // above all of them, and one press must stop every broker started.
@@ -501,8 +606,31 @@ if (verb == "serve" && rest.Length == 0)
     // `Hosting` connects to the address the broker actually bound rather than the one it was
     // asked for, because --listen may name port 0 and a node told to connect to port 0 connects
     // to nothing.
-    return await UntilInterrupted(token =>
+    // **One table of running agents for this whole process, keyed by identity** (018 R5). A node is
+    // hosted per broker and each used to keep its own, so two projects asking for one checkout started
+    // two processes in one working directory — the hazard the per-project catalogue was partitioned to
+    // avoid, reached by the route the partition created. Shared, the second ask finds the first's
+    // process. Passed rather than static, because test classes run in parallel.
+    //
+    // **Declared out here, and swept out here, because this is what owns it** (review gate, lens 1). While
+    // it was made inside, every node loop swept it on its way out — so one project stopping sent away every
+    // agent on the machine, including the ones still serving other projects. A node sweeps only a table it
+    // made itself now; this is the one that ends when the process does.
+    var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
+
+    try
     {
+        return await UntilInterrupted(token =>
+        {
+
+        // **One catalogue for this machine, whatever project is asking** (018 R6, FR-003). It was resolved
+        // per project, from the entry that named it — which is what made a checkout startable in one project
+        // and not another, since only one project's file could hold it. The entry's binding is gone; what
+        // resolves it is the flag, the variable, and then the file beside the manifest.
+        var machineCatalogue = ProjectResolution.NodeConfig(
+            nodeConfigPath, Environment.GetEnvironmentVariable, manifestPath).Value
+            ?? NodeCatalogue.DefaultFileName;
+
         async Task<int> HostingNode(
             IReadOnlyList<string> addresses, TextWriter reporting, CancellationToken stopping)
         {
@@ -512,45 +640,21 @@ if (verb == "serve" && rest.Length == 0)
             using var channel = GrpcChannel.ForAddress(addresses[0]);
 
             return await NodeCommand.RunAsync(
-                channel, addresses[0], hostedFrom, reporting, stopping).ConfigureAwait(false);
+                channel, addresses[0], hostedFrom, reporting, null, residents, stopping)
+                .ConfigureAwait(false);
         }
 
-        // One project keeps every resolution `up` has -- the flag, the variable, the project, the
-        // file in the working directory -- because that is a person at a terminal. Several is a
-        // manifest being served, usually by a supervisor, and there the only catalogue a project
-        // can have is the one its entry names.
+        // **Every project hosts from the same catalogue, and announces what the repositories say it may
+        // start for that project.** The lone-project dance that used to be here decided which of several
+        // resolutions a single project was allowed — it existed because a catalogue belonged to a project,
+        // and nothing belongs to a project any more.
         async Task<int> HostingNodeFor(
             ProjectSettings project,
             IReadOnlyList<string> addresses,
             TextWriter reporting,
             CancellationToken stopping)
         {
-            // The one project this started with, by name, not any project when there happened to
-            // be one: a second named while this runs is a manifest being served, whatever the
-            // count was at the start. By name and not by identity, because the watcher restarts a
-            // project on a changed entry as a new record -- and a lone project whose catalogue is
-            // in PARLEY_NODE_CONFIG was, by identity, a different project after that restart, told
-            // it named no catalogue, and silently stopped starting agents. Found by probing.
-            if (serving.Count == 1
-                && string.Equals(project.Name.Value, serving[0].Name.Value, StringComparison.Ordinal))
-            {
-                return await HostingNode(addresses, reporting, stopping).ConfigureAwait(false);
-            }
-
-            if (project.NodeConfig is not { Length: > 0 } catalogue)
-            {
-                // Said per project, because a manifest in which nothing is catalogued looks
-                // exactly like one in which everything is, until a question to a repository
-                // nobody has open waits out its window.
-                await reporting.WriteLineAsync(
-                    $"{project.Name}: names no catalogue, so this machine starts nothing for it. "
-                    + "`parley project add` with --node-config says what it may start.")
-                    .ConfigureAwait(false);
-
-                return 0;
-            }
-
-            var from = Path.GetFullPath(catalogue);
+            var from = Path.GetFullPath(machineCatalogue);
 
             await reporting.WriteLineAsync(
                 $"{project.Name}: hosting this machine's node, from {from}.").ConfigureAwait(false);
@@ -558,7 +662,8 @@ if (verb == "serve" && rest.Length == 0)
             using var channel = GrpcChannel.ForAddress(addresses[0]);
 
             return await NodeCommand.RunAsync(
-                channel, addresses[0], from, reporting, stopping).ConfigureAwait(false);
+                channel, addresses[0], from, reporting, project.Name.Value, residents, stopping)
+                .ConfigureAwait(false);
         }
 
         // **Started as a child process, not hosted here, and that is the change.** The web UI is
@@ -600,8 +705,20 @@ if (verb == "serve" && rest.Length == 0)
 
                 start.ArgumentList.Add("--listen");
                 start.ArgumentList.Add(webUiAddress);
-                start.ArgumentList.Add("--broker");
-                start.ArgumentList.Add(addresses[0]);
+
+                // **The manifest this process serves, not whichever one the web UI would find on its own.** It locates
+                // one the way every tool does -- the variable, then this machine's -- so `serve --config <file>` started
+                // a web UI showing this machine's projects beside a broker serving somebody else's. Found by the gate
+                // over the installer change, which made the web UI the place a waiting machine is shown.
+                start.Environment[ProjectManifest.PathVariable] = manifestPath;
+
+                // Only when there is a broker. A machine serving a manifest that names no project yet has none, and
+                // the web UI then reads the manifest and says how to name the first one.
+                if (addresses.Count > 0)
+                {
+                    start.ArgumentList.Add("--broker");
+                    start.ArgumentList.Add(addresses[0]);
+                }
 
                 child = Process.Start(start);
 
@@ -623,7 +740,7 @@ if (verb == "serve" && rest.Length == 0)
             // **Printed either way, and the failure is a line inside it rather than instead of**
             // **it.** The block names both ways into a deployment, and the reader is at a terminal
             // on the machine running the broker -- frequently not a machine with a browser at all,
-            // which is the whole reason `parley top` exists. A version that suppressed the block
+            // which is the whole reason `parley terminal` exists. A version that suppressed the block
             // when the web UI could not start would take the terminal line with it, on exactly the
             // run where somebody needs to be told there is another way in.
             var opening = whyNot is null
@@ -635,7 +752,7 @@ if (verb == "serve" && rest.Length == 0)
             var body =
                 opening + Environment.NewLine
                 + Environment.NewLine
-                + $"   Terminal: parley top{Environment.NewLine}"
+                + $"   Terminal: parley terminal{(configPath is null ? string.Empty : $" --config \"{manifestPath}\"")}{Environment.NewLine}"
                 + "   The same deployment, from here, and no browser needed.";
 
             // Sized to the widest line between the rules. It was the address plus twelve, which
@@ -728,9 +845,18 @@ if (verb == "serve" && rest.Length == 0)
             return ProjectManifest.TryRead(manifestPath, out var current, out _) ? current : null;
         }
 
-        var watching = string.IsNullOrWhiteSpace(projectName) && serving.Count > 0;
+        // **A manifest named on the command line that names no project yet is still the manifest being served.** That
+        // is the entry the installer registers on a machine nobody has configured: it waits, hosting the web UI, and
+        // starts the first project named. It used to fall through to one default store, which served a deployment
+        // nobody had named and was not in the manifest anybody would then read.
+        var awaitingFirstProject = serving.Count == 0
+            && string.IsNullOrWhiteSpace(projectName)
+            && configPath is not null
+            && databasePath is null;
 
-        return serving.Count > 0
+        var watching = string.IsNullOrWhiteSpace(projectName) && (serving.Count > 0 || awaitingFirstProject);
+
+        return serving.Count > 0 || awaitingFirstProject
             ? ServeCommand.RunAsync(
                 serving,
                 logPath,
@@ -749,7 +875,15 @@ if (verb == "serve" && rest.Length == 0)
                 hostNode ? HostingNode : null,
                 hostWebUi ? HostingWebUi : null,
                 token);
-    }).ConfigureAwait(false);
+        }).ConfigureAwait(false);
+    }
+    finally
+    {
+        // **Every agent this machine started is sent away here, and only here.** A node loop sweeps only a
+        // table it created itself; this one it did not create, so ending them belongs to the process that
+        // did. While the sweep lived in the loop, one project stopping took down every agent on the machine.
+        await NodeCommand.StopEveryoneAsync(residents, Console.Out).ConfigureAwait(false);
+    }
 }
 
 // Beside `serve`, because it installs `serve`. It is not a client either: registering a
@@ -771,11 +905,15 @@ if (verb == "serve" && rest.Length == 0)
 // nothing else.
 if (verb == "autostart" && rest.Length == 1)
 {
-    // --db and the variable are explicit; a project named is explicit; a manifest with projects
-    // and nothing said is the manifest being served. Precedence as §4.1 states it: an explicit
+    // --db and the variable are explicit; a project named is explicit; nothing said is the
+    // manifest being served, whether or not it names a project yet -- a machine just installed
+    // names none, and its entry waits for the first. Precedence as §4.1 states it: an explicit
     // path or variable still wins over anything a project says.
     var explicitStore = databasePath
-        ?? Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable);
+        ?? (Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable) is { } storeVariable
+            && !string.IsNullOrWhiteSpace(storeVariable)
+                ? storeVariable
+                : null);
 
     ProjectSettings? named = null;
 
@@ -786,7 +924,7 @@ if (verb == "autostart" && rest.Length == 1)
         return Config;
     }
 
-    var servesManifest = explicitStore is null && named is null && configuredProjects.Count > 0;
+    var servesManifest = explicitStore is null && named is null;
 
     // Refused rather than ignored. An entry serving three projects has three endpoints and up to
     // three catalogues, all in the manifest; a flag that names one of either has nowhere to go,
@@ -814,7 +952,7 @@ if (verb == "autostart" && rest.Length == 1)
     // word, missing file included -- it may be written before the next logon, and refusing would
     // make installing depend on the order two setup steps were done in.
     var entryCatalogue = ProjectResolution.NodeConfig(
-        nodeConfigPath, Environment.GetEnvironmentVariable, named);
+        nodeConfigPath, Environment.GetEnvironmentVariable, manifestPath);
 
     var hostFrom = servesManifest
         ? null
@@ -841,19 +979,65 @@ if (verb == "autostart" && rest.Length == 1)
         Console.Error).ConfigureAwait(false);
 }
 
-// Selection is refused rather than guessed, for every command that acts on one deployment.
-// Several configured and none named, or a name the manifest does not describe, both end here —
-// choosing one silently acts on a deployment the operator did not ask for, and falling back
-// connects to a different one.
-if (!ProjectResolution.TrySelect(projectName, configuredProjects, out var project, out var selectionProblem))
+// **The project a command acts on comes from its context**, in this order: --project; PARLEY_PROJECT, which `parley use`
+// prints the line to set for one terminal; the repository the command runs in, when its .mcp.json names exactly one
+// project this machine describes; and the only project on the machine. Otherwise it is refused and the projects listed,
+// as before. The owner's call, made when a machine naming several projects had every command asking to be told again;
+// `ProjectResolution.TrySelect` carries why this and not a saved current project.
+var projectFromVariable = Environment.GetEnvironmentVariable(EnrollmentPlan.ProjectVariable);
+var projectFromRepository = RepositoryProjects.Read(Environment.CurrentDirectory);
+
+if (!ProjectResolution.TrySelect(
+        projectName, projectFromVariable, projectFromRepository, configuredProjects,
+        out var project, out var projectSource, out var selectionProblem))
 {
-    await Console.Error.WriteLineAsync(selectionProblem).ConfigureAwait(false);
-    return Config;
+    // **An address given explicitly is a choice, and is not refused for naming no project.** --broker and PARLEY_BROKER
+    // say exactly where to connect, which is all a project would have added for a client, and the help says explicit
+    // flags and variables win over a project. Refusing them on a machine naming several left every caller that
+    // connects by address -- a launch configuration's PARLEY_BROKER read by the waiting hook, a script pointed at one
+    // broker -- unable to ask anything. Found by the sweep over project-scoped callers. A project named that the
+    // manifest does not describe is still refused, address or not.
+    var explicitBroker = !string.IsNullOrWhiteSpace(brokerAddress)
+        || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(BrokerEndpoint.Variable));
+
+    // **`enroll scan` acts on no deployment, so naming none cannot be an error.** It walks one
+    // directory, decides which subdirectories are git repositories, and writes a file for a person
+    // to edit — no broker, no catalogue, no launch configuration, and nothing anywhere in it that
+    // names a project. `plan` and `apply` genuinely need one, because the key they write into each
+    // `.mcp.json` is `parley-<project>`; the refusal was applied to the verb rather than to the
+    // subcommand, so all three were held to the requirement of the two.
+    //
+    // What that cost is the wrong way round: the one step whose whole job is to survey a machine
+    // was the one step that could not be run on a machine with several projects on it — which is
+    // the machine worth surveying. Found by the owner trying to re-enrol nineteen repositories.
+    //
+    // A project *named* and not described by the manifest is still refused, exactly as it is for
+    // an explicit address below: this exempts a command from having to choose, never from being
+    // told a name that is wrong.
+    var scanning = verb == "enroll"
+        && rest is ["scan", ..]
+        && string.IsNullOrWhiteSpace(projectName)
+        && string.IsNullOrWhiteSpace(projectFromVariable);
+
+    if (!scanning
+        && !(string.IsNullOrWhiteSpace(projectName) && string.IsNullOrWhiteSpace(projectFromVariable) && explicitBroker))
+    {
+        await Console.Error.WriteLineAsync(selectionProblem).ConfigureAwait(false);
+        return Config;
+    }
+}
+
+// Said on a machine naming several, because that is where a command could have acted on another deployment: which one,
+// and what chose it. To standard error, so a script reading the answer reads only the answer.
+if (project is not null && configuredProjects.Count > 1)
+{
+    await Console.Error.WriteLineAsync($"Project: {project.Name.Value} ({projectSource}).").ConfigureAwait(false);
 }
 
 var resolvedStore = ProjectResolution.Store(databasePath, Environment.GetEnvironmentVariable, project);
 var resolvedEndpoint = ProjectResolution.Endpoint(brokerAddress, Environment.GetEnvironmentVariable, project);
-var resolvedNodeConfig = ProjectResolution.NodeConfig(nodeConfigPath, Environment.GetEnvironmentVariable, project);
+var resolvedNodeConfig = ProjectResolution.NodeConfig(
+    nodeConfigPath, Environment.GetEnvironmentVariable, manifestPath);
 
 // Beside `serve` and `autostart` because it is not a client either. It writes launch
 // configurations, node entries and the placeholder peers block — files on this machine, against
@@ -959,13 +1143,51 @@ try
                 rest[0], id => commands.ExportAsync(id, CancellationToken.None))
                 .ConfigureAwait(false);
 
-        case "force-conclude" when rest.Length == 1:
+        // Everything after the conversation is the reason, so it can be typed without quoting.
+        case "force-conclude" when rest.Length >= 1:
             return await WithConversation(
-                rest[0], id => commands.ForceConcludeAsync(id, CancellationToken.None))
+                rest[0],
+                id => commands.ForceConcludeAsync(
+                    id, rest.Length == 1 ? null : string.Join(' ', rest[1..]), CancellationToken.None))
                 .ConfigureAwait(false);
 
         case "prune" when rest.Length == 0:
             return await commands.PruneAsync(CancellationToken.None).ConfigureAwait(false);
+
+        // The file location (SPEC.md §9.5). Its own command, because five subcommands with confirmations and a
+        // launcher are more than a case each.
+        case "files":
+            return await new FilesCommand(
+                    new BrokerClient(new Wire.Operators.OperatorsClient(channel)),
+                    Console.Out,
+                    Console.Error,
+                    Console.In,
+                    Parley.Client.Files.LocalLauncher.ForThisMachine,
+                    projectName)
+                .RunAsync(rest, CancellationToken.None)
+                .ConfigureAwait(false);
+
+        // Everything after the agent is the instruction, so it can be typed without quoting.
+        case "instruct" when rest.Length >= 2:
+            return await WithAgent(
+                rest[0], a => commands.InstructAsync(a, string.Join(' ', rest[1..]), CancellationToken.None))
+                .ConfigureAwait(false);
+
+        case "start" when rest.Length == 1:
+            return await WithAgent(rest[0], a => commands.StartAgentAsync(a, CancellationToken.None))
+                .ConfigureAwait(false);
+
+        case "archive" when rest.Length == 1:
+            return await WithConversation(rest[0], id => commands.ArchiveAsync(id, CancellationToken.None))
+                .ConfigureAwait(false);
+
+        case "unarchive" when rest.Length == 1:
+            return await WithConversation(rest[0], id => commands.UnarchiveAsync(id, CancellationToken.None))
+                .ConfigureAwait(false);
+
+        case "destroy" when rest.Length == 1:
+            return await WithConversation(rest[0], id => commands.DestroyAsync(id, CancellationToken.None))
+                .ConfigureAwait(false);
 
         case "refusals" when rest.Length == 0:
             return await commands.RefusalsAsync(CancellationToken.None).ConfigureAwait(false);
@@ -973,39 +1195,47 @@ try
         case "clarifications" when rest.Length == 0:
             return await commands.ClarificationsAsync(CancellationToken.None).ConfigureAwait(false);
 
-        case "referrals" when rest.Length == 0:
-            return await commands.ReferralsAsync(CancellationToken.None).ConfigureAwait(false);
+        case "results" when rest.Length == 0:
+            return await commands.ResultsAsync(CancellationToken.None).ConfigureAwait(false);
 
-        case "notifications" when rest.Length == 0:
-            return await commands.NotificationsAsync(CancellationToken.None).ConfigureAwait(false);
+        case "flags" when rest.Length == 0:
+            return await commands.FlagsAsync(CancellationToken.None).ConfigureAwait(false);
 
         // Not an operator operation, and it is here because a caller that is not an agent needs
         // it: an editor hook that wants to say "two answers are waiting" before a turn used to
         // read the database, and cannot now. It discloses only counts, for one named agent, and
         // §16 already says the wire cannot tell who is asking — so this adds no disclosure that
         // was not already available to anything that could reach the broker.
+        // `--with-files` adds the change notices waiting as a third count (SPEC.md §9.5). Asked for rather than always
+        // printed, because a waiting hook installed before files existed splits this line on its first space and would
+        // read "0 1" as a number: it fails silently, which for that hook means never speaking again. Taken with the other
+        // flags above, because anything still starting with a hyphen here was refused before the verb ran.
         case "waiting" when rest.Length == 1:
-            return await WithAgent(
+            return await WithAgentHere(
                 rest[0],
                 async a =>
                 {
                     var counts = await new Wire.Agents.AgentsClient(channel).WaitingAsync(
                         new Wire.WaitingRequest { Agent = a.Value }).ConfigureAwait(false);
 
-                    await Console.Out.WriteLineAsync(string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"{counts.MessagesWaiting} {counts.ClosurePollsWaiting}"))
+                    await Console.Out.WriteLineAsync(withFiles
+                        ? string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"{counts.MessagesWaiting} {counts.ClosurePollsWaiting} {counts.FileNoticesWaiting}")
+                        : string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"{counts.MessagesWaiting} {counts.ClosurePollsWaiting}"))
                         .ConfigureAwait(false);
 
                     return 0;
                 }).ConfigureAwait(false);
 
         // **What is in flight, for the one caller that has to know before it stops a broker.**
-        // §12 says the node stopping tells every agent it started to quit, and a question already
-        // drained into an agent's inbox sits in §4.2's four-hour Working window rather than the
-        // fifteen-minute Delivery one -- so killing the agent that holds it leaves the exchange
-        // open and owed with nothing running to answer, ending in `ghosted`, which §5.3 defines as
-        // "nobody replied". Against an agent that was killed rather than one that ignored anything.
+        // §12 says the node stopping tells every agent it started to quit, and a Request already
+        // drained into an agent's inbox is marked delivered -- so killing the agent that holds it
+        // leaves the exchange open and owed with nothing running to do the work, flagged as
+        // collected and left (§6) against an agent that was killed rather than one that ignored
+        // anything.
         //
         // Both surfaces already read this; the command line could not, so `install.ps1` had no way
         // to ask. It is the same §10.2 `conversations()` reply filtered to what is open, and it
@@ -1146,6 +1376,8 @@ async Task<int> UpAsync() =>
             endpoint,
             resolvedNodeConfig.Value ?? NodeCatalogue.DefaultFileName,
             Console.Out,
+            project?.Name.Value,
+            null,
             token)).ConfigureAwait(false);
 
 // Runs something that would otherwise never return, and gives the terminal back on Ctrl+C.
@@ -1204,9 +1436,8 @@ async Task<int> WithConversation(string conversationId, Func<string, Task<int>> 
     if (string.IsNullOrWhiteSpace(conversationId))
     {
         await Console.Error.WriteLineAsync(
-            "A conversation identifier is required, and blank is not one. Identifiers are chosen " +
-            "by the agents that name them on a question or an event; `parley export <id>` is how " +
-            "you read one back.").ConfigureAwait(false);
+            "A conversation identifier is required, and blank is not one. `parley open` lists the " +
+            "conversations with work in them, and `parley export <id>` reads one back.").ConfigureAwait(false);
 
         return Usage;
     }
@@ -1228,6 +1459,16 @@ async Task<int> WithAgent(string name, Func<AgentName, Task<int>> run)
 
     return await run(agent).ConfigureAwait(false);
 }
+
+// **`waiting` takes a bare role and completes it with this machine**, as the adapter completes PARLEY_AGENT. A launch
+// configuration names a role, so the waiting hook -- which reads one, on the agent's own machine -- had nothing else to
+// pass, and every call was refused as not an agent name: in all twenty-one enrolled repositories on the machine where
+// the sweep over project-scoped callers found it, so the hook had never spoken there. Only here: a command that acts on
+// an agent still takes the whole name, because acting on one by guessing its machine is the wrong way to be helpful.
+async Task<int> WithAgentHere(string name, Func<AgentName, Task<int>> run) =>
+    !AgentName.TryCreate(name, out _) && MachineName.TryNameHere(name, out var here)
+        ? await run(here).ConfigureAwait(false)
+        : await WithAgent(name, run).ConfigureAwait(false);
 
 // Consumes an option and its value from the argument list, or returns null.
 // Flags have to be taken here, beside the options, rather than read by the command they belong

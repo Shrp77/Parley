@@ -8,11 +8,10 @@ namespace Parley.Cli.Tests;
 /// <remarks>
 /// <para>
 /// SC-003 and FR-012. SPEC.md §12 says the node stopping tells every agent it started to quit, and
-/// the process is what held everything each had learned. A question already drained into an
-/// agent's inbox is marked delivered, so it sits in §4.2's four-hour Working window rather than
-/// the fifteen-minute Delivery one — killing the agent that holds it leaves the exchange open and
-/// owed with nothing running to answer, ending as <c>ghosted</c>, which §5.3 defines as "nobody
-/// replied", recorded against an agent that was killed rather than one that ignored anything.
+/// the process is what held everything each had learned. A Request already drained into an
+/// agent's inbox is marked delivered, so killing the agent that holds it leaves the exchange open
+/// and owed with nothing running to do the work — flagged as collected and left (§6), against an
+/// agent that was killed rather than one that ignored anything.
 /// </para>
 /// <para>
 /// <b>The most important assertion here is the negative one.</b> Only the broker opens the store
@@ -39,9 +38,9 @@ public sealed class InFlightWarningTests
         // The negative, and the reason this test exists. A script that opened the database would be
         // quicker and would break §4, which gives the store to one process.
         //
-        // **Naming the store is not opening it, and a first draft confused the two.** These scripts
-        // pass a path to `autostart install --db`, so `parley.db` appears in both and always will.
-        // What must not appear is anything that reads it.
+        // **Naming a store is not opening it, and a first draft confused the two.** These scripts
+        // once passed a path to `autostart install --db`, and still tell a person how to name a
+        // project's store. What must not appear is anything that reads one.
         // Named as the ways a script could actually open one, rather than as the word. Both scripts
         // say "SQLite" out loud -- one in its help, one in the sentence it prints while asking where
         // the store should go -- and a check that forbade the word would delete the explanation to

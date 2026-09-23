@@ -14,8 +14,8 @@ public sealed class MessageIdentityTests
     public void Identical_messages_hash_identically()
     {
         Assert.Equal(
-            MessageIdentity.Compute(1, MessageType.Question, Orders, Billing, Payload),
-            MessageIdentity.Compute(1, MessageType.Question, Orders, Billing, Payload));
+            MessageIdentity.Compute(1, 0, MessageType.Request, Orders, Billing, Payload),
+            MessageIdentity.Compute(1, 0, MessageType.Request, Orders, Billing, Payload));
     }
 
     [Fact]
@@ -23,7 +23,7 @@ public sealed class MessageIdentityTests
     {
         // The schema constrains the column to exactly this shape, so a change here that the
         // schema rejected would surface as an insert failure rather than a silent mismatch.
-        var hash = MessageIdentity.Compute(1, MessageType.Question, Orders, Billing, Payload);
+        var hash = MessageIdentity.Compute(1, 0, MessageType.Request, Orders, Billing, Payload);
 
         Assert.Equal(64, hash.Length);
         Assert.All(hash, c => Assert.True(char.IsAsciiDigit(c) || (c >= 'a' && c <= 'f')));
@@ -35,40 +35,57 @@ public sealed class MessageIdentityTests
         // Routing is part of identity. Suppressing this as a duplicate would drop a message
         // its recipient never saw.
         Assert.NotEqual(
-            MessageIdentity.Compute(1, MessageType.Question, Orders, Billing, Payload),
-            MessageIdentity.Compute(1, MessageType.Question, Orders, Inventory, Payload));
+            MessageIdentity.Compute(1, 0, MessageType.Request, Orders, Billing, Payload),
+            MessageIdentity.Compute(1, 0, MessageType.Request, Orders, Inventory, Payload));
     }
 
     [Fact]
     public void The_same_text_on_a_different_exchange_is_a_different_message()
     {
         Assert.NotEqual(
-            MessageIdentity.Compute(1, MessageType.Question, Orders, Billing, Payload),
-            MessageIdentity.Compute(2, MessageType.Question, Orders, Billing, Payload));
+            MessageIdentity.Compute(1, 0, MessageType.Request, Orders, Billing, Payload),
+            MessageIdentity.Compute(2, 0, MessageType.Request, Orders, Billing, Payload));
     }
 
     [Fact]
-    public void A_notification_is_distinct_from_the_same_text_on_an_exchange()
+    public void The_same_text_later_in_the_same_exchange_is_a_different_message()
     {
+        // A requester answering "yes" to two clarifications inside the window. Without the version these
+        // were one identity, so the second reply was declined as a duplicate, reported as sent, and the
+        // turn never moved (SPEC.md §13.1).
         Assert.NotEqual(
-            MessageIdentity.Compute(null, MessageType.Notify, Orders, Billing, Payload),
-            MessageIdentity.Compute(1, MessageType.Notify, Orders, Billing, Payload));
+            MessageIdentity.Compute(1, 2, MessageType.Clarify, Orders, Billing, Payload),
+            MessageIdentity.Compute(1, 4, MessageType.Clarify, Orders, Billing, Payload));
+    }
+
+    [Fact]
+    public void A_request_identity_ignores_the_exchange_it_will_open()
+    {
+        // Written as the exchange is created, when there is no identifier yet. Folding one in would make
+        // every hash unique and switch off the distinctness index of §7.1.
+        Assert.Equal(
+            MessageIdentity.Compute(null, 0, MessageType.Request, Orders, Billing, Payload),
+            MessageIdentity.ComputeRequest(Orders, Billing, Payload));
+
+        Assert.NotEqual(
+            MessageIdentity.ComputeRequest(Orders, Billing, Payload),
+            MessageIdentity.Compute(1, 0, MessageType.Request, Orders, Billing, Payload));
     }
 
     [Fact]
     public void The_direction_of_travel_matters()
     {
         Assert.NotEqual(
-            MessageIdentity.Compute(1, MessageType.Question, Orders, Billing, Payload),
-            MessageIdentity.Compute(1, MessageType.Question, Billing, Orders, Payload));
+            MessageIdentity.Compute(1, 0, MessageType.Request, Orders, Billing, Payload),
+            MessageIdentity.Compute(1, 0, MessageType.Request, Billing, Orders, Payload));
     }
 
     [Fact]
     public void The_type_is_part_of_identity()
     {
         Assert.NotEqual(
-            MessageIdentity.Compute(1, MessageType.Question, Orders, Billing, Payload),
-            MessageIdentity.Compute(1, MessageType.Clarify, Orders, Billing, Payload));
+            MessageIdentity.Compute(1, 0, MessageType.Request, Orders, Billing, Payload),
+            MessageIdentity.Compute(1, 0, MessageType.Clarify, Orders, Billing, Payload));
     }
 
     [Fact]
@@ -78,8 +95,8 @@ public sealed class MessageIdentityTests
         // together could produce identical text from different messages: here the payload of
         // one carries what would be the field boundary of the other. Two genuinely different
         // messages must not collide into a single dedup identity.
-        var a = MessageIdentity.Compute(1, MessageType.Notify, Orders, Billing, """{"a":""}""");
-        var b = MessageIdentity.Compute(1, MessageType.Notify, Orders, Billing, """{"a":"x"}""");
+        var a = MessageIdentity.Compute(1, 0, MessageType.Result, Orders, Billing, """{"a":""}""");
+        var b = MessageIdentity.Compute(1, 0, MessageType.Result, Orders, Billing, """{"a":"x"}""");
 
         Assert.NotEqual(a, b);
     }
@@ -88,14 +105,13 @@ public sealed class MessageIdentityTests
     public void A_null_payload_is_rejected()
     {
         Assert.Throws<ArgumentNullException>(
-            () => MessageIdentity.Compute(1, MessageType.Question, Orders, Billing, null!));
+            () => MessageIdentity.Compute(1, 0, MessageType.Request, Orders, Billing, null!));
     }
 
     [Theory]
-    [InlineData(MessageType.Question, "question")]
+    [InlineData(MessageType.Request, "request")]
     [InlineData(MessageType.Clarify, "clarify")]
-    [InlineData(MessageType.Answer, "answer")]
-    [InlineData(MessageType.Notify, "notify")]
+    [InlineData(MessageType.Result, "result")]
     public void Types_round_trip_through_their_stored_tokens(MessageType type, string token)
     {
         // The token feeds both storage and the hash, so renumbering the enum must not silently
@@ -125,9 +141,14 @@ public sealed class MessageIdentityTests
         // names are inside the hashed form, so every stored hash became unreachable. The store
         // was rebuilt from empty in the same change, so nothing was stranded -- had it not
         // been, this failing is what would have said so.
+        //
+        // It moved again in 0.5, twice: "question" became "request" (the type token is hashed),
+        // and the exchange's version joined the identity, after the exchange identifier. Migration
+        // 008 copies stored hashes verbatim rather than recomputing them, so only deduplication
+        // against a 0.4 message sent in the same minute as the upgrade is lost.
         Assert.Equal(
-            "275289c21594e81505578cf7544c876207c1e4acd38885532d92e5eb62294087",
-            MessageIdentity.Compute(1, MessageType.Question, Orders, Billing, "{}"));
+            "252fabab45718e0aba7f178b7f5ca460a57dc24c2d23946637c0186d8f98e4de",
+            MessageIdentity.Compute(1, 0, MessageType.Request, Orders, Billing, "{}"));
     }
 
     [Fact]

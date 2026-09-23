@@ -70,7 +70,7 @@ public sealed class DocumentedClaimsTests : IDisposable
     {
         // `LaunchKey`: "Reading it is permanent; it is never renamed in place, because the key is a
         // component of every tool name the agent behind it already sees." Renaming would edit an
-        // agent's vocabulary — `mcp__parley__parley_ask` becomes `mcp__parley_alpha__parley_ask` — to
+        // agent's vocabulary — `mcp__parley__parley_request` becomes `mcp__parley-alpha__parley_request` — to
         // change nothing, which is the one cost this feature refused to pay.
         await File.WriteAllTextAsync(
             LaunchFile,

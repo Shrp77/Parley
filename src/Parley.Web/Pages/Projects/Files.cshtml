@@ -1,0 +1,178 @@
+@page
+@model Parley.Web.Pages.Projects.FilesModel
+@using Parley.Core
+@{
+    ViewData["Title"] = $"Files in {Model.Project}";
+}
+
+<h1>Files in @Model.Project</h1>
+
+<nav aria-label="This project">
+    <a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a>
+    @if (!string.IsNullOrWhiteSpace(Model.Conversation))
+    {
+        <a href="/Projects/Files?project=@Model.Project">Every conversation's files</a>
+    }
+</nav>
+
+@if (Model.Outcome is { Length: > 0 } outcome)
+{
+    <p role="status" class="outcome">@outcome</p>
+}
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="problem">@problem</p>
+}
+
+@if (Model.ConfirmingRemoval.Count > 0)
+{
+    @* Described before anything goes, in the same columns the list used, so somebody checking they chose the right
+       files is comparing like with like. *@
+    <p>
+        These files will be removed, whichever agent placed them. Every agent that fetched one is told it is gone the
+        next time it checks its inbox. <strong>It cannot be undone.</strong>
+    </p>
+
+    <ul>
+        @foreach (var file in Model.ConfirmingRemoval)
+        {
+            <li>@file.ConversationId / @file.Name.Value — @FilesModel.Size(file.SizeBytes), placed by @(file.PlacedBy?.Value ?? "the person")</li>
+        }
+    </ul>
+
+    <p>@Model.ConfirmingRemoval.Count file(s), @FilesModel.Size(Model.ConfirmingRemoval.Sum(f => f.SizeBytes)).</p>
+
+    <form method="post" asp-page-handler="Remove">
+        <input type="hidden" name="project" value="@Model.Project" />
+        <input type="hidden" name="conversation" value="@Model.Conversation" />
+        @foreach (var file in Model.ConfirmingRemoval)
+        {
+            <input type="hidden" name="selected" value="@($"{file.ConversationId}/{file.Name.Value}")" />
+        }
+        <input type="hidden" name="confirmed" value="yes" />
+
+        <button type="submit">Remove them</button>
+        <a href="/Projects/Files?project=@Model.Project&amp;conversation=@Model.Conversation">Keep them</a>
+    </form>
+}
+else if (Model.ConfirmingPrune && Model.Listing is { } pruning)
+{
+    <p>
+        Every file in @Model.Project will be removed: @pruning.Page.TotalFiles file(s), @FilesModel.Size(pruning.Page.TotalBytes).
+        Conversations, messages and agents are untouched. Every agent that fetched a file is told it is gone.
+        <strong>It cannot be undone.</strong>
+    </p>
+
+    <form method="post" asp-page-handler="Prune">
+        <input type="hidden" name="project" value="@Model.Project" />
+
+        <label for="typed">Type the project's name to confirm:</label>
+        <input id="typed" name="typed" autocomplete="off" />
+
+        <button type="submit">Remove every file</button>
+        <a href="/Projects/Files?project=@Model.Project">Keep them</a>
+    </form>
+}
+else if (Model.Listing is { } listing)
+{
+    <form method="get" action="/Projects/Files">
+        <input type="hidden" name="project" value="@Model.Project" />
+        <label for="conversation">Only the files of conversation</label>
+        <input id="conversation" name="conversation" value="@Model.Conversation" autocomplete="off" />
+        <button type="submit">Show</button>
+    </form>
+
+    @if (listing.Page.TotalFiles == 0)
+    {
+        <p>The file location is empty.</p>
+    }
+    else
+    {
+        <form method="post" asp-page-handler="Remove">
+            <input type="hidden" name="project" value="@Model.Project" />
+            <input type="hidden" name="conversation" value="@Model.Conversation" />
+
+            <table class="files">
+                <thead>
+                    <tr>
+                        <th scope="col"><span class="visually-hidden">Choose</span></th>
+                        <th scope="col">Conversation</th>
+                        <th scope="col">Name</th>
+                        <th scope="col">Size</th>
+                        <th scope="col">sha256</th>
+                        <th scope="col">Placed by</th>
+                        <th scope="col">Changed</th>
+                        <th scope="col"><span class="visually-hidden">Open</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var file in listing.Page.Files)
+                    {
+                        <tr>
+                            <td><input type="checkbox" name="selected" value="@($"{file.ConversationId}/{file.Name.Value}")" aria-label="Choose @file.Name.Value" /></td>
+                            <td><a href="/Projects/Files?project=@Model.Project&amp;conversation=@file.ConversationId">@file.ConversationId</a></td>
+                            <td>@file.Name.Value</td>
+                            <td>@FilesModel.Size(file.SizeBytes)</td>
+                            <td title="@file.Sha256.Value"><code>@file.Sha256.Short</code></td>
+                            <td>@(file.PlacedBy?.Value ?? "the person")</td>
+                            <td>@Parley.Client.Rendering.LocalTime.Write(file.ChangedUtc)</td>
+                            <td>
+                                <button type="submit" asp-page-handler="Open"
+                                        asp-route-project="@Model.Project"
+                                        asp-route-file="@file.Name.Value"
+                                        asp-route-inConversation="@file.ConversationId">Open</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <button type="submit">Remove the chosen files…</button>
+        </form>
+
+        <p>@listing.Page.TotalFiles file(s), @FilesModel.Size(listing.Page.TotalBytes) in all. @Parley.Client.Rendering.LocalTime.Note()</p>
+
+        @if (listing.Page.Totals.Count > 1 || string.IsNullOrWhiteSpace(Model.Conversation))
+        {
+            <ul class="totals">
+                @foreach (var total in listing.Page.Totals)
+                {
+                    <li>@total.ConversationId: @total.Files file(s), @FilesModel.Size(total.Bytes)</li>
+                }
+            </ul>
+        }
+
+        @if (listing.Page.NextPageToken is { Length: > 0 } next)
+        {
+            <p><a href="/Projects/Files?project=@Model.Project&amp;conversation=@Model.Conversation&amp;pageToken=@Uri.EscapeDataString(next)">More files</a></p>
+        }
+    }
+
+    @if (listing.NotListedSentence is { } notListed)
+    {
+        <p class="notice">@notListed</p>
+    }
+
+    @if (listing.Placements.Count > 0)
+    {
+        <h2>Placements</h2>
+        <ul class="placements">
+            @foreach (var count in listing.Placements)
+            {
+                <li>@count.Agent: @count.Placements placement(s), @FilesModel.Size(count.Bytes)</li>
+            }
+        </ul>
+    }
+
+    <form method="post" asp-page-handler="Folder">
+        <input type="hidden" name="project" value="@Model.Project" />
+        <input type="hidden" name="conversation" value="@Model.Conversation" />
+        <button type="submit">Open the folder</button>
+    </form>
+
+    <form method="post" asp-page-handler="Prune">
+        <input type="hidden" name="project" value="@Model.Project" />
+        <button type="submit">Remove every file…</button>
+    </form>
+}

@@ -447,37 +447,24 @@ public sealed class ProjectManifestTests : IDisposable
     }
 
     [Fact]
-    public void Two_projects_cannot_share_one_node_catalogue()
+    public void Two_projects_sharing_one_catalogue_is_the_ordinary_case()
     {
-        // Consent to run unattended is per project because the catalogue is — and nothing was
-        // enforcing the second half of that. A node reads one file and agent names collide freely
-        // across projects by design, so two projects pointing at one catalogue means `parley up`
-        // for either starts entries the other agreed to, under a name that means a different
-        // repository in each.
+        // **This asserted the opposite, and went on asserting it after 018 removed the rule** —
+        // red in every run since, under a commit that recorded this suite as green. The rule it
+        // held was that consent to run unattended is per project *because the catalogue is*, so
+        // two projects naming one file meant either could start what the other had agreed to.
         //
-        // It cannot be caught in storage the way §9.3 prefers, because the catalogue is not in the
-        // store: it names how to start things on a machine the broker is not on. So it is caught
-        // here, on write and on read alike.
+        // Both halves of that are gone. There is one catalogue per machine, keyed by identity, so
+        // "two projects sharing one" is not a collision but the only arrangement there is — and a
+        // name is no longer what the catalogue holds, so one entry cannot mean a different
+        // repository in each project. What is left of the reasoning is in `Collisions` itself,
+        // which still refuses a shared *store* and a shared endpoint.
         var shared = Path.Combine(_root, "node.json");
 
         var collisions = ProjectManifest.Collisions(
         [
             Project("orders", "/srv/orders.db", "http://127.0.0.1:51707", shared),
             Project("billing", "/srv/billing.db", "http://127.0.0.1:51708", shared),
-        ]);
-
-        Assert.Contains(collisions, c => c.Contains("share a node catalogue", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void A_project_that_starts_nothing_here_does_not_collide_with_another()
-    {
-        // Absent is a legitimate state — a project whose agents live on other machines — and two
-        // of them must not be read as sharing the catalogue neither has.
-        var collisions = ProjectManifest.Collisions(
-        [
-            Project("orders", "/srv/orders.db", "http://127.0.0.1:51707", null),
-            Project("billing", "/srv/billing.db", "http://127.0.0.1:51708", null),
         ]);
 
         Assert.Empty(collisions);

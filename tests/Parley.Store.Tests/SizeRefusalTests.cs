@@ -9,7 +9,7 @@ namespace Parley.Store.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The cap of rule 8.5 was a number nobody had evidence for — two thousand because that sounded
+/// The cap of rule 8.4 was a number nobody had evidence for — two thousand because that sounded
 /// like enough, then four thousand for a reason of the same quality. This record is what made the
 /// next change measured, and it did: eight thousand was set from forty-three refusals across six
 /// agents (SPEC.md §17 question 16). So the checks here are about whether the record can answer
@@ -61,7 +61,7 @@ public sealed class SizeRefusalTests : IDisposable
     /// <remarks>
     /// The schema refuses a refusal that is not over the cap — <c>CHECK (worst &gt; cap)</c> —
     /// so these sizes are relative rather than literal. They were literals tuned to a cap of
-    /// four thousand, and every one of them failed the day rule 8.5's number moved. That is the
+    /// four thousand, and every one of them failed the day rule 8.4's number moved. That is the
     /// right failure arriving for the wrong reason: nothing was wrong with the store.
     /// </remarks>
     private static int Over(int by) => MessageLimits.MaxPayloadCharacters + by;
@@ -69,12 +69,12 @@ public sealed class SizeRefusalTests : IDisposable
     [Fact]
     public async Task One_refusal_is_recorded_whole()
     {
-        await Record(Orders, MessageType.Answer, Over(500));
+        await Record(Orders, MessageType.Result, Over(500));
 
         var only = Assert.Single(await _refusals.GetAllAsync(Ct));
 
         Assert.Equal(Orders, only.Agent);
-        Assert.Equal(MessageType.Answer, only.Type);
+        Assert.Equal(MessageType.Result, only.Type);
         Assert.Equal(1, only.Refusals);
         Assert.Equal(Over(500), only.Worst);
         Assert.Equal(Over(500), only.Total);
@@ -86,11 +86,11 @@ public sealed class SizeRefusalTests : IDisposable
     public async Task Repeated_refusals_accumulate_onto_one_row()
     {
         // The property that makes this safe to leave on: the table is bounded by the registry,
-        // not by how badly an agent behaves. An agent looping on an oversized answer updates a
+        // not by how badly an agent behaves. An agent looping on an oversized Result updates a
         // row rather than filling a disk, which is why there is no per-event log here.
-        await Record(Orders, MessageType.Answer, Over(100), at: 0);
-        await Record(Orders, MessageType.Answer, Over(5000), at: 5);
-        await Record(Orders, MessageType.Answer, Over(200), at: 9);
+        await Record(Orders, MessageType.Result, Over(100), at: 0);
+        await Record(Orders, MessageType.Result, Over(5000), at: 5);
+        await Record(Orders, MessageType.Result, Over(200), at: 9);
 
         var only = Assert.Single(await _refusals.GetAllAsync(Ct));
 
@@ -106,9 +106,9 @@ public sealed class SizeRefusalTests : IDisposable
         // The distinction the whole record exists to make. Forty refusals just over the cap is
         // an argument for raising it; one refusal at ten times the cap is an argument for
         // nothing at all, and the worst case alone cannot tell them apart.
-        await Record(Orders, MessageType.Answer, Over(50), at: 0);
-        await Record(Orders, MessageType.Answer, Over(100), at: 1);
-        await Record(Billing, MessageType.Answer, MessageLimits.MaxPayloadCharacters * 10, at: 2);
+        await Record(Orders, MessageType.Result, Over(50), at: 0);
+        await Record(Orders, MessageType.Result, Over(100), at: 1);
+        await Record(Billing, MessageType.Result, MessageLimits.MaxPayloadCharacters * 10, at: 2);
 
         var all = await _refusals.GetAllAsync(Ct);
         var tight = all.Single(r => r.Agent == Orders);
@@ -124,10 +124,10 @@ public sealed class SizeRefusalTests : IDisposable
     [Fact]
     public async Task Each_message_type_is_counted_apart()
     {
-        // An answer that will not fit and a question that will not fit are different problems:
-        // one is an answerer with too much to say, the other an asker writing an essay.
-        await Record(Orders, MessageType.Answer, Over(100));
-        await Record(Orders, MessageType.Question, Over(200));
+        // A Result that will not fit and a Request that will not fit are different problems: one is a
+        // receiver with too much to report, the other a requester writing an essay.
+        await Record(Orders, MessageType.Result, Over(100));
+        await Record(Orders, MessageType.Request, Over(200));
 
         var all = await _refusals.GetAllAsync(Ct);
 
@@ -142,7 +142,7 @@ public sealed class SizeRefusalTests : IDisposable
         // formatter and the parser have to agree. One added to a single side compiles cleanly
         // and fails only when a row carrying it is read back.
         MessageType[] sendable =
-            [MessageType.Question, MessageType.Clarify, MessageType.Answer, MessageType.Notify];
+            [MessageType.Request, MessageType.Clarify, MessageType.Result];
 
         foreach (var type in sendable)
         {
@@ -158,21 +158,6 @@ public sealed class SizeRefusalTests : IDisposable
     }
 
     [Fact]
-    public async Task A_ghost_notice_has_no_place_here()
-    {
-        // Found by writing the loop over every message type and watching it throw. Ghost is the
-        // fifth, and it is the broker's own: §14 produces it when an exchange is abandoned, and
-        // GhostNotice trims it to fit rather than being refused. A row recording one would be
-        // the broker reporting that it refused itself, which is not evidence about whether the
-        // cap suits the agents. Refusing it here keeps that out of the record rather than
-        // leaving a token the schema would reject on the way in.
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => Record(Orders, MessageType.Ghost, Over(1000)));
-
-        Assert.Empty(await _refusals.GetAllAsync(Ct));
-    }
-
-    [Fact]
     public async Task A_total_past_two_billion_is_still_readable()
     {
         // The read threw an OverflowException before the total was widened, which took the
@@ -183,7 +168,7 @@ public sealed class SizeRefusalTests : IDisposable
         await using var seed = _connection.CreateCommand();
         seed.CommandText =
             "INSERT INTO size_refusals (agent, type, refusals, worst, total, cap, last_utc) " +
-            "VALUES ('orders@test', 'answer', 60000, 40000, 2400000000, 4000, $when);";
+            "VALUES ('orders@test', 'result', 60000, 40000, 2400000000, 4000, $when);";
         seed.Parameters.AddWithValue("$when", ExchangeRow.FormatTimestamp(T0));
         await seed.ExecuteNonQueryAsync(Ct);
 
@@ -221,7 +206,7 @@ public sealed class SizeRefusalTests : IDisposable
         await using var command = _connection.CreateCommand();
         command.CommandText =
             "INSERT INTO size_refusals (agent, type, refusals, worst, total, cap, last_utc) " +
-            "VALUES ('orders@test', 'answer', 1, 100, 100, 4000, '2026-01-01T00:00:00Z');";
+            "VALUES ('orders@test', 'result', 1, 100, 100, 4000, '2026-01-01T00:00:00Z');";
 
         var failure = await Assert.ThrowsAsync<SqliteException>(
             () => command.ExecuteNonQueryAsync(Ct));
@@ -235,7 +220,7 @@ public sealed class SizeRefusalTests : IDisposable
         // The row cascades with the registration, like a credential does. Keeping counts for an
         // agent nobody can address would leave the evidence describing a deployment that no
         // longer exists.
-        await Record(Orders, MessageType.Answer, Over(1000));
+        await Record(Orders, MessageType.Result, Over(1000));
 
         await using var command = _connection.CreateCommand();
         command.CommandText = "DELETE FROM agents WHERE name = 'orders@test';";

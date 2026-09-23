@@ -10,15 +10,15 @@ namespace Parley.Web.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The load-bearing distinction is between looking and taking. SPEC.md §6 runs the working
-/// window from delivery and records delivery by the inbox drain, so a page that drained while
-/// rendering would start a four-hour clock for somebody who followed a link — and §14 would
-/// ghost what they did not get to. The count is free; the contents are not.
+/// The load-bearing distinction is between looking and taking. Delivery is recorded by the inbox
+/// drain, and what is delivered is what the flags of §15 measure progress from, so a page that
+/// drained while rendering would mark work collected for somebody who only followed a link. The
+/// count is free; the contents are not.
 /// </para>
 /// <para>
-/// Reading and answering shipped together on purpose. An inbox that could take a question and
-/// not answer it would guarantee a ghost four hours later, every time, so the half would have
-/// made the deployment worse rather than merely unfinished.
+/// Reading and resolving shipped together on purpose. An inbox that could take a Request and not
+/// send its Result would leave work collected and owed with no way to report it, so the half would
+/// have made the deployment worse rather than merely unfinished.
 /// </para>
 /// </remarks>
 public sealed class InboxTests
@@ -51,7 +51,7 @@ public sealed class InboxTests
 
         // Described before it happens, like every other operation in this console that changes
         // something. "You cannot put them back" is the part somebody needs before clicking.
-        Assert.Contains("starts the clock", Page, StringComparison.Ordinal);
+        Assert.Contains("marks them collected", Page, StringComparison.Ordinal);
         Assert.Contains("cannot put them back", Page, StringComparison.Ordinal);
     }
 
@@ -71,11 +71,11 @@ public sealed class InboxTests
     }
 
     [Fact]
-    public void A_debt_cannot_be_dismissed_and_a_notice_can()
+    public void Work_owed_cannot_be_dismissed_and_a_result_can()
     {
-        // Clearing removes what owes nothing back. A question that could be cleared would let
-        // somebody tidy the page while the exchange behind it ran on to be ghosted, which is
-        // the one outcome the inbox exists to prevent.
+        // Clearing removes what owes nothing back. A Request that could be cleared would let
+        // somebody tidy the page while the exchange behind it stayed open with nobody working it,
+        // which is the one outcome the inbox exists to prevent.
         var hold = File.ReadAllText(RepositoryPath("src/Parley.Client/Seating/SeatHold.cs"));
 
         Assert.Contains("RemoveAll(one => !one.Owes)", hold, StringComparison.Ordinal);
@@ -86,20 +86,16 @@ public sealed class InboxTests
     }
 
     [Theory]
-    [InlineData(MessageType.Question, 7L, true)]
-    [InlineData(MessageType.Clarify, 7L, true)]
-    [InlineData(MessageType.Answer, 7L, false)]
-    [InlineData(MessageType.Notify, 7L, false)]
-    [InlineData(MessageType.Ghost, 7L, false)]
-    [InlineData(MessageType.Question, null, false)]
-    public void What_is_owed_back_is_a_question_inside_an_exchange(
-        MessageType type, long? exchange, bool owes)
+    [InlineData(MessageType.Request, true)]
+    [InlineData(MessageType.Clarify, true)]
+    [InlineData(MessageType.Result, false)]
+    public void What_is_owed_back_is_a_request_or_a_clarification(MessageType type, bool owes)
     {
-        // An answer form offered for a message nobody may answer is an invitation to a refusal,
-        // and a question shown without one is a debt with no way to pay it.
+        // A Result form offered for a message nobody may answer is an invitation to a refusal,
+        // and a Request shown without one is work owed with no way to report it.
         var delivered = new Delivered(
             new Message(
-                1, exchange, type,
+                1, 7, type,
                 AgentName.Create("orders@alpha"), AgentName.Create("arvind@alpha"),
                 "claude-opus-5", "{}", "c", DateTimeOffset.UnixEpoch, null));
 
@@ -107,47 +103,48 @@ public sealed class InboxTests
     }
 
     [Fact]
-    public void The_sub_questions_answered_are_the_ones_the_broker_says_were_asked()
+    public void The_items_a_result_covers_are_the_ones_the_request_carried()
     {
-        // Read from the broker rather than parsed out of the payload the page just rendered.
-        // §5.3 answers by identifier, and a form built from this process's own reading would be
-        // a second opinion — the one that disagrees produces an answer resolving a sub-question
-        // nobody asked, which is stored and closes the exchange.
-        Assert.Contains("SubQuestionsAsync", Model, StringComparison.Ordinal);
+        // §5.3 resolves by item id, and the broker refuses a Result that does not give exactly one
+        // outcome per item — naming the ones it expected. So the form is built from the Request
+        // as stored, and a Result is never offered for anything else.
+        var request = new Delivered(
+            new Message(
+                1, 7, MessageType.Request,
+                AgentName.Create("orders@alpha"), AgentName.Create("arvind@alpha"), "claude-opus-5",
+                """{"intent":"moving tax","items":[{"id":"r1","kind":"work","text":"a"},{"id":"q2","kind":"question","text":"b"}],"done_when":"both are resolved and said so"}""",
+                "c", DateTimeOffset.UnixEpoch, null));
 
-        var voice = File.ReadAllText(RepositoryPath("src/Parley.Client/Seating/SeatVoice.cs"));
+        Assert.Equal(["r1", "q2"], request.Items());
+        Assert.Contains("item.Items()", Page, StringComparison.Ordinal);
 
-        Assert.Contains("GetSubQuestionIdsAsync", voice, StringComparison.Ordinal);
+        var result = request with { Message = request.Message with { Type = MessageType.Result } };
+
+        Assert.Empty(result.Items());
     }
 
     [Fact]
-    public void The_aggregate_takes_the_least_resolved_of_the_parts()
+    public void The_exchange_outcome_is_not_the_persons_to_choose()
     {
-        // §5.3. Rolled up rather than chosen, because a person who could pick it separately
-        // could record a question as settled while leaving a sub-question unknown — and §15
-        // counts that.
-        var voice = File.ReadAllText(RepositoryPath("src/Parley.Client/Seating/SeatVoice.cs"));
-        var rollUp = voice[voice.IndexOf("private static Wire.Resolution RollUp", StringComparison.Ordinal)..];
+        // §5.3. Rolled up by the broker from the items rather than chosen, because a person who
+        // could pick it separately could record work complete while leaving an item blocked — and
+        // §15 counts that. So the wire has nowhere to put one.
+        var fields = typeof(Parley.Transport.ResultRequest)
+            .GetProperties()
+            .Select(p => p.Name)
+            .ToArray();
 
-        Assert.True(
-            rollUp.IndexOf("Unknown", StringComparison.Ordinal)
-            < rollUp.IndexOf("OutOfScope", StringComparison.Ordinal),
-            "unknown must win over out_of_scope, or an unresolved answer reads as a scoped one");
+        Assert.Contains("PayloadJson", fields);
+        Assert.DoesNotContain(fields, f => f.Contains("Outcome", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void Ghosted_is_not_an_outcome_a_person_may_choose()
+    public void Closed_is_not_an_outcome_a_person_may_choose()
     {
-        // §5.3 reserves it for the broker recording an exchange nobody returned to. An agent
-        // able to write it over its own unanswered work would be manufacturing the evidence
-        // §15 counts to find an unhealthy deployment — which is a defect this repository has
-        // already had once.
-        Assert.DoesNotContain("\"ghosted\"",
-            File.ReadAllText(RepositoryPath("src/Parley.Client/Seating/SeatVoice.cs")),
-            StringComparison.Ordinal);
-
-        Assert.Equal(3, SeatVoice.Outcomes.Count);
-        Assert.DoesNotContain(SeatVoice.Outcomes, o => o.Value.Contains("ghost", StringComparison.Ordinal));
+        // §5.3 reserves it for the broker closing a conversation. A participant able to write it
+        // over its own open work would be forging the broker's hand in the record §15 reads.
+        Assert.Equal(6, SeatVoice.Outcomes.Count);
+        Assert.DoesNotContain(SeatVoice.Outcomes, o => o.Value.StartsWith("closed", StringComparison.Ordinal));
     }
 
     [Fact]

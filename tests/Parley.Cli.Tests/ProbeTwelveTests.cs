@@ -127,11 +127,14 @@ public sealed class ProbeTwelveTests : IDisposable
     [InlineData("‮")]
     public void A_refusal_quoting_a_catalogue_carries_no_control_characters(string mischief)
     {
-        // A refusal quotes a catalogue's path and the role it found there — both read out of a file,
-        // and refusals are read in terminals. This repository has fixed this shape twice: the
+        // A refusal quotes the path a catalogue records and the one this run was offered — both read out
+        // of a file, and refusals are read in terminals. This repository has fixed this shape twice: the
         // transcript's column-zero rule, and the destroy dialog quoting a manifest's endpoint raw.
-        var refusal = Catalogues.Refusal(
-            new Consent($"alpha{mischief}", $"/tmp/node{mischief}.json", $"orders{mischief}"));
+        //
+        // The sentence this probes is 018's copied-repository refusal. It replaced FR-013's, which is
+        // where this probe was pointed when it was written; the values are read from the same file and
+        // printed in the same place, so what it is asking is unchanged.
+        var refusal = Catalogues.Copied($"/tmp/orders{mischief}", $"/tmp/copy{mischief}");
 
         foreach (var character in refusal)
         {

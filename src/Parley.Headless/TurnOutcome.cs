@@ -19,7 +19,7 @@ namespace Parley.Headless;
 /// <para>
 /// Recorded rather than merely logged because this is where a fleet becomes expensive. SPEC.md
 /// §17 question 1 settled a comparable question by measuring instead of guessing, and a resident
-/// agent costs considerably more than a notification: it holds a session open and takes a
+/// agent costs considerably more than a message: it holds a session open and takes a
 /// billable turn every time a peer says anything to it.
 /// </para>
 /// <para>

@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Globalization;
 using Grpc.Core;
 using Grpc.Net.Client;
@@ -78,11 +78,22 @@ public static class NodeCommand
     /// are kept across it — they belong to the machine, not to the connection.
     /// </para>
     /// </remarks>
+    /// <param name="project">
+    /// The project this node serves, which decides which names it announces. Null accepts every claim, for a
+    /// node with no project of its own.
+    /// </param>
+    /// <param name="residents">
+    /// The agents this machine is running, shared with every other node in this process and keyed by
+    /// identity, so one checkout is one process however many projects ask for it. Null makes its own, which
+    /// is what a node running alone wants.
+    /// </param>
     public static async Task<int> RunAsync(
         GrpcChannel channel,
         string endpoint,
         string catalogueFile,
         TextWriter output,
+        string? project = null,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent>? residents = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(channel);
@@ -102,7 +113,24 @@ public static class NodeCommand
         }
 
         var nodes = new Wire.Nodes.NodesClient(channel);
-        var residents = new ConcurrentDictionary<string, ResidentAgent>(StringComparer.Ordinal);
+
+        // **Handed in rather than made here, and keyed by identity** (018 R5). One process hosts a node per
+        // broker it joins, and each used to keep its own table as a local — so two projects asking for one
+        // checkout started two processes, which is the hazard the per-project catalogue was partitioned to
+        // avoid. Shared and keyed by what a checkout *is*, two asks find one process.
+        // **Whoever makes this table is whoever stops it**, and the review gate found the other rule was
+        // machine-wide harm. The sweep below used to run whenever *any* node loop returned — and 018 made
+        // this table shared across every project one process hosts, so one project stopping swept every
+        // agent on the machine, including the ones still serving other projects. `serve` stops and restarts
+        // a project whose store or endpoint changed, and `project remove` ends one outright: either of them
+        // silently took down every agent Parley was running. SPEC.md §12 says what that costs — the process
+        // is what held everything each agent had learned.
+        //
+        // 018 already fixed one instance of this shape, where recording a catalogue on a project restarted
+        // the broker and dropped every agent attached to it. This is the same class, one level down.
+        var ours = residents is null;
+
+        residents ??= new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
 
         // Turns now run concurrently and each reports its own outcome, so more than one of them can
         // be writing at once. A TextWriter is not thread-safe, and the callers here supply whatever
@@ -121,7 +149,13 @@ public static class NodeCommand
                     Facts = Observe()
                 };
 
-                request.StartableRoles.AddRange(catalogue.Roles);
+                // **What this node can start for this project, which the repositories decide** (018 R3).
+                // A catalogue entry says how to start a checkout and nothing about projects; each catalogued
+                // workspace declares what it answers to, and a name two of them claim is announced by
+                // neither.
+                var announceable = catalogue.Announceable(project);
+
+                request.StartableRoles.AddRange(announceable.Names);
 
                 // Two sources, and they are not the same question. `watching` stops the poll when
                 // this attempt is over for any reason; `rejoining` is cancelled only by the poll,
@@ -131,7 +165,7 @@ public static class NodeCommand
                 using var rejoining = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
                 var watcher = WatchAsync(
-                    catalogueFile, catalogue.Roles, output, rejoining, watching.Token);
+                    catalogueFile, project, announceable.Names, output, rejoining, watching.Token);
 
                 try
                 {
@@ -144,28 +178,30 @@ public static class NodeCommand
                         {
                             case Wire.NodeCommand.CommandOneofCase.Joined:
                                 await ReportJoinedAsync(
-                                    command.Joined, catalogue, catalogueFile, endpoint, output)
+                                    command.Joined, catalogue, project, catalogueFile, endpoint, output)
                                     .ConfigureAwait(false);
                                 break;
 
                             case Wire.NodeCommand.CommandOneofCase.Start:
-                                await StartAsync(command.Start, catalogue, residents, output,
+                                await StartAsync(command.Start, catalogue, project, residents, output,
                                     cancellationToken).ConfigureAwait(false);
                                 break;
 
                             case Wire.NodeCommand.CommandOneofCase.Turn:
-                                await TurnAsync(command.Turn, residents, output, cancellationToken)
+                                await TurnAsync(command.Turn, catalogue, project, residents, output, cancellationToken)
                                     .ConfigureAwait(false);
                                 break;
 
                             case Wire.NodeCommand.CommandOneofCase.Instruct:
                                 await InstructAsync(
-                                    command.Instruct, nodes, request.Machine, residents, output, cancellationToken)
+                                    command.Instruct, nodes, request.Machine, catalogue, project, residents,
+                                    output, cancellationToken)
                                     .ConfigureAwait(false);
                                 break;
 
                             case Wire.NodeCommand.CommandOneofCase.Stop:
-                                await StopAsync(command.Stop.Agent, residents, output).ConfigureAwait(false);
+                                await StopAsync(command.Stop.Agent, catalogue, project, residents, output)
+                                    .ConfigureAwait(false);
                                 break;
 
                             default:
@@ -207,7 +243,7 @@ public static class NodeCommand
                 catalogue = changed;
 
                 await output.WriteLineAsync(
-                    $"{catalogueFile} changed. Rejoining with: {Listed(catalogue)}")
+                    $"{catalogueFile} changed. Rejoining with: {Listed(catalogue.Announceable(project).Names)}")
                     .ConfigureAwait(false);
             }
         }
@@ -230,7 +266,12 @@ public static class NodeCommand
         }
         finally
         {
-            await StopEveryoneAsync(residents, output).ConfigureAwait(false);
+            // Only the table this call created. A caller that supplied one owns its lifetime and sweeps it
+            // when the process ends, which is the one moment every agent on the machine should be sent away.
+            if (ours)
+            {
+                await StopEveryoneAsync(residents, output).ConfigureAwait(false);
+            }
         }
 
         return 0;
@@ -240,6 +281,7 @@ public static class NodeCommand
     /// Watches the catalogue and asks for a rejoin when the roles in it change.
     /// </summary>
     /// <param name="catalogueFile">The file to watch.</param>
+    /// <param name="project">The project this node serves, or null to accept every claim.</param>
     /// <param name="announced">The roles the current join announced.</param>
     /// <param name="output">Where to report a file it could not read.</param>
     /// <param name="rejoining">Cancelled to end the current stream when the roles have changed.</param>
@@ -261,6 +303,7 @@ public static class NodeCommand
     /// </remarks>
     private static async Task<NodeCatalogue?> WatchAsync(
         string catalogueFile,
+        string? project,
         IReadOnlyCollection<string> announced,
         TextWriter output,
         CancellationTokenSource rejoining,
@@ -295,7 +338,11 @@ public static class NodeCommand
 
             complained = false;
 
-            if (next.Roles.Order(StringComparer.Ordinal)
+            // **Compared on what would be announced, not on what the file holds.** The catalogue is keyed
+            // by identity and the names come from the repositories, so an entry repointed at a different
+            // checkout changes nothing here and a repository renaming itself changes everything — which is
+            // the comparison that actually decides whether the broker's picture is stale.
+            if (next.Announceable(project).Names.Order(StringComparer.Ordinal)
                 .SequenceEqual(announced.Order(StringComparer.Ordinal), StringComparer.Ordinal))
             {
                 continue;
@@ -320,18 +367,17 @@ public static class NodeCommand
         ending is OperationCanceledException
         || ending is RpcException { StatusCode: StatusCode.Cancelled };
 
-    /// <summary>The roles in a catalogue, in a stable order, for a report.</summary>
-    /// <param name="catalogue">What this machine can start.</param>
-    /// <returns>The roles, or a phrase saying there are none.</returns>
-    private static string Listed(NodeCatalogue catalogue) =>
-        catalogue.Roles.Count == 0
-            ? "nothing"
-            : string.Join(", ", catalogue.Roles.Order(StringComparer.Ordinal));
+    /// <summary>The names a node offers, in a stable order, for a report.</summary>
+    /// <param name="names">What it announced.</param>
+    /// <returns>The names, or a phrase saying there are none.</returns>
+    private static string Listed(IReadOnlyList<string> names) =>
+        names.Count == 0 ? "nothing" : string.Join(", ", names);
 
     /// <summary>Reports what the broker knows about this machine.</summary>
     /// <param name="joined">The acknowledgement.</param>
     /// <param name="catalogue">What this machine can start.</param>
     /// <param name="catalogueFile">The file it was read from, named when it turns out to be empty.</param>
+    /// <param name="project">The project this node serves, or null to accept every claim.</param>
     /// <param name="endpoint">Where the broker is.</param>
     /// <param name="output">Where to report.</param>
     /// <returns>A task that completes when it has been reported.</returns>
@@ -339,8 +385,8 @@ public static class NodeCommand
     /// <para>
     /// The reconciliation is the useful part: an agent registered to this machine that the
     /// catalogue cannot launch is a repository that moved, was renamed, or was never listed —
-    /// and saying so at startup beats discovering it when a question to it goes unanswered for a
-    /// window and is then ghosted.
+    /// and saying so at startup beats discovering it when a request to it sits uncollected and is
+    /// flagged.
     /// </para>
     /// <para>
     /// <b>"nothing" names the file it read.</b> An absent catalogue and an empty one are both
@@ -353,34 +399,65 @@ public static class NodeCommand
     private static async Task ReportJoinedAsync(
         Wire.Joined joined,
         NodeCatalogue catalogue,
+        string? project,
         string catalogueFile,
         string endpoint,
         TextWriter output)
     {
-        var startable = catalogue.Roles.Count == 0
+        var announceable = catalogue.Announceable(project);
+
+        var startable = announceable.Names.Count == 0
             ? string.Create(CultureInfo.InvariantCulture, $"nothing (no agents in {catalogueFile})")
-            : string.Join(", ", catalogue.Roles.Order(StringComparer.Ordinal));
+            : string.Join(", ", announceable.Names);
 
         await output.WriteLineAsync(string.Create(
             CultureInfo.InvariantCulture,
             $"Node {joined.Machine} joined {endpoint}. Can start: {startable}."))
             .ConfigureAwait(false);
 
+        // **A name two catalogued workspaces claim is started by neither, and saying so names both.** It is
+        // either a copied repository or an enrolment mistake, and an agent's name is the one thing Parley
+        // makes unforgeable — so this is the report a person acts on rather than a silence they cannot.
+        foreach (var contested in announceable.Contested)
+        {
+            await output.WriteLineAsync(
+                $"  {contested}: claimed by more than one catalogued workspace, so nothing answers to it "
+                + "here. Enrol one of them under another name, or re-mint its identity.")
+                .ConfigureAwait(false);
+        }
+
+        foreach (var unread in announceable.Unread)
+        {
+            await output.WriteLineAsync(
+                $"  {unread.Workspace}: its launch configuration could not be read, so nothing it answers "
+                + $"to is offered. {unread.Problem}")
+                .ConfigureAwait(false);
+        }
+
+        foreach (var strange in catalogue.Unreadable)
+        {
+            await output.WriteLineAsync(
+                $"  {strange}: not an agent identity, so this catalogue entry is ignored. Re-enrol that "
+                + "repository to give it one.")
+                .ConfigureAwait(false);
+        }
+
         var unstartable = joined.Agents
-            .Where(a => AgentName.TryCreate(a, out var name) && catalogue.CommandFor(name) is null)
+            .Where(a => !announceable.Names.Contains(a.Split('@')[0], StringComparer.Ordinal))
             .ToArray();
 
         if (unstartable.Length > 0)
         {
             await output.WriteLineAsync(
                 $"  Registered here but not in the catalogue: {string.Join(", ", unstartable)}. " +
-                "A question to one of those will wait and then be ghosted.").ConfigureAwait(false);
+                "A request to one of those waits, flagged, until somebody opens that repository.").ConfigureAwait(false);
         }
     }
 
     /// <summary>Starts an agent and gives it a turn.</summary>
     /// <param name="start">What to start, and why.</param>
     /// <param name="catalogue">What this machine can start.</param>
+    /// <param name="project">The project this node serves, or null to accept every claim.</param>
     /// <param name="residents">The agents already running here.</param>
     /// <param name="output">Where to report.</param>
     /// <param name="cancellationToken">Stops the turn.</param>
@@ -388,21 +465,22 @@ public static class NodeCommand
     /// <remarks>
     /// <para>
     /// The turn is what makes starting worth anything. A process that launched and sat there
-    /// would have attached, drained nothing, and answered nothing — SPEC.md §4.2 is clear that
+    /// would have attached, drained nothing, and done nothing — SPEC.md §4.2 is clear that
     /// waking an adapter is not the same as the model taking a turn, and the model is what
-    /// answers.
+    /// does the work.
     /// </para>
     /// <para>
     /// Failures are reported and swallowed. A repository that has moved, a command that is not
     /// installed, an agent that dies on startup: none of them is a reason to take the whole
-    /// machine off the air, and the question that prompted this will orphan and be ghosted on
-    /// its ordinary schedule, which is how the asker finds out.
+    /// machine off the air, and the Request that prompted this stays open and is flagged as not
+    /// collected, which is how the person finds out.
     /// </para>
     /// </remarks>
-    private static async Task StartAsync(
+    internal static async Task StartAsync(
         Wire.StartAgent start,
         NodeCatalogue catalogue,
-        ConcurrentDictionary<string, ResidentAgent> residents,
+        string? project,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
         TextWriter output,
         CancellationToken cancellationToken)
     {
@@ -411,48 +489,117 @@ public static class NodeCommand
             return;
         }
 
-        if (residents.TryGetValue(agent.Value, out var existing) && existing.IsAlive)
-        {
-            // Already here. The broker checks before asking, but the check and the command are
-            // not one operation — so this is the race, and losing it must not produce a second
-            // process for an agent that needed one.
-            DispatchTurn(existing, output, cancellationToken);
-            return;
-        }
-
-        if (catalogue.CommandFor(agent) is not { } command)
+        // **A name is what a project calls an agent; the thing that starts is the identity behind it**
+        // (018). Two workspaces claiming one name resolve to neither, because starting either would be
+        // guessing at identity — and the name is the one thing Parley makes unforgeable.
+        if (!catalogue.TryResolve(agent.Role, project, out var identity, out var contested))
         {
             await output.WriteLineAsync(
-                $"  {agent.Value}: asked for, but this machine has no way to start it.")
+                contested.Count > 1
+                    ? $"  {agent.Value}: two catalogued workspaces claim that name, so neither was "
+                      + $"started: {string.Join(", ", contested)}."
+                    : $"  {agent.Value}: asked for, but this machine has no way to start it.")
                 .ConfigureAwait(false);
 
             return;
         }
+
+        // **Looking and starting are one act, and until the review gate probed it they were not.**
+        // `TryGetValue` followed later by an assignment is a check-then-act, and 018 made this table shared
+        // across every project one process hosts — so two projects' node loops reach here for one identity
+        // at the same moment, both miss, and both launch. Twenty-five concurrent pairs produced **forty-seven
+        // processes**: the hazard 009's FR-013 partitioned the catalogues to avoid, arriving by the route the
+        // partition's removal opened.
+        //
+        // The second half was worse than the first. `residents[identity] = resident` overwrote the loser, so
+        // the process it had started was no longer in the table `StopEveryoneAsync` walks — an agent nothing
+        // would ever stop, accumulating one per race.
+        //
+        // One semaphore for the whole process rather than one per identity: starting is rare, it is already
+        // slower than any lock, and a table shared by every project wants a guard with the same reach.
+        await Starting.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
-            var invocation = InvocationCommand.Parse(command);
-            var workspace = catalogue.WorkspaceFor(agent) ?? Directory.GetCurrentDirectory();
+            var replacing = false;
 
-            var resident = ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System);
-            residents[agent.Value] = resident;
+            if (residents.TryGetValue(identity, out var existing))
+            {
+                if (existing.IsAlive)
+                {
+                    // Already here, and "here" is machine-wide rather than this node's own. This is also how
+                    // one checkout stays one process when a second project asks for it under another name.
+                    DispatchTurn(existing, output, cancellationToken);
+                    return;
+                }
 
-            await output.WriteLineAsync(
-                $"  {agent.Value}: started ({start.Because}).").ConfigureAwait(false);
+                // **Ours, and dead — so the corpse is disposed rather than overwritten.** `TurnAsync` takes
+                // exactly this care and says why: the object holding a departed process still owns a Process
+                // handle and the two pumps draining its output, so letting the reference fall out of the
+                // dictionary leaks both, once per agent that ever dies. The assignment below is what would
+                // have dropped it.
+                if (residents.TryRemove(identity, out var corpse))
+                {
+                    await corpse.DisposeAsync().ConfigureAwait(false);
+                }
 
-            DispatchTurn(resident, output, cancellationToken);
+                replacing = true;
+            }
+
+            if (catalogue.CommandFor(identity) is not { } command)
+            {
+                await output.WriteLineAsync(
+                    $"  {agent.Value}: asked for, but this machine has no way to start it.")
+                    .ConfigureAwait(false);
+
+                return;
+            }
+
+            try
+            {
+                var invocation = InvocationCommand.Parse(command);
+                var workspace = catalogue.WorkspaceFor(identity) ?? Directory.GetCurrentDirectory();
+
+                var resident = ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System);
+                residents[identity] = resident;
+
+                // **A replacement says so, and that is not decoration.** Starting an agent because nothing
+                // was running is an ordinary event; starting one because the process behind an attached
+                // session had gone is an anomaly worth a line, and `TurnAsync` already names the same state
+                // where it meets it. Reading a node's log, the two are completely different pieces of news.
+                await output.WriteLineAsync(
+                    replacing
+                        ? $"  {agent.Value}: restarted ({start.Because}) — the previous process had gone."
+                        : $"  {agent.Value}: started ({start.Because}).").ConfigureAwait(false);
+
+                DispatchTurn(resident, output, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                await output.WriteLineAsync($"  {agent.Value}: could not start — {exception.Message}")
+                    .ConfigureAwait(false);
+            }
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        finally
         {
-            await output.WriteLineAsync($"  {agent.Value}: could not start — {exception.Message}")
-                .ConfigureAwait(false);
+            _ = Starting.Release();
         }
     }
+
+    /// <summary>Serialises starting, so that looking for a resident and creating one are one act.</summary>
+    /// <remarks>
+    /// Process-wide, because the table it protects is: 018 gave every project one resident table so that a
+    /// checkout answering in two projects is one process. A guard narrower than the thing it guards would
+    /// leave exactly the gap this closes.
+    /// </remarks>
+    private static readonly SemaphoreSlim Starting = new(1, 1);
 
     /// <summary>Gives a turn to an agent this node already holds.</summary>
     /// <param name="turn">Which agent, and why.</param>
     /// <param name="residents">The agents already running here.</param>
     /// <param name="output">Where to report.</param>
+    /// <param name="catalogue">What this machine can start, which is what resolves a name.</param>
+    /// <param name="project">The project this node serves, or null to accept every claim.</param>
     /// <param name="cancellationToken">Stops the turn.</param>
     /// <returns>A task that completes when the turn has been taken.</returns>
     /// <remarks>
@@ -476,7 +623,9 @@ public static class NodeCommand
     /// </remarks>
     internal static async Task TurnAsync(
         Wire.GiveTurn turn,
-        ConcurrentDictionary<string, ResidentAgent> residents,
+        NodeCatalogue catalogue,
+        string? project,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
         TextWriter output,
         CancellationToken cancellationToken)
     {
@@ -485,7 +634,10 @@ public static class NodeCommand
             return;
         }
 
-        if (!residents.TryGetValue(agent.Value, out var resident))
+        // The name resolves to the identity the resident is held under, which may be a process another
+        // project's node started under a different name. That is the point of sharing the table.
+        if (!catalogue.TryResolve(agent.Role, project, out var identity, out _)
+            || !residents.TryGetValue(identity, out var resident))
         {
             // Not one of ours. Silent, and common: an agent attached through somebody's editor
             // window is working perfectly well, driven by the person in front of it.
@@ -500,7 +652,7 @@ public static class NodeCommand
             // this question exactly the way the silence this command exists to fix dropped the
             // last one, so the corpse is cleared and the anomaly is named. The broker's next
             // question arrives as a start, because by then nothing is attached.
-            if (residents.TryRemove(agent.Value, out var corpse))
+            if (residents.TryRemove(identity, out var corpse))
             {
                 // Disposed rather than dropped. The process has gone but the object holding it
                 // has not: it owns a Process handle and the two pumps draining that process's
@@ -527,6 +679,8 @@ public static class NodeCommand
     /// <param name="machine">This machine's name.</param>
     /// <param name="residents">The agents running here.</param>
     /// <param name="output">Where to report locally.</param>
+    /// <param name="catalogue">What this machine can start, which is what resolves a name.</param>
+    /// <param name="project">The project this node serves, or null to accept every claim.</param>
     /// <param name="cancellationToken">Stops the turn.</param>
     /// <returns>A task that completes when the outcome has been reported.</returns>
     /// <remarks>
@@ -550,7 +704,9 @@ public static class NodeCommand
         Wire.DeliverInstruction instruct,
         Wire.Nodes.NodesClient nodes,
         string machine,
-        ConcurrentDictionary<string, ResidentAgent> residents,
+        NodeCatalogue catalogue,
+        string? project,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
         TextWriter output,
         CancellationToken cancellationToken)
     {
@@ -558,7 +714,8 @@ public static class NodeCommand
         var reply = string.Empty;
 
         if (AgentName.TryCreate(instruct.Agent, out var agent)
-            && residents.TryGetValue(agent.Value, out var resident)
+            && catalogue.TryResolve(agent.Role, project, out var identity, out _)
+            && residents.TryGetValue(identity, out var resident)
             && resident.IsAlive)
         {
             try
@@ -695,21 +852,43 @@ public static class NodeCommand
 
     /// <summary>Stops one agent.</summary>
     /// <param name="name">The agent.</param>
+    /// <param name="catalogue">What this machine can start, which is what resolves a name.</param>
+    /// <param name="project">The project this node serves, or null to accept every claim.</param>
     /// <param name="residents">The agents running here.</param>
     /// <param name="output">Where to report.</param>
     /// <returns>A task that completes when it has stopped.</returns>
     private static async Task StopAsync(
-        string name, ConcurrentDictionary<string, ResidentAgent> residents, TextWriter output)
+        string name,
+        NodeCatalogue catalogue,
+        string? project,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
+        TextWriter output)
     {
-        if (!residents.TryRemove(name, out var resident))
+        if (!AgentName.TryCreate(name, out var asked)
+            || !catalogue.TryResolve(asked.Role, project, out var identity, out _)
+            || !residents.TryRemove(identity, out var resident))
         {
             return;
         }
 
+        await ShutDownAsync(resident, name, output).ConfigureAwait(false);
+    }
+
+    /// <summary>Ends one resident and says so.</summary>
+    /// <param name="resident">The agent.</param>
+    /// <param name="named">What to call it in the report.</param>
+    /// <param name="output">Where to report.</param>
+    /// <returns>When it has gone.</returns>
+    /// <remarks>
+    /// Shared by the one that is asked for and the sweep at the end, so a shutdown cannot come to mean two
+    /// things depending on which route reached it.
+    /// </remarks>
+    private static async Task ShutDownAsync(ResidentAgent resident, string named, TextWriter output)
+    {
         _ = await resident.ShutdownAsync(ShutdownGrace).ConfigureAwait(false);
         await resident.DisposeAsync().ConfigureAwait(false);
 
-        await output.WriteLineAsync($"  {name}: stopped.").ConfigureAwait(false);
+        await output.WriteLineAsync($"  {named}: stopped.").ConfigureAwait(false);
     }
 
     /// <summary>Stops every agent this node started.</summary>
@@ -722,12 +901,17 @@ public static class NodeCommand
     /// untidy — they would hold sessions the broker still counts, and nothing would be left that
     /// could stop them.
     /// </remarks>
-    private static async Task StopEveryoneAsync(
-        ConcurrentDictionary<string, ResidentAgent> residents, TextWriter output)
+    internal static async Task StopEveryoneAsync(
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents, TextWriter output)
     {
-        foreach (var name in residents.Keys.ToArray())
+        foreach (var identity in residents.Keys.ToArray())
         {
-            await StopAsync(name, residents, output).ConfigureAwait(false);
+            if (!residents.TryRemove(identity, out var resident))
+            {
+                continue;
+            }
+
+            await ShutDownAsync(resident, identity.ToString(), output).ConfigureAwait(false);
         }
     }
 

@@ -1,3 +1,4 @@
+using Parley.Configuration;
 using Parley.Setup;
 using System.Text.Json.Nodes;
 using Xunit;
@@ -50,7 +51,8 @@ public sealed class MultiProjectEnrolmentTests
               }
             },
             "some-other-server": { "command": "whatever" }
-          }
+          },
+          "parleyAgentId": "3f2b86d1-9c47-4a05-b8e3-51d0c7a29e64"
         }
         """;
 
@@ -129,6 +131,11 @@ public sealed class MultiProjectEnrolmentTests
     public void Enrolling_again_into_a_project_it_already_answers_in_changes_nothing()
     {
         // FR-015. The run must not report a change it did not make.
+        //
+        // **The fixture carries an identity because 018 made that part of "already correct".** A
+        // repository that declares none is genuinely changed by an enrolment — it gains one — so the
+        // file below would be rewritten and the run would be right to say so. That case is its own
+        // test rather than this one's silence.
         var plan = EnrollmentPlan.Describe(
             Entry("inventory", "Stock levels and reservations. Not pricing."),
             InAlpha,
@@ -138,6 +145,41 @@ public sealed class MultiProjectEnrolmentTests
 
         Assert.Null(plan.LaunchConfiguration);
         Assert.Contains(plan.Notes, note => note.Contains("already correct", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_repository_that_declares_no_identity_gains_one_and_the_run_says_so()
+    {
+        // The other half of the test above, and the one enrolment actually performs on every
+        // repository enrolled before 018. The identity is what the catalogue is keyed by, so a
+        // checkout without one is startable by nothing; gaining one is a change to somebody's file and
+        // is reported like every other.
+        // Taken out through the parser rather than by string surgery, because the member's line ending
+        // is whatever this file has and a literal would match on one platform and not the other.
+        var stripped = JsonNode.Parse(InAlpha)!.AsObject();
+
+        _ = stripped.Remove(LaunchConfiguration.IdentityMember);
+
+        var without = stripped.ToJsonString();
+
+        var plan = EnrollmentPlan.Describe(
+            Entry("inventory", "Stock levels and reservations. Not pricing."),
+            without,
+            null,
+            false,
+            project: "alpha");
+
+        Assert.NotNull(plan.LaunchConfiguration);
+        Assert.True(plan.Identity.Known);
+        Assert.Contains(
+            plan.Notes,
+            note => note.Contains(LaunchConfiguration.IdentityMember, StringComparison.Ordinal));
+
+        // And it is the one written into the file, not a second one minted on the way out.
+        Assert.Equal(
+            plan.Identity.ToString(),
+            JsonNode.Parse(plan.LaunchConfiguration!)![LaunchConfiguration.IdentityMember]!
+                .GetValue<string>());
     }
 
     [Fact]

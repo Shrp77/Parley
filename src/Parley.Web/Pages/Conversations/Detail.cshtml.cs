@@ -81,29 +81,6 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     [BindProperty]
     public string? Says { get; set; }
 
-    /// <summary>Whether an answer is wanted back.</summary>
-    /// <remarks>
-    /// It means two different things depending on who is writing, which is the honest reading of
-    /// both. From a seat it chooses between §10.1's <c>ask</c> and <c>notify</c>, and an
-    /// exchange is opened or not. From the operator it is a sentence in an instruction, because
-    /// §11.5 has no reply channel and the agent may decline the whole thing.
-    /// </remarks>
-    [BindProperty]
-    public bool WantsAnswer { get; set; }
-
-    /// <summary>What the person is trying to decide, when they are asking a question.</summary>
-    /// <remarks>
-    /// Only reached from a seat. §8 rule 1 is enforced in the schema, so a question without it
-    /// is refused by a <c>CHECK</c> constraint — this asks for it in the form instead, where the
-    /// answer is a sentence rather than a debugging session.
-    /// </remarks>
-    [BindProperty]
-    public string? Intent { get; set; }
-
-    /// <summary>What turns on the answer, when they are asking a question.</summary>
-    [BindProperty]
-    public string? Consequences { get; set; }
-
     /// <summary>The seat this person holds in this project, or null if they hold none.</summary>
     /// <remarks>
     /// What decides whether the composer speaks or instructs. A person without a seat has no
@@ -125,57 +102,86 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
 
     /// <summary>Says where the exchange a message belongs to stands.</summary>
     /// <param name="message">The message.</param>
-    /// <returns>The state in words, or empty when the message belongs to no exchange.</returns>
+    /// <returns>The state in words, or empty when the export did not include the exchange.</returns>
     /// <remarks>
-    /// Read from the export rather than inferred from the messages, because an orphaned exchange
-    /// and an open one carry exactly the same traffic — and an operator opens a conversation
+    /// Read from the export rather than inferred from the messages, because an exchange a person closed
+    /// and one that was finished can carry the same last message — and an operator opens a conversation
     /// precisely because something went wrong.
     /// </remarks>
     public string StateOf(Message message) =>
-        message.ExchangeId is { } id && Exchanges.TryGetValue(id, out var snapshot)
-            ? snapshot.State switch
-            {
-                ExchangeState.Open => "still open, awaiting an answer",
-                ExchangeState.Orphaned => "orphaned: nobody returned to it",
-                _ => "closed"
-            }
+        Exchanges.TryGetValue(message.ExchangeId, out var snapshot)
+            ? snapshot.State == ExchangeState.Open ? "still open, awaiting a result" : Reading.State(snapshot)
             : string.Empty;
 
-    /// <summary>The identifier of the newest message on this page.</summary>
-    /// <remarks>
-    /// What a staleness check compares against. A transcript must not change under its reader, so
-    /// the page says it has fallen behind rather than growing while somebody is partway down it.
-    /// </remarks>
-    public long Newest => Messages.Count == 0 ? 0 : Messages[^1].Id;
+    /// <summary>Whether the exchange a message belongs to was closed by a person rather than finished.</summary>
+    /// <param name="message">The message.</param>
+    /// <returns><see langword="true"/> when its exchange closed with outcome <c>closed</c>.</returns>
+    public bool ClosedUnfinished(Message message) =>
+        Exchanges.TryGetValue(message.ExchangeId, out var snapshot) && snapshot.Outcome == ExchangeOutcome.Closed;
 
-    /// <summary>Says whether the conversation has gained messages since a page was rendered.</summary>
-    /// <param name="since">The newest message the reader has.</param>
-    /// <returns>How many have arrived since.</returns>
-    public async Task<IActionResult> OnGetSinceAsync(long since)
+    /// <summary>Where a following page asks for the conversation again.</summary>
+    public string FollowPath =>
+        $"/Conversations/Detail?project={Uri.EscapeDataString(Project ?? string.Empty)}"
+        + $"&id={Uri.EscapeDataString(Id ?? string.Empty)}&handler=Follow";
+
+    /// <summary>A digest of a rendered region, which a following page compares to decide whether anything changed.</summary>
+    /// <param name="html">The region as rendered.</param>
+    /// <returns>SHA-256 of its UTF-8 bytes, in lowercase hex.</returns>
+    public static string Digest(string html)
+    {
+        ArgumentNullException.ThrowIfNull(html);
+
+        return Convert.ToHexStringLower(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(html)));
+    }
+
+    /// <summary>The conversation's changing region again, for a page that is following it.</summary>
+    /// <returns>
+    /// The region, or 503 carrying the reason when the broker could not be read, or 404 for a project this
+    /// console does not know.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The transcript follows its conversation, which reverses what this page used to do.</b> It never
+    /// refreshed, on the argument that a page changing under a reader mid-sentence is worse than one briefly
+    /// out of date, and said instead that it had fallen behind. The terminal answered that argument in 0.25.7
+    /// rather than overruling it, and this answers it the same way: a transcript grows only at its end, and
+    /// the page keeps the message a reader is looking at where it was — so what the argument feared does not
+    /// happen, and a reader at the bottom sees an answer arrive without reloading.
+    /// </para>
+    /// <para>
+    /// <b>The whole region rather than the messages after one the reader has.</b> A new message is not the
+    /// only change: an earlier exchange closes, a participant's standing in the roster moves, a note about
+    /// who could see a message gains a name. The terminal reads the whole export and redraws when the text
+    /// differs, and this is that, with the page comparing digests so nothing is touched when nothing changed.
+    /// </para>
+    /// <para>
+    /// <b>A read that follows must not keep a seat.</b> The frame touches a seat on every render, because a
+    /// page render is evidence somebody is at the console and <see cref="SeatBook.IdleAfter"/> is the only
+    /// thing that releases a seat whose person has gone. A tab polling every few seconds is not a person, and
+    /// a follow that counted would hold a seat for as long as a browser stayed open — which is the case the
+    /// idle release exists for. So this returns a partial, which has no frame, and reads no seat.
+    /// </para>
+    /// <para>
+    /// A failed read changes nothing on the page: it answers 503 and the page keeps what it shows and says it
+    /// may be out of date. A 200 with an empty region would replace a conversation with nothing because of a
+    /// moment's trouble reaching the broker.
+    /// </para>
+    /// </remarks>
+    public async Task<IActionResult> OnGetFollowAsync()
     {
         var project = directory.Find(Project);
 
         if (project is null || string.IsNullOrWhiteSpace(Id))
         {
-            return new JsonResult(new { arrived = 0 });
+            return NotFound();
         }
 
-        var read = await BrokerDirectory.ReadAsync(async () =>
-            await new BrokerClient(directory.ClientFor(project))
-                .ExportAsync(Id, HttpContext.RequestAborted).ConfigureAwait(false))
-            .ConfigureAwait(false);
+        await ReadAsync(project, Id).ConfigureAwait(false);
 
-        if (read.Value is not { } export)
-        {
-            // Not zero. A broker that stopped answering and a conversation that gained nothing
-            // are the same number, and reporting the first as the second leaves a transcript
-            // quietly asserting it is current for as long as the tab stays open — which is the
-            // failure this whole check exists to prevent, arriving by the back door.
-            return new JsonResult(new { arrived = 0, checkFailed = true });
-        }
+        Response.Headers.CacheControl = "no-store";
 
-        return new JsonResult(
-            new { arrived = export.Messages.Count(m => m.Id > since), checkFailed = false });
+        return Problem is null ? Partial("_Followed", this) : Unavailable(Problem);
     }
 
     /// <summary>The transcript as text, with its annotations intact.</summary>
@@ -290,8 +296,8 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     /// </para>
     /// <para>
     /// Without a seat it instructs, and puts nothing in the conversation. §5.0 derives
-    /// participants from being party to an exchange, and there is no operator <c>ask</c> or
-    /// <c>notify</c> — an operator is not an agent and has no name in the registry to send as.
+    /// participants from being party to an exchange, and there is no operator <c>request</c> — an
+    /// operator is not an agent and has no name in the registry to send as.
     /// What it does is tell agents something, marked as the operator's (§11.5); if one of them
     /// then speaks to a peer, that message is theirs and appears here as theirs.
     /// </para>
@@ -385,10 +391,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
 
             if (voice is not null)
             {
-                sent.Add((target, WantsAnswer
-                    ? await voice.AskAsync(agent, Intent, Says, Consequences, Id, token)
-                        .ConfigureAwait(false)
-                    : await voice.NotifyAsync(agent, Says, Id, token).ConfigureAwait(false)));
+                sent.Add((target, await voice
+                    .RequestAsync(agent, Says, Id, token)
+                    .ConfigureAwait(false)));
 
                 continue;
             }
@@ -414,12 +419,8 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     /// will be said cannot be responsible for it — and the node marks this as the operator's, so
     /// the agent reads it as the principal speaking.
     /// </remarks>
-    public string Compose()
-    {
-        var opening = WantsAnswer ? "I would like a reply." : "No reply needed.";
-
-        return $"About conversation '{Id}'. {opening}{Environment.NewLine}{Environment.NewLine}{Says}";
-    }
+    public string Compose() =>
+        $"About conversation '{Id}'.{Environment.NewLine}{Environment.NewLine}{Says}";
 
     /// <summary>Puts one instruction's outcome into words.</summary>
     /// <param name="result">What the broker reported.</param>
@@ -436,7 +437,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
         InstructionOutcome.Taken => $"Taken. {result.Reply}",
         InstructionOutcome.Declined => $"Declined, which is its right. {result.Reply}",
         InstructionOutcome.Undeliverable =>
-            "Not delivered: nothing is running for that agent to receive it.",
+            InstructionWording.Undeliverable,
         InstructionOutcome.Failed => $"The turn did not complete. {result.Reply}",
         _ => "Given to the agent, and the turn is still running. Its answer will appear on that "
              + "agent's page."
@@ -464,9 +465,20 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
 
         Seat = SeatCookie.Read(Request) is { } who ? seats.Held(project.Name.Value, who) : null;
 
+        await ReadAsync(project, Id).ConfigureAwait(false);
+
+        return Page();
+    }
+
+    /// <summary>Reads the conversation and its participants' standing, for the page or for a follow.</summary>
+    /// <param name="project">The project it belongs to.</param>
+    /// <param name="id">The conversation.</param>
+    /// <returns>When it has been read.</returns>
+    private async Task ReadAsync(ProjectSettings project, string id)
+    {
         var read = await BrokerDirectory.ReadAsync(async () =>
             await new BrokerClient(directory.ClientFor(project))
-                .ExportAsync(Id, HttpContext.RequestAborted).ConfigureAwait(false))
+                .ExportAsync(id, HttpContext.RequestAborted).ConfigureAwait(false))
             .ConfigureAwait(false);
 
         Messages = read.Value?.Messages ?? [];
@@ -494,7 +506,5 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
             Roll = known;
         }
         AsOf = DateTimeOffset.Now;
-
-        return Page();
     }
 }

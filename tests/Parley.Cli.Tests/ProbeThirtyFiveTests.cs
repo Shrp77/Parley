@@ -81,6 +81,9 @@ public sealed class ProbeThirtyFiveTests : IDisposable
         return projects;
     }
 
+    /// <summary>This machine's one catalogue, which every project on it is started from (018).</summary>
+    private string MachineCatalogue => Path.Combine(_root, "node.json");
+
     private Task<Enrolment.Outcome> EnrolAsync(string project, bool unattended) =>
         Enrolment.AddAsync(
             new EnrollmentEntry(Workspace, "infra", "Pipelines and images. Not the product.", unattended)
@@ -89,7 +92,7 @@ public sealed class ProbeThirtyFiveTests : IDisposable
                 OwnsApproved = true,
             },
             project,
-            Path.Combine(_root, $"{project}-node.json"),
+            MachineCatalogue,
             Path.Combine(Workspace, "CLAUDE.md"),
             TestContext.Current.CancellationToken,
             Deployment(),
@@ -114,16 +117,22 @@ public sealed class ProbeThirtyFiveTests : IDisposable
     [Fact]
     public async Task An_attended_enrolment_beside_an_unattended_one_says_it_too()
     {
-        // The other order, and the one that is easier to miss: the consent was granted first and is
-        // widened by an enrolment that is not itself about running unattended. Nothing re-reads the
-        // catalogue afterwards, so this is the only moment anybody could be told.
+        // The other order, and the one that is easier to miss: the checkout was catalogued first and
+        // what this enrolment adds is loaded by the same start. Nothing re-reads the catalogue
+        // afterwards, so this is the only moment anybody could be told.
+        //
+        // **What the sentence names changed with 018 and what it is for did not.** It used to name the
+        // project holding the unattended consent, because consent was per project and a person who
+        // wanted it moved had to know which project to take it from. There is one catalogue per machine
+        // now, so the thing that already starts this checkout is the machine.
         await EnrolAsync("alpha", unattended: true);
 
         var outcome = await EnrolAsync("beta", unattended: false);
 
         Assert.Contains(
             outcome.Notes,
-            note => note.Contains("alpha", StringComparison.Ordinal));
+            note => note.Contains("this machine already starts", StringComparison.Ordinal)
+                && note.Contains("nobody watching", StringComparison.Ordinal));
     }
 
     [Fact]

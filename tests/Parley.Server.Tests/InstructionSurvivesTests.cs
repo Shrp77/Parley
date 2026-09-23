@@ -241,7 +241,7 @@ public sealed class InstructionSurvivesTests
     [Fact]
     public async Task The_broker_bounds_the_page_whatever_the_caller_asks_for()
     {
-        // §10.2 makes rule 8.5's argument one level up: an unbounded operator query is the mistake
+        // §10.2 makes rule 8.4's argument one level up: an unbounded operator query is the mistake
         // the message cap prevents, and a caller's number is a caller's number.
         var token = TestContext.Current.CancellationToken;
 

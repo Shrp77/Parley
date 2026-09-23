@@ -1,30 +1,18 @@
-﻿using Parley.Core;
+using Parley.Core;
 
 namespace Parley.Broker;
 
 /// <summary>
-/// What one broker tick did.
+/// What one maintenance pass did.
 /// </summary>
-/// <param name="Exchanges">What the exchange sweep orphaned, ghosted, and lost to contention.</param>
-/// <param name="ConversationsConcluded">
-/// Conversations closed because every polled participant agreed, or fell silent long enough to
-/// be taken as agreeing.
-/// </param>
-/// <param name="Retention">What the retention policy of §9.4 removed and what the floor held.</param>
-/// <param name="InstructionsAbandoned">
-/// How many operator instructions were settled as failed for having outlived any turn a node is
-/// permitted to run.
-/// </param>
+/// <param name="ConversationsConcluded">Polling conversations closed because their last decline lapsed.</param>
+/// <param name="Retention">What retention removed, or <see cref="PruneResult.Nothing"/> when it was not due.</param>
+/// <param name="InstructionsAbandoned">Instructions settled failed because their turn outlived any permitted length.</param>
 /// <remarks>
-/// A wrapper rather than three more fields on <see cref="ReapResult"/>, because the two sweeps
-/// answer to different sections and would drift if merged. <see cref="ReapResult"/> is the
-/// §6 and §14 deadline machinery and lives in the store beside the repository it reads;
-/// closure is §5.0 consensus, runs on a different clock, and is decided from the registry as
-/// much as from any exchange. A single record would have made <c>Reaper</c> the place both
-/// were implemented, which is how a type acquires a second reason to change.
+/// There is no count of exchanges: the pass does nothing to them. Nothing times an exchange out
+/// (principle 2.8), and flags are derived when a person reads them rather than written by a sweep.
 /// </remarks>
 public sealed record TickResult(
-    ReapResult Exchanges,
     int ConversationsConcluded,
     PruneResult Retention,
     int InstructionsAbandoned = 0);

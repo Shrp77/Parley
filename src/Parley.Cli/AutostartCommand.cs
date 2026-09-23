@@ -203,8 +203,8 @@ public static class AutostartCommand
 
         // Which half was installed, said plainly, because the two are one entry and therefore
         // indistinguishable in a task list. A deployment whose node was left out looks identical
-        // to one whose node is running, until a question to a repository nobody has open waits
-        // out its window and is ghosted.
+        // to one whose node is running, until a request to a repository nobody has open waits,
+        // never collected, and is flagged.
         if (manifestToServe is not null)
         {
             await output.WriteLineAsync(
@@ -212,8 +212,18 @@ public static class AutostartCommand
                 "named later\n         is started within seconds, without reinstalling this.")
                 .ConfigureAwait(false);
 
-            await output.WriteLineAsync(
-                "  hosts: this machine's agents in each project whose entry names a catalogue.")
+            // **One catalogue for the machine, named once** (018). This said "in each project whose
+            // entry names a catalogue" and the lines under it printed one path per project, because a
+            // catalogue used to belong to one — which is exactly what made a checkout startable in one
+            // project and not the other. The binding is gone, so a path per project would be this
+            // command reading a manifest field nothing else does, and reporting it as fact.
+            //
+            // Resolved once into a local, for the reason the store path above it is: the line that
+            // reports a path and the check that compares it are two answers to one question, and they
+            // agree only while nothing moves underneath them.
+            var hosting = MachineCatalogue(nodeConfig, manifestToServe);
+
+            await output.WriteLineAsync($"  hosts: this machine's agents, from {hosting}")
                 .ConfigureAwait(false);
 
             foreach (var line in ServedProjects(manifestToServe))
@@ -221,14 +231,30 @@ public static class AutostartCommand
                 await output.WriteLineAsync(line).ConfigureAwait(false);
             }
 
+            // A machine just installed names nothing, and the entry is waiting rather than broken: said, with the way on.
+            if (Parley.Configuration.ProjectManifest.TryRead(manifestToServe, out var listedProjects, out _)
+                && listedProjects.Count == 0)
+            {
+                await output.WriteLineAsync(
+                    "  names: no project yet. Name the first one from `parley terminal`, or with `parley project add`;\n" +
+                    "         it starts within seconds, and the web UI shows it.")
+                    .ConfigureAwait(false);
+            }
+
+            // **Still worth saying, and it now asks a different question.** It used to ask whether any
+            // project named a catalogue, because that is where the replaced entry's one would have had
+            // to be carried to. Nothing names one any more, so what can be lost is narrower and more
+            // specific: the old entry hosted from one file and the new one hosts from another, and
+            // every agent catalogued only in the old file stops being startable at the next logon.
             if (replacing is { ServesManifest: false, NodeConfig: { Length: > 0 } dropped }
-                && !ProjectsNameACatalogue(manifestToServe))
+                && !SamePath(Path.GetFullPath(dropped), hosting))
             {
                 await output.WriteLineAsync(
                     $"  WARNING: the entry this replaced started this machine's agents from {dropped}, " +
-                    "and no project in the manifest names a catalogue, so none will be started " +
-                    "now.\n         Give the project one with `parley project set <name> " +
-                    $"--node-config {AutostartPlan.Quote(dropped)}`; the broker picks it up within seconds.")
+                    $"and this one\n         hosts from {hosting}. " +
+                    "Anything catalogued only in the old file will not\n         be started. Re-run with " +
+                    $"`--node-config {AutostartPlan.Quote(dropped)}` to keep the old one, or re-enrol " +
+                    "those repositories.")
                     .ConfigureAwait(false);
             }
         }
@@ -240,8 +266,8 @@ public static class AutostartCommand
         else
         {
             await output.WriteLineAsync(
-                "  hosts: nothing. This entry starts the broker alone, so a question to a " +
-                "repository\n         nobody has open will wait and then be ghosted. Install " +
+                "  hosts: nothing. This entry starts the broker alone, so a request to a " +
+                "repository\n         nobody has open waits, flagged, until somebody opens it. Install " +
                 "with --node-config <path>\n         to have it start this machine's agents too.")
                 .ConfigureAwait(false);
         }
@@ -299,14 +325,47 @@ public static class AutostartCommand
         return true;
     }
 
-    /// <summary>Whether any project in a manifest names a node catalogue.</summary>
-    /// <param name="manifestPath">The manifest.</param>
-    /// <returns><see langword="true"/> if at least one does; false when none do or it cannot be read.</returns>
-    private static bool ProjectsNameACatalogue(string manifestPath) =>
-        Configuration.ProjectManifest.TryRead(manifestPath, out var projects, out _)
-        && projects.Any(p => p.NodeConfig is { Length: > 0 });
+    /// <summary>Where the broker this entry starts will look for this machine's catalogue.</summary>
+    /// <param name="nodeConfig">A catalogue named on this command line, or null.</param>
+    /// <param name="manifestPath">The manifest the entry serves.</param>
+    /// <returns>The absolute path.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Resolved with no environment, because the entry runs with none.</b> A supervisor starts
+    /// the broker at logon, where nothing has set <c>PARLEY_NODE_CONFIG</c> — the paragraph above
+    /// the manifest check says so in as many words, about what it serves. Reporting the path
+    /// <i>this shell</i> would resolve would therefore be the same defect this output was just
+    /// fixed for: a true-looking answer to a question nobody asked, about a run that will not
+    /// happen. So the variable is not consulted, and what is printed is what the logon broker gets.
+    /// </para>
+    /// <para>
+    /// The lookup is <see cref="ProjectResolution.NodeConfig"/>'s rather than a second copy of the
+    /// rule, for the reason <c>LaunchKey</c> changed assemblies during 018: one rule with two
+    /// implementations is a rule that agrees right up until it does not, and this one decides where
+    /// consent to start an agent is read from.
+    /// </para>
+    /// </remarks>
+    internal static string MachineCatalogue(string? nodeConfig, string manifestPath) =>
+        Path.GetFullPath(
+            ProjectResolution.NodeConfig(nodeConfig, _ => null, manifestPath).Value
+            ?? Configuration.NodeCatalogue.DefaultFileName);
 
-    /// <summary>Every project this entry serves, with the three files each one is.</summary>
+    /// <summary>Whether two resolved paths are the same file to this platform.</summary>
+    /// <param name="left">One path.</param>
+    /// <param name="right">The other.</param>
+    /// <returns>True when they name the same thing.</returns>
+    /// <remarks>
+    /// Case-folded on Windows and not elsewhere, because the comparison decides whether to print a
+    /// warning about agents that will stop being started — and a warning raised by nothing but the
+    /// capitalisation of a drive letter is one somebody learns to ignore.
+    /// </remarks>
+    private static bool SamePath(string left, string right) =>
+        string.Equals(
+            left,
+            right,
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    /// <summary>Every project this entry serves, with the store and endpoint each one names.</summary>
     /// <param name="manifestPath">The manifest the entry serves.</param>
     /// <returns>The lines to print, or nothing when the manifest cannot be read.</returns>
     /// <remarks>
@@ -319,12 +378,17 @@ public static class AutostartCommand
     /// agents.
     /// </para>
     /// <para>
-    /// <b>Three files, because a deployment is three files per project and they are rarely together.</b>
-    /// The manifest is the one thing a person is told about, and it is the only one of the four that
-    /// the entry itself names: the store and the catalogue are inside it, per project, and on the
-    /// deployment that found this they were in different directories from each other and from the
-    /// manifest. A path a person has to go and look up is a path they cannot check against what they
-    /// meant.
+    /// <b>The paths, because they are rarely beside the manifest and a path somebody has to go and
+    /// look up is a path they cannot check against what they meant.</b> The manifest is the one thing
+    /// a person is told about, and it is the only one the entry itself names; the store is inside it,
+    /// per project, and on the deployment that found this the two projects' stores were in different
+    /// directories from each other and from the manifest.
+    /// </para>
+    /// <para>
+    /// <b>This said "three files" and named a catalogue per project until 018.</b> There is one per
+    /// machine now, so the caller says it once above these lines rather than repeating one path under
+    /// every project — and the reason it had to change is the reason the feature exists: a catalogue
+    /// that belonged to a project is what let a checkout be startable in one and stranded in another.
     /// </para>
     /// <para>
     /// Silent when the manifest cannot be read, because the callers have their own words for that and
@@ -345,13 +409,12 @@ public static class AutostartCommand
             lines.Add($"    {project.Name.Value}  {project.Endpoint}");
             lines.Add($"      store:     {project.Store}");
 
-            // Named as a fact about this machine rather than as a property of the project: a project
-            // with no catalogue is *served* -- its broker comes up and answers -- and starts nothing
-            // here, which is a different thing from not being served, and the only one of the two
-            // that reads as a fault when it is not one.
-            lines.Add(project.NodeConfig is { Length: > 0 } catalogue
-                ? $"      catalogue: {catalogue}"
-                : "      catalogue: none, so this machine starts no agents for it");
+            // **The catalogue line was here and is now said once for the machine** (018). What stood
+            // here named `node_config` from this project's manifest entry, and the paragraph above
+            // still records why three files per project was the right answer then. It is the wrong
+            // answer now for the reason the whole feature exists: one catalogue per machine means a
+            // path printed per project is either the same path repeated or a field nothing reads.
+            // The remaining two really are per project, and really are in different directories.
         }
 
         return lines;
@@ -546,6 +609,15 @@ public static class AutostartCommand
 
             if (entry.ServesManifest && entry.Manifest is { Length: > 0 } served)
             {
+                // **Said here as well, and read out of the entry rather than resolved in this shell**
+                // (018). Status lost its catalogue line the moment `ServedProjects` stopped printing
+                // one per project — and "which file does the node read" is most of what somebody
+                // running this command is asking, since it is the one that decides what can be
+                // started. The entry's own `--node-config` is what the logon broker will see.
+                await output.WriteLineAsync(
+                    $"  hosts: this machine's agents, from {MachineCatalogue(entry.NodeConfig, served)}")
+                    .ConfigureAwait(false);
+
                 foreach (var line in ServedProjects(served))
                 {
                     await output.WriteLineAsync(line).ConfigureAwait(false);

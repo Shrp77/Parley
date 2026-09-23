@@ -28,8 +28,11 @@ public sealed class PruneCommandTests : IAsyncDisposable
     private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    private const string Question =
-        """{"intent":"where does price live","sub_questions":[{"id":"q1","text":"gross or net?"}],"consequences":"If it does I read it from you; if not I snapshot my own copy and we can diverge."}""";
+    private const string Request =
+        """{"ask":"Where does price live, and is it gross or net of tax?"}""";
+
+    private const string Result =
+        """{"outcomes":[{"id":"request","outcome":"answered","text":"net"}]}""";
 
     private const string Model = "some-model-9";
 
@@ -86,21 +89,19 @@ public sealed class PruneCommandTests : IAsyncDisposable
 
     private string Printed => _output.ToString();
 
-    /// <summary>Asks, collects and answers, so the exchange ends and its floor lifts.</summary>
+    /// <summary>Requests, collects and resolves, so the exchange ends and its floor lifts.</summary>
     private async Task SettledExchange()
     {
         var broker = new Broker.Broker(_connection, BrokerOptions.Default);
         await broker.StartAsync(Orders, T0, Ct);
 
-        var asked = await broker.AskAsync(Orders, Billing, Model, Question, T0, "pricing", Ct);
-        Assert.True(asked.Succeeded, $"expected admission, got {asked.Rejection}");
+        var sent = await broker.RequestAsync(Orders, Billing, Model, Request, T0, "pricing", Ct);
+        Assert.True(sent.Exchange is not null, $"expected admission, got {sent.Admission.Rejection}");
 
         await broker.DrainInboxAsync(Billing, T0.AddMinutes(1), cancellationToken: Ct);
 
-        Assert.True((await broker.AnswerAsync(
-            asked.Exchange!.Id, Billing, Model,
-            """{"resolutions":[{"id":"q1","resolution":"answered","text":"net"}]}""",
-            T0.AddMinutes(2), cancellationToken: Ct)).Succeeded);
+        Assert.True((await broker.ResultAsync(
+            sent.Exchange.Id, Billing, Model, Result, T0.AddMinutes(2), cancellationToken: Ct)).Succeeded);
 
         await broker.DrainInboxAsync(Orders, T0.AddMinutes(3), cancellationToken: Ct);
     }
@@ -158,9 +159,8 @@ public sealed class PruneCommandTests : IAsyncDisposable
         var broker = new Broker.Broker(_connection, BrokerOptions.Default);
         await broker.StartAsync(Orders, T0, Ct);
 
-        // Asked and never collected: past every deadline, and held anyway.
-        Assert.True((await broker.AskAsync(Orders, Billing, Model, Question, T0, null, Ct))
-            .Succeeded);
+        // Sent and never collected: sixty days old, and held anyway.
+        Assert.NotNull((await broker.RequestAsync(Orders, Billing, Model, Request, T0, null, Ct)).Exchange);
 
         _clock.Advance(TimeSpan.FromDays(60));
 
@@ -203,8 +203,7 @@ public sealed class PruneCommandTests : IAsyncDisposable
 
             var broker = new Broker.Broker(connection, BrokerOptions.Default);
             await broker.StartAsync(Orders, T0, Ct);
-            Assert.True((await broker.AskAsync(Orders, Billing, Model, Question, T0, null, Ct))
-                .Succeeded);
+            Assert.NotNull((await broker.RequestAsync(Orders, Billing, Model, Request, T0, null, Ct)).Exchange);
         }
 
         return path;
@@ -308,15 +307,13 @@ public sealed class PruneCommandTests : IAsyncDisposable
             var broker = new Broker.Broker(connection, BrokerOptions.Default);
             await broker.StartAsync(Orders, then, Ct);
 
-            var asked = await broker.AskAsync(Orders, Billing, Model, Question, then, null, Ct);
-            Assert.True(asked.Succeeded, $"expected admission, got {asked.Rejection}");
+            var sent = await broker.RequestAsync(Orders, Billing, Model, Request, then, null, Ct);
+            Assert.True(sent.Exchange is not null, $"expected admission, got {sent.Admission.Rejection}");
 
             await broker.DrainInboxAsync(Billing, then.AddMinutes(1), cancellationToken: Ct);
 
-            Assert.True((await broker.AnswerAsync(
-                asked.Exchange!.Id, Billing, Model,
-                """{"resolutions":[{"id":"q1","resolution":"answered","text":"net"}]}""",
-                then.AddMinutes(2), cancellationToken: Ct)).Succeeded);
+            Assert.True((await broker.ResultAsync(
+                sent.Exchange.Id, Billing, Model, Result, then.AddMinutes(2), cancellationToken: Ct)).Succeeded);
 
             await broker.DrainInboxAsync(Orders, then.AddMinutes(3), cancellationToken: Ct);
         }

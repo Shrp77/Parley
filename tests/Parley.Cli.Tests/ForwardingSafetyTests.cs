@@ -13,10 +13,10 @@ namespace Parley.Cli.Tests;
 /// always the one that was installed.
 /// </para>
 /// <para>
-/// <b>The second was probed outside the suite and held.</b> `parley-top` is started by bare name,
-/// and Windows' documented search order for <c>CreateProcess</c> includes the calling process's
-/// current directory — so an operator running `parley top` inside a cloned repository containing a
-/// `parley-top.exe` would be the hijack. It was tried: a working stand-in was planted in the
+/// <b>The second was probed outside the suite and held.</b> `parley-terminal` is started by bare
+/// name, and Windows' documented search order for <c>CreateProcess</c> includes the calling
+/// process's current directory — so an operator running `parley terminal` inside a cloned repository
+/// containing a `parley-terminal.exe` would be the hijack. It was tried: a working stand-in was planted in the
 /// working directory, proved to run when invoked directly, and the tool on PATH answered anyway,
 /// with <c>NoDefaultCurrentDirectoryInExePath</c> removed from the calling process as well as the
 /// child. .NET's <c>Process.Start</c> resolves through PATH. Recorded rather than defended against,
@@ -24,7 +24,7 @@ namespace Parley.Cli.Tests;
 /// nothing exercises.
 /// </para>
 /// <para>
-/// Whether an awkward argument survives the hand-off is checked in <c>Parley.Top.Tests</c>, against
+/// Whether an awkward argument survives the hand-off is checked in <c>Parley.Terminal.Tests</c>, against
 /// the real terminal. A first draft checked it here against <c>cmd</c>, and could not: the shell's
 /// own quoting rules decide what <c>if exist</c> sees, so the probe was measuring <c>cmd</c> rather
 /// than the wrapper.

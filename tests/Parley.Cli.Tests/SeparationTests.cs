@@ -36,13 +36,17 @@ public sealed class SeparationTests
         // method was already in.
         string[] expected =
         [
+            "ArchiveAsync",
+
             // Not "ClarifyAsync". §10.1 gives an agent clarify(exchange_id, text), and this
             // check is one of the three that caught the collision when the report was first
             // written under that name.
             "ClarificationsAsync",
+            "DestroyAsync",
             "ExportAsync",
+            "FlagsAsync",
             "ForceConcludeAsync",
-            "NotificationsAsync",
+            "InstructAsync",
             "PruneAsync",
 
             // No agent operation deletes anything, so there is no name here to collide with —
@@ -50,13 +54,6 @@ public sealed class SeparationTests
             // agent that could purge a peer would be an agent with authority over another,
             // which the whole protocol refuses.
             "PurgeAsync",
-            // Two letters from RefusalsAsync below, which is worth noticing rather than
-            // renaming away: both are read-only reports, so typing one for the other costs a
-            // glance at unexpected output and nothing else. The §10.2 naming rule is about an
-            // operator operation being mistaken for an agent one, which neither of these is.
-            // If either ever gained a side effect, that reasoning expires and they must be
-            // pulled apart.
-            "ReferralsAsync",
             "RefusalsAsync",
 
             // Not "AgentsAsync". §10.1 gives an agent agents(), and the operator's listing is a
@@ -65,7 +62,16 @@ public sealed class SeparationTests
             // which is what hid the collision: adding the row made the spec check fail.
             "RegistryAsync",
             "ReinstateAsync",
-            "RetireAsync"
+
+            // Not "ResultAsync". §10.1 gives an agent result(exchange_id, outcomes), and this reads
+            // what every Result said; a single letter apart is exactly the collision §10.2 warns of,
+            // which is why the report is plural and reads rather than writes.
+            "ResultsAsync",
+            "RetireAsync",
+
+            // Not "StartAsync". §10.1's start is an agent attaching; this asks a machine to launch one.
+            "StartAgentAsync",
+            "UnarchiveAsync"
         ];
 
         Assert.Equal(expected, PublicMethodsOf(typeof(OperatorCommands)).OrderBy(n => n, StringComparer.Ordinal));

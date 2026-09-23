@@ -76,11 +76,66 @@ internal sealed class LoopbackOperator : IAsyncDisposable
         return new LoopbackOperator(server, GrpcChannel.ForAddress(server.Addresses[0]));
     }
 
+    /// <summary>How long a teardown waits for the channel before it stops waiting and says so.</summary>
+    /// <remarks>
+    /// Generous, because the honest case is milliseconds and the only thing this bound exists to catch is a
+    /// call that is never going to complete.
+    /// </remarks>
+    private static readonly TimeSpan ShutdownBudget = TimeSpan.FromSeconds(10);
+
     /// <summary>Stops the broker and closes the client.</summary>
     /// <returns>A task that completes when both are closed.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The channel shutdown is bounded so that a teardown which never returns is reported rather than
+    /// waited on.</b> <c>ShutdownAsync</c> waits for pending calls and took no deadline, and a seat's mail
+    /// poll runs every five seconds by default (<c>Shell.MailEvery</c>), so there is routinely a call in
+    /// flight when a fixture is torn down.
+    /// </para>
+    /// <para>
+    /// <b>What makes that worth a bound is the gate rather than the wait.</b> <c>Driving.Open</c> admits one
+    /// driven test at a time across the whole assembly, so a class whose teardown never returns never
+    /// releases it and every remaining test queues behind it. The suite would then end with no failure, no
+    /// message and no summary — a shape indistinguishable from a slow machine, which is the expensive part:
+    /// telling those two apart in this project has cost dump captures and hours of waiting.
+    /// </para>
+    /// <para>
+    /// <b>This bound has never fired, and it is not a fix for anything observed.</b> It was added while
+    /// chasing a Terminal suite that would not finish; that turned out to be contention from overlapping
+    /// runs, and an undisturbed suite completes in its usual time with no timeout here. It is kept for the
+    /// failure it names, not for one it caught — and if it ever does fire, the thing to doubt first is
+    /// whether a surface outlived the fixture, because the product's own wiring is sound: the poll is
+    /// linked to the surface's token and <c>MailOnceAsync</c> passes it to the call.
+    /// </para>
+    /// <para>
+    /// <b>Bounded and loud rather than bounded and quiet.</b> Swallowing the timeout would turn an endless
+    /// wait into a silent one, which is the same defect wearing a disguise.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="TimeoutException">The channel did not shut down within the budget.</exception>
     public async ValueTask DisposeAsync()
     {
-        await _channel.ShutdownAsync().ConfigureAwait(false);
+        var closing = _channel.ShutdownAsync();
+
+        // The delay is cancelled on the ordinary path. Left running it would hold a timer per teardown for
+        // the whole budget, and this fixture is disposed several hundred times in one run.
+        using (var expiry = new CancellationTokenSource())
+        {
+            var lapsed = Task.Delay(ShutdownBudget, expiry.Token);
+
+            if (await Task.WhenAny(closing, lapsed).ConfigureAwait(false) != closing)
+            {
+                throw new TimeoutException(
+                    $"The loopback channel did not shut down within {ShutdownBudget.TotalSeconds:0} seconds. "
+                    + "Something is still calling the broker this fixture is tearing down — a seat's mail poll "
+                    + "or a transcript follow that outlived the surface that started it.");
+            }
+
+            await expiry.CancelAsync().ConfigureAwait(false);
+        }
+
+        await closing.ConfigureAwait(false);
+
         _channel.Dispose();
 
         // Disposes the runtime, which leaves the caller's connection open — see BrokerRuntime.Over.

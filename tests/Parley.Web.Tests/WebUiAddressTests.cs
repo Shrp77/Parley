@@ -7,7 +7,7 @@ namespace Parley.Web.Tests;
 /// That the host binds the address every other package thinks it binds.
 /// </summary>
 /// <remarks>
-/// The other half of the check in <c>Parley.Top.Tests</c>. The number moved to
+/// The other half of the check in <c>Parley.Terminal.Tests</c>. The number moved to
 /// <c>Parley.Configuration</c> because four things in three packages state it — the host, the
 /// broker that starts it, the autostart entry it registers, and the terminal's browser action —
 /// and there was nowhere else all four could see. <c>ConsoleHost.LoopbackAddress</c> stayed as a

@@ -20,13 +20,6 @@ namespace Parley.Server.Tests;
 /// </remarks>
 public sealed class ExportShapeTests
 {
-    private const string Consequences =
-        "If the answer is yes I will record it and stop asking; if no I will raise it with the "
-        + "operator rather than deciding alone.";
-
-    private static string Question(string text) =>
-        $$"""{"intent":"{{text}}","sub_questions":[{"id":"q1","text":"{{text}}"}],"consequences":"{{Consequences}}"}""";
-
     private static async Task TalkAsync(LoopbackBroker broker, CancellationToken token)
     {
         await using var orders = await AttachedClient.AttachAsync(
@@ -34,16 +27,8 @@ public sealed class ExportShapeTests
         await using var billing = await AttachedClient.AttachAsync(
             broker, "billing@alpha", "C:/repo-b", token);
 
-        await orders.Client.AskAsync(
-            new Wire.AskRequest
-            {
-                From = orders.Name,
-                To = billing.Name,
-                ConversationId = "a-discussion",
-                ResponderModel = "some-model-9",
-                PayloadJson = Question("who owns the totals"),
-            },
-            cancellationToken: token);
+        await orders.Client.RequestAsync(
+            Requests.Open(orders.Name, billing.Name, "who owns the totals", "a-discussion"), cancellationToken: token);
     }
 
     [Fact]

@@ -1,4 +1,6 @@
-﻿using Parley.Setup;
+﻿using Parley.Configuration;
+using Parley.Core;
+using Parley.Setup;
 using System.Text;
 using System.Text.Json.Nodes;
 using Xunit;
@@ -75,9 +77,17 @@ public sealed class EnrolmentTests : IDisposable
         Assert.Equal("orders", env["PARLEY_AGENT"]!.GetValue<string>());
         Assert.Equal("acme", env["PARLEY_PROJECT"]!.GetValue<string>());
 
+        // **The catalogue is keyed by the identity the enrolment minted, not by the role** (018). A role
+        // is what one project calls this checkout, and the catalogue has no projects in it; the identity
+        // is written into the repository, which is where the node reads it back from.
+        var identity = AgentIdentity.Read(launch[LaunchConfiguration.IdentityMember]!.GetValue<string>());
+
         var catalogue = JsonNode.Parse(await File.ReadAllTextAsync(CatalogueFile, TestContext.Current.CancellationToken))!;
 
-        Assert.Equal(Workspace, catalogue["agents"]!["orders"]!["workspace"]!.GetValue<string>());
+        Assert.Equal(
+            Workspace,
+            catalogue["agents"]![identity.ToString()]!["workspace"]!.GetValue<string>());
+
         Assert.Contains(LaunchFile, outcome.Written);
         Assert.Contains(CatalogueFile, outcome.Written);
     }
@@ -221,14 +231,20 @@ public sealed class EnrolmentTests : IDisposable
     }
 
     [Fact]
-    public async Task A_catalogue_entry_for_somebody_else_is_removed_only_by_its_own_name()
+    public async Task A_catalogue_entry_for_somebody_else_is_removed_only_by_its_own_checkout()
     {
         // The probe: withdrawing 'orders' must not take 'billing' with it, even though both are
         // in the same file and only one of them is being withdrawn.
+        //
+        // **What decides is the identity the withdrawn repository declares** (018), where it used to be
+        // the name typed. That is the stronger answer to the same question: a name is what one project
+        // calls something and two checkouts can claim one, which is the case 005's gate found from the
+        // other side — a withdrawal that removed a second agent's launch entry and reported success.
         await Enrolment.AddAsync(
             Entry("orders", Workspace), "acme", CatalogueFile, InstructionsFile,
             TestContext.Current.CancellationToken);
 
+        var mine = IdentityOf(Workspace);
         var billing = Path.Combine(_root, "billing");
 
         Directory.CreateDirectory(Path.Combine(billing, ".git"));
@@ -237,14 +253,31 @@ public sealed class EnrolmentTests : IDisposable
             Entry("billing", billing), "acme", CatalogueFile, InstructionsFile,
             TestContext.Current.CancellationToken);
 
+        var theirs = IdentityOf(billing);
+
+        Assert.NotEqual(mine, theirs);
+
         await Enrolment.WithdrawAsync(
             Workspace, "orders", "acme", CatalogueFile, TestContext.Current.CancellationToken);
 
         var agents = (JsonObject)JsonNode.Parse(
             await File.ReadAllTextAsync(CatalogueFile, TestContext.Current.CancellationToken))!["agents"]!;
 
-        Assert.False(agents.ContainsKey("orders"));
-        Assert.True(agents.ContainsKey("billing"), "another agent's catalogue entry went with this one");
+        Assert.False(agents.ContainsKey(mine.ToString()));
+        Assert.True(
+            agents.ContainsKey(theirs.ToString()),
+            "another agent's catalogue entry went with this one");
+    }
+
+    /// <summary>Which agent a checkout says it is.</summary>
+    /// <param name="workspace">The checkout.</param>
+    /// <returns>Its identity.</returns>
+    private static AgentIdentity IdentityOf(string workspace)
+    {
+        Assert.True(LaunchConfiguration.TryRead(workspace, out var declared, out var problem), problem);
+        Assert.True(declared.Identity.Known, "the enrolment left the repository with no identity");
+
+        return declared.Identity;
     }
 
     [Fact]

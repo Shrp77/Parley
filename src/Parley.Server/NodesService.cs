@@ -54,7 +54,7 @@ public sealed class NodesService : Wire.Nodes.NodesBase
         ArgumentNullException.ThrowIfNull(context);
 
         // **Fitted to the cap before it is stored, and the schema refuses anything larger.** This
-        // was unbounded: the instruction's own text has carried rule 8.5's cap for two migrations
+        // was unbounded: the instruction's own text has carried rule 8.4's cap for two migrations
         // and the agent's answer carried nothing, so anything able to reach the broker and claim to
         // be a node — which §16 says is anything on the network — could write an arbitrarily large
         // blob into the operator's record. Found by the review gate with a 200,000-character reply
@@ -225,9 +225,9 @@ public sealed class NodesService : Wire.Nodes.NodesBase
 /// <remarks>
 /// <b>The command queue is unbounded, unlike an agent's notice queue.</b> A notice is a count
 /// that supersedes its predecessor, so keeping only the newest loses nothing. A start command
-/// names a particular agent, so dropping one means an agent that a question is waiting on is
-/// never launched — and nothing would report it, because the question sits there looking
-/// ordinary until it is ghosted. The queue is instead bounded by the registry: a node can only
+/// names a particular agent, so dropping one means an agent that a Request is waiting on is
+/// never launched — and nothing would say why, because the Request sits there looking ordinary,
+/// flagged only as not collected. The queue is instead bounded by the registry: a node can only
 /// ever be told to start an agent registered to it.
 /// </remarks>
 public sealed class JoinedNode : IAsyncDisposable

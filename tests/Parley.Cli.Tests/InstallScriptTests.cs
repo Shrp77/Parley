@@ -268,27 +268,41 @@ public sealed class InstallScriptTests
 
     [Theory]
     [MemberData(nameof(BothScripts))]
-    public void Each_script_takes_the_store_as_an_argument(string script)
+    public void No_script_asks_where_a_store_goes_or_takes_a_catalogue(string script)
     {
-        // Where the store goes is the one decision this cannot make for somebody, because it
-        // outlives every clone and holds the whole deployment's history. Taking it as an
-        // argument is also what makes the scripts usable unattended.
-        var text = RepositoryFile.Read(script);
+        // Where a deployment lives is a project's to say, and a project is named in `parley terminal` or with
+        // `parley project add`. The scripts used to ask for a store when nothing was named -- registering one deployment by
+        // explicit paths -- and, given one, to register that narrow entry over a working manifest: a reinstall that
+        // stopped serving every project but one. The owner removed the parameter rather than guard it.
+        var code = Code(RepositoryFile.Read(script));
 
-        Assert.Matches(@"(--db|\$Db)", text);
+        foreach (var gone in new[] { "$Store", "-Store", "Resolve-Store", "$NodeConfig", "-NodeConfig", "--store", "$store", "resolve_store", "node_config", "--node-config" })
+        {
+            Assert.DoesNotContain(gone, code, StringComparison.Ordinal);
+        }
     }
 
     [Theory]
     [MemberData(nameof(BothScripts))]
-    public void Each_script_defaults_the_store_outside_this_checkout(string script)
+    public void With_no_project_named_each_script_says_how_to_name_the_first(string script)
     {
-        // Under the home directory, never beside the repository. A store inside a working copy
-        // is destroyed by `git clean`, and a store inside *this* working copy would make
-        // Parley's own checkout load-bearing for machines that do not have one.
-        var text = RepositoryFile.Read(script);
+        // A machine just installed names nothing, and its broker is waiting for the first project. The script is the
+        // last thing the person read, so it says the next step rather than leaving it to be found.
+        var code = Code(RepositoryFile.Read(script));
 
-        Assert.Contains(".parley", text, StringComparison.Ordinal);
-        Assert.Matches(@"(USERPROFILE|\$HOME)", text);
+        Assert.Contains("No projects configured", code, StringComparison.Ordinal);
+        Assert.Contains("parley project add", code, StringComparison.Ordinal);
+        Assert.Contains("parley terminal", code, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Each_script_counts_a_version_it_could_not_read_as_a_failure()
+    {
+        // `parley-mcp --version` answered only with a launch configuration, so it exited 78 and printed nothing on
+        // standard output. PowerShell's `-notmatch` over that empty result is empty, which is false, and the check
+        // passed; the POSIX script's bare substitution would have ended it under set -e with no message at all.
+        Assert.Contains("$LASTEXITCODE -ne 0 -or $says -notmatch", Code(Windows), StringComparison.Ordinal);
+        Assert.Contains("--version 2>&1)\" || says=\"\"", Code(Unix), StringComparison.Ordinal);
     }
 
     [Theory]
@@ -389,31 +403,4 @@ public sealed class InstallScriptTests
                 && (line.Contains("Remove-Item", StringComparison.Ordinal)
                     || line.Contains("rm ", StringComparison.Ordinal)));
     }
-    [Fact]
-    public void Reinstalling_on_Windows_keeps_the_agent_catalogue_it_is_replacing()
-    {
-        // `autostart install` registers a broker-alone entry when given no catalogue, so a script
-        // that always calls it that way turns a working deployment into one whose agents are
-        // never started -- and the loss arrives days later, on a machine nobody is signed into,
-        // as a question that waits out its window and is ghosted.
-        //
-        // The operator ran the script and is reading its output, not the command's, so the
-        // command's own warning does not reach them.
-        Assert.Contains("--node-config", Windows, StringComparison.Ordinal);
-        Assert.Contains("$existingArguments", Windows, StringComparison.Ordinal);
-        Assert.Contains(
-            "keeping this machine's agent catalogue", Windows, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Both_scripts_take_a_catalogue_and_say_what_happens_without_one()
-    {
-        // Read-back is Windows-only, because the POSIX script registers a systemd user unit or a
-        // launch agent and `autostart status` reports neither's arguments. So the Unix half says
-        // plainly that the entry will start the broker alone -- which is better than a read-back
-        // that works on one platform and silently does nothing on the other.
-        Assert.Contains("--node-config", Unix, StringComparison.Ordinal);
-        Assert.Contains("starts the broker alone", Unix, StringComparison.Ordinal);
-    }
-
 }

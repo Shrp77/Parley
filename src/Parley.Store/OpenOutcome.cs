@@ -1,265 +1,189 @@
-﻿using Parley.Core;
+using Parley.Core;
 
 namespace Parley.Store;
 
 /// <summary>
-/// The reason an attempt to open an exchange was refused.
+/// Why a Request was refused (SPEC.md §7.3).
 /// </summary>
-public enum OpenRejection
+/// <remarks>
+/// Every refusal returns something the sender can act on now — the conversations it may name, the
+/// exchange already carrying the Request, what it already holds open — and none of them asks it to try
+/// again later. A model told to retry later loops or gives up silently.
+/// </remarks>
+public enum RequestRejection
 {
     /// <summary>No refusal; the exchange was opened.</summary>
     None = 0,
 
-    /// <summary>
-    /// This asker already has the maximum open exchanges with this peer.
-    /// </summary>
-    /// <remarks>
-    /// Volume, not repetition. See <see cref="OpenOutcome.Outstanding"/> for what the asker is
-    /// already waiting on, which is frequently enough for it to conclude that this question is
-    /// already covered.
-    /// </remarks>
-    PairSaturated,
+    /// <summary>A request cap the deployment set has been reached with this receiver.</summary>
+    /// <remarks>See <see cref="OpenOutcome.Outstanding"/> for what the sender already holds open with it.</remarks>
+    Saturated,
 
-    /// <summary>
-    /// An identical question from this asker to this peer is already open.
-    /// </summary>
-    /// <remarks>
-    /// Distinct from <see cref="PairSaturated"/> because it calls for a different response:
-    /// saturation means wait, duplication means the question has already been asked and the
-    /// answer is coming. See <see cref="OpenOutcome.Outstanding"/> for the exchange carrying
-    /// it.
-    /// </remarks>
-    DuplicateQuestion,
+    /// <summary>An identical Request from this sender to this receiver is still open.</summary>
+    /// <remarks>See <see cref="OpenOutcome.Outstanding"/> for the exchange carrying it.</remarks>
+    Duplicate,
 
-    /// <summary>
-    /// Admitting the question would close a cycle in the wait-for graph, deadlocking every
-    /// agent in it. See <see cref="OpenOutcome.CyclePath"/> for the agents involved.
-    /// </summary>
-    WouldDeadlock,
-
-    /// <summary>
-    /// The answerer is not being routed to: it could not be spawned, or it has been retired.
-    /// </summary>
+    /// <summary>Nothing is registered under the receiver's name.</summary>
     /// <remarks>
-    /// Usually a repository that was deleted, moved, or renamed while its agent was still
-    /// registered. It also covers a <c>retired</c> agent, which SPEC.md §14 says is not routed
-    /// to at all — the two are one refusal because the asker's correct response is identical,
-    /// and splitting them would disclose whether a peer was deliberately withdrawn or merely
-    /// broken, which is the operator's business rather than the asker's. This is the one
-    /// refusal that hands back no work, because there is none to hand back — and saying so
-    /// immediately is the point. Accepting the question instead
-    /// would cost a full inactivity window before it orphaned unanswered, teaching the asker
-    /// nothing and costing the same again on every retry. An asker seeing this should tell its
-    /// principal, not try later.
+    /// Almost always a misspelling, or a name remembered from before a re-registration. The roster in
+    /// <c>agents()</c> is the remedy.
     /// </remarks>
-    AnswererUnreachable,
+    ReceiverNotRegistered,
 
-    /// <summary>
-    /// The question names a conversation that has already concluded.
-    /// </summary>
-    /// <remarks>
-    /// SPEC.md §5.0: a closed conversation stays closed. Closure is by consensus, so admitting
-    /// this would let one agent reopen a discussion everybody agreed was over — defeating the
-    /// poll, the decline veto and the silence rule at once. Like
-    /// <see cref="AnswererUnreachable"/> this hands back no work, and for the same reason: there
-    /// is none. What the asker should do is drop the identifier, or use a new one. A discussion
-    /// worth resuming is a new discussion, and identifiers cost nothing.
-    /// </remarks>
+    /// <summary>A person retired the receiver, so the work has to go to whoever owns it now (§14).</summary>
+    ReceiverRetired,
+
+    /// <summary>A person retired the sender, which may not open new work.</summary>
+    SenderRetired,
+
+    /// <summary>The conversation is closed, and says by whom.</summary>
+    /// <remarks>Work worth resuming after a conversation closed is new work (§5.0).</remarks>
     ConversationClosed,
 
     /// <summary>
-    /// The asker has itself been retired, and may not open new exchanges.
+    /// The sender may not send into the conversation it named, or named none while holding Requests
+    /// from several (§5.0).
     /// </summary>
-    /// <remarks>
-    /// SPEC.md §14 says a retired agent is not routed to. Admitting its question would commit
-    /// the broker to breaking that: the answer is a message addressed to the asker, so every
-    /// exchange opened by a retired agent is a routing violation already scheduled. Refusing at
-    /// the point of asking is what keeps the rule from being one the broker undertakes to break
-    /// later.
-    /// </remarks>
-    /// <para>
-    /// Exchanges opened before retirement are left to finish rather than stranded. Retirement
-    /// is an operator's judgement about a repository, not a kill signal, and discarding work
-    /// already in flight would lose answers that peers had gone to the trouble of producing.
-    /// </para>
-    AskerRetired
+    /// <remarks>See <see cref="OpenOutcome.Assignable"/> for the conversations it may name.</remarks>
+    ConversationNotAssignable,
+
+    /// <summary>A Request addressed a role nothing is registered under (§5.5).</summary>
+    NoSuchRole
 }
 
 /// <summary>
-/// The result of attempting to open an exchange, carrying either the new exchange or enough
-/// context for the caller to act on the refusal.
+/// The result of trying to open an exchange: the exchange, or what the sender can do about the refusal.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The constructor is private and the named factories below are the only way to build one.
-/// A public constructor would accept combinations that contradict themselves — a refusal
-/// carrying an exchange, or <see cref="Succeeded"/> reporting true with
-/// <see cref="Exchange"/> null. Callers read <see cref="Succeeded"/> and then dereference
-/// <see cref="Exchange"/> without a null check, so that pairing is an invariant they rely
-/// on rather than a convention, and only the factories can establish it.
-/// </para>
-/// <para>
-/// <see cref="OpenRejection.PairSaturated"/> and <see cref="OpenRejection.DuplicateQuestion"/>
-/// are kept apart because they call for completely different responses. Saturation means the
-/// asker is already waiting on as much as this peer will take, and the answer to one of those
-/// may well make this question unnecessary. Duplication means the question is already in
-/// flight, and the only sensible response is to wait for the answer that is coming. Neither
-/// tells the model to retry later, which SPEC.md §7.3 refuses to do: instructing a language
-/// model to remember something for later produces a token-burning loop or silent abandonment,
-/// so every refusal hands back work instead.
-/// </para>
-/// <para>
-/// When the asker is merely waiting, there is no work to hand back and the outcome reports
-/// what it is waiting on instead.
-/// </para>
+/// The constructor is private and the named factories are the only way to build one, so a refusal
+/// carrying an exchange, or success without one, cannot be constructed. Callers read
+/// <see cref="Succeeded"/> and then dereference <see cref="Exchange"/>.
 /// </remarks>
 public sealed record OpenOutcome
 {
     private OpenOutcome(
         Exchange? exchange,
-        OpenRejection rejection,
+        RequestRejection rejection,
         IReadOnlyList<Exchange> outstanding,
-        IReadOnlyList<AgentName> cyclePath)
+        IReadOnlyList<AgentName> cyclePath,
+        IReadOnlyList<string> assignable,
+        ConversationCloser? closedBy)
     {
         Exchange = exchange;
         Rejection = rejection;
         Outstanding = outstanding;
         CyclePath = cyclePath;
+        Assignable = assignable;
+        ClosedBy = closedBy;
     }
 
-    /// <summary>
-    /// Gets the newly opened exchange.
-    /// </summary>
-    /// <value>
-    /// The exchange, or <see langword="null"/> if the attempt was refused. Non-null exactly
-    /// when <see cref="Succeeded"/> is <see langword="true"/>.
-    /// </value>
+    /// <summary>Gets the opened exchange.</summary>
+    /// <value>Non-null exactly when <see cref="Succeeded"/> is <see langword="true"/>.</value>
     public Exchange? Exchange { get; }
 
-    /// <summary>
-    /// Gets the reason the attempt was refused.
-    /// </summary>
-    /// <value>
-    /// The refusal reason, or <see cref="OpenRejection.None"/> on success.
-    /// </value>
-    public OpenRejection Rejection { get; }
+    /// <summary>Gets why the Request was refused.</summary>
+    /// <value><see cref="RequestRejection.None"/> on success.</value>
+    public RequestRejection Rejection { get; }
 
-    /// <summary>
-    /// Gets what this asker already has open with this peer.
-    /// </summary>
+    /// <summary>Gets what the sender already has open with this receiver.</summary>
     /// <value>
-    /// On <see cref="OpenRejection.PairSaturated"/>, every open exchange from this asker to
-    /// this answerer. On <see cref="OpenRejection.DuplicateQuestion"/>, the single exchange
-    /// already carrying the question. Empty otherwise.
+    /// On <see cref="RequestRejection.Saturated"/> every open exchange to the receiver; on
+    /// <see cref="RequestRejection.Duplicate"/> the one already carrying the Request; otherwise empty.
     /// </value>
-    /// <remarks>
-    /// This is what makes both refusals actionable rather than an instruction to try later,
-    /// which SPEC.md §7.3 refuses to give. An asker handed the questions it is already waiting
-    /// on can usually see that the one it was about to send is among them, or is about to be
-    /// answered by one of them.
-    /// </remarks>
     public IReadOnlyList<Exchange> Outstanding { get; }
 
-    /// <summary>
-    /// Gets the agents forming the cycle the question would have closed.
-    /// </summary>
+    /// <summary>Gets the cycle this Request closed, when it closed one.</summary>
     /// <value>
-    /// On <see cref="OpenRejection.WouldDeadlock"/>: the agents in the order they block one
-    /// another, starting with the asker. Empty otherwise.
+    /// On success, the participants in the order each waits on the next, starting with the sender —
+    /// recorded on the conversation rather than refused (§7.2). Empty otherwise.
     /// </value>
     public IReadOnlyList<AgentName> CyclePath { get; }
 
-    /// <summary>
-    /// Gets a value indicating whether the exchange was opened.
-    /// </summary>
-    /// <value>
-    /// <see langword="true"/> when <see cref="Exchange"/> is populated; otherwise
-    /// <see langword="false"/>.
-    /// </value>
-    public bool Succeeded => Rejection == OpenRejection.None;
+    /// <summary>Gets the conversations the sender may name.</summary>
+    /// <value>On <see cref="RequestRejection.ConversationNotAssignable"/>; empty otherwise.</value>
+    public IReadOnlyList<string> Assignable { get; }
 
-    /// <summary>
-    /// Creates a successful outcome.
-    /// </summary>
-    /// <param name="exchange">The newly opened exchange.</param>
-    /// <returns>An outcome carrying <paramref name="exchange"/>.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="exchange"/> is <see langword="null"/>.</exception>
-    public static OpenOutcome Opened(Exchange exchange)
+    /// <summary>Gets who closed the conversation.</summary>
+    /// <value>
+    /// On <see cref="RequestRejection.ConversationClosed"/>, when it was recorded; otherwise
+    /// <see langword="null"/>.
+    /// </value>
+    public ConversationCloser? ClosedBy { get; }
+
+    /// <summary>Gets a value indicating whether the exchange was opened.</summary>
+    /// <value><see langword="true"/> when <see cref="Exchange"/> is populated.</value>
+    public bool Succeeded => Rejection == RequestRejection.None;
+
+    /// <summary>Creates a successful outcome.</summary>
+    /// <param name="exchange">The opened exchange.</param>
+    /// <param name="cyclePath">The cycle it closed, or empty.</param>
+    /// <returns>The outcome.</returns>
+    public static OpenOutcome Opened(Exchange exchange, IReadOnlyList<AgentName>? cyclePath = null)
     {
         ArgumentNullException.ThrowIfNull(exchange);
-        return new(exchange, OpenRejection.None, [], []);
+        return new(exchange, RequestRejection.None, [], cyclePath ?? [], [], null);
     }
 
-    /// <summary>
-    /// Creates a refusal indicating this asker has reached its limit with this peer.
-    /// </summary>
-    /// <param name="outstanding">Everything the asker already has open with the answerer.</param>
-    /// <returns>A refusal carrying what is already in flight.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="outstanding"/> is <see langword="null"/>.</exception>
-    public static OpenOutcome PairSaturated(IReadOnlyList<Exchange> outstanding)
+    /// <summary>Creates a refusal for a request cap reached.</summary>
+    /// <param name="outstanding">Everything the sender already holds open with the receiver.</param>
+    /// <returns>The refusal.</returns>
+    public static OpenOutcome Saturated(IReadOnlyList<Exchange> outstanding)
     {
         ArgumentNullException.ThrowIfNull(outstanding);
-        return new(null, OpenRejection.PairSaturated, outstanding, []);
+        return new(null, RequestRejection.Saturated, outstanding, [], [], null);
     }
 
-    /// <summary>
-    /// Creates a refusal indicating this question is already open with this peer.
-    /// </summary>
-    /// <param name="existing">The exchange already carrying the question.</param>
-    /// <returns>A refusal carrying the exchange to wait on.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="existing"/> is <see langword="null"/>.</exception>
+    /// <summary>Creates a refusal for a Request already open.</summary>
+    /// <param name="existing">The exchange already carrying it.</param>
+    /// <returns>The refusal.</returns>
     public static OpenOutcome Duplicate(Exchange existing)
     {
         ArgumentNullException.ThrowIfNull(existing);
-        return new(null, OpenRejection.DuplicateQuestion, [existing], []);
+        return new(null, RequestRejection.Duplicate, [existing], [], [], null);
     }
 
-    /// <summary>
-    /// Creates a refusal indicating the answerer cannot be reached.
-    /// </summary>
-    /// <returns>A refusal carrying no work, because there is none.</returns>
-    /// <remarks>
-    /// Every other refusal returns something the asker can act on — the debt it owes, the
-    /// exchange it waits on, the cycle it would close. This one cannot, and that absence is
-    /// itself the information: nothing is coming from this peer, so stop asking.
-    /// </remarks>
-    public static OpenOutcome Unreachable() =>
-        new(null, OpenRejection.AnswererUnreachable, [], []);
-
-    /// <summary>
-    /// Creates a refusal indicating the named conversation has concluded.
-    /// </summary>
-    /// <returns>A refusal carrying no work, because there is none.</returns>
-    /// <remarks>
-    /// The refusal states its reason, which SPEC.md §5.0 requires: an asker told only that its
-    /// question was refused would retry with the same identifier indefinitely, since nothing
-    /// about waiting reopens a concluded discussion.
-    /// </remarks>
-    public static OpenOutcome ConversationClosed() =>
-        new(null, OpenRejection.ConversationClosed, [], []);
-
-    /// <summary>
-    /// Creates a refusal indicating the asker has been retired.
-    /// </summary>
-    /// <returns>A refusal carrying no work, because there is none.</returns>
-    /// <remarks>
-    /// Distinct from <see cref="Unreachable"/>, which is about the peer, because the remedy is
-    /// different: an unreachable answerer means stop asking <em>this peer</em>, and this means
-    /// stop working. An agent seeing it should tell its principal that its registration has
-    /// been withdrawn.
-    /// </remarks>
-    public static OpenOutcome AskerRetired() =>
-        new(null, OpenRejection.AskerRetired, [], []);
-
-    /// <summary>
-    /// Creates a refusal indicating the question would deadlock.
-    /// </summary>
-    /// <param name="cyclePath">The agents forming the cycle, starting with the asker.</param>
-    /// <returns>A refusal carrying the cycle path.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="cyclePath"/> is <see langword="null"/>.</exception>
-    public static OpenOutcome Deadlock(IReadOnlyList<AgentName> cyclePath)
+    /// <summary>Creates a refusal of the kinds that carry nothing but their reason.</summary>
+    /// <param name="rejection">The reason.</param>
+    /// <returns>The refusal.</returns>
+    /// <exception cref="ArgumentException">The reason carries data and has a factory of its own.</exception>
+    public static OpenOutcome Refused(RequestRejection rejection) => rejection switch
     {
-        ArgumentNullException.ThrowIfNull(cyclePath);
-        return new(null, OpenRejection.WouldDeadlock, [], cyclePath);
+        RequestRejection.ReceiverNotRegistered or RequestRejection.ReceiverRetired or
+            RequestRejection.SenderRetired or RequestRejection.NoSuchRole =>
+            new(null, rejection, [], [], [], null),
+        _ => throw new ArgumentException(
+            $"{rejection} carries what the sender can act on; use its own factory.", nameof(rejection))
+    };
+
+    /// <summary>Creates a refusal for a closed conversation.</summary>
+    /// <param name="closedBy">Who closed it, when recorded.</param>
+    /// <returns>The refusal.</returns>
+    public static OpenOutcome ConversationClosed(ConversationCloser? closedBy) =>
+        new(null, RequestRejection.ConversationClosed, [], [], [], closedBy);
+
+    /// <summary>Creates a refusal for a conversation the sender may not send into.</summary>
+    /// <param name="assignable">The conversations it may name.</param>
+    /// <returns>The refusal.</returns>
+    public static OpenOutcome NotAssignable(IReadOnlyList<string> assignable)
+    {
+        ArgumentNullException.ThrowIfNull(assignable);
+        return new(null, RequestRejection.ConversationNotAssignable, [], [], assignable, null);
     }
+}
+
+/// <summary>
+/// Which conversation a Request goes into, as §5.0 decides it from what the sender holds.
+/// </summary>
+/// <param name="ConversationId">The conversation, when one could be assigned.</param>
+/// <param name="Starts">Whether this Request starts it.</param>
+/// <param name="Refusal">Why none could be assigned, or <see langword="null"/>.</param>
+/// <remarks>
+/// Decided once per Request, before any exchange is opened, so every exchange a Request to a role opens
+/// (§5.5) lands in the same conversation — including one the broker names on the sender's behalf.
+/// </remarks>
+public sealed record ConversationAssignment(string? ConversationId, bool Starts, OpenOutcome? Refusal)
+{
+    /// <summary>Gets a value indicating whether a conversation was assigned.</summary>
+    /// <value><see langword="true"/> when <see cref="ConversationId"/> is set.</value>
+    public bool Succeeded => Refusal is null;
 }

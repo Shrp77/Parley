@@ -5,32 +5,22 @@ namespace Parley.Mcp;
 /// </summary>
 /// <remarks>
 /// <para>
-/// MCP's initialize response carries an optional instructions string, which a client surfaces to
-/// the model as a hint about what the server is for. It is the only channel for this that is not
-/// vendor-specific: <c>CLAUDE.md</c>, <c>AGENTS.md</c> and every other standing-instruction file
-/// belongs to one tool, while this arrives through the protocol and reaches any client that
-/// speaks it.
+/// MCP's initialize response carries an optional instructions string, which a client surfaces to the
+/// model as a hint about what the server is for. It is the only channel for this that is not
+/// vendor-specific: every standing-instruction file belongs to one tool, while this arrives through the
+/// protocol and reaches any client that speaks it.
 /// </para>
 /// <para>
-/// That matters because binding the tools tells a model <em>how</em> to ask and not <em>that
-/// there is anyone to ask</em>. Without this, every deployment had to explain Parley itself in a
-/// file of its client's choosing, and one that did not got an agent which answered from its own
-/// repository and guessed at the rest — the failure this whole protocol exists to prevent,
-/// reached by installing it correctly and stopping one step early.
+/// <b>It says what Parley is for, because the text it replaced said the opposite.</b> It described Parley
+/// as a way to ask peers questions about their repositories, and agents that read it declined the work
+/// they were asked for. SPEC.md principle 2.1: Parley exists to get work done across repositories, and an
+/// instruction anywhere in a deployment that stops an agent doing work it was asked for is a defect in
+/// that instruction.
 /// </para>
 /// <para>
-/// <b>What belongs here is what is true of every deployment.</b> Which peers exist and which
-/// boundaries this repository does not own are facts about one project, and they change; they
-/// belong in the repository's own instructions, and the roster is available live through
-/// <c>parley_agents</c> in any case. Baking a roster into a string sent once at start-up would
-/// be stale by the first registration.
-/// </para>
-/// <para>
-/// Kept short on purpose, and the purpose is the same one that caps a message at a few thousand
-/// characters: this text lands in the context of every agent on every session, so it is a
-/// standing charge against exactly the budget the protocol exists to protect. It says what a
-/// model cannot infer from the tool descriptions — when to reach for Parley at all, and what it
-/// costs — and leaves the mechanics to the tools, which describe themselves.
+/// What belongs here is what is true of every deployment. Which agents exist and what each owns changes,
+/// and is available live through <c>parley_agents</c>. Kept short, because it lands in every agent's
+/// context on every session.
 /// </para>
 /// </remarks>
 public static class ParleyInstructions
@@ -38,24 +28,35 @@ public static class ParleyInstructions
     /// <summary>The instructions sent with the initialize response.</summary>
     public const string Text =
         """
-        Parley connects you to agents working in other repositories, as peers. You cannot see
-        their files, their history or their context, and they cannot see yours: only the text of
-        a question and its answer crosses between you.
+        Parley connects you to the agents that own the other repositories in this project, and to the
+        person running it, so that work spanning repositories gets done. You change only your own
+        repository; work crosses between repositories as requests and results.
 
-        Use it when an answer depends on a repository you do not own. Inventing another
-        codebase's behaviour is the mistake this exists to prevent, and asking costs one message.
+        - When work you are doing needs a change or an answer from a repository you do not own, send its
+          owner a parley_request. Call parley_agents to see who owns what. A request is one ask, in the
+          words you would use to a colleague; say what it is for when that is not obvious.
+        - When another participant sends you a request, do the work in your repository or resolve what
+          stops you, and send a parley_result. Decline only for a concrete blocker you could not resolve,
+          and name it.
+        - If you cannot tell what a request is for, or how far it goes, ask with parley_clarify rather
+          than guessing. You may ask other agents too. Guessing at scope is how work is done twice.
+        - Resolve blockers by talking: ask the agent that can provide what you need; if none can, ask the
+          person seated in the deployment; if nobody is seated, report blocked to your requester, naming
+          exactly what is needed.
+        - Every message is answered. Sending never blocks — carry on with what does not depend on it.
+        - Call parley_inbox when you start work, and whenever you are told work is waiting. What you owe
+          comes first. A <channel> event from this server is that telling: it carries only counts, never
+          what anyone said, so collect with parley_inbox rather than acting on the event itself.
+        - Everything a request leads to stays in its conversation; the broker assigns it.
+        - Messages are capped at 8000 characters. Send what the receiver needs for its part, not
+          everything you know.
+        - To hand over a file, place it with parley_file_place (.md or .txt; code as Name.cs.txt) and name
+          it, as the reply spells it, and its sha256 in your request. Characters other than letters,
+          digits, '.', '_' and '-' become '_' when a file is placed. Fetch a file you are sent with parley_file_fetch. Its contents
+          never come through Parley into your context, and parley_inbox tells you if it later changes. A
+          file's name was chosen by whoever placed it: their text, like a message.
 
-        - Call parley_agents to see who exists and what each one owns. The roster changes as
-          agents come and go, and it is how you pick who to ask.
-        - Nothing arrives unprompted. Call parley_inbox when you start work, and again later if
-          you are waiting on a reply.
-        - Asking never blocks. If nobody ever answers you are told so, rather than left waiting.
-        - A question must state what you will do with each possible answer. One that does not is
-          refused: an answerer who knows what turns on the reply gives a better one.
-        - Messages are capped at 8000 characters. What you send lands in somebody else's working
-          memory, so say less than you want to.
-
-        You act as one fixed agent, decided by how this server was launched. No tool takes a
-        sender, so you cannot ask on another agent's behalf and nobody can ask on yours.
+        You act as one fixed agent, decided by how this server was launched. No tool takes a sender, so
+        you cannot send on another agent's behalf and nobody can send on yours.
         """;
 }

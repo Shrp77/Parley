@@ -157,7 +157,12 @@ public sealed class ForeignDatabaseTests : IDisposable
         var (exitCode, error) = ToolProcess.Run("serve");
 
         Assert.Equal(78, exitCode);
-        Assert.Contains("No database.", error, StringComparison.Ordinal);
+        Assert.Contains("No database:", error, StringComparison.Ordinal);
+
+        // The way on is a project. The one-store options are for testing, and a refusal naming only them sent a person
+        // to deploy by hand outside the manifest -- found by the gate over the installer change.
+        Assert.Contains("parley project add", error, StringComparison.Ordinal);
+        Assert.Contains("for testing only", error, StringComparison.Ordinal);
     }
 
     [Theory]

@@ -378,13 +378,13 @@ public static class ProjectManifest
         var stores = new Dictionary<string, int>(PathComparer);
         var endpoints = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-        // Catalogues, because agent names collide freely across projects and a node reads one
-        // file. Two projects sharing a catalogue means `parley up` for either starts entries the
-        // other consented to, under a name that legitimately means different repositories in each
-        // — and the consent that says a repository may run with nobody watching stops being per
-        // project, which is the one thing SPEC.md §4.1's isolation cannot supply from storage
-        // because the catalogue is not in the store.
-        var catalogues = new Dictionary<string, int>(PathComparer);
+        // **A catalogue collision used to be checked here, and the paragraph describing it outlived
+        // the code by a release** (018). It read that two projects sharing a catalogue let `parley
+        // up` for either start what the other consented to, under a name meaning a different
+        // repository in each — true while a catalogue belonged to a project and was keyed by name.
+        // There is one per machine now, keyed by identity, so sharing is the only arrangement and
+        // a name cannot mean two checkouts. Recorded rather than deleted because a comment left
+        // standing over a rule that has gone is how the next reader concludes the check was lost.
 
         for (var index = 0; index < projects.Count; index++)
         {
@@ -407,16 +407,10 @@ public static class ProjectManifest
                 Claim(endpoints, project.Endpoint, index, "an endpoint", "only one broker can hold a port");
             }
 
-            if (!string.IsNullOrEmpty(project.NodeConfig))
-            {
-                Claim(
-                    catalogues,
-                    Canonical(project.NodeConfig),
-                    index,
-                    "a node catalogue",
-                    "consent to run unattended is per project because the catalogue is, and one " +
-                    "file cannot be two projects' answer");
-            }
+            // **Two projects sharing a catalogue was refused here, and 018 removed the reason.** The
+            // rule read: consent to run unattended is per project because the catalogue is, and one file
+            // cannot be two projects' answer. The catalogue belongs to the machine now and every project
+            // on it reads the same file, so sharing one is the ordinary case rather than a collision.
         }
 
         return problems;

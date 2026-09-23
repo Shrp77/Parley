@@ -1,3 +1,34 @@
+<!--
+Sync Impact Report — 2026-09-14
+Version change: 1.0.0 → 2.0.0 (MAJOR)
+  Two backward-incompatible redefinitions, one of which had shipped without a bump:
+  - Principle II was redefined by 0.26.0 (protocol 0.5, specs/014) — "an agent may refuse … and may not be overruled"
+    became "declined only for a concrete blocker" — and the version stayed 1.0.0. Recorded here rather than left silent.
+  - "Only question and answer text crosses. Never … files" is redefined for specs/015 (protocol 0.6): files placed in a
+    project's file location cross between agents; their contents never enter a model's context through Parley.
+    Its first clause also described protocol 0.4's question-and-answer channel, stale since 0.5.
+Modified principles:
+  - II. No agent has authority over another — text unchanged here; the 0.26.0 redefinition is now versioned.
+  - IV. Terseness is a security control — expanded: what an operation returns about a file is bounded text, and a
+    file's bytes go to disk, never into a context.
+Modified sections:
+  - Boundaries That Do Not Move — "Only question and answer text crosses" → "What crosses is messages and placed files,
+    never contexts".
+Added sections: none. Removed sections: none.
+Templates and dependent documents:
+  ✅ .specify/templates/plan-template.md — generic "Constitution Check"; no change needed
+  ✅ .specify/templates/spec-template.md — no constitution-mandated sections affected
+  ✅ .specify/templates/tasks-template.md — no principle-driven task types affected
+  ✅ .specify/templates/commands/ — does not exist in this repository
+  ✅ specs/015-file-store/plan.md, research.md, tasks.md — 1.1.0 references updated to 2.0.0; the boundary is no longer
+     a violation; T009 is now a verification
+  ✅ CLAUDE.md — the 015 plan entry records the amendment
+  ✅ SPEC.md §1 and principle 2.2 — rewritten the same day: messages and, from protocol 0.6, placed files cross; a
+     file's contents never enter a context; what crosses about a file is bounded
+  ✅ README.md "What Parley does" — rewritten the same day for protocol 0.5, with file sharing marked as arriving in 0.27.0
+Deferred TODOs: none.
+-->
+
 # Parley Constitution
 
 Parley is a cross-repository agent-to-agent messaging protocol. `SPEC.md` is the primary
@@ -17,11 +48,16 @@ specification must be able to stand alone for somebody who will never read the c
 
 ### II. No agent has authority over another
 
-There is no orchestrator, no lead agent, and no plan that one agent imposes on another. An
-agent may refuse, may decline to conclude, and may not be overruled by a peer. The one
-asymmetry is the operator, who is a person and not an agent: operator operations exist on a
-separate type, in a separate binary, so an adapter has nothing to bind by accident. Any
-design that introduces authority between agents contradicts the premise.
+There is no orchestrator, no lead agent, and no plan that one agent imposes on another. **That is
+not the same as agents declining each other's work, and Parley exists so that they do not.** Any
+agent or person may request work of another repository's agent; each owner changes only its own
+repository; and a request is declined only for a concrete blocker the receiver pursued and could
+not resolve — missing information, a conflict, or a permission it does not have. No agent may
+conclude a conversation over another's objection, and nothing ends work because a participant
+was silent. The one asymmetry is the operator, who is a person and not an agent: operator
+operations exist on a separate type, in a separate binary, so an adapter has nothing to bind by
+accident, and a person may close a conversation whatever its participants have voted. Any design
+that introduces authority between agents contradicts the premise.
 
 ### III. Identity is fixed by the launch, never by a call
 
@@ -40,6 +76,12 @@ the working memory of every agent that receives it. A new field that can hold a 
 will eventually hold one, so **a bound is part of the design of any new text that crosses**,
 not a refinement added later.
 
+**A file is not text that crosses.** Its bytes are written to disk in the receiving agent's own
+repository and are never returned into a model's context by Parley. What an operation returns
+*about* files — names, sizes, hashes, lists, change notices — is text that crosses, and is
+bounded like any other: a name has a maximum length, and a list or a batch of notices has a
+maximum count per call.
+
 ### V. Invariants live in storage
 
 Application code can route around a check it makes itself; a database constraint refuses
@@ -50,9 +92,12 @@ moving on is not enough — the case is added so the next edit is checked too.
 
 ## Boundaries That Do Not Move
 
-**Only question and answer text crosses.** Never conversation history, never files, never
-another agent's context. An operation that returns more about a peer than an asker needs to
-address it is a disclosure, and must be argued as one. The agent-facing roster withholds
+**What crosses between agents is messages and placed files, never contexts.** Requests,
+Clarifies and Results cross as messages. Files cross only by being placed in a project's file
+location and fetched from it onto disk, each carrying a content hash the broker computed. Never
+conversation history, never another agent's context, and never a file's contents delivered into
+a model's context by Parley. An operation that returns more about a peer than a participant needs
+to address it is a disclosure, and must be argued as one. The agent-facing roster withholds
 workspace paths for exactly this reason.
 
 **Agent operations and operator operations are different surfaces.** Not merely differently
@@ -116,4 +161,12 @@ explicitly and carry the argument for the change, in the specification rather th
 commit message. Design rationale belongs in the pull request body, which is the durable
 record: merges are squash-only, so the pull request title becomes the commit message.
 
-**Version**: 1.0.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-08-22
+**A principle changes in its own amendment, never inside a feature's implementation.** A
+feature that needs one records the argument in its specification, the constitution is amended
+first with a Sync Impact Report at the top of this file, and the feature's plan then checks
+against the amended text. Versions follow semantic versioning: MAJOR for a principle or boundary
+removed or redefined, MINOR for one added or materially expanded, PATCH for wording. **An
+amendment that changes what a principle permits is MAJOR even when its title is unchanged** —
+0.26.0's redefinition of Principle II shipped without a version change, and 2.0.0 records it.
+
+**Version**: 2.0.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-09-14

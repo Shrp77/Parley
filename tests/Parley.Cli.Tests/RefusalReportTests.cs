@@ -74,9 +74,9 @@ public sealed class RefusalReportTests : IAsyncDisposable
     [Fact]
     public async Task The_report_carries_what_a_decision_needs()
     {
-        await _refusals.RecordAsync(Orders, MessageType.Answer, 4100, 4000, T0, Ct);
-        await _refusals.RecordAsync(Orders, MessageType.Answer, 4300, 4000, T0.AddMinutes(1), Ct);
-        await _refusals.RecordAsync(Billing, MessageType.Question, 40000, 4000, T0.AddMinutes(2), Ct);
+        await _refusals.RecordAsync(Orders, MessageType.Result, 4100, 4000, T0, Ct);
+        await _refusals.RecordAsync(Orders, MessageType.Result, 4300, 4000, T0.AddMinutes(1), Ct);
+        await _refusals.RecordAsync(Billing, MessageType.Request, 40000, 4000, T0.AddMinutes(2), Ct);
 
         Assert.Equal(0, await _commands.RefusalsAsync(Ct));
 
@@ -86,8 +86,8 @@ public sealed class RefusalReportTests : IAsyncDisposable
         // them: 4,200 for the pair just over the line, 40,000 for the one sending a file.
         Assert.Contains("orders@test", printed, StringComparison.Ordinal);
         Assert.Contains("billing@test", printed, StringComparison.Ordinal);
-        Assert.Contains("answer", printed, StringComparison.Ordinal);
-        Assert.Contains("question", printed, StringComparison.Ordinal);
+        Assert.Contains("result", printed, StringComparison.Ordinal);
+        Assert.Contains("request", printed, StringComparison.Ordinal);
         Assert.Contains("4300", printed, StringComparison.Ordinal);
         Assert.Contains("4200", printed, StringComparison.Ordinal);
         Assert.Contains("40000", printed, StringComparison.Ordinal);
@@ -98,7 +98,7 @@ public sealed class RefusalReportTests : IAsyncDisposable
     {
         // Without it a row recorded under one cap is unreadable after the cap moves, which is
         // exactly when somebody goes looking at this table.
-        await _refusals.RecordAsync(Orders, MessageType.Answer, 2500, 2000, T0, Ct);
+        await _refusals.RecordAsync(Orders, MessageType.Result, 2500, 2000, T0, Ct);
 
         await _commands.RefusalsAsync(Ct);
 
@@ -110,7 +110,7 @@ public sealed class RefusalReportTests : IAsyncDisposable
     {
         // The report cannot leak what was refused, and not because it is careful: there is
         // nowhere for the payload to have been stored.
-        await _refusals.RecordAsync(Orders, MessageType.Answer, 9000, 4000, T0, Ct);
+        await _refusals.RecordAsync(Orders, MessageType.Result, 9000, 4000, T0, Ct);
 
         await _commands.RefusalsAsync(Ct);
 

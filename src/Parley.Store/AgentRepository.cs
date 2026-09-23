@@ -133,14 +133,14 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <para>
     /// Matched on the <c>role</c> column rather than on a prefix of the name, which is the whole
     /// reason that column is stored at all: <c>infra</c> is a prefix of <c>infrastructure</c>,
-    /// so a <c>LIKE 'infra%'</c> would quietly ask a question of agents that answer to something
+    /// so a <c>LIKE 'infra%'</c> would quietly send work to agents that answer to something
     /// else entirely.
     /// </para>
     /// <para>
     /// <b>Membership is every registered agent, not every reachable one.</b> A machine that is
-    /// switched off still has its agents here, so a role question opens an exchange with them
-    /// too — which orphans and is ghosted, and tells the asker. The alternative silently omits
-    /// the one agent whose answer mattered and looks exactly like success.
+    /// switched off still has its agents here, so a Request to the role opens an exchange with them
+    /// too — which waits and is flagged. The alternative silently omits the one agent whose work
+    /// mattered and looks exactly like success.
     /// </para>
     /// <para>
     /// Retired agents are excluded, because retirement is the one judgement that gates routing
@@ -186,21 +186,24 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// Reports whether an agent is registered at all.
     /// </summary>
     /// <param name="agent">The name to look for.</param>
+    /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns><see langword="true"/> if the registry holds a row for it, in any status.</returns>
     /// <remarks>
     /// Distinct from <see cref="IsUnroutableAsync"/>, which folds an unknown name in with the
-    /// statuses that refuse traffic. This one answers the different question the broker asks
-    /// about the agent that is <em>acting</em>: an adapter configured with a name nobody
-    /// registered is a deployment fault, not a peer being unavailable.
+    /// status that refuses traffic. Admission asks the two apart because the sender's remedy
+    /// differs: an unknown name is usually a misspelling, and a retired one means the work has to
+    /// go to whoever owns it now.
     /// </remarks>
     public async Task<bool> IsRegisteredAsync(
         AgentName agent,
+        SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default) =>
         await _connection.ExecuteScalarAsync<long>(
             new CommandDefinition(
                 "SELECT count(*) FROM agents WHERE name = @Name;",
                 new { Name = agent.Value },
+                transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
 
     /// <summary>
@@ -220,8 +223,8 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <para>
     /// Retired agents are omitted, per §14 — "not routed to, not offered in <c>agents()</c>".
     /// Everything else is listed whatever its presence, because presence does not gate routing:
-    /// a question to an agent nobody is running is what causes it to be started, and one to an
-    /// agent on a switched-off machine orphans and is ghosted, which tells the asker more than
+    /// a Request to an agent nobody is running is what causes it to be started, and one to an
+    /// agent on a switched-off machine waits and is flagged, which tells the person more than
     /// a refusal at the door would.
     /// </para>
     /// </remarks>
@@ -324,6 +327,26 @@ public sealed class AgentRepository(SqliteConnection connection)
                 new { Name = agent.Value },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
+
+    /// <summary>Reads the adapter an agent registered through.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The adapter, or <see langword="null"/> if the agent is not registered.</returns>
+    /// <remarks>
+    /// Read at admission for one purpose: a person seated through <see cref="Seats.Adapter"/> may always
+    /// start a new conversation (SPEC.md principle 2.10), where an agent holding a Request may not.
+    /// </remarks>
+    public async Task<string?> AdapterOfAsync(
+        AgentName agent,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteScalarAsync<string?>(
+            new CommandDefinition(
+                "SELECT adapter FROM agents WHERE name = @Name;",
+                new { Name = agent.Value },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>
     /// Says whether any session is attached for an agent right now.
@@ -657,9 +680,9 @@ public sealed class AgentRepository(SqliteConnection connection)
         // It was also wrong in a way worth recording. `nodes.connected` answers "is there
         // something on that machine that could start an agent", and an attached adapter is not
         // that -- it is one agent, already started, which cannot launch its neighbours. A
-        // deployment with no supervisor anywhere read as fully startable, and the first question
-        // to an idle agent would sit unanswered until it was ghosted, with the registry having
-        // said all along that it could be started.
+        // deployment with no supervisor anywhere read as fully startable, and the first message
+        // to an idle agent would sit uncollected, with the registry having said all along that it
+        // could be started.
         return await _connection.ExecuteAsync(
             new CommandDefinition(
                 """
@@ -702,9 +725,8 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// the ones that had gone wrong.
     /// </para>
     /// <para>
-    /// Nothing here touches the outstanding exchanges. They take the ordinary path: their
-    /// windows elapse, they orphan, and the grace period ghosts them. Retiring neither waits
-    /// for that nor accelerates it.
+    /// Nothing here touches the outstanding exchanges. They stay open and are flagged as held by a
+    /// retired agent (§6, §14), for a person to close the conversation or to reinstate it.
     /// </para>
     /// </remarks>
     public async Task<int> RetireAsync(
@@ -755,6 +777,10 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <param name="name">The agent to purge.</param>
     /// <param name="transaction">A transaction to join, or <see langword="null"/> to own one.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
+    /// <param name="nowUtc">
+    /// When it happened, stamped on the notices telling agents that files they fetched from the purged conversations
+    /// are gone.
+    /// </param>
     /// <returns>What was destroyed, or <see cref="PurgeOutcome.NotRegistered"/>.</returns>
     /// <remarks>
     /// <para>
@@ -792,6 +818,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// </remarks>
     public async Task<PurgeOutcome> PurgeAsync(
         AgentName name,
+        DateTimeOffset nowUtc,
         SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
@@ -834,19 +861,17 @@ public sealed class AgentRepository(SqliteConnection connection)
             SELECT conversation_id AS id FROM conversation_participants WHERE agent = @Name
             UNION
             SELECT conversation_id FROM exchanges
-             WHERE (asker = @Name OR answerer = @Name OR owed_by = @Name)
-               AND conversation_id IS NOT NULL
+             WHERE requester = @Name OR receiver = @Name OR owed_by = @Name
             UNION
             SELECT conversation_id FROM messages
-             WHERE (from_agent = @Name OR to_agent = @Name)
-               AND conversation_id IS NOT NULL;
+             WHERE from_agent = @Name OR to_agent = @Name;
             """).ConfigureAwait(false);
 
         await ExecuteAsync(
             """
             CREATE TEMP TABLE doomed_exchanges AS
             SELECT id FROM exchanges
-             WHERE asker = @Name OR answerer = @Name OR owed_by = @Name
+             WHERE requester = @Name OR receiver = @Name OR owed_by = @Name
                 OR conversation_id IN (SELECT id FROM doomed_conversations);
             """).ConfigureAwait(false);
 
@@ -856,9 +881,13 @@ public sealed class AgentRepository(SqliteConnection connection)
         // name the agent at all. They are a peer's messages, and a peer's side of an exchange,
         // in a conversation this agent was party to -- and they go because a conversation with
         // one party deleted out of it is not a smaller record but a misleading one.
-        await RazeAsync("message_referrals",
-            "DELETE FROM message_referrals WHERE exchange_id IN (SELECT id FROM doomed_exchanges);")
-            .ConfigureAwait(false);
+        foreach (var table in new[] { "result_sources", "result_items", "conversation_cycles" })
+        {
+            // Interpolated because a table name cannot be a parameter; the names are the array above.
+            await RazeAsync(table,
+                $"DELETE FROM {table} WHERE exchange_id IN (SELECT id FROM doomed_exchanges);")
+                .ConfigureAwait(false);
+        }
 
         await RazeAsync("messages",
             """
@@ -869,6 +898,28 @@ public sealed class AgentRepository(SqliteConnection connection)
 
         await RazeAsync("exchanges",
             "DELETE FROM exchanges WHERE id IN (SELECT id FROM doomed_exchanges);")
+            .ConfigureAwait(false);
+
+        // The files of those conversations go with them (SPEC.md §14): placing a file made its placer a participant,
+        // so a purged agent's own files are among them. Every other agent that fetched one is told it is gone before
+        // the records of who fetched what are deleted; the purged agent's own records cascade from it. The folders
+        // on disk are the server's to delete.
+        await new FileNoticeRepository(_connection).RaiseGoneForConversationsAsync(
+            ConversationScope.Doomed,
+            new { Name = name.Value, When = ExchangeRow.FormatTimestamp(nowUtc) },
+            scope.Transaction,
+            cancellationToken).ConfigureAwait(false);
+
+        await RazeAsync("file_fetches",
+            "DELETE FROM file_fetches WHERE conversation_id IN (SELECT id FROM doomed_conversations);")
+            .ConfigureAwait(false);
+
+        await RazeAsync("shared_files",
+            "DELETE FROM shared_files WHERE conversation_id IN (SELECT id FROM doomed_conversations);")
+            .ConfigureAwait(false);
+
+        await RazeAsync("conversation_folders",
+            "DELETE FROM conversation_folders WHERE conversation_id IN (SELECT id FROM doomed_conversations);")
             .ConfigureAwait(false);
 
         await RazeAsync("conversation_participants",
@@ -937,6 +988,21 @@ public sealed class AgentRepository(SqliteConnection connection)
             toll[table] = toll.GetValueOrDefault(table) + rows;
         }
     }
+
+    /// <summary>Deletes an agent and everything it was party to, stamping what it raises with the current time.</summary>
+    /// <param name="name">The agent.</param>
+    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>What was destroyed, or <see cref="PurgeOutcome.NotRegistered"/>.</returns>
+    /// <remarks>
+    /// Kept so that callers with no clock of their own go on calling purge as they did before files existed; the
+    /// only thing the time stamps is a notice.
+    /// </remarks>
+    public Task<PurgeOutcome> PurgeAsync(
+        AgentName name,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default) =>
+        PurgeAsync(name, DateTimeOffset.UtcNow, transaction, cancellationToken);
 
     /// <summary>
     /// Asks the schema which columns reference <c>agents(name)</c> without cascading.

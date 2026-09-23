@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Nodes;
+﻿using System.Text.Json;
+using System.Text.Json.Nodes;
 using Parley.Configuration;
 using Parley.Core;
 
@@ -127,14 +128,19 @@ public static class EnrollmentPlan
         ## Peers
 
         Other repositories have their own agents, reachable through Parley. They cannot see this
-        repository and this repository cannot see theirs: only the text of a question and its answer
+        repository and this repository cannot see theirs: only the text of a request and its result
         crosses between them. `parley_inbox` is pull rather than push - call it when you start work,
-        and again when you are waiting on a reply.
+        and again when you are waiting on a result.
+
+        To hand over a file, place it with `parley_file_place` and name it and its sha256 in your
+        request; fetch a file you are sent with `parley_file_fetch`. Only `.md` and `.txt` files can be
+        placed, so code travels as `Name.cs.txt`.
 
         - The roster has not been read yet. Run `/parley:write-peers` to fill this in.
 
-        **Do not guess at what these repositories do, and do not edit them. Ask.** A question must say
-        what you will do with each possible answer.
+        **Do not guess at what these repositories do, and do not edit them.** When you need work done
+        in one, or something it knows, send its agent a `parley_request` saying why and what done
+        looks like. Do the work other agents request of this repository.
 
         """;
 
@@ -159,6 +165,28 @@ public static class EnrollmentPlan
         name is { Length: > 0 and <= NameLimit }
         && char.IsAsciiLetterLower(name[0])
         && name.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-');
+
+    /// <summary>What a field says when <see cref="CorrectName"/> changed what was typed.</summary>
+    public const string NameWasCorrected = NameCorrection.WasCorrected;
+
+    /// <summary>
+    /// Turns what somebody typed into something <see cref="IsWellFormedName"/> can accept.
+    /// </summary>
+    /// <param name="typed">What is in the field.</param>
+    /// <returns>What the field should hold instead.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Named here rather than called directly by the form.</b> What the enrolment form is
+    /// holding somebody to is <see cref="IsWellFormedName"/>, and a surface reaching past it to the
+    /// correction would be depending on the two staying the same rule by coincidence.
+    /// </para>
+    /// <para>
+    /// <b>It corrects and never completes:</b> an empty name and a first character that is a digit
+    /// are left for the message to refuse, because inventing a leading letter would put a name
+    /// somebody did not choose into a manifest and into every peer's roster.
+    /// </para>
+    /// </remarks>
+    public static string CorrectName(string? typed) => NameCorrection.Correct(typed);
 
     /// <summary>
     /// Finds everything wrong with a manifest, before any of it is written.
@@ -342,6 +370,9 @@ public static class EnrollmentPlan
     /// resolved rather than guessed at. Null where there is no manifest, which refuses such an entry
     /// exactly as it was refused before.
     /// </param>
+    /// <param name="identity">
+    /// The identity to write when the repository declares none, or the default to mint one here.
+    /// </param>
     public static RepositoryPlan Describe(
         EnrollmentEntry entry,
         string? launchConfiguration,
@@ -349,7 +380,8 @@ public static class EnrollmentPlan
         bool nodeAlreadyLists,
         string? project = null,
         IReadOnlyDictionary<string, string>? endpoints = null,
-        string? nodeWorkspace = null)
+        string? nodeWorkspace = null,
+        AgentIdentity identity = default)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
@@ -466,10 +498,19 @@ public static class EnrollmentPlan
             ? workspace
             : "${" + WorkspaceVariable + ":-" + workspace + "}";
 
+        // **The identity is kept where it is found and minted only where there is none** (018 R2). It sits
+        // beside `mcpServers` rather than inside an entry, because it belongs to the repository and not to
+        // any one project's server: a checkout answering in two projects has one identity and two entries.
+        // A checkout that already carries one keeps it through a move, a rename, and every further project
+        // it joins — which is the whole of what R1 buys, and it is bought by not touching this.
+        var declared = Declared(root);
+        var chosen = declared.Known ? declared : identity.Known ? identity : AgentIdentity.Mint();
+
         var desired = new JsonObject { ["command"] = AdapterCommand, ["env"] = env };
         var existing = servers[key];
         var already = existing is not null
-            && JsonNode.DeepEquals(existing, desired);
+            && JsonNode.DeepEquals(existing, desired)
+            && declared == chosen;
 
         string? launchOutput = null;
 
@@ -479,6 +520,13 @@ public static class EnrollmentPlan
         }
         else
         {
+            root[LaunchConfiguration.IdentityMember] = chosen.ToString();
+
+            if (!declared.Known)
+            {
+                notes.Add($".mcp.json: mint {LaunchConfiguration.IdentityMember}, which is what this agent is");
+            }
+
             var others = servers.Count(pair => !string.Equals(pair.Key, key, StringComparison.Ordinal));
 
             servers[key] = desired;
@@ -609,8 +657,45 @@ public static class EnrollmentPlan
                 + "the other's mail");
         }
 
-        return new RepositoryPlan(notes, launchOutput, instructionsOutput, addsNode);
+        return new RepositoryPlan(notes, launchOutput, instructionsOutput, addsNode, chosen);
     }
+
+    /// <summary>Which agent a launch configuration says its repository is.</summary>
+    /// <param name="launchConfiguration">The file's contents, or null when there is no file.</param>
+    /// <returns>The identity it declares, or the default when it declares none or cannot be parsed.</returns>
+    /// <remarks>
+    /// <b>Here rather than only inside <see cref="Describe"/>, because the caller needs it first.</b> The
+    /// catalogue is keyed by identity, so whether this machine already starts this checkout — and whether
+    /// what it starts is at another path — cannot be asked until the repository has been read. Unparseable
+    /// is the default rather than a throw: <see cref="Describe"/> is about to refuse the same file with a
+    /// sentence that says what is wrong with it, and refusing twice in two voices helps nobody.
+    /// </remarks>
+    public static AgentIdentity IdentityIn(string? launchConfiguration)
+    {
+        if (launchConfiguration is not { Length: > 0 })
+        {
+            return default;
+        }
+
+        try
+        {
+            return JsonNode.Parse(launchConfiguration) is JsonObject root ? Declared(root) : default;
+        }
+        catch (JsonException)
+        {
+            return default;
+        }
+    }
+
+    /// <summary>The identity written in a parsed launch configuration.</summary>
+    /// <param name="root">The file.</param>
+    /// <returns>What it declares, or the default.</returns>
+    private static AgentIdentity Declared(JsonObject root) =>
+        root[LaunchConfiguration.IdentityMember] is JsonValue value
+        && value.TryGetValue<string>(out var written)
+        && AgentIdentity.TryRead(written, out var identity)
+            ? identity
+            : default;
 
     /// <summary>Reads one environment variable out of a launch entry, when it is a string.</summary>
     /// <param name="env">The <c>env</c> object, or null when the entry has none.</param>

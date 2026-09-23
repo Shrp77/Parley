@@ -40,6 +40,14 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     [BindProperty]
     public string? Text { get; set; }
 
+    /// <summary>Why the person is closing a conversation, when they give a reason.</summary>
+    /// <remarks>
+    /// Told to every participant holding open work in it (§5.3). Optional, because a close with no reason
+    /// is still a close each of them is told about, and refusing one would leave the work open instead.
+    /// </remarks>
+    [BindProperty]
+    public string? Reason { get; set; }
+
     /// <summary>What this action would do, in words, before it is done.</summary>
     public string Warning { get; private set; } = string.Empty;
 
@@ -70,11 +78,18 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                       + "free for another agent. This cannot be undone, and retiring it instead "
                       + "achieves everything except freeing the name.", true),
 
-            "forceconclude" => ($"Conversation '{Subject}' will be closed over its participants' "
-                              + "votes. The log records that a person closed it.", false),
+            "forceconclude" => ($"Conversation '{Subject}' will be closed now, whatever its participants "
+                              + "have voted. Every request still open in it is closed with a result saying "
+                              + "a person closed it, each participant holding that work is told, and the "
+                              + "log records that a person closed it.", false),
 
             "instruct" => ($"'{Subject}' will be given your words as a turn. It may decline, which "
                          + "is not a failure. The instruction is recorded as yours.", false),
+
+            "prune" => ($"The broker for '{Project}' applies its retention policy now rather than at its next "
+                      + "sweep. Message text past the policy is deleted permanently: export a conversation "
+                      + "first if it is worth keeping. Nothing on an open exchange, and nothing not yet "
+                      + "collected, is removed.", true),
 
             _ => ("This is not something the console does.", false)
         };
@@ -107,7 +122,11 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             {
                 // forceconclude takes a conversation identifier, which is opaque and chosen by an
                 // agent (§5.0). There is nothing to validate it against, so it is passed through.
-                "forceconclude" => Describe(broker.ForceConcludeAsync(Subject, token)),
+                "forceconclude" => Describe(broker.ForceConcludeAsync(
+                    Subject, string.IsNullOrWhiteSpace(Reason) ? null : Reason, token)),
+
+                // prune acts on the whole project; its subject is only what made the page's link.
+                "prune" => DescribePrune(broker.PruneAsync(token)),
 
                 _ when !named => Task.FromResult(
                     $"'{Subject}' is not a name an agent can have, so there is nothing to act on."),
@@ -131,6 +150,21 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
     private static async Task<string> Describe(Task<bool> action) =>
         await action.ConfigureAwait(false) ? "Done." : "Nothing changed.";
+
+    private static async Task<string> DescribePrune(Task<PruneResult> action)
+    {
+        var pruned = await action.ConfigureAwait(false);
+
+        var said = $"Removed {pruned.Removed} message(s)"
+                   + (pruned.InstructionsRemoved > 0 ? $" and {pruned.InstructionsRemoved} instruction(s)." : ".");
+
+        if (pruned.HeldByFloor > 0)
+        {
+            said += $" {pruned.HeldByFloor} more were old enough and were kept, because they are on open work, not yet collected, or the request a result not yet collected carries back.";
+        }
+
+        return pruned.Capped ? said + " It stopped at its own limit with more still to remove; run it again." : said;
+    }
 
     private static async Task<string> DescribePurge(Task<PurgeOutcome> action)
     {
@@ -172,7 +206,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             InstructionOutcome.Taken => $"Taken. {result.Reply}",
             InstructionOutcome.Declined => $"The agent declined, which is its right. {result.Reply}",
             InstructionOutcome.Undeliverable =>
-                "The machine that holds this agent is not connected, so nothing was delivered.",
+                InstructionWording.Undeliverable,
             InstructionOutcome.Failed => $"The turn did not complete. {result.Reply}",
 
             // The ordinary answer for any real piece of work, and it must not read as a fault.

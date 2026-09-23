@@ -68,11 +68,11 @@ public sealed class PackedToolTests
     {
         // The same question of the other surface, because they are installed independently and a
         // machine that wanted only a terminal should not acquire a web stack to get one.
-        var package = Packed("Parley.Top");
+        var package = Packed("Parley.Terminal");
 
         if (package is null)
         {
-            Assert.Skip("nothing packed; run `dotnet pack src/Parley.Top -c Release` to check this.");
+            Assert.Skip("nothing packed; run `dotnet pack src/Parley.Terminal -c Release` to check this.");
 
             return;
         }

@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json.Nodes;
 using Parley.Configuration;
 using Parley.Core;
@@ -53,6 +53,11 @@ public static class Enrolment
     /// <param name="workspace">The repository directory.</param>
     /// <returns>The path, whether or not anything is there.</returns>
     public static string LaunchPath(string workspace) => Path.Combine(workspace, LaunchFile);
+
+    // **`StartedElsewhere` was here, and 018 removed it along with the question it answered.** It told a
+    // surface that another project already started this workspace unattended, so that the add screen could
+    // explain why this project was getting a launch entry and no catalogue line. One catalogue keyed by
+    // identity means every project gets the same one entry, so there is nothing to explain.
 
     /// <summary>
     /// Writes what a plan decided, and says which files changed.
@@ -212,13 +217,19 @@ public static class Enrolment
 
     /// <summary>Puts an agent in a catalogue, so a node may start it.</summary>
     /// <param name="catalogue">The catalogue's <c>agents</c> object.</param>
-    /// <param name="agent">The role the node would start.</param>
+    /// <param name="agent">Which agent, which is what the catalogue is keyed by.</param>
     /// <param name="workspace">Where it would be started.</param>
-    public static void List(JsonObject catalogue, string agent, string workspace)
+    /// <remarks>
+    /// <b>Keyed by identity, where this was keyed by the role</b> (018). A role is what one project calls a
+    /// checkout, so a checkout answering in two projects needed two entries in two files — and was startable
+    /// wherever it had one and unstartable wherever it had not. One checkout is one entry now, whatever it
+    /// is called in however many projects, and enrolling into a further project writes nothing here at all.
+    /// </remarks>
+    public static void List(JsonObject catalogue, AgentIdentity agent, string workspace)
     {
         ArgumentNullException.ThrowIfNull(catalogue);
 
-        catalogue[agent] = new JsonObject
+        catalogue[agent.ToString()] = new JsonObject
         {
             ["command"] = "claude",
             ["workspace"] = workspace,
@@ -492,14 +503,150 @@ public static class Enrolment
 
     /// <summary>Takes an agent out of a catalogue.</summary>
     /// <param name="catalogue">The catalogue's <c>agents</c> object.</param>
-    /// <param name="agent">The role to remove.</param>
+    /// <param name="agent">Which agent to remove.</param>
     /// <returns>Whether it was there to remove.</returns>
-    public static bool Unlist(JsonObject catalogue, string agent)
+    /// <remarks>
+    /// Keyed by identity, as <see cref="List"/> is. The identity comes from the repository being withdrawn,
+    /// so a withdrawal removes the entry for the checkout it was pointed at and never one that happens to
+    /// answer to the same name — which is the defect 005's review gate found from the other direction.
+    /// </remarks>
+    public static bool Unlist(JsonObject catalogue, AgentIdentity agent)
     {
         ArgumentNullException.ThrowIfNull(catalogue);
 
-        return catalogue.Remove(agent);
+        return catalogue.Remove(agent.ToString());
     }
+
+    /// <summary>Says which other catalogued checkouts already answer to a name in a project.</summary>
+    /// <param name="agents">The catalogue's <c>agents</c> object.</param>
+    /// <param name="identity">The checkout being enrolled, which is never its own claimant.</param>
+    /// <param name="project">The project the name is being taken in, or null.</param>
+    /// <param name="role">The name being taken.</param>
+    /// <returns>The workspaces that already claim it, in the order the catalogue holds them.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The warning this restores was free when the catalogue was keyed by the role.</b> A second
+    /// repository taking a name the first held wrote over the first's entry, so the writer could see the
+    /// collision by looking at one key. Keyed by identity the two are separate entries and neither is
+    /// disturbed — which is better, and silent: an agent's name is the one thing this protocol makes
+    /// unforgeable, and two repositories claiming one means either may collect the other's mail.
+    /// </para>
+    /// <para>
+    /// <b>Said rather than refused</b>, because the node is what refuses (018 R4): it leaves a contested
+    /// name out of what it announces, so neither is started under it. Refusing here would refuse the
+    /// repair as well as the mistake — renaming one of the two is an enrolment.
+    /// </para>
+    /// </remarks>
+    private static IReadOnlyList<string> Claimants(
+        JsonObject agents, AgentIdentity identity, string? project, string role)
+    {
+        var found = new List<string>();
+
+        foreach (var entry in agents)
+        {
+            if (string.Equals(entry.Key, identity.ToString(), StringComparison.Ordinal)
+                || entry.Value?["workspace"] is not JsonValue value
+                || !value.TryGetValue<string>(out var workspace)
+                || !LaunchConfiguration.TryRead(workspace, out var declared, out _))
+            {
+                continue;
+            }
+
+            if (declared.Memberships.Any(membership =>
+                string.Equals(membership.Name, role, StringComparison.Ordinal)
+                && (project is null
+                    || membership.Project is null
+                    || string.Equals(membership.Project, project, StringComparison.Ordinal))))
+            {
+                found.Add(workspace);
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>Refuses an enrolment of a second checkout of a repository this machine already starts.</summary>
+    /// <param name="catalogued">Where the catalogue says that identity lives, or null when it says nothing.</param>
+    /// <param name="offered">Where this enrolment says it lives.</param>
+    /// <exception cref="InvalidDataException">Both are there, so they are two checkouts of one agent.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>A move and a copy are the same two facts from the files, and the filesystem is what tells them
+    /// apart.</b> An identity catalogued at one path and offered at another is either a checkout that moved
+    /// or a checkout that was copied — and they want opposite repairs. What distinguishes them is whether
+    /// anything is still at the old path: if there is not, it moved, and the entry is repointed with a note.
+    /// If there is, both exist, and cataloguing the second would point one identity at two working
+    /// directories.
+    /// </para>
+    /// <para>
+    /// <b>Asked here rather than in <see cref="EnrollmentPlan"/>, which decides everything else about an
+    /// enrolment.</b> That type takes file contents as strings and returns file contents as strings, and
+    /// reaching a filesystem from inside it would hand every one of its tests one.
+    /// </para>
+    /// </remarks>
+    private static void RefuseACopy(string? catalogued, string offered)
+    {
+        if (Refused(catalogued, offered) is { } refusal)
+        {
+            throw new InvalidDataException(refusal);
+        }
+    }
+
+    /// <summary>Why a repository cannot be enrolled against this catalogue, if it cannot.</summary>
+    /// <param name="agents">The catalogue's <c>agents</c> object.</param>
+    /// <param name="workspace">The repository being enrolled.</param>
+    /// <returns>The refusal, or <see langword="null"/> when there is none.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="agents"/> is null.</exception>
+    /// <remarks>
+    /// <b>The bulk command asks this and <see cref="AddAsync"/> applies it, which is one rule and two
+    /// callers rather than two rules.</b> They differ only in when: a bulk run refuses the whole manifest
+    /// before writing any of it, because a half-enrolled set is worse than none, and the single-repository
+    /// path has nothing to be half of. The answer is the same either way, and a probe found it enforced on
+    /// one writer and not the other — which is this repository's recorded shape for exactly this mistake.
+    /// </remarks>
+    public static string? CopyRefusal(JsonObject agents, string workspace)
+    {
+        ArgumentNullException.ThrowIfNull(agents);
+
+        var identity = EnrollmentPlan.IdentityIn(ReadLaunch(workspace));
+
+        if (!identity.Known)
+        {
+            // Nothing declared, so nothing is already catalogued under it: the enrolment is about to mint
+            // one, and a minted identity is in no catalogue by construction.
+            return null;
+        }
+
+        return Refused(agents[identity.ToString()]?["workspace"]?.GetValue<string>(), workspace);
+    }
+
+    /// <summary>Reads a repository's launch configuration, or null when there is none to read.</summary>
+    /// <param name="workspace">The repository.</param>
+    /// <returns>The file's contents, or null.</returns>
+    private static string? ReadLaunch(string workspace)
+    {
+        var path = LaunchPath(workspace);
+
+        try
+        {
+            return File.Exists(path) ? File.ReadAllText(path) : null;
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The one comparison behind both callers.</summary>
+    /// <param name="catalogued">Where the catalogue says that identity lives, or null.</param>
+    /// <param name="offered">Where this enrolment says it lives.</param>
+    /// <returns>The refusal, or null.</returns>
+    private static string? Refused(string? catalogued, string offered) =>
+        catalogued is { Length: > 0 }
+        && !WorkspacePath.SameRepository(catalogued, offered)
+        && Directory.Exists(catalogued)
+            ? Catalogues.Copied(catalogued, offered)
+            : null;
 
     /// <summary>
     /// Makes one repository an agent of a project.
@@ -583,40 +730,17 @@ public static class Enrolment
         var written = new List<string>();
         var said = new List<string>();
 
-        // **Asked whether or not this enrolment is about running unattended, and only *refused* when
-        // it is.** An attended entry beside an existing consent is not a second consent — but the
-        // client the other project's node starts reads one launch configuration and brings up every
-        // server in it, so the entry about to be written here will be started by that node too, in a
-        // project that never catalogued this repository. That is worth a sentence at the moment
-        // somebody adds it, which is the only moment anybody looks.
-        var already = Catalogues.Elsewhere(
-            deployment, entry.Workspace, catalogueFile, out var unreadable);
-
-        if (!entry.Unattended && already is not null)
-        {
-            said.Add(
-                $"{Quoting.Quoted(already.Project)} already starts this workspace unattended, so its "
-                + "node will bring this entry up as well: one working directory has one launch "
-                + "configuration and a client starts every server in it");
-        }
-
-        if (entry.Unattended)
-        {
-            // Refused before anything is written, and refused even though the launch entry would
-            // have been fine. Enrolling the repository in this project is admitted; starting it here
-            // as well is what cannot be.
-            if (already is not null)
-            {
-                throw new InvalidDataException(Catalogues.Refusal(already));
-            }
-
-            // And refused on the same terms when the machine could not be checked at all, which is
-            // not the same fact and used to reach here as the same silence.
-            if (unreadable is not null)
-            {
-                throw new InvalidDataException(unreadable);
-            }
-        }
+        // **There is no second-project refusal any more, and that is 018.**
+        //
+        // What stood here asked whether another project already catalogued this workspace for unattended
+        // start, and refused if one had: FR-013's rule that a repository may answer in several projects and
+        // be started unattended by only one, because two nodes launching one working directory is two models
+        // editing one checkout. It needed a scan across every other project's catalogue, and 009 recorded
+        // the deviation from Principle V that the scan was.
+        //
+        // The catalogue is one file keyed by the agent's identity now. One checkout has one entry, whatever
+        // it is called in however many projects, so "catalogued twice" cannot be written down and there is
+        // nothing left to refuse. Enrolling into a further project adds a name and touches nothing else.
 
         // **Read and written under one exclusive handle, because a repository now has more than one
         // writer.** Before this feature a second enrolment of one repository was refused outright, so
@@ -643,20 +767,66 @@ public static class Enrolment
                 {
                     var mark = notes is not null && HeldHasByteOrderMark(notes);
 
+                    var declared = launch is null
+                        ? null
+                        : await ReadHeldAsync(launch, cancellationToken).ConfigureAwait(false);
+
+                    // **The identity is read before the catalogue is asked anything, because it is the
+                    // key.** Whether this machine already starts this checkout is not a question about a
+                    // name — a name is what one project calls it — so it cannot be asked until the
+                    // repository has said which agent it is.
+                    var identity = EnrollmentPlan.IdentityIn(declared);
+
+                    if (!identity.Known)
+                    {
+                        identity = AgentIdentity.Mint();
+                    }
+
+                    var key = identity.ToString();
+                    var listed = agents[key]?["workspace"]?.GetValue<string>();
+
+                    RefuseACopy(listed, entry.Workspace);
+
+                    // **An attended enrolment beside a catalogued checkout still widens what a start
+                    // starts, and this is the only moment anybody could be told.** The entry about to be
+                    // written here is loaded by the client the node launches — one working directory has
+                    // one launch configuration and a client brings up every server in it — so this
+                    // project gets an agent that answers unattended without having asked for one. The
+                    // sentence used to name the project that held the consent, because consent was per
+                    // project; there is one catalogue now, so what it names is the machine.
+                    if (!entry.Unattended && agents.ContainsKey(key))
+                    {
+                        said.Add(
+                            $"this machine already starts {Quoting.Flat(entry.Workspace)}, so its node "
+                            + $"will bring this entry up as well and {Quoting.Quoted(project)} will have "
+                            + "an agent here with nobody watching");
+                    }
+
+                    foreach (var claimant in Claimants(agents, identity, project, entry.Agent))
+                    {
+                        said.Add(
+                            $"{Quoting.Flat(claimant)} already answers to {Quoting.Quoted(entry.Agent)} in "
+                            + $"{Quoting.Quoted(project)}. Two repositories claiming one name means either "
+                            + "may collect the other's mail, and this machine will start neither under it "
+                            + "until one is renamed");
+                    }
+
+
                     plan = EnrollmentPlan.Describe(
                         entry,
-                        launch is null ? null : await ReadHeldAsync(launch, cancellationToken).ConfigureAwait(false),
+                        declared,
                         notes is null
                             ? await DeclinedTextAsync(declined, instructionsPath, cancellationToken)
                                 .ConfigureAwait(false)
                             : await ReadHeldAsync(notes, cancellationToken).ConfigureAwait(false),
-                        agents.ContainsKey(entry.Agent),
+                        agents.ContainsKey(key),
                         project,
                         deployment?.ToDictionary(
                             settings => settings.Name.Value,
                             settings => settings.Endpoint,
                             StringComparer.Ordinal),
-                        agents[entry.Agent]?["workspace"]?.GetValue<string>());
+                        listed,
+                        identity);
 
                     if (plan.LaunchConfiguration is { } text)
                     {
@@ -690,7 +860,7 @@ public static class Enrolment
 
             if (plan.AddsNodeEntry)
             {
-                List(agents, entry.Agent, entry.Workspace);
+                List(agents, plan.Identity, entry.Workspace);
 
                 await SaveHeldCatalogueAsync(catalogueHeld, catalogueFile, catalogue, cancellationToken)
                     .ConfigureAwait(false);
@@ -748,6 +918,13 @@ public static class Enrolment
         var written = new List<string>();
         var launchPath = LaunchPath(workspace);
 
+        // **Which agent this repository is, and whether it is still one when this is done.** The catalogue
+        // is keyed by identity and one entry serves every project the checkout answers in, so withdrawing
+        // from one of two projects must leave it there: taking it would stop the other project being able
+        // to start the repository, which nobody asked for. Both are filled in from the file below.
+        var withdrawn = default(AgentIdentity);
+        var stillAnAgent = false;
+
         // Catalogue before launch, the same order AddAsync takes them in. Two runs acquiring in
         // opposite orders is how each comes to hold the half the other is waiting for.
         using var catalogueHeld = catalogueFile is null
@@ -803,6 +980,8 @@ public static class Enrolment
 
                 if (parsed is JsonObject root)
                 {
+                    withdrawn = EnrollmentPlan.IdentityIn(text);
+
                     if (root["mcpServers"] is JsonObject servers)
                     {
                         IReadOnlyList<LaunchEntry> entries;
@@ -883,13 +1062,26 @@ public static class Enrolment
                         }
                         else if (servers.Remove(candidates[0].Key))
                         {
+                            var left = LaunchEntries.Read(servers).Count;
+
+                            // **The identity goes with the last entry and not before it.** It belongs to
+                            // the repository rather than to any one project, so a withdrawal from one of
+                            // two must leave it — that is what lets the other project go on addressing
+                            // this checkout as the same agent. Once nothing answers from here the
+                            // repository is an agent nowhere, and a key this program wrote into somebody
+                            // else's file has to come back out: withdrawing undoes exactly what adding
+                            // did, which is the property this half exists to keep.
+                            if (left == 0)
+                            {
+                                _ = root.Remove(LaunchConfiguration.IdentityMember);
+                            }
+
                             await OverwriteHeldAsync(
                                 held,
                                 launchPath,
                                 root.ToJsonString(SerialisationOptions.Indented) + "\n",
                                 cancellationToken).ConfigureAwait(false);
 
-                            var left = LaunchEntries.Read(servers).Count;
 
                             written.Add(launchPath);
                             notes.Add(
@@ -900,6 +1092,15 @@ public static class Enrolment
                         {
                             notes.Add($"{launchPath}: no entry for {Where(project)} to remove");
                         }
+
+                        // **Asked of the file as it now stands, on every path through the block above.**
+                        // Three of those paths leave the repository answering somewhere — the entry was
+                        // removed and others remain, the entry belongs to another agent and was left, the
+                        // file was left alone for one of the reasons it cannot be acted on — and all three
+                        // must keep the catalogue line. Setting this only where the removal succeeded was
+                        // the first version, and it took the checkout's one way of being started away
+                        // from an agent nobody had withdrawn.
+                        stillAnAgent = LaunchEntries.Read(servers).Count > 0;
                     }
                     else
                     {
@@ -929,7 +1130,26 @@ public static class Enrolment
 
                 if (catalogue["agents"] is JsonObject agents)
                 {
-                    if (Unlist(agents, agent))
+                    // **Left where the repository still answers somewhere**, which is 018's shape rather
+                    // than a kindness. One entry says this machine may start this checkout, and every
+                    // project it answers in is started through that one entry — so removing it because one
+                    // project let it go would take the others' ability to start it with no sign that
+                    // anything had happened but an agent that never comes when it is asked for.
+                    if (stillAnAgent)
+                    {
+                        notes.Add(
+                            $"{catalogueFile}: entry kept, the repository still answers in another project");
+                    }
+                    else if (!withdrawn.Known)
+                    {
+                        // Enrolled before identities existed, or a file this could not read. The entry
+                        // cannot be found by name, and guessing which one is meant is how a withdrawal
+                        // comes to remove somebody else's.
+                        notes.Add(
+                            $"{catalogueFile}: left alone, {launchPath} says which agent this is and it "
+                            + "does not — re-enrol it, or remove the entry by hand");
+                    }
+                    else if (Unlist(agents, withdrawn))
                     {
                         await SaveHeldCatalogueAsync(catalogueHeld, catalogueFile, catalogue, cancellationToken)
                             .ConfigureAwait(false);

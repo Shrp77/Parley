@@ -29,6 +29,24 @@ using Parley.Mcp;
 // The agent's identity comes from that environment and from nowhere else. No tool takes it as
 // a parameter, so no tool call can change who the caller is — see ServerOptions.
 
+// Before the environment is read, because asking which build this is must not need a launch configuration. The
+// installer asks every tool it installed, from a shell that sets nothing -- and while this answered only with
+// PARLEY_AGENT set, its check printed nothing and passed.
+if (Array.Exists(args, argument => argument is "--version" or "-v"))
+{
+    var build = System.Reflection.CustomAttributeExtensions
+        .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(ServerOptions).Assembly)
+        ?.InformationalVersion ?? "unknown";
+    var plus = build.IndexOf('+', StringComparison.Ordinal);
+
+    await Console.Out.WriteLineAsync(string.Create(
+        System.Globalization.CultureInfo.InvariantCulture,
+        $"parley-mcp {(plus < 0 ? build : build[..plus])}, speaking Parley protocol {Parley.Core.ProtocolVersion.Current}"))
+        .ConfigureAwait(false);
+
+    return 0;
+}
+
 ServerOptions options;
 
 try
@@ -72,16 +90,29 @@ builder.Services.AddSingleton(provider =>
         .GetAwaiter().GetResult());
 
 // No sweep here any more. It ran in every adapter while every adapter opened the store, which
-// meant a deployment of twenty repositories ran twenty sweeps over one file, each with its own
-// idea of when the ghosting clock started. It belongs to the process that owns the store.
+// meant a deployment of twenty repositories ran twenty sweeps over one file, each taking the
+// write lock for the same work. It belongs to the process that owns the store.
 
 builder.Services
     // Instructions travel with the protocol, which makes this the one way to tell a model what
     // Parley is for that does not depend on which vendor's client it lives in. See
     // ParleyInstructions for what belongs in it and what deliberately does not.
-    .AddMcpServer(server => server.ServerInstructions = ParleyInstructions.Text)
+    .AddMcpServer(server =>
+    {
+        server.ServerInstructions = ParleyInstructions.Text;
+
+        // Declared always. A Claude Code session started with this server as a channel is pushed an event when work
+        // arrives, and every other client drops or ignores it -- see ChannelNudges for why that is safe and what the
+        // event may carry.
+        server.Capabilities = new ModelContextProtocol.Protocol.ServerCapabilities
+        {
+            Experimental = new Dictionary<string, object> { [ChannelNudges.Capability] = new System.Text.Json.Nodes.JsonObject() }
+        };
+    })
     .WithStdioServerTransport()
     .WithTools<ParleyTools>();
+
+builder.Services.AddHostedService<ChannelNudges>();
 
 var host = builder.Build();
 

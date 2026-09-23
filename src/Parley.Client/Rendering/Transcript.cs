@@ -71,13 +71,14 @@ public static class Transcript
                 .Append(CultureInfo.InvariantCulture, $"{message.From.Value} -> {message.To.Value} ")
                 .Append(
                     CultureInfo.InvariantCulture,
-                    $"({message.Type}, answered by {message.ResponderModel})")
+                    $"({message.Type}, answered by {message.ResponderModel}, "
+                    + $"{Delivery.Of(message, TimeZoneInfo.Utc)})")
                 .AppendLine();
 
-            if (message.ExchangeId is { } id && states.TryGetValue(id, out var snapshot))
+            if (states.TryGetValue(message.ExchangeId, out var snapshot))
             {
                 written
-                    .Append(CultureInfo.InvariantCulture, $"  exchange {id}: {snapshot.State}")
+                    .Append(CultureInfo.InvariantCulture, $"  exchange {message.ExchangeId}: {Reading.State(snapshot)}")
                     .AppendLine();
             }
 
@@ -119,11 +120,11 @@ public static class Transcript
     /// </para>
     /// <para>
     /// The line breaks and nothing else. Escaping backslashes too would be the more thorough
-    /// habit and the wrong one here: <c>json_valid</c> is enforced on the column (§13), so a
-    /// payload that reached this file cannot contain a raw newline in the first place — and every
-    /// payload that actually exists is JSON, in which <c>\n</c> already appears as those two
-    /// characters. Doubling them would make the common case render wrongly to defend a case the
-    /// schema does not permit.
+    /// habit and the wrong one here: <c>json_valid</c> is enforced on the column (§13), and JSON
+    /// allows a raw line break only as whitespace between tokens, never inside a string — so the
+    /// breaks escaped here are the only raw ones a payload can hold, and every word of it sits in a
+    /// string, where <c>\n</c> already appears as those two characters. Doubling them would make
+    /// the common case render wrongly to defend a case the schema does not permit.
     /// </para>
     /// </remarks>
     private static string OneLine(string? payload) =>

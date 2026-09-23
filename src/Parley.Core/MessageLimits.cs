@@ -36,23 +36,21 @@ public static class MessageLimits
     /// thousand was set from <c>refusals</c>, which is what that record was instrumented for —
     /// six agents, forty-three refusals, worst case 6,195 characters and means clustered between
     /// 4,328 and 4,556. Every refusal ever recorded fits under this number with room left, and
-    /// five of the six agents were turned away on <em>answers</em>, which is the direction that
-    /// costs the asker something it had already decided it needed.
+    /// five of the six agents were turned away on <em>answers</em> — Results, in 0.5 — which is the
+    /// direction that costs the requester something it had already decided it needed.
     /// </para>
     /// <para>
-    /// What it buys is editorial and that has not changed. A bounded answer forces the answerer
-    /// to decide what matters; an unbounded one hands that job to the asker, which is the
-    /// shared-context problem arriving by another route. Volume is still bounded elsewhere and
-    /// more strongly — one open exchange per pair, and a cap on clarification rounds — so this
-    /// remains the third control on the same risk rather than the only one.
+    /// What it buys is editorial and that has not changed. A bounded Result forces the receiver
+    /// to decide what matters; an unbounded one hands that job to the requester, which is the
+    /// shared-context problem arriving by another route. Nothing else bounds volume by default —
+    /// the per-pair and clarification caps are both off unless a deployment sets them — so this is
+    /// the one control on that risk that always applies.
     /// </para>
     /// <para>
-    /// <b>It doubles a worst case that is no longer the binding one.</b> SPEC.md rule 8.5 works
-    /// the arithmetic through: with a clarify cap of 200 the most one peer can place in another's
-    /// context through a single exchange is <c>(200 + 1) ×</c> this number, which the change from
-    /// four thousand moved from about 804,000 characters to about 1,608,000. Both figures are
-    /// dominated by the clarify counter rather than by this constant, which is the thing to
-    /// reason about before moving this one again.
+    /// <b>It bounds a message, not an exchange.</b> With no clarification cap by default, an
+    /// exchange that goes back and forth fifty times can carry fifty messages of this size in each
+    /// direction, and SPEC.md rule 8.4 says so. Moving this number moves the size of every one of
+    /// them, which is the thing to reason about before moving it again.
     /// </para>
     /// <para>
     /// Refusals keep being counted, so the next move can be argued the same way. A limit nobody
@@ -60,6 +58,22 @@ public static class MessageLimits
     /// </para>
     /// </remarks>
     public const int MaxPayloadCharacters = 8000;
+
+    /// <summary>The longest item id a Result can carry (SPEC.md §5.3).</summary>
+    /// <remarks>
+    /// <para>
+    /// A Result answers by id and storage records one row per outcome, holding the id to this.
+    /// </para>
+    /// <para>
+    /// <b>Since 0.7 nothing a sender writes reaches here.</b> A Request is the ask (§5.1) and declares no
+    /// identifiers, so what a Result names is either the single spelling <c>request</c> or the identifiers of a
+    /// Request stored under an earlier version — which are the reason this bound is still enforced rather than
+    /// retired. 0.5 and 0.6 refused a longer one when the Request was written; a question 0.4 wrote was not, and
+    /// its longer ids are read as though absent so the work can still be reported on
+    /// (<see cref="PayloadShape.ItemIds"/>).
+    /// </para>
+    /// </remarks>
+    public const int LongestItemId = 64;
 
     /// <summary>What is put in place of the part of a reply that did not fit.</summary>
     /// <remarks>

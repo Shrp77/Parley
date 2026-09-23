@@ -50,66 +50,40 @@ public sealed class HostedNodeTests : IDisposable
         new(ProjectName.Create(name), store, endpoint, null, null);
 
     [Fact]
-    public void One_catalogue_offered_to_several_projects_is_refused_rather_than_placed()
+    public async Task One_catalogue_named_for_several_projects_is_the_one_they_all_read()
     {
-        // The refusal has to name the fix, because the person meeting it has just installed
-        // something and is not going to read §4.1 to find out why one flag was rejected. And it
-        // must come before anything is opened -- no store touched, no port bound -- because the
-        // failure this prevents is not an error message: it is a machine quietly joined to
-        // whichever project happened to be listed first. The ports are ones nothing listens on,
-        // so a refusal that came too late would show up as a bound port rather than pass by luck.
+        // **This asserted a refusal until 018, and the refusal's reason is what went.** A catalogue
+        // belonged to a project, so one named on the command line beside several projects had nowhere
+        // to go — and admitting it would have joined the machine to whichever project happened to be
+        // listed first, which is why the check ran before any store was opened or any port bound.
+        //
+        // There is one catalogue per machine now and `--node-config` names exactly that, so it applies
+        // to every project this process serves and there is nothing left to disambiguate. What the old
+        // test protected is now unrepresentable rather than guarded.
         ProjectManifest.Write(
             ManifestPath,
             [
-                Project("orders", Path.Combine(_directory, "a.db"), "http://127.0.0.1:1"),
-                Project("billing", Path.Combine(_directory, "b.db"), "http://127.0.0.1:2"),
-            ]);
-
-        var catalogue = Path.Combine(_directory, "node.json");
-
-        var (code, error) = ToolProcess.Run(
-            [(ProjectManifest.PathVariable, ManifestPath)],
-            "serve", "--with-node", "--node-config", catalogue);
-
-        Assert.Equal(78, code);
-        Assert.Contains("--node-config", error, StringComparison.Ordinal);
-        Assert.Contains("--project", error, StringComparison.Ordinal);
-        Assert.Contains("manifest entry", error, StringComparison.Ordinal);
-        Assert.False(File.Exists(Path.Combine(_directory, "a.db")), "the first project's store was opened");
-        Assert.False(File.Exists(Path.Combine(_directory, "b.db")), "the second project's store was opened");
-    }
-
-    [Fact]
-    public async Task Serving_several_projects_hosts_a_node_where_a_catalogue_is_named()
-    {
-        // The rule the refusal above is the other half of: with several projects, each one whose
-        // entry names a catalogue gets this machine's node and each one that does not is told so,
-        // by name. Read from the real tool's output, because the placement lives in the entry
-        // point and not in the command the in-process test drives. The catalogue file does not
-        // exist, and need not: what is asserted is where the node was placed, and a node that
-        // then stops for want of its file is contained and says so on the next line.
-        var ct = TestContext.Current.CancellationToken;
-
-        ProjectManifest.Write(
-            ManifestPath,
-            [
-                new ProjectSettings(
-                    ProjectName.Create("orders"),
-                    Path.Combine(_directory, "a.db"),
-                    $"http://127.0.0.1:{FreePort()}",
-                    Path.Combine(_directory, "node.json"),
-                    null),
+                Project("orders", Path.Combine(_directory, "a.db"), $"http://127.0.0.1:{FreePort()}"),
                 Project("billing", Path.Combine(_directory, "b.db"), $"http://127.0.0.1:{FreePort()}"),
             ]);
 
+        var catalogue = Path.Combine(_directory, "given-node.json");
+
+        await File.WriteAllTextAsync(
+            catalogue, """{"agents":{}}""", TestContext.Current.CancellationToken);
+
         using var process = ToolProcess.Launch(
-            [(ProjectManifest.PathVariable, ManifestPath)], "serve", "--with-node");
+            [(ProjectManifest.PathVariable, ManifestPath)],
+            "serve", "--with-node", "--node-config", catalogue);
 
         var log = ToolLog.Of(process);
 
         try
         {
-            await log.UntilAsync(l => Placed(l) && Declined(l), TimeSpan.FromSeconds(20), ct);
+            await log.UntilAsync(
+                l => Hosted(l, "orders") && Hosted(l, "billing"),
+                TimeSpan.FromSeconds(20),
+                TestContext.Current.CancellationToken);
         }
         finally
         {
@@ -120,23 +94,84 @@ public sealed class HostedNodeTests : IDisposable
             }
         }
 
-        Assert.True(Placed(log), $"orders was not offered the node. The tool said:{Environment.NewLine}{log}");
-        Assert.True(Declined(log), $"billing was not told it names no catalogue. The tool said:{Environment.NewLine}{log}");
+        Assert.True(
+            Hosted(log, "orders") && Hosted(log, "billing"),
+            $"both projects should host this machine's node from the one catalogue:{Environment.NewLine}{log}");
 
-        static bool Placed(ToolLog log) => log.Said("orders: hosting this machine's node");
+        // And from the file that was named, rather than from anywhere either project points at.
+        Assert.True(
+            log.Said(catalogue),
+            $"the node was not hosted from the catalogue that was named:{Environment.NewLine}{log}");
 
-        static bool Declined(ToolLog log) => log.Said("billing: names no catalogue");
+        static bool Hosted(ToolLog log, string project) =>
+            log.Said($"{project}: hosting this machine's node");
     }
 
     [Fact]
-    public async Task A_lone_projects_environment_catalogue_survives_the_watcher_restarting_it()
+    public async Task Every_project_served_hosts_a_node_from_the_one_catalogue()
     {
-        // Lens 1 probe. A machine with one project and its catalogue in PARLEY_NODE_CONFIG --
-        // the documented resolution for one project, and this machine's own arrangement --
-        // hosts its node from the variable at start. The watcher then restarts the project on a
-        // changed entry. If "the one project" is recognised by object identity, the restarted
-        // one is a different record, falls to the per-entry rule, names no catalogue, and the
-        // machine silently stops starting agents until the next logon.
+        // **This asserted the opposite until 018: one project offered the node and the other told, by
+        // name, that it named no catalogue.** That was the per-project binding working exactly as
+        // designed — and it is the defect, not a symptom of one: a checkout is addressable in every
+        // project that names it and was startable only in the one whose file happened to hold it.
+        //
+        // Read from the real tool's output, because the placement lives in the entry point and not in
+        // the command an in-process test drives.
+        var ct = TestContext.Current.CancellationToken;
+
+        ProjectManifest.Write(
+            ManifestPath,
+            [
+                Project("orders", Path.Combine(_directory, "a.db"), $"http://127.0.0.1:{FreePort()}"),
+                Project("billing", Path.Combine(_directory, "b.db"), $"http://127.0.0.1:{FreePort()}"),
+            ]);
+
+        using var process = ToolProcess.Launch(
+            [(ProjectManifest.PathVariable, ManifestPath)], "serve", "--with-node");
+
+        var log = ToolLog.Of(process);
+
+        try
+        {
+            await log.UntilAsync(l => Placed(l, "orders") && Placed(l, "billing"), TimeSpan.FromSeconds(20), ct);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                _ = process.WaitForExit(5000);
+            }
+        }
+
+        Assert.True(Placed(log, "orders"), $"orders was not offered the node. The tool said:{Environment.NewLine}{log}");
+        Assert.True(Placed(log, "billing"), $"billing was not offered the node. The tool said:{Environment.NewLine}{log}");
+
+        // Nothing is told it names no catalogue, because nothing names one: the file belongs to the
+        // machine and every project served reads it.
+        Assert.False(
+            log.Said("names no catalogue"),
+            $"a project was told it names no catalogue:{Environment.NewLine}{log}");
+
+        static bool Placed(ToolLog log, string project) =>
+            log.Said($"{project}: hosting this machine's node");
+    }
+
+    [Fact]
+    public async Task The_environment_catalogue_survives_the_watcher_restarting_a_project()
+    {
+        // Lens 1 probe, kept through 018 because the failure it guards is still reachable. A machine
+        // whose catalogue is in PARLEY_NODE_CONFIG hosts its node from the variable at start; the
+        // watcher then restarts the project on a changed entry, and the restarted project must read
+        // the same file.
+        //
+        // **What made this fragile was a special case that is now gone.** One project served alone
+        // resolved its catalogue differently from several, so the machine had to recognise "the lone
+        // project" — by name rather than by identity, because the watcher restarts a project as a new
+        // record, and recognising it by identity made the restarted one fall to the per-entry rule,
+        // name no catalogue, and silently stop starting agents until the next logon. One catalogue per
+        // machine is resolved the same way however many projects are served, so neither the count nor
+        // the restart can change the answer.
         var ct = TestContext.Current.CancellationToken;
 
         var catalogue = Path.Combine(_directory, "env-node.json");
@@ -175,8 +210,12 @@ public sealed class HostedNodeTests : IDisposable
         Assert.False(Declined(log), $"after the restart the lone project was told it names no catalogue:{Environment.NewLine}{log}");
         Assert.True(Hosted(log) == 2, $"the node was not hosted again after the restart:{Environment.NewLine}{log}");
 
+        // Matched case-insensitively because the two spellings are two call sites: a node hosted for a
+        // named project is prefixed with that name and opens lower case, and one hosted for a machine
+        // serving no project opens the sentence. 018 made every project take the first, and a matcher
+        // pinned to the second counted nothing while the node was hosted perfectly well.
         static int Hosted(ToolLog log) =>
-            log.Lines().Count(l => l.Contains("Hosting this machine's node", StringComparison.Ordinal));
+            log.Lines().Count(l => l.Contains("osting this machine's node", StringComparison.Ordinal));
 
         static bool Declined(ToolLog log) => log.Said("names no catalogue");
     }

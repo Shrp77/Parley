@@ -24,6 +24,14 @@ else
             </p>
         }
 
+        @if (string.Equals(Model.Action, "forceconclude", StringComparison.OrdinalIgnoreCase))
+        {
+            <p>
+                <label for="reason">Why are you closing it? Each participant holding open work is told.</label><br />
+                <textarea id="reason" name="reason" rows="3" cols="70" maxlength="1000"></textarea>
+            </p>
+        }
+
         <button type="submit">
             @(Model.Destroys ? "Yes, destroy it" : "Confirm")
         </button>

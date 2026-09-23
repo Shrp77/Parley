@@ -1,3 +1,4 @@
+using Parley.Configuration;
 using Parley.Setup;
 using System.Text.Json.Nodes;
 using Xunit;
@@ -16,7 +17,7 @@ namespace Parley.Cli.Tests;
 /// <para>
 /// <b>The bound.</b> The document says a key is "safe unescaped in JSON and in a client's tool names:
 /// at most 39 characters". That number is not decoration — the key is a component of every tool name
-/// the agent behind it sees, so it is <c>mcp__parley-&lt;project&gt;__parley_ask</c> that has to stay
+/// the agent behind it sees, so it is <c>mcp__parley-&lt;project&gt;__parley_request</c> that has to stay
 /// inside whatever a client allows, and the arithmetic is `parley-` plus the longest a project name
 /// may be.
 /// </para>

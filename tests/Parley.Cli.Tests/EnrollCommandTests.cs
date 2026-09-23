@@ -1,8 +1,9 @@
-﻿using Parley.Setup;
-using System.Text;
-using System.Text.Json;
+﻿using Parley.Configuration;
+using Parley.Core;
+using Parley.Setup;
 using System.Text.Json.Nodes;
-using Parley.Configuration;
+using System.Text.Json;
+using System.Text;
 using Xunit;
 
 namespace Parley.Cli.Tests;
@@ -191,9 +192,21 @@ public sealed class EnrollCommandTests : IDisposable
     [Fact]
     public async Task An_existing_catalogue_keeps_the_agents_it_already_listed()
     {
+        var docs = AgentIdentity.Mint();
+
         await File.WriteAllTextAsync(
             NodePath,
-            """{"agents":{"docs":{"command":"claude","workspace":"C:/repos/docs"}}}""",
+            new JsonObject
+            {
+                ["agents"] = new JsonObject
+                {
+                    [docs.ToString()] = new JsonObject
+                    {
+                        ["command"] = "claude",
+                        ["workspace"] = "C:/repos/docs",
+                    },
+                },
+            }.ToJsonString(),
             TestContext.Current.CancellationToken);
 
         await WriteManifestAsync(unattended: true);
@@ -201,8 +214,16 @@ public sealed class EnrollCommandTests : IDisposable
 
         var node = await File.ReadAllTextAsync(NodePath, TestContext.Current.CancellationToken);
 
-        Assert.Contains("\"docs\"", node, StringComparison.Ordinal);
-        Assert.Contains("\"acme-orders\"", node, StringComparison.Ordinal);
+        // The entry that was there, and the one this run added — keyed by identity, which is what the
+        // enrolment wrote into the repository it enrolled.
+        Assert.Contains(docs.ToString(), node, StringComparison.Ordinal);
+
+        Assert.True(
+            LaunchConfiguration.TryRead(
+                Path.Combine(Checkouts, "Acme.Orders"), out var declared, out var problem),
+            problem);
+
+        Assert.Contains(declared.Identity.ToString(), node, StringComparison.Ordinal);
     }
 
     [Fact]

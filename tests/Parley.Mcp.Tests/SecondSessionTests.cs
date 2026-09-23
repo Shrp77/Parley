@@ -1,4 +1,5 @@
-﻿using Xunit;
+using System.Text.Json.Nodes;
+using Xunit;
 
 namespace Parley.Mcp.Tests;
 
@@ -14,95 +15,55 @@ public sealed class SecondSessionTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);
 
+    private static async Task<long> RequestAsync(ParleyTools orders, CancellationToken ct)
+    {
+        var sent = await orders.RequestAsync(
+            to: "billing@test",
+            ask: "Does an invoice carry the tax rate at time of sale?",
+            cancellationToken: ct);
+
+        return sent["exchange_id"]!.GetValue<long>();
+    }
+
+    private static Task<JsonNode> ResultAsync(ParleyTools billing, long exchangeId, CancellationToken ct) =>
+        billing.ResultAsync(
+            exchangeId, "answered", "Yes. invoice_lines.tax_rate is stamped at issue.",
+            cancellationToken: ct);
+
     [Fact]
-    public async Task A_second_window_on_one_repository_does_not_release_the_first_ones_work()
+    public async Task A_second_window_on_one_repository_does_not_take_the_first_ones_work()
     {
         // Before the live check this destroyed the exchange outright: the first session's answer
-        // was refused as not-open, and the second session's inbox was empty — so the question
-        // was gone and neither side had been told anything.
+        // was refused as not-open, and the second session's inbox was empty — so the work was
+        // gone and neither side had been told anything.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
         var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
         var (_, billingA) = await fixture.LaunchAsync("billing@test", ct);
 
-        var asked = await orders.AskAsync(
-            to: "billing@test",
-            intent: "Deciding where the tax rate lives.",
-            subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
-            consequences: "If it does I read it from you; if not I snapshot my own copy.",
-            cancellationToken: ct);
+        var exchangeId = await RequestAsync(orders, ct);
 
-        var exchangeId = asked["exchange_id"]!.GetValue<long>();
-
-        // The first session picks the question up and starts working on it.
+        // The first session picks the Request up and starts working on it.
         Assert.Single((await billingA.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
 
-        // Somebody opens a second window on the same repository.
+        // Somebody opens a second window on the same repository. It is not handed the work again,
+        // because the agent is already attached and working.
         fixture.Clock.Advance(TimeSpan.FromMinutes(1));
-        await fixture.LaunchAsync("billing@test", ct);
+        var (_, billingB) = await fixture.LaunchAsync("billing@test", ct);
 
-        var answered = await billingA.AnswerAsync(
-            exchangeId,
-            [new Resolution("q1", "answered", "Yes. invoice_lines.tax_rate is stamped at issue.")],
-            cancellationToken: ct);
+        Assert.Empty((await billingB.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
+
+        var resolved = await ResultAsync(billingA, exchangeId, ct);
 
         Assert.True(
-            answered["ok"]?.GetValue<bool>() ?? false,
-            $"the first session's answer should still land, got {answered.ToJsonString()}");
+            resolved["ok"]?.GetValue<bool>() ?? false,
+            $"the first session's Result should still land, got {resolved.ToJsonString()}");
     }
 
     [Fact]
-    public async Task A_third_window_does_not_release_the_first_ones_work()
+    public async Task Closing_one_of_two_windows_does_not_disturb_the_others_work()
     {
-        // The same defect again, and the form that needs no race at all. `connected` counts
-        // sessions, and the registry's attach test read `connected = 1` -- so with two windows
-        // open the answer was "nobody is attached", and the third window's attach sequence
-        // released work the first was mid-answer on. Three runs out of three before the fix.
-        //
-        // It is also what made the test below look flaky rather than broken: there the count
-        // reached two only when a departing session's detach had not landed yet, which a loaded
-        // machine arranges and a fast one does not. Same bug, seen through a race instead of
-        // through arithmetic.
-        var ct = TestContext.Current.CancellationToken;
-        await using var fixture = new ServerFixture(T0);
-
-        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
-        var (_, billingA) = await fixture.LaunchAsync("billing@test", ct);
-
-        var asked = await orders.AskAsync(
-            to: "billing@test",
-            intent: "Deciding where the tax rate lives.",
-            subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
-            consequences: "If it does I read it from you; if not I snapshot my own copy.",
-            cancellationToken: ct);
-
-        var exchangeId = asked["exchange_id"]!.GetValue<long>();
-
-        Assert.Single((await billingA.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
-
-        // Two more windows on the same repository, neither of which closes.
-        await fixture.LaunchAsync("billing@test", ct);
-        await fixture.LaunchAsync("billing@test", ct);
-
-        var answered = await billingA.AnswerAsync(
-            exchangeId,
-            [new Resolution("q1", "answered", "Yes. invoice_lines.tax_rate is stamped at issue.")],
-            cancellationToken: ct);
-
-        Assert.True(
-            answered["ok"]?.GetValue<bool>() ?? false,
-            $"the first window's answer should still land, got {answered.ToJsonString()}");
-    }
-
-    [Fact]
-    public async Task Closing_one_of_two_windows_does_not_release_the_others_work()
-    {
-        // The same defect reached through the other door. A clean shutdown marks the agent
-        // offline, and while a boolean carried liveness that was enough for the next attach to
-        // conclude nobody was there — even though the first window was mid-answer. It is why
-        // liveness is a lease renewed by whichever sessions are running, rather than a flag
-        // whichever session leaves last happens to write.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
@@ -110,14 +71,7 @@ public sealed class SecondSessionTests
         var (_, billingA) = await fixture.LaunchAsync("billing@test", ct);
         var (sessionB, _) = await fixture.LaunchAsync("billing@test", ct);
 
-        var asked = await orders.AskAsync(
-            to: "billing@test",
-            intent: "Deciding where the tax rate lives.",
-            subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
-            consequences: "If it does I read it from you; if not I snapshot my own copy.",
-            cancellationToken: ct);
-
-        var exchangeId = asked["exchange_id"]!.GetValue<long>();
+        var exchangeId = await RequestAsync(orders, ct);
         Assert.Single((await billingA.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
 
         // The second window closes while the first is still working, and a third opens.
@@ -125,81 +79,26 @@ public sealed class SecondSessionTests
         fixture.Clock.Advance(TimeSpan.FromMinutes(1));
         await fixture.LaunchAsync("billing@test", ct);
 
-        var answered = await billingA.AnswerAsync(
-            exchangeId,
-            [new Resolution("q1", "answered", "Yes. invoice_lines.tax_rate is stamped at issue.")],
-            cancellationToken: ct);
+        var resolved = await ResultAsync(billingA, exchangeId, ct);
 
         Assert.True(
-            answered["ok"]?.GetValue<bool>() ?? false,
-            $"the working session's answer should still land, got {answered.ToJsonString()}");
+            resolved["ok"]?.GetValue<bool>() ?? false,
+            $"the working session's Result should still land, got {resolved.ToJsonString()}");
     }
 
     [Fact]
-    public async Task A_long_running_session_keeps_its_lease_by_sweeping()
+    public async Task A_session_that_stopped_is_handed_its_work_again_when_it_returns()
     {
-        // What makes the lease a lease rather than a five-minute grace period. A session that has
-        // been open all afternoon has not been heard from since it attached unless something
-        // renews the mark, and the sweep is that something — so without the heartbeat this agent
-        // would look departed after five minutes and the next window to open would release the
-        // work it is doing. The whole session is inside one working window; only the lease has
-        // elapsed several times over.
-        var ct = TestContext.Current.CancellationToken;
-        await using var fixture = new ServerFixture(T0);
-
-        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
-        var (sessionA, billingA) = await fixture.LaunchAsync("billing@test", ct);
-
-        var asked = await orders.AskAsync(
-            to: "billing@test",
-            intent: "Deciding where the tax rate lives.",
-            subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
-            consequences: "If it does I read it from you; if not I snapshot my own copy.",
-            cancellationToken: ct);
-
-        var exchangeId = asked["exchange_id"]!.GetValue<long>();
-        Assert.Single((await billingA.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
-
-        // An hour of ordinary operation: the session is up and its sweep runs every minute.
-        for (var minute = 0; minute < 60; minute++)
-        {
-            fixture.Clock.Advance(TimeSpan.FromMinutes(1));
-            await fixture.TickAsync(ct);
-        }
-
-        // Somebody opens a second window.
-        await fixture.LaunchAsync("billing@test", ct);
-
-        var answered = await billingA.AnswerAsync(
-            exchangeId,
-            [new Resolution("q1", "answered", "Yes. invoice_lines.tax_rate is stamped at issue.")],
-            cancellationToken: ct);
-
-        Assert.True(
-            answered["ok"]?.GetValue<bool>() ?? false,
-            $"an hour of sweeping should have kept the lease, got {answered.ToJsonString()}");
-    }
-
-    [Fact]
-    public async Task A_session_that_stopped_long_ago_does_release_its_debts()
-    {
-        // The other side, so the lease is not simply "never release anything". Once it has
-        // lapsed the next attach releases what the previous session left, which is what stops a
-        // peer waiting out a four-hour working window for an agent that came back in seconds.
+        // 0.4 released an exchange like this when the agent came back, and the requester was told
+        // nobody had answered. Nothing times out now (§5.3): the work was collected by a session
+        // that ended, so the next session is given it again and its Result lands.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
         var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
         var (billingSession, billing) = await fixture.LaunchAsync("billing@test", ct);
 
-        var asked = await orders.AskAsync(
-            to: "billing@test",
-            intent: "Deciding where the tax rate lives.",
-            subQuestions: [new SubQuestion("q1", "Does an invoice carry the rate at time of sale?")],
-            consequences: "If it does I read it from you; if not I snapshot my own copy.",
-            cancellationToken: ct);
-
-        var exchangeId = asked["exchange_id"]!.GetValue<long>();
+        var exchangeId = await RequestAsync(orders, ct);
         Assert.Single((await billing.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
 
         await fixture.ShutDownAsync(billingSession);
@@ -207,12 +106,12 @@ public sealed class SecondSessionTests
 
         var (_, billingAgain) = await fixture.LaunchAsync("billing@test", ct);
 
-        var refused = await billingAgain.AnswerAsync(
-            exchangeId,
-            [new Resolution("q1", "answered", "Yes, it does.")],
-            cancellationToken: ct);
+        var redelivered = Assert.Single((await billingAgain.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
+        Assert.Equal(exchangeId, redelivered!["exchange_id"]!.GetValue<long>());
 
-        Assert.False(refused["ok"]?.GetValue<bool>() ?? false);
+        var resolved = await ResultAsync(billingAgain, exchangeId, ct);
+
+        Assert.True(resolved["ok"]?.GetValue<bool>() ?? false, resolved.ToJsonString());
     }
 
     [Fact]
@@ -221,17 +120,12 @@ public sealed class SecondSessionTests
         // The first run of every project. PARLEY_DB conventionally names .parley/parley.db and
         // nothing has created .parley, which SQLite reports as "unable to open database file" —
         // true, and no help at all to somebody setting this up for the first time.
-        //
-        // Through the broker now, because the adapter no longer opens anything. The check is the
-        // same one and it matters more: there used to be many processes that could create the
-        // directory and any of them would do, and now there is exactly one.
         var root = Path.Combine(Path.GetTempPath(), "parley-fresh-" + Guid.NewGuid().ToString("N"));
         var path = Path.Combine(root, ".parley", "parley.db");
 
         try
         {
-            var runtime = Parley.Server.BrokerRuntime.Open(
-                path, Parley.Broker.BrokerOptions.Default, new StubClock(T0));
+            var runtime = Parley.Server.BrokerRuntime.Open(path, Parley.Broker.BrokerOptions.Default, new StubClock(T0));
 
             await runtime.DisposeAsync();
 
@@ -246,9 +140,8 @@ public sealed class SecondSessionTests
             catch (IOException)
             {
                 // Best effort, like the fixture's. Microsoft.Data.Sqlite pools connections, so
-                // disposing one returns it rather than closing the file — and clearing the pool
-                // to force that is process-wide, which would reach into whatever else is running
-                // in parallel. A directory left under the temporary path is the cheaper problem.
+                // disposing one returns it rather than closing the file — and clearing the pool to
+                // force that is process-wide, which would reach into whatever else runs in parallel.
             }
         }
     }

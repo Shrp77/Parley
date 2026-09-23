@@ -106,6 +106,29 @@ public static class Visibility
             return string.Empty;
         }
 
-        return $"{string.Join(", ", absent.Select(a => a.Value))} did not see this.";
+        return absent.Count <= Named
+            ? $"{string.Join(", ", absent.Select(a => a.Value))} did not see this."
+            : $"{string.Join(", ", absent.Take(Named).Select(a => a.Value))} and "
+              + $"{absent.Count - Named} others in this conversation did not see this.";
     }
+
+    /// <summary>How many of the absent to name before counting the rest.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Unbounded, this line was longer than everything it annotated.</b> A person told every
+    /// agent in a project one thing, which is nineteen pairwise notifications in one conversation
+    /// — and every one of the nineteen carried the other eighteen names, four hundred characters
+    /// of them, under a header that already said who the message was for. The owner read the
+    /// result as the recipients having missed it, which is the opposite of what it says.
+    /// </para>
+    /// <para>
+    /// <b>Four, and then a count — the same shape as every other list here</b> (a broadcast's
+    /// refusals, a bulk start's outcomes). Naming <em>some</em> is what keeps
+    /// <c>ExportTests.The_transcript_names_the_agent_that_was_left_out</c>'s point: "one
+    /// participant did not see this" is unactionable. What is dropped stays recoverable — the
+    /// export lists every participant in its header, and the absent are the participants less the
+    /// pair the header names.
+    /// </para>
+    /// </remarks>
+    private const int Named = 4;
 }

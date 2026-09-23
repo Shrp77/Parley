@@ -69,22 +69,56 @@ public sealed class BrokerRuntime : IAsyncDisposable
     private readonly ConcurrentDictionary<string, JoinedNode> _nodes =
         new(StringComparer.Ordinal);
 
+    /// <summary>The silent participants each closure poll has already asked again, keyed by poll.</summary>
+    /// <remarks>
+    /// In memory, for the reason the pending mark is: a restart forgets, and the worst that costs is one more ask.
+    /// Never pruned, because an entry is three short strings and one exists only for a participant that went silent
+    /// on a poll it was asked — a count bounded by the conversations that ever stalled on a vote.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, byte> _askedAgain = new(StringComparer.Ordinal);
+
+    /// <summary>Claims the one time a silent participant may be asked again in a poll (§5.0).</summary>
+    /// <param name="conversationId">The conversation being polled.</param>
+    /// <param name="agent">The participant that has not voted.</param>
+    /// <param name="polledUtc">When its poll began, which identifies the poll.</param>
+    /// <returns><see langword="true"/> the first time for that poll, and never again.</returns>
+    /// <remarks>
+    /// The bound is on the turns being spent rather than on which vote came before, because each turn is a
+    /// collection and a collection frees the next wake: any rule about when to ask was one a participant could
+    /// replay by repeating or alternating its own vote. Claimed atomically, so two votes landing at once ask once.
+    /// </remarks>
+    internal bool TryAskAgain(string conversationId, AgentName agent, DateTimeOffset polledUtc) =>
+        _askedAgain.TryAdd(
+            string.Join(
+                PairKey.Separator,
+                conversationId,
+                agent.Value,
+                polledUtc.UtcTicks.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            0);
+
     /// <summary>
-    /// When attention was last asked for on an agent's behalf, until that agent drains.
+    /// When attention was last asked for on an agent's behalf, until that agent begins collecting.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>The bound that makes waking a notification's recipient affordable.</b> SPEC.md §17
-    /// question 15 refused the wake on the grounds that it would be unbounded, and the answer is
-    /// in question 1's own evidence: <c>inbox</c> collects everything pending, so one turn drains
-    /// sixty notifications. Asking a second time buys nothing.
+    /// <b>The bound that makes waking every message's recipient affordable.</b> SPEC.md §17
+    /// question 15 once refused a wake on the grounds that it would be unbounded, and the answer is
+    /// in question 1's own evidence: <c>inbox</c> with no limit collects everything pending, so one
+    /// turn drains sixty messages and asking a second time buys nothing.
+    /// </para>
+    /// <para>
+    /// <b>Two things the review gate changed about when it clears</b> (SPEC.md §5.4). It is removed as a
+    /// collection begins rather than after it returns (<see cref="CollectAsync{T}"/>), so a message stored
+    /// during one asks for its own turn. And a collection its caller limited to fewer than are waiting is
+    /// followed by a wake for the rest (<c>AgentsService.DrainInbox</c>), because there asking again is what
+    /// the messages left behind are owed.
     /// </para>
     /// <para>
     /// <b>Keyed on the drain, not on the attach, and that distinction is the whole of it.</b>
     /// <c>NodeCommand.StartAsync</c> dispatches a turn when the resident is already alive — so the
     /// node already refuses a duplicate <em>process</em> and cannot refuse a duplicate
     /// <em>turn</em>. A marker cleared by the attach would clear a second after the first
-    /// notification, leaving the other fifty-nine to buy a turn apiece. §4.2 already draws this
+    /// message, leaving the other fifty-nine to buy a turn apiece. §4.2 already draws this
     /// line: waking an adapter is not the model taking a turn, and only a drain proves the mail
     /// was read.
     /// </para>
@@ -102,21 +136,39 @@ public sealed class BrokerRuntime : IAsyncDisposable
     private readonly ConcurrentDictionary<string, DateTimeOffset> _pending =
         new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Machines this broker has already woken agents on for work that was outstanding when it started.
+    /// </summary>
+    /// <remarks>
+    /// Once per machine per broker lifetime, because what SPEC.md §14's resume policy governs is a restart.
+    /// A node rejoining after a network blip has not restarted anything, and waking its agents again would
+    /// buy turns for work they are already doing.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, bool> _resumedMachines = new(StringComparer.Ordinal);
+
     private readonly SqliteConnection _connection;
     private readonly Parley.Broker.Broker _house;
     private readonly Parley.Broker.BrokerOptions _options;
 
     private readonly bool _ownsConnection;
 
+    // The claim on the store, for a runtime opened from a path. Null for one given a connection or
+    // an in-memory database, neither of which is a file another broker could also be serving.
+    private readonly StoreLock? _storeLock;
+
     private BrokerRuntime(
         SqliteConnection connection,
         Parley.Broker.BrokerOptions options,
         TimeProvider clock,
         RetentionPolicy retention,
-        bool ownsConnection = true)
+        FileLocationStore files,
+        bool ownsConnection = true,
+        StoreLock? storeLock = null)
     {
+        Files = files;
         _connection = connection;
         _ownsConnection = ownsConnection;
+        _storeLock = storeLock;
         _options = options;
         Clock = clock;
         Retention = retention;
@@ -131,7 +183,15 @@ public sealed class BrokerRuntime : IAsyncDisposable
         var now = clock.GetUtcNow();
         _ = new NodeRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
         _ = new AgentRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
+
+        // Last, once everything it reads through is in place: the scan it starts goes through the gate like any other
+        // write, and changes made while no broker was running are found before anybody asks.
+        Watcher = new FolderWatcher(this);
+        Watcher.Start();
     }
+
+    /// <summary>Gets what notices changes made to the file location outside Parley (SPEC.md §9.5).</summary>
+    internal FolderWatcher Watcher { get; }
 
     /// <summary>
     /// How long a wake stays pending before another may be asked for.
@@ -192,6 +252,17 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     public RetentionPolicy Retention { get; }
 
+    /// <summary>Gets the file location this broker's store keeps its placed files in (SPEC.md §9.5).</summary>
+    /// <remarks>
+    /// Owned by the runtime because it is the store's: the same process that alone opens the database alone writes
+    /// the files, and the holds a download takes live in memory here, so a restart ends every download and every
+    /// hold together.
+    /// </remarks>
+    public FileLocationStore Files { get; }
+
+    /// <summary>Gets the fetches streamed to completion and not yet reported as written.</summary>
+    public ServedFetches Fetches { get; } = new();
+
     /// <summary>Gets the agents currently attached, by name.</summary>
     public IReadOnlyCollection<string> Attached => (IReadOnlyCollection<string>)_attached.Keys;
 
@@ -213,13 +284,26 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="retention">
     /// What to prune to, or <see langword="null"/> to read it from this process's environment.
     /// </param>
-    /// <returns>The runtime.</returns>
+    /// <returns>The runtime, holding the store until it is disposed.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
+    /// <exception cref="StoreHeldException">Another broker is serving this store.</exception>
     /// <remarks>
+    /// <para>
     /// Migration happens here, once, rather than in every client. It used to run in each
     /// adapter's launch path, which meant a deployment's schema version was whatever the
     /// most recently updated repository happened to carry — and two adapters at different
     /// versions raced to apply it.
+    /// </para>
+    /// <para>
+    /// <b>The store is locked before anything else touches it, and the order is the fix.</b> The
+    /// constructor clears every <c>connected</c> it finds, which is right for a broker that is
+    /// about to serve and ruinous for one that is not: two launchers at logon — a scheduled task
+    /// and a terminal restoring its last session — both reached it, the one that then failed to
+    /// bind its port had already marked the other's live node disconnected, and seventeen agents
+    /// read as stranded on the machine that was running them. Nothing put the flag back, because
+    /// the live node's stream never ended. Taken here, a second broker is refused before it has
+    /// opened a connection, run a migration or written a row.
+    /// </para>
     /// </remarks>
     public static BrokerRuntime Open(
         string databasePath,
@@ -238,20 +322,31 @@ public sealed class BrokerRuntime : IAsyncDisposable
             Directory.CreateDirectory(directory);
         }
 
-        var connection = ParleyDatabase.Open(databasePath);
+        var held = StoreLock.Acquire(databasePath);
+        SqliteConnection? connection = null;
 
         try
         {
+            connection = ParleyDatabase.Open(databasePath);
+
             RefuseAForeignDatabase(connection, databasePath);
             SchemaMigrator.Migrate(connection);
 
+            // After the lock, like everything else that touches what belongs to the store: emptying the staging
+            // directory while another broker was mid-placement would destroy an upload it was about to commit.
+            var files = new FileLocationStore(databasePath + StoreFiles.Files, databasePath + StoreFiles.FilesIncoming);
+            files.Prepare();
+
             return new BrokerRuntime(
                 connection, options, clock,
-                retention ?? RetentionPolicyEnvironment.Read(Environment.GetEnvironmentVariable));
+                retention ?? RetentionPolicyEnvironment.Read(Environment.GetEnvironmentVariable),
+                files,
+                storeLock: held);
         }
         catch
         {
-            connection.Dispose();
+            connection?.Dispose();
+            held.Dispose();
             throw;
         }
     }
@@ -262,6 +357,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="options">Lifecycle configuration.</param>
     /// <param name="clock">The clock.</param>
     /// <param name="retention">What to prune to, or <see langword="null"/> for the default.</param>
+    /// <param name="filesRoot">
+    /// Where placed files go, or <see langword="null"/> for a temporary directory deleted when the runtime is.
+    /// </param>
     /// <returns>The runtime.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     /// <remarks>
@@ -272,7 +370,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public static BrokerRuntime OpenInMemory(
         Parley.Broker.BrokerOptions options,
         TimeProvider clock,
-        RetentionPolicy? retention = null)
+        RetentionPolicy? retention = null,
+        string? filesRoot = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(clock);
@@ -282,7 +381,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
         try
         {
             return new BrokerRuntime(
-                connection, options, clock, retention ?? RetentionPolicy.Default);
+                connection, options, clock, retention ?? RetentionPolicy.Default, FilesAt(filesRoot));
         }
         catch
         {
@@ -351,6 +450,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="options">Lifecycle configuration.</param>
     /// <param name="clock">The clock.</param>
     /// <param name="retention">What to prune to, or <see langword="null"/> for the default.</param>
+    /// <param name="filesRoot">
+    /// Where placed files go, or <see langword="null"/> for a temporary directory deleted when the runtime is.
+    /// </param>
     /// <returns>The runtime.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     /// <remarks>
@@ -369,14 +471,33 @@ public sealed class BrokerRuntime : IAsyncDisposable
         SqliteConnection connection,
         Parley.Broker.BrokerOptions options,
         TimeProvider clock,
-        RetentionPolicy? retention = null)
+        RetentionPolicy? retention = null,
+        string? filesRoot = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(clock);
 
         return new BrokerRuntime(
-            connection, options, clock, retention ?? RetentionPolicy.Default, ownsConnection: false);
+            connection, options, clock, retention ?? RetentionPolicy.Default, FilesAt(filesRoot), ownsConnection: false);
+    }
+
+    /// <summary>A file location for a runtime that has no store path to put one beside.</summary>
+    /// <param name="root">The directory asked for, or <see langword="null"/> for a temporary one.</param>
+    /// <returns>The location, prepared.</returns>
+    /// <remarks>
+    /// Temporary by default and deleted with the runtime, so a test never writes beside a real store and never
+    /// leaves a location behind. The staging directory is beside the root, as it is for a real store.
+    /// </remarks>
+    private static FileLocationStore FilesAt(string? root)
+    {
+        var temporary = root is null;
+        var location = root ?? Path.Combine(Path.GetTempPath(), "parley-files-" + Guid.NewGuid().ToString("N"));
+
+        var files = new FileLocationStore(location, location + "-incoming", deleteOnDispose: temporary);
+        files.Prepare();
+
+        return files;
     }
 
     /// <summary>
@@ -519,7 +640,60 @@ public sealed class BrokerRuntime : IAsyncDisposable
             throw;
         }
 
+        if (_options.ResumePolicy == ResumePolicy.Always && _resumedMachines.TryAdd(node.Machine, true))
+        {
+            await WakeForOutstandingWorkAsync(node.Machine, cancellationToken).ConfigureAwait(false);
+        }
+
         return joined;
+    }
+
+    /// <summary>
+    /// Wakes the agents on a machine that owe work outstanding from before the broker started (§14).
+    /// </summary>
+    /// <param name="machine">The machine whose node has just joined.</param>
+    /// <param name="cancellationToken">Cancels the reads.</param>
+    /// <returns>A task that completes when every waking has been asked for.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The resume policy decides only whether agents are woken, never whether the work survives.</b> The
+    /// work is open under every policy. Under <c>always</c> this asks the machine to start or give a turn to
+    /// each agent that owes some of it and that the resume gate permits; under <c>never</c> and <c>ask</c>
+    /// it is not called, and the work is flagged on the ordinary schedule for the person to act on.
+    /// </para>
+    /// <para>
+    /// Here rather than when the broker opens its store, because a node joining is the first moment an
+    /// agent on its machine can be started at all.
+    /// </para>
+    /// </remarks>
+    private async Task WakeForOutstandingWorkAsync(string machine, CancellationToken cancellationToken)
+    {
+        var owing = await UseConnectionAsync(
+            async (connection, _, ct) =>
+            {
+                var agents = (await new AgentRepository(connection).GetAllAsync(ct).ConfigureAwait(false))
+                    .Where(a => a.Status == AgentStatus.Active && a.Name.Machine == machine)
+                    .Select(a => a.Name)
+                    .ToList();
+
+                var due = new List<AgentName>();
+
+                foreach (var agent in agents)
+                {
+                    if ((await _house.OutstandingToWakeForAsync(agent, ct).ConfigureAwait(false)).Count > 0)
+                    {
+                        due.Add(agent);
+                    }
+                }
+
+                return due;
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        foreach (var agent in owing)
+        {
+            _ = RequestAttentionForMail(agent, "work was outstanding when the broker started");
+        }
     }
 
     /// <summary>Releases a node when its stream has ended.</summary>
@@ -664,15 +838,19 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <para>
     /// <b>Not named for the start, because the start is only half of it.</b> An agent that is
     /// already attached needs a turn rather than a process, and this used to fall silent in that
-    /// case — which read as correct and meant every question after the first reached nobody. A
+    /// case — which read as correct and meant every message after the first reached nobody. A
     /// name that promised only a start is how that stayed invisible: the call did what it said,
     /// and what it said was not what the traffic needed.
     /// </para>
     /// <para>
     /// Silent and false when the machine has no node, or when that node did not list the role
-    /// among what it can launch. Neither is an error: §5.5 asks a machine that is switched off
-    /// deliberately, so that its silence arrives as an orphan the asker is told about rather than
-    /// an answer nobody noticed was missing.
+    /// among what it can launch. Neither is an error: §5.5 sends work to a machine that is switched
+    /// off deliberately, so that the work it owes waits and is flagged to the person rather than
+    /// being silently absent (§6).
+    /// </para>
+    /// <para>
+    /// Consults no pending mark, because its caller is a person's deliberate start rather than
+    /// traffic; every message's wake goes through <see cref="RequestAttentionForMail"/>.
     /// </para>
     /// </remarks>
     public bool RequestAttention(AgentName agent, string because) =>
@@ -681,16 +859,16 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <summary>
     /// Asks an agent's machine to see to its mail, unless something already has.
     /// </summary>
-    /// <param name="agent">The agent a notification is waiting for.</param>
+    /// <param name="agent">The agent a message is waiting for.</param>
     /// <param name="because">Why, for the operator's benefit.</param>
     /// <returns>What became of the asking.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The only caller that consults the pending mark, and that asymmetry is deliberate.</b>
-    /// A question keeps <see cref="RequestAttention"/>'s behaviour because §7.1's per-pair cap
-    /// already bounds questions — which is exactly the bound SPEC.md §17 question 15 identified as
-    /// holding the line today. What changes is that a notification will not stack a turn on top of
-    /// one a question has already asked for: that turn will collect it.
+    /// <b>The path every message's wake takes.</b> A Request, a Clarify and a Result all wake their
+    /// recipient through here, so a burst from any number of senders costs one turn until the
+    /// recipient collects, and a message will not stack a turn on top of one already coming: that
+    /// turn collects it. 0.4 kept questions on <see cref="RequestAttention"/>, bounded instead by
+    /// §7.1's per-pair cap; 0.5 has one message path and that cap is off by default.
     /// </para>
     /// <para>
     /// Returns an outcome rather than a flag because a sender told only that its message was
@@ -717,10 +895,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
         if (outcome is WakeOutcome.Unreachable)
         {
             // Nothing is coming after all, so the claim is given back rather than left to expire.
-            // Holding it would suppress every notification for the next two minutes on the strength
+            // Holding it would suppress every wake for the next two minutes on the strength
             // of a turn that was never asked for.
             //
-            // **Given back by key and value, not by key.** A question's wake can land between the
+            // **Given back by key and value, not by key.** Another wake can land between the
             // claim above and this line -- a node joining in the gap is all it takes -- and a bare
             // removal would then throw away a mark for a turn that really is coming, buying a
             // duplicate. Narrow, and the sort of narrow this bound exists to be exact about.
@@ -797,15 +975,50 @@ public sealed class BrokerRuntime : IAsyncDisposable
     }
 
     /// <summary>
-    /// Records that an agent has collected what was waiting for it.
+    /// Records that an agent is collecting what was waiting for it.
     /// </summary>
     /// <param name="agent">The agent that drained.</param>
     /// <remarks>
-    /// Called from the drain and from nowhere else, because the drain is the single place a
-    /// collection is observable. Everything asked for before it has now been seen, so the next
-    /// notification is free to ask again.
+    /// Reached in production only through <see cref="CollectAsync{T}"/>, which calls it before the drain reads, because
+    /// the drain is the single place a collection is observable. Everything asked for before it is about to be seen,
+    /// so the next message is free to ask again.
     /// </remarks>
     public void Collected(AgentName agent) => _ = _pending.TryRemove(agent.Value, out _);
+
+    /// <summary>
+    /// Collects an attached agent's mail, freeing its wake bound first.
+    /// </summary>
+    /// <typeparam name="T">What the drain returns.</typeparam>
+    /// <param name="agent">The agent collecting.</param>
+    /// <param name="drain">The drain, given the broker and the instant to stamp it with.</param>
+    /// <param name="cancellationToken">Cancels the wait for the gate and the drain.</param>
+    /// <returns>Whatever the drain returned.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="drain"/> is null.</exception>
+    /// <exception cref="NotAttachedException">The agent has no open stream.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>The mark is cleared before the drain reads, not after it returns.</b> Cleared after, a message stored in
+    /// between found the mark still held, asked for nothing, and then lost the mark to a collection that had never
+    /// seen it: the message sat with no turn coming, and nothing in 0.5 times out. Found by the review gate by
+    /// replaying the two halves in their shipped order (lens 1 run 1.17).
+    /// </para>
+    /// <para>
+    /// Cleared before, a message stored after the clear claims a turn of its own. If the drain then reads it anyway,
+    /// that turn finds nothing — at most one, because the claim it made holds until the next collection. A spare turn
+    /// is the cost the bound can afford; a lost one is not.
+    /// </para>
+    /// </remarks>
+    public async Task<T> CollectAsync<T>(
+        AgentName agent,
+        Func<Parley.Broker.Broker, DateTimeOffset, CancellationToken, Task<T>> drain,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(drain);
+
+        Collected(agent);
+
+        return await RunAsync(agent, drain, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Whether a turn has been asked for on an agent's behalf that it has not yet answered by
@@ -830,7 +1043,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return true;
         }
 
-        // Dropped on the way past rather than left to be re-read on every later notification.
+        // Dropped on the way past rather than left to be re-read on every later wake.
         // Removed by key and value together, so a wake that landed between the read above and
         // here is not thrown away by this one.
         _ = ((ICollection<KeyValuePair<string, DateTimeOffset>>)_pending)
@@ -844,9 +1057,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="because">Why, for the operator's benefit.</param>
     /// <returns>What became of the asking.</returns>
     /// <remarks>
-    /// <b>Every wake marks, whatever asked for it.</b> A notification arriving while a question's
-    /// turn is already coming must find the mark set, or the common case — ask a peer, then tell it
-    /// something — costs two turns for one reading.
+    /// <b>Every wake marks, whatever asked for it.</b> A message arriving while a turn is already
+    /// coming — for an earlier message, or a person's start — must find the mark set, or two in
+    /// quick succession cost two turns for one reading.
     /// </remarks>
     private WakeOutcome Ask(AgentName agent, string because)
     {
@@ -856,9 +1069,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
         }
 
         // Attached already, so a start would duplicate a process. What the traffic needs is not a
-        // start but a turn, and falling silent here is what left a second question reaching
-        // nobody: written, never collected, ghosted on the ordinary schedule while the registry
-        // reported the agent live. The node gives the turn only to a resident of its own, so an
+        // start but a turn, and falling silent here is what left a second message reaching
+        // nobody: written and never collected while the registry reported the agent live. The node gives the turn only to a resident of its own, so an
         // agent attached through somebody's editor window is left alone rather than duplicated.
         var running = _attached.TryGetValue(agent.Value, out var sessions) && !sessions.IsEmpty;
 
@@ -866,7 +1078,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
         {
             // The node holds this machine but does not name the role among what it can launch, so
             // nothing here will run it. Not marked pending: nothing is coming, and marking would
-            // suppress the next notification on the strength of a turn that was never asked for.
+            // suppress the next wake on the strength of a turn that was never asked for.
             return WakeOutcome.Unreachable;
         }
 
@@ -904,10 +1116,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
         }
 
         // Any of them. They are brokers for the same agent over the same connection, and differ
-        // only in when each attached -- which the ghosting clock reads. The newest is chosen
-        // because it is the one whose grace period is still running: an agent that reopened its
-        // editor a moment ago should not have its orphans measured from a session it opened
-        // yesterday and left.
+        // only in when each attached -- which nothing reads now that 0.5 has no ghosting clock.
+        // The newest is taken because it needs no comparison.
         var attached = sessions[^1];
 
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -957,15 +1167,15 @@ public sealed class BrokerRuntime : IAsyncDisposable
     }
 
     /// <summary>
-    /// Runs the sweep of SPEC.md §6, on the broker the host owns.
+    /// Runs the broker's maintenance pass — polls, instructions nothing will report on, and retention — on the
+    /// broker the host owns.
     /// </summary>
     /// <param name="cancellationToken">Cancels the pass.</param>
     /// <returns>What it did.</returns>
     /// <remarks>
-    /// The sweep belongs to the process that owns the store, and this is the first arrangement
+    /// The pass belongs to the process that owns the store, and this is the first arrangement
     /// in which such a process exists. It used to run inside every adapter, so a deployment of
-    /// twenty repositories ran twenty sweeps over one file, each with its own idea of when the
-    /// ghosting clock started.
+    /// twenty repositories ran twenty passes over one file, each taking the write lock for the same work.
     /// </remarks>
     public Task<Parley.Broker.TickResult> TickAsync(CancellationToken cancellationToken = default) =>
         UseConnectionAsync(
@@ -986,14 +1196,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </para>
     /// <para>
     /// Silent when the agent is not attached, which is the ordinary case rather than a failure.
-    /// SPEC.md §5.5 asks a role whether or not its machines are awake, precisely so that a
-    /// question to something switched off becomes an orphan the asker is told about rather than
-    /// an answer nobody noticed was missing.
+    /// SPEC.md §5.5 sends to a role whether or not its machines are awake, precisely so that
+    /// work sent to something switched off waits and is flagged rather than silently omitted.
     /// </para>
     /// <para>
     /// Best effort. A notice is an optimisation over the drain the adapter would have done
     /// anyway, so failing to deliver one costs latency and never correctness — and a broker that
-    /// failed an <c>answer</c> because it could not nudge the asker would be trading the durable
+    /// failed a Result because it could not nudge the requester would be trading the durable
     /// half of the operation for the disposable one.
     /// </para>
     /// </remarks>
@@ -1060,6 +1269,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
                     new KeyValuePair<string, ImmutableArray<AttachedAgent>>(
                         attached.Name.Value, sessions)))
                 {
+                    // Its last session: nothing left can report a fetch it was streamed (SPEC.md §9.5).
+                    Fetches.Forget(attached.Name);
                     break;
                 }
             }
@@ -1122,6 +1333,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <returns>A task that completes when it is closed.</returns>
     public async ValueTask DisposeAsync()
     {
+        // Before the gate and the connection go: a look it had scheduled would otherwise reach for both.
+        await Watcher.DisposeAsync().ConfigureAwait(false);
+
         CloseStreams();
 
         _attached.Clear();
@@ -1139,5 +1353,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
             // only: the other projects' connections are theirs.
             SqliteConnection.ClearPool(_connection);
         }
+
+        Files.Dispose();
+
+        // Last, after the connection and its pool have let go of the file. Released any earlier, a
+        // broker started the moment this one stopped could open a database this process still had
+        // open -- two processes on one store, which is the thing the claim exists to stop.
+        _storeLock?.Dispose();
     }
 }

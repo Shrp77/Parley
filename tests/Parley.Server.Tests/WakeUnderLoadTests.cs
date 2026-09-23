@@ -67,18 +67,10 @@ public sealed class WakeUnderLoadTests
                     {
                         var to = recipients[round % recipients.Length];
 
-                        var reply = await sender.Client.NotifyAsync(
-                            new Wire.NotifyRequest
-                            {
-                                From = $"sender{which}@alpha",
-                                To = $"{to}@alpha",
-                                ResponderModel = "test",
-                                PayloadJson = $$"""{"text":"s{{which}} r{{round}}"}""",
-                                ConversationId = "c1"
-                            },
-                            cancellationToken: token);
+                        var reply = await sender.Client.RequestAsync(
+                            Requests.Open($"sender{which}@alpha", $"{to}@alpha", $"s{which} r{round}"), cancellationToken: token);
 
-                        Assert.True(reply.Ok, $"a notice from sender{which} was refused");
+                        Assert.True(Assert.Single(reply.Outcomes).Ok, $"a request from sender{which} was refused");
                     }
                 },
                 token)));
@@ -132,16 +124,8 @@ public sealed class WakeUnderLoadTests
                     {
                         start.SignalAndWait(token);
 
-                        _ = await sender.Client.NotifyAsync(
-                            new Wire.NotifyRequest
-                            {
-                                From = "billing@alpha",
-                                To = "orders@alpha",
-                                ResponderModel = "test",
-                                PayloadJson = $$"""{"text":"round {{round}}"}""",
-                                ConversationId = "c1"
-                            },
-                            cancellationToken: token);
+                        _ = await sender.Client.RequestAsync(
+                            Requests.Open("billing@alpha", "orders@alpha", $"round {round}"), cancellationToken: token);
                     },
                     token),
                 Task.Run(
@@ -178,7 +162,7 @@ public sealed class WakeUnderLoadTests
     [Fact]
     public async Task Housekeeping_running_alongside_the_bound_disturbs_neither()
     {
-        // The broker's own tick orphans, ghosts and prunes on a timer, and it takes the same gate
+        // The broker's own tick closes satisfied polls, sweeps instructions and prunes on a timer, and it takes the same gate
         // every operation takes. A mark held across one must survive it, and the tick must not
         // throw because a mark exists.
         var token = TestContext.Current.CancellationToken;

@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 The Parley server introduces itself when it connects: it tells this agent that peers exist in
 other repositories, that inventing their behaviour is the mistake to avoid, that the inbox is
-pull rather than push, and what a question has to carry. What it cannot know is **which** peers
+pull rather than push, and what a request has to carry. What it cannot know is **which** peers
 this repository has and **which** boundaries it does not own, because those are facts about one
 project and they change.
 
@@ -84,17 +84,23 @@ paragraph that looked like boilerplate.
 ## Peers
 
 Other repositories have their own agents, reachable through Parley. They cannot see this
-repository and this repository cannot see theirs: only the text of a question and its answer
+repository and this repository cannot see theirs: only the text of a request and its result
 crosses between them. `parley_inbox` is pull rather than push - call it when you start work,
-and again when you are waiting on a reply.
+and again when you are waiting on a result.
+
+To hand over a file, place it with `parley_file_place` and name it and its sha256 in your
+request; fetch a file you are sent with `parley_file_fetch`. Only `.md` and `.txt` files can be
+placed, so code travels as `Name.cs.txt`.
 
 - `billing` says it owns invoicing and tax. This repository computes a net order total and
   does not apply VAT.
 - `inventory` says it owns stock levels and reservations. This repository does not decide
   whether an order can be fulfilled.
 
-**Do not guess at what these repositories do, and do not edit them. Ask.** A question must say
-what you will do with each possible answer.
+**Do not guess at what these repositories do, and do not edit them.** When you need work done
+in one, or something it knows, send its agent a `parley_request` saying what you want, and what
+it is for when that is not obvious. If a request you receive is unclear, ask with
+`parley_clarify` rather than guessing. Do the work other agents request of this repository.
 ```
 
 Keep it to a line per peer. This block is in context for every turn of every session, so it is

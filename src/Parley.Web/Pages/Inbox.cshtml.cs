@@ -20,26 +20,17 @@ public sealed record Pending(
     IReadOnlyList<Delivered> Delivered);
 
 /// <summary>
-/// A person's own inbox: what peers have sent them, and the answers they owe back.
+/// A person's own inbox: what participants have sent them, and the Results and replies they owe back.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Taking delivery is an act, and this page is built around saying so.</b> SPEC.md §6 runs
-/// the working window from the question being delivered and records delivery by the inbox drain,
-/// so reading a question is what puts a four-hour clock on answering it — and §14 ghosts what is
-/// left. A page that drained while rendering would start that clock for somebody who had merely
-/// clicked a link.
+/// <b>Taking delivery is an act, and this page is built around saying so.</b> SPEC.md §6 separates work
+/// nobody collected from work collected and left, and records collection by the inbox drain. A page that
+/// drained while rendering would mark work picked up for somebody who had merely clicked a link.
 /// </para>
 /// <para>
-/// That is the protocol rather than an awkwardness to design around. A peer whose question has
-/// been read and is being ignored is in a different position from one whose question nobody ever
-/// picked up, and §6 splits its two windows on exactly that difference. So the count is shown
-/// freely, and the contents are taken on purpose.
-/// </para>
-/// <para>
-/// Answering is here for a reason that is not symmetry: an inbox that could receive a question
-/// and not answer it would guarantee a ghost four hours later, every time. Delivering the
-/// reading half alone would have made the deployment worse, not incomplete.
+/// Sending Results is here for a reason that is not symmetry: an inbox that could receive a Request and not
+/// report on it would leave an exchange open until a person closed the whole conversation.
 /// </para>
 /// </remarks>
 /// <param name="directory">This machine's projects.</param>
@@ -52,22 +43,28 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
     /// <summary>What is waiting in each project this person is seated in.</summary>
     public IReadOnlyList<Pending> Projects { get; private set; } = [];
 
-    /// <summary>The sub-questions each owed exchange asked, by exchange.</summary>
-    public IReadOnlyDictionary<long, IReadOnlyList<string>> Asked { get; private set; } =
-        new Dictionary<long, IReadOnlyList<string>>();
+    /// <summary>How much is waiting for this name while no seat is held, and whether every project answered.</summary>
+    /// <remarks>
+    /// Only read when <see cref="Projects"/> is empty, which is the state this page used to describe as "you are
+    /// seated nowhere, so nothing can be waiting". That sentence read the absence of a collector as the absence of
+    /// mail, and the owner met the case that proves them different: two Results waiting for a name whose seat a
+    /// broker restart had taken. Counted without opening an attachment, so reading the page still does not make
+    /// anybody present.
+    /// </remarks>
+    public (int Waiting, bool Certain) Away { get; private set; }
 
-    /// <summary>What became of taking delivery, or of answering.</summary>
+    /// <summary>What became of taking delivery, or of sending.</summary>
     public string? Outcome { get; private set; }
 
     /// <summary>The project a form was submitted for.</summary>
     [BindProperty]
     public string? For { get; set; }
 
-    /// <summary>The exchange being answered.</summary>
+    /// <summary>The exchange being reported on or clarified.</summary>
     [BindProperty]
     public long Exchange { get; set; }
 
-    /// <summary>The sub-question identifiers being resolved, in order.</summary>
+    /// <summary>The item identifiers being reported on, in order.</summary>
     [BindProperty]
     public IList<string> Ids { get; set; } = [];
 
@@ -78,6 +75,10 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
     /// <summary>The outcome chosen for each, in the same order.</summary>
     [BindProperty]
     public IList<string> Verdicts { get; set; } = [];
+
+    /// <summary>A clarification, or the reply to one.</summary>
+    [BindProperty]
+    public string? Clarification { get; set; }
 
     /// <summary>Shows what is waiting, and whatever has already been taken.</summary>
     /// <returns>The page, or the join page when nobody is seated.</returns>
@@ -111,7 +112,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
         Outcome = messages.Count == 0 && polls == 0
             ? "Nothing was waiting."
-            : $"{messages.Count} taken. The working window is running on anything you now owe.";
+            : $"{messages.Count} taken. Anything you were asked to do now counts as picked up.";
 
         Me = seat;
 
@@ -135,7 +136,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
         Outcome = dropped == 0
             ? "There was nothing to clear."
-            : $"{dropped} cleared. Anything you owe an answer to is still here.";
+            : $"{dropped} cleared. Anything you owe a result or a reply on is still here.";
 
         Me = seat;
 
@@ -144,9 +145,9 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
         return Page();
     }
 
-    /// <summary>Answers one exchange.</summary>
+    /// <summary>Sends the Result of one exchange.</summary>
     /// <returns>The page, saying what happened.</returns>
-    public async Task<IActionResult> OnPostAnswerAsync()
+    public async Task<IActionResult> OnPostResultAsync()
     {
         var (seat, hold, voice) = Seated();
 
@@ -155,22 +156,50 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
             return RedirectToPage("/Join");
         }
 
-        // Zipped rather than trusted to arrive in matching lengths: these are three parallel
-        // form fields, and a browser that sent an uneven set would otherwise resolve one
-        // sub-question with another's text.
-        var resolutions = Ids
+        // Zipped rather than trusted to arrive in matching lengths: these are three parallel form
+        // fields, and a browser that sent an uneven set would otherwise report one item with another's
+        // text.
+        var outcomes = Ids
             .Select((id, at) => (
                 Id: id,
                 Text: at < Texts.Count ? Texts[at] : string.Empty,
-                Outcome: at < Verdicts.Count ? Verdicts[at] : "unknown"))
+                Outcome: at < Verdicts.Count ? Verdicts[at] : string.Empty))
             .Where(r => !string.IsNullOrWhiteSpace(r.Id))
             .ToList();
 
-        var answered = await voice
-            .AnswerAsync(hold, Exchange, resolutions, HttpContext.RequestAborted)
+        var sent = await voice
+            .ResultAsync(hold, Exchange, outcomes, HttpContext.RequestAborted)
             .ConfigureAwait(false);
 
-        Outcome = answered.Says;
+        Outcome = sent.Says;
+
+        Me = seat;
+
+        await LoadAsync().ConfigureAwait(false);
+
+        return Page();
+    }
+
+    /// <summary>Asks for a clarification on one exchange, or replies to one.</summary>
+    /// <returns>The page, saying what happened.</returns>
+    /// <remarks>
+    /// One handler for both, because on the wire they are one message: a Clarify hands the turn to the other
+    /// side, whichever side sends it.
+    /// </remarks>
+    public async Task<IActionResult> OnPostClarifyAsync()
+    {
+        var (seat, hold, voice) = Seated();
+
+        if (seat is null || hold is null || voice is null)
+        {
+            return RedirectToPage("/Join");
+        }
+
+        var sent = await voice
+            .ClarifyAsync(hold, Exchange, Clarification, HttpContext.RequestAborted)
+            .ConfigureAwait(false);
+
+        Outcome = sent.Says;
 
         Me = seat;
 
@@ -196,15 +225,13 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
     /// <summary>Reads what is waiting in every project this person is seated in.</summary>
     /// <returns>A task completing when every project has answered or failed.</returns>
     /// <remarks>
-    /// The count comes from the broker per render rather than from the notice the attach stream
-    /// pushed. A notice is superseded rather than queued, so a console that had been quiet would
-    /// show whatever number happened to arrive last — and this page is the one place the number
-    /// is the whole point.
+    /// The count comes from the broker per render rather than from the notice the attach stream pushed. A
+    /// notice is superseded rather than queued, so a console that had been quiet would show whatever number
+    /// happened to arrive last — and this page is the one place the number is the whole point.
     /// </remarks>
     private async Task LoadAsync()
     {
         var pending = new List<Pending>();
-        var asked = new Dictionary<long, IReadOnlyList<string>>();
         var token = HttpContext.RequestAborted;
 
         foreach (var hold in seats.Seats(Me!))
@@ -228,16 +255,13 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
                 counts.Value.ClosurePolls,
                 counts.Problem,
                 hold.Delivered));
-
-            foreach (var owed in hold.Delivered.Where(one => one.Owes))
-            {
-                asked[owed.Message.ExchangeId!.Value] = await voice
-                    .SubQuestionsAsync(owed.Message.ExchangeId!.Value, token)
-                    .ConfigureAwait(false);
-            }
         }
 
         Projects = pending;
-        Asked = asked;
+
+        if (pending.Count == 0)
+        {
+            Away = await seats.WaitingUnseatedAsync(Me!, directory.Projects, token).ConfigureAwait(false);
+        }
     }
 }

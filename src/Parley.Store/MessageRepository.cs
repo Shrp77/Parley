@@ -1,4 +1,3 @@
-﻿using System.Data;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Parley.Core;
@@ -6,56 +5,40 @@ using Parley.Core;
 namespace Parley.Store;
 
 /// <summary>
-/// Appends messages, deduplicates them, and drains agent inboxes.
+/// Appends messages, deduplicates them, and drains inboxes.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Instances are cheap and hold no state beyond the supplied connection. They are not
-/// thread-safe, because a <see cref="SqliteConnection"/> is not; give each unit of work its
-/// own connection and repository.
+/// Instances are cheap and hold no state beyond the connection, and are not thread-safe because a
+/// <see cref="SqliteConnection"/> is not.
 /// </para>
 /// <para>
-/// This repository owns the deduplication identity rather than accepting one. A caller that
-/// supplied its own hash could supply a wrong one, and the schema cannot recompute it to
-/// check — unlike <c>dedup_bucket</c>, which it derives. Computing here is what keeps
-/// SPEC.md §13.1 a rule rather than a request.
+/// This repository computes the deduplication identity rather than accepting one. A caller that
+/// supplied its own hash could supply a wrong one, and the schema cannot recompute it to check.
 /// </para>
 /// </remarks>
-/// <param name="connection">
-/// An open connection to the Parley database, already migrated by
-/// <see cref="SchemaMigrator"/>.
-/// </param>
+/// <param name="connection">An open connection to the Parley database, already migrated.</param>
 public sealed class MessageRepository(SqliteConnection connection)
 {
-    /// <summary>
-    /// What counts as waiting for an agent, shared by the drain and the count of it.
-    /// </summary>
+    /// <summary>What counts as waiting for a participant, shared by the drain and the count of it.</summary>
     /// <remarks>
     /// <para>
-    /// Shared rather than written twice, and that is the whole reason it is a constant. The
-    /// transport pushes a notice carrying how much is waiting (SPEC.md §4.0) and the adapter
-    /// then drains to find out what it is. A count computed from a looser predicate than the
-    /// drain uses reports work that the drain will not hand over, so the adapter wakes, asks,
-    /// receives nothing, and has no way to tell that from a race it should retry.
+    /// Shared because the transport pushes a count of what is waiting and the adapter then drains to find
+    /// out what it is. A count from a looser predicate than the drain uses reports work the drain will not
+    /// hand over.
     /// </para>
     /// <para>
-    /// A question whose exchange is no longer open asks for a move that can no longer be made.
-    /// Handing it over spends an agent's turn on something it will be refused for -- and after a
-    /// ghost it does so while the asker is being told nobody answered, which is the two halves
-    /// of one exchange disagreeing.
-    /// </para>
-    /// <para>
-    /// Only questions. An answer closes the exchange it belongs to and a ghost exists because
-    /// one closed, so neither can require an open exchange; a notify names none at all. A
-    /// clarification is left alone deliberately: it is text from a peer inside an exchange the
-    /// recipient is already party to, and withholding it would drop what somebody said rather
-    /// than a request nobody can act on.
+    /// <b>A Request is not delivered once its exchange has ended</b> (§14). It asks for work, and handing
+    /// one over after its exchange closed spends a turn on work somebody finished or the person ended —
+    /// and after a close, gives the receiver the Request at the moment the requester is told the work was
+    /// ended. A Result closes its exchange and a Clarify is something said inside one the recipient is
+    /// party to, so neither requires the exchange to be open.
     /// </para>
     /// </remarks>
     private const string PendingPredicate =
         """
         WHERE to_agent = @Agent AND delivered_utc IS NULL
-          AND (type <> 'question'
+          AND (type <> 'request'
                OR EXISTS (SELECT 1 FROM exchanges e
                            WHERE e.id = messages.exchange_id AND e.state = 'OPEN'))
         """;
@@ -78,98 +61,75 @@ public sealed class MessageRepository(SqliteConnection connection)
     private readonly SqliteConnection _connection =
         connection ?? throw new ArgumentNullException(nameof(connection));
 
-
-    /// <summary>
-    /// Appends a message unless an identical one was written inside the deduplication window.
-    /// </summary>
-    /// <param name="exchangeId">
-    /// The exchange this belongs to, or <see langword="null"/> for a
-    /// <see cref="MessageType.Notify"/>.
-    /// </param>
+    /// <summary>Appends a message unless an identical one was written inside the deduplication window.</summary>
+    /// <param name="exchangeId">The exchange it belongs to.</param>
     /// <param name="type">The message kind.</param>
-    /// <param name="from">The sending agent.</param>
-    /// <param name="to">The receiving agent.</param>
-    /// <param name="responderModel">
-    /// What produced this message. Required on every message, not only answers; see
-    /// SPEC.md §11.3.
-    /// </param>
+    /// <param name="from">The sender.</param>
+    /// <param name="to">The recipient.</param>
+    /// <param name="responderModel">What produced it (§11.3).</param>
     /// <param name="payloadJson">The payload document.</param>
-    /// <param name="nowUtc">The current instant, in UTC.</param>
-    /// <param name="conversationId">
-    /// The discussion this message belongs to, or <see langword="null"/> for an exchange that
-    /// stands alone. Supplied by the agent on a question or a notification; a clarification or
-    /// answer inherits the identifier of the exchange it belongs to. See SPEC.md §5.0.
-    /// </param>
-    /// <param name="transaction">
-    /// A transaction to enlist in, or <see langword="null"/> to own one. Supplied when this
-    /// write is one step of a larger operation that must commit or fail whole; see
-    /// <c>WriteScope</c>. A borrowed transaction is not committed here.
-    /// </param>
+    /// <param name="nowUtc">The current instant.</param>
+    /// <param name="transaction">A transaction to enlist in, or <see langword="null"/> to own one.</param>
     /// <param name="cancellationToken">Cancels the operation.</param>
-    /// <returns>
-    /// An outcome carrying either the appended message or the earlier one that made this a
-    /// duplicate.
-    /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="responderModel"/> or <paramref name="payloadJson"/> is
-    /// <see langword="null"/>.
-    /// </exception>
+    /// <returns>The appended message, or the earlier one that made this a duplicate.</returns>
     /// <exception cref="ArgumentException">
-    /// <paramref name="from"/> and <paramref name="to"/> are the same agent, or
-    /// <paramref name="responderModel"/> or <paramref name="payloadJson"/> is empty.
+    /// The sender and recipient are the same, or <paramref name="responderModel"/> or
+    /// <paramref name="payloadJson"/> is empty.
     /// </exception>
-    /// <exception cref="SqliteException">
-    /// The row violates a schema constraint — an over-length payload, a payload that is not
-    /// valid JSON, a notification carrying an exchange reference, or a responder identity
-    /// outside the permitted character set.
-    /// </exception>
+    /// <exception cref="InvalidOperationException">No such exchange exists.</exception>
+    /// <exception cref="SqliteException">The row violates a schema constraint.</exception>
     /// <remarks>
     /// <para>
-    /// The transaction is <c>IMMEDIATE</c>, for the reason set out on
-    /// <see cref="ExchangeRepository.TryOpenAsync"/>: a deferred transaction takes its read
-    /// snapshot at the first <c>SELECT</c> and only upgrades at the <c>INSERT</c>, and WAL
-    /// refuses that upgrade if another connection committed in between. Taking the write lock
-    /// up front is what makes the duplicate check sound rather than advisory.
+    /// The conversation is read from the exchange and never supplied. The broker assigned it when the
+    /// exchange was admitted (§5.0), and the composite foreign key would refuse a different one anyway —
+    /// there is no reason to offer a caller the chance to try.
     /// </para>
     /// <para>
-    /// The conversation identifier is deliberately not part of the identity. It groups
-    /// messages, it is not one of them, and hashing it would make the same text count as two
-    /// different messages depending on which discussion an agent said it belonged to — so an
-    /// agent could defeat deduplication simply by varying the identifier.
-    /// </para>
-    /// <para>
-    /// The check here is the exact window; the unique index on
-    /// <c>(content_hash, dedup_bucket)</c> is the backstop and is deliberately coarser. Two
-    /// identical messages twenty seconds apart but either side of a bucket boundary pass the
-    /// index and are refused here. The index exists for the writer that never ran this check.
+    /// The check here is the exact window; the unique index on <c>(content_hash, dedup_bucket)</c> is the
+    /// coarser backstop for a writer that never ran it.
     /// </para>
     /// </remarks>
     public async Task<AppendOutcome> AppendAsync(
-        long? exchangeId,
+        long exchangeId,
         MessageType type,
         AgentName from,
         AgentName to,
         string responderModel,
         string payloadJson,
         DateTimeOffset nowUtc,
-        string? conversationId = null,
         SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
         if (from == to)
         {
-            throw new ArgumentException($"An agent cannot message itself ('{from}').", nameof(to));
+            throw new ArgumentException($"A participant cannot message itself ('{from}').", nameof(to));
         }
 
         ArgumentException.ThrowIfNullOrEmpty(responderModel);
         ArgumentException.ThrowIfNullOrEmpty(payloadJson);
 
-        var hash = MessageIdentity.Compute(exchangeId, type, from, to, payloadJson);
         var cutoff = ExchangeRow.FormatTimestamp(nowUtc - MessageIdentity.DeduplicationWindow);
 
-        // Owns a transaction when called alone, joins one when composed into a larger
-        // operation. See WriteScope for why an ask cannot be two commits.
         using var scope = WriteScope.Begin(_connection, transaction);
+
+        // Read before hashing: the exchange's version is part of the identity (§13.1), so the same words
+        // at a later point in the exchange are a new message rather than a retry of an earlier one.
+        var place = (await _connection.QueryAsync<(string ConversationId, long Version)>(
+                new CommandDefinition(
+                    "SELECT conversation_id, version FROM exchanges WHERE id = @Exchange;",
+                    new { Exchange = exchangeId },
+                    scope.Transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false))
+            .ToList();
+
+        if (place.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Exchange {exchangeId} does not exist, and every message belongs to one.");
+        }
+
+        var (conversation, version) = place[0];
+        var hash = MessageIdentity.Compute(exchangeId, version, type, from, to, payloadJson);
 
         var existing = await _connection.QuerySingleOrDefaultAsync<MessageRow>(
             new CommandDefinition(
@@ -187,42 +147,6 @@ public sealed class MessageRepository(SqliteConnection connection)
         {
             return AppendOutcome.Duplicate(existing.ToDomain());
         }
-
-        // The exchange holds the authoritative conversation (SPEC.md 5.0); a message attached
-        // to one carries a copy, and the composite foreign key on messages keeps the two from
-        // ever disagreeing. So this reads the exchange rather than reconstructing the answer
-        // from whichever message happened to arrive first, which is what it used to do.
-        //
-        // A Notify has no exchange and therefore declares its own.
-        var conversation = conversationId;
-
-        if (exchangeId is { } exchange)
-        {
-            var owned = await _connection.ExecuteScalarAsync<string>(
-                new CommandDefinition(
-                    """
-                    SELECT conversation_id FROM exchanges WHERE id = @Exchange;
-                    """,
-                    new { Exchange = exchange },
-                    scope.Transaction,
-                    cancellationToken: cancellationToken)).ConfigureAwait(false);
-
-            if (conversationId is not null && conversationId != owned)
-            {
-                throw new ArgumentException(
-                    owned is null
-                        ? $"Exchange {exchange} belongs to no conversation, and a message cannot " +
-                          $"enrol it in '{conversationId}'. The conversation is chosen when the " +
-                          "exchange is opened."
-                        : $"Exchange {exchange} belongs to conversation '{owned}'. A message on " +
-                          $"it cannot declare '{conversationId}'.",
-                    nameof(conversationId));
-            }
-
-            conversation = owned;
-        }
-
-        var created = ExchangeRow.FormatTimestamp(nowUtc);
 
         var id = await _connection.ExecuteScalarAsync<long>(
             new CommandDefinition(
@@ -244,7 +168,7 @@ public sealed class MessageRepository(SqliteConnection connection)
                     Payload = payloadJson,
                     Hash = hash,
                     Conversation = conversation,
-                    Created = created
+                    Created = ExchangeRow.FormatTimestamp(nowUtc)
                 },
                 scope.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -252,22 +176,14 @@ public sealed class MessageRepository(SqliteConnection connection)
         scope.Complete();
 
         return AppendOutcome.Appended(new Message(
-            id, exchangeId, type, from, to, responderModel, payloadJson, conversation, nowUtc,
-            null));
+            id, exchangeId, type, from, to, responderModel, payloadJson, conversation, nowUtc, null));
     }
 
-    /// <summary>
-    /// How many messages are waiting for an agent.
-    /// </summary>
-    /// <param name="agent">The agent.</param>
+    /// <summary>How many messages are waiting for a participant.</summary>
+    /// <param name="agent">The participant.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>The number <see cref="GetPendingAsync"/> would hand over, unlimited.</returns>
-    /// <remarks>
-    /// Reads and changes nothing: unlike the drain, this does not mark anything delivered and
-    /// does not start a working window. It exists for the notice the broker pushes down a held
-    /// connection, which says how much is waiting and never what it is -- SPEC.md §13 has a
-    /// peer's words reach a model wrapped as data, and the envelope is applied by the drain.
-    /// </remarks>
+    /// <remarks>Reads and changes nothing, so it is safe to call from something that will not act on it.</remarks>
     public async Task<int> CountPendingAsync(
         AgentName agent,
         CancellationToken cancellationToken = default) =>
@@ -280,56 +196,21 @@ public sealed class MessageRepository(SqliteConnection connection)
                 new { Agent = agent.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-    /// <summary>
-    /// Loads the messages awaiting delivery to an agent, oldest first.
-    /// </summary>
+    /// <summary>Loads the messages awaiting delivery to a participant, debts first.</summary>
     /// <param name="agent">The recipient.</param>
-    /// <param name="limit">
-    /// The most messages to return, oldest first, or <see langword="null"/> for all of them.
-    /// </param>
-    /// <param name="cancellationToken">Cancels the operation.</param>
-    /// <returns>Pending messages in the order they were appended.</returns>
+    /// <param name="limit">The most messages to return, or <see langword="null"/> for all.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Pending messages, those on exchanges it owes a move on first, then by age.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="limit"/> is not positive.</exception>
     /// <remarks>
     /// <para>
-    /// Ordered by identity rather than timestamp. Two messages can share a timestamp at the
-    /// resolution stored, and an inbox that reordered them would present an answer before the
-    /// clarification it answers. The <c>ix_inbox</c> index is on <c>(to_agent, id)</c> for
-    /// this reason.
+    /// <b>Debts first</b> (§7.3). A participant collecting its messages meets the work it owes ahead of
+    /// anything new, on every collection, because a design whose correct behaviour depends on a model
+    /// choosing to come back to something fails on turn forty.
     /// </para>
     /// <para>
-    /// <strong>Callers delivering into an agent's context should pass a limit.</strong> The
-    /// message size cap bounds one message; nothing bounds a backlog. An agent offline for
-    /// a day, or one peer sending steadily, produces an inbox whose total size is limited only
-    /// by how long it went undrained — and injecting that wholesale recreates the
-    /// context-poisoning problem the per-message cap exists to prevent, just in aggregate.
-    /// SPEC.md §13 names per-sender rate limits as the control for this, and they are not
-    /// implemented yet, so until they are the limit here is the only thing standing in the
-    /// way.
-    /// </para>
-    /// <para>
-    /// The default is unbounded because the repository does not know what the caller intends.
-    /// A reaper or an audit wants everything; a delivery path wants a page. Truncating by
-    /// default would silently hide messages from the callers that need them all.
-    /// </para>
-    /// </remarks>
-    /// <remarks>
-    /// <para>
-    /// Debts first, then by age. SPEC.md §7.3 requires that an agent draining its inbox meets
-    /// the questions it has not answered ahead of anything else — the adults-with-manners
-    /// ordering, which exploits the fact that a pending question is frequently reshaped or made
-    /// irrelevant by the answer to one already owed.
-    /// </para>
-    /// <para>
-    /// Ordered in the query rather than by the caller, and there is deliberately no unordered
-    /// overload. The ordering is a protocol rule, and a rule with a convenient way around it is
-    /// a suggestion — the caller that reached for the unordered version would be the one under
-    /// time pressure, which is exactly when the ordering earns its keep.
-    /// </para>
-    /// <para>
-    /// A debt is a message whose exchange this agent owes a response on. An answer to its own
-    /// question is not a debt and sorts after, and a Notify has no exchange at all so it sorts
-    /// with them.
+    /// Ordered in the query and with no unordered overload. The ordering is a protocol rule, and a rule
+    /// with a convenient way around it is a suggestion.
     /// </para>
     /// </remarks>
     public async Task<IReadOnlyList<Message>> GetPendingAsync(
@@ -350,6 +231,7 @@ public sealed class MessageRepository(SqliteConnection connection)
                 ORDER BY CASE
                              WHEN EXISTS (SELECT 1 FROM exchanges e
                                            WHERE e.id = messages.exchange_id
+                                             AND e.state = 'OPEN'
                                              AND e.owed_by = @Agent)
                              THEN 0 ELSE 1
                          END,
@@ -362,25 +244,14 @@ public sealed class MessageRepository(SqliteConnection connection)
         return [.. rows.Select(r => r.ToDomain())];
     }
 
-    /// <summary>
-    /// Loads every message in a conversation, oldest first.
-    /// </summary>
-    /// <param name="conversationId">The discussion to gather.</param>
-    /// <param name="cancellationToken">Cancels the operation.</param>
-    /// <returns>The conversation's messages in the order they were appended.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="conversationId"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="conversationId"/> is empty.</exception>
+    /// <summary>Loads every message in a conversation, oldest first.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Its messages in the order they were appended.</returns>
     /// <remarks>
-    /// <para>
-    /// This is the export in SPEC.md §10.2, and it is an operator operation. It reads across
-    /// agents by design, which is precisely why it must never be surfaced into an agent's tool
-    /// set: it is the one query that would breach the isolation §10.1 exists to enforce.
-    /// </para>
-    /// <para>
-    /// Deliberately unbounded, unlike the inbox drain. An export that silently truncated would
-    /// present a partial record as a complete one, and the caller is an operator reading their
-    /// own data rather than a context window with a budget.
-    /// </para>
+    /// The export of §10.2, and an operator operation: it reads across participants by design, which is
+    /// exactly why it must never reach an agent's tool set. Unbounded, because an export that silently
+    /// truncated would present a partial record as a complete one.
     /// </remarks>
     public async Task<IReadOnlyList<Message>> GetConversationAsync(
         string conversationId,
@@ -401,41 +272,35 @@ public sealed class MessageRepository(SqliteConnection connection)
         return [.. rows.Select(r => r.ToDomain())];
     }
 
-    /// <summary>
-    /// Loads the question an exchange was opened with.
-    /// </summary>
+    /// <summary>Loads the Request an exchange was opened with.</summary>
     /// <param name="exchangeId">The exchange.</param>
+    /// <param name="transaction">The transaction to read within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>The question, or <see langword="null"/> if the exchange carries none.</returns>
-    /// <remarks>
-    /// The oldest question on the exchange, which is the only one there: a second would need a
-    /// second admission, and admission opens a new exchange rather than adding to this one. The
-    /// ordering makes that explicit rather than relying on it.
-    /// </remarks>
-    public async Task<Message?> GetQuestionAsync(
+    /// <returns>The Request, or <see langword="null"/> if the exchange carries none any more.</returns>
+    public async Task<Message?> GetRequestAsync(
         long exchangeId,
+        SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
         var row = await _connection.QueryFirstOrDefaultAsync<MessageRow>(
             new CommandDefinition(
                 $"""
                 {SelectColumns}
-                WHERE exchange_id = @Exchange AND type = 'question'
+                WHERE exchange_id = @Exchange AND type = 'request'
                 ORDER BY id
                 LIMIT 1;
                 """,
                 new { Exchange = exchangeId },
+                transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return row?.ToDomain();
     }
 
-    /// <summary>
-    /// Loads a single message by its identity.
-    /// </summary>
+    /// <summary>Loads a single message.</summary>
     /// <param name="id">The message's primary key.</param>
-    /// <param name="cancellationToken">Cancels the operation.</param>
-    /// <returns>The message, or <see langword="null"/> if no row exists with that identity.</returns>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The message, or <see langword="null"/>.</returns>
     public async Task<Message?> GetAsync(long id, CancellationToken cancellationToken = default)
     {
         var row = await _connection.QuerySingleOrDefaultAsync<MessageRow>(
@@ -447,20 +312,12 @@ public sealed class MessageRepository(SqliteConnection connection)
         return row?.ToDomain();
     }
 
-    /// <summary>
-    /// Records that a message has been handed to its recipient.
-    /// </summary>
-    /// <param name="id">The message to mark.</param>
-    /// <param name="nowUtc">The current instant, in UTC.</param>
-    /// <param name="cancellationToken">Cancels the operation.</param>
-    /// <returns>
-    /// <see langword="true"/> if a pending message was marked; <see langword="false"/> if it
-    /// does not exist or was already delivered.
-    /// </returns>
-    /// <remarks>
-    /// Guarded on the message still being pending, so a concurrent second drain of the same
-    /// inbox cannot overwrite the first delivery's timestamp with its own.
-    /// </remarks>
+    /// <summary>Records that a message has been handed to its recipient.</summary>
+    /// <param name="id">The message.</param>
+    /// <param name="nowUtc">The current instant.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true"/> if a pending message was marked.</returns>
+    /// <remarks>Guarded on still being pending, so a concurrent second drain cannot overwrite the first's stamp.</remarks>
     public async Task<bool> MarkDeliveredAsync(
         long id,
         DateTimeOffset nowUtc,
@@ -479,25 +336,14 @@ public sealed class MessageRepository(SqliteConnection connection)
         return affected == 1;
     }
 
-    /// <summary>
-    /// Finds the message a replayed exchange must hand over again.
-    /// </summary>
-    /// <param name="exchangeId">The exchange being replayed.</param>
-    /// <param name="agent">The agent that owes a response.</param>
-    /// <param name="cancellationToken">Cancels the query.</param>
-    /// <returns>The message, or <see langword="null"/> if there is nothing to replay.</returns>
+    /// <summary>Finds the message an exchange's owing participant would be given again.</summary>
+    /// <param name="exchangeId">The exchange.</param>
+    /// <param name="agent">The participant that owes the next move.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The latest message addressed to it on that exchange, or <see langword="null"/>.</returns>
     /// <remarks>
-    /// <para>
-    /// The most recent message addressed to the owing agent, which is the question when the
-    /// exchange never got past one and the latest clarification otherwise. Replaying the whole
-    /// exchange would hand back messages the agent has already dealt with and, worse, ones it
-    /// sent itself.
-    /// </para>
-    /// <para>
-    /// Not filtered on delivery. A replayed exchange usually holds a message delivered before
-    /// the interruption, which is the ordinary case, and one never delivered is already pending
-    /// and needs nothing done to it.
-    /// </para>
+    /// The latest rather than the whole exchange: giving back everything would hand over messages the
+    /// participant already dealt with and ones it sent itself.
     /// </remarks>
     public async Task<Message?> GetLatestOwedAsync(
         long exchangeId,
@@ -518,28 +364,14 @@ public sealed class MessageRepository(SqliteConnection connection)
         return row?.ToDomain();
     }
 
-    /// <summary>
-    /// Returns a delivered message to its recipient's inbox.
-    /// </summary>
-    /// <param name="id">The message to replay.</param>
-    /// <param name="cancellationToken">Cancels the operation.</param>
-    /// <returns>
-    /// <see langword="true"/> if the message was returned to the inbox; <see langword="false"/>
-    /// if no row exists with that identity.
-    /// </returns>
+    /// <summary>Returns a delivered message to its recipient's inbox.</summary>
+    /// <param name="id">The message.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true"/> if the row exists.</returns>
     /// <remarks>
-    /// <para>
-    /// Replay is re-delivery, not re-sending, per SPEC.md §14. Writing a fresh row would make
-    /// the log a record of how many times delivery was attempted rather than of what was said,
-    /// which would distort both the per-exchange caps and the telemetry. A replay landing
-    /// inside the deduplication window would additionally be refused outright, so on a fast
-    /// restart the replay path would defeat itself.
-    /// </para>
-    /// <para>
-    /// Whether a restart replays anything at all is the operator's configured policy, not this
-    /// method's decision. See SPEC.md §14: killing the broker to stop two agents consuming a
-    /// quota and losing it to a forced update are indistinguishable from here.
-    /// </para>
+    /// Re-delivery, not re-sending (§14). A fresh row would make the log a record of delivery attempts
+    /// rather than of what was said, and on a fast restart would land inside the deduplication window and
+    /// be discarded.
     /// </remarks>
     public async Task<bool> RedeliverAsync(long id, CancellationToken cancellationToken = default)
     {

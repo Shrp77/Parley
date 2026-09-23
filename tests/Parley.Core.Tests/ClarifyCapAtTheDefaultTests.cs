@@ -8,16 +8,15 @@ namespace Parley.Core.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every other test of this rule sets the cap to 1 or 2, which is the right way to test a
-/// boundary and leaves one thing unexercised: the number the default supplies. The two are the
-/// same comparison and there is no honest argument that 200 behaves differently — but that is
-/// reasoning, and the rule here is to probe. A default that admitted 199 or 201 would be a
-/// silent off-by-one in the only number an unconfigured deployment ever uses.
+/// <b>The default is no cap, and it was 200.</b> SPEC.md principle 2.8 says nothing cuts a line of
+/// work off before its participants are finished, and clarification is how two of them converge,
+/// so the owner took the cap off by default the way the pair cap was. These check that the default
+/// really admits more than any number a cap used to be, and that a deployment which sets a cap
+/// still has it held.
 /// </para>
 /// <para>
-/// Driven from <see cref="ExchangePolicy.Default"/> rather than the literal 200, so lowering
-/// the default moves this test with it instead of leaving a test asserting a number nothing
-/// uses any more.
+/// Driven from <see cref="ExchangePolicy.Default"/> rather than a literal, so a later change to the
+/// default moves this test with it instead of leaving a test asserting a number nothing uses.
 /// </para>
 /// </remarks>
 public sealed class ClarifyCapAtTheDefaultTests
@@ -26,37 +25,45 @@ public sealed class ClarifyCapAtTheDefaultTests
     private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    private static int Cap => ExchangePolicy.Default.ClarifyDepthCap;
+    /// <summary>More rounds than the storage band allows a real cap to be.</summary>
+    /// <remarks>
+    /// Past <see cref="ExchangePolicy.MaximumClarifyDepthCap"/> rather than past the old default of
+    /// 200, so a default that was merely a large cap inside the band would fail here too.
+    /// </remarks>
+    private const int PastAnyCap = ExchangePolicy.MaximumClarifyDepthCap + 500;
 
     [Fact]
-    public void The_default_admits_exactly_its_own_number_of_requests()
+    public void The_default_refuses_no_clarification()
     {
         var exchange = Exchange.Open(1, Orders, Billing, T0, ExchangePolicy.Default);
 
-        // A request from the answerer, then the asker's reply, repeated. Turn-taking is what
-        // makes the reply mandatory: OwedBy alternates, so the answerer cannot ask twice
-        // running, and this is the shape §5.3's "each request draws a reply" describes.
-        for (var i = 0; i < Cap; i++)
+        // A request from the receiver, then the requester's reply, repeated. Turn-taking makes the
+        // reply mandatory: OwedBy alternates, so the receiver cannot ask twice running.
+        for (var i = 0; i < PastAnyCap; i++)
         {
             Assert.True(exchange.Clarify(Billing, T0.AddMinutes(i)).Succeeded, $"request {i + 1}");
             Assert.True(exchange.Clarify(Orders, T0.AddMinutes(i)).Succeeded, $"reply {i + 1}");
         }
 
-        Assert.Equal(Cap, exchange.ClarifyDepth);
-
-        var overflow = exchange.Clarify(Billing, T0.AddHours(1));
-
-        Assert.False(overflow.Succeeded);
-        Assert.Equal(TransitionError.ClarifyDepthExceeded, overflow.Error);
+        Assert.Equal(PastAnyCap, exchange.ClarifyDepth);
     }
 
     [Fact]
-    public void The_askers_replies_are_not_charged_to_the_counter()
+    public void The_default_is_the_no_cap_value_and_not_a_large_cap()
     {
-        // The asymmetry §5.3 now records, and the reason raising the cap is not purely
-        // self-inflicted: the counter is stamped from the asker's policy, but only the
-        // answerer's requests spend it. If replies were charged, the depth below would be
-        // double and the exchange would refuse halfway through.
+        Assert.False(ExchangePolicy.Default.BoundsClarifications);
+        Assert.Equal(ExchangePolicy.UnboundedClarifications, ExchangePolicy.Default.ClarifyDepthCap);
+
+        // The top of the band is a real cap. If the sentinel ever ate it, a deployment asking for
+        // a thousand would silently get none.
+        Assert.True((ExchangePolicy.Default with { ClarifyDepthCap = ExchangePolicy.MaximumClarifyDepthCap }).BoundsClarifications);
+    }
+
+    [Fact]
+    public void The_requesters_replies_are_not_charged_to_the_counter()
+    {
+        // Only the receiver's requests spend it. If replies were charged, the depth below would be
+        // double, and a deployment's cap would refuse halfway through.
         var exchange = Exchange.Open(1, Orders, Billing, T0, ExchangePolicy.Default);
 
         for (var i = 0; i < 10; i++)
@@ -69,16 +76,13 @@ public sealed class ClarifyCapAtTheDefaultTests
     }
 
     [Fact]
-    public void An_exchange_keeps_the_cap_it_was_admitted_under()
+    public void A_cap_a_deployment_sets_is_still_held_at_its_own_number()
     {
-        // Policy is stamped at admission and never read again, so an operator lowering the
-        // default cannot reach back and refuse clarifications on work already in flight. That
-        // is the property that makes this a policy rather than a settings object, and the one
-        // that stops a change to the default from being retroactive.
+        // Policy is stamped at admission and never read again, so the default changing cannot
+        // reach back into work already in flight, and a deployment that set a cap keeps it.
         var strict = Exchange.Open(1, Orders, Billing, T0, ExchangePolicy.Default with { ClarifyDepthCap = 2 });
 
         Assert.Equal(2, strict.ClarifyDepthCap);
-        Assert.NotEqual(Cap, strict.ClarifyDepthCap);
 
         strict.Clarify(Billing, T0);
         strict.Clarify(Orders, T0);

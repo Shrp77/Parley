@@ -1,24 +1,21 @@
-﻿using Dapper;
+using System.Text.Json;
+using Dapper;
 using Microsoft.Data.Sqlite;
 using Parley.Core;
 
 namespace Parley.Store;
 
 /// <summary>
-/// Conversations and the closure poll of SPEC.md §5.0.
+/// Conversations, the closure poll of SPEC.md §5.0, and closing a conversation.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Membership is derived, never declared: a row appears here because an agent became party to
-/// an exchange carrying the identifier. There is no join operation and agents never create a
-/// conversation explicitly, because a conversation is not a thing to be set up before use — it
-/// is whatever its participants said belonged together.
+/// Membership is derived, never declared: a row appears here because a participant became party to an
+/// exchange in the conversation. Nobody joins one by asking to.
 /// </para>
 /// <para>
-/// Everything this type exposes is deliberately narrow on what it will report. §5.0 makes the
-/// poll strictly bilateral, so nothing here returns a roster, a tally, or another agent's
-/// position, and the methods that could have are shaped to make that impossible rather than
-/// merely unusual. The broker holds the count; no participant does.
+/// What this type reports is deliberately narrow. §5.0 makes the poll strictly bilateral, so nothing
+/// here returns a roster, a tally or another participant's position to anything an agent can reach.
 /// </para>
 /// </remarks>
 public sealed class ConversationRepository(SqliteConnection connection)
@@ -26,11 +23,18 @@ public sealed class ConversationRepository(SqliteConnection connection)
     private readonly SqliteConnection _connection =
         connection ?? throw new ArgumentNullException(nameof(connection));
 
+    /// <summary>The longest reason a person's close carries, in characters.</summary>
+    /// <remarks>
+    /// Shortened rather than refused (§14): a close that cannot be stored is a close nobody is told
+    /// about, and the reason is the least important part of it.
+    /// </remarks>
+    public const int MaxReasonCharacters = 1000;
+
     /// <summary>Loads a conversation.</summary>
     /// <param name="id">The identifier.</param>
     /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>The conversation, or <see langword="null"/> if no agent has named it.</returns>
+    /// <returns>The conversation, or <see langword="null"/> if none has that identifier.</returns>
     public async Task<ConversationRecord?> GetAsync(
         string id,
         SqliteTransaction? transaction = null,
@@ -42,7 +46,7 @@ public sealed class ConversationRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 SELECT id AS Id, state AS State, opened_utc AS OpenedUtc,
-                       closed_utc AS ClosedUtc
+                       closed_utc AS ClosedUtc, closed_by AS ClosedBy
                   FROM conversations
                  WHERE id = @Id;
                 """,
@@ -53,24 +57,14 @@ public sealed class ConversationRepository(SqliteConnection connection)
         return row?.ToDomain();
     }
 
-    /// <summary>
-    /// Opens a conversation if no agent has named it yet.
-    /// </summary>
-    /// <param name="conversationId">The identifier being declared.</param>
-    /// <param name="nowUtc">The instant it was first named.</param>
+    /// <summary>Opens a conversation if it does not exist yet.</summary>
+    /// <param name="conversationId">The identifier.</param>
+    /// <param name="nowUtc">The instant it started.</param>
     /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <remarks>
-    /// Idempotent, because two agents may name the same new identifier at once and neither
-    /// should lose. Agents never create a conversation explicitly: SPEC.md §5.0 makes it
-    /// whatever its participants said belonged together, so it comes into being as a side effect
-    /// of the first message that names it.
-    /// <para>
-    /// Called from admission and from a notification, which is the whole reason it is a method.
-    /// A notification has no exchange and §5.0 therefore has it declare its own conversation —
-    /// so both paths mint one, and two copies of that INSERT would be two chances to get the
-    /// initial state wrong.
-    /// </para>
+    /// Idempotent, because two senders may start the same named conversation at once and neither should
+    /// fail. Called from admission, inside the transaction that admits the Request starting it.
     /// </remarks>
     public async Task EnsureOpenAsync(
         string conversationId,
@@ -92,34 +86,18 @@ public sealed class ConversationRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Records that two agents are party to a conversation, and voids any poll in progress.
-    /// </summary>
-    /// <param name="conversationId">The discussion they joined.</param>
+    /// <summary>Records that two participants are party to a conversation, and voids any poll in progress.</summary>
+    /// <param name="conversationId">The conversation.</param>
     /// <param name="first">One participant.</param>
     /// <param name="second">The other.</param>
     /// <param name="nowUtc">The instant of joining.</param>
     /// <param name="transaction">The transaction admitting the exchange.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <remarks>
-    /// <para>
-    /// Called from admission, inside the transaction that writes the exchange, because both
-    /// facts come from the same act: SPEC.md §5.0 says an agent is a participant precisely
-    /// because it is party to an exchange carrying the identifier, so membership recorded
-    /// separately could disagree with the exchange that established it.
-    /// </para>
-    /// <para>
-    /// Voiding the poll happens here for the same reason. §5.0: opening an exchange in a
-    /// conversation discards any in-flight poll <em>and every vote already cast</em>, and
-    /// closure begins again from nothing. Discarding the votes is the part worth getting right
-    /// — an agent that said it was finished may not be, once a peer reopens the subject.
-    /// </para>
-    /// <para>
-    /// Without it the poll has a race with an obvious loser. Only participants holding open
-    /// exchanges are polled, so an agent whose exchanges had all closed is not asked; if it
-    /// opens a new one while the poll runs, the conversation can conclude around a live
-    /// question, which then sits in a closed discussion nobody may add to.
-    /// </para>
+    /// Both facts come from one act. A participant is one because it is party to an exchange in the
+    /// conversation, and a Request opened in a conversation discards any poll in progress and every vote
+    /// cast in it (§5.0), because a participant that was finished may not be once somebody reopens the
+    /// subject.
     /// </remarks>
     public async Task JoinAsync(
         string conversationId,
@@ -151,18 +129,52 @@ public sealed class ConversationRepository(SqliteConnection connection)
         await VoidPollAsync(conversationId, transaction, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Discards a poll in progress and every vote cast in it.
-    /// </summary>
-    /// <param name="conversationId">The discussion.</param>
+    /// <summary>Records that an agent that placed a file is party to the file's conversation.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="participant">The agent that placed the file.</param>
+    /// <param name="nowUtc">The instant of joining.</param>
+    /// <param name="transaction">The transaction recording the placement.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <remarks>
+    /// <para>
+    /// The one way into a conversation that is not an exchange (SPEC.md §5.0). A conversation started by a file has
+    /// no exchange for membership to be derived from, and the agent that started it must be able to add a second
+    /// file by naming it and take part in closing it.
+    /// </para>
+    /// <para>
+    /// Unlike joining through a Request, this voids no poll: a file is not new work reopening the subject, and a
+    /// participant that placed one has said nothing about whether it is finished.
+    /// </para>
+    /// </remarks>
+    public Task JoinByPlacingAsync(
+        string conversationId,
+        AgentName participant,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        return _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                INSERT INTO conversation_participants (conversation_id, agent, joined_utc)
+                VALUES (@Conversation, @Agent, @When)
+                ON CONFLICT (conversation_id, agent) DO NOTHING;
+                """,
+                new { Conversation = conversationId, Agent = participant.Value, When = ExchangeRow.FormatTimestamp(nowUtc) },
+                transaction,
+                cancellationToken: cancellationToken));
+    }
+
+    /// <summary>Discards a poll in progress and every vote cast in it.</summary>
+    /// <param name="conversationId">The conversation.</param>
     /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns><see langword="true"/> if a poll was in progress and has been discarded.</returns>
     /// <remarks>
-    /// A no-op unless the conversation is <see cref="ConversationState.Closing"/>. It
-    /// deliberately cannot reopen a closed conversation: §5.0 makes closure terminal, and the
-    /// state filter is what stops new activity — which is refused on a closed conversation
-    /// anyway — from being a back door to reopening one.
+    /// A no-op unless the conversation is <see cref="ConversationState.Closing"/>, so it can never be a
+    /// back door to reopening a closed one.
     /// </remarks>
     public async Task<bool> VoidPollAsync(
         string conversationId,
@@ -175,43 +187,35 @@ public sealed class ConversationRepository(SqliteConnection connection)
 
         var affected = await _connection.ExecuteAsync(
             new CommandDefinition(
-                """
-                UPDATE conversations SET state = 'OPEN'
-                 WHERE id = @Conversation AND state = 'CLOSING';
-                """,
+                "UPDATE conversations SET state = 'OPEN' WHERE id = @Conversation AND state = 'CLOSING';",
                 new { Conversation = conversationId },
                 scope.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        if (affected == 0)
+        if (affected > 0)
         {
-            scope.Complete();
-            return false;
+            await _connection.ExecuteAsync(
+                new CommandDefinition(
+                    """
+                    UPDATE conversation_participants
+                       SET vote = NULL, voted_utc = NULL, polled_utc = NULL
+                     WHERE conversation_id = @Conversation;
+                    """,
+                    new { Conversation = conversationId },
+                    scope.Transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
 
-        await _connection.ExecuteAsync(
-            new CommandDefinition(
-                """
-                UPDATE conversation_participants
-                   SET vote = NULL, voted_utc = NULL, polled_utc = NULL
-                 WHERE conversation_id = @Conversation;
-                """,
-                new { Conversation = conversationId },
-                scope.Transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
-
         scope.Complete();
-        return true;
+        return affected > 0;
     }
 
-    /// <summary>
-    /// Reports whether an agent is party to a conversation.
-    /// </summary>
-    /// <param name="conversationId">The discussion.</param>
-    /// <param name="agent">The agent.</param>
+    /// <summary>Reports whether a participant is party to a conversation.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="agent">The participant.</param>
     /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns><see langword="true"/> if the agent has been party to an exchange in it.</returns>
+    /// <returns><see langword="true"/> if it has been party to an exchange in it.</returns>
     public async Task<bool> IsParticipantAsync(
         string conversationId,
         AgentName agent,
@@ -231,62 +235,24 @@ public sealed class ConversationRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
     }
 
-    /// <summary>
-    /// Opens a poll, putting the closure question to every participant worth asking.
-    /// </summary>
-    /// <param name="conversationId">The discussion.</param>
+    /// <summary>Opens a poll, putting the closure question to every participant worth asking.</summary>
+    /// <param name="conversationId">The conversation.</param>
     /// <param name="nowUtc">The instant the poll opened.</param>
     /// <param name="transaction">The transaction to write within.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <remarks>
-    /// Returns nothing, deliberately. The obvious return value is the number of participants
-    /// the question was put to, and that number is exactly the tally SPEC.md §5.0 forbids
-    /// disclosing — a count of "three of four agree" gives away the roster size as surely as
-    /// naming its members. It was written that way first and the only caller ignored it, which
-    /// is the whole hazard: a value nobody needs, sitting on a public method, one careless
-    /// caller away from reaching an agent. This class claims to be shaped so that leaking is
-    /// impossible rather than merely unusual, and that claim is only worth what the signatures
-    /// are worth.
-    /// </remarks>
-    /// <remarks>
     /// <para>
-    /// The polled set is participants with an exchange still live in this conversation, which
-    /// is SPEC.md §5.0's rule and not an optimisation. An agent whose exchanges have all closed
-    /// has already said what it had to say, and under §14's lazy spawn, polling it would
-    /// instantiate an idle agent purely to ask whether it was finished — at this protocol's
-    /// scale, most of the roster, woken to answer a question about nothing.
+    /// Returns nothing, deliberately: the obvious return value is how many were asked, which is exactly
+    /// the tally §5.0 forbids disclosing.
     /// </para>
     /// <para>
-    /// Live means <c>OPEN</c> or <c>ORPHANED</c>, and the second is not a detail. §5.0 says
-    /// "holding open exchanges" but gives its reason as an agent whose exchanges are all
-    /// <em>closed</em>, and an orphan is neither: it is a debt awaiting replay under §14, which
-    /// may return it to open at the next inbound traffic. Counting only <c>OPEN</c> made a
-    /// restart into a weapon — the attach sequence orphans the debts of whoever attached, so a
-    /// participant proposing closure straight afterwards could find nobody left to ask and
-    /// conclude the discussion single-handed. A probe closed a live discussion that way in three
-    /// calls, back when a single attach orphaned every open exchange at once.
+    /// <b>Only participants holding an open exchange are asked</b> (§5.0). One whose exchanges have all
+    /// closed has said what it had to say, and starting it to ask whether it is finished would buy a
+    /// turn for nothing. A retired participant is not asked, because its judgement lapsed with it.
     /// </para>
     /// <para>
-    /// The proposer gets no exemption, and an earlier version of this gave it one — stamping it
-    /// whether or not it held an open exchange, on the reasoning that it was demonstrably awake
-    /// and ought to be able to record its own answer. That defeats the only thing bounding a
-    /// gate-crasher. §5.0 admits that an identifier is a claim rather than a verified fact, so
-    /// an agent may name a discussion it was not part of and thereby join it, and the cost that
-    /// makes acceptable is precisely this: "keeping the veto alive means keeping an exchange
-    /// open, which the windows in §6 will eventually close." Exempting the proposer made the
-    /// veto free and permanent — a probe held a discussion open for a week from an agent whose
-    /// only exchange had closed days earlier.
-    /// </para>
-    /// <para>
-    /// It may still propose. Any participant may, and a proposer that is not polled has already
-    /// said the only thing the poll would have asked it. Its vote is simply not recorded, which
-    /// <see cref="RecordVoteAsync"/> reports rather than enforcing silently.
-    /// </para>
-    /// <para>
-    /// Agents marked <c>unreachable</c> or <c>retired</c> are excluded. §5.0 lapses their
-    /// judgement for the same reason it lapses a decline: one is only worth honouring while the
-    /// agent that made it can still act on it, and a discussion held open by a repository that
-    /// no longer exists is the churn §14 exists to stop.
+    /// The proposer gets no exemption. It may propose, and a proposer that holds nothing open has
+    /// already said the only thing the poll would ask it.
     /// </para>
     /// </remarks>
     public async Task BeginPollAsync(
@@ -298,14 +264,10 @@ public sealed class ConversationRepository(SqliteConnection connection)
         ArgumentException.ThrowIfNullOrEmpty(conversationId);
 
         using var scope = WriteScope.Begin(_connection, transaction);
-        var stamp = ExchangeRow.FormatTimestamp(nowUtc);
 
         await _connection.ExecuteAsync(
             new CommandDefinition(
-                """
-                UPDATE conversations SET state = 'CLOSING'
-                 WHERE id = @Conversation AND state = 'OPEN';
-                """,
+                "UPDATE conversations SET state = 'CLOSING' WHERE id = @Conversation AND state = 'OPEN';",
                 new { Conversation = conversationId },
                 scope.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -317,27 +279,22 @@ public sealed class ConversationRepository(SqliteConnection connection)
                    SET polled_utc = @When
                  WHERE conversation_id = @Conversation
                    AND polled_utc IS NULL
-                   AND agent NOT IN (SELECT name FROM agents
-                                      WHERE status IN ('unreachable', 'retired'))
-                   AND agent IN (SELECT asker FROM exchanges
-                                  WHERE conversation_id = @Conversation
-                                    AND state IN ('OPEN', 'ORPHANED')
+                   AND agent NOT IN (SELECT name FROM agents WHERE status = 'retired')
+                   AND agent IN (SELECT requester FROM exchanges
+                                  WHERE conversation_id = @Conversation AND state = 'OPEN'
                                  UNION
-                                 SELECT answerer FROM exchanges
-                                  WHERE conversation_id = @Conversation
-                                    AND state IN ('OPEN', 'ORPHANED'));
+                                 SELECT receiver FROM exchanges
+                                  WHERE conversation_id = @Conversation AND state = 'OPEN');
                 """,
-                new { Conversation = conversationId, When = stamp },
+                new { Conversation = conversationId, When = ExchangeRow.FormatTimestamp(nowUtc) },
                 scope.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         scope.Complete();
     }
 
-    /// <summary>
-    /// Records a participant's answer to a poll it was asked.
-    /// </summary>
-    /// <param name="conversationId">The discussion.</param>
+    /// <summary>Records a participant's answer to a poll it was asked.</summary>
+    /// <param name="conversationId">The conversation.</param>
     /// <param name="agent">The participant answering.</param>
     /// <param name="vote">Its answer.</param>
     /// <param name="nowUtc">The instant it answered.</param>
@@ -345,22 +302,9 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns><see langword="true"/> if the vote was recorded.</returns>
     /// <remarks>
-    /// Refuses an agent that was never polled, by matching on <c>polled_utc IS NOT NULL</c>
-    /// rather than trusting the caller to have checked. The schema forbids that combination
-    /// too; doing it in the <c>WHERE</c> clause means the refusal is a <see langword="false"/>
-    /// return rather than a constraint violation the caller has to interpret.
-    /// <para>
-    /// Refuses a conversation that is not polling, for the same reason and one found later. A
-    /// vote against a concluded discussion changes no state — closure is terminal — but it is
-    /// recorded, and the row then says a participant declined a closure that had already
-    /// happened. The log is what an operator reads when something has gone wrong, so a stored
-    /// contradiction is worse than a refused write. The trigger in §9.3 is the backstop.
-    /// </para>
-    /// <para>
-    /// A later vote overwrites an earlier one. An agent that declined and has since been
-    /// satisfied must be able to say so, and §5.0's re-ask makes that the ordinary path rather
-    /// than an edge case.
-    /// </para>
+    /// Refuses a participant never polled and a conversation not polling, in the <c>WHERE</c> clause
+    /// rather than by trusting the caller. A later vote overwrites an earlier one, so a participant that
+    /// declined and has since been satisfied can say so.
     /// </remarks>
     public async Task<bool> RecordVoteAsync(
         string conversationId,
@@ -396,38 +340,27 @@ public sealed class ConversationRepository(SqliteConnection connection)
         return affected > 0;
     }
 
-    /// <summary>
-    /// Concludes a conversation if its poll has been satisfied.
-    /// </summary>
-    /// <param name="conversationId">The discussion.</param>
-    /// <param name="nowUtc">The instant to judge silence against.</param>
-    /// <param name="silenceWindow">
-    /// How long a polled participant may stay silent before it is taken to agree.
-    /// </param>
+    /// <summary>Closes a conversation by consensus if its poll has been satisfied.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="nowUtc">The instant to close at.</param>
     /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns><see langword="true"/> if the conversation is now closed.</returns>
     /// <remarks>
     /// <para>
-    /// Three conditions, all from SPEC.md §5.0. A decline blocks outright — closure requires
-    /// that no polled participant declined, because a majority that can conclude over an
-    /// objection is authority over another agent by a different name. A participant that has
-    /// not answered blocks only until its window elapses, after which silence assents; without
-    /// that, one unreachable agent could hold a discussion open indefinitely. And a participant
-    /// marked <c>unreachable</c> or <c>retired</c> counts for nothing either way, because its
-    /// judgement has lapsed with it.
+    /// <b>Every participant asked must have agreed.</b> A decline blocks outright, and so does silence:
+    /// a participant that has not answered has not agreed (§5.0). The version this replaced let silence
+    /// assent after a window, which closed conversations over participants that were simply busy with
+    /// the work. A retired participant counts for nothing either way.
     /// </para>
     /// <para>
-    /// The silence window is measured from each participant's own <c>polled_utc</c> rather than
-    /// from when the poll opened. They are usually the same instant, and are not when a
-    /// participant joined after the poll began — which is possible, since joining is what voids
-    /// a poll, and the void leaves the conversation open to be proposed again.
+    /// Work still open when the participants agree ends <c>closed</c>, with the broker's Result to each
+    /// participant holding it, exactly as a person's close does (§14).
     /// </para>
     /// </remarks>
     public async Task<bool> TryConcludeAsync(
         string conversationId,
         DateTimeOffset nowUtc,
-        TimeSpan silenceWindow,
         SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
@@ -435,8 +368,13 @@ public sealed class ConversationRepository(SqliteConnection connection)
 
         using var scope = WriteScope.Begin(_connection, transaction);
 
-        // One query for both blocking conditions, so a decline and an unexpired silence cannot
-        // be evaluated against different snapshots of the participant set.
+        var polling = await _connection.ExecuteScalarAsync<long>(
+            new CommandDefinition(
+                "SELECT count(*) FROM conversations WHERE id = @Conversation AND state = 'CLOSING';",
+                new { Conversation = conversationId },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
+
         var blocking = await _connection.ExecuteScalarAsync<long>(
             new CommandDefinition(
                 """
@@ -444,104 +382,192 @@ public sealed class ConversationRepository(SqliteConnection connection)
                   FROM conversation_participants p
                  WHERE p.conversation_id = @Conversation
                    AND p.polled_utc IS NOT NULL
-                   AND p.agent NOT IN (SELECT name FROM agents
-                                        WHERE status IN ('unreachable', 'retired'))
-                   AND (p.vote = 'not_done'
-                        OR (p.vote IS NULL AND @Deadline < p.polled_utc));
+                   AND p.agent NOT IN (SELECT name FROM agents WHERE status = 'retired')
+                   AND (p.vote IS NULL OR p.vote = 'not_done');
                 """,
-                new
-                {
-                    Conversation = conversationId,
-
-                    // Compared as text, which is sound because the format is fixed-width and
-                    // zero-padded with a constant offset, so lexical order is chronological.
-                    // The same property ExchangeRow relies on everywhere else.
-                    Deadline = ExchangeRow.FormatTimestamp(nowUtc - silenceWindow)
-                },
+                new { Conversation = conversationId },
                 scope.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        if (blocking > 0)
+        if (!polling || blocking > 0)
         {
             scope.Complete();
             return false;
         }
 
-        var closed = await _connection.ExecuteAsync(
-            new CommandDefinition(
-                """
-                UPDATE conversations
-                   SET state = 'CLOSED', closed_utc = @When
-                 WHERE id = @Conversation AND state = 'CLOSING';
-                """,
-                new
-                {
-                    Conversation = conversationId,
-                    When = ExchangeRow.FormatTimestamp(nowUtc)
-                },
-                scope.Transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        var closed = await CloseAsync(
+            conversationId, ConversationCloser.Consensus, reason: null, nowUtc, scope.Transaction,
+            cancellationToken).ConfigureAwait(false);
 
         scope.Complete();
-        return closed > 0;
+        return closed;
     }
 
-    /// <summary>
-    /// Closes a conversation regardless of its participants' votes.
-    /// </summary>
-    /// <param name="conversationId">The discussion to end.</param>
+    /// <summary>Closes a conversation on the person's word, regardless of its participants' votes.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="reason">Why, told to every participant holding open work; or <see langword="null"/>.</param>
     /// <param name="nowUtc">The instant of closure.</param>
-    /// <param name="transaction">
-    /// A transaction to enlist in, or <see langword="null"/> to run on its own. Present for the
-    /// same reason as on every other write here: an operator surface that ends a discussion will
-    /// eventually want to do something else in the same breath.
-    /// </param>
+    /// <param name="transaction">A transaction to enlist in, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns><see langword="true"/> if this call closed it.</returns>
     /// <remarks>
-    /// SPEC.md §10.2's <c>force_conclude</c>, and an operator operation only — see
-    /// <c>Broker.ForceConcludeAsync</c> for why it is named apart from the agent-facing one.
-    /// Matching on <c>state &lt;&gt; 'CLOSED'</c> rather than on <c>'CLOSING'</c> is deliberate:
-    /// an operator ending a discussion should not have to wait for somebody to propose closure
-    /// first, and a closure that is already recorded is left with its original instant rather
-    /// than being restamped.
+    /// §10.2's <c>force_conclude</c>, and an operator operation only. It closes a conversation in any
+    /// state short of closed: a person ending work should not have to wait for somebody to propose it.
     /// </remarks>
-    public async Task<bool> ForceConcludeAsync(
+    public Task<bool> ForceConcludeAsync(
         string conversationId,
+        string? reason,
         DateTimeOffset nowUtc,
         SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(conversationId);
 
+        return CloseAsync(
+            conversationId, ConversationCloser.Person, reason, nowUtc, transaction, cancellationToken);
+    }
+
+    /// <summary>
+    /// Closes a conversation, and ends every exchange still open in it with the broker's <c>closed</c>
+    /// Result to each participant holding it — in one write.
+    /// </summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="closer">Who closed it.</param>
+    /// <param name="reason">The person's reason, if one was given.</param>
+    /// <param name="nowUtc">The instant of closure.</param>
+    /// <param name="transaction">A transaction to enlist in, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true"/> if this call closed it.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The close and the notices are one write</b> (§14). An exchange is closable exactly once, so a
+    /// close that committed without its notices would leave a participant working on something ended,
+    /// with nothing ever revisiting it.
+    /// </para>
+    /// <para>
+    /// Both parties are told: the receiver so it stops, the requester so it knows its work was not done.
+    /// Each notice is a Result carrying an outcome of <c>closed</c> for every item the Request carried,
+    /// attributed to <c>parley:broker</c>, which the schema requires of a closed outcome and forbids of
+    /// anything else (§9.3). It says who closed it and nothing a participant wrote, so it cannot exceed
+    /// the message cap by quoting one.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> CloseAsync(
+        string conversationId,
+        ConversationCloser closer,
+        string? reason,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        using var scope = WriteScope.Begin(_connection, transaction);
+
         var closed = await _connection.ExecuteAsync(
             new CommandDefinition(
                 """
                 UPDATE conversations
-                   SET state = 'CLOSED', closed_utc = @When
+                   SET state = 'CLOSED', closed_utc = @When, closed_by = @By
                  WHERE id = @Conversation AND state <> 'CLOSED';
                 """,
                 new
                 {
                     Conversation = conversationId,
-                    When = ExchangeRow.FormatTimestamp(nowUtc)
+                    When = ExchangeRow.FormatTimestamp(nowUtc),
+                    By = closer == ConversationCloser.Person ? "person" : "consensus"
                 },
-                transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
 
-        return closed > 0;
+        if (!closed)
+        {
+            scope.Complete();
+            return false;
+        }
+
+        var exchanges = new ExchangeRepository(_connection);
+        var messages = new MessageRepository(_connection);
+
+        var open = await exchanges.GetOpenInConversationAsync(conversationId, scope.Transaction, cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var exchange in open)
+        {
+            var request = await messages.GetRequestAsync(exchange.Id, scope.Transaction, cancellationToken)
+                .ConfigureAwait(false);
+
+            var payload = ClosedResult(conversationId, closer, reason, ItemIds(request?.PayloadJson));
+
+            await messages.AppendAsync(
+                exchange.Id, MessageType.Result, exchange.Receiver, exchange.Requester, Responder.Broker,
+                payload, nowUtc, scope.Transaction, cancellationToken).ConfigureAwait(false);
+
+            await messages.AppendAsync(
+                exchange.Id, MessageType.Result, exchange.Requester, exchange.Receiver, Responder.Broker,
+                payload, nowUtc, scope.Transaction, cancellationToken).ConfigureAwait(false);
+
+            if (!exchange.CloseWithConversation(nowUtc).Succeeded
+                || !await exchanges.SaveAsync(exchange, scope.Transaction, cancellationToken).ConfigureAwait(false))
+            {
+                // Unreachable under the write lock this transaction holds; thrown so the whole close
+                // rolls back rather than committing a conversation closed around work left open.
+                throw new InvalidOperationException(
+                    $"Exchange {exchange.Id} changed while conversation '{conversationId}' was being closed.");
+            }
+        }
+
+        scope.Complete();
+        return true;
     }
 
-    /// <summary>
-    /// Lists every conversation with a poll in progress.
-    /// </summary>
+    /// <summary>The item identifiers a Request carried, for the <c>closed</c> Result that answers it.</summary>
+    /// <param name="requestJson">The Request's payload, or <see langword="null"/> if it has none any more.</param>
+    /// <returns>Its item ids, or a single placeholder when none can be read.</returns>
+    /// <remarks>
+    /// A Request written under protocol 0.4 carries <c>sub_questions</c> rather than <c>items</c>, and
+    /// is read for those too. A Result must carry at least one outcome, so a Request whose items cannot
+    /// be read is answered for the Request as a whole.
+    /// </remarks>
+    internal static IReadOnlyList<string> ItemIds(string? requestJson)
+    {
+        var ids = PayloadShape.ItemIds(requestJson)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        return ids.Count > 0 ? ids : [PayloadShape.WholeRequest];
+    }
+
+    private static string ClosedResult(
+        string conversationId, ConversationCloser closer, string? reason, IReadOnlyList<string> items)
+    {
+        var text = closer == ConversationCloser.Person
+            ? $"The person running the deployment closed conversation {conversationId} before this was finished."
+            : $"The participants agreed conversation {conversationId} was finished before this was.";
+
+        if (!string.IsNullOrWhiteSpace(reason))
+        {
+            var trimmed = reason.Trim();
+            text += " Their reason: " + (trimmed.Length > MaxReasonCharacters
+                ? string.Concat(trimmed.AsSpan(0, MaxReasonCharacters), "...")
+                : trimmed);
+        }
+
+        var payload = Render(text);
+
+        // A Request with many items and a long reason could still pass the cap. The notice matters
+        // more than its wording, so the reason goes before the close does.
+        return payload.Length <= MessageLimits.MaxPayloadCharacters ? payload : Render("Closed.");
+
+        string Render(string said) => JsonSerializer.Serialize(new
+        {
+            outcomes = items.Select(id => new { id, outcome = "closed", text = said }).ToArray(),
+            closed_by = closer == ConversationCloser.Person ? "person" : "consensus"
+        });
+    }
+
+    /// <summary>Lists every conversation with a poll in progress.</summary>
     /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>The identifiers of conversations currently polling.</returns>
-    /// <remarks>
-    /// The sweep's input. Bounded by the number of discussions in flight rather than by
-    /// history, since a poll is transient by construction: it either concludes or is voided.
-    /// </remarks>
     public async Task<IReadOnlyList<string>> GetPollingAsync(
         SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default)
@@ -556,14 +582,57 @@ public sealed class ConversationRepository(SqliteConnection connection)
     }
 
     /// <summary>
-    /// Which polls an agent still owes a vote on, shared by the read and the count of it.
+    /// The participants a closure poll is waiting on once nothing else is: shared by the flags and the wake.
     /// </summary>
     /// <remarks>
-    /// Shared rather than written twice. The transport pushes a notice saying how much is
-    /// waiting and the adapter then drains to find out what it is, so a count computed from a
-    /// looser predicate than the read uses reports work the read will not hand over -- and the
-    /// adapter wakes, asks, receives nothing, and cannot tell that from a race worth retrying.
+    /// Polled, silent and not retired, in a conversation still closing that has no open exchange and no live
+    /// decline. §5.0 asks such a participant again and shows it to the person; before this, a participant that
+    /// finished its part and never voted left the conversation closing with nothing asking it and nobody told.
     /// </remarks>
+    internal const string SilentVoters =
+        """
+          FROM conversation_participants p
+          JOIN conversations c ON c.id = p.conversation_id
+         WHERE c.state = 'CLOSING'
+           AND p.polled_utc IS NOT NULL
+           AND p.vote IS NULL
+           AND p.agent NOT IN (SELECT name FROM agents WHERE status = 'retired')
+           AND NOT EXISTS (SELECT 1 FROM exchanges x
+                            WHERE x.conversation_id = c.id AND x.state = 'OPEN')
+           AND NOT EXISTS (SELECT 1 FROM conversation_participants d
+                            WHERE d.conversation_id = c.id
+                              AND d.vote = 'not_done'
+                              AND d.agent NOT IN (SELECT name FROM agents WHERE status = 'retired'))
+        """;
+
+    /// <summary>The participants one conversation is waiting on for nothing but a vote.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>
+    /// Each one and when its poll began, ordered; empty unless the conversation is otherwise ready to close. The
+    /// instant identifies the poll, so a caller can ask each participant again once for each poll.
+    /// </returns>
+    public async Task<IReadOnlyList<(AgentName Agent, DateTimeOffset PolledUtc)>> GetSilentVotersAsync(
+        string conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        var rows = await _connection.QueryAsync<VoterRow>(
+            new CommandDefinition(
+                $"""
+                SELECT p.agent AS Agent, p.polled_utc AS PolledUtc
+                {SilentVoters}
+                   AND c.id = @Conversation
+                 ORDER BY p.agent;
+                """,
+                new { Conversation = conversationId },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return [.. rows.Select(r => (AgentName.Create(r.Agent), ExchangeRow.ParseTimestamp(r.PolledUtc)))];
+    }
+
+    /// <summary>Which polls a participant still owes a vote on, shared by the read and the count.</summary>
     private const string OutstandingPolls =
         """
           FROM conversation_participants p
@@ -574,18 +643,10 @@ public sealed class ConversationRepository(SqliteConnection connection)
            AND p.vote IS NULL
         """;
 
-    /// <summary>
-    /// How many closure polls an agent has not voted on.
-    /// </summary>
-    /// <param name="agent">The agent.</param>
+    /// <summary>How many closure polls a participant has not voted on.</summary>
+    /// <param name="agent">The participant.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>The number of polls awaiting this agent.</returns>
-    /// <remarks>
-    /// Takes no silence window, unlike <see cref="GetOutstandingPollsAsync"/>. The window says
-    /// when an unanswered poll lapses into consent, which the caller needs in order to say when
-    /// each expires; it does not decide which polls are outstanding, so it has no part in
-    /// counting them.
-    /// </remarks>
+    /// <returns>The number of polls waiting on it.</returns>
     public async Task<int> CountOutstandingPollsAsync(
         AgentName agent,
         CancellationToken cancellationToken = default) =>
@@ -598,27 +659,17 @@ public sealed class ConversationRepository(SqliteConnection connection)
                 new { Agent = agent.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-    /// <summary>
-    /// Lists the closure polls outstanding against one agent.
-    /// </summary>
-    /// <param name="agent">The agent collecting its inbox.</param>
-    /// <param name="silenceWindow">How long its silence will be waited for.</param>
+    /// <summary>Lists the closure polls outstanding against one participant.</summary>
+    /// <param name="agent">The participant collecting its inbox.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>The polls it has been asked and not yet answered.</returns>
     /// <remarks>
-    /// Surfaced through the inbox rather than as a message, because SPEC.md §5 admits four
-    /// message types and no others — and a fifth carrying broker questions would also make the
-    /// broker a participant that agents address, which it is not.
-    /// <para>
-    /// Scoped to this agent by the <c>WHERE</c> clause, so there is no shape of result that
-    /// could carry another participant's position. A poll it has already answered is omitted:
-    /// §5.0 has the broker re-ask when the conversation next falls idle, which is a fresh poll,
-    /// not this one shown again.
-    /// </para>
+    /// Surfaced through the inbox rather than as a message, because §5 admits three message types and a
+    /// fourth carrying the broker's questions would make the broker a participant others address. Shown
+    /// on every collection until answered, which is how the silent participant is asked again.
     /// </remarks>
     public async Task<IReadOnlyList<ClosurePoll>> GetOutstandingPollsAsync(
         AgentName agent,
-        TimeSpan silenceWindow,
         CancellationToken cancellationToken = default)
     {
         var rows = await _connection.QueryAsync<PollRow>(
@@ -631,27 +682,9 @@ public sealed class ConversationRepository(SqliteConnection connection)
                 new { Agent = agent.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        return rows.Select(r =>
-        {
-            var polled = ExchangeRow.ParseTimestamp(r.PolledUtc);
-            return new ClosurePoll(r.ConversationId, polled, polled + silenceWindow);
-        }).ToList();
+        return [.. rows.Select(r => new ClosurePoll(r.ConversationId, ExchangeRow.ParseTimestamp(r.PolledUtc)))];
     }
 
-    /// <summary>Formats a vote as the token used in storage.</summary>
-    /// <param name="vote">The vote.</param>
-    /// <returns>The stored token.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="vote"/> is not a defined value.
-    /// </exception>
-    /// <remarks>
-    /// Written out rather than persisting the numeric value, so the schema's <c>CHECK</c> can
-    /// validate it and the table stays legible in a SQLite client — the same reasoning as
-    /// <see cref="MessageIdentity.FormatType"/>. Private where that one is public, because this
-    /// is a storage detail and that is a protocol rule: §13.1 names the hash so independent
-    /// implementations agree on what a duplicate is, and nothing outside this file has any
-    /// business reading a vote.
-    /// </remarks>
     private static string FormatVote(Vote vote) => vote switch
     {
         Vote.Done => "done",
@@ -662,46 +695,36 @@ public sealed class ConversationRepository(SqliteConnection connection)
     private sealed class PollRow
     {
         public string ConversationId { get; init; } = "";
+
         public string PolledUtc { get; init; } = "";
     }
 
-    /// <summary>
-    /// Lists conversations for the operator listing of SPEC.md §10.2, most recent activity first.
-    /// </summary>
-    /// <param name="participant">Restrict to conversations this agent is party to, or null for all.</param>
+    private sealed class VoterRow
+    {
+        public string Agent { get; init; } = "";
+
+        public string PolledUtc { get; init; } = "";
+    }
+
+    /// <summary>Lists conversations for the operator listing of §10.2, most recent activity first.</summary>
+    /// <param name="participant">Restrict to conversations this participant is party to, or null for all.</param>
     /// <param name="sinceUtc">Only those last active at or after this instant, if given.</param>
     /// <param name="untilUtc">Only those last active at or before this instant, if given.</param>
     /// <param name="limit">How many to return. The caller is expected to have bounded this.</param>
     /// <param name="beforeLastActivityUtc">Resume point: only those last active strictly before it.</param>
-    /// <param name="beforeId">
-    /// The identifier at that resume point, breaking ties the instant alone cannot.
-    /// </param>
+    /// <param name="beforeId">The identifier at that resume point, breaking ties the instant alone cannot.</param>
     /// <param name="includeArchived">Whether to list archived conversations as well.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>One page of summaries.</returns>
     /// <remarks>
     /// <para>
-    /// Activity is read from the messages rather than from the conversation's own timestamps,
-    /// because <c>opened_utc</c> says when an agent first named it and nothing says when anybody
-    /// last used it. An operator scanning for "what happened this afternoon" is asking the second
-    /// question.
+    /// Activity is read from the messages, because <c>opened_utc</c> says when a conversation started
+    /// and nothing else says when anybody last used it.
     /// </para>
     /// <para>
-    /// Participants come from <c>conversation_participants</c>, which §5.0 fills from the
-    /// exchanges. They are derived and are not evidence of agreement: an identifier is a claim by
-    /// its sender, so an agent may name a discussion it was not part of and thereby join it.
-    /// </para>
-    /// <para>
-    /// Paged by last activity rather than by offset. An offset re-reads rows that may have moved
-    /// between pages, which for a log that only grows means the same conversation appearing twice
-    /// and another never appearing at all.
-    /// </para>
-    /// <para>
-    /// The resume carries the identifier as well as the instant, because the order breaks ties on
-    /// the identifier and a resume that did not would skip every remaining member of a group
-    /// sharing one instant. That is not a contrived case: the Windows system clock ticks about
-    /// every 15.6ms, so two agents answering at the same moment are written with the same
-    /// timestamp — and the conversation that vanishes is simply absent, with nothing saying so.
+    /// Paged by last activity rather than by offset, and the resume carries the identifier too: the
+    /// Windows clock ticks about every 15.6ms, so two participants writing at once share a timestamp, and
+    /// a resume on the instant alone would skip one of them with nothing saying so.
     /// </para>
     /// </remarks>
     public async Task<IReadOnlyList<ConversationSummary>> ListAsync(
@@ -719,14 +742,27 @@ public sealed class ConversationRepository(SqliteConnection connection)
         var rows = await _connection.QueryAsync<ConversationSummaryRow>(
             new CommandDefinition(
                 """
-                WITH activity AS (
+                WITH messaged AS (
                     SELECT conversation_id      AS id,
                            count(*)             AS messages,
                            min(created_utc)     AS first_utc,
                            max(created_utc)     AS last_utc
                       FROM messages
-                     WHERE conversation_id IS NOT NULL
                      GROUP BY conversation_id
+                ),
+                -- A conversation started by placing a file has no message (SPEC.md §5.0), and is still a line of work
+                -- a person must be able to find: its activity is when it opened, until a message says otherwise. One
+                -- that was named and never used — no message, no participant, no file — still does not appear.
+                activity AS (
+                    SELECT c.id                                   AS id,
+                           coalesce(m.messages, 0)                AS messages,
+                           coalesce(m.first_utc, c.opened_utc)    AS first_utc,
+                           coalesce(m.last_utc, c.opened_utc)     AS last_utc
+                      FROM conversations c
+                      LEFT JOIN messaged m ON m.id = c.id
+                     WHERE m.id IS NOT NULL
+                        OR EXISTS (SELECT 1 FROM conversation_participants p WHERE p.conversation_id = c.id)
+                        OR EXISTS (SELECT 1 FROM shared_files f WHERE f.conversation_id = c.id)
                 )
                 SELECT c.id                                       AS Id,
                        a.messages                                 AS Messages,
@@ -791,41 +827,38 @@ public sealed class ConversationRepository(SqliteConnection connection)
         return summaries;
     }
 
-    /// <summary>
-    /// Counts the archived conversations a listing with the same filters would have omitted.
-    /// </summary>
-    /// <param name="participant">Restrict to conversations this agent is party to, or null for all.</param>
+    /// <summary>Counts the archived conversations a listing with the same filters would have omitted.</summary>
+    /// <param name="participant">Restrict to conversations this participant is party to, or null for all.</param>
     /// <param name="sinceUtc">Only those last active at or after this instant, if given.</param>
     /// <param name="untilUtc">Only those last active at or before this instant, if given.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>How many were left out.</returns>
     /// <remarks>
-    /// <para>
-    /// Counted across the whole filtered set rather than per page, because it answers <i>are there
-    /// archived conversations here</i> and a per-page number would answer something narrower that
-    /// looks the same. A caller on page three seeing zero would conclude there were none.
-    /// </para>
-    /// <para>
-    /// It exists because archiving does not stop a conversation receiving messages. Without this
-    /// number a surface hiding archived conversations would be hiding traffic, and would have no
-    /// way to know it.
-    /// </para>
+    /// Across the whole filtered set rather than per page, and part of the listing contract: archiving
+    /// does not stop a conversation receiving messages, so a surface that could not tell archived ones
+    /// existed would be hiding traffic.
     /// </remarks>
     public async Task<int> CountArchivedAsync(
         AgentName? participant = null,
         DateTimeOffset? sinceUtc = null,
         DateTimeOffset? untilUtc = null,
-        CancellationToken cancellationToken = default)
-    {
-        return await _connection.ExecuteScalarAsync<int>(
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteScalarAsync<int>(
             new CommandDefinition(
                 """
-                WITH activity AS (
+                WITH messaged AS (
                     SELECT conversation_id      AS id,
                            max(created_utc)     AS last_utc
                       FROM messages
-                     WHERE conversation_id IS NOT NULL
                      GROUP BY conversation_id
+                ),
+                activity AS (
+                    SELECT c.id AS id, coalesce(m.last_utc, c.opened_utc) AS last_utc
+                      FROM conversations c
+                      LEFT JOIN messaged m ON m.id = c.id
+                     WHERE m.id IS NOT NULL
+                        OR EXISTS (SELECT 1 FROM conversation_participants p WHERE p.conversation_id = c.id)
+                        OR EXISTS (SELECT 1 FROM shared_files f WHERE f.conversation_id = c.id)
                 )
                 SELECT count(*)
                   FROM conversations c
@@ -845,7 +878,6 @@ public sealed class ConversationRepository(SqliteConnection connection)
                     Until = Format(untilUtc)
                 },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
-    }
 
     /// <summary>Puts a conversation out of the ordinary listing, or brings it back.</summary>
     /// <param name="conversationId">The conversation.</param>
@@ -855,22 +887,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>Whether anything changed.</returns>
     /// <remarks>
-    /// <para>
-    /// One method for both directions because they are one column, and two would be two places to
-    /// get the guard below wrong.
-    /// </para>
-    /// <para>
-    /// <b>The state column is not touched and must not be.</b> Archiving is orthogonal to the
-    /// closure lifecycle of SPEC.md §5.0: an operator may file away a conversation that is still
-    /// open, and closing one does not file it. Writing to <c>state</c> here would make the first
-    /// conversation that was both lose one of the two facts.
-    /// </para>
-    /// <para>
-    /// The <c>IS NULL</c> guards make this idempotent, so archiving twice reports no change rather
-    /// than moving the timestamp. An operator who archived something last week and clicks again
-    /// has not re-archived it today, and a surface showing the second date would be reporting an
-    /// event that did not happen.
-    /// </para>
+    /// The state column is not touched: archiving is orthogonal to closure. The <c>IS NULL</c> guards make
+    /// it idempotent, so archiving twice does not move the timestamp to an event that did not happen.
     /// </remarks>
     public async Task<bool> SetArchivedAsync(
         string conversationId,
@@ -894,11 +912,7 @@ public sealed class ConversationRepository(SqliteConnection connection)
                          SET archived_utc = NULL
                        WHERE id = @Conversation AND archived_utc IS NOT NULL;
                       """,
-                new
-                {
-                    Conversation = conversationId,
-                    When = ExchangeRow.FormatTimestamp(nowUtc)
-                },
+                new { Conversation = conversationId, When = ExchangeRow.FormatTimestamp(nowUtc) },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
@@ -908,19 +922,7 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// <summary>Reads what is left of a conversation that was destroyed.</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>The record, or <see langword="null"/> when no such conversation was destroyed.</returns>
-    /// <remarks>
-    /// <para>
-    /// Null and a record are two different answers and both are useful: null means no conversation
-    /// of that name was ever destroyed, which -- together with an empty message list -- says the
-    /// identifier was never used at all. A record says it was, and when, and how much went.
-    /// </para>
-    /// <para>
-    /// The participants come back as one value because that is how they are stored: a row per
-    /// participant would outlive the agents it named and need a cascade of its own, for a table
-    /// nothing joins against.
-    /// </para>
-    /// </remarks>
+    /// <returns>The record, or <see langword="null"/> when no conversation of that name was destroyed.</returns>
     public async Task<DestroyedConversation?> GetDestroyedAsync(
         string conversationId,
         CancellationToken cancellationToken = default)
@@ -957,29 +959,20 @@ public sealed class ConversationRepository(SqliteConnection connection)
 
     /// <summary>Deletes a conversation and everything belonging to it.</summary>
     /// <param name="conversationId">The conversation.</param>
-    /// <param name="nowUtc">The current instant, recorded on the tombstone.</param>
+    /// <param name="nowUtc">The current instant, recorded on what is left.</param>
     /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>What was destroyed, per table.</returns>
     /// <remarks>
     /// <para>
-    /// <b>Foreign keys deferred to commit, and deliberately not cascading</b> — the same shape as
-    /// <c>AgentRepository.PurgeAsync</c> and for the same load-bearing reason. A cascade deletes
-    /// whatever it reaches and reports nothing, so a reference added by a later migration is swept
-    /// silently, and one added in the wrong place is swept silently too. A deferred check refuses
-    /// at commit and rolls the whole thing back, which is what SPEC.md §9.3 means by an invariant
-    /// belonging in storage rather than in whichever code happens to be running.
+    /// <b>Foreign keys deferred to commit, and deliberately not cascading</b> — the shape of
+    /// <c>AgentRepository.PurgeAsync</c>. A cascade deletes whatever it reaches and reports nothing, so a
+    /// reference added later is swept silently; a deferred check refuses at commit and rolls everything
+    /// back (§14).
     /// </para>
     /// <para>
-    /// <b>The tombstone is written before the deletes.</b> It has to be: the participants and the
-    /// message count are read from rows this method is about to remove, and computing them
-    /// afterwards would record zero of everything.
-    /// </para>
-    /// <para>
-    /// It holds facts and no content — §9.4 argues that a log kept past its usefulness grows the
-    /// blast radius of a leaked database, and keeping message text past a destroy is that argument
-    /// inverted. It also keeps the identifier taken, so a new conversation cannot be opened under
-    /// the name of one somebody already holds an export of.
+    /// The record is written before the deletes, because the participants and the message count are read
+    /// from rows about to go. It holds facts and no content, and keeps the identifier taken.
     /// </para>
     /// </remarks>
     public async Task<DestroyOutcome> DestroyAsync(
@@ -1024,27 +1017,47 @@ public sealed class ConversationRepository(SqliteConnection connection)
                 scope.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        // See the remarks: not cascading is the guard, so a table nobody remembered fails the
-        // commit rather than leaving a row pointing at a conversation that has gone.
         await ExecuteAsync("PRAGMA defer_foreign_keys = ON;").ConfigureAwait(false);
 
         var toll = new Dictionary<string, int>(StringComparer.Ordinal);
 
-        await RazeAsync(
-            "message_referrals",
-            """
-            DELETE FROM message_referrals
-             WHERE exchange_id IN (SELECT id FROM exchanges
-                                    WHERE conversation_id = @Conversation);
-            """).ConfigureAwait(false);
+        foreach (var table in new[] { "result_sources", "result_items", "conversation_cycles" })
+        {
+            await RazeAsync(
+                table,
+                // Interpolated because a table name cannot be a parameter; the name comes from the
+                // array above and nowhere else.
+                $"""
+                DELETE FROM {table}
+                 WHERE exchange_id IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation);
+                """).ConfigureAwait(false);
+        }
+
+        await RazeAsync("messages", "DELETE FROM messages WHERE conversation_id = @Conversation;")
+            .ConfigureAwait(false);
+
+        await RazeAsync("exchanges", "DELETE FROM exchanges WHERE conversation_id = @Conversation;")
+            .ConfigureAwait(false);
+
+        // Its files (SPEC.md §14): every agent that fetched one is told it is gone before the records that say who
+        // fetched what are deleted, and the rows are reported like every other. The folder on disk is the server's
+        // to delete; the notices stay, having no key to the conversation, so the agents are still told.
+        await new FileNoticeRepository(_connection).RaiseGoneForConversationsAsync(
+            ConversationScope.One,
+            new { Conversation = conversationId, When = ExchangeRow.FormatTimestamp(nowUtc) },
+            scope.Transaction,
+            cancellationToken).ConfigureAwait(false);
+
+        await RazeAsync("file_fetches", "DELETE FROM file_fetches WHERE conversation_id = @Conversation;")
+            .ConfigureAwait(false);
+
+        await RazeAsync("shared_files", "DELETE FROM shared_files WHERE conversation_id = @Conversation;")
+            .ConfigureAwait(false);
 
         await RazeAsync(
-            "messages",
-            "DELETE FROM messages WHERE conversation_id = @Conversation;").ConfigureAwait(false);
-
-        await RazeAsync(
-            "exchanges",
-            "DELETE FROM exchanges WHERE conversation_id = @Conversation;").ConfigureAwait(false);
+            "conversation_folders",
+            "DELETE FROM conversation_folders WHERE conversation_id = @Conversation;")
+            .ConfigureAwait(false);
 
         await RazeAsync(
             "conversation_participants",
@@ -1057,11 +1070,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
             VALUES (@Conversation, @When, @Messages, @Participants);
             """).ConfigureAwait(false);
 
-        // Not tolled, for the reason a purge does not toll the agent's own row: the toll is an
-        // account of collateral, and the conversation is the thing that was asked for. Counting it
-        // would make an empty toll impossible and cost the report its clearest reading.
-        await ExecuteAsync("DELETE FROM conversations WHERE id = @Conversation;")
-            .ConfigureAwait(false);
+        // Not tolled: the toll is an account of collateral, and the conversation is what was asked for.
+        await ExecuteAsync("DELETE FROM conversations WHERE id = @Conversation;").ConfigureAwait(false);
 
         scope.Complete();
 
@@ -1088,7 +1098,6 @@ public sealed class ConversationRepository(SqliteConnection connection)
         async Task RazeAsync(string table, string sql)
         {
             var rows = await ExecuteAsync(sql).ConfigureAwait(false);
-
             toll[table] = toll.GetValueOrDefault(table) + rows;
         }
     }
@@ -1097,17 +1106,13 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// <param name="instant">The instant.</param>
     /// <returns>The stored form, or <see langword="null"/>.</returns>
     /// <remarks>
-    /// <see cref="ExchangeRow.FormatTimestamp(DateTimeOffset)"/>'s rendering, and it has to be exactly that
-    /// one because these values are compared as text in SQL. A <see cref="DateTime"/> formatted
-    /// with "O" ends in <c>Z</c>; a <see cref="DateTimeOffset"/> ends in <c>+00:00</c>. They
-    /// describe the same instant and do not sort the same way — <c>Z</c> orders after <c>+</c> —
-    /// so a bound rendered the first way admits rows it was meant to exclude. Found by a paging
-    /// test returning a conversation it had already returned.
+    /// Exactly <see cref="ExchangeRow.FormatTimestamp(DateTimeOffset)"/>'s rendering, because these values
+    /// are compared as text: a <see cref="DateTime"/> rendered with "O" ends in <c>Z</c> and sorts after
+    /// the same instant ending in <c>+00:00</c>.
     /// </remarks>
     private static string? Format(DateTimeOffset? instant) =>
         instant is null ? null : ExchangeRow.FormatTimestamp(instant.Value);
 
-    /// <summary>One row of the operator listing, before its participants are read.</summary>
     private sealed class DestroyedRow
     {
         public string Id { get; init; } = string.Empty;
@@ -1137,9 +1142,14 @@ public sealed class ConversationRepository(SqliteConnection connection)
     private sealed class ConversationRow
     {
         public string Id { get; init; } = "";
+
         public string State { get; init; } = "";
+
         public string OpenedUtc { get; init; } = "";
+
         public string? ClosedUtc { get; init; }
+
+        public string? ClosedBy { get; init; }
 
         public ConversationRecord ToDomain() => new(
             Id,
@@ -1151,6 +1161,13 @@ public sealed class ConversationRepository(SqliteConnection connection)
                 _ => throw new InvalidOperationException($"Unrecognised conversation state '{State}'.")
             },
             ExchangeRow.ParseTimestamp(OpenedUtc),
-            ClosedUtc is null ? null : ExchangeRow.ParseTimestamp(ClosedUtc));
+            ClosedUtc is null ? null : ExchangeRow.ParseTimestamp(ClosedUtc),
+            ClosedBy switch
+            {
+                null => null,
+                "consensus" => ConversationCloser.Consensus,
+                "person" => ConversationCloser.Person,
+                _ => throw new InvalidOperationException($"Unrecognised closer '{ClosedBy}'.")
+            });
     }
 }

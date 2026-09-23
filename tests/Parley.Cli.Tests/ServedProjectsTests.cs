@@ -72,40 +72,43 @@ public sealed class ServedProjectsTests : IDisposable
     }
 
     [Fact]
-    public void Each_project_names_all_three_of_its_files()
+    public void Each_project_names_both_of_its_files()
     {
-        // **A deployment is three files per project and they are rarely together.** The manifest is
-        // the only one the entry itself names; the store and the catalogue live inside it, and on the
-        // machine that found this they were in different directories from each other and from the
-        // manifest. A path somebody has to go and look up is a path they cannot check against what
-        // they meant.
-        var catalogue = Path.Combine(_root, "alpha-node.json");
-
-        Write(("alpha", catalogue));
+        // **Two files per project now, and they are still rarely together.** This asked for three and
+        // the third was the catalogue, which stopped being a property of a project in 018. The store
+        // and the endpoint remain genuinely per project, and on the machine that found this they were
+        // in different directories from each other and from the manifest — which is the whole reason
+        // naming the manifest alone was not enough.
+        Write(("alpha", Path.Combine(_root, "alpha-node.json")));
 
         var text = string.Join("\n", AutostartCommand.ServedProjects(ManifestPath));
 
         Assert.Contains("alpha", text, StringComparison.Ordinal);
         Assert.Contains(Path.Combine(_root, "alpha.db"), text, StringComparison.Ordinal);
-        Assert.Contains(catalogue, text, StringComparison.Ordinal);
         Assert.Contains("http://127.0.0.1:7100", text, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void A_project_that_starts_agents_is_told_apart_from_one_that_does_not()
+    public void No_project_is_given_a_catalogue_of_its_own()
     {
-        // The distinction the `hosts:` rule states and never applies. A project with no catalogue is
-        // served — its broker comes up and answers — and starts nothing here, which is a different
-        // fact from not being served at all, and the one that reads as a fault when it is not.
-        Write(("alpha", Path.Combine(_root, "alpha-node.json")), ("beta", null));
+        // **The defect the owner met on 0.31.0's install**, and it is the interesting direction: the
+        // manifest still carries `node_config` per project, because nothing has deleted the field yet
+        // (T027) — so a command that goes on reading it prints a path that is still in the file and no
+        // longer decides anything. The broker two lines further up the same output said it was hosting
+        // from somewhere else entirely, which is the shape of every defect this repository keeps
+        // recording: two answers to one question, one of them unreachable from the code that matters.
+        //
+        // Written against a manifest whose entries *do* name catalogues, since a manifest with none
+        // would pass this by having nothing to leak.
+        Write(
+            ("alpha", Path.Combine(_root, "alpha-node.json")),
+            ("beta", Path.Combine(_root, "beta-node.json")));
 
-        var lines = AutostartCommand.ServedProjects(ManifestPath);
+        var text = string.Join("\n", AutostartCommand.ServedProjects(ManifestPath));
 
-        var alpha = Assert.Single(lines, line => line.Contains("alpha-node.json", StringComparison.Ordinal));
-        var beta = Assert.Single(lines, line => line.Contains("starts no agents", StringComparison.Ordinal));
-
-        Assert.Contains("alpha-node.json", alpha, StringComparison.Ordinal);
-        Assert.Contains("starts no agents for it", beta, StringComparison.Ordinal);
+        Assert.DoesNotContain("alpha-node.json", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("beta-node.json", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("catalogue", text, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -119,18 +122,59 @@ public sealed class ServedProjectsTests : IDisposable
     }
 
     [Fact]
-    public void The_catalogue_named_is_the_one_the_project_names()
+    public void The_catalogue_reported_is_the_one_beside_the_manifest()
     {
-        // Not a guess at a default. A project's catalogue is wherever its manifest entry says, and on
-        // the deployment that found this the two projects' catalogues were in different directories
-        // entirely — which is precisely why naming the manifest was not enough.
-        var elsewhere = Path.Combine(_root, "somewhere", "else.json");
+        // One per machine, and the entry names none of its own — so the broker it starts resolves the
+        // file beside the manifest it serves. Asserted against `ProjectResolution`'s own answer rather
+        // than against a path built here: a second spelling of this rule in a test is how the test
+        // comes to pass while the code is wrong, which is what `KeyRuleTests` caught during 018.
+        Write(("alpha", Path.Combine(_root, "alpha-node.json")));
 
-        Write(("alpha", elsewhere));
+        Assert.Equal(
+            Path.GetFullPath(Path.Combine(_root, NodeCatalogue.DefaultFileName)),
+            AutostartCommand.MachineCatalogue(null, ManifestPath));
+    }
 
-        Assert.Contains(
-            elsewhere,
-            string.Join("\n", AutostartCommand.ServedProjects(ManifestPath)),
-            StringComparison.Ordinal);
+    [Fact]
+    public void The_variable_this_shell_holds_does_not_change_what_is_reported()
+    {
+        // **The entry runs with no environment, so reporting what this shell resolves would be a lie
+        // told confidently.** A supervisor starts the broker at logon and nothing has set
+        // `PARLEY_NODE_CONFIG` there, so a path taken from the developer's own variable names a file
+        // the logon broker will never open — and it would look right to whoever ran the installer,
+        // which is the only moment somebody checks.
+        //
+        // This is 018's live-file incident read from the other side: there, ambient state was read at
+        // the bottom of a call stack and wrote into a real deployment; here it would be read at the
+        // top and describe one that does not exist.
+        Write(("alpha", null));
+
+        var previous = Environment.GetEnvironmentVariable(NodeCatalogue.PathVariable);
+
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                NodeCatalogue.PathVariable, Path.Combine(_root, "from-the-shell.json"));
+
+            Assert.Equal(
+                Path.GetFullPath(Path.Combine(_root, NodeCatalogue.DefaultFileName)),
+                AutostartCommand.MachineCatalogue(null, ManifestPath));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(NodeCatalogue.PathVariable, previous);
+        }
+    }
+
+    [Fact]
+    public void A_catalogue_named_on_the_command_line_is_what_the_entry_will_host_from()
+    {
+        // The one input that does survive into the entry, because it is written onto its command line
+        // rather than read out of an environment that will not be there.
+        Write(("alpha", null));
+
+        var named = Path.Combine(_root, "chosen.json");
+
+        Assert.Equal(named, AutostartCommand.MachineCatalogue(named, ManifestPath));
     }
 }

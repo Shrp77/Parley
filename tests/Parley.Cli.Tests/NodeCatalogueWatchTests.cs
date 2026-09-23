@@ -212,10 +212,50 @@ public sealed class NodeCatalogueWatchTests : IDisposable
     private void MoveWorkspace(string role, string workspaceSuffix) =>
         WriteCatalogue([role], workspaceSuffix);
 
+    /// <summary>Which agent each role belongs to, fixed for the length of one test.</summary>
+    /// <remarks>
+    /// **A role keeps its identity across rewrites, because a checkout does** (018). The catalogue is
+    /// keyed by the identity and the name comes back out of the checkout, so minting a new one per write
+    /// would make every rewrite look like a different agent arriving — which is the opposite of what
+    /// these tests are about, and would make the "same roles, no rejoin" case rejoin every time.
+    /// </remarks>
+    private readonly Dictionary<string, AgentIdentity> _identities = new(StringComparer.Ordinal);
+
     private void WriteCatalogue(string[] roles, string workspaceSuffix)
     {
-        var entries = roles.Select(role =>
-            $"    \"{role}\": {{ \"command\": \"claude\", \"workspace\": \"{Escaped(role, workspaceSuffix)}\" }}");
+        var entries = new List<string>();
+
+        foreach (var role in roles)
+        {
+            if (!_identities.TryGetValue(role, out var identity))
+            {
+                identity = AgentIdentity.Mint();
+                _identities[role] = identity;
+            }
+
+            var workspace = Path.Combine(_directory, role + workspaceSuffix);
+
+            Directory.CreateDirectory(workspace);
+
+            // The checkout declares what this project calls it, which is what the node announces.
+            File.WriteAllText(
+                Path.Combine(workspace, LaunchConfiguration.FileName),
+                $$"""
+                {
+                  "mcpServers": {
+                    "parley-acme": {
+                      "command": "parley-mcp",
+                      "env": { "PARLEY_AGENT": "{{role}}" }
+                    }
+                  },
+                  "{{LaunchConfiguration.IdentityMember}}": "{{identity}}"
+                }
+                """);
+
+            entries.Add(
+                $"    \"{identity}\": {{ \"command\": \"claude\", "
+                + $"\"workspace\": \"{Escaped(role, workspaceSuffix)}\" }}");
+        }
 
         File.WriteAllText(
             CataloguePath,

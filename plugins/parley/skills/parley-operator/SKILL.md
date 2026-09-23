@@ -19,7 +19,8 @@ binary. Reaching them means running this program.
 Run these when the person asks for them. Do not run them to get around the protocol.
 
 - `force-conclude` closes a discussion the participants have not agreed to close. It is not a
-  way past a gate an agent is waiting on. If a question is blocked, the answer is to answer it.
+  way past something an agent is waiting on. If a request is blocked on an answer, the answer is to
+  give it.
 - `export` prints every message in a discussion, across agents. That is exactly the context
   Parley keeps apart, so it is for a person reading back a decision - not a way to hand one
   agent another's reasoning. Do not paste an export into an agent's session as a shortcut for
@@ -64,9 +65,14 @@ parley project add orders --db C:/parley/orders.db --listen http://127.0.0.1:517
 parley --project orders registry
 ```
 
-With exactly one project configured, `--project` is unnecessary. With more than one and none
-named, **every command refuses and lists them rather than choosing** - picking silently would
-act on a deployment nobody asked for, and the output would look entirely normal.
+A command acts on the project `--project` names; failing that, `PARLEY_PROJECT`, which `parley
+use <name>` prints the line to set for one terminal; failing that, the one the repository it
+runs in names in `.mcp.json`, when exactly one of them is a project this machine has; failing
+that, the only project. With several and nothing of those choosing, **every command refuses and
+lists them rather than choosing** - picking silently would act on a deployment nobody asked for,
+and the output would look entirely normal. On such a machine each command says on standard error
+which project it acted on and why. Run from inside a repository enrolled in one project, nothing
+needs naming.
 
 **A machine with no projects is an ordinary machine.** The manifest is optional, nothing reports
 its absence, and every flag and environment variable that worked before still works and still
@@ -84,7 +90,7 @@ Removing a project and deleting its store are two decisions, so deleting has its
 catalogue, and lists the repositories that were agents in it, whose launch configuration still
 names it. A broker it does not own - one started by hand - is reported and left running.
 
-**Retiring and purging an agent can also be done from `parley top`, since 2026-09-05.** The rule
+**Retiring and purging an agent can also be done from `parley terminal`, since 2026-09-05.** The rule
 that kept them off it was that a purge behind a keystroke is a different risk from one behind a page
 describing it first; what the rule asks for is a description and a deliberate act, and the terminal
 now gives both. It describes the agent — what it is, where it runs, what it owns, and any answer it
@@ -93,32 +99,42 @@ purging. A purge that would leave an asker waiting names them and what they will
 acceptance before the name. `force-conclude`, `instruct` and `prune` remain command-line only, and a
 test fails the build if one appears on that surface.
 
-The terminal can also add an agent: it names a repository directory and writes the same two files
-`parley enroll apply` writes for one repository. The agent then reads as *catalogued, not yet
-registered* until its own server attaches once — nothing on an operator's surface may register on a
-repository's behalf.
+The terminal can also add an agent: a repository is picked by walking to it, and the same files
+`parley enroll apply` writes for one repository are written — the launch configuration, the
+repository's own instructions file, and a line in the project's catalogue. It then asks the machine
+to start the agent once, and the agent registers itself as it attaches: nothing on an operator's
+surface may register on a repository's behalf, so the start is a request and the registration is the
+agent's own act.
 
-**With projects named, `parley autostart install` needs no `--db`.** The entry then serves every
-project in the manifest from one process, hosts this machine's node in each project whose entry
-names a catalogue, and starts a project named later within seconds. `parley autostart status`
-says which form is installed and, for the one-store form, how to switch.
+A repository already started unattended by another project gets no catalogue line in the second one,
+and is started through the project that does start it.
+
+**`parley autostart install` serves the manifest.** The entry serves every project in it from
+one process, hosts this machine's node in each project whose entry
+names a catalogue (on a machine with one project `PARLEY_NODE_CONFIG` wins when it is set, as it
+does for `parley up`), and starts a project named later within seconds. `parley autostart status`
+says which form is installed and, for the one-store form, how to switch. That form -
+`autostart install --db` - and `parley serve --db` and `PARLEY_DB` are for testing only: a
+deployment names its stores with `parley project add`.
 
 ## The commands
 
 ```
-parley serve --db <path>              run the broker: the one process that opens the store
+parley serve                          run the broker: the one process that opens the stores
+parley serve --db <path>              one store by hand, outside the manifest: testing only
 parley serve --with-node              and this machine's node in the same process
-parley autostart install              start both whenever you log in; with projects named
-                                      and no --db, serve every project in the manifest
+parley autostart install              start both whenever you log in, serving every project
+                                      in the manifest (--db: one store, testing only)
 parley autostart remove               stop doing that
 parley autostart status               say whether it is set up, and what it serves
 parley up                             run this machine's node, so its agents can be started
 parley web-ui [<url>]                 the operator's web UI in a browser; loopback by default
                                       (its own tool: parley-web-ui, installed separately)
-parley top                            the same deployment in this terminal; needs a real one
-                                      (its own tool: parley-top, installed separately)
+parley terminal                       the same deployment in this terminal; needs a real one
+                                      (its own tool: parley-terminal, installed separately)
 
 parley project list                   what this machine is configured for
+parley use [<name>] [--shell <name>]  the project this terminal's commands act on (--clear to stop)
 parley project add <name> --db <path> --listen <url>    name a deployment
 parley project set <name> [--db] [--listen] [--node-config] [--description]   change one
 parley project remove <name>          forget how to reach one; deletes nothing
@@ -135,13 +151,24 @@ parley retire <agent>                 withdraw a registration
 parley reinstate <agent>              the only thing that clears a retirement
 parley purge <agent>                  DESTROY an agent and everything it was party to
 parley export <conversation>          every message in a discussion, across agents
-parley force-conclude <conv>          close a discussion over its participants' votes
+parley force-conclude <conv> [<reason>]  close a conversation now, over its participants' votes
 parley prune                          apply the retention policy now
+parley instruct <agent> <words>       give an agent a person's words as a turn; it may decline
+parley start <agent>                  ask the machine that holds an agent to start it
+parley archive <conversation>         take a conversation off the list; deletes nothing
+parley unarchive <conversation>       put an archived conversation back
+parley destroy <conversation>         DESTROY a conversation and every message in it
+parley files list [--conversation <id>] [--full]  the files agents placed: size, sha256, who placed each
+parley files remove <name>... [--conversation <id>] [--yes]  remove files whoever placed them; describes them and asks
+parley files prune [--yes-remove-every-file]  REMOVE every file; asks for the project's name
+parley files open <name>... [--conversation <id>]  open files in their editor here, or say where they are
+parley files folder [--conversation <id>] open a conversation's folder, or say where it is
 parley refusals                       what the message size cap refused
-parley clarifications                 how deep clarification went, and whether the cap binds
-parley referrals                      where questions are sent onward, and to whom
-parley notifications                  how much Notify carries, and who can judge it
-parley waiting <agent>                how many messages and polls await an agent
+parley clarifications                 how deep clarification went, and whether a cap binds
+parley results                        what Results reported: outcomes, and what blocked
+parley flags                          open work nobody collected or nobody is moving, and
+                                      conversations waiting only on somebody's vote
+parley waiting <agent|role>           how many messages and polls await an agent
 parley open                           conversations with an exchange still open, and who is in
                                       them; what stopping the broker would interrupt
 parley instructions [<agent>]         what you told your agents, what became of each, and what
@@ -183,7 +210,8 @@ there is a real service, which does need privilege.
 
 `serve` is the broker. It opens the store, migrates it, and serves every agent and node in the
 project. Nothing else opens the file - so this is also the only command that can create one, and
-the only one that takes `--db`.
+the only one that takes `--db` - which is for testing only, since a deployment's stores are
+named with `parley project add`.
 
 `up` is this machine's node. It tells the broker the machine is here, which is what makes the
 agents registered to it startable rather than stranded, and starts one when a question arrives
@@ -224,8 +252,9 @@ shell's, not the deployment's, and the agents have been quietly enforcing someth
 a file the person owns, and it is the only copy that outlives the policy.
 
 A floor bounds it in the other direction and is not configurable: no amount of tightening
-deletes a message nobody has collected yet, the question of an exchange that is still open, or
-the recent rows deduplication is still reading.
+deletes a message nobody has collected yet, anything on an exchange that is still open, the
+request a result nobody has collected yet carries back, or the recent rows deduplication is still
+reading.
 
 ## The caps, and the evidence for them
 
@@ -239,9 +268,8 @@ that was refused for being too long would retain exactly what the cap exists to 
 somebody wants the cap raised, this is what the argument should be made from.
 
 `clarifications` is the same idea for the other cap, and it reads a question the spec has left
-open rather than settling one. It reports how deep clarification actually goes, how often an
-exchange reached its limit, whether the broker had to force an `unknown`, and whether answers
-ever resolve sub-questions differently from one another.
+open rather than settling one. It reports how deep clarification actually goes and how often an
+exchange reached its limit.
 
 Read the caps it prints beside the distribution, because a cap censors its own evidence: depths
 pile up at whatever limit was in force, whether the true need was one more or forty more. A
@@ -249,36 +277,23 @@ distribution with a heap at the top is a truncated measurement, not a finding. R
 far above any plausible need and watching where depth actually settles is the only way to learn
 what it should be - and if depth is almost always zero, the cap was never what kept it low.
 
-`referrals` is the third of these and the only one that points at something a person can fix. It
-reports, per pair, how many closed exchanges the answerer resolved as `out_of_scope` and who it
-named instead. A high rate is not an agent behaving badly - it is two repositories that disagree
-about where a boundary runs, or one holding a stale idea of what the other owns.
+`results` is the one that points at something a person can fix. It reports what Results said,
+item by item: how much was done, answered or acknowledged, and how much came back blocked -
+and on what, `missing_information`, `conflict` or `permission`. A blocker is not an agent
+behaving badly. It is the protocol handing a person the one thing no agent could resolve, and
+the Result's text says exactly what is needed. Read the blocked ones first.
 
-The two halves come from different places and have different reach. The rate is counted from
-exchanges, which retention never touches, so it covers the whole life of the deployment. The
-names come from a record kept beside the messages, because `redirect_to` used to live only in a
-payload that `prune` deletes. Neither half keeps any text.
-
-When it points somewhere, the fix is in whatever the project uses to record ownership, and in the
-`PARLEY_OWNS` line of the agent being asked wrongly. Not here.
-
-`notifications` is a measurement rather than a check on anything. Nothing limits how many
-notifications an agent may send - deliberately, while there is no evidence for what a limit
-should be - so this reports how many were sent, how big they were, between whom, and over what
-span. Compare the mean against the single-message cap it prints beside it.
-
-Since protocol 0.4 a notification also *starts* its recipient, so this volume now costs turns
-on somebody's machine rather than only context. The turns are bounded and the messages are
-not: a recipient is woken once until it reads its inbox, however many notices arrive. So a
-high count here is still the cue to ask, and what it costs is in `invocations`.
-
-It also totals what each agent has received, and marks the ones past ten. That is the cue to go
-and ask that agent whether any of it was worth having: volume alone cannot tell a useful stream
-of contract changes from noise, and the only participant who knows is the one reading them.
+`flags` is what needs a person *now*. Nothing in Parley times out, so work that has stopped
+moving is not closed for you - it is flagged: a message its recipient has not collected past its
+threshold, an open exchange where nobody has sent anything for too long, work owed by an agent
+that has been retired, or a conversation whose work is all closed and which is waiting only on a
+participant saying whether it is finished. A flag on work names the exchange and who holds the
+next move; a flag on a vote names the conversation and who has not answered. Starting the agent,
+answering what it is waiting on, or `force-conclude` with a reason are the remedies.
 
 The cap is set per agent, by `PARLEY_CLARIFY_CAP` in that repository's `.mcp.json`, and it is the
-**asker's** cap that governs an exchange. Raising it in one repository widens only the questions
-that repository asks. To measure across a project, raise it everywhere - and check the range this
+**requester's** cap that governs an exchange. Unset, there is no cap. Raising it in one repository widens only the requests
+that repository sends. To measure across a project, raise it everywhere - and check the range this
 command prints, because a half-applied change shows up there as two different caps in force.
 
 ## Reporting back

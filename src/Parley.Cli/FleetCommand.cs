@@ -87,11 +87,15 @@ public sealed class FleetCommand
         // Said at start-up because the alternative is finding out per agent, per pass, in a skip
         // reason. A machine told about nothing still reaps and still reports; it simply launches
         // nothing, and an operator who expected otherwise should learn it here.
-        await WriteAsync(_catalogue.Roles.Count == 0
+        // The names come from the repositories the catalogue points at (018 R3). This sweeper serves no one
+        // project, so it accepts a claim from any — and a name two workspaces claim is offered by neither.
+        var startable = _catalogue.Announceable(project: null).Names;
+
+        await WriteAsync(startable.Count == 0
             ? $"This machine can start nothing: no {NodeCatalogue.DefaultFileName} names any agents."
             : string.Create(
                 CultureInfo.InvariantCulture,
-                $"Can start: {string.Join(", ", _catalogue.Roles.Order(StringComparer.Ordinal))}."))
+                $"Can start: {string.Join(", ", startable)}."))
             .ConfigureAwait(false);
 
         await WriteAsync("Press Ctrl+C to stop the fleet and every agent it started.")

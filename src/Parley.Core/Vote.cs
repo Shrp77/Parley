@@ -1,42 +1,30 @@
 namespace Parley.Core;
 
 /// <summary>
-/// A participant's answer to a closure poll, per SPEC.md §5.0.
+/// A participant's answer to a closure poll (SPEC.md §5.0).
 /// </summary>
 /// <remarks>
 /// <para>
-/// Two values and no abstention, because silence already means something. A participant that
-/// does not answer within the window §14 uses to abandon an orphan is taken to agree, so the
-/// absence of a vote is the assent — and a third value meaning "no opinion" would be
-/// indistinguishable from it while costing an agent a call to say so.
+/// Two values and no abstention. A participant that has not answered has not agreed — silence does not
+/// assent — so the absence of a vote already means "not yet", and a third value would say the same
+/// thing at the cost of a call.
 /// </para>
 /// <para>
-/// The asymmetry between the two is the whole design. <see cref="Done"/> is one voice among
-/// several and settles nothing on its own; <see cref="NotDone"/> settles the poll immediately,
-/// because §5.0 refuses to let a majority conclude over an objection — that would be authority
-/// over another agent by a different name.
+/// The asymmetry between the two is the design. <see cref="Done"/> is one voice and settles nothing on
+/// its own; <see cref="NotDone"/> blocks closure outright, because a majority that can close over an
+/// objection is authority over another participant by a different name.
 /// </para>
 /// </remarks>
 public enum Vote
 {
-    /// <summary>
-    /// This participant considers the discussion finished.
-    /// </summary>
+    /// <summary>This participant considers the conversation finished.</summary>
     Done = 0,
 
-    /// <summary>
-    /// This participant has a live concern and closure is blocked.
-    /// </summary>
+    /// <summary>This participant has a live concern, and closure is blocked.</summary>
     /// <remarks>
-    /// Durable, but not something the agent must remember: §5.0 has the broker re-deliver the
-    /// closure question when the conversation next falls idle, because depending on an agent to
-    /// revisit a subject unprompted is what §7.3 says plainly does not work.
-    /// <para>
-    /// It lapses with its holder. An agent marked <c>unreachable</c> or <c>retired</c> no longer
-    /// blocks, since a judgement is only worth honouring while the agent that made it can still
-    /// act on it, and a discussion held open by a repository that no longer exists is the churn
-    /// §14 exists to stop.
-    /// </para>
+    /// Durable, and changed by calling again. It lapses with its holder: a retired participant's
+    /// decline no longer blocks, since a judgement is only worth honouring while the agent that made it
+    /// can act on it.
     /// </remarks>
     NotDone = 1
 }

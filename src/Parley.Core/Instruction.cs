@@ -46,15 +46,41 @@ public enum InstructionOutcome
     /// </remarks>
     Declined = 2,
 
-    /// <summary>Nothing was given: the machine holding the agent is not connected.</summary>
+    /// <summary>
+    /// Nothing was given: the machine holding the agent is not connected, or the agent is not running there.
+    /// </summary>
     /// <remarks>
+    /// <para>
     /// Distinct from <see cref="Failed"/> because the remedy is different and the operator can
-    /// act on it — the machine is off, and no amount of re-sending will change that.
+    /// act on it — re-sending changes nothing until something is running to receive it.
+    /// </para>
+    /// <para>
+    /// <b>Two causes, and every surface named only one.</b> A node gives an instruction only to an agent it already holds,
+    /// and reports this when it holds none, so the owner instructed an agent that was simply not running and was told its
+    /// machine was not connected — beside a node that was. <see cref="InstructionWording.Undeliverable"/> is the one
+    /// sentence now.
+    /// </para>
     /// </remarks>
     Undeliverable = 3,
 
     /// <summary>The turn was attempted and did not complete.</summary>
     Failed = 4
+}
+
+/// <summary>
+/// The words every surface uses for an instruction outcome that is the same fact wherever it is shown.
+/// </summary>
+/// <remarks>
+/// Here rather than on each surface because three of them said the same wrong thing: the command line, the terminal and
+/// the web UI each spelled out their own sentence for <see cref="InstructionOutcome.Undeliverable"/>, and all three were
+/// corrected at once only because a search found them.
+/// </remarks>
+public static class InstructionWording
+{
+    /// <summary>What an operator is told when an instruction reached nothing.</summary>
+    public const string Undeliverable =
+        "Nothing was delivered: an instruction reaches only an agent its machine is already running, and this one is not " +
+        "running, or its machine is not connected. A request to it starts it; instruct it again once it is running.";
 }
 
 /// <summary>
@@ -140,7 +166,7 @@ public sealed record InstructionRecord(
 /// </param>
 /// <remarks>
 /// <para>
-/// Bounded by the broker whatever the caller asked for. SPEC.md §10.2 makes rule 8.5's argument one
+/// Bounded by the broker whatever the caller asked for. SPEC.md §10.2 makes rule 8.4's argument one
 /// level up: an unbounded operator query is the mistake the message cap exists to prevent, and a
 /// caller's number is a caller's number.
 /// </para>

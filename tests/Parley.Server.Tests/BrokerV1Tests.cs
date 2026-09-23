@@ -57,7 +57,7 @@ public sealed class BrokerV1Tests
     [Fact]
     public async Task The_broker_bounds_the_page_whatever_is_asked_for()
     {
-        // §10.2 makes rule 8.5's argument one level up: a bound the caller chooses is not a
+        // §10.2 makes rule 8.4's argument one level up: a bound the caller chooses is not a
         // bound. Asked for a million, the broker answers with its own ceiling rather than
         // attempting the read.
         var token = TestContext.Current.CancellationToken;

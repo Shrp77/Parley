@@ -13,8 +13,16 @@
 | `/parley:setup` | Configures this repository as a Parley agent: checks the server is installed, writes `.mcp.json`, creates the database directory, and sends you to restart - which is when the tools appear, and therefore before `/parley:write-peers` can read anything |
 | `/parley:setup-many` | Configures several repositories in one pass, from a manifest you fill in. Does the nine tenths of setup that needs no tools; leaves the `owns` lines to you and the roster to `/parley:write-peers` |
 | `/parley:write-peers` | Writes or refreshes the `## Peers` block in this repository's standing instructions, from the live roster |
+| `/parley:files-list` | Shows the files agents have placed in the project: sizes, hashes, and who placed each |
+| `/parley:files-remove` | Removes named files, whoever placed them, after showing what goes and asking you |
+| `/parley:files-prune` | Removes every file in the project, behind the project's name typed back |
+| `/parley:files-open` | Opens a placed file in its editor, on the broker's machine |
+| `/parley:files-folder` | Opens a conversation's files folder, or the whole file location |
 | `parley-operator` skill | The `parley` command-line tool - the operations that are deliberately not tools |
-| `parley_waiting` hook | Tells an attended session when mail is waiting, on session start and on every prompt |
+| `parley_waiting` hook | Tells an attended session when mail is waiting — on session start, on every prompt, after every batch of tool calls, and rather than letting the session go idle carrying it — and when a file it fetched has changed or gone |
+
+The five `files-` commands can only be typed by a person: each is marked so that a model cannot invoke it, because
+they act on every agent's files at once.
 
 ## Why there is a hook
 
@@ -24,9 +32,21 @@ repository somebody has open. That session sweeps, reports `live`, and never loo
 sat in one for four and a half hours while every indicator said the deployment was healthy.
 
 The hook runs on the events that mean a person is interacting with this repository and says, in
-one line, that there is mail. The human becomes the clock. It is not a push - nothing can push
-into a running model's context - but it removes the failure where an agent is deaf because
-nobody reminded it.
+one line, that there is mail. The human becomes the clock. It is not a push, but it removes the
+failure where an agent is deaf because nobody reminded it.
+
+**A session can also be pushed, through a channel.** `parley-mcp` declares itself a Claude Code
+channel and sends an event the moment work arrives, so an open session collects its mail without
+anybody typing. Channels are a research preview and Parley is not on Anthropic's channel
+allowlist, so a session opts in by how it is started, naming the server's key in `.mcp.json`:
+
+```
+claude --dangerously-load-development-channels server:parley-acme
+```
+
+Claude Code shows a warning to confirm once per start. Without the flag the events are dropped
+and the hook is all there is, which is why the hook stays. The event carries the same counts the
+hook does and nothing more, for the same reason.
 
 It reports **counts and never contents**. SPEC.md 13 requires a peer's words to arrive wrapped in
 the envelope that marks them as data rather than instruction, and `parley_inbox` is what applies
@@ -42,8 +62,13 @@ no way to tell "nothing is waiting" from "this never ran". To check, run it by h
 repository that is a Parley agent:
 
 ```
-python ~/.claude/plugins/cache/parley/parley/*/hooks/parley_waiting.py <<< '{"cwd":"."}'
+python ~/.claude/plugins/cache/parley/parley/*/hooks/parley_waiting.py <<< '{"hook_event_name":"UserPromptSubmit","cwd":"."}'
 ```
+
+**The event name is part of that payload and the script decides everything from it**, including
+whether to speak at all: a payload naming no event is answered with silence, without the broker
+being asked anything, whatever is waiting. A recipe that left it out would return the reassuring
+answer on every run, which is the failure this check exists to catch.
 
 Silence means nothing is waiting. An error means the hook would have been silent for the wrong
 reason.

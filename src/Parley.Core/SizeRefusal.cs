@@ -1,7 +1,7 @@
 ﻿namespace Parley.Core;
 
 /// <summary>
-/// What the size cap of SPEC.md rule 8.5 refused, for one agent and one message type.
+/// What the size cap of SPEC.md rule 8.4 refused, for one agent and one message type.
 /// </summary>
 /// <param name="Agent">The agent whose message was refused.</param>
 /// <param name="Type">The message type it was trying to send.</param>

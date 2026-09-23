@@ -1,3 +1,5 @@
+using Parley.Configuration;
+using Parley.Core;
 using Parley.Setup;
 using System.Text.Json.Nodes;
 using Xunit;
@@ -70,6 +72,16 @@ public sealed class ProbeThirtyTwoTests : IDisposable
         (JsonObject)JsonNode.Parse(
             await File.ReadAllTextAsync(CataloguePath, TestContext.Current.CancellationToken))!["agents"]!;
 
+    /// <summary>Which agent a checkout says it is.</summary>
+    /// <param name="workspace">The checkout.</param>
+    /// <returns>Its identity.</returns>
+    private static AgentIdentity IdentityOf(string workspace)
+    {
+        Assert.True(LaunchConfiguration.TryRead(workspace, out var declared, out var problem), problem);
+
+        return declared.Identity;
+    }
+
     [Fact]
     public async Task A_second_repository_taking_a_role_the_first_holds_is_said_out_loud()
     {
@@ -86,20 +98,35 @@ public sealed class ProbeThirtyTwoTests : IDisposable
     }
 
     [Fact]
-    public async Task The_catalogue_does_not_end_up_pointing_at_both_or_neither()
+    public async Task Neither_repository_loses_its_entry_and_neither_is_startable_under_the_name()
     {
-        // Whichever repository the role ends up naming, it must name exactly one: the catalogue is
-        // where a node is told which directory to start a process in, and this is the file that
-        // decides it.
+        // **This asserted that the catalogue named exactly one of the two, and 018 changed which
+        // answer is right.** Keyed by the role, the second enrolment wrote over the first's entry, so
+        // one of them silently stopped being startable at all and the file was the only record of
+        // which. Keyed by identity they are two entries and neither is disturbed — the collision is
+        // between the *names*, and it is resolved where names are resolved: a node announces neither,
+        // so nothing is started under a name two checkouts claim.
         await EnrolAsync(Workspace("first"), "orders");
         await EnrolAsync(Workspace("second"), "orders");
 
-        var listed = Assert.Single(await AgentsAsync());
+        var agents = await AgentsAsync();
 
-        Assert.Equal("orders", listed.Key);
-        Assert.Contains(
-            listed.Value!["workspace"]!.GetValue<string>(),
-            (string[])[Workspace("first"), Workspace("second")]);
+        Assert.Equal(2, agents.Count);
+
+        Assert.Equal(
+            Workspace("first"),
+            agents[IdentityOf(Workspace("first")).ToString()]!["workspace"]!.GetValue<string>());
+
+        Assert.Equal(
+            Workspace("second"),
+            agents[IdentityOf(Workspace("second")).ToString()]!["workspace"]!.GetValue<string>());
+
+        // And the half that keeps "two entries" from meaning "either may be started".
+        var catalogue = NodeCatalogue.ReadFrom(CataloguePath);
+        var (names, contested, _) = catalogue.Announceable("alpha");
+
+        Assert.DoesNotContain("orders", names, StringComparer.Ordinal);
+        Assert.Contains("orders", contested, StringComparer.Ordinal);
     }
 
     [Fact]
@@ -120,7 +147,7 @@ public sealed class ProbeThirtyTwoTests : IDisposable
 
         Assert.Equal(
             workspace,
-            (await AgentsAsync())["orders"]!["workspace"]!.GetValue<string>());
+            (await AgentsAsync())[IdentityOf(workspace).ToString()]!["workspace"]!.GetValue<string>());
     }
 
     [Fact]
@@ -135,24 +162,49 @@ public sealed class ProbeThirtyTwoTests : IDisposable
         // raw control bytes, which is not JSON at all.
         var hostile = "/srv/" + (char)0x1B + "[2J" + (char)0x202E + "orders";
 
-        await File.WriteAllTextAsync(
-            CataloguePath,
-            new JsonObject
-            {
-                ["agents"] = new JsonObject
-                {
-                    ["orders"] = new JsonObject
-                    {
-                        ["command"] = "claude",
-                        ["workspace"] = hostile,
-                    },
-                },
-            }.ToJsonString(),
-            TestContext.Current.CancellationToken);
-
+        // **The note that quotes it is the one about a checkout that has moved** (018). It used to be
+        // the note about a second repository taking a name the first held, and that one can no longer
+        // carry a hostile path: the claim is established by reading the other workspace's own launch
+        // configuration, so a path nothing can open claims nothing and is quoted nowhere. A checkout
+        // catalogued at a path it is not at is the same shape — a value out of a file, in a sentence a
+        // person reads — and is constructible, so the probe is pointed there rather than retired.
         foreach (var unattended in (bool[])[true, false])
         {
-            var outcome = await EnrolAsync(Workspace("second"), "orders", unattended);
+            var second = Workspace("second");
+            var identity = AgentIdentity.Mint();
+
+            await File.WriteAllTextAsync(
+                Path.Combine(second, LaunchConfiguration.FileName),
+                $$"""
+                {
+                  "mcpServers": {
+                    "parley-alpha": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "orders" } }
+                  },
+                  "{{LaunchConfiguration.IdentityMember}}": "{{identity}}"
+                }
+                """,
+                TestContext.Current.CancellationToken);
+
+            await File.WriteAllTextAsync(
+                CataloguePath,
+                new JsonObject
+                {
+                    ["agents"] = new JsonObject
+                    {
+                        [identity.ToString()] = new JsonObject
+                        {
+                            ["command"] = "claude",
+                            ["workspace"] = hostile,
+                        },
+                    },
+                }.ToJsonString(),
+                TestContext.Current.CancellationToken);
+
+            var outcome = await EnrolAsync(second, "orders", unattended);
+
+            Assert.Contains(
+                outcome.Notes,
+                note => note.Contains("node.json", StringComparison.Ordinal));
 
             foreach (var character in string.Join(" | ", outcome.Notes))
             {

@@ -96,6 +96,19 @@ alternative is losing the message silently. A deployment that cannot collect
 its mail is broken, and being told so on every turn is better than the four
 and a half hours of quiet that prompted this file.
 
+File change notices
+-------------------
+A notice that a file this agent fetched has changed or gone is counted with
+the mail, and like the mail it is only a count: never the file's name, which
+its placer chose and which is as much a peer's words as a payload is. A notice
+wakes nothing -- it waits for the next inbox check -- and holding a turn open
+at ``Stop`` is asking for a turn, so there notices are mentioned only beside
+mail that holds the turn anyway.
+
+The count is asked for with ``--with-files``, and a ``parley`` from before
+files refuses the flag. The hook then asks again without it, so a plugin
+upgraded ahead of its tool keeps reporting mail rather than going quiet.
+
 What it costs
 -------------
 Two things, both measured rather than estimated, and recorded here because §14's
@@ -105,12 +118,19 @@ One extra model turn per turn, not one in total, and the same repetition on
 ``PostToolBatch``: while something stays uncollected the notice returns on every
 batch and at the end of every turn.
 
-And about 150 ms of wall clock per invocation -- interpreter start, then two
-counting queries -- which now lands after every tool batch rather than only at a
-turn boundary. A turn with twenty batches pays roughly three seconds. That is the
-price of mid-turn delivery and it is worth paying, but it is not free, and a
-future maintainer wondering why turns feel slower in a Parley repository should
-find the answer here rather than have to measure it again.
+And about 150 ms of wall clock per invocation -- interpreter start, then one
+counting query per launch entry -- which now lands after every tool batch rather
+than only at a turn boundary. A turn with twenty batches pays roughly three
+seconds. That is the price of mid-turn delivery and it is worth paying, but it is
+not free, and a future maintainer wondering why turns feel slower in a Parley
+repository should find the answer here rather than have to measure it again.
+
+The per-entry part is why there are two bounds rather than one. A repository
+answering in several projects asks each of their brokers, so ``TIMEOUT`` bounds
+one question and ``BUDGET`` bounds all of them together; entries past the budget
+are not asked. Sequential, and deliberately: asking in parallel would be faster
+and would put threads in a file whose every other failure is handled by giving
+up quietly.
 
 It also stays silent when nothing is waiting. A hook that speaks on every turn
 is one people learn to ignore, and this needs to be worth reading on the rare
@@ -130,6 +150,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # ${VAR:-default}, the form .mcp.json uses so one committed file works on every
@@ -144,6 +165,15 @@ SPOKEN = frozenset({"SessionStart", "UserPromptSubmit"})
 # hookSpecificOutput.additionalContext.
 STRUCTURED = frozenset({"PostToolBatch", "Stop"})
 
+# How long one question may take, and how long all of a repository's questions
+# may take between them. Both matter because a repository answering in several
+# projects asks each of their brokers in turn: one bound alone would either drop
+# a broker that is merely busy, or let three slow ones hold a person's turn for
+# fifteen seconds. Entries past the budget are not asked, which is the same
+# "nothing waiting" every other failure here reports.
+TIMEOUT = 5
+BUDGET = 10
+
 
 def expand(value: str) -> str:
     """Resolve ${VAR:-default} against the environment."""
@@ -152,27 +182,67 @@ def expand(value: str) -> str:
     )
 
 
-def configuration(root: Path) -> tuple[str, str] | None:
-    """Read this repository's agent name and broker address from .mcp.json."""
+def launches(root: Path) -> list[tuple[str, str, str, str]]:
+    """Every Parley launch entry in this repository's .mcp.json: its agent, broker, project and machine."""
     manifest = root / ".mcp.json"
 
     if not manifest.is_file():
-        return None
+        return []
 
     servers = json.loads(manifest.read_text(encoding="utf-8-sig")).get("mcpServers", {})
-    env = servers.get("parley", {}).get("env", {})
+    found: list[tuple[str, str, str, str]] = []
 
-    agent = expand(env.get("PARLEY_AGENT", "")).strip()
+    # `parley` is the key a repository enrolled into no named project holds;
+    # enrolment into a project writes `parley-<project>`, one for each project the
+    # repository answers in. This read only the first, so in every repository
+    # enrolled into a named project it found no agent and said nothing -- all
+    # twenty-one on the machine where the sweep over project-scoped callers found it.
+    for key, server in servers.items():
+        if key != "parley" and not key.startswith("parley-"):
+            continue
 
-    # Absent is the ordinary case and means the local broker, so unlike the agent
-    # name this is not a reason to give up.
-    broker = expand(env.get("PARLEY_BROKER", "")).strip()
+        env = server.get("env", {}) if isinstance(server, dict) else {}
+        agent = expand(env.get("PARLEY_AGENT", "")).strip()
 
-    return (agent, broker) if agent else None
+        if not agent:
+            continue
+
+        # Absent is the ordinary case and means the local broker, so unlike the
+        # agent name this is not a reason to give up.
+        broker = expand(env.get("PARLEY_BROKER", "")).strip()
+
+        # Named the way the adapter itself resolves it: an address wins, then
+        # PARLEY_PROJECT. The key's suffix stands in only when neither is written,
+        # because `parley` on a machine naming several projects refuses to guess.
+        project = expand(env.get("PARLEY_PROJECT", "")).strip()
+
+        if not project and not broker and key.startswith("parley-"):
+            project = key[len("parley-"):]
+
+        # A launch configuration names a role, and the adapter appends this
+        # machine -- or the machine the entry names in PARLEY_MACHINE, as a
+        # container's does. `parley waiting` completes a bare role the same way,
+        # so the entry's machine is handed to it rather than a second
+        # normalisation being written here to drift from the adapter's.
+        machine = expand(env.get("PARLEY_MACHINE", "")).strip()
+
+        entry = (agent, broker, project, machine)
+
+        if entry not in found:
+            found.append(entry)
+
+    return found
 
 
-def waiting(broker: str, agent: str) -> tuple[int, int]:
-    """Ask the broker what is waiting: uncollected messages, and polls owed a vote."""
+def waiting(
+    broker: str,
+    agent: str,
+    project: str = "",
+    machine: str = "",
+    root: Path | None = None,
+    budget: float = TIMEOUT,
+) -> tuple[int, int, int]:
+    """Ask the broker what is waiting: uncollected messages, polls owed a vote, and file change notices."""
     # Asked rather than read, and that is the whole of the change here. This used
     # to open the database read-only and count rows itself, which worked while the
     # file was on this machine and every process opened it. One process owns it
@@ -186,12 +256,14 @@ def waiting(broker: str, agent: str) -> tuple[int, int]:
     tool = shutil.which("parley")
 
     if tool is None:
-        return 0, 0
+        return 0, 0, 0
 
     command = [tool]
 
     if broker:
         command += ["--broker", broker]
+    elif project:
+        command += ["--project", project]
 
     command += ["waiting", agent]
 
@@ -200,19 +272,63 @@ def waiting(broker: str, agent: str) -> tuple[int, int]:
     # dropped; the caller treats any failure as "nothing waiting", which is the
     # safe direction -- a session that does not know it has mail is a great deal
     # better than one that cannot be worked in.
-    finished = subprocess.run(
-        command, capture_output=True, text=True, timeout=5, check=False
-    )
+    #
+    # File change notices are a third count, asked for with --with-files, and a
+    # tool from before files existed refuses the flag. Asked again without it
+    # then, so a plugin upgraded ahead of its tool keeps reporting mail rather
+    # than going quiet.
+    child = dict(os.environ)
+
+    if machine:
+        child["PARLEY_MACHINE"] = machine
+
+    # Run from the repository's root, because `parley` takes a project from the
+    # repository it runs in when nothing else names one, and the one meant is this.
+    here = str(root) if root else None
+
+    def ask(words: list[str]) -> subprocess.CompletedProcess[str] | None:
+        """Ask once, or give up on this entry."""
+        # **Every way one question can fail is caught here, because there are other
+        # entries after it.** A broker that accepts a connection and never answers
+        # raised TimeoutExpired out of this function, out of `main`, and into the
+        # blanket `except` at the bottom of this file -- which ended the run: the
+        # entries after it were never asked, and the counts already gathered from
+        # the ones before it went into the traceback with everything else. One
+        # project slow to answer silenced the mail in all the others, which is the
+        # silence this file exists to end. Found by the review gate; the test that
+        # holds it accepts a connection and says nothing, because a *refused*
+        # connection comes back in a moment and never showed it.
+        try:
+            return subprocess.run(
+                words, capture_output=True, text=True, timeout=budget, check=False, env=child, cwd=here
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return None
+
+    finished = ask(command + ["--with-files"])
+
+    # A question that timed out is not the flag being refused, and asking again
+    # would spend the budget twice to learn the same thing.
+    if finished is None:
+        return 0, 0, 0
 
     if finished.returncode != 0:
-        return 0, 0
+        finished = ask(command)
 
-    messages, _, polls = finished.stdout.strip().partition(" ")
+    if finished is None or finished.returncode != 0:
+        return 0, 0, 0
 
-    return int(messages), int(polls)
+    # Counts, or nothing at all. A tool answering something this cannot read is
+    # one more way a single entry used to take the whole check down with it.
+    try:
+        counts = [int(count) for count in finished.stdout.split()]
+
+        return counts[0], counts[1], counts[2] if len(counts) > 2 else 0
+    except (IndexError, ValueError):
+        return 0, 0, 0
 
 
-def tally(unread: int, owed: int) -> str:
+def tally(unread: int, owed: int, notices: int = 0) -> str:
     """Say what is waiting, in counts only."""
     parts = []
 
@@ -221,6 +337,13 @@ def tally(unread: int, owed: int) -> str:
 
     if owed:
         parts.append(f"{owed} question{'s' if owed != 1 else ''} you owe an answer")
+
+    # A count and never a name: a file's name was chosen by whoever placed it,
+    # and is as much a peer's words as a payload is.
+    if notices:
+        parts.append(
+            f"{notices} notice{'s' if notices != 1 else ''} that a file you fetched has changed or gone"
+        )
 
     return " and ".join(parts)
 
@@ -247,14 +370,14 @@ UNAVAILABLE = (
 )
 
 
-def sentence(unread: int, owed: int, event: str) -> str:
+def sentence(unread: int, owed: int, event: str, notices: int = 0) -> str:
     """Say what is waiting, and what to do about it, for one event."""
     # The Stop wording differs because the situation does: the agent is about to
     # go idle, and going idle is the thing that loses the message. Everywhere
     # else it is a notice; here it is the reason the turn has not ended.
     if event == "Stop":
         return (
-            f"Parley: {tally(unread, owed)}. Do not finish here - call "
+            f"Parley: {tally(unread, owed, notices)}. Do not finish here - call "
             "`parley_inbox` first and deal with what it hands you. The inbox is "
             "pull, so nothing arrives until you do, and an idle session collects "
             "nothing. This notice carries no message content by design; the "
@@ -262,7 +385,7 @@ def sentence(unread: int, owed: int, event: str) -> str:
         )
 
     return (
-        f"Parley: {tally(unread, owed)}. Call `parley_inbox` to collect it - the "
+        f"Parley: {tally(unread, owed, notices)}. Call `parley_inbox` to collect it - the "
         "inbox is pull, so nothing arrives until you do. This notice carries no "
         "message content by design; the envelope comes with the message." + UNAVAILABLE
     )
@@ -308,22 +431,48 @@ def main() -> int:
 
     root = Path(payload.get("cwd") or os.getcwd())
 
-    settings = configuration(root)
+    entries = launches(root)
 
-    if settings is None:
+    if not entries:
         return 0
-
-    agent, broker = settings
 
     # No file to check for any more. Whether the broker is reachable is a question
     # only asking it can answer, and `waiting` treats every failure as nothing
     # waiting -- so an unreachable broker costs this hook a moment and says
     # nothing, which is the right outcome for something that runs in front of a
     # person waiting for their turn to start.
-    unread, owed = waiting(broker, agent)
+    #
+    # Added across entries: a repository answering in two projects has one inbox
+    # in each, and mail in either is mail this session has to collect.
+    unread = owed = notices = 0
+    deadline = time.monotonic() + BUDGET
 
-    if unread or owed:
-        print(render(sentence(unread, owed, event), event))
+    for agent, broker, project, machine in entries:
+        left = deadline - time.monotonic()
+
+        # Bounded across the entries as well as within one, because this runs in
+        # front of a person waiting for their turn to start: three projects whose
+        # brokers are all slow would otherwise cost a full TIMEOUT each.
+        if left <= 0:
+            break
+
+        more_unread, more_owed, more_notices = waiting(
+            broker, agent, project, machine, root, min(TIMEOUT, left)
+        )
+
+        unread += more_unread
+        owed += more_owed
+        notices += more_notices
+
+    # A change notice wakes nothing (SPEC.md 9.5): it is told at the next inbox
+    # check and never asks for a turn. Holding a turn open at Stop is asking for
+    # one, so notices alone do not; they are mentioned there only beside mail
+    # that does.
+    if event == "Stop" and not (unread or owed):
+        notices = 0
+
+    if unread or owed or notices:
+        print(render(sentence(unread, owed, event, notices), event))
 
     return 0
 

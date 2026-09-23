@@ -84,7 +84,7 @@
   </ItemGroup>
 
   <!--
-    The terminal surface of `parley top`, and the only dependency on the tool that is neither
+    The terminal surface of `parley terminal`, and the only dependency on the tool that is neither
     Microsoft's nor gRPC's.
 
     That is worth a paragraph rather than a shrug, because NuGetAudit fails this build on a high

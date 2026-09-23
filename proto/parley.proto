@@ -4,94 +4,82 @@ package parley.v1;
 
 option csharp_namespace = "Parley.Transport";
 
-// The Parley wire contract, per SPEC.md section 4.0.
+// The Parley wire contract, per SPEC.md section 4.0. Protocol 0.7.
 //
 // SPEC.md is the authority and this file is not. A message defined here and absent there is a
-// defect here; a rule stated there and unrepresentable here is a defect here too. The same
+// defect here; a rule stated there and unrepresentable here is a defect here too -- the same
 // relationship the storage schema of section 9.2 has to the document, one layer out.
 //
-// Three services, because there are three kinds of caller and the split is worth enforcing at
-// the wire rather than remembering in code:
+// Three services, because there are three kinds of caller and the split is worth enforcing at the
+// wire rather than remembering in code:
 //
-//   Agents     what an adapter may do, on behalf of one agent          (section 10.1)
-//   Operators  what a person may do, on behalf of nobody               (section 10.2)
-//   Nodes      what a machine may do, on behalf of the agents it hosts (section 4)
+//   Agents     what an adapter may do, on behalf of one participant     (section 10.1)
+//   Operators  what a person may do, on behalf of nobody                (section 10.2)
+//   Nodes      what a machine may do, on behalf of the agents it hosts  (section 4)
 //
-// SurfaceBoundaryTests already pins that an agent cannot reach an operator's verbs through the
-// broker's own API. Three services makes that structural instead: there is no method on Agents
-// that retires anybody, so no amount of confusion about which object is in hand can produce a
-// call that does.
+// There is no method on Agents that retires anybody, closes a conversation over its participants,
+// or reads another participant's traffic, so no confusion about which client is in hand can
+// produce a call that does.
 //
-// Timestamps are RFC 3339 in UTC, carried as strings rather than google.protobuf.Timestamp.
-// The store's canonical form is text of exactly this shape and every existing reader parses it;
-// a second representation on the wire would mean two formats that agree until one of them meets
-// a value the other rounds.
+// Timestamps are RFC 3339 in UTC, carried as strings rather than google.protobuf.Timestamp. The
+// store's canonical form is text of exactly this shape; a second representation on the wire would
+// be two formats that agree until one of them meets a value the other rounds.
 
 // ===========================================================================================
 // Agents -- SPEC.md section 10.1
 // ===========================================================================================
 
 service Agents {
-  // Attaches an agent and holds the connection open for as long as it is running.
+  // Attaches a participant and holds the connection open for as long as it is running.
   //
-  // This is the load-bearing one. SPEC.md section 4.0: a connection is evidence. The stream
-  // being open IS the agent being reachable -- there is no heartbeat to renew, no timestamp to
-  // age, and no reader left to guess how stale is too stale. The broker increments connected
-  // when the stream opens and decrements when it ends, however it ends: a clean shutdown, a
-  // killed process and a severed network all arrive as the same event, because from the
-  // broker's side they are the same event.
+  // SPEC.md section 4.0: a connection is evidence. The stream being open IS the participant being
+  // reachable -- there is no heartbeat and no timestamp to age. There is no Detach, because it
+  // could only be a second, optional way to say what the stream already says for certain.
   //
-  // That is also why there is no Detach. An explicit one could only ever be a second, optional
-  // way to say what the stream already says for certain, and the failure it invites -- an
-  // agent that died without calling it -- is precisely the state the sweep's heartbeat was
-  // quietly manufacturing before section 14 was rewritten.
-  //
-  // The first Event is always attached, carrying what section 6.4 requires an agent to be told
-  // when it comes back: how much of its own abandoned work was released. Everything after it
-  // is a notice.
+  // The first Event is always attached. Everything after it is a notice.
   rpc Attach(AttachRequest) returns (stream Event);
 
-  rpc Ask(AskRequest) returns (AskReply);
-
-  // One question to every agent under a role, per SPEC.md section 5.5. N ordinary exchanges,
-  // reported one outcome each, because a refusal for one member says nothing about the rest.
-  rpc AskRole(AskRoleRequest) returns (AskRoleReply);
+  // Sends a Request (section 5.1). `to` is a whole name, reaching one participant, or a bare role,
+  // opening one ordinary exchange with each participant registered under it (section 5.5). The
+  // broker assigns the conversation from what the sender holds (section 5.0).
+  rpc Request(OpenRequest) returns (RequestReply);
 
   rpc Clarify(ClarifyRequest) returns (SayReply);
-  rpc Answer(AnswerRequest) returns (SayReply);
-  rpc Notify(NotifyRequest) returns (NotifyReply);
+  rpc Result(ResultRequest) returns (SayReply);
   rpc Conclude(ConcludeRequest) returns (ConcludeReply);
   rpc ListAgents(ListAgentsRequest) returns (ListAgentsReply);
 
-  // Everything waiting, taken once. SPEC.md section 13: a peer's words arrive wrapped as data,
-  // and this is the only path they travel. See the note on Notice.
+  // Everything waiting, taken once, each message already inside the section 13 envelope. The only
+  // path a participant's words travel to a model.
   rpc DrainInbox(DrainInboxRequest) returns (InboxReply);
 
-  // Records that this adapter refused to send something for being over the size cap.
-  //
-  // The cap is checked by the adapter rather than only by the store, because the point is to
-  // not put the text on the wire at all -- and the refusal has to reach the model as an ordinary
-  // ok:false with a sentence about what to do, not as a constraint violation. But the evidence
-  // belongs in one place, because the number the cap should be set to is the one question about
-  // it nobody has ever had data for (SPEC.md §17). So the adapter refuses and then says so.
-  //
-  // Length only. Never the payload -- that is the material the cap exists to keep out of a
-  // context, and recording it would put it somewhere an operator's report reads from.
-  // How much is waiting, without taking any of it.
-  //
-  // The same counts a Notice carries, asked for rather than pushed. It exists for a caller that
-  // is not the adapter and holds no stream -- an editor hook that wants to say "two answers are
-  // waiting" before a turn, which used to read the database directly and cannot now.
-  //
-  // It marks nothing delivered and starts no working window, which is what makes it safe to
-  // call from something that is not going to act on the result. DrainInbox does all of that and
-  // is how the messages themselves are collected.
+  // How much is waiting, without taking any of it. For a caller that holds no stream -- an editor
+  // hook that wants to say "work is waiting" before a turn. Marks nothing delivered.
   rpc Waiting(WaitingRequest) returns (Notice);
 
+  // Records that an adapter refused to send something for being over the size cap. Length only,
+  // never the payload: that is the material the cap exists to keep out of a context.
   rpc RecordRefusal(RecordRefusalRequest) returns (Empty);
 
-  rpc ResumeOwedBy(ResumeOwedByRequest) returns (ExchangesReply);
-  rpc GetSubQuestionIds(SubQuestionsRequest) returns (SubQuestionsReply);
+  // Places a file from the agent's own repository in a conversation's folder of the file location (section 9.5).
+  // The first frame is a header naming the conversation and the file; every later frame carries bytes. The
+  // conversation is assigned as a Request's is (section 5.0), and placing makes the placer a participant.
+  rpc PlaceFile(stream PlaceFileFrame) returns (PlaceFileReply);
+
+  // Streams one whole content of a file: a header and then bytes, or a refusal instead of the header. While the
+  // call is open the stored file is held for reading and a replacement or removal waits. The adapter writes the
+  // bytes to disk; nothing carries them into a model's context.
+  rpc FetchFile(FetchFileRequest) returns (stream FetchFileFrame);
+
+  // Reports that a fetch was written and verified. Only then is it recorded, so change notices follow. A report of
+  // a fetch the broker did not stream to this agent, or of a hash it did not stream, is refused.
+  rpc FetchedFile(FetchedFileRequest) returns (FetchedFileReply);
+
+  // A page of the files in the location: names, sizes, hashes and placers, never contents.
+  rpc ListFiles(ListFilesRequest) returns (FilesReply);
+
+  // Removes files the calling agent placed. Every other name is refused, naming its placer.
+  rpc RemoveOwnFiles(RemoveFilesRequest) returns (RemoveFilesReply);
 }
 
 message AttachRequest {
@@ -114,59 +102,61 @@ message Event {
 
 message Attached {
   int32 agent_marked_live = 1;
-  int32 exchanges_orphaned = 2;
+
+  // Work the participant had collected in a session that ended before its Result, handed over again
+  // on its next collection (section 6). Nothing about that work changed; it was open throughout.
+  int32 exchanges_redelivered = 2;
 }
 
-// The broker speaking first.
-//
-// Counts only. Never a payload, never a sender, never a subject line. SPEC.md section 13 says a
-// peer's words reach a model wrapped in an envelope that marks them as data, and the envelope
-// is applied on the way out of DrainInbox. A notice that carried the words would be a second
-// path for the same text with no envelope on it, which is not a shortcut but a hole -- and it
-// would be the more attractive path, because it arrives sooner.
-//
-// So this says how much is waiting and nothing about what it is. The adapter drains to find out.
+// The broker speaking first. Counts only -- never a payload, a sender or a subject. Section 13 has a
+// participant's words reach a model inside an envelope applied on the way out of DrainInbox, and a
+// notice carrying the words would be a second path for the same text with no envelope on it.
 message Notice {
   int32 messages_waiting = 1;
   int32 closure_polls_waiting = 2;
+  int32 file_notices_waiting = 3;     // section 9.5: counted like the rest, and never waking anything
 }
 
-message AskRequest {
+message OpenRequest {
   string from = 1;
-  string to = 2;                 // a whole name
+  string to = 2;                 // a whole name, or a bare role
   string responder_model = 3;
-  string payload_json = 4;
+  string payload_json = 4;       // the ask -- section 5.1
+
+  // The conversation the sender names, or empty. Whether it may name one, and which, depends on the
+  // Requests it holds (section 5.0); the broker refuses the rest and says what it may name.
   string conversation_id = 5;
 }
 
-message AskRoleRequest {
-  string from = 1;
-  string role = 2;               // no machine part
-  string responder_model = 3;
-  string payload_json = 4;
-  string conversation_id = 5;
+// One outcome per exchange a Request opened, or a single refusal when none could be opened.
+message RequestReply {
+  repeated RequestOutcome outcomes = 1;
 }
 
-message AskReply {
+message RequestOutcome {
   bool ok = 1;
-  OpenRejection rejection = 2;
-  int64 exchange_id = 3;
-  string answerer = 4;
-  string ask_group = 5;          // set only for a member of a role question
-  // What this asker already has open with this answerer, and the field that makes both
-  // refusals actionable rather than an instruction to retry (SPEC.md §7.3).
-  //
-  // On PAIR_SATURATED, every open exchange to that peer: the remedy is to conclude one.
-  // On DUPLICATE_QUESTION, the single exchange already carrying this question -- which is
-  // §7.1's "the refusal returns the exchange already carrying it", and the only place that
-  // identifier is returned. exchange_id is 0 on any refusal, so an adapter that reads it
-  // alone loses the one recovery path an asker has for a question it already sent and lost
-  // the answer to.
-  repeated int64 waiting_on = 6;
-}
+  RequestRejection rejection = 2;
+  int64 exchange_id = 3;         // 0 on a refusal
+  string receiver = 4;
+  string request_group = 5;      // set only for a member of a Request to a role
+  string conversation_id = 6;    // the conversation the broker assigned
 
-message AskRoleReply {
-  repeated AskReply outcomes = 1;
+  // What makes each refusal actionable rather than an instruction to retry (section 7.3).
+  //   SATURATED: every exchange the sender has open with that receiver.
+  //   DUPLICATE: the single exchange already carrying this Request.
+  repeated int64 open_exchanges = 7;
+  //   CONVERSATION_NOT_ASSIGNABLE: the conversations the sender may name.
+  repeated string assignable_conversations = 8;
+  //   CONVERSATION_CLOSED: who closed it, when recorded.
+  ConversationCloser closed_by = 9;
+
+  // On success, the cycle this Request closed, if it closed one -- admitted and recorded on the
+  // conversation rather than refused (section 7.2). Empty otherwise.
+  repeated string cycle = 10;
+
+  // What became of the receiver (section 5.4). None of these is a refusal: the Request is stored
+  // before any of it is decided.
+  WakeOutcome wake = 11;
 }
 
 message ClarifyRequest {
@@ -176,20 +166,16 @@ message ClarifyRequest {
   string payload_json = 4;
 }
 
-message AnswerRequest {
+message ResultRequest {
   string from = 1;
   int64 exchange_id = 2;
   string responder_model = 3;
+
+  // One outcome for the exchange (section 5.3), recorded against the item "request"; a Request stored under
+  // 0.5 or 0.6 carried items and is answered by them. The exchange's rolled-up outcome is derived by the
+  // broker from this and is deliberately not a field: a sender that could state it separately could state one
+  // its own outcome contradicts.
   string payload_json = 4;
-
-  // How the exchange as a whole came out, rolled up from the per-sub-question resolutions in the
-  // payload. Carried rather than derived here, because SPEC.md §5.3 makes the rollup the
-  // answerer's statement about its own answer -- a broker that inferred it would be overruling
-  // an agent about what it meant.
-  Resolution resolution = 5;
-
-  // Whether this settles something worth keeping past retention (§9.4).
-  bool is_decision = 6;
 }
 
 message SayReply {
@@ -197,24 +183,11 @@ message SayReply {
   TransitionError refusal = 2;
   bool deduplicated = 3;
   int64 message_id = 4;
-}
 
-message NotifyRequest {
-  string from = 1;
-  string to = 2;
-  string responder_model = 3;
-  string payload_json = 4;
-  string conversation_id = 5;
-}
-
-message NotifyReply {
-  bool ok = 1;
-  NotifyRejection refusal = 2;
-  bool deduplicated = 3;
-
-  // What became of the recipient. Additional to `ok` rather than part of it: a message that could
-  // not wake anybody is still stored and still collected whenever that agent next runs.
-  WakeOutcome wake = 4;
+  // On OUTCOMES_DO_NOT_MATCH_ITEMS, what the Result must answer, so the sender can correct it in one move:
+  // the single id "request" for a Request written under 0.7, and the stored ids of one written earlier --
+  // section 5.1.
+  repeated string expected_items = 5;
 }
 
 message ConcludeRequest {
@@ -253,11 +226,200 @@ message DrainInboxRequest {
 message InboxReply {
   repeated DeliveredMessage messages = 1;
   repeated ClosurePoll closure_polls = 2;
+
+  // Section 9.5. Not messages: nothing is owed back. At most 200 in one collection, oldest change first, whatever
+  // `limit` says about messages; the rest wait for the agent's next collection and are counted here.
+  repeated FileNotice file_notices = 3;
+  int32 file_notices_waiting = 4;
 }
 
-// A message and the envelope that marks it as data, per SPEC.md section 13. The envelope is
-// built by the broker and carried, rather than left for each adapter to construct: an adapter
-// that forgot would deliver a peer's words as though they were the operator's.
+// That a file the agent fetched has changed or gone since. A name and two hashes, never the content.
+message FileNotice {
+  string conversation_id = 1;
+  string name = 2;
+  string sha256_had = 3;              // what the agent fetched
+  string sha256_now = 4;              // empty when gone
+  int64 size_bytes = 5;               // 0 when gone
+  string changed_utc = 6;
+  bool gone = 7;
+}
+
+// ===========================================================================================
+// Files -- SPEC.md section 9.5
+//
+// What crosses about a file is its name, size, hash and placer. Its bytes travel only inside PlaceFile and
+// FetchFile, in pieces well under the default message limit, and land on disk on either side.
+// ===========================================================================================
+
+message PlaceFileFrame {
+  oneof frame {
+    PlaceFileHeader header = 1;       // first, and only first
+    bytes chunk = 2;                  // at most 256 KiB
+  }
+}
+
+message PlaceFileHeader {
+  string agent = 1;                   // the adapter's launch identity, as every Agents call carries
+  string conversation_id = 2;         // empty: assigned by the broker (section 5.0)
+  string name = 3;                    // section 9.5's rules; only .md and .txt
+}
+
+message PlaceFileReply {
+  PlaceOutcome outcome = 1;
+  FileRejection rejection = 2;        // NONE when the file was placed, replaced or already current
+  string conversation_id = 3;
+  string name = 4;
+  int64 size_bytes = 5;
+  string sha256 = 6;                  // the broker's, never the placer's
+  string previous_sha256 = 7;         // on REPLACED
+  string placed_by = 8;               // on NAME_PLACED_BY_ANOTHER; empty there means the person
+  repeated string assignable_conversations = 9;   // on CONVERSATION_NOT_ASSIGNABLE, as a Request's refusal carries
+  int32 characters_left = 10;         // on DOES_NOT_FIT: the longest name the conversation's folder allows
+  string detail = 11;                 // on a refusal, the rule in words
+  string requested_name = 12;         // the name asked for, when characters outside the set renamed it (section 9.5)
+}
+
+message FetchFileRequest {
+  string agent = 1;
+  string conversation_id = 2;         // empty: looked for across the location
+  string name = 3;
+  string expect_sha256 = 4;           // empty: no expectation
+}
+
+message FetchFileFrame {
+  oneof frame {
+    SharedFileView header = 1;        // size, hash and placer of the content about to be streamed
+    bytes chunk = 2;
+    FileRefusal refusal = 3;          // sent instead of a header
+  }
+}
+
+message FileRef {
+  string conversation_id = 1;         // empty: looked for across the location
+  string name = 2;
+}
+
+message FileRefusal {
+  FileRef file = 1;
+  FileRejection rejection = 2;
+  string placed_by = 3;               // on NAME_PLACED_BY_ANOTHER; empty there means the person
+  repeated string conversations = 4;  // on AMBIGUOUS_NAME: at most 200 holding the name
+  int32 conversations_more = 5;       // how many more hold it than are listed
+  string sha256_now = 6;              // on CHANGED: the hash the location holds
+  string detail = 7;                  // the rule, in words
+}
+
+message FetchedFileRequest {
+  string agent = 1;
+  string conversation_id = 2;
+  string name = 3;
+  string sha256 = 4;                  // what the adapter verified it wrote
+}
+
+message FetchedFileReply {
+  bool ok = 1;
+  FileRejection rejection = 2;        // NOT_FETCHED: no completed stream of that content to this agent
+}
+
+message ListFilesRequest {
+  string agent = 1;                   // empty on the Operators service
+  string conversation_id = 2;         // empty for every conversation
+  int32 page_size = 3;                // 0 for 50; the broker bounds this at 200 whatever is asked for
+  string page_token = 4;              // empty for the first page
+}
+
+message SharedFileView {
+  string conversation_id = 1;
+  string name = 2;
+  int64 size_bytes = 3;
+  string sha256 = 4;
+  string placed_by = 5;               // empty: the person
+  string placed_utc = 6;
+  string changed_utc = 7;
+  string folder = 8;                  // the conversation's folder on disk
+}
+
+message FilesReply {
+  repeated SharedFileView files = 1;              // one page, ordered by conversation and then name
+  repeated ConversationFilesTotal totals = 2;     // the conversations on this page, each counted whole
+  int64 total_bytes = 3;                          // everything listed, whatever the page
+  repeated FilePlacementCount placements = 4;     // Operators only
+  string next_page_token = 5;                     // empty at the end
+  int32 total_files = 6;                          // the files total_bytes counts
+  int32 files_not_listed = 7;                     // Operators only: files in the listed folders whose names break section 9.5's rules
+}
+
+message ConversationFilesTotal {
+  string conversation_id = 1;
+  int32 files = 2;
+  int64 bytes = 3;
+}
+
+message FilePlacementCount {
+  string agent = 1;                   // kept after the agent is purged
+  int64 placements = 2;
+  int64 bytes = 3;
+  string last_utc = 4;
+}
+
+message RemoveFilesRequest {
+  string agent = 1;                   // empty on the Operators service
+  repeated FileRef files = 2;         // at most 200; more is refused whole
+}
+
+message RemoveFilesReply {
+  repeated FileRef removed = 1;
+  repeated FileRefusal refused = 2;
+  int64 bytes_freed = 3;
+  FileRejection rejection = 4;        // TOO_MANY_NAMES when nothing was removed for that reason
+}
+
+message PruneFilesReply {
+  int32 files_removed = 1;
+  int64 bytes_freed = 2;
+}
+
+message FileLocationRequest {
+  string conversation_id = 1;         // empty: the whole location
+  string name = 2;                    // empty: the folder
+}
+
+message FileLocationReply {
+  bool ok = 1;
+  FileRefusal refusal = 2;            // when not ok
+  string machine = 3;                 // the broker's machine name (section 4.1.1)
+  string path = 4;                    // absolute, on that machine
+}
+
+enum FileRejection {
+  FILE_REJECTION_UNSPECIFIED = 0;
+  FILE_REJECTION_NONE = 1;
+  FILE_REJECTION_BAD_NAME = 2;
+  FILE_REJECTION_NAME_PLACED_BY_ANOTHER = 3;
+  FILE_REJECTION_NO_SUCH_FILE = 4;
+  FILE_REJECTION_AMBIGUOUS_NAME = 5;
+  FILE_REJECTION_CONVERSATION_NOT_ASSIGNABLE = 6;
+  FILE_REJECTION_CONVERSATION_CLOSED = 7;
+  FILE_REJECTION_CHANGED = 8;
+  FILE_REJECTION_INCOMPLETE = 9;
+  FILE_REJECTION_NO_SPACE = 10;
+  FILE_REJECTION_EXTENSION_NOT_ALLOWED = 11;
+  FILE_REJECTION_NOT_FETCHED = 12;
+  FILE_REJECTION_TOO_MANY_NAMES = 13;
+  FILE_REJECTION_SAFE_NAME_TAKEN = 14;  // a renamed placement's safe spelling is already another file's name
+}
+
+enum PlaceOutcome {
+  PLACE_OUTCOME_UNSPECIFIED = 0;
+  PLACE_OUTCOME_PLACED = 1;
+  PLACE_OUTCOME_REPLACED = 2;
+  PLACE_OUTCOME_ALREADY_CURRENT = 3;
+  PLACE_OUTCOME_PLACED_BY_ANOTHER = 4;
+  PLACE_OUTCOME_DOES_NOT_FIT = 5;
+}
+
+// A message and the envelope that marks it as a participant's words, per section 13. Built by the
+// broker and carried, rather than left for each adapter to construct.
 message DeliveredMessage {
   Message message = 1;
   string envelope = 2;
@@ -265,7 +427,7 @@ message DeliveredMessage {
 
 message Message {
   int64 id = 1;
-  int64 exchange_id = 2;         // 0 when the message belongs to no exchange
+  int64 exchange_id = 2;         // every message belongs to one (section 5)
   MessageType type = 3;
   string from = 4;
   string to = 5;
@@ -276,10 +438,10 @@ message Message {
   string delivered_utc = 10;
 }
 
+// No deadline: silence does not assent (section 5.0).
 message ClosurePoll {
   string conversation_id = 1;
   string polled_utc = 2;
-  string expires_utc = 3;
 }
 
 message WaitingRequest {
@@ -292,66 +454,20 @@ message RecordRefusalRequest {
   int32 characters = 3;
 }
 
-message ResumeOwedByRequest {
-  string agent = 1;
-}
-
-message ExchangesReply {
-  repeated ExchangeView exchanges = 1;
-}
-
-message ExchangeView {
-  int64 id = 1;
-  string asker = 2;
-  string answerer = 3;
-  string owed_by = 4;
-  ExchangeState state = 5;
-  int32 clarify_depth = 6;
-  int32 clarify_depth_cap = 7;
-  string opened_utc = 8;
-  string expires_utc = 9;
-  string closed_utc = 10;
-  Resolution resolution = 11;
-  bool is_decision = 12;
-  string ask_group = 13;
-}
-
-message SubQuestionsRequest {
-  int64 exchange_id = 1;
-
-  // The participant asking. A sub-question list is scoped to a party to the exchange, so this
-  // is what the broker checks against -- and it is a field rather than something inferred from
-  // the connection because SPEC.md §16 states plainly that the transport cannot tell who is
-  // calling. Naming the caller does not make it true; it makes the check possible.
-  string asking_as = 2;
-}
-
-message SubQuestionsReply {
-  repeated string ids = 1;
-}
-
 // ===========================================================================================
 // Nodes -- SPEC.md section 4
 // ===========================================================================================
 
 service Nodes {
-  // Announces a machine and holds the connection open for as long as it is up.
-  //
-  // Same argument as Attach, one level out: the stream being open is the machine being
-  // reachable, and an agent registered to a machine with no stream is Stranded rather than
-  // merely quiet (section 14). The broker sends a Start down this stream when a question
-  // arrives for an agent that is registered here and not running -- section 5.5 asks a role
-  // whether or not its machines are awake, and this is what makes that more than a promise.
+  // Announces a machine and holds the connection open for as long as it is up. The broker sends a
+  // Start down this stream when something is waiting on an agent registered here and not running,
+  // and a turn when it is running.
   rpc Join(JoinRequest) returns (stream NodeCommand);
 
-  // How a node answers a DeliverInstruction. The command stream runs one way, so the outcome
-  // comes back as its own call rather than as a reply nobody could have sent.
+  // How a node answers a DeliverInstruction. The command stream runs one way.
   rpc ReportInstruction(InstructionReport) returns (Empty);
 
-  // What the node observed about itself. Detected, never configured: SPEC.md section 4.1.1
-  // makes the machine name the node's to determine, on the grounds that a machine that can be
-  // told what it is called can be told the wrong thing, and two boxes answering to server-b is a
-  // fault that surfaces as messages arriving somewhere unexpected long after the mistake.
+  // What the node observed about itself. Detected, never configured (section 4.1.1).
   rpc Describe(DescribeNodeRequest) returns (DescribeNodeReply);
 }
 
@@ -373,20 +489,17 @@ message NodeFacts {
 
 message NodeCommand {
   oneof command {
-    // Always first, and sent before any other. Symmetric with Attach's first Event, and for the
-    // same reason: a stream that says nothing until something happens leaves a client unable to
-    // tell "joined, and quiet" from "still connecting" or "refused" -- and a node that guessed
-    // wrong would start supervising a machine the broker had rejected.
+    // Always first. A stream that says nothing until something happens leaves a node unable to tell
+    // "joined, and quiet" from "still connecting" or "refused".
     Joined joined = 1;
 
     StartAgent start = 2;
     StopAgent stop = 3;
     GiveTurn turn = 4;
 
-    // The operator's words, for an agent this node holds. Separate from GiveTurn because a turn
-    // says only that there is mail; this carries text a person wrote and must be given to the
-    // agent as what it is. Section 11.5: an instruction arriving dressed as peer traffic would be
-    // a forgery in the direction section 13 does not cover.
+    // The person's words, for an agent this node holds. Separate from GiveTurn because a turn says only
+    // that there is mail; this carries text a person wrote and must be given to the agent as what it is
+    // (section 11.5).
     DeliverInstruction instruct = 5;
   }
 }
@@ -394,9 +507,8 @@ message NodeCommand {
 message Joined {
   string machine = 1;
 
-  // What the broker already knows lives here. A node uses it to reconcile: an agent registered
-  // to this machine that the node has no way to launch is a repository that moved or was
-  // renamed, and saying so at startup beats discovering it when a question goes unanswered.
+  // What the broker already knows lives here, so a node can reconcile: an agent registered to this
+  // machine that the node cannot launch is a repository that moved or was renamed.
   repeated string agents = 2;
 }
 
@@ -405,28 +517,12 @@ message StartAgent {
   string because = 2;            // for the operator's benefit, never the agent's
 }
 
-// A turn, for an agent this node already holds.
-//
-// Distinct from StartAgent on purpose, and the distinction is the whole of it. A start is not
-// asked for when an agent is already attached, because a second process for one agent is worse
-// than a late answer. But what a second question needs is not a start, it is a turn -- and
-// without this there is no way to ask for one, so the question is written, reaches nobody, and
-// is ghosted on the ordinary schedule while the registry reports the agent live.
-//
-// It is a separate command rather than a flag on StartAgent because only the node knows which
-// sessions are its own. An agent can be attached through a session this node did not start --
-// somebody's editor window -- and asking the node to start that one would produce exactly the
-// duplicate process the refusal exists to prevent. So the node gives a turn only to its own
-// resident, and does nothing at all otherwise: nothing can make a person's window take a turn,
-// and pretending otherwise would be worse than silence.
 message DeliverInstruction {
-  int64 instruction_id = 1;           // so the report can be matched to the asking
+  int64 instruction_id = 1;
   string agent = 2;
   string text = 3;
 }
 
-// A node saying what became of an instruction it was asked to deliver. A separate call rather
-// than a reply on the command stream, which runs one way: the broker speaks and the node listens.
 message InstructionReport {
   string machine = 1;
   int64 instruction_id = 2;
@@ -434,6 +530,10 @@ message InstructionReport {
   string reply = 4;                   // empty when the agent never got the turn
 }
 
+// A turn, for an agent this node already holds. Distinct from StartAgent because a second process
+// for one agent is worse than a late collection, and only the node knows which sessions are its own:
+// it gives a turn only to its own resident, and does nothing for an agent attached through somebody's
+// editor window.
 message GiveTurn {
   string agent = 1;
   string because = 2;            // for the operator's benefit, never the agent's
@@ -459,55 +559,54 @@ message DescribeNodeReply {
 // ===========================================================================================
 
 service Operators {
+  // How the person closes a conversation (section 5.0). Every exchange still open in it ends closed,
+  // and every participant holding one is sent the broker's closed Result in the same write.
   rpc ForceConclude(ForceConcludeRequest) returns (DidItReply);
   rpc Retire(AgentRequest) returns (DidItReply);
   rpc Reinstate(AgentRequest) returns (DidItReply);
-
-  // Terminatus. SPEC.md section 10.2: this does not weigh what the registration was used for,
-  // it removes the agent and everything that referred to it.
   rpc Purge(AgentRequest) returns (PurgeReply);
 
   rpc DescribeRegistry(Empty) returns (RegistryReply);
   rpc DescribeRefusals(Empty) returns (RefusalsReply);
   rpc DescribeClarifications(Empty) returns (ClarificationsReply);
-  rpc DescribeReferrals(Empty) returns (ReferralsReply);
-  rpc DescribeNotifications(Empty) returns (NotificationsReply);
+
+  // What Results have said: outcomes by responder, blockers by kind, sources, closures (section 15).
+  rpc DescribeResults(Empty) returns (ResultsReply);
+
+  // The work in front of the person: open exchanges gone quiet or owed by a retired agent, and cycles
+  // (sections 6 and 7.2). What replaced ghosting.
+  rpc DescribeFlags(Empty) returns (FlagsReply);
+
   rpc Export(ExportRequest) returns (ExportReply);
-  // Takes no policy. Retention belongs to the deployment and the broker is the deployment's
-  // one process, so it reads its own configuration -- an operator's shell would otherwise be
-  // able to prune to a different floor than the sweep uses, from a machine that does not hold
-  // the store and cannot see what the setting there is.
+
+  // Takes no policy: retention belongs to the deployment, and the broker reads its own configuration.
   rpc Prune(Empty) returns (PruneReply);
 
-  // Broker V1, added together. SPEC.md section 10.2 is a versioned contract: a broker implements
-  // all of it or is not a V1 broker, and Implements is asked first because a contract whose
-  // version cannot be discovered is one nobody can rely on.
+  // Broker V1. Implements is asked first, because a contract whose version cannot be discovered is one
+  // nobody can rely on.
   rpc Implements(Empty) returns (ImplementsReply);
   rpc ListConversations(ListConversationsRequest) returns (ListConversationsReply);
   rpc DescribeWaiting(Empty) returns (WaitingReply);
   rpc Instruct(InstructRequest) returns (InstructReply);
-
-  // What became of the instructions an operator gave, and what each agent said back.
-  //
-  // On this service and never on Agents. An agent able to read an instruction could learn what the
-  // operator had told a peer to do, which is a disclosure section 10.1 withholds even for ordinary
-  // traffic between agents -- and this is the one channel carrying a person's own words.
   rpc Instructions(InstructionsRequest) returns (InstructionsReply);
 
-  // Filing, not muting. SPEC.md section 10.2: an archived conversation still delivers, still
-  // opens and closes exchanges, and no agent is told. Only the listing changes.
+  // Filing, not muting: delivery is unchanged and no participant is told.
   rpc Archive(ConversationRequest) returns (DidItReply);
   rpc Unarchive(ConversationRequest) returns (DidItReply);
 
-  // Terminatus for one conversation: section 14's argument for Purge applied to a narrower
-  // subject. Every participant's half goes, and an open exchange inside it is not orphaned and
-  // not ghosted -- it ceases to exist, so whoever was waiting is never told anything at all.
+  // Deletes a conversation for every participant. An open exchange inside it ceases to exist, so
+  // whoever was waiting is never told anything at all -- which is why closing first is recommended.
   rpc Destroy(ConversationRequest) returns (DestroyReply);
 
-  // Causes a launch and never a registration. The launched adapter registers the one agent it
-  // attaches, by section 12.3's ordinary route -- which is why an agent nothing has ever
-  // registered can still be started: what makes the role reachable is the node's catalogue.
+  // Causes a launch and never a registration (section 12.3).
   rpc Start(StartRequest) returns (DidItReply);
+
+  // The file location (section 9.5). Removing any file and pruning them all are the person's, because they remove
+  // files other agents placed. Describing where a file is lets a surface on that machine open it in place.
+  rpc ListSharedFiles(ListFilesRequest) returns (FilesReply);
+  rpc RemoveFiles(RemoveFilesRequest) returns (RemoveFilesReply);
+  rpc PruneFiles(Empty) returns (PruneFilesReply);
+  rpc DescribeFileLocation(FileLocationRequest) returns (FileLocationReply);
 }
 
 message Empty {}
@@ -522,6 +621,10 @@ message DidItReply {
 
 message ForceConcludeRequest {
   string conversation_id = 1;
+
+  // Why, told to every participant holding open work. Shortened rather than refused when long: a close
+  // that cannot be stored is a close nobody is told about.
+  string reason = 2;
 }
 
 message PurgeReply {
@@ -540,8 +643,6 @@ message ConversationRequest {
 
 message DestroyReply {
   DestroyVerdict verdict = 1;
-  // Per table rather than as a total, for the reason PurgeReply gives: a total is the one number
-  // that carries no warning, and this is the only account of those rows that will ever exist.
   repeated PurgeToll destroyed = 2;
 }
 
@@ -590,8 +691,8 @@ message ClarificationsReply {
   int64 exchanges_at_cap = 2;
   int64 lowest_cap_in_force = 3;
   int64 highest_cap_in_force = 4;
-  int64 answers = 5;
-  int64 answers_resolving_sub_questions_differently = 6;
+  int64 results = 5;
+  int64 results_with_mixed_outcomes = 6;
 }
 
 message ClarifyDepthBucket {
@@ -599,41 +700,57 @@ message ClarifyDepthBucket {
   int64 exchanges = 2;
 }
 
-message ReferralsReply {
-  repeated ReferralPair pairs = 1;
-  repeated ReferralTarget targets = 2;
+message ResultsReply {
+  repeated OutcomeCount outcomes = 1;
+  repeated BlockerCount blockers = 2;
+  repeated SourceCount sources = 3;
+  repeated ClosureCount closures = 4;
 }
 
-// The out-of-scope rate for one pair, per SPEC.md §15. The rate itself is not carried: it is
-// Closed and OutOfScope divided, and a computed field on the wire is a second place for the
-// arithmetic to be done differently.
-message ReferralPair {
-  string asker = 1;
-  string answerer = 2;
-  int64 closed = 3;
-  int64 out_of_scope = 4;
+message OutcomeCount {
+  string agent = 1;
+  string responder_model = 2;
+  Outcome outcome = 3;
+  int64 items = 4;
 }
 
-message ReferralTarget {
-  string asker = 1;
-  string answerer = 2;
-  string redirected_to = 3;
-  int64 referrals = 4;
-  string last_utc = 5;
+message BlockerCount {
+  string agent = 1;
+  BlockerKind kind = 2;
+  int64 items = 3;
 }
 
-message NotificationsReply {
-  repeated NotifyFlow flows = 1;
+message SourceCount {
+  string agent = 1;
+  string source = 2;
+  int64 items = 3;
 }
 
-message NotifyFlow {
-  string from = 1;
-  string to = 2;
-  int64 sent = 3;
-  int64 characters = 4;
-  int64 largest = 5;
-  string first_utc = 6;
-  string last_utc = 7;
+message ClosureCount {
+  string agent = 1;
+  int64 by_consensus = 2;
+  int64 by_person = 3;
+}
+
+message FlagsReply {
+  repeated FlagView flags = 1;
+  repeated CycleView cycles = 2;
+}
+
+message FlagView {
+  FlagKind kind = 1;
+  int64 exchange_id = 2;           // zero for FLAG_KIND_NOT_VOTED, which waits on a vote rather than an exchange
+  string conversation_id = 3;
+  string waiting_on = 4;
+  string waiting = 5;
+  string since_utc = 6;
+}
+
+message CycleView {
+  int64 exchange_id = 1;
+  string conversation_id = 2;
+  repeated string path = 3;
+  string recorded_utc = 4;
 }
 
 message ExportRequest {
@@ -643,22 +760,16 @@ message ExportRequest {
 message ExportReply {
   repeated Message messages = 1;
 
-  // Added beside the messages rather than fetched separately. A reader wants both at one
-  // instant, and two calls can disagree -- the messages from one moment and the states from the
-  // next, with nothing to say which was which. Field 2 rather than a replacement, so a client
-  // that knows nothing of it keeps working.
+  // Beside the messages rather than fetched separately, because a reader wants both at one instant.
   repeated ExchangeSnapshot exchanges = 2;
 
-  // Set only when this conversation was destroyed, in which case the two above are empty.
-  // Section 14: an empty export cannot be told from a store that lost something, and telling those
-  // two apart is the whole reason the record is kept. Optional so an absent one means "no such
-  // conversation ever" rather than "destroyed, and here is nothing about it".
+  // Set only when this conversation was destroyed, in which case the two above are empty. Absent with
+  // both above empty means there was no such conversation ever: an empty export cannot otherwise be
+  // told from a store that lost something (section 14).
   optional DestroyedConversation destroyed = 3;
 }
 
-// Facts and no content. Section 9.4 argues that a log kept past its usefulness grows the blast
-// radius of a leaked database, so nothing here can hold message text -- and there is no field to
-// put any in without the addition being obvious.
+// Facts and no content (section 9.4). There is no field to put message text in.
 message DestroyedConversation {
   string conversation_id = 1;
   string destroyed_utc = 2;
@@ -671,15 +782,14 @@ message ExchangeSnapshot {
   ExchangeState state = 2;
   string opened_utc = 3;
   string closed_utc = 4;              // empty while it is open
+  ExchangeOutcome outcome = 5;        // UNSPECIFIED while it is open
 }
 
 message ImplementsReply {
   string protocol_version = 1;
 }
 
-// Deliberately carries no project. SPEC.md section 4.1 says the protocol has no concept of one
-// and must not acquire one: membership is which endpoint the caller connected to, so a field
-// here would give a broker several projects to tell apart and a WHERE clause somebody can forget.
+// Deliberately carries no project. Section 4.1: membership is which endpoint the caller connected to.
 message ListConversationsRequest {
   string participant = 1;             // empty for every conversation
   string since_utc = 2;               // empty for no lower bound
@@ -692,15 +802,12 @@ message ListConversationsRequest {
 message ListConversationsReply {
   repeated ConversationSummary conversations = 1;
   string next_page_token = 2;         // empty at the end
-  // How many archived conversations this listing did not show. Part of the contract rather than
-  // a nicety, because archiving does not stop a conversation receiving messages: a caller that
+
+  // Part of the contract: archiving does not stop a conversation receiving messages, so a caller that
   // could not tell they existed would be hiding traffic rather than filing it.
   int32 archived_omitted = 3;
 }
 
-// Participants are derived from the exchanges rather than declared. Section 5.0 makes an
-// identifier a claim by its sender, so this says who is party to what and asserts nothing about
-// anybody having agreed to be there.
 message ConversationSummary {
   string conversation_id = 1;
   repeated string participants = 2;
@@ -729,22 +836,9 @@ message InstructRequest {
 message InstructReply {
   InstructionOutcome outcome = 1;
   string reply = 2;                   // empty when the agent never got the turn
-
-  // Which instruction this was, so a caller told PENDING knows where to come back to.
-  //
-  // An operator told the turn is still running and given no identifier has been told to look
-  // again and not told where. Additive, so an older client ignores it and a newer one reading an
-  // older broker sees zero -- which is honest, since a broker without Instructions has nothing to
-  // read back anyway.
-  int64 instruction_id = 3;
+  int64 instruction_id = 3;           // where a caller told PENDING comes back to
 }
 
-// Reading instructions back. SPEC.md section 10.2.
-//
-// The section always said the reply "is kept beside the instruction rather than in the message
-// log", and it was -- with nothing on this service able to ask for it. The only route to an
-// agent's answer was the return value of Instruct, so anything that interrupted that call lost
-// the answer for ever while the broker still held it.
 message InstructionsRequest {
   string agent = 1;                   // empty for every agent
   int64 instruction_id = 2;           // 0 for all that match; otherwise exactly this one
@@ -755,12 +849,7 @@ message InstructionsRequest {
 message InstructionRecord {
   int64 id = 1;
   string agent = 2;
-
-  // The operator's own words. Disclosed deliberately: these are a person's instructions to their
-  // own agent, on a service no agent can reach, and a reply with no question beside it is half a
-  // transcript.
-  string text = 3;
-
+  string text = 3;                    // the person's own words, on a service no agent can reach
   InstructionOutcome outcome = 4;
   string reply = 5;                   // empty unless settled
   string issued_utc = 6;
@@ -777,26 +866,16 @@ message PruneReply {
   int32 held_by_floor = 2;
   int32 contended = 3;
   bool capped = 4;
-
-  // Instructions removed for age, counted apart from messages.
-  //
-  // Apart, because the floors differ entirely: a message is held back by an open exchange, a
-  // deduplication window and an unread inbox, and none of those mean anything for an instruction.
-  // Folding them into one number would report a held count that explains nothing about half of it.
-  //
-  // Reported at all because the alternative is a count computed and shown to nobody: a pass that
-  // removed five hundred instructions and no messages would say "0 removed", which reads as
-  // nothing having happened.
   int32 instructions_removed = 5;
 }
 
 // ===========================================================================================
 // Enumerations
 //
-// Every one of these is a copy of a C# enum, and a copy is a thing that can drift. Each starts
-// at a zero-valued UNSPECIFIED that the C# side has no member for -- so a value the broker has
-// never heard of arrives as UNSPECIFIED and is refused, rather than arriving as whichever
-// member happens to be numbered zero. TransportEnumTests pins each against its counterpart.
+// Every one of these is a copy of a C# enum, and a copy is a thing that can drift. Each starts at a
+// zero-valued UNSPECIFIED that the C# side has no member for -- so a value the broker has never heard
+// of arrives as UNSPECIFIED and is refused, rather than arriving as whichever member is numbered zero.
+// TransportEnumTests pins each against its counterpart.
 // ===========================================================================================
 
 enum AgentTier {
@@ -819,51 +898,35 @@ enum AgentPresence {
   AGENT_PRESENCE_RUNNING = 3;
 }
 
-enum OpenRejection {
-  OPEN_REJECTION_UNSPECIFIED = 0;
-  OPEN_REJECTION_NONE = 1;
-  OPEN_REJECTION_PAIR_SATURATED = 2;
-  OPEN_REJECTION_DUPLICATE_QUESTION = 3;
-  OPEN_REJECTION_WOULD_DEADLOCK = 4;
-  OPEN_REJECTION_ANSWERER_UNREACHABLE = 5;
-  OPEN_REJECTION_CONVERSATION_CLOSED = 6;
-  OPEN_REJECTION_ASKER_RETIRED = 7;
+// Why a Request was refused. A value rather than a sentence: composing the sentence is the adapter's
+// job, since it is the half of the system that knows what its model reads.
+enum RequestRejection {
+  REQUEST_REJECTION_UNSPECIFIED = 0;
+  REQUEST_REJECTION_NONE = 1;
+  REQUEST_REJECTION_SATURATED = 2;
+  REQUEST_REJECTION_DUPLICATE = 3;
+  REQUEST_REJECTION_RECEIVER_NOT_REGISTERED = 4;
+  REQUEST_REJECTION_RECEIVER_RETIRED = 5;
+  REQUEST_REJECTION_SENDER_RETIRED = 6;
+  REQUEST_REJECTION_CONVERSATION_CLOSED = 7;
+  REQUEST_REJECTION_CONVERSATION_NOT_ASSIGNABLE = 8;
+  REQUEST_REJECTION_NO_SUCH_ROLE = 9;
 }
 
-// Why a move was refused. Carried as a value rather than as the sentence an adapter would show
-// somebody: composing that sentence is the adapter's job, since it is the half of the system
-// that knows what its model reads, and a broker that shipped prose would be deciding it for
-// every adapter at once.
 enum TransitionError {
   TRANSITION_ERROR_UNSPECIFIED = 0;
   TRANSITION_ERROR_NONE = 1;
   TRANSITION_ERROR_EXCHANGE_NOT_OPEN = 2;
   TRANSITION_ERROR_NOT_A_PARTICIPANT = 3;
   TRANSITION_ERROR_NOT_YOUR_TURN = 4;
-  TRANSITION_ERROR_ONLY_ANSWERER_MAY_ANSWER = 5;
+  TRANSITION_ERROR_ONLY_RECEIVER_SENDS_RESULT = 5;
   TRANSITION_ERROR_CLARIFY_DEPTH_EXCEEDED = 6;
-  TRANSITION_ERROR_EXCHANGE_NOT_ORPHANED = 7;
-  TRANSITION_ERROR_GHOST_IS_NOT_AN_ANSWER = 8;
+  TRANSITION_ERROR_OUTCOMES_DO_NOT_MATCH_ITEMS = 7;
+  TRANSITION_ERROR_CLOSED_IS_THE_BROKERS = 8;
 }
 
-enum NotifyRejection {
-  NOTIFY_REJECTION_UNSPECIFIED = 0;
-  NOTIFY_REJECTION_NONE = 1;
-  NOTIFY_REJECTION_RECIPIENT_UNROUTABLE = 2;
-  NOTIFY_REJECTION_SENDER_RETIRED = 3;
-  NOTIFY_REJECTION_CONVERSATION_CLOSED = 4;
-}
-
-// What became of the attempt to put a message in front of its recipient.
-//
-// None of these is a refusal, which is the distinction the type exists for: the message is stored
-// before any of this is decided, so every member describes the recipient rather than the send.
-// SPEC.md section 17 question 1 requires that whatever bounds notification traffic must not make an
-// event undeliverable, so a surface rendering UNREACHABLE as a failure would report a message as
-// not sent when it was.
-//
-// An enum rather than a sentence: everything crossing between agents is charged against the working
-// memory of whoever receives it, and a field that can hold a paragraph eventually holds one.
+// What became of the attempt to put a message in front of its receiver. None of these is a refusal:
+// the message is stored before any of this is decided.
 enum WakeOutcome {
   WAKE_OUTCOME_UNSPECIFIED = 0;
   WAKE_OUTCOME_STARTED = 1;
@@ -880,17 +943,14 @@ enum ClosureError {
 
 enum MessageType {
   MESSAGE_TYPE_UNSPECIFIED = 0;
-  MESSAGE_TYPE_QUESTION = 1;
+  MESSAGE_TYPE_REQUEST = 1;
   MESSAGE_TYPE_CLARIFY = 2;
-  MESSAGE_TYPE_ANSWER = 3;
-  MESSAGE_TYPE_NOTIFY = 4;
-  MESSAGE_TYPE_GHOST = 5;
+  MESSAGE_TYPE_RESULT = 3;
 }
 
-// What became of an instruction the operator gave an agent. Four outcomes because they are four
-// different facts: the distinction that matters most is DECLINED against FAILED, because section
-// 11.5 says an agent may refuse and a console rendering refusal as malfunction teaches whoever
-// reads it to work around the agent rather than ask why.
+// What became of an instruction the person gave an agent. DECLINED against FAILED is the distinction
+// that matters most: an agent declines only for a blocker it names (section 11.5), and a surface
+// rendering that as a malfunction teaches whoever reads it to work around the agent.
 enum InstructionOutcome {
   INSTRUCTION_OUTCOME_UNSPECIFIED = 0;
   INSTRUCTION_OUTCOME_PENDING = 1;
@@ -904,15 +964,46 @@ enum ExchangeState {
   EXCHANGE_STATE_UNSPECIFIED = 0;
   EXCHANGE_STATE_OPEN = 1;
   EXCHANGE_STATE_CLOSED = 2;
-  EXCHANGE_STATE_ORPHANED = 3;
 }
 
-enum Resolution {
-  RESOLUTION_UNSPECIFIED = 0;
-  RESOLUTION_ANSWERED = 1;
-  RESOLUTION_OUT_OF_SCOPE = 2;
-  RESOLUTION_UNKNOWN = 3;
-  RESOLUTION_GHOSTED = 4;
+// An exchange's rolled-up outcome (section 5.3). UNSPECIFIED is what an open exchange carries.
+enum ExchangeOutcome {
+  EXCHANGE_OUTCOME_UNSPECIFIED = 0;
+  EXCHANGE_OUTCOME_COMPLETE = 1;
+  EXCHANGE_OUTCOME_BLOCKED = 2;
+  EXCHANGE_OUTCOME_CLOSED = 3;
+}
+
+// What one item of a Request came to (section 5.3).
+enum Outcome {
+  OUTCOME_UNSPECIFIED = 0;
+  OUTCOME_DONE = 1;
+  OUTCOME_ANSWERED = 2;
+  OUTCOME_ACKNOWLEDGED = 3;
+  OUTCOME_BLOCKED = 4;
+  OUTCOME_CLOSED = 5;
+}
+
+enum BlockerKind {
+  BLOCKER_KIND_UNSPECIFIED = 0;
+  BLOCKER_KIND_MISSING_INFORMATION = 1;
+  BLOCKER_KIND_CONFLICT = 2;
+  BLOCKER_KIND_PERMISSION = 3;
+}
+
+// Who closed a conversation. UNSPECIFIED where nothing recorded it.
+enum ConversationCloser {
+  CONVERSATION_CLOSER_UNSPECIFIED = 0;
+  CONVERSATION_CLOSER_CONSENSUS = 1;
+  CONVERSATION_CLOSER_PERSON = 2;
+}
+
+enum FlagKind {
+  FLAG_KIND_UNSPECIFIED = 0;
+  FLAG_KIND_NOT_COLLECTED = 1;
+  FLAG_KIND_NO_PROGRESS = 2;
+  FLAG_KIND_RETIRED = 3;
+  FLAG_KIND_NOT_VOTED = 4;
 }
 
 enum Vote {

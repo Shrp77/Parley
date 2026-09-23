@@ -121,6 +121,26 @@ internal sealed class ServerFixture : IAsyncDisposable
         return (link, new ParleyTools(link, options));
     }
 
+    /// <summary>Launches a server for an agent whose repository is a given directory.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="workspace">The repository's root, which the file tools are confined to.</param>
+    /// <param name="cancellationToken">Cancels start-up.</param>
+    /// <returns>The attached link and the tools bound to it.</returns>
+    /// <remarks>
+    /// The file tools read and write inside the workspace, and fall back to the current directory without one — which
+    /// here would be the test run's own output directory.
+    /// </remarks>
+    public async Task<(BrokerLink Link, ParleyTools Tools)> LaunchInAsync(
+        string agent, string workspace, CancellationToken cancellationToken)
+    {
+        var options = OptionsFor(agent) with { Workspace = workspace };
+        var link = await BrokerLink.StartAsync(options, cancellationToken);
+
+        _links.Add(link);
+
+        return (link, new ParleyTools(link, options));
+    }
+
     /// <summary>Closes a server as its client closing the pipe would.</summary>
     /// <param name="link">The link to close.</param>
     /// <returns>A task that completes when the broker has seen it go.</returns>
@@ -185,7 +205,7 @@ internal sealed class ServerFixture : IAsyncDisposable
 
     /// <summary>Runs the sweep and reports what it did.</summary>
     /// <param name="cancellationToken">Cancels the pass.</param>
-    /// <returns>What the pass orphaned, ghosted and pruned.</returns>
+    /// <returns>What the pass concluded and pruned.</returns>
     public Task<TickResult> SweepAsync(CancellationToken cancellationToken) =>
         _server.Runtime.TickAsync(cancellationToken);
 

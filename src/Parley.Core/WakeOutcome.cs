@@ -8,13 +8,13 @@ namespace Parley.Core;
 /// <b>None of these is a refusal, and that distinction is the whole reason the type exists.</b> A
 /// message is stored before any of this is decided, so every member here describes the
 /// <em>recipient</em> rather than the send. SPEC.md section 17 question 1 requires that whatever
-/// bounds notification traffic "must not make an event undeliverable"; a surface that rendered
+/// bounds wake traffic "must not make an event undeliverable"; a surface that rendered
 /// <see cref="Unreachable"/> as a failure would tell somebody their contract change had not been
 /// sent when it had.
 /// </para>
 /// <para>
 /// It exists because a sender told only that the message was stored cannot tell delivery from
-/// silence. That was met in use: a notification to an agent nobody had open reported "Sent.",
+/// silence. That was met in use: a message to an agent nobody had open reported "Sent.",
 /// which was true, and left the person believing a peer was reading it.
 /// </para>
 /// <para>
@@ -46,7 +46,7 @@ public enum WakeOutcome
     /// <remarks>
     /// The coalescing bound, seen from the sender's side. It is not a failure and not a delay: the
     /// turn already coming will collect this message along with everything else pending, because
-    /// draining an inbox collects all of it. One turn for sixty notifications is the correct
+    /// draining an inbox collects all of it. One turn for sixty messages is the correct
     /// number rather than a rationed one.
     /// </remarks>
     AlreadyComing = 2,

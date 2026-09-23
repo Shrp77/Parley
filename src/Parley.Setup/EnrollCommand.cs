@@ -877,29 +877,18 @@ public static class EnrollCommand
 
         var problems = new List<string>(EnrollmentPlan.Validate(entries, Directory.Exists));
 
-        // **FR-013 belongs here and was in the writing loop, which is a different promise.** This
-        // command refuses a half-enrolled set on principle -- everything is validated before
-        // anything is written, because "the repository that missed out is indistinguishable from one
-        // you never meant to enroll". A refusal raised while writing undoes exactly that: the
-        // repositories before it in the list are on disk and the run reports a failure. Found by
-        // probe, in the gate, after the check had been written into the wrong phase.
-        foreach (var entry in entries.Where(row => row.Unattended))
-        {
-            var already = Catalogues.Elsewhere(
-                deployment,
-                entry.Workspace,
-                ResolveNodeConfig(manifest?.NodeConfig, nodeConfig.Value),
-                out var unseen);
-
-            if (already is not null)
-            {
-                problems.Add($"{entry.Agent}: {Catalogues.Refusal(already)}");
-            }
-            else if (unseen is not null)
-            {
-                problems.Add($"{entry.Agent}: {unseen}");
-            }
-        }
+        // **FR-013's check was here, and 018 removed the rule it enforced.**
+        //
+        // It refused a row whose workspace another project already catalogued for unattended start, because
+        // two nodes launching one working directory is two models editing one checkout. The check belonged
+        // in this phase and not in the writing loop, which is the note that used to sit here: this command
+        // refuses a half-enrolled set on principle, and a refusal raised while writing leaves the
+        // repositories before it on disk.
+        //
+        // The catalogue is one file keyed by the agent's identity now, so one checkout has one entry however
+        // many projects name it, and "catalogued twice" cannot be written down. What the check prevented is
+        // prevented by the shape of the file; what it cost — three routes to "I could not read that
+        // catalogue", each granting the second start silently — is gone with it.
 
         // **Asked here, among every other reason to refuse the whole run**, because enrolment now
         // depends on the answer: it must leave each agent registered, registering is the agent
@@ -983,6 +972,43 @@ public static class EnrollCommand
             await error.WriteLineAsync(
                 $"{nodePath} has an \"agents\" entry that is not an object. Fix or move it first:\n" +
                 "enrolling would replace it.").ConfigureAwait(false);
+
+            return Config;
+        }
+
+        // **The copied-repository refusal, asked of every row before any of them is written** (018). It is
+        // the one refusal left that cannot be decided from the manifest alone: it needs the catalogue,
+        // which is read here and not in the validation phase above. Asked in this loop rather than in the
+        // writing one for that phase's own reason — a refusal raised while writing leaves the repositories
+        // before it on disk, and this command refuses a half-enrolled set on principle.
+        //
+        // `Enrolment.AddAsync` applies the same rule for the single-repository path. One rule enforced on
+        // one of two writers is this repository's recorded shape, and the probe that found it here was
+        // asking a different question.
+        var copies = new List<string>();
+
+        foreach (var entry in entries)
+        {
+            var declared = Enrolment.CopyRefusal(listed, entry.Workspace);
+
+            if (declared is not null)
+            {
+                copies.Add($"{entry.Workspace}: {declared}");
+            }
+        }
+
+        if (copies.Count > 0)
+        {
+            await error.WriteLineAsync("This manifest is not usable yet:\n").ConfigureAwait(false);
+
+            foreach (var copy in copies)
+            {
+                await error.WriteLineAsync($"  - {copy}").ConfigureAwait(false);
+            }
+
+            await error.WriteLineAsync(
+                "\nNothing was written. A half-enrolled set is worse than none: the repository that " +
+                "\nmissed out is indistinguishable from one you never meant to enroll.").ConfigureAwait(false);
 
             return Config;
         }
@@ -1128,11 +1154,11 @@ public static class EnrollCommand
 
             if (plan.AddsNodeEntry)
             {
-                // FR-013 is checked in the validation phase above, with every other reason to refuse
-                // the whole run. Checking it here as well would be a second answer to one question,
-                // and the version that lived here produced the half-applied set this command exists
-                // to prevent.
-                Enrolment.List(listed, entry.Agent, entry.Workspace);
+                // **Keyed by the identity the plan decided**, which is the one the repository now carries.
+                // FR-013 used to be checked in the validation phase above rather than here, so that one
+                // answer to one question could refuse the whole run before anything was half-applied; the
+                // rule is gone and the shape is kept — nothing about the catalogue is decided in this loop.
+                Enrolment.List(listed, plan.Identity, entry.Workspace);
                 nodeChanged = true;
             }
         }
@@ -1168,9 +1194,9 @@ public static class EnrollCommand
         // **Enrolment is not finished until each agent has registered**, and it cannot register
         // itself without running once: §12.3 makes registration the adapter's own act on attach, so
         // the only honest way to leave one registered is to start it and let it do so. Until then
-        // §14 counts the name unroutable and every message type is refused — a question and a
-        // notification alike — so a repository enrolled and never opened is not a quiet agent but
-        // one nothing can address.
+        // §14 counts the name unroutable and every message type is refused, a Request as surely as
+        // any other, so a repository enrolled and never opened is not a quiet agent but one nothing
+        // can address.
         //
         // Last, after both files and the catalogue: a start asks the broker to launch a role, and
         // the node cannot launch what its catalogue does not yet name.
@@ -1181,15 +1207,40 @@ public static class EnrollCommand
         // for one. A run that wrote `unattended` into the catalogue and then said "start a
         // broker" has described half a deployment: the repositories it just recorded as
         // startable are startable by a process it never mentioned, so they sit there reading as
-        // available and are ghosted when somebody asks them anything. The catalogue is named
+        // available while work sent to them waits, never collected. The catalogue is named
         // because a supervisor starts a process with no shell environment, and this is the one
         // moment somebody has both facts in front of them.
-        var start = nodeChanged
-            ? "  1. A broker and this machine's node:\n" +
-              $"       parley serve --db <path to the store> --with-node --node-config {nodePath}\n" +
-              "     Or install both as one logon entry:\n" +
-              $"       parley autostart install --db <path to the store> --node-config {nodePath}\n"
-            : "  1. A broker running:  parley serve --db <path to the store>\n";
+        //
+        // **A machine is deployed as projects**, and the logon entry `parley autostart install` writes serves every one,
+        // hosting each project's node from the catalogue its entry names -- or, on a machine with one project, from
+        // PARLEY_NODE_CONFIG when that is set, as `parley up` would. This said
+        // `parley serve --db` and `autostart install --db`, which serve one store outside the manifest and are for
+        // testing only; found by the gate over the installer change. The entry is named as something to install only
+        // when `autostart status` does not already show it, because installing it again restarts the broker and ends
+        // every agent it started.
+        var named = project?.Name.Value;
+        var entryCatalogue = project?.NodeConfig;
+        var catalogueNamed = entryCatalogue is { Length: > 0 }
+            && string.Equals(
+                Path.GetFullPath(entryCatalogue),
+                Path.GetFullPath(nodePath),
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+        const string Serve =
+            "     Served at every logon by `parley autostart install`; a machine whose entry already serves the\n" +
+            "     manifest (`parley autostart status` says) picks this up within seconds and needs nothing.\n";
+
+        var start = named is null
+            ? "  1. Name the project these repositories answer in:\n" +
+              "       parley project add <name> --db <path to the store> --listen <url>" +
+              (nodeChanged ? $" --node-config {nodePath}\n" : "\n") +
+              Serve
+            : nodeChanged && !catalogueNamed
+                ? $"  1. Point {named} at the catalogue this wrote, since a machine serving several projects hosts each\n" +
+                  "     node from the catalogue its entry names:\n" +
+                  $"       parley project set {named} --node-config {nodePath}\n" +
+                  Serve
+                : $"  1. A broker{(nodeChanged ? " and this machine's node" : string.Empty)} for {named}.\n" + Serve;
 
         // **This used to have three steps and the middle one was "restart your editor in each
         // repository".** It existed because enrolment wrote two files and started nothing, so every

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Parley.Core;
 
 namespace Parley.Client.Rendering;
@@ -13,13 +13,13 @@ public enum LineKind
     /// <summary>Who said what to whom, when, and what became of it.</summary>
     Header = 1,
 
-    /// <summary>One numbered sub-question, or the resolution answering it.</summary>
+    /// <summary>One numbered item of a Request, or its outcome in a Result.</summary>
     Point = 2,
 
-    /// <summary>The consequences clause of rule 8.1.</summary>
-    Consequences = 3,
+    /// <summary>What a Request stored before 0.7 said counted as finished.</summary>
+    DoneWhen = 3,
 
-    /// <summary>The console's own note about who was not party to a message.</summary>
+    /// <summary>The surface's own note about who was not party to a message.</summary>
     Annotation = 4,
 
     /// <summary>Nothing, separating one message from the next.</summary>
@@ -30,65 +30,54 @@ public enum LineKind
 /// <param name="Text">What it says, already indented for its kind.</param>
 /// <param name="Kind">What kind of line it is.</param>
 /// <param name="Colour">
-/// The sender's colour slot on a header, null everywhere else. Decoration only: every header names
-/// its sender in words, so a reader who sees no colour loses nothing.
+/// The sender's colour slot on a header, null everywhere else. Decoration only: every header names its
+/// sender in words, so a reader who sees no colour loses nothing.
 /// </param>
-public sealed record TranscriptLine(string Text, LineKind Kind, int? Colour);
+/// <param name="Message">
+/// The message this line belongs to, or <see langword="null"/> for a line the surface wrote itself.
+/// </param>
+/// <remarks>
+/// <para>
+/// <b><paramref name="Message"/> is what lets a surface put one message in front of a reader</b> — the room's
+/// "waiting on you" list names a thing owed and a person should read the question in its context rather than
+/// in a list. Carried on the line rather than worked out by counting messages, because a count would be a
+/// second opinion about the layout that this type already decides.
+/// </para>
+/// <para>
+/// Null on the blank line between messages and on the record §14 leaves behind: a line the surface wrote is
+/// not part of anybody's message, and answering "which message is this" with a guess would scroll a reader to
+/// somewhere nothing was said.
+/// </para>
+/// </remarks>
+public sealed record TranscriptLine(string Text, LineKind Kind, int? Colour, long? Message = null);
 
 /// <summary>
 /// A conversation laid out for somebody to read, rather than run together into one blob.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Why this exists.</b> The owner's word for the transcript 005 shipped was "one long ass blob
-/// that is not readable by a human", and that was fair: every message came out as a header and one
-/// flattened line of JSON, so twenty messages were twenty walls of braces with nothing to catch
-/// the eye between them.
+/// <b>Headers are distinguished structurally, not by colour.</b> A header sits at column zero and nothing
+/// else does, which survives every colour being stripped.
 /// </para>
 /// <para>
-/// <b>Headers are distinguished structurally, not by colour.</b> A header sits at column zero and
-/// nothing else does. That survives every colour being stripped, which is the property the whole
-/// view is held to — a test reads the screen with attributes removed and must lose no information,
-/// so any distinction carried only in colour is a distinction that test cannot see.
+/// <b>Times are local here and UTC in the export.</b> A screen is read by the person in front of it; a file
+/// is read by somebody else, somewhere else.
 /// </para>
 /// <para>
-/// <b>Times are local here and UTC in the export.</b> A screen is read by the person in front of
-/// it; a file is read by somebody else, somewhere else. <see cref="LocalTime"/> carries the
-/// argument.
-/// </para>
-/// <para>
-/// <b>Nothing an agent wrote may become structure.</b> A payload's newlines produce body lines, and
-/// a body line is indented — so a peer cannot write a line that arrives at column zero and reads as
-/// a header. That is the same forgery <see cref="Transcript"/> defends against in the export by
-/// flattening, solved here by indenting instead, because on screen the whole point is that the
-/// breaks survive.
+/// <b>Nothing a participant wrote may become structure.</b> A payload's newlines produce body lines, and a
+/// body line is indented — so nobody can write a line that arrives at column zero and reads as a header.
 /// </para>
 /// </remarks>
 public static class Reading
 {
     /// <summary>How far body text is indented, in spaces.</summary>
-    /// <remarks>
-    /// The structural half of FR-018. Four rather than two because two is what
-    /// <see cref="Transcript"/> uses for its own annotations in the export, and two conventions
-    /// that look alike in two artefacts is how somebody comes to trust the wrong line.
-    /// </remarks>
     public const int Indent = 4;
 
     /// <summary>What a destroyed conversation says instead of a transcript.</summary>
     /// <param name="destroyed">The record §14 left behind.</param>
     /// <returns>The lines, in the order they are read.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="destroyed"/> is null.</exception>
-    /// <remarks>
-    /// <para>
-    /// <b>Composed once because both surfaces have to say the same thing.</b> This is the answer to
-    /// "what happened to it", and two surfaces answering it differently would be two accounts of an
-    /// event that has no other account left — the record is the only one that will ever exist.
-    /// </para>
-    /// <para>
-    /// It names what was lost and never what was said. The record holds no content, and this must
-    /// not invent the impression of any.
-    /// </para>
-    /// </remarks>
+    /// <remarks>Composed once, because this is the only account of the event that will ever exist.</remarks>
     public static IReadOnlyList<string> Gone(DestroyedConversation destroyed)
     {
         ArgumentNullException.ThrowIfNull(destroyed);
@@ -100,32 +89,41 @@ public static class Reading
         return
         [
             $"{destroyed.Id} was destroyed on {LocalTime.Write(destroyed.DestroyedUtc)}.",
-            $"It held {destroyed.Messages} message"
-                + $"{(destroyed.Messages == 1 ? string.Empty : "s")}, between {participants}.",
+            $"It held {destroyed.Messages} message{(destroyed.Messages == 1 ? string.Empty : "s")}, between {participants}.",
             "Nothing of what was said was kept, and it cannot be undone.",
         ];
     }
 
     /// <summary>Lays out one conversation.</summary>
     /// <param name="messages">Its messages, in the order the broker recorded them.</param>
-    /// <param name="exchanges">The state of every exchange those messages belong to.</param>
     /// <param name="zone">The zone to render times in, or null for the machine's own.</param>
     /// <returns>The lines, in order.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="messages"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>A header is a time, a sender and a recipient, and nothing else.</b> It carried the message type, the
+    /// state of its exchange and whether it had been collected, and the owner read all three in the room and
+    /// asked for all three to go: <i>"Humans just talk; we do not begin by saying 'Inquiry' and 'Response'."</i>
+    /// </para>
+    /// <para>
+    /// <b>Each was removed for its own reason, and the facts they carried are still somewhere.</b> The type is
+    /// derivable from the conversation and is never what a reader is short of. The exchange's state is what the
+    /// room column says per peer, in the form somebody can act on — "waiting on you", "owes you" — rather than
+    /// as a word beside every line. And <i>collected</i> was actively misleading here: it means the recipient
+    /// drained its inbox, which for a person is a key they press, so an answer somebody was reading on screen
+    /// was labelled "not collected yet" and read as a fault. The export still records all of it (see
+    /// <see cref="Transcript"/>), which is where a fact for somebody else, somewhere else, belongs.
+    /// </para>
+    /// <para>
+    /// The exchange states were a parameter and are one no longer. Leaving it would have been a lying
+    /// signature: callers would go on gathering and passing something nothing read.
+    /// </para>
+    /// </remarks>
     public static IReadOnlyList<TranscriptLine> Lines(
         IReadOnlyList<Message> messages,
-        IReadOnlyList<ExchangeSnapshot>? exchanges = null,
         TimeZoneInfo? zone = null)
     {
         ArgumentNullException.ThrowIfNull(messages);
-
-        var participants = Visibility.Participants(messages);
-        var states = new Dictionary<long, ExchangeSnapshot>();
-
-        foreach (var exchange in exchanges ?? [])
-        {
-            states[exchange.ExchangeId] = exchange;
-        }
 
         var lines = new List<TranscriptLine>();
 
@@ -136,53 +134,58 @@ public static class Reading
                 lines.Add(new TranscriptLine(string.Empty, LineKind.Blank, null));
             }
 
-            lines.Add(new TranscriptLine(Header(message, states, zone), LineKind.Header,
-                Palette.SlotFor(message.From)));
+            lines.Add(new TranscriptLine(
+                Header(message, zone),
+                LineKind.Header,
+                Palette.SlotFor(message.From),
+                message.Id));
 
             foreach (var line in Body(message.PayloadJson))
             {
-                lines.Add(line);
-            }
-
-            var absent = Visibility.Describe(message, participants);
-
-            if (absent.Length > 0)
-            {
-                lines.Add(new TranscriptLine(Pad(absent), LineKind.Annotation, null));
+                lines.Add(line with { Message = message.Id });
             }
         }
 
         return lines;
     }
 
-    /// <summary>The one line naming who said what to whom, and what became of it.</summary>
-    /// <param name="message">The message.</param>
-    /// <param name="states">Exchange states, keyed by identifier.</param>
-    /// <param name="zone">The zone to render the time in.</param>
-    /// <returns>The header.</returns>
-    private static string Header(
-        Message message,
-        IReadOnlyDictionary<long, ExchangeSnapshot> states,
-        TimeZoneInfo? zone)
+    /// <summary>The state of an exchange, as a header says it.</summary>
+    /// <param name="snapshot">The exchange.</param>
+    /// <returns>A short phrase: open, or how it closed.</returns>
+    /// <remarks>
+    /// The outcome is named because a closed exchange that was finished and one the person ended are
+    /// opposite facts, and a transcript that said only "Closed" for both would hide the one that matters.
+    /// </remarks>
+    public static string State(ExchangeSnapshot snapshot)
     {
-        var state = message.ExchangeId is { } id && states.TryGetValue(id, out var snapshot)
-            ? $", {snapshot.State}"
-            : string.Empty;
+        ArgumentNullException.ThrowIfNull(snapshot);
 
-        return $"{LocalTime.Write(message.CreatedUtc, zone)}  "
-            + $"{message.From.Value} -> {message.To.Value}  "
-            + $"({message.Type}{state})";
+        return snapshot.State == ExchangeState.Open
+            ? "open"
+            : snapshot.Outcome switch
+            {
+                ExchangeOutcome.Complete => "closed, complete",
+                ExchangeOutcome.Blocked => "closed, blocked",
+                ExchangeOutcome.Closed => "closed before it finished",
+                _ => "closed"
+            };
     }
+
+    /// <summary>Who said this to whom, and when.</summary>
+    /// <param name="message">The message.</param>
+    /// <param name="zone">The zone to render the time in.</param>
+    /// <returns>The header line.</returns>
+    /// <remarks>
+    /// <b>The recipient stays, where the type and the state went.</b> A conversation is a set of pairwise
+    /// exchanges (SPEC.md §5.0), so one line said to three agents is three messages — and which of them a
+    /// message is addressed to is the one thing a reader cannot work out from the words.
+    /// </remarks>
+    private static string Header(Message message, TimeZoneInfo? zone) =>
+        $"{LocalTime.Write(message.CreatedUtc, zone)}  {message.From.Value} -> {message.To.Value}";
 
     /// <summary>The words of a message, broken as its author wrote them.</summary>
     /// <param name="payloadJson">The payload, as the store holds it.</param>
     /// <returns>The body lines.</returns>
-    /// <remarks>
-    /// Reads through <see cref="Payload"/>, which already knows rule 8.1's shapes, rather than
-    /// parsing again. What is added is that each part becomes lines instead of a field: an intent
-    /// with paragraphs keeps them, each sub-question gets its own line, and a document this cannot
-    /// read is laid out as JSON rather than run onto one.
-    /// </remarks>
     private static IEnumerable<TranscriptLine> Body(string? payloadJson)
     {
         var payload = Payload.Read(payloadJson);
@@ -204,36 +207,47 @@ public static class Reading
 
         foreach (var point in payload.Points)
         {
-            var head = string.IsNullOrEmpty(point.Resolution)
-                ? $"{point.Id}: {point.Text}"
-                : $"{point.Id} ({point.Resolution}): {point.Text}";
-
             var first = true;
 
-            foreach (var line in Wrap(head))
+            foreach (var line in Wrap(Point(point)))
             {
-                yield return new TranscriptLine(
-                    first ? Pad(line) : Pad("  " + line), LineKind.Point, null);
+                yield return new TranscriptLine(first ? Pad(line) : Pad("  " + line), LineKind.Point, null);
                 first = false;
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(payload.Consequences))
+        if (!string.IsNullOrWhiteSpace(payload.DoneWhen))
         {
-            foreach (var line in Wrap(payload.Consequences))
+            foreach (var line in Wrap("Done when: " + payload.DoneWhen))
             {
-                yield return new TranscriptLine(Pad(line), LineKind.Consequences, null);
+                yield return new TranscriptLine(Pad(line), LineKind.DoneWhen, null);
             }
         }
+    }
+
+    /// <summary>One item or outcome as a line of text.</summary>
+    /// <param name="point">The point.</param>
+    /// <returns>Its id, what kind or outcome it is, and its words.</returns>
+    public static string Point(PayloadPoint point)
+    {
+        ArgumentNullException.ThrowIfNull(point);
+
+        var tag = point.Outcome switch
+        {
+            null => point.Kind,
+            "blocked" when point.Blocker is { } blocker => $"blocked: {blocker.Replace('_', ' ')}",
+            var outcome => outcome
+        };
+
+        var head = string.IsNullOrEmpty(tag) ? $"{point.Id}: {point.Text}" : $"{point.Id} ({tag}): {point.Text}";
+
+        return point.Sources.Count == 0 ? head : $"{head} [relied on {string.Join(", ", point.Sources)}]";
     }
 
     /// <summary>Splits text on the breaks its author wrote.</summary>
     /// <param name="text">The text.</param>
     /// <returns>One entry per line, with blank lines kept.</returns>
-    /// <remarks>
-    /// <b>Blank lines are kept, which is the whole of "paragraphs survive".</b> Dropping empty
-    /// entries is the obvious tidy-up and it is what turns two paragraphs into one.
-    /// </remarks>
+    /// <remarks><b>Blank lines are kept, which is the whole of "paragraphs survive".</b></remarks>
     internal static IReadOnlyList<string> Wrap(string? text)
     {
         if (string.IsNullOrEmpty(text))
@@ -250,25 +264,15 @@ public static class Reading
     /// <param name="raw">The document.</param>
     /// <returns>The indented form, or the original when it is not JSON.</returns>
     /// <remarks>
-    /// <para>
-    /// Only reached for a payload <see cref="Payload"/> could not read as one of rule 8.1's shapes.
-    /// Those are the documents most worth laying out, because a reader meeting one has no structure
-    /// to fall back on.
-    /// </para>
-    /// <para>
-    /// Returns the original when it will not parse rather than throwing or blanking. A payload that
-    /// is not JSON should be impossible — <c>json_valid</c> is enforced on the column — and showing
-    /// whatever is actually there is how somebody finds out that it was.
-    /// </para>
+    /// Only reached for a payload <see cref="Payload"/> could not read. Returns the original when it will
+    /// not parse, because showing whatever is actually there is how somebody finds out that it was.
     /// </remarks>
     internal static string Pretty(string raw)
     {
         try
         {
             using var document = JsonDocument.Parse(raw);
-
-            return JsonSerializer.Serialize(
-                document.RootElement, PrettyOptions);
+            return JsonSerializer.Serialize(document.RootElement, PrettyOptions);
         }
         catch (JsonException)
         {
@@ -276,11 +280,7 @@ public static class Reading
         }
     }
 
-    /// <summary>Indented, and never sorted or re-encoded beyond what indenting needs.</summary>
     private static readonly JsonSerializerOptions PrettyOptions = new() { WriteIndented = true };
 
-    /// <summary>Indents a line so it cannot be mistaken for a header.</summary>
-    /// <param name="text">The line.</param>
-    /// <returns>The indented line.</returns>
     private static string Pad(string text) => new string(' ', Indent) + text;
 }

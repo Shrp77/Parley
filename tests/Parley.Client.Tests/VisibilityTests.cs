@@ -29,7 +29,7 @@ public sealed class VisibilityTests
     private static AgentName Inventory => AgentName.Create("inventory@alpha");
 
     private static Message Between(AgentName from, AgentName to, long id) =>
-        new(id, id, MessageType.Question, from, to, "some-model-9", "{}", "shared",
+        new(id, id, MessageType.Request, from, to, "some-model-9", "{}", "shared",
             DateTimeOffset.UnixEpoch.AddMinutes(id), null);
 
     /// <summary>The three-participant conversation of §5.0, in the order it happened.</summary>

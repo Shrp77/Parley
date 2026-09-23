@@ -28,7 +28,7 @@ public sealed class DestroyIntegrityTests : IDisposable
     private int _hashes;
 
     private const string Payload =
-        @"{""question"":""who owns it"",""consequences"":""if it is yours I will ask you to change it, and if it is not I will look elsewhere""}";
+        @"{""ask"":""who owns the invoice total, and does it include tax?""}";
 
     /// <summary>The unit separator the pair key's CHECK requires. See DestroyTests.</summary>
     private const string Separator = "\u001F";
@@ -160,12 +160,11 @@ public sealed class DestroyIntegrityTests : IDisposable
                    ('{id}', 'billing@test', '{Stamp(minute)}');
 
             INSERT INTO exchanges
-                (pair_key, asker, answerer, owed_by, state, conversation_id, opened_utc,
-                 expires_utc, closed_utc, clarify_depth, clarify_depth_cap, delivery_window_ms,
-                 working_window_ms, grace_period_ms, question_hash, resolution)
+                (pair_key, requester, receiver, owed_by, state, conversation_id, opened_utc,
+                 closed_utc, clarify_depth, uncollected_flag_ms, stalled_flag_ms, request_hash, outcome)
             VALUES ('billing@test{Separator}orders@test', 'orders@test', 'billing@test',
-                    'billing@test', 'OPEN', '{id}', '{Stamp(minute)}', '{Stamp(minute + 30)}',
-                    NULL, 0, 3, 900000, 3600000, 60000, 'question-hash-{id}', NULL);
+                    'billing@test', 'OPEN', '{id}', '{Stamp(minute)}',
+                    NULL, 0, 900000, 14400000, 'request-hash-{id}', NULL);
             """);
 
         var exchange = (long)(ExecuteScalar("SELECT last_insert_rowid();") ?? 0L);
@@ -178,7 +177,7 @@ public sealed class DestroyIntegrityTests : IDisposable
                 INSERT INTO messages
                     (exchange_id, type, from_agent, to_agent, responder_model, payload_json,
                      content_hash, conversation_id, created_utc)
-                VALUES ({exchange}, 'question', 'orders@test', 'billing@test', 'some-model-9',
+                VALUES ({exchange}, 'request', 'orders@test', 'billing@test', 'some-model-9',
                         '{Payload}', '{_hashes:x64}', '{id}', '{Stamp(minute + i)}');
                 """);
         }

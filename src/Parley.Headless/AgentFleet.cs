@@ -127,11 +127,36 @@ public sealed class AgentFleet : IAsyncDisposable
                 break;
             }
 
+            // **The machine half is checked here, because the catalogue no longer knows about machines.**
+            // It used to be part of the key, so `billing` in this file meant `billing@thisMachine` and
+            // nothing else. An identity says nothing about machines, and a store holds agents on several --
+            // so without this, a local checkout claiming `billing` would be started for `billing@server-b`,
+            // which is a process launched on this machine under a name somebody else holds.
+            if (!string.Equals(candidate.Agent.Machine, NodeCatalogue.Machine, StringComparison.Ordinal))
+            {
+                actions.Add(Skip(candidate, "it is registered on another machine"));
+                continue;
+            }
+
             // Asked of this machine rather than read from the registry. The store holds no
             // executable command line (SPEC.md §4), so an agent registered here that this node
             // has not been told about is one it declines to start -- which is the honest
             // answer, and the same one it would give for an agent on another machine.
-            if (_catalogue.CommandFor(candidate.Agent) is not { } template)
+            // **Resolved through the name a repository claims, because the catalogue is keyed by identity.**
+            // This sweeper has no project of its own -- it polls one store -- so it accepts a claim from any,
+            // and two workspaces claiming one name resolve to neither: starting either would be guessing at
+            // identity, and the ambiguity is reported rather than picked between.
+            if (!_catalogue.TryResolve(candidate.Agent.Role, project: null, out var identity, out var contested))
+            {
+                actions.Add(Skip(
+                    candidate,
+                    contested.Count > 1
+                        ? $"two catalogued workspaces claim that name: {string.Join(", ", contested)}"
+                        : "this machine has no launch command for it"));
+                continue;
+            }
+
+            if (_catalogue.CommandFor(identity) is not { } template)
             {
                 actions.Add(Skip(candidate, "this machine has no launch command for it"));
                 continue;
@@ -157,10 +182,10 @@ public sealed class AgentFleet : IAsyncDisposable
             // entirely -- the first version of this guard sat inside the start and did nothing
             // from the second pass onward, which is precisely when it was needed.
             //
-            // The trigger it guards does not expire on its own: an owed exchange ages out
-            // through §14 whether or not the agent cooperates, but an uncollected message is
-            // held against retention by §9.4's floor, so without this one unread notification
-            // would buy a real session every pass for as long as the fleet ran. One wasted turn
+            // The trigger it guards does not expire on its own: nothing times an owed exchange out
+            // (§6), and an uncollected message is held against retention by §9.4's floor, so
+            // without this one unread message would buy a real session every pass for as long as
+            // the fleet ran. One wasted turn
             // per new message is the bound -- a fresh message raises the count above what was
             // still waiting last time, which re-arms it.
             if (candidate.StuckAt is { } stuck && candidate.Waiting <= stuck)

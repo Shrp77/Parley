@@ -39,7 +39,6 @@ public sealed class OneKeyRuleTests
     {
         ["LaunchKey.cs"] = "the key itself, which is the whole point of the type",
         ["AutostartPlan.cs"] = "the broker's executable name, when nothing else names it",
-        ["Shell.cs"] = "the terminal's window title",
         ["Program.cs"] = "the adapter's header comment, illustrating a launch configuration",
     };
 

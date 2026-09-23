@@ -23,7 +23,7 @@ namespace Parley.Client.Tests.Views;
 public sealed class ReadabilityTests
 {
     private static Message Message(
-        string from, string to, string payload, int minute = 0, MessageType type = MessageType.Question) =>
+        string from, string to, string payload, int minute = 0, MessageType type = MessageType.Request) =>
         new(
             1,
             1,
@@ -111,7 +111,7 @@ public sealed class ReadabilityTests
             "test-plus-five", TimeSpan.FromHours(5), "test +5", "test +5");
 
         var payload = """{"intent":"a question"}""";
-        var lines = Reading.Lines([Message("orders@test", "billing@test", payload)], null, zone);
+        var lines = Reading.Lines([Message("orders@test", "billing@test", payload)], zone);
         var header = lines.Single(l => l.Kind == LineKind.Header);
 
         Assert.Contains("17:00:00", header.Text, StringComparison.Ordinal);

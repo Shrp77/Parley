@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using Grpc.Core;
 using Parley.Broker;
 using Parley.Core;
@@ -11,40 +11,23 @@ namespace Parley.Server;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>A separate service from <see cref="AgentsService"/>, and that is the point.</b> §10.2 opens
-/// by warning that an adapter surfacing an operator operation into an agent's tool set would
-/// breach §10.1 and, through it, §16. The document's own protection is a naming convention —
-/// <c>force_conclude</c> is deliberately not <c>conclude</c> — which depends on whoever writes an
-/// adapter reading carefully. Two services on the wire makes it structural: an adapter binds
-/// <c>Agents</c>, and <c>Agents</c> has no method that retires anybody.
+/// <b>A separate service from <see cref="AgentsService"/>, and that is the point.</b> An adapter binds
+/// <c>Agents</c>, and <c>Agents</c> has no method that retires anybody or closes a conversation over its
+/// participants.
 /// </para>
 /// <para>
-/// <b>It is not authenticated, and nothing here pretends otherwise.</b> §16 records a hostile
-/// network as a non-goal, so anything that can reach the broker can reach this. The separation
-/// is about what an <em>agent's adapter</em> can be tricked into exposing to a model, which is a
-/// real and different problem: a model that can retire its peers can end a conversation it is
-/// losing.
+/// <b>It is not authenticated, and nothing here pretends otherwise.</b> §16 records a hostile network as a
+/// non-goal. The separation is about what an agent's adapter can be tricked into exposing to a model.
 /// </para>
 /// </remarks>
 public sealed class OperatorsService : Wire.Operators.OperatorsBase
 {
-    /// <summary>How many conversations a listing returns when the caller does not say.</summary>
     private const int DefaultPageSize = 50;
 
     /// <summary>The most a listing returns however many were asked for.</summary>
-    /// <remarks>
-    /// The broker's number rather than the caller's. §10.2 makes rule 8.5's argument one level
-    /// up: an unbounded operator query is the mistake the message cap exists to prevent, and a
-    /// bound the caller chooses is not a bound.
-    /// </remarks>
+    /// <remarks>The broker's number rather than the caller's: a bound the caller chooses is not a bound.</remarks>
     private const int MaximumPageSize = 200;
 
-    /// <summary>How long an instruction waits for the agent to take its turn.</summary>
-    /// <remarks>
-    /// A turn is a model thinking, so this is generous and bounded rather than indefinite. The
-    /// alternative is an operator holding a page open against a turn that may never end, and an
-    /// instruction that outlives its patience settles as failed rather than staying pending.
-    /// </remarks>
     private readonly BrokerRuntime _runtime;
 
     /// <summary>Creates the service over a runtime.</summary>
@@ -57,70 +40,93 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.DidItReply> ForceConclude(
-        Wire.ForceConcludeRequest request,
-        ServerCallContext context)
+    /// <remarks>
+    /// Participants still attached are nudged afterwards, so a receiver working in a live session learns the
+    /// work was ended without waiting for its next collection. Nobody is started for it: a closed Result is
+    /// news about work that no longer needs doing, and buying a turn to deliver it would spend the person's
+    /// money on the thing they just stopped.
+    /// </remarks>
+    public override async Task<Wire.DidItReply> ForceConclude(Wire.ForceConcludeRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason;
+
+        var changed = await Console(
+            (console, now, ct) => console.ForceConcludeAsync(request.ConversationId, reason, now, ct),
+            context).ConfigureAwait(false);
+
+        if (changed)
+        {
+            var exported = await Console(
+                (console, _, ct) => console.ExportAsync(request.ConversationId, ct), context).ConfigureAwait(false);
+
+            foreach (var told in exported.Messages
+                         .Where(m => m.ResponderModel == Responder.Broker)
+                         .Select(m => m.To)
+                         .Distinct())
+            {
+                await _runtime.NudgeAsync(told, context.CancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return new Wire.DidItReply { Changed = changed };
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.DidItReply> Archive(Wire.ConversationRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
         var changed = await Console(
-            (console, now, ct) => console.ForceConcludeAsync(request.ConversationId, now, ct),
+            (console, now, ct) => console.SetConversationArchivedAsync(request.ConversationId, archived: true, now, ct),
             context).ConfigureAwait(false);
 
         return new Wire.DidItReply { Changed = changed };
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.DidItReply> Archive(
-        Wire.ConversationRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.DidItReply> Unarchive(Wire.ConversationRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
         var changed = await Console(
-            (console, now, ct) => console.SetConversationArchivedAsync(
-                request.ConversationId, archived: true, now, ct),
+            (console, now, ct) => console.SetConversationArchivedAsync(request.ConversationId, archived: false, now, ct),
             context).ConfigureAwait(false);
 
         return new Wire.DidItReply { Changed = changed };
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.DidItReply> Unarchive(
-        Wire.ConversationRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.DestroyReply> Destroy(Wire.ConversationRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var changed = await Console(
-            (console, now, ct) => console.SetConversationArchivedAsync(
-                request.ConversationId, archived: false, now, ct),
-            context).ConfigureAwait(false);
+        // Its files go with it (SPEC.md §14), once every download in progress has finished: the rows first, in the
+        // destroy's own transaction, then the folder on disk — and only when the rows really went.
+        var files = new FileWork(_runtime);
 
-        return new Wire.DidItReply { Changed = changed };
-    }
+        using var held = await files.HoldEverythingAsync(context.CancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc/>
-    public override async Task<Wire.DestroyReply> Destroy(
-        Wire.ConversationRequest request,
-        ServerCallContext context)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(context);
+        var folder = string.IsNullOrEmpty(request.ConversationId)
+            ? null
+            : await _runtime.UseConnectionAsync(
+                (connection, _, ct) => new Parley.Store.SharedFileRepository(connection)
+                    .GetFolderAsync(request.ConversationId, cancellationToken: ct),
+                context.CancellationToken).ConfigureAwait(false);
 
         var outcome = await Console(
             (console, now, ct) => console.DestroyConversationAsync(request.ConversationId, now, ct),
             context).ConfigureAwait(false);
 
-        var reply = new Wire.DestroyReply { Verdict = Conversions.Out(outcome.Verdict) };
+        await DeleteFoldersWhoseRowsWentAsync(files, folder is null ? [] : [folder], context).ConfigureAwait(false);
 
-        foreach (var toll in outcome.Destroyed)
-        {
-            reply.Destroyed.Add(new Wire.PurgeToll { Table = toll.Table, Rows = toll.Rows });
-        }
+        var reply = new Wire.DestroyReply { Verdict = Conversions.Out(outcome.Verdict) };
+        reply.Destroyed.AddRange(outcome.Destroyed.Select(t => new Wire.PurgeToll { Table = t.Table, Rows = t.Rows }));
 
         return reply;
     }
@@ -128,40 +134,24 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// <inheritdoc/>
     /// <remarks>
     /// <para>
-    /// <b>This does not touch the registry, and that is the whole of why it is allowed to exist.</b>
-    /// It asks the node whose catalogue names the role to launch it; the launched adapter then
-    /// registers the one agent it attaches, by SPEC.md §12.3's ordinary route and under the identity
-    /// §13 requires its launch to fix. Writing a registration here would be the forgery §12.3 forbids
-    /// wearing an operator's clothes.
+    /// <b>This does not touch the registry.</b> It asks the node whose catalogue names the role to launch it;
+    /// the launched adapter registers the one agent it attaches, by §12.3's ordinary route.
     /// </para>
     /// <para>
-    /// It follows that an agent nothing has ever registered can be started, because what makes the
-    /// role reachable is the node's catalogue rather than the registry — which is why enrolling a
-    /// repository need not leave an agent nobody can reach until somebody opens that directory.
+    /// A retired agent is not started: retirement is a person's decision that nothing is routed to it, and
+    /// <c>reinstate</c> is the route that undoes it. An agent the registry does not hold is started, because
+    /// nothing about it has been retired.
     /// </para>
     /// </remarks>
-    public override async Task<Wire.DidItReply> Start(
-        Wire.StartRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.DidItReply> Start(Wire.StartRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
         var agent = Name(request.Agent);
 
-        // **A retired agent is not started, and this was found by probing rather than by reading.**
-        // Retirement is an operator's decision that nothing is routed to an agent (§14), and a
-        // start that ignored it would bring back the process for an agent somebody deliberately
-        // withdrew -- undoing one operator operation by a route that is not the one that means it.
-        // `reinstate` is that route and says so.
-        //
-        // **The lookup is deliberately conditional and that is the whole subtlety.** §12.3, and
-        // T039, turn on there being no registry lookup between an operator asking for a start and
-        // the node receiving it: that absence is what lets a catalogued role nothing has ever
-        // registered be started at all. So an agent the registry does not hold is started, because
-        // nothing about it has been retired; only one it holds and marks retired is refused.
-        var registry = await Console(
-            (console, _, ct) => console.DescribeRegistryAsync(ct), context).ConfigureAwait(false);
+        var registry = await Console((console, _, ct) => console.DescribeRegistryAsync(ct), context)
+            .ConfigureAwait(false);
 
         if (registry.FirstOrDefault(row => row.Name == agent) is { Status: AgentStatus.Retired })
         {
@@ -169,234 +159,211 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         }
 
         var started = _runtime.RequestAttention(
-            agent,
-            string.IsNullOrWhiteSpace(request.Because) ? "an operator asked for it" : request.Because);
+            agent, string.IsNullOrWhiteSpace(request.Because) ? "the person asked for it" : request.Because);
 
         return new Wire.DidItReply { Changed = started };
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.DidItReply> Retire(
-        Wire.AgentRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.DidItReply> Retire(Wire.AgentRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
         var agent = Name(request.Agent);
-
-        var changed = await Console(
-            (console, _, ct) => console.RetireAsync(agent, ct),
-            context).ConfigureAwait(false);
+        var changed = await Console((console, _, ct) => console.RetireAsync(agent, ct), context).ConfigureAwait(false);
 
         return new Wire.DidItReply { Changed = changed };
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.DidItReply> Reinstate(
-        Wire.AgentRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.DidItReply> Reinstate(Wire.AgentRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
         var agent = Name(request.Agent);
-
-        var changed = await Console(
-            (console, _, ct) => console.ReinstateAsync(agent, ct),
-            context).ConfigureAwait(false);
+        var changed = await Console((console, _, ct) => console.ReinstateAsync(agent, ct), context).ConfigureAwait(false);
 
         return new Wire.DidItReply { Changed = changed };
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.PurgeReply> Purge(
-        Wire.AgentRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.PurgeReply> Purge(Wire.AgentRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
         var agent = Name(request.Agent);
 
-        var outcome = await Console(
-            (console, _, ct) => console.PurgeAsync(agent, ct),
-            context).ConfigureAwait(false);
+        // Every conversation it took part in goes, and placing a file made it a participant, so its files go too
+        // (SPEC.md §14). The folders are read before the purge, because afterwards nothing names them.
+        var files = new FileWork(_runtime);
+
+        using var held = await files.HoldEverythingAsync(context.CancellationToken).ConfigureAwait(false);
+
+        var folders = await _runtime.UseConnectionAsync(
+            (connection, _, ct) => new Parley.Store.SharedFileRepository(connection)
+                .GetFoldersPurgingWouldDeleteAsync(agent, cancellationToken: ct),
+            context.CancellationToken).ConfigureAwait(false);
+
+        var outcome = await Console((console, _, ct) => console.PurgeAsync(agent, ct), context).ConfigureAwait(false);
+
+        await DeleteFoldersWhoseRowsWentAsync(files, folders, context).ConfigureAwait(false);
 
         var reply = new Wire.PurgeReply { Verdict = Conversions.Out(outcome.Verdict) };
-
-        foreach (var toll in outcome.Destroyed)
-        {
-            reply.Destroyed.Add(new Wire.PurgeToll { Table = toll.Table, Rows = toll.Rows });
-        }
+        reply.Destroyed.AddRange(outcome.Destroyed.Select(t => new Wire.PurgeToll { Table = t.Table, Rows = t.Rows }));
 
         return reply;
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.RegistryReply> DescribeRegistry(
-        Wire.Empty request,
-        ServerCallContext context)
+    public override async Task<Wire.RegistryReply> DescribeRegistry(Wire.Empty request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var rows = await Console(
-            (console, _, ct) => console.DescribeRegistryAsync(ct),
-            context).ConfigureAwait(false);
+        var rows = await Console((console, _, ct) => console.DescribeRegistryAsync(ct), context).ConfigureAwait(false);
 
         var reply = new Wire.RegistryReply();
-
-        foreach (var row in rows)
-        {
-            reply.Rows.Add(Conversions.Out(row));
-        }
+        reply.Rows.AddRange(rows.Select(Conversions.Out));
 
         return reply;
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.RefusalsReply> DescribeRefusals(
-        Wire.Empty request,
-        ServerCallContext context)
+    public override async Task<Wire.RefusalsReply> DescribeRefusals(Wire.Empty request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var refusals = await Console(
-            (console, _, ct) => console.DescribeRefusalsAsync(ct),
-            context).ConfigureAwait(false);
+        var refusals = await Console((console, _, ct) => console.DescribeRefusalsAsync(ct), context)
+            .ConfigureAwait(false);
 
         var reply = new Wire.RefusalsReply();
-
-        foreach (var refusal in refusals)
+        reply.Refusals.AddRange(refusals.Select(r => new Wire.SizeRefusal
         {
-            reply.Refusals.Add(new Wire.SizeRefusal
-            {
-                Agent = refusal.Agent.Value,
-                Type = Conversions.Out(refusal.Type),
-                Refusals = refusal.Refusals,
-                Worst = refusal.Worst,
-                Total = refusal.Total,
-                Cap = refusal.Cap,
-                LastUtc = Conversions.Stamp(refusal.LastUtc)
-            });
-        }
+            Agent = r.Agent.Value,
+            Type = Conversions.Out(r.Type),
+            Refusals = r.Refusals,
+            Worst = r.Worst,
+            Total = r.Total,
+            Cap = r.Cap,
+            LastUtc = Conversions.Stamp(r.LastUtc)
+        }));
 
         return reply;
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.ClarificationsReply> DescribeClarifications(
-        Wire.Empty request,
-        ServerCallContext context)
+    public override async Task<Wire.ClarificationsReply> DescribeClarifications(Wire.Empty request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var report = await Console(
-            (console, _, ct) => console.DescribeClarificationsAsync(ct),
-            context).ConfigureAwait(false);
+        var report = await Console((console, _, ct) => console.DescribeClarificationsAsync(ct), context)
+            .ConfigureAwait(false);
 
         var reply = new Wire.ClarificationsReply
         {
             ExchangesAtCap = report.ExchangesAtCap,
             LowestCapInForce = report.LowestCapInForce,
             HighestCapInForce = report.HighestCapInForce,
-            Answers = report.Answers,
-            AnswersResolvingSubQuestionsDifferently =
-                report.AnswersResolvingSubQuestionsDifferently
+            Results = report.Results,
+            ResultsWithMixedOutcomes = report.ResultsWithMixedOutcomes
         };
 
-        foreach (var bucket in report.Distribution)
+        reply.Distribution.AddRange(report.Distribution.Select(b => new Wire.ClarifyDepthBucket
         {
-            reply.Distribution.Add(new Wire.ClarifyDepthBucket
-            {
-                Depth = bucket.Depth,
-                Exchanges = bucket.Exchanges
-            });
-        }
+            Depth = b.Depth,
+            Exchanges = b.Exchanges
+        }));
 
         return reply;
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.ReferralsReply> DescribeReferrals(
-        Wire.Empty request,
-        ServerCallContext context)
+    public override async Task<Wire.ResultsReply> DescribeResults(Wire.Empty request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var report = await Console(
-            (console, _, ct) => console.DescribeReferralsAsync(ct),
-            context).ConfigureAwait(false);
+        var report = await Console((console, _, ct) => console.DescribeResultsAsync(ct), context).ConfigureAwait(false);
 
-        var reply = new Wire.ReferralsReply();
+        var reply = new Wire.ResultsReply();
 
-        foreach (var pair in report.Pairs)
+        reply.Outcomes.AddRange(report.Outcomes.Select(o => new Wire.OutcomeCount
         {
-            reply.Pairs.Add(new Wire.ReferralPair
-            {
-                Asker = pair.Asker,
-                Answerer = pair.Answerer,
-                Closed = pair.Closed,
-                OutOfScope = pair.OutOfScope
-            });
-        }
+            Agent = o.Agent,
+            ResponderModel = o.ResponderModel,
+            Outcome = Conversions.Out(o.Outcome),
+            Items = o.Items
+        }));
 
-        foreach (var target in report.Targets)
+        reply.Blockers.AddRange(report.Blockers.Select(b => new Wire.BlockerCount
         {
-            reply.Targets.Add(new Wire.ReferralTarget
-            {
-                Asker = target.Asker,
-                Answerer = target.Answerer,
-                RedirectedTo = target.RedirectedTo,
-                Referrals = target.Referrals,
-                LastUtc = target.LastUtc
-            });
-        }
+            Agent = b.Agent,
+            Kind = Conversions.Out(b.Kind),
+            Items = b.Items
+        }));
+
+        reply.Sources.AddRange(report.Sources.Select(s => new Wire.SourceCount
+        {
+            Agent = s.Agent,
+            Source = s.Source,
+            Items = s.Items
+        }));
+
+        reply.Closures.AddRange(report.Closures.Select(c => new Wire.ClosureCount
+        {
+            Agent = c.Agent,
+            ByConsensus = c.ByConsensus,
+            ByPerson = c.ByPerson
+        }));
 
         return reply;
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.NotificationsReply> DescribeNotifications(
-        Wire.Empty request,
-        ServerCallContext context)
+    public override async Task<Wire.FlagsReply> DescribeFlags(Wire.Empty request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var report = await Console(
-            (console, _, ct) => console.DescribeNotificationsAsync(ct),
-            context).ConfigureAwait(false);
+        var report = await Console((console, now, ct) => console.DescribeFlagsAsync(now, ct), context)
+            .ConfigureAwait(false);
 
-        var reply = new Wire.NotificationsReply();
+        var reply = new Wire.FlagsReply();
 
-        foreach (var flow in report.Flows)
+        reply.Flags.AddRange(report.Exchanges.Select(f => new Wire.FlagView
         {
-            reply.Flows.Add(new Wire.NotifyFlow
+            Kind = Conversions.Out(f.Kind),
+            ExchangeId = f.ExchangeId,
+            ConversationId = f.ConversationId,
+            WaitingOn = f.WaitingOn.Value,
+            Waiting = f.Waiting.Value,
+            SinceUtc = Conversions.Stamp(f.SinceUtc)
+        }));
+
+        foreach (var cycle in report.Cycles)
+        {
+            var view = new Wire.CycleView
             {
-                From = flow.From,
-                To = flow.To,
-                Sent = flow.Sent,
-                Characters = flow.Characters,
-                Largest = flow.Largest,
-                FirstUtc = flow.FirstUtc,
-                LastUtc = flow.LastUtc
-            });
+                ExchangeId = cycle.ExchangeId,
+                ConversationId = cycle.ConversationId,
+                RecordedUtc = Conversions.Stamp(cycle.RecordedUtc)
+            };
+
+            view.Path.AddRange(cycle.Path.Select(a => a.Value));
+            reply.Cycles.Add(view);
         }
 
         return reply;
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.ExportReply> Export(
-        Wire.ExportRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.ExportReply> Export(Wire.ExportRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var exported = await Console(
-            (console, _, ct) => console.ExportAsync(request.ConversationId, ct),
-            context).ConfigureAwait(false);
+        var exported = await Console((console, _, ct) => console.ExportAsync(request.ConversationId, ct), context)
+            .ConfigureAwait(false);
 
         var reply = new Wire.ExportReply();
 
@@ -406,132 +373,76 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             {
                 ConversationId = gone.Id,
                 DestroyedUtc = gone.DestroyedUtc.ToString("O", CultureInfo.InvariantCulture),
-                Messages = gone.Messages,
+                Messages = gone.Messages
             };
 
-            foreach (var agent in gone.Participants)
-            {
-                record.Participants.Add(agent.Value);
-            }
-
+            record.Participants.AddRange(gone.Participants.Select(a => a.Value));
             reply.Destroyed = record;
         }
 
-        foreach (var message in exported.Messages)
-        {
-            reply.Messages.Add(Conversions.Out(message));
-        }
+        reply.Messages.AddRange(exported.Messages.Select(Conversions.Out));
 
-        // Beside the messages rather than behind a second call. A transcript rendered without
-        // them cannot tell an abandoned question from an answered one, and §10.2 says that is the
-        // most misleading thing a console can do.
-        foreach (var exchange in exported.Exchanges)
+        reply.Exchanges.AddRange(exported.Exchanges.Select(e => new Wire.ExchangeSnapshot
         {
-            reply.Exchanges.Add(new Wire.ExchangeSnapshot
-            {
-                ExchangeId = exchange.ExchangeId,
-                State = Conversions.Out(exchange.State),
-                OpenedUtc = exchange.OpenedUtc.ToString("O", CultureInfo.InvariantCulture),
-                ClosedUtc = exchange.ClosedUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty
-            });
-        }
+            ExchangeId = e.ExchangeId,
+            State = Conversions.Out(e.State),
+            OpenedUtc = e.OpenedUtc.ToString("O", CultureInfo.InvariantCulture),
+            ClosedUtc = e.ClosedUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty,
+            Outcome = Conversions.Out(e.Outcome)
+        }));
 
         return reply;
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.WaitingReply> DescribeWaiting(
-        Wire.Empty request,
-        ServerCallContext context)
+    public override async Task<Wire.WaitingReply> DescribeWaiting(Wire.Empty request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var edges = await Console(
-            (console, _, ct) => console.DescribeWaitingAsync(ct),
-            context).ConfigureAwait(false);
+        var edges = await Console((console, _, ct) => console.DescribeWaitingAsync(ct), context).ConfigureAwait(false);
 
         var reply = new Wire.WaitingReply();
-
-        foreach (var edge in edges)
+        reply.Edges.AddRange(edges.Select(e => new Wire.WaitingEdge
         {
-            reply.Edges.Add(new Wire.WaitingEdge
-            {
-                Waiter = edge.Waiter.Value,
-                WaitedOn = edge.WaitedOn.Value,
-                ExchangeId = edge.ExchangeId
-            });
-        }
+            Waiter = e.Waiter.Value,
+            WaitedOn = e.WaitedOn.Value,
+            ExchangeId = e.ExchangeId
+        }));
 
         return reply;
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.InstructReply> Instruct(
-        Wire.InstructRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.InstructReply> Instruct(Wire.InstructRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
         if (!AgentName.TryCreate(request.Agent, out var agent))
         {
-            throw new RpcException(new Status(
-                StatusCode.InvalidArgument, $"'{request.Agent}' is not an agent name."));
+            throw new RpcException(new Status(StatusCode.InvalidArgument, $"'{request.Agent}' is not an agent name."));
         }
 
-        // Said here rather than left to the schema. The instructions table carries the same cap
-        // the messages table does, and reaching it as a constraint violation gives the operator a
-        // failed write to read instead of a sentence about length — for the one refusal they can
-        // actually do something about, since unlike an agent they can simply say less.
         if (request.Text.Length > MessageLimits.MaxPayloadCharacters)
         {
             throw new RpcException(new Status(
                 StatusCode.InvalidArgument,
-                $"An instruction may be at most {MessageLimits.MaxPayloadCharacters} characters "
-                + $"and this one is {request.Text.Length}."));
+                $"An instruction may be at most {MessageLimits.MaxPayloadCharacters} characters and this one is " +
+                $"{request.Text.Length}."));
         }
 
-        // Written before anybody tries to deliver it. The row records that a person asked, which
-        // is worth having even when the asking failed — somebody wanting to know what they told
-        // an agent last Tuesday is asking about the instruction, not about whether the machine
-        // happened to be on.
+        // Written before anybody tries to deliver it: the row records that a person asked.
         var id = await Console(
             (console, now, ct) => console.RecordInstructionAsync(agent, request.Text, now, ct),
             context).ConfigureAwait(false);
 
         var result = await _runtime.DeliverInstructionAsync(
-            id, agent, request.Text, _runtime.InstructionPatience, context.CancellationToken)
-            .ConfigureAwait(false);
+            id, agent, request.Text, _runtime.InstructionPatience, context.CancellationToken).ConfigureAwait(false);
 
-        // **Nothing is settled here, and that removal is the whole defect.**
-        //
-        // This used to write the outcome it had just computed, including the one it computed by
-        // giving up. Ceasing to wait is a fact about the broker; `failed` is a claim about the
-        // turn -- "attempted and did not complete" -- which nobody is entitled to make while it is
-        // still being attempted. Worse, writing it *settled* the record, and settlement is
-        // first-come: the agent's real answer was refused when it arrived minutes later, so the
-        // work was done and both the operator and the store were told it had failed.
-        //
-        // The perverse part was that patience was punished. The write took `context`'s token, so
-        // an operator who closed the tab cancelled it, the row stayed open, and the node's true
-        // report landed -- while an operator who waited got `failed` written first and lost the
-        // answer. Two operators, opposite outcomes, neither told which they had had.
-        //
-        // What settles an instruction now is only ever something that knows: the node reporting,
-        // the node departing, or the sweep past TurnBudget.PresumedDead.
-        //
-        // **With one exception, and it is an exception because it is knowledge rather than
-        // impatience.** Undeliverable is decided before any waiting at all -- no node holds the
-        // machine, or the node's catalogue does not name the role -- so no turn was begun and
-        // there is nothing to be premature about. §11.5 requires the operator to be told rather
-        // than left looking as though the instruction arrived, and a row left pending would say
-        // the opposite of what happened.
-        //
-        // **Written with no cancellation token, deliberately.** The old code took the operator's,
-        // which is how patience came to be punished: an operator who walked away cancelled the
-        // write. Whether this row records what the broker already knows must not depend on
-        // whether anybody is still listening. It is one small update against a row this call just
-        // inserted.
+        // Nothing is settled here but undeliverable, which is knowledge rather than impatience: no turn was
+        // begun. Ceasing to wait is a fact about the broker, and settling on it would destroy the agent's
+        // answer when it arrives (§10.2). Written with no cancellation token, so whether the record says what
+        // the broker knows does not depend on whether anybody is still listening.
         if (result.Outcome == InstructionOutcome.Undeliverable)
         {
             _ = await _runtime.UseConnectionAsync(
@@ -549,21 +460,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// <para>
-    /// The page is bounded by the broker whatever was asked for, exactly as
-    /// <c>ListConversations</c> is, and for the reason recorded there: §10.2 makes rule 8.5's
-    /// argument one level up, and a caller's number is a caller's number.
-    /// </para>
-    /// <para>
-    /// An agent filter that is not a name is refused rather than ignored. Dropping it would answer
-    /// a narrow question with a wide result, and the caller cannot tell the difference — an empty
-    /// list invites a second look, a full one reads as the answer.
-    /// </para>
-    /// </remarks>
-    public override async Task<Wire.InstructionsReply> Instructions(
-        Wire.InstructionsRequest request,
-        ServerCallContext context)
+    public override async Task<Wire.InstructionsReply> Instructions(Wire.InstructionsRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
@@ -576,33 +473,22 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             {
                 throw new RpcException(new Status(
                     StatusCode.InvalidArgument,
-                    $"'{request.Agent}' is not an agent name, so it cannot narrow this list. "
-                    + "Ask again without it to see everything."));
+                    $"'{request.Agent}' is not an agent name, so it cannot narrow this list. Ask again without it " +
+                    "to see everything."));
             }
 
             agent = named;
         }
 
-        var limit = request.PageSize <= 0
-            ? DefaultPageSize
-            : Math.Min(request.PageSize, MaximumPageSize);
+        var limit = request.PageSize <= 0 ? DefaultPageSize : Math.Min(request.PageSize, MaximumPageSize);
 
-        // Opaque to the caller, for the reason ListConversations gives: a token whose shape a
-        // client parsed would be a shape the broker could not change. One more row is asked for
-        // than will be returned, so the end of the listing is known rather than guessed -- a token
-        // handed out on a full last page would send the caller back for nothing.
-        var resumeAt = long.TryParse(
-            request.PageToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var before)
+        var resumeAt = long.TryParse(request.PageToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var before)
             ? before
             : (long?)null;
 
         var found = await Console(
             (console, _, ct) => console.ListInstructionsAsync(
-                agent,
-                request.InstructionId > 0 ? request.InstructionId : null,
-                limit + 1,
-                resumeAt,
-                ct),
+                agent, request.InstructionId > 0 ? request.InstructionId : null, limit + 1, resumeAt, ct),
             context).ConfigureAwait(false);
 
         var more = found.Count > limit;
@@ -610,33 +496,25 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         var reply = new Wire.InstructionsReply
         {
-            NextPageToken = more
-                ? page[^1].Id.ToString(CultureInfo.InvariantCulture)
-                : string.Empty
+            NextPageToken = more ? page[^1].Id.ToString(CultureInfo.InvariantCulture) : string.Empty
         };
 
-        foreach (var instruction in page)
+        reply.Instructions.AddRange(page.Select(i => new Wire.InstructionRecord
         {
-            reply.Instructions.Add(new Wire.InstructionRecord
-            {
-                Id = instruction.Id,
-                Agent = instruction.Agent.Value,
-                Text = instruction.Text,
-                Outcome = Conversions.Out(instruction.Outcome),
-                Reply = instruction.Reply ?? string.Empty,
-                IssuedUtc = Conversions.Stamp(instruction.IssuedUtc),
-                SettledUtc = instruction.SettledUtc is { } settled ? Conversions.Stamp(settled) : string.Empty
-            });
-        }
+            Id = i.Id,
+            Agent = i.Agent.Value,
+            Text = i.Text,
+            Outcome = Conversions.Out(i.Outcome),
+            Reply = i.Reply ?? string.Empty,
+            IssuedUtc = Conversions.Stamp(i.IssuedUtc),
+            SettledUtc = i.SettledUtc is { } settled ? Conversions.Stamp(settled) : string.Empty
+        }));
 
         return reply;
     }
 
     /// <inheritdoc/>
-    public override Task<Wire.ImplementsReply> Implements(
-        Wire.Empty request, ServerCallContext context) =>
-        // Asked before anything else, so a client can tell a broker of the wrong version from one
-        // that is switched off. Those want different words in front of a person.
+    public override Task<Wire.ImplementsReply> Implements(Wire.Empty request, ServerCallContext context) =>
         Task.FromResult(new Wire.ImplementsReply { ProtocolVersion = ProtocolVersion.Current });
 
     /// <inheritdoc/>
@@ -647,52 +525,33 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        // The broker bounds the page whatever was asked for. §10.2 makes rule 8.5's argument one
-        // level up: an unbounded operator query is the mistake the message cap prevents, and a
-        // caller's number is a caller's number.
         var limit = request.PageSize <= 0 ? DefaultPageSize : Math.Min(request.PageSize, MaximumPageSize);
 
         AgentName? participant = null;
 
         if (!string.IsNullOrEmpty(request.Participant))
         {
-            // Refused rather than ignored. Dropping a filter that could not be parsed answers a
-            // narrow question with a wide result, and the caller has no way to tell: an empty
-            // list invites a second look, a full one reads as the answer. The console says so on
-            // its own page, but the console is not the only thing that may ask.
             if (!AgentName.TryCreate(request.Participant, out var named))
             {
                 throw new RpcException(new Status(
                     StatusCode.InvalidArgument,
-                    $"'{request.Participant}' is not an agent name, so it cannot narrow this "
-                    + "list. Ask again without it to see everything."));
+                    $"'{request.Participant}' is not an agent name, so it cannot narrow this list. Ask again " +
+                    "without it to see everything."));
             }
 
             participant = named;
         }
 
-        // The token carries the instant and the identifier at it, separated by a space -- an
-        // instant alone cannot resume, because the order breaks ties on the identifier and a
-        // resume that ignored it would skip every remaining conversation sharing one instant.
-        // Opaque to the caller either way: §10.2 says the broker bounds the page, and a token
-        // whose shape a client parsed would be a shape the broker could not change.
+        // The instant and the identifier at it, because the order breaks ties on the identifier and a resume
+        // on the instant alone would skip conversations sharing one.
         var resumeAt = request.PageToken.Split(' ', 2);
 
         var summaries = await Console(
             (console, _, ct) => console.ListConversationsAsync(
-                participant,
-                Parse(request.SinceUtc),
-                Parse(request.UntilUtc),
-                limit,
-                Parse(resumeAt[0]),
-                resumeAt.Length > 1 ? resumeAt[1] : null,
-                request.IncludeArchived,
-                ct),
+                participant, Parse(request.SinceUtc), Parse(request.UntilUtc), limit, Parse(resumeAt[0]),
+                resumeAt.Length > 1 ? resumeAt[1] : null, request.IncludeArchived, ct),
             context).ConfigureAwait(false);
 
-        // Counted whether or not archived ones were asked for, because the question it answers is
-        // "are there archived conversations here" and a caller that could not ask would be hiding
-        // traffic: an archived conversation goes on receiving messages.
         var omitted = request.IncludeArchived
             ? 0
             : await Console(
@@ -714,48 +573,31 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 Archived = summary.Archived
             };
 
-            foreach (var agent in summary.Participants)
-            {
-                row.Participants.Add(agent.Value);
-            }
-
+            row.Participants.AddRange(summary.Participants.Select(a => a.Value));
             reply.Conversations.Add(row);
         }
 
-        // The resume point is the last row on this page, which is a value that does not move. An
-        // offset would re-read rows that shift as the log grows, showing one conversation twice
-        // and another never. Both halves, for the reason above: the instant alone does not
-        // identify a position when several conversations share it.
         reply.NextPageToken = summaries.Count < limit
             ? string.Empty
-            : string.Create(
-                CultureInfo.InvariantCulture,
-                $"{summaries[^1].LastActivityUtc:O} {summaries[^1].Id}");
+            : string.Create(CultureInfo.InvariantCulture, $"{summaries[^1].LastActivityUtc:O} {summaries[^1].Id}");
 
         return reply;
     }
 
-    /// <summary>Reads an optional instant from the wire, where empty means absent.</summary>
-    /// <param name="value">The rendered instant, or empty.</param>
-    /// <returns>The instant, or <see langword="null"/>.</returns>
     private static DateTimeOffset? Parse(string value) =>
         string.IsNullOrEmpty(value)
             ? null
-            : DateTimeOffset.TryParse(
-                value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed)
+            : DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed)
                 ? parsed
                 : null;
 
     /// <inheritdoc/>
-    public override async Task<Wire.PruneReply> Prune(
-        Wire.Empty request,
-        ServerCallContext context)
+    public override async Task<Wire.PruneReply> Prune(Wire.Empty request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var result = await Console(
-            (console, now, ct) => console.PruneAsync(_runtime.Retention, now, ct),
-            context).ConfigureAwait(false);
+        var result = await Console((console, now, ct) => console.PruneAsync(_runtime.Retention, now, ct), context)
+            .ConfigureAwait(false);
 
         return new Wire.PruneReply
         {
@@ -767,16 +609,81 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         };
     }
 
-    /// <summary>Runs work against a console over the shared connection.</summary>
-    /// <typeparam name="T">What the work returns.</typeparam>
-    /// <param name="work">The work.</param>
-    /// <param name="context">The call.</param>
-    /// <returns>Whatever the work returned.</returns>
+    /// <inheritdoc/>
+    public override Task<Wire.FilesReply> ListSharedFiles(Wire.ListFilesRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).ListAsync(request, forOperator: true, context.CancellationToken);
+    }
+
+    /// <inheritdoc/>
     /// <remarks>
-    /// A console is built per call rather than held, because it carries no state — unlike a
-    /// broker, which is bound to the agent it attached for. What it needs is the connection, and
-    /// the connection is what the gate protects.
+    /// Any placer's, which is why this is here and not on <c>Agents</c>: an agent removes only what it placed.
     /// </remarks>
+    public override Task<Wire.RemoveFilesReply> RemoveFiles(Wire.RemoveFilesRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).RemoveAsync(request, forOperator: true, context.CancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public override Task<Wire.PruneFilesReply> PruneFiles(Wire.Empty request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).PruneAsync(context.CancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public override Task<Wire.FileLocationReply> DescribeFileLocation(Wire.FileLocationRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).DescribeAsync(request, context.CancellationToken);
+    }
+
+    /// <summary>Deletes the folders on disk of conversations whose rows are gone.</summary>
+    /// <param name="files">The file operations.</param>
+    /// <param name="folders">The folders as they were recorded before the delete.</param>
+    /// <param name="context">The call.</param>
+    /// <returns>A task that completes when they are deleted.</returns>
+    /// <remarks>
+    /// Checked against the store rather than assumed from the outcome, so a destroy or purge that deleted nothing —
+    /// no such conversation, no such agent — can never take a folder that still belongs to one.
+    /// </remarks>
+    private async Task DeleteFoldersWhoseRowsWentAsync(FileWork files, IReadOnlyList<string> folders, ServerCallContext context)
+    {
+        if (folders.Count == 0)
+        {
+            return;
+        }
+
+        var gone = await _runtime.UseConnectionAsync(
+            async (connection, _, ct) =>
+            {
+                var repository = new Parley.Store.SharedFileRepository(connection);
+                var orphaned = new List<string>();
+
+                foreach (var folder in folders)
+                {
+                    if (await repository.GetConversationForFolderAsync(folder, cancellationToken: ct).ConfigureAwait(false) is null)
+                    {
+                        orphaned.Add(folder);
+                    }
+                }
+
+                return orphaned;
+            },
+            context.CancellationToken).ConfigureAwait(false);
+
+        files.DeleteFolders(gone);
+    }
+
     private Task<T> Console<T>(
         Func<OperatorConsole, DateTimeOffset, CancellationToken, Task<T>> work,
         ServerCallContext context) =>
@@ -784,9 +691,6 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             (connection, now, ct) => work(new OperatorConsole(connection), now, ct),
             context.CancellationToken);
 
-    /// <summary>Reads an agent name, refusing anything that is not one.</summary>
-    /// <param name="value">The name as it arrived.</param>
-    /// <returns>The name.</returns>
     private static AgentName Name(string value) =>
         AgentName.TryCreate(value, out var name)
             ? name

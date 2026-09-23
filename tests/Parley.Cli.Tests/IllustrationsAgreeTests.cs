@@ -1,3 +1,4 @@
+using Parley.Configuration;
 using Parley.Setup;
 using Xunit;
 

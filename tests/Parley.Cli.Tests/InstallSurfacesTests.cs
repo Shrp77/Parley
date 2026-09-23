@@ -34,8 +34,8 @@ public sealed class InstallSurfacesTests
     {
         var text = RepositoryFile.Read(script);
 
-        Assert.Contains("Parley.Top", text, StringComparison.Ordinal);
-        Assert.Contains("parley-top", text, StringComparison.Ordinal);
+        Assert.Contains("Parley.Terminal", text, StringComparison.Ordinal);
+        Assert.Contains("parley-terminal", text, StringComparison.Ordinal);
     }
 
     [Theory]

@@ -5,7 +5,7 @@
 
     A project of its own for the reason Parley.Configuration is one, and in almost the same
     words: two programs read this and cannot otherwise share one reader. The operator's console
-    reads it to render a page; `parley top` reads it to draw a terminal. Leaving it inside
+    reads it to render a page; `parley terminal` reads it to draw a terminal. Leaving it inside
     Parley.Web would mean a terminal application taking a dependency on an ASP.NET Core assembly
     in order to find out who is in a conversation, which is a boundary nobody would defend if it
     were proposed fresh.

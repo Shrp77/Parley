@@ -1,7 +1,8 @@
+using Parley.Configuration;
 using Parley.Core;
 using Parley.Setup;
-using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json;
 using Xunit;
 
 namespace Parley.Cli.Tests;
@@ -80,83 +81,49 @@ public sealed class ProbeThreeTests : IAsyncDisposable
             OwnsApproved = true,
         };
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(4)]
-    [InlineData(5)]
-    public async Task Two_projects_claiming_one_workspace_unattended_at_once_do_not_both_win(int round)
-    {
-        // Repeated, because one pass of a race is luck rather than evidence. The round number only
-        // separates the fixtures.
-        _ = round;
-
-        // **The check reads other projects' catalogues and writes its own.** Holding a file cannot
-        // close that: the thing checked is not the thing written. Two projects enrolling one
-        // repository unattended at the same moment can each look and see nothing.
-        //
-        // The rule exists because a node starts an agent with the repository as its working
-        // directory, so two consents is two models editing one checkout with nobody watching.
-        var workspace = Workspace("inventory");
-        var deployment = new[] { Project("alpha"), Project("beta") };
-
-        // The gate is the manifest itself, so the probe has to have one -- which is also the honest
-        // shape: a machine with two projects has a manifest describing them.
-        var manifest = Path.Combine(_root, "projects.json");
-
-        await File.WriteAllTextAsync(manifest, "{}", TestContext.Current.CancellationToken);
-
-        var both = new[] { "alpha", "beta" }.Select(project => Task.Run(async () =>
-        {
-            try
-            {
-                await Enrolment.AddAsync(
-                    Entry(workspace, project, unattended: true),
-                    project,
-                    CatalogueFor(project),
-                    Path.Combine(workspace, "CLAUDE.md"),
-                    TestContext.Current.CancellationToken,
-                    deployment,
-                    manifest);
-
-                return true;
-            }
-            catch (Exception ex) when (ex is IOException or InvalidDataException)
-            {
-                return false;
-            }
-        })).ToArray();
-
-        await Task.WhenAll(both);
-
-        var consenting = new[] { "alpha", "beta" }
-            .Where(project => File.Exists(CatalogueFor(project)))
-            .Count(project =>
-                (JsonNode.Parse(File.ReadAllText(CatalogueFor(project)))?["agents"] as JsonObject)
-                    is { Count: > 0 });
-
-        Assert.True(
-            consenting <= 1,
-            $"{consenting} projects consented to start one workspace unattended");
-    }
+    // **A six-round race stood here and 018 removed the thing it raced for.** Two projects granting one
+    // workspace an unattended start at the same moment each looked, saw nothing, and both wrote — which
+    // is what put the machine-wide gate in `Catalogues`. FR-013 is gone: one catalogue keyed by the
+    // agent's identity means one checkout has one entry, so there is no second grant to win. The gate
+    // stays and is still raced below, because two enrolments still share one file.
 
     [Fact]
     public async Task A_bulk_run_that_refuses_one_repository_has_not_written_the_ones_before_it()
     {
         // `enroll apply` refuses a half-enrolled set by design — *"the repository that missed out is
         // indistinguishable from one you never meant to enroll"* — and validates every row before
-        // writing any. FR-013 is a refusal that arrives during the writing phase, which is a
-        // different thing, and this asks whether it undoes that promise.
+        // writing any. A refusal that arrives during the *writing* phase is a different thing, and this
+        // asks whether it undoes that promise.
+        //
+        // **The specimen refusal changed with 018 and the question did not.** It used to be FR-013's
+        // second unattended start; it is now the copied repository — one identity offered at a second
+        // path while the first is still there — which is the one refusal left that cannot be decided
+        // before the catalogue is read.
         var first = Workspace("orders");
         var second = Workspace("inventory");
+        var original = Workspace("inventory-original");
+        var identity = AgentIdentity.Mint();
 
-        // `alpha` already starts `second` unattended, so enrolling it into `beta` must be refused.
+        foreach (var checkout in (string[])[second, original])
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(checkout, LaunchConfiguration.FileName),
+                $$"""
+                {
+                  "mcpServers": {
+                    "parley-alpha": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "stock" } }
+                  },
+                  "{{LaunchConfiguration.IdentityMember}}": "{{identity}}"
+                }
+                """,
+                TestContext.Current.CancellationToken);
+        }
+
+        // This machine already starts that agent from the original checkout, which is still there.
         await File.WriteAllTextAsync(
-            CatalogueFor("alpha"),
+            CatalogueFor("beta"),
             $$"""
-              { "agents": { "inventory": { "command": "claude", "workspace": "{{second}}" } } }
+              { "agents": { "{{identity}}": { "command": "claude", "workspace": "{{original.Replace('\\', '/')}}" } } }
               """,
             TestContext.Current.CancellationToken);
 

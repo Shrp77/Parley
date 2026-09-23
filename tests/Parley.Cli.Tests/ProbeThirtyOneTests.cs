@@ -1,3 +1,5 @@
+using Parley.Configuration;
+using Parley.Core;
 using Parley.Setup;
 using System.Text.Json.Nodes;
 using Xunit;
@@ -121,17 +123,18 @@ public sealed class ProbeThirtyOneTests : IDisposable
     }
 
     [Fact]
-    public async Task The_catalogue_is_keyed_by_a_role_a_node_can_actually_look_up()
+    public async Task The_catalogue_is_keyed_by_something_a_node_can_actually_look_up()
     {
-        // **Why the name rule is not merely tidiness.** The catalogue key is whatever string this was
-        // handed, and a node finds an entry by `agent.Role`: `NodeCatalogue.WorkspaceFor` looks up
-        // `agent.Role` and `NodesService.RequestStart` guards on `Startable.Contains(agent.Role)`. A
-        // key under a qualified name is therefore never found and never started — standing consent
-        // recorded in a form nothing can act on, with nothing said.
+        // **Why the name rule is not merely tidiness, asked of the key 018 gave this file.** It used to
+        // be whatever role string this writer was handed, and a node found an entry by `agent.Role` —
+        // so a key under a *qualified* name was never found and never started: standing consent
+        // recorded in a form nothing could act on, with nothing said. The adapter accepts either
+        // spelling in `PARLEY_AGENT`, which is what made the qualified one look admissible.
         //
-        // The adapter accepts either spelling in `PARLEY_AGENT`, which is what made the qualified one
-        // look admissible. That is its tolerance for a hand-written file, not a licence for this
-        // writer to emit either — and six tests had come to assert the shape it produced.
+        // The key is an identity now, which cannot be mis-spelled into something unlookupable, and the
+        // question becomes whether the node can still get from a name to it. It can only do that by
+        // reading what the checkout declares — so the two files have to agree, and a catalogue keyed by
+        // an identity the repository does not carry is the same defect in its new shape.
         await Enrolment.AddAsync(
             new EnrollmentEntry(Workspace, "orders", "Carts and totals.", Unattended: true)
             {
@@ -150,8 +153,21 @@ public sealed class ProbeThirtyOneTests : IDisposable
         var key = Assert.Single(agents).Key;
 
         Assert.True(
-            EnrollmentPlan.IsWellFormedName(key),
+            AgentIdentity.TryRead(key, out var keyed),
             $"the catalogue is keyed '{key}', which no node will ever look up");
+
+        Assert.True(
+            LaunchConfiguration.TryRead(Workspace, out var declared, out var problem), problem);
+
+        Assert.Equal(keyed, declared.Identity);
+
+        // And the name the repository claims is still one an agent can be called, because that is what
+        // a node resolves to this key and what the broker refuses to let anything forge.
+        var claimed = Assert.Single(declared.Memberships);
+
+        Assert.True(
+            EnrollmentPlan.IsWellFormedName(claimed.Name),
+            $"the repository claims '{claimed.Name}', which is not a name an agent can hold");
     }
 
     [Fact]

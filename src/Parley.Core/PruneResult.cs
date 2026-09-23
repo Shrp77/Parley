@@ -31,8 +31,7 @@ namespace Parley.Core;
 /// thousand spent messages had four of them removing nothing. Folded into
 /// <see cref="HeldByFloor"/> that read as "thirty thousand messages are undelivered or on open
 /// exchanges", which is not merely imprecise: it points at a broken deployment when nothing is
-/// wrong. It is not an error count, for the same reason <see cref="ReapResult.Contended"/> is
-/// not: the work was done, by somebody else.
+/// wrong. It is not an error count: the work was done, by somebody else.
 /// </para>
 /// <para>
 /// <see cref="Capped"/> is a fact rather than a count, and it is here rather than left to a

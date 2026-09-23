@@ -23,12 +23,33 @@ public sealed class SetupSurfaceTests
 {
     private static readonly Assembly Setup = typeof(Enrolment).Assembly;
 
+    /// <summary>Whether a type is reachable from outside this assembly.</summary>
+    /// <param name="type">The type.</param>
+    /// <returns>Whether somebody outside can name it.</returns>
+    /// <remarks>
+    /// <b>Found by lens 3, and the guard had the hole from the day it was written.</b>
+    /// <see cref="Type.IsPublic"/> is true only of a <em>top-level</em> public type; a public type
+    /// nested inside a public one answers <see cref="Type.IsNestedPublic"/> instead. So
+    /// <c>Enrolment.Outcome</c> — public since the split, and returned by every write this
+    /// assembly performs — was never on the list, and neither was the type added beside it in this
+    /// branch. The check's own claim is that a member appearing here is a decision somebody makes
+    /// in this file, and it could not keep that promise for the shape a nested record has.
+    /// </remarks>
+    private static bool Reachable(Type type) =>
+        type.IsPublic || (type.IsNestedPublic && Reachable(type.DeclaringType!));
+
+    /// <summary>What to call a type, so a nested one reads as what it is.</summary>
+    /// <param name="type">The type.</param>
+    /// <returns>Its name, qualified by whatever it is nested in.</returns>
+    private static string Named(Type type) =>
+        type.IsNested ? $"{Named(type.DeclaringType!)}.{type.Name}" : type.Name;
+
     [Fact]
     public void The_setup_assembly_exposes_exactly_these_types()
     {
         var public_ = Setup.GetTypes()
-            .Where(type => type.IsPublic)
-            .Select(type => type.Name)
+            .Where(Reachable)
+            .Select(Named)
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
 
@@ -41,12 +62,29 @@ public sealed class SetupSurfaceTests
                 "EnrollmentManifest",
                 "EnrollmentPlan",
                 "Enrolment",
+
+                // Nested, and invisible to this check until lens 3 widened it. `Outcome` is what
+                // every write here returns and has been public since the split.
+                //
+                // `Enrolment.Shared` was beside it and 018 removed it: it said which project already
+                // started a repository, so a surface could describe the launch entry it was about to
+                // write and the catalogue line it was not. One catalogue per machine keyed by the
+                // agent's identity means every project shares the one entry, so there is no second
+                // shape to describe.
+                "Enrolment.Outcome",
                 "InstalledEntry",
                 "InterruptedEnrolment",
                 "ProjectCommand",
                 "ProjectFields",
                 "ProjectResolution",
                 "RepositoryPlan",
+
+                // A command's project comes from its context, and `parley` reads which projects the repository it runs
+                // in names. Here rather than in the CLI because the terminal enrols repositories through this assembly
+                // and the key rule it reads -- `parley-<project>` -- is `LaunchKey`'s, which must not be written twice.
+                // `LaunchKey` itself moved to Parley.Configuration in 018, where a node's own reader of that file can
+                // see it; this assembly still reads it from there rather than keeping a second spelling.
+                "RepositoryProjects",
                 "RepositorySelection",
                 "Resolved",
                 "ScheduledTasks",

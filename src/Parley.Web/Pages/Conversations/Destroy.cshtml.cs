@@ -17,8 +17,8 @@ namespace Parley.Web.Pages.Conversations;
 /// description and a deliberate act, and a typed name is a deliberate act.
 /// </para>
 /// <para>
-/// <b>The waiting asker is named before the identifier is asked for.</b> An open exchange in a
-/// destroyed conversation does not orphan and is not ghosted -- it ceases to exist, so the agent
+/// <b>Whoever is waiting is named before the identifier is asked for.</b> An open exchange in a
+/// destroyed conversation is not closed -- it ceases to exist, so the agent
 /// waiting on it is never told anything at all. That is a different outcome from every other way
 /// an exchange can end, and the one an operator is least likely to predict.
 /// </para>

@@ -63,9 +63,8 @@ public sealed record PurgeToll(string Table, int Rows);
 /// for when the history is the thing you want gone.
 /// </para>
 /// <para>
-/// There is deliberately no <c>Succeeded</c> property, for the reason set out on
-/// <see cref="ReapResult"/>: a derived summary is a second definition of the outcome that drifts
-/// from the first the moment a verdict is added. A caller that wants to know whether the agent
+/// There is deliberately no <c>Succeeded</c> property: a derived summary is a second definition of
+/// the outcome that drifts from the first the moment a verdict is added. A caller that wants to know whether the agent
 /// is gone names <see cref="PurgeVerdict.Gone"/>.
 /// </para>
 /// </remarks>

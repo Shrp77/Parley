@@ -23,8 +23,9 @@ public sealed class ActingTests : IClassFixture<WebApplicationFactory<Program>>
     [InlineData("purge", "cannot be undone")]
     [InlineData("retire", "Its history is kept")]
     [InlineData("reinstate", "routed to again")]
-    [InlineData("forceconclude", "over its participants")]
+    [InlineData("forceconclude", "whatever its participants")]
     [InlineData("instruct", "It may decline")]
+    [InlineData("prune", "deleted permanently")]
     public async Task Every_action_is_described_before_it_is_offered(string action, string said)
     {
         // A GET describes; only a POST does. So a link cannot destroy anything, and neither can
@@ -98,7 +99,8 @@ public sealed class ActingTests : IClassFixture<WebApplicationFactory<Program>>
         // will not change it.
         var page = File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Projects/Act.cshtml.cs"));
 
-        Assert.Contains("not connected, so nothing was delivered", page, StringComparison.Ordinal);
+        // The shared sentence rather than a copy: every surface said the same wrong thing until it was one constant.
+        Assert.Contains("InstructionWording.Undeliverable", page, StringComparison.Ordinal);
         Assert.Contains("The turn did not complete", page, StringComparison.Ordinal);
     }
 

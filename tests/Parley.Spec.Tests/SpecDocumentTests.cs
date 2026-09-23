@@ -29,12 +29,13 @@ public sealed class SpecDocumentTests
     [Fact]
     public void A_section_containing_a_deeper_heading_is_not_truncated_at_it()
     {
-        // §5.3 carries a #### Referral subheading. A depth test that treated any heading as a
-        // boundary would cut the section there and silently hide everything after it.
+        // §5.3 carries a #### Blocked subheading. A depth test that treated any heading as a
+        // boundary would cut the section there and silently hide everything after it -- so the
+        // second assertion reads text that sits below that subheading.
         var section = SpecDocument.Section("5.3");
 
-        Assert.Contains("#### Referral", section, StringComparison.Ordinal);
-        Assert.Contains("redirect_to", section, StringComparison.Ordinal);
+        Assert.Contains("#### Blocked", section, StringComparison.Ordinal);
+        Assert.Contains("never means", section, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -86,7 +87,7 @@ public sealed class SpecDocumentTests
         // order in the pattern turns out not to matter, because INDEX cannot match text that
         // reads UNIQUE — verified rather than assumed, since the opposite is easy to believe.
         var names = SpecDocument.SchemaObjects.Select(o => o.Name).ToList();
-        Assert.Contains("ux_open_question", names, StringComparer.Ordinal);
+        Assert.Contains("ux_open_request", names, StringComparer.Ordinal);
         Assert.Contains("ux_message_dedup", names, StringComparer.Ordinal);
     }
 
