@@ -50,7 +50,6 @@ public sealed class ServeSelectionTests : IDisposable
                     ProjectName.Create("orders"),
                     Path.Combine(_directory, "manifest.db"),
                     $"http://127.0.0.1:{FreePort()}",
-                    catalogue,
                     null),
             ]);
 

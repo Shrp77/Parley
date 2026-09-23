@@ -119,5 +119,5 @@ public sealed class LogReachTests : IDisposable
     }
 
     private static ProjectSettings Project(string store) =>
-        new(ProjectName.Create("alpha"), store, "http://127.0.0.1:1", null, null);
+        new(ProjectName.Create("alpha"), store, "http://127.0.0.1:1", null);
 }

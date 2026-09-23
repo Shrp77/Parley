@@ -2694,8 +2694,12 @@ internal sealed class Shell : Window
                 .Where(edge => edge.WaitedOn.Value == row.Name)
                 .ToList();
 
+            // **The machine's catalogue, resolved the way every other caller here resolves it.** This
+            // read the project's own until 019 removed that field; passing null instead would have
+            // left a withdrawn agent catalogued and startable by a peer's request.
             await Withdrawing.OpenAsync(
-                app, client, row, agent, owed, project.Name.Value, project.NodeConfig, Queue,
+                app, client, row, agent, owed, project.Name.Value,
+                new Catalogue(ManifestPath, CataloguePath).Proposed(), Queue,
                 Reported(project))
                 .ConfigureAwait(false);
         });

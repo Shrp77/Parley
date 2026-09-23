@@ -63,7 +63,7 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
     }
 
     private ProjectSettings Project() =>
-        new(ProjectName.Create("acme"), "unused.db", _broker.Address, null, null);
+        new(ProjectName.Create("acme"), "unused.db", _broker.Address, null);
 
     private BrokerDirectory Directory() =>
         new([Project()], _ => GrpcChannel.ForAddress(_broker.Address));

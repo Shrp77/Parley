@@ -192,7 +192,6 @@ public sealed class NodeCatalogueWatchTests : IDisposable
                     ProjectName.Create("acme"),
                     Path.Combine(_directory, "acme.db"),
                     $"http://127.0.0.1:{FreePort()}",
-                    CataloguePath,
                     null),
             ]);
 

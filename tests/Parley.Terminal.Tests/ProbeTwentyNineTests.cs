@@ -69,8 +69,7 @@ public sealed class ProbeTwentyNineTests : IAsyncDisposable
         ProjectManifest.Write(
             ManifestPath,
             [new ProjectSettings(
-                ProjectName.Create("acme"), Path.Combine(_root, "acme.db"), _broker.Address,
-                CataloguePath, null)]);
+                ProjectName.Create("acme"), Path.Combine(_root, "acme.db"), _broker.Address, null)]);
 
         await File.WriteAllTextAsync(
             CataloguePath, "{\n  \"agents\": {}\n}\n", TestContext.Current.CancellationToken);

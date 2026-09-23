@@ -194,7 +194,7 @@ public sealed class WaitingOnScreenTests : IDisposable
 
     private static BrokerDirectory Directory(LoopbackOperator broker) =>
         new(
-            [new ProjectSettings(ProjectName.Create("acme"), "unused.db", broker.Address, null, null)],
+            [new ProjectSettings(ProjectName.Create("acme"), "unused.db", broker.Address, null)],
             _ => GrpcChannel.ForAddress(broker.Address));
 
     private static async Task<Shell> SeatedAsync(

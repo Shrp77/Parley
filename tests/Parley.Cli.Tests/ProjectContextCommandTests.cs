@@ -24,8 +24,8 @@ public sealed class ProjectContextCommandTests : IDisposable
         ProjectManifest.Write(
             ManifestPath,
             [
-                new ProjectSettings(ProjectName.Create("alpha"), Path.Combine(_root, "a.db"), "http://127.0.0.1:2", null, null),
-                new ProjectSettings(ProjectName.Create("beta"), Path.Combine(_root, "b.db"), "http://127.0.0.1:3", null, null),
+                new ProjectSettings(ProjectName.Create("alpha"), Path.Combine(_root, "a.db"), "http://127.0.0.1:2", null),
+                new ProjectSettings(ProjectName.Create("beta"), Path.Combine(_root, "b.db"), "http://127.0.0.1:3", null),
             ]);
     }
 

@@ -29,7 +29,7 @@ public sealed class JoinGuardTests
     private const string Nowhere = "http://127.0.0.1:5799";
 
     private static readonly ProjectSettings Unreachable =
-        new(ProjectName.Create("alpha"), string.Empty, Nowhere, null, null);
+        new(ProjectName.Create("alpha"), string.Empty, Nowhere, null);
 
     [Fact]
     public async Task A_broker_that_cannot_be_reached_seats_nobody()

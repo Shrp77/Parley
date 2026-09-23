@@ -108,7 +108,7 @@ public sealed class ManifestWatchTests : IDisposable
         Directory.CreateDirectory(brokenStore);
 
         var broken = new ProjectSettings(
-            ProjectName.Create("broken"), brokenStore, $"http://127.0.0.1:{FreePort()}", null, null);
+            ProjectName.Create("broken"), brokenStore, $"http://127.0.0.1:{FreePort()}", null);
 
         var reads = 0;
 
@@ -623,6 +623,5 @@ public sealed class ManifestWatchTests : IDisposable
             ProjectName.Create(name),
             Path.Combine(_directory, name + ".db"),
             $"http://127.0.0.1:{FreePort()}",
-            null,
             null);
 }

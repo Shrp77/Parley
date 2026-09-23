@@ -157,7 +157,7 @@ public sealed class MessageCapTests : IAsyncDisposable
         // of a sender rather than for size -- which is the probe passing for the wrong reason,
         // in the direction that looks like a failure rather than the one that looks like a pass.
         var taken = await _seats.TakeAsync(
-            new ProjectSettings(ProjectName.Create("alpha"), string.Empty, _broker.Address, null, null),
+            new ProjectSettings(ProjectName.Create("alpha"), string.Empty, _broker.Address, null),
             me,
             [],
             cancellationToken);

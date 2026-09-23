@@ -46,8 +46,7 @@ public sealed class ProbeFourTests : IDisposable
     private string CatalogueFor(string project) => Path.Combine(_root, $"{project}-node.json");
 
     private ProjectSettings Project(string name) =>
-        new(ProjectName.Create(name), Path.Combine(_root, $"{name}.db"), "127.0.0.1:51707",
-            CatalogueFor(name), null);
+        new(ProjectName.Create(name), Path.Combine(_root, $"{name}.db"), "127.0.0.1:51707", null);
 
     private void Catalogue(string project, string role, string workspace) =>
         File.WriteAllText(

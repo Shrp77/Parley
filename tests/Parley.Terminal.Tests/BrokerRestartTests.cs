@@ -38,7 +38,7 @@ namespace Parley.Terminal.Tests;
 public sealed class BrokerRestartTests
 {
     private static readonly ProjectSettings Alpha =
-        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5601", null, null);
+        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5601", null);
 
     [Fact]
     public async Task A_seat_that_is_over_is_drawn_as_no_seat()

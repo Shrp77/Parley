@@ -59,7 +59,6 @@ public sealed class NamingAPageAwayTests : IDisposable
                 ProjectName.Create("orders"),
                 Path.Combine(_folder, "orders.db"),
                 "http://127.0.0.1:1",
-                null,
                 null)]);
 
         var after = await client.GetStringAsync(
@@ -82,7 +81,6 @@ public sealed class NamingAPageAwayTests : IDisposable
                 ProjectName.Create("billing"),
                 Path.Combine(_folder, "billing.db"),
                 "http://127.0.0.1:1",
-                null,
                 null)]);
 
         using var console = new ManifestBackedConsole(_path);

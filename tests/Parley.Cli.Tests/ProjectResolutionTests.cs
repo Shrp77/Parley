@@ -30,7 +30,7 @@ public sealed class ProjectResolutionTests
         string store = "/srv/orders/parley.db",
         string endpoint = "http://127.0.0.1:51707",
         string? node = "/srv/orders/node.json") =>
-        new(ProjectName.Create(name), store, endpoint, node, null);
+        new(ProjectName.Create(name), store, endpoint, null);
 
     // ---- selection -------------------------------------------------------------------------
 

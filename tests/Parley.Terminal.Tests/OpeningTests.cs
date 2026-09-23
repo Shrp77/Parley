@@ -182,6 +182,6 @@ public sealed class OpeningTests : IAsyncDisposable
 
     private BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, _broker.Address, null, null)],
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, _broker.Address, null)],
             _ => GrpcChannel.ForAddress(_broker.Address));
 }

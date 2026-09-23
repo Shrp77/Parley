@@ -53,7 +53,6 @@ public sealed class ServedProjectsTests : IDisposable
             ProjectName.Create(project.Name),
             Path.Combine(_root, $"{project.Name}.db"),
             $"http://127.0.0.1:{7100 + index}",
-            project.Catalogue,
             null)).ToArray();
 
         ProjectManifest.Write(ManifestPath, settings);

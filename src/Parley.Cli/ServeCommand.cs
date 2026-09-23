@@ -781,8 +781,7 @@ public static class ServeCommand
         static bool SameDeployment(ProjectSettings a, ProjectSettings b) =>
             SameName(a, b)
             && string.Equals(a.Store, b.Store, StringComparison.Ordinal)
-            && string.Equals(a.Endpoint, b.Endpoint, StringComparison.Ordinal)
-            && string.Equals(a.NodeConfig, b.NodeConfig, StringComparison.Ordinal);
+            && string.Equals(a.Endpoint, b.Endpoint, StringComparison.Ordinal);
     }
 
     /// <summary>Runs whatever wanted the port to be open, and survives it failing.</summary>

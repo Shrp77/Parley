@@ -209,6 +209,5 @@ public sealed class ManifestMovesTests : IAsyncDisposable
                 ProjectName.Create(name),
                 Path.Combine(_root, name + ".db"),
                 at == 0 ? _broker.Address : _second.Address,
-                null,
                 null))]);
 }

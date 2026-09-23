@@ -85,9 +85,9 @@ public sealed class RosterTests
         using var directory = new BrokerDirectory(
             [
                 new ProjectSettings(
-                    ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:5301", null, null),
+                    ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:5301", null),
                 new ProjectSettings(
-                    ProjectName.Create("beta"), "b.db", "http://127.0.0.1:5302", null, null)
+                    ProjectName.Create("beta"), "b.db", "http://127.0.0.1:5302", null)
             ],
             endpoint =>
             {
@@ -115,7 +115,7 @@ public sealed class RosterTests
         // arriving by a different route.
         using var directory = new BrokerDirectory(
             [new ProjectSettings(
-                ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:5301", null, null)],
+                ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:5301", null)],
             _ => throw new InvalidOperationException("must not connect"));
 
         Assert.Null(directory.Find("beta"));

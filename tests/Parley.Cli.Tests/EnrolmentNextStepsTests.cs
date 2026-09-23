@@ -115,12 +115,20 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Consent_written_to_another_catalogue_says_to_point_the_project_at_it()
+    public async Task Consent_written_to_any_catalogue_points_the_project_at_none_of_them()
     {
+        // **The instruction this asserted is gone, and what replaced it is the absence.** A project
+        // recorded a catalogue of its own, so consent written somewhere the project did not name left
+        // a step: point it there. 018 made that field mean nothing and 019 removed it, so there is one
+        // catalogue per machine and nothing a project could be pointed at.
+        //
+        // Asserted as a refusal to mention it rather than deleted, because a step that quietly grew
+        // back would name a flag the tool no longer has — and this is the one place that text is read.
         var said = await ApplyAsync(Elsewhere, unattended: true, _alpha.Settings);
 
-        // As the enrolment manifest spells it, which is with forward slashes; either spelling is the same file.
-        Assert.Contains($"parley project set alpha --node-config {Slashed(Elsewhere)}", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("project set", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("--node-config", said, StringComparison.Ordinal);
+        Assert.Contains("for alpha.", said, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -138,8 +146,10 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
         var said = await ApplyAsync(Elsewhere, unattended: true, project: null);
 
         Assert.Contains("Name the project these repositories answer in", said, StringComparison.Ordinal);
-        Assert.Contains($"parley project add <name> --db <path to the store> --listen <url> --node-config {Slashed(Elsewhere)}", said, StringComparison.Ordinal);
-    }
 
-    private static string Slashed(string path) => path.Replace(Path.DirectorySeparatorChar, '/');
+        // The catalogue no longer appears here: there is one per machine, so naming a project cannot
+        // point it at one and the flag that did has gone.
+        Assert.Contains("parley project add <name> --db <path to the store> --listen <url>", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("--node-config", said, StringComparison.Ordinal);
+    }
 }

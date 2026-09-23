@@ -270,7 +270,7 @@ public sealed class ParticipationTests : IAsyncDisposable
     /// <summary>The one project these tests use.</summary>
     /// <returns>Its settings, pointed at the loopback broker.</returns>
     private ProjectSettings Project() =>
-        new(ProjectName.Create("alpha"), string.Empty, _broker.Address, null, null);
+        new(ProjectName.Create("alpha"), string.Empty, _broker.Address, null);
 
     /// <summary>A directory holding that one project.</summary>
     /// <returns>The directory.</returns>

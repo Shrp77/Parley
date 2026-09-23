@@ -20,7 +20,6 @@ public sealed class LogLocationTests
         ProjectName.Create("alpha"),
         Path.Combine(Path.GetTempPath(), "alpha", "alpha.db"),
         "http://127.0.0.1:1",
-        null,
         null);
 
     [Fact]
@@ -52,7 +51,6 @@ public sealed class LogLocationTests
                 ProjectName.Create("alpha"),
                 Path.Combine(directory, "store", "alpha.db"),
                 "http://127.0.0.1:1",
-                null,
                 null);
 
             Parley.Configuration.ProjectManifest.Write(manifest, [project]);

@@ -81,7 +81,7 @@ public sealed class NamingTests : IDisposable
         Assert.Equal(string.Empty, form.Problems[0]);
 
         form.Fill(2, "http://127.0.0.1:1");
-        form.Fill(4, "the first one");
+        form.Fill(3, "the first one");
         form.Finish(taken: true);
 
         await shell.Settled;
@@ -93,7 +93,6 @@ public sealed class NamingTests : IDisposable
         Assert.Equal("alpha", named.Name.Value);
         Assert.EndsWith(".db", named.Store, StringComparison.Ordinal);
         Assert.Equal("http://127.0.0.1:1", named.Endpoint);
-        Assert.Null(named.NodeConfig);
         Assert.Equal("the first one", named.Description);
 
         Assert.Contains(Naming.Named, shell.Said, StringComparison.Ordinal);
@@ -129,7 +128,6 @@ public sealed class NamingTests : IDisposable
 
         Assert.Equal(entry.Store, form.Values[1]);
         Assert.Equal(entry.Listen, form.Values[2]);
-        Assert.Equal(entry.NodeConfig, form.Values[3]);
 
         form.Fill(0, "prod");
         form.Finish(taken: true);
@@ -142,7 +140,6 @@ public sealed class NamingTests : IDisposable
 
         Assert.Equal(entry.Store, named.Store);
         Assert.Equal(entry.Listen, named.Endpoint);
-        Assert.Equal(entry.NodeConfig, named.NodeConfig);
 
         // And what to do next: the entry serves one store and will not serve this manifest until
         // it is reinstalled without one.
@@ -169,7 +166,7 @@ public sealed class NamingTests : IDisposable
     public void A_name_a_store_or_a_port_already_taken_is_refused_in_the_field()
     {
         var alpha = new ProjectSettings(
-            ProjectName.Create("alpha"), Path.Combine(_directory, "alpha.db"), "http://127.0.0.1:1", null, null);
+            ProjectName.Create("alpha"), Path.Combine(_directory, "alpha.db"), "http://127.0.0.1:1", null);
 
         Assert.Contains("lowercase", Naming.NameProblem("Alpha", [alpha]), StringComparison.Ordinal);
         Assert.Contains("already named", Naming.NameProblem("alpha", [alpha]), StringComparison.Ordinal);
@@ -191,7 +188,7 @@ public sealed class NamingTests : IDisposable
         var manifestEntry = new InstalledEntry(null, null, null, null, Manifest);
 
         var claimed = new ProjectSettings(
-            ProjectName.Create("prod"), store, "http://127.0.0.1:1", null, null);
+            ProjectName.Create("prod"), store, "http://127.0.0.1:1", null);
 
         Assert.True(Naming.CanNameRunning([], explicitEntry));
         Assert.False(Naming.CanNameRunning([claimed], explicitEntry));

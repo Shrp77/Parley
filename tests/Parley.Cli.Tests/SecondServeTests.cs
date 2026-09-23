@@ -222,6 +222,5 @@ public sealed class SecondServeTests : IDisposable
             ProjectName.Create(name),
             Path.Combine(_directory, name + ".db"),
             $"http://127.0.0.1:{FreePort()}",
-            null,
             null);
 }

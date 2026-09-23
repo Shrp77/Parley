@@ -34,8 +34,8 @@ public sealed class ExplicitBrokerSelectionTests : IDisposable
         ProjectManifest.Write(
             ManifestPath,
             [
-                new ProjectSettings(ProjectName.Create("alpha"), Path.Combine(_directory, "a.db"), "http://127.0.0.1:2", null, null),
-                new ProjectSettings(ProjectName.Create("beta"), Path.Combine(_directory, "b.db"), "http://127.0.0.1:3", null, null),
+                new ProjectSettings(ProjectName.Create("alpha"), Path.Combine(_directory, "a.db"), "http://127.0.0.1:2", null),
+                new ProjectSettings(ProjectName.Create("beta"), Path.Combine(_directory, "b.db"), "http://127.0.0.1:3", null),
             ]);
     }
 

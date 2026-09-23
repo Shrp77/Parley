@@ -17,7 +17,7 @@ namespace Parley.Terminal;
 /// asks for is a description first and a deliberate act, neither of which a keystroke is.
 /// </para>
 /// <para>
-/// So it is not a keystroke. The project is described — store, broker, catalogue — and forgetting
+/// So it is not a keystroke. The project is described — store and broker — and forgetting
 /// it, which deletes nothing, is offered beside destroying it. Destroying takes the project's own
 /// name typed back, and nothing else is accepted: not a "y", not Enter. That is the same act
 /// <c>parley project remove --destroy</c> is, reached through the command it runs, which is the
@@ -45,7 +45,7 @@ internal static class Removing
     internal const string Forget = "Forget it (stops its broker; deletes nothing)";
 
     /// <summary>Destroying it, which does not come back.</summary>
-    internal const string Destroy = "Destroy it (deletes its store and catalogue)";
+    internal const string Destroy = "Destroy it (deletes its store)";
 
     /// <summary>What the first dialog is called.</summary>
     internal const string Title = "Remove this project from this machine";
@@ -86,14 +86,14 @@ internal static class Removing
         // this dialog did not, and it is the more dangerous of the two — it is the description
         // somebody reads before typing a project's name to destroy it, and an escape sequence in
         // an endpoint clears it.
-        var catalogue = Safe.Text(project.NodeConfig) is { Length: > 0 } named
-            ? named
-            : "none: nothing is started for it";
-
+        // **The catalogue line went with 019, and its absence is the honest answer.** A project
+        // recorded a catalogue of its own and destroying the project deleted it, so this named it.
+        // There is one catalogue per machine now, shared by every project and untouched by this —
+        // so naming it here would say a thing was about to go that is not, in the one dialog whose
+        // whole job is to say what destroying costs.
         return $"{Safe.Text(project.Name.Value)}{Environment.NewLine}"
             + $"  broker     {Safe.Text(project.Endpoint)}{Environment.NewLine}"
-            + $"  store      {Safe.Text(project.Store)}{Environment.NewLine}"
-            + $"  catalogue  {catalogue}";
+            + $"  store      {Safe.Text(project.Store)}";
     }
 
     /// <summary>Why a typed name would not be accepted, or null when it would.</summary>
@@ -211,7 +211,7 @@ internal static class Removing
         var code = await ProjectCommand.RunAsync(
             ["remove", project.Name.Value],
             manifestPath,
-            new ProjectFields(null, null, null, null),
+            new ProjectFields(null, null, null),
             said,
             complained,
             destroy,

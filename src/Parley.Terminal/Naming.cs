@@ -340,10 +340,6 @@ internal static class Naming
                     proposed.Endpoint,
                     typed => EndpointProblem(typed, projects)),
                 new FormField(
-                    "Node catalogue (optional) — without one, a request to an agent nobody has "
-                    + "open waits until somebody opens it:",
-                    proposed.NodeConfig ?? string.Empty),
-                new FormField(
                     "Description (optional) — one line shown beside the name:",
                     string.Empty),
             ]);
@@ -395,8 +391,7 @@ internal static class Naming
             new ProjectFields(
                 values[1],
                 values[2],
-                values[3].Length == 0 ? null : values[3],
-                values[4].Length == 0 ? null : values[4]),
+                values[3].Length == 0 ? null : values[3]),
             said,
             complained,
             cancellationToken: CancellationToken.None).ConfigureAwait(false);

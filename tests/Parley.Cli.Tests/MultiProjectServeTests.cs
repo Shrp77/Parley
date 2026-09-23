@@ -52,7 +52,6 @@ public sealed class MultiProjectServeTests : IDisposable
             ProjectName.Create(name),
             store ?? Path.Combine(_directory, name + ".db"),
             $"http://127.0.0.1:{FreePort()}",
-            null,
             null);
 
     /// <summary>

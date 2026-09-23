@@ -121,7 +121,7 @@ public sealed class ConcludedUnderfootTests : IAsyncDisposable
 
         var taken = await _seats.TakeAsync(
             new ProjectSettings(
-                ProjectName.Create("alpha"), string.Empty, _broker.Address, null, null),
+                ProjectName.Create("alpha"), string.Empty, _broker.Address, null),
             me,
             [],
             cancellationToken);

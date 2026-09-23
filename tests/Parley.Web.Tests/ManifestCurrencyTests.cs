@@ -52,7 +52,6 @@ public sealed class ManifestCurrencyTests : IDisposable
                 ProjectName.Create(name),
                 Path.Combine(_folder, $"{name}.db"),
                 $"http://127.0.0.1:{5301 + index}",
-                null,
                 null))]);
 
     [Fact]
@@ -172,7 +171,7 @@ public sealed class ManifestCurrencyTests : IDisposable
         var fixedList = new[]
         {
             new ProjectSettings(
-                ProjectName.Create("given"), "given.db", "http://127.0.0.1:5399", null, null)
+                ProjectName.Create("given"), "given.db", "http://127.0.0.1:5399", null)
         };
 
         using var directory = new BrokerDirectory(fixedList, BrokerDirectory.Connect);

@@ -290,7 +290,7 @@ public sealed class LineTests : IAsyncDisposable
 
     private BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(Walking.Alpha, "unused.db", _broker.Address, null, null)],
+            [new ProjectSettings(Walking.Alpha, "unused.db", _broker.Address, null)],
             _ => GrpcChannel.ForAddress(_broker.Address));
 
     private static async Task<Shell> SeatedAsync(

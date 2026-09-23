@@ -44,7 +44,7 @@ public sealed class ProjectSetTests : IDisposable
         var code = await ProjectCommand.RunAsync(
             arguments,
             ManifestPath,
-            fields ?? new ProjectFields(null, null, null, null),
+            fields ?? new ProjectFields(null, null, null),
             output,
             error,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -55,7 +55,7 @@ public sealed class ProjectSetTests : IDisposable
     private Task<(int Code, string Out, string Error)> AddAsync(string name, int port) =>
         RunAsync(
             ["add", name],
-            new ProjectFields(Path.Combine(_directory, name + ".db"), $"http://127.0.0.1:{port}", null, null));
+            new ProjectFields(Path.Combine(_directory, name + ".db"), $"http://127.0.0.1:{port}", null));
 
     private IReadOnlyList<Parley.Core.ProjectSettings> Projects()
     {
@@ -72,7 +72,7 @@ public sealed class ProjectSetTests : IDisposable
         var catalogue = Path.Combine(_directory, "node.json");
 
         var (code, output, error) = await RunAsync(
-            ["set", "orders"], new ProjectFields(null, null, catalogue, "the one that started it all"));
+            ["set", "orders"], new ProjectFields(null, null, "the one that started it all"));
 
         Assert.Equal(0, code);
         Assert.Empty(error);
@@ -83,20 +83,24 @@ public sealed class ProjectSetTests : IDisposable
 
         Assert.Equal(Path.Combine(_directory, "orders.db"), orders.Store);
         Assert.Equal("http://127.0.0.1:51901", orders.Endpoint);
-        Assert.Equal(catalogue, orders.NodeConfig);
         Assert.Equal("the one that started it all", orders.Description);
     }
 
     [Fact]
     public async Task An_empty_value_clears_an_optional_field()
     {
+        // **Written about `node_config`, which 019 removed.** The rule survived the field: an empty
+        // value clears an optional one rather than being read as "leave it alone", and `description`
+        // is what now has to hold it.
         await AddAsync("orders", 51902);
-        await RunAsync(["set", "orders"], new ProjectFields(null, null, Path.Combine(_directory, "node.json"), null));
+        await RunAsync(["set", "orders"], new ProjectFields(null, null, "the one that started it all"));
 
-        var (code, _, _) = await RunAsync(["set", "orders"], new ProjectFields(null, null, string.Empty, null));
+        Assert.Equal("the one that started it all", Assert.Single(Projects()).Description);
+
+        var (code, _, _) = await RunAsync(["set", "orders"], new ProjectFields(null, null, string.Empty));
 
         Assert.Equal(0, code);
-        Assert.Null(Assert.Single(Projects()).NodeConfig);
+        Assert.Null(Assert.Single(Projects()).Description);
     }
 
     [Fact]
@@ -106,7 +110,7 @@ public sealed class ProjectSetTests : IDisposable
         await AddAsync("billing", 51904);
 
         var (code, _, error) = await RunAsync(
-            ["set", "billing"], new ProjectFields(null, "http://127.0.0.1:51903", null, null));
+            ["set", "billing"], new ProjectFields(null, "http://127.0.0.1:51903", null));
 
         Assert.Equal(78, code);
         Assert.Contains("unchanged", error, StringComparison.Ordinal);
@@ -123,27 +127,22 @@ public sealed class ProjectSetTests : IDisposable
         await AddAsync("billing", 51907);
 
         var (shared, _, sharedWhy) = await RunAsync(
-            ["set", "billing"], new ProjectFields(Path.Combine(_directory, "orders.db"), null, null, null));
+            ["set", "billing"], new ProjectFields(Path.Combine(_directory, "orders.db"), null, null));
 
         Assert.Equal(78, shared);
         Assert.Contains("unchanged", sharedWhy, StringComparison.Ordinal);
 
         var (manifest, _, manifestWhy) = await RunAsync(
-            ["set", "billing"], new ProjectFields(ManifestPath, null, null, null));
+            ["set", "billing"], new ProjectFields(ManifestPath, null, null));
 
         Assert.Equal(78, manifest);
         Assert.Contains("is this manifest", manifestWhy, StringComparison.Ordinal);
 
-        var (catalogue, _, catalogueWhy) = await RunAsync(
-            ["set", "billing"], new ProjectFields(null, null, ManifestPath, null));
-
-        Assert.Equal(78, catalogue);
-        Assert.Contains("is this manifest", catalogueWhy, StringComparison.Ordinal);
-
+        // A third way in went with `--node-config`: a project could be pointed at the manifest as its
+        // catalogue. The field is gone, so only the two store routes remain to be refused.
         var billing = Projects().Single(p => p.Name.Value == "billing");
 
         Assert.Equal(Path.Combine(_directory, "billing.db"), billing.Store);
-        Assert.Null(billing.NodeConfig);
     }
 
     [Fact]
@@ -152,7 +151,7 @@ public sealed class ProjectSetTests : IDisposable
         await AddAsync("orders", 51905);
 
         var (missing, _, notThere) = await RunAsync(
-            ["set", "billing"], new ProjectFields(null, null, null, "x"));
+            ["set", "billing"], new ProjectFields(null, null, "x"));
 
         Assert.Equal(78, missing);
         Assert.Contains("No project named 'billing'", notThere, StringComparison.Ordinal);

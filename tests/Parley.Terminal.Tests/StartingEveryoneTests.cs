@@ -59,7 +59,7 @@ public sealed class StartingEveryoneTests : IAsyncDisposable
     private readonly List<Catalogued> _machines = [];
 
     private ProjectSettings Project() =>
-        new(Walking.Alpha, "unused.db", _broker.Address, null, null);
+        new(Walking.Alpha, "unused.db", _broker.Address, null);
 
     private BrokerDirectory Directory() =>
         new([Project()], _ => GrpcChannel.ForAddress(_broker.Address));

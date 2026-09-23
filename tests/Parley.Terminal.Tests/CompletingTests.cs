@@ -341,7 +341,7 @@ public sealed class CompletingTests : IAsyncDisposable
 
     private BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(Walking.Alpha, "unused.db", _broker.Address, null, null)],
+            [new ProjectSettings(Walking.Alpha, "unused.db", _broker.Address, null)],
             _ => GrpcChannel.ForAddress(_broker.Address));
 
     private async Task<(Shell Shell, Driving.Session Driving)> SeatedAsync(CancellationToken ct)

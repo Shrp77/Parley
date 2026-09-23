@@ -6,7 +6,6 @@ namespace Parley.Core;
 /// <param name="Name">What a person calls it.</param>
 /// <param name="Store">The database file this project's broker opens.</param>
 /// <param name="Endpoint">The transport address that broker listens on.</param>
-/// <param name="NodeConfig">This project's node catalogue, or null when this machine starts nothing for it.</param>
 /// <param name="Description">One line for the operator's own benefit, or null.</param>
 /// <remarks>
 /// <para>
@@ -31,7 +30,6 @@ public sealed record ProjectSettings(
     ProjectName Name,
     string Store,
     string Endpoint,
-    string? NodeConfig,
     string? Description)
 {
     /// <summary>
@@ -63,14 +61,6 @@ public sealed record ProjectSettings(
             problems.Add($"endpoint '{Endpoint}' is not an absolute address");
         }
 
-        if (NodeConfig is { Length: 0 })
-        {
-            // Absent and empty mean different things: absent is "this machine starts nothing for
-            // this project", which is a legitimate state. Empty is a field somebody began and
-            // did not finish, and reading it as absent would hide that.
-            problems.Add("node_config is present but empty: omit it, or give it a path");
-        }
-
         if (Description is { Length: > MaxDescription })
         {
             problems.Add(
@@ -82,7 +72,6 @@ public sealed record ProjectSettings(
                  {
                      ("store", Store),
                      ("endpoint", Endpoint),
-                     ("node_config", NodeConfig),
                      ("description", Description),
                  })
         {

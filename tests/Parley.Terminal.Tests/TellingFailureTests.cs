@@ -29,12 +29,12 @@ public sealed class TellingFailureTests
 
     private static BrokerDirectory Nowhere() =>
         new(
-            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 
     private static BrokerDirectory Living(string address) =>
         new(
-            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, address, null, null)],
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, address, null)],
             _ => GrpcChannel.ForAddress(address));
 
     [Fact]

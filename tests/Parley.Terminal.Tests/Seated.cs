@@ -103,7 +103,7 @@ internal sealed class Seated : IAsyncDisposable
 
         var broker = LoopbackOperator.Start(connection);
         var directory = new BrokerDirectory(
-            [new ProjectSettings(Walking.Alpha, "unused.db", broker.Address, null, null)],
+            [new ProjectSettings(Walking.Alpha, "unused.db", broker.Address, null)],
             _ => GrpcChannel.ForAddress(broker.Address));
 
         var seats = new SeatBook(directory.AgentsFor);

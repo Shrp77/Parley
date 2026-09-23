@@ -27,7 +27,7 @@ namespace Parley.Client.Tests;
 public sealed class SeatBookConcurrencyTests
 {
     private static readonly ProjectSettings Alpha =
-        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5403", null, null);
+        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5403", null);
 
     /// <summary>How many threads pile on.</summary>
     private const int Crowd = 24;

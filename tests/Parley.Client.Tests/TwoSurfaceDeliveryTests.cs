@@ -26,7 +26,7 @@ namespace Parley.Client.Tests;
 public sealed class TwoSurfaceDeliveryTests
 {
     private static readonly ProjectSettings Alpha =
-        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5404", null, null);
+        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5404", null);
 
     [Fact]
     public async Task A_drain_lands_on_the_surface_that_drained_and_not_the_other()

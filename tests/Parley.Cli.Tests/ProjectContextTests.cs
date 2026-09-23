@@ -41,7 +41,7 @@ public sealed class ProjectContextTests : IDisposable
     }
 
     private static ProjectSettings Project(string name) =>
-        new(ProjectName.Create(name), $"C:/stores/{name}.db", "http://127.0.0.1:1", null, null);
+        new(ProjectName.Create(name), $"C:/stores/{name}.db", "http://127.0.0.1:1", null);
 
     private static (bool Chosen, string? Name, string? Source, string? Problem) Select(
         string? named, string? variable, string[] repository, IReadOnlyList<ProjectSettings> projects)

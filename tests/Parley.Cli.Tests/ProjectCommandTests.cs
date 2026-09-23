@@ -65,7 +65,7 @@ public sealed class ProjectCommandTests : IDisposable
         var code = await ProjectCommand.RunAsync(
             arguments,
             ManifestPath,
-            fields ?? new ProjectFields(null, null, null, null),
+            fields ?? new ProjectFields(null, null, null),
             output,
             error,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -77,7 +77,7 @@ public sealed class ProjectCommandTests : IDisposable
         string name, string? store = null, string? endpoint = null, string? node = null) =>
         RunAsync(
             ["add", name],
-            new ProjectFields(store ?? Store(name), endpoint ?? $"http://127.0.0.1:{Port(name)}", node, null));
+            new ProjectFields(store ?? Store(name), endpoint ?? $"http://127.0.0.1:{Port(name)}", null));
 
     /// <summary>A stable, distinct port per project name, so fixtures cannot collide.</summary>
     /// <param name="name">The project's name.</param>
@@ -245,14 +245,12 @@ public sealed class ProjectCommandTests : IDisposable
         Assert.Empty(projects);
 
         Assert.True(File.Exists(Store("orders")), "the store was deleted");
-        Assert.True(File.Exists(Path.Combine(_directory, "node.json")), "the catalogue was deleted");
 
         // Said every time, because somebody removing a project may well have meant to delete its
         // data too — and the only safe way to offer that is to say what still exists and let them
         // do it deliberately.
         Assert.Contains("Nothing was deleted", output, StringComparison.Ordinal);
         Assert.Contains(Store("orders"), output, StringComparison.Ordinal);
-        Assert.Contains(Path.Combine(_directory, "node.json"), output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -278,7 +276,7 @@ public sealed class ProjectCommandTests : IDisposable
 
         await RunAsync(
             ["add", "orders"],
-            new ProjectFields(Path.Combine(_directory, "live.db"), endpoint, null, null));
+            new ProjectFields(Path.Combine(_directory, "live.db"), endpoint, null));
 
         var (code, output, _) = await RunAsync(["remove", "orders"]);
 
@@ -369,7 +367,7 @@ public sealed class ProjectCommandTests : IDisposable
     {
         await RunAsync(
             ["add", "orders"],
-            new ProjectFields(Store("orders"), "http://127.0.0.1:51801", null, "the shop's own deployment"));
+            new ProjectFields(Store("orders"), "http://127.0.0.1:51801", "the shop's own deployment"));
 
         var (_, output, _) = await RunAsync(["list"]);
 

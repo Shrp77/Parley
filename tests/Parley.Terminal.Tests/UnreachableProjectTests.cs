@@ -105,8 +105,8 @@ public sealed class UnreachableProjectTests : IAsyncDisposable
     private BrokerDirectory Directory() =>
         new(
             [
-                new ProjectSettings(ProjectName.Create("dead"), string.Empty, _dead, null, null),
-                new ProjectSettings(ProjectName.Create("alive"), string.Empty, _broker.Address, null, null),
+                new ProjectSettings(ProjectName.Create("dead"), string.Empty, _dead, null),
+                new ProjectSettings(ProjectName.Create("alive"), string.Empty, _broker.Address, null),
             ],
             endpoint => GrpcChannel.ForAddress(endpoint));
 }

@@ -284,7 +284,6 @@ public sealed class BrokerDirectory : IDisposable
         new(ProjectName.Create("this-machine"),
             string.Empty,
             endpoint,
-            null,
             "Not named in a manifest. This is the broker this machine's commands talk to; "
             + "`parley project add` gives it a name.");
 

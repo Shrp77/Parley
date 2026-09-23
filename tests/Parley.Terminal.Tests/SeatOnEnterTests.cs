@@ -48,7 +48,7 @@ public sealed class SeatOnEnterTests : IAsyncDisposable
         new([Project()], _ => GrpcChannel.ForAddress(_broker.Address));
 
     private ProjectSettings Project() =>
-        new(ProjectName.Create("alpha"), string.Empty, _broker.Address, null, null);
+        new(ProjectName.Create("alpha"), string.Empty, _broker.Address, null);
 
     private async Task RegisterSeatAsync(AgentStatus status)
     {

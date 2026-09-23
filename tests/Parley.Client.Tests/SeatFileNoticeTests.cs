@@ -20,7 +20,7 @@ namespace Parley.Client.Tests;
 public sealed class SeatFileNoticeTests
 {
     private static readonly ProjectSettings Alpha =
-        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5404", null, null);
+        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5404", null);
 
     [Fact]
     public async Task A_drain_carrying_file_notices_records_only_the_messages()

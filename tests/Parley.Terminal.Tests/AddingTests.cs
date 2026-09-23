@@ -186,7 +186,7 @@ public sealed class AddingTests : IAsyncDisposable
         // And the manifest is untouched, so nothing restarts.
         Assert.DoesNotContain("broker restarts", shell.Said, StringComparison.Ordinal);
         Assert.True(ProjectManifest.TryRead(ManifestPath, out var projects, out _));
-        Assert.Null(Assert.Single(projects).NodeConfig);
+        _ = Assert.Single(projects);
     }
 
     [Theory]
@@ -398,7 +398,6 @@ public sealed class AddingTests : IAsyncDisposable
             ProjectName.Create("acme"),
             Store,
             _broker.Address,
-            null,
             null);
 
         ProjectManifest.Write(ManifestPath, [project]);

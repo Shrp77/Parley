@@ -178,7 +178,7 @@ public sealed class SeatingRegionTests : IAsyncDisposable
     }
 
     private ProjectSettings Project() =>
-        new(ProjectName.Create("alpha"), string.Empty, _broker.Address, null, null);
+        new(ProjectName.Create("alpha"), string.Empty, _broker.Address, null);
 
     private BrokerDirectory Directory() =>
         new([Project()], _ => GrpcChannel.ForAddress(_broker.Address));

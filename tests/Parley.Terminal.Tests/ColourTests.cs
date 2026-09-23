@@ -143,7 +143,6 @@ public sealed class ColourTests
                     ProjectName.Create("orders"),
                     string.Empty,
                     "http://127.0.0.1:1",
-                    null,
                     "quiet\u001b[31m and red"),
             ],
             new Dictionary<string, ProjectHealth>(StringComparer.Ordinal),

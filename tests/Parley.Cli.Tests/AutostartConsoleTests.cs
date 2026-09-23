@@ -158,9 +158,9 @@ public sealed class AutostartConsoleTests
         var projects = new[]
         {
             new ProjectSettings(
-                ProjectName.Create("alpha"), "alpha.db", "http://127.0.0.1:0", null, null),
+                ProjectName.Create("alpha"), "alpha.db", "http://127.0.0.1:0", null),
             new ProjectSettings(
-                ProjectName.Create("beta"), "beta.db", "http://127.0.0.1:0", null, null)
+                ProjectName.Create("beta"), "beta.db", "http://127.0.0.1:0", null)
         };
 
         using var stopping = new CancellationTokenSource();

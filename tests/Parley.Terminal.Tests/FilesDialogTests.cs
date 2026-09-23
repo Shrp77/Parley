@@ -154,7 +154,7 @@ internal static class FilesOnScreen
 
         ProjectManifest.Write(
             manifest,
-            [new ProjectSettings(ProjectName.Create(Project), Path.Combine(directory, "alpha.db"), files.Broker.Address, null, null)]);
+            [new ProjectSettings(ProjectName.Create(Project), Path.Combine(directory, "alpha.db"), files.Broker.Address, null)]);
 
         var shell = TerminalCommand.Build(BrokerDirectory.FromManifest(manifest), manifestPath: manifest);
 

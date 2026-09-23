@@ -32,7 +32,7 @@ public sealed class ProbeEightTests : IDisposable
 
         ProjectManifest.Write(
             ManifestPath,
-            [new ProjectSettings(ProjectName.Create("alpha"), Store, "http://127.0.0.1:51707", null, null)]);
+            [new ProjectSettings(ProjectName.Create("alpha"), Store, "http://127.0.0.1:51707", null)]);
     }
 
     public void Dispose()

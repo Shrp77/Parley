@@ -215,7 +215,7 @@ public sealed class ColourSaysNothingNewTests
             AgentPresence.Running);
 
     private static ProjectSettings Project(string name) =>
-        new(ProjectName.Create(name), string.Empty, "http://127.0.0.1:1", null, null);
+        new(ProjectName.Create(name), string.Empty, "http://127.0.0.1:1", null);
 
     private static ConversationSummary Conversation(string id, bool open) =>
         new(id, [AgentName.Create("orders@here")], 2, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, open);

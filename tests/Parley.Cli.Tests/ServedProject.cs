@@ -57,7 +57,7 @@ internal sealed class ServedProject : IAsyncDisposable
         return new ServedProject(
             connection,
             broker,
-            new ProjectSettings(ProjectName.Create(name), store, broker.Address, catalogue, null));
+            new ProjectSettings(ProjectName.Create(name), store, broker.Address, null));
     }
 
     /// <inheritdoc/>

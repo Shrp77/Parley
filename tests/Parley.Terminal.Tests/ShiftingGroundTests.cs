@@ -170,7 +170,6 @@ public sealed class ShiftingGroundTests : IAsyncDisposable
                     ProjectName.Create(name),
                     Path.Combine(_root, name + ".db"),
                     at == 0 ? _broker.Address : $"http://127.0.0.1:{9000 + at}",
-                    null,
                     null)),
             ]);
 }

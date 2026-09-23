@@ -364,7 +364,6 @@ public sealed class WithdrawingTests : IAsyncDisposable
                     ProjectName.Create("acme"),
                     Path.Combine(_root, "acme.db"),
                     _broker.Address,
-                    CataloguePath,
                     null),
             ]);
 

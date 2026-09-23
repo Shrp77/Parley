@@ -27,10 +27,10 @@ namespace Parley.Terminal.Tests;
 public sealed class SeatLifetimeTests
 {
     private static readonly ProjectSettings Alpha =
-        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5501", null, null);
+        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5501", null);
 
     private static readonly ProjectSettings Beta =
-        new(ProjectName.Create("beta"), string.Empty, "http://127.0.0.1:5502", null, null);
+        new(ProjectName.Create("beta"), string.Empty, "http://127.0.0.1:5502", null);
 
     [Fact]
     public async Task Visiting_a_project_you_are_not_seated_in_does_not_forget_who_you_are()

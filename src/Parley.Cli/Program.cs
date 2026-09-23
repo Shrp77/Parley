@@ -457,7 +457,7 @@ if (verb == "project")
     return await ProjectCommand.RunAsync(
         rest,
         manifestPath,
-        new ProjectFields(databasePath, listenOn, nodeConfigPath, projectDescription),
+        new ProjectFields(databasePath, listenOn, projectDescription),
         Console.Out,
         Console.Error,
         destroy: destroy).ConfigureAwait(false);

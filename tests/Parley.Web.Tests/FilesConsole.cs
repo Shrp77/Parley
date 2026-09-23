@@ -53,7 +53,7 @@ public sealed class FilesConsole : WebApplicationFactory<Program>
             services.RemoveAll<BrokerDirectory>();
 
             services.AddSingleton(_ => new BrokerDirectory(
-                [new ProjectSettings(ProjectName.Create(Project), "alpha.db", "http://127.0.0.1:5405", null, null)],
+                [new ProjectSettings(ProjectName.Create(Project), "alpha.db", "http://127.0.0.1:5405", null)],
                 address => GrpcChannel.ForAddress(address, new GrpcChannelOptions { HttpHandler = Broker, DisposeHttpClient = false })));
 
             services.AddSingleton(new LocalLauncher(

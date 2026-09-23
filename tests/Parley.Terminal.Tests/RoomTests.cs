@@ -30,7 +30,7 @@ public sealed class RoomTests
 
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(Walking.Alpha, string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(Walking.Alpha, string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 
     private static RoomRegion Filled(bool seated = true, params PairState[] pairs)

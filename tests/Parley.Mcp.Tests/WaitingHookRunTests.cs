@@ -594,8 +594,8 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Parley.Configuration.ProjectManifest.Write(
             _projects,
             [
-                new ProjectSettings(ProjectName.Create("alpha"), Path.Combine(_workspace, "alpha.db"), _broker!.Addresses[0], null, null),
-                new ProjectSettings(ProjectName.Create("beta"), Path.Combine(_workspace, "beta.db"), "http://127.0.0.1:1", null, null),
+                new ProjectSettings(ProjectName.Create("alpha"), Path.Combine(_workspace, "alpha.db"), _broker!.Addresses[0], null),
+                new ProjectSettings(ProjectName.Create("beta"), Path.Combine(_workspace, "beta.db"), "http://127.0.0.1:1", null),
             ]);
     }
 

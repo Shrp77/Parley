@@ -26,7 +26,7 @@ namespace Parley.Client.Tests;
 public sealed class AskShapeTests
 {
     private static readonly ProjectSettings Alpha =
-        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5403", null, null);
+        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5403", null);
 
     private static AgentName Orders => AgentName.Create("orders@test");
 

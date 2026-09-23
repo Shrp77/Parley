@@ -37,34 +37,38 @@ public sealed class DoorsAreReadableTests
 
         Assert.DoesNotContain(Escape, described);
 
-        // Four lines, and a value cannot make a fifth. The line breaks in the description are this
+        // Three lines, and a value cannot make a fourth. The line breaks in the description are this
         // surface's own; a carriage return or newline inside a manifest value is replaced rather
-        // than obeyed, so it cannot add a row that looks like another field.
-        Assert.Equal(4, described.ReplaceLineEndings("\n").Split('\n').Length);
+        // than obeyed, so it cannot add a row that looks like another field. It was four until 019
+        // took the catalogue line, which is a count this test has to carry rather than infer — an
+        // assertion that counted whatever it was given would pass against the forgery it exists for.
+        Assert.Equal(3, described.ReplaceLineEndings("\n").Split('\n').Length);
     }
 
     [Fact]
     public void It_still_says_which_project_and_what_would_go_with_it()
     {
         // The other half: neutralising must not neutralise the point. Somebody deciding whether to
-        // destroy a project needs to see which store and which catalogue go with it.
+        // destroy a project needs to see which store goes with it.
         var described = Removing.Describe(Hostile());
 
         Assert.Contains("alpha", described, StringComparison.Ordinal);
         Assert.Contains("127.0.0.1", described, StringComparison.Ordinal);
         Assert.Contains("store", described, StringComparison.Ordinal);
-        Assert.Contains("config.json", described, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void A_project_with_no_catalogue_says_so_rather_than_showing_a_blank()
+    public void The_description_never_names_a_catalogue_destroying_does_not_touch()
     {
-        // The branch the fix rewrote. An empty catalogue path has to keep reading as "nothing is
-        // started for it" rather than as a field that failed to render.
+        // **This asked the opposite question until 019.** A project recorded a catalogue of its own
+        // and destroying the project deleted it, so an absent one had to read as "nothing is started
+        // for it" rather than as a field that failed to render. There is one catalogue per machine
+        // now and this dialog does not touch it — so naming one here would say a thing was about to
+        // go that is not, in the one dialog whose whole job is to say what destroying costs.
         var described = Removing.Describe(new ProjectSettings(
-            ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:1", null, null));
+            ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:1", null));
 
-        Assert.Contains("nothing is started for it", described, StringComparison.Ordinal);
+        Assert.DoesNotContain("catalogue", described, StringComparison.OrdinalIgnoreCase);
     }
 
 
@@ -137,7 +141,6 @@ public sealed class DoorsAreReadableTests
 
         Assert.Contains(Escape, project.Endpoint);
         Assert.Contains(Escape, project.Store!);
-        Assert.Contains(Escape, project.NodeConfig!);
     }
 
     /// <summary>A manifest entry that tries to rewrite the dialog quoting it.</summary>
@@ -147,6 +150,5 @@ public sealed class DoorsAreReadableTests
             ProjectName.Create("alpha"),
             $"C:/store{Escape}[31m.db",
             $"http://127.0.0.1:1{Escape}[2J",
-            $"C:/node{Escape}[2Jconfig.json",
             Description: null);
 }

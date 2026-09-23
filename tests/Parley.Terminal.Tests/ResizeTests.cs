@@ -156,6 +156,6 @@ public sealed class ResizeTests
 
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 }

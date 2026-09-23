@@ -33,7 +33,7 @@ namespace Parley.Client.Tests;
 public sealed class DoubleSeatTests
 {
     private static readonly ProjectSettings Alpha =
-        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5401", null, null);
+        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5401", null);
 
     [Fact]
     public async Task Two_surfaces_seat_one_person_as_two_attachments()

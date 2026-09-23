@@ -58,7 +58,7 @@ public sealed class DescribedWritesTests : IDisposable
             manifest,
             [new ProjectSettings(
                 ProjectName.Create("alpha"), Path.Combine(_root, "alpha.db"),
-                "http://127.0.0.1:1", catalogue, null)]);
+                "http://127.0.0.1:1", null)]);
 
         await File.WriteAllTextAsync(catalogue, """{ "agents": {} }""", token);
 

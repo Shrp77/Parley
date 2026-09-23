@@ -47,7 +47,7 @@ public sealed class HostedNodeTests : IDisposable
     private string ManifestPath => Path.Combine(_directory, "projects.json");
 
     private static ProjectSettings Project(string name, string store, string endpoint) =>
-        new(ProjectName.Create(name), store, endpoint, null, null);
+        new(ProjectName.Create(name), store, endpoint, null);
 
     [Fact]
     public async Task One_catalogue_named_for_several_projects_is_the_one_they_all_read()

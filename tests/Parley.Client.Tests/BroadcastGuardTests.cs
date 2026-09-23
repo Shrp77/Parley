@@ -26,7 +26,7 @@ namespace Parley.Client.Tests;
 public sealed class BroadcastGuardTests
 {
     private static readonly ProjectSettings Alpha =
-        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5402", null, null);
+        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5402", null);
 
     private static AgentName[] Peers =>
     [

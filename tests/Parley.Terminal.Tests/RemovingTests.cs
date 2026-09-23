@@ -81,7 +81,6 @@ public sealed class RemovingTests : IDisposable
 
         Assert.Contains("Nothing was deleted", shell.Said, StringComparison.Ordinal);
         Assert.True(File.Exists(alpha.Store));
-        Assert.True(File.Exists(alpha.NodeConfig));
         Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
         Assert.Empty(left);
     }
@@ -135,7 +134,6 @@ public sealed class RemovingTests : IDisposable
 
         Assert.Contains("Destroyed 'alpha'", shell.Said, StringComparison.Ordinal);
         Assert.False(File.Exists(alpha.Store), "the store survived");
-        Assert.False(File.Exists(alpha.NodeConfig), "the catalogue survived");
         Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
         Assert.Empty(left);
     }
@@ -199,7 +197,6 @@ public sealed class RemovingTests : IDisposable
             ProjectName.Create("orders"),
             Path.Combine(_directory, "orders.db"),
             $"http://127.0.0.1:{FreePort()}",
-            null,
             null);
 
         ProjectManifest.Write(Manifest, [orders]);
@@ -317,12 +314,10 @@ public sealed class RemovingTests : IDisposable
             ProjectName.Create("alpha"),
             Path.Combine(_directory, "alpha.db"),
             "http://127.0.0.1:1",
-            Path.Combine(_directory, "alpha-node.json"),
             null);
 
         ProjectManifest.Write(Manifest, [alpha]);
         await File.WriteAllTextAsync(alpha.Store, string.Empty, ct);
-        await File.WriteAllTextAsync(alpha.NodeConfig!, "{}", ct);
 
         return alpha;
     }

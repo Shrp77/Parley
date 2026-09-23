@@ -108,7 +108,7 @@ public sealed class NoManifestParityTests : IDisposable
         // which input won — because the only thing worse than the wrong path is the wrong path
         // with nothing to say where it came from.
         var project = new ProjectSettings(
-            ProjectName.Create("orders"), "/srv/orders.db", "http://127.0.0.1:51801", null, null);
+            ProjectName.Create("orders"), "/srv/orders.db", "http://127.0.0.1:51801", null);
 
         var store = ProjectResolution.Store("/given/here.db", NoVariables, project);
 

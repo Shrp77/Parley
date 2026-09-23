@@ -133,6 +133,5 @@ public sealed class ManifestStampTests : IDisposable
                 ProjectName.Create(name),
                 Path.Combine(_folder, $"{name}.db"),
                 $"http://127.0.0.1:{5301 + index}",
-                null,
                 null))]);
 }

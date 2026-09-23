@@ -55,7 +55,7 @@ public sealed class ProbeNineTests : IDisposable
 
     private ProjectSettings Project(string? catalogue) =>
         new(ProjectName.Create("alpha"), Path.Combine(_root, "alpha.db"),
-            "http://127.0.0.1:51707", catalogue, null);
+            "http://127.0.0.1:51707", null);
 
     private static EnrollmentEntry Entry(string workspace) =>
         new(workspace, "orders", "Carts and totals.", Unattended: true)
@@ -142,6 +142,6 @@ public sealed class ProbeNineTests : IDisposable
             problem);
 
         Assert.True(ProjectManifest.TryRead(ManifestPath, out var projects, out _));
-        Assert.Equal(CataloguePath, Assert.Single(projects).NodeConfig);
+        _ = Assert.Single(projects);
     }
 }

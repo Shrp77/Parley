@@ -46,8 +46,8 @@ public sealed class ProjectManifestTests : IDisposable
         string name = "orders",
         string store = "/srv/orders/parley.db",
         string endpoint = "http://127.0.0.1:51707",
-        string? node = "/srv/orders/node.json") =>
-        new(ProjectName.Create(name), store, endpoint, node, null);
+        string? description = null) =>
+        new(ProjectName.Create(name), store, endpoint, description);
 
     // ---- location -------------------------------------------------------------------------
 
@@ -247,12 +247,9 @@ public sealed class ProjectManifestTests : IDisposable
     {
         // Neither answer is right everywhere, and CI runs all three platforms, so the assertion
         // has to follow the platform rather than pick a side.
-        // Catalogues given explicitly and distinct, because the helper's default gives both
-        // projects the same one — which is now a collision in its own right, and would make this
-        // test fail for a reason that has nothing to do with what it is asking about.
         var problems = ProjectManifest.Collisions(
-            [Project("orders", store: "/Srv/One.db", endpoint: "http://x:1", node: "/srv/a.json"),
-             Project("billing", store: "/srv/one.db", endpoint: "http://x:2", node: "/srv/b.json")]);
+            [Project("orders", store: "/Srv/One.db", endpoint: "http://x:1"),
+             Project("billing", store: "/srv/one.db", endpoint: "http://x:2")]);
 
         if (OperatingSystem.IsLinux())
         {
@@ -274,8 +271,7 @@ public sealed class ProjectManifestTests : IDisposable
         Assert.True(ProjectManifest.TryRead(Path_, out var projects, out var problem), problem);
         Assert.Equal(2, projects.Count);
         Assert.Equal("orders", projects[0].Name.Value);
-        Assert.Equal("/srv/orders/node.json", projects[0].NodeConfig);
-        Assert.Null(projects[1].NodeConfig);
+        Assert.Equal("billing", projects[1].Name.Value);
     }
 
     [Fact]
@@ -347,23 +343,27 @@ public sealed class ProjectManifestTests : IDisposable
     }
 
     [Fact]
-    public void Clearing_a_projects_catalogue_actually_clears_it()
+    public void Clearing_an_optional_field_actually_clears_it()
     {
         // The other half of preserving a row: the fields this build owns are authoritative, so an
         // optional one that is now absent must go rather than linger. Preserving everything
-        // indiscriminately would make a node catalogue impossible to remove.
+        // indiscriminately would make an optional field impossible to remove.
+        //
+        // **This was written about `node_config`, which 019 removed.** The field went; the rule did
+        // not, and `description` is what it now has to hold — so the test is repointed rather than
+        // deleted, because deleting it would take the guarantee with the field it happened to use.
         Given(
             "{ \"projects\": [ { \"name\": \"orders\", \"store\": \"/srv/o.db\", " +
-            "\"endpoint\": \"http://x:1\", \"node_config\": \"/srv/node.json\" } ] }");
+            "\"endpoint\": \"http://x:1\", \"description\": \"the order pipeline\" } ] }");
 
         Assert.True(ProjectManifest.TryRead(Path_, out var read, out _));
-        Assert.Equal("/srv/node.json", read[0].NodeConfig);
+        Assert.Equal("the order pipeline", read[0].Description);
 
-        ProjectManifest.Write(Path_, [read[0] with { NodeConfig = null }]);
+        ProjectManifest.Write(Path_, [read[0] with { Description = null }]);
 
         Assert.True(ProjectManifest.TryRead(Path_, out var after, out _));
-        Assert.Null(after[0].NodeConfig);
-        Assert.DoesNotContain("node_config", File.ReadAllText(Path_), StringComparison.Ordinal);
+        Assert.Null(after[0].Description);
+        Assert.DoesNotContain("description", File.ReadAllText(Path_), StringComparison.Ordinal);
     }
 
     [Theory]
@@ -677,7 +677,7 @@ public sealed class ProjectManifestTests : IDisposable
                 barrier.SignalAndWait();
 
                 var added = Project(name: $"p{index}", store: $"/srv/p{index}.db",
-                    endpoint: $"http://127.0.0.1:{5400 + index}", node: $"/srv/p{index}.json");
+                    endpoint: $"http://127.0.0.1:{5400 + index}");
 
                 // Caught, because an unhandled exception on a background thread does not fail
                 // this test -- it hangs it, and a ten-minute stall says nothing about what went

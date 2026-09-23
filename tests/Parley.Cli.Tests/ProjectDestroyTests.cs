@@ -45,10 +45,13 @@ public sealed class ProjectDestroyTests : IDisposable
     private string Manifest => Path.Combine(_directory, "projects.json");
 
     [Fact]
-    public async Task With_nothing_serving_the_store_and_an_unshared_catalogue_are_deleted()
+    public async Task With_nothing_serving_the_store_is_deleted_and_the_machines_catalogue_is_not()
     {
-        var catalogue = Path.Combine(_directory, "billing-node.json");
-        var billing = Project("billing", catalogue);
+        // **The catalogue is no longer the project's to delete.** A project recorded one of its own
+        // until 019, and destroying the project took it; there is one per machine now, shared by every
+        // project, so a destroy that removed it would take the other projects' agents with it.
+        var catalogue = Path.Combine(_directory, NodeCatalogue.DefaultFileName);
+        var billing = Project("billing");
 
         ProjectManifest.Write(Manifest, [billing]);
         await File.WriteAllTextAsync(billing.Store, string.Empty, TestContext.Current.CancellationToken);
@@ -60,23 +63,26 @@ public sealed class ProjectDestroyTests : IDisposable
         Assert.Empty(error);
         Assert.Contains("Destroyed 'billing'", output, StringComparison.Ordinal);
         Assert.False(File.Exists(billing.Store), "the store survived");
-        Assert.False(File.Exists(catalogue), "the catalogue survived");
+        Assert.True(File.Exists(catalogue), "the machine's catalogue was deleted with one project");
 
         Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
         Assert.Empty(left);
     }
 
     [Fact]
-    public async Task Another_projects_catalogue_and_store_are_not_touched()
+    public async Task Another_projects_store_is_not_touched()
     {
-        // The manifest refuses two projects sharing a catalogue, so "another project's" is the
-        // only other case, and it must stay exactly where it is.
-        var orders = Project("orders", Path.Combine(_directory, "orders-node.json"));
-        var billing = Project("billing", Path.Combine(_directory, "billing-node.json"));
+        // **The catalogue half of this went with 019, and only the catalogue half.** A project used
+        // to record one of its own, so destroying one had to leave another's alone; there is one
+        // catalogue per machine now and destroying a project does not touch it at all. What still
+        // has to hold — and is the reason this test exists — is that a destroy reaches exactly one
+        // project's store.
+        var orders = Project("orders");
+        var billing = Project("billing");
 
         ProjectManifest.Write(Manifest, [orders, billing]);
 
-        foreach (var path in new[] { orders.Store, orders.NodeConfig!, billing.Store, billing.NodeConfig! })
+        foreach (var path in new[] { orders.Store, billing.Store })
         {
             await File.WriteAllTextAsync(path, "{}", TestContext.Current.CancellationToken);
         }
@@ -85,15 +91,13 @@ public sealed class ProjectDestroyTests : IDisposable
 
         Assert.Equal(0, code);
         Assert.True(File.Exists(orders.Store), "the other project's store was deleted");
-        Assert.True(File.Exists(orders.NodeConfig), "the other project's catalogue was deleted");
         Assert.False(File.Exists(billing.Store));
-        Assert.False(File.Exists(billing.NodeConfig));
     }
 
     [Fact]
     public async Task Without_destroy_nothing_is_deleted_and_the_way_to_is_named()
     {
-        var billing = Project("billing", null);
+        var billing = Project("billing");
 
         ProjectManifest.Write(Manifest, [billing]);
         await File.WriteAllTextAsync(billing.Store, string.Empty, TestContext.Current.CancellationToken);
@@ -111,8 +115,8 @@ public sealed class ProjectDestroyTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
 
-        var orders = Project("orders", null);
-        var billing = Project("billing", null);
+        var orders = Project("orders");
+        var billing = Project("billing");
 
         ProjectManifest.Write(Manifest, [orders, billing]);
 
@@ -181,7 +185,7 @@ public sealed class ProjectDestroyTests : IDisposable
 
         using var byHand = BrokerProcess.Start(store);
 
-        var project = new ProjectSettings(ProjectName.Create("byhand"), store, byHand.Address, null, null);
+        var project = new ProjectSettings(ProjectName.Create("byhand"), store, byHand.Address, null);
 
         ProjectManifest.Write(Manifest, [project]);
 
@@ -220,7 +224,7 @@ public sealed class ProjectDestroyTests : IDisposable
         var code = await ProjectCommand.RunAsync(
             ["add", "trap"],
             Manifest,
-            new ProjectFields(Manifest, "http://127.0.0.1:1", null, null),
+            new ProjectFields(Manifest, "http://127.0.0.1:1", null),
             output,
             error,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -241,7 +245,7 @@ public sealed class ProjectDestroyTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(directoryStore, "precious.txt"), "keep", TestContext.Current.CancellationToken);
 
         var project = new ProjectSettings(
-            ProjectName.Create("dir"), directoryStore, "http://127.0.0.1:1", null, null);
+            ProjectName.Create("dir"), directoryStore, "http://127.0.0.1:1", null);
 
         ProjectManifest.Write(Manifest, [project]);
 
@@ -270,7 +274,7 @@ public sealed class ProjectDestroyTests : IDisposable
 
         var ct = TestContext.Current.CancellationToken;
 
-        var project = Project("held", null);
+        var project = Project("held");
 
         ProjectManifest.Write(Manifest, [project]);
         await File.WriteAllTextAsync(project.Store, string.Empty, ct);
@@ -304,7 +308,7 @@ public sealed class ProjectDestroyTests : IDisposable
 
         var ct = TestContext.Current.CancellationToken;
 
-        var project = Project("held-lock", null);
+        var project = Project("held-lock");
 
         ProjectManifest.Write(Manifest, [project]);
         await File.WriteAllTextAsync(project.Store, string.Empty, ct);
@@ -330,7 +334,7 @@ public sealed class ProjectDestroyTests : IDisposable
         // an owner record naming a process that has since exited is harmless but untrue.
         var ct = TestContext.Current.CancellationToken;
 
-        var project = Project("with-lock", null);
+        var project = Project("with-lock");
 
         ProjectManifest.Write(Manifest, [project]);
         await File.WriteAllTextAsync(project.Store, string.Empty, ct);
@@ -352,7 +356,7 @@ public sealed class ProjectDestroyTests : IDisposable
         // would leave every file anybody placed on disk under a name nothing refers to any more.
         var ct = TestContext.Current.CancellationToken;
 
-        var project = Project("with-files", null);
+        var project = Project("with-files");
 
         ProjectManifest.Write(Manifest, [project]);
         await File.WriteAllTextAsync(project.Store, string.Empty, ct);
@@ -378,7 +382,7 @@ public sealed class ProjectDestroyTests : IDisposable
         var code = await ProjectCommand.RunAsync(
             ["remove", name],
             Manifest,
-            new ProjectFields(null, null, null, null),
+            new ProjectFields(null, null, null),
             output,
             error,
             destroy,
@@ -387,12 +391,11 @@ public sealed class ProjectDestroyTests : IDisposable
         return (code, output.ToString(), error.ToString());
     }
 
-    private ProjectSettings Project(string name, string? catalogue) =>
+    private ProjectSettings Project(string name) =>
         new(
             ProjectName.Create(name),
             Path.Combine(_directory, name + ".db"),
             $"http://127.0.0.1:{FreePort()}",
-            catalogue,
             null);
 
 }

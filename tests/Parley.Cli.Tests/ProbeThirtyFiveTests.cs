@@ -72,7 +72,6 @@ public sealed class ProbeThirtyFiveTests : IDisposable
                 ProjectName.Create(name),
                 Path.Combine(_root, $"{name}.db"),
                 $"http://127.0.0.1:{port}",
-                Path.Combine(_root, $"{name}-node.json"),
                 null));
         }
 

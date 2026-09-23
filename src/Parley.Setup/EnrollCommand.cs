@@ -1219,28 +1219,20 @@ public static class EnrollCommand
         // when `autostart status` does not already show it, because installing it again restarts the broker and ends
         // every agent it started.
         var named = project?.Name.Value;
-        var entryCatalogue = project?.NodeConfig;
-        var catalogueNamed = entryCatalogue is { Length: > 0 }
-            && string.Equals(
-                Path.GetFullPath(entryCatalogue),
-                Path.GetFullPath(nodePath),
-                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
         const string Serve =
             "     Served at every logon by `parley autostart install`; a machine whose entry already serves the\n" +
             "     manifest (`parley autostart status` says) picks this up within seconds and needs nothing.\n";
 
+        // **Nothing here points a project at a catalogue any more.** There is one per machine, so a
+        // project cannot name a different one and no step could ask for it. A branch telling somebody to
+        // run `project set --node-config` stood here until 019 removed the field it wrote, and it had
+        // already been unreachable since 018 made that field mean nothing.
         var start = named is null
             ? "  1. Name the project these repositories answer in:\n" +
-              "       parley project add <name> --db <path to the store> --listen <url>" +
-              (nodeChanged ? $" --node-config {nodePath}\n" : "\n") +
+              "       parley project add <name> --db <path to the store> --listen <url>\n" +
               Serve
-            : nodeChanged && !catalogueNamed
-                ? $"  1. Point {named} at the catalogue this wrote, since a machine serving several projects hosts each\n" +
-                  "     node from the catalogue its entry names:\n" +
-                  $"       parley project set {named} --node-config {nodePath}\n" +
-                  Serve
-                : $"  1. A broker{(nodeChanged ? " and this machine's node" : string.Empty)} for {named}.\n" + Serve;
+            : $"  1. A broker{(nodeChanged ? " and this machine's node" : string.Empty)} for {named}.\n" + Serve;
 
         // **This used to have three steps and the middle one was "restart your editor in each
         // repository".** It existed because enrolment wrote two files and started nothing, so every

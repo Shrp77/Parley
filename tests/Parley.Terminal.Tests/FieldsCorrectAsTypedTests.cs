@@ -183,6 +183,6 @@ public sealed class FieldsCorrectAsTypedTests
     private static BrokerDirectory Directory() =>
         new(
             [new ProjectSettings(
-                ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null, null)],
+                ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => Grpc.Net.Client.GrpcChannel.ForAddress("http://127.0.0.1:1"));
 }

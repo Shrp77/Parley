@@ -232,7 +232,6 @@ public static class ProjectManifest
                 projectName,
                 Text(entry, "store") ?? string.Empty,
                 Text(entry, "endpoint") ?? string.Empty,
-                Text(entry, "node_config"),
                 Text(entry, "description"));
 
             foreach (var fault in settings.Problems())
@@ -307,7 +306,6 @@ public static class ProjectManifest
         foreach (var (field, value) in new[]
                  {
                      ("store", project.Store),
-                     ("node_config", project.NodeConfig),
                  })
         {
             if (string.IsNullOrEmpty(value))
@@ -839,7 +837,6 @@ public static class ProjectManifest
         entry["store"] = project.Store;
         entry["endpoint"] = project.Endpoint;
 
-        Set(entry, "node_config", project.NodeConfig);
         Set(entry, "description", project.Description);
 
         return entry;

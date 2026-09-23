@@ -75,7 +75,7 @@ public sealed class ProbeFiveTests : IAsyncDisposable
     private async Task<Shell> OpenInsideProjectAsync(Driving.Session driving)
     {
         var project = new ProjectSettings(
-            ProjectName.Create("acme"), Store, _broker.Address, CataloguePath, null);
+            ProjectName.Create("acme"), Store, _broker.Address, null);
 
         ProjectManifest.Write(ManifestPath, [project]);
 

@@ -33,7 +33,7 @@ namespace Parley.Client.Tests;
 public sealed class LostSeatTests
 {
     private static readonly ProjectSettings Alpha =
-        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5402", null, null);
+        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5402", null);
 
     [Fact]
     public async Task A_refused_reattachment_ends_the_seat()

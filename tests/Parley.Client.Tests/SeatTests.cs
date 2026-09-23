@@ -26,10 +26,10 @@ namespace Parley.Client.Tests;
 public sealed class SeatTests
 {
     private static readonly ProjectSettings Alpha =
-        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5301", null, null);
+        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5301", null);
 
     private static readonly ProjectSettings Beta =
-        new(ProjectName.Create("beta"), string.Empty, "http://127.0.0.1:5302", null, null);
+        new(ProjectName.Create("beta"), string.Empty, "http://127.0.0.1:5302", null);
 
     [Fact]
     public async Task A_name_an_agent_already_holds_is_refused()

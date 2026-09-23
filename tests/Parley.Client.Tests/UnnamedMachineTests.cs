@@ -118,7 +118,6 @@ public sealed class UnnamedMachineTests
                 ProjectName.Create("alpha"),
                 Path.Combine(manifest, "alpha.db"),
                 "http://127.0.0.1:5301",
-                null,
                 null)]);
 
         try

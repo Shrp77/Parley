@@ -100,7 +100,6 @@ public sealed class TwoProjectsTests : IAsyncDisposable
                 ProjectName.Create(name),
                 Path.Combine(_root, name + ".db"),
                 _brokers[at].Address,
-                CatalogueFor(name),
                 null))
             .ToList();
 
@@ -109,7 +108,7 @@ public sealed class TwoProjectsTests : IAsyncDisposable
         foreach (var project in projects)
         {
             await File.WriteAllTextAsync(
-                project.NodeConfig!, "{\n  \"agents\": {}\n}\n", TestContext.Current.CancellationToken);
+                CatalogueFor(project.Name.Value), "{\n  \"agents\": {}\n}\n", TestContext.Current.CancellationToken);
         }
 
         var shell = TerminalCommand.Build(
@@ -293,21 +292,21 @@ public sealed class TwoProjectsTests : IAsyncDisposable
         var deployment = new[] { "alpha", "beta", "gamma", "delta" }
             .Select((name, at) => new ProjectSettings(
                 ProjectName.Create(name), Path.Combine(_root, name + ".db"),
-                $"http://127.0.0.1:{9100 + at}", CatalogueFor(name), null))
+                $"http://127.0.0.1:{9100 + at}", null))
             .ToList();
 
         ProjectManifest.Write(ManifestPath, deployment);
 
         foreach (var project in deployment)
         {
-            await File.WriteAllTextAsync(project.NodeConfig!, """{ "agents": {} }""", token);
+            await File.WriteAllTextAsync(CatalogueFor(project.Name.Value), """{ "agents": {} }""", token);
         }
 
         await Task.WhenAll(deployment.Select(project => Task.Run(
             async () => await Enrolment.AddAsync(
                 new EnrollmentEntry(Workspace, "orders", null, Unattended: false) { Enroll = true },
                 project.Name.Value,
-                project.NodeConfig!,
+                CatalogueFor(project.Name.Value),
                 Path.Combine(Workspace, Adding.Instructions),
                 token,
                 deployment,

@@ -103,12 +103,11 @@ public static class ProjectCommand
         TextWriter output,
         TextWriter error)
     {
-        if (fields.Store is null && fields.Endpoint is null && fields.NodeConfig is null
-            && fields.Description is null)
+        if (fields.Store is null && fields.Endpoint is null && fields.Description is null)
         {
             await error.WriteLineAsync(
-                "Nothing to change. Give at least one of --db, --listen, --node-config or " +
-                "--description.").ConfigureAwait(false);
+                "Nothing to change. Give at least one of --db, --listen or --description.")
+                .ConfigureAwait(false);
 
             return Usage;
         }
@@ -141,9 +140,6 @@ public static class ProjectCommand
                 {
                     Store = fields.Store ?? current.Store,
                     Endpoint = fields.Endpoint ?? current.Endpoint,
-                    NodeConfig = fields.NodeConfig is null
-                        ? current.NodeConfig
-                        : fields.NodeConfig.Length == 0 ? null : fields.NodeConfig,
                     Description = fields.Description is null
                         ? current.Description
                         : fields.Description.Length == 0 ? null : fields.Description,
@@ -195,7 +191,6 @@ public static class ProjectCommand
         await output.WriteLineAsync(
             $"  endpoint  {changed!.Endpoint}{Environment.NewLine}" +
             $"  store     {changed.Store}" +
-            (changed.NodeConfig is { Length: > 0 } node ? $"{Environment.NewLine}  node      {node}" : string.Empty) +
             (changed.Description is { Length: > 0 } about ? $"{Environment.NewLine}  {about}" : string.Empty))
             .ConfigureAwait(false);
 
@@ -240,11 +235,6 @@ public static class ProjectCommand
                 .ConfigureAwait(false);
 
             await output.WriteLineAsync($"                 store  {project.Store}").ConfigureAwait(false);
-
-            if (project.NodeConfig is { Length: > 0 } node)
-            {
-                await output.WriteLineAsync($"                 node   {node}").ConfigureAwait(false);
-            }
 
             if (project.Description is { Length: > 0 } description)
             {
@@ -314,10 +304,9 @@ public static class ProjectCommand
             return Usage;
         }
 
-        var node = fields.NodeConfig;
         var description = fields.Description;
 
-        var settings = new ProjectSettings(name, store, endpoint, node, description);
+        var settings = new ProjectSettings(name, store, endpoint, description);
         var faults = new List<string>();
 
         try
@@ -487,7 +476,6 @@ public static class ProjectCommand
         // them do it deliberately.
         await output.WriteLineAsync(
             $"Nothing was deleted. The store remains at {going!.Store}" +
-            (going.NodeConfig is { Length: > 0 } node ? $", the node catalogue at {node}" : string.Empty) +
             ", and every repository's launch configuration is untouched. `remove --destroy` " +
             "deletes them.").ConfigureAwait(false);
 
@@ -645,14 +633,6 @@ public static class ProjectCommand
             deleted.Add(path);
         }
 
-        if (going.NodeConfig is { Length: > 0 } catalogue
-            && File.Exists(catalogue)
-            && !ProjectManifest.IsTheManifest(catalogue, manifestPath)
-            && await TryDeleteAsync(catalogue, cancellationToken).ConfigureAwait(false))
-        {
-            deleted.Add(catalogue);
-        }
-
         _ = staying;
 
         await output.WriteLineAsync(
@@ -774,11 +754,10 @@ public static class ProjectCommand
 /// </summary>
 /// <param name="Store">The database file, from <c>--db</c>.</param>
 /// <param name="Endpoint">The transport address, from <c>--listen</c>.</param>
-/// <param name="NodeConfig">The node catalogue, from <c>--node-config</c>, or null.</param>
 /// <param name="Description">One line for the operator, from <c>--description</c>, or null.</param>
 /// <remarks>
 /// Passed in rather than parsed here, because the entry point consumes every option before any
 /// command sees its arguments — anything left starting with a hyphen is refused as an option the
 /// tool does not have. A command that parsed its own flags would never receive them.
 /// </remarks>
-public sealed record ProjectFields(string? Store, string? Endpoint, string? NodeConfig, string? Description);
+public sealed record ProjectFields(string? Store, string? Endpoint, string? Description);
