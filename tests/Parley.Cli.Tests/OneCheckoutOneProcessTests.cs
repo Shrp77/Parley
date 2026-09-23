@@ -74,6 +74,7 @@ public sealed class OneCheckoutOneProcessTests : IDisposable
         _ = Directory.CreateDirectory(workspace);
 
         var cataloguePath = Path.Combine(_root, NodeCatalogue.DefaultFileName);
+        var reports = new List<string>();
 
         // The repository declares the name each project calls it, which is how a name resolves to an
         // identity. Two projects, two names, one checkout.
@@ -111,61 +112,94 @@ public sealed class OneCheckoutOneProcessTests : IDisposable
                 """,
                 ct);
 
-            await OnceAsync(NodeCatalogue.ReadFrom(cataloguePath), ct);
+            reports.Add(await OnceAsync(NodeCatalogue.ReadFrom(cataloguePath), ct));
         }
 
-        var launches = File.Exists(Evidence)
-            ? (await File.ReadAllLinesAsync(Evidence, ct)).Count(l => l.Trim().Length > 0)
-            : 0;
+        // Guarded against passing by vacuity: a run where nothing ever started measured nothing, and
+        // would satisfy "never started twice" perfectly.
+        var started = reports.Sum(Starts);
 
-        // Guarded against passing by vacuity: if nothing launched at all, one-per-attempt is not what happened.
-        Assert.True(launches > 0, "nothing was launched, so this test measured nothing");
+        Assert.True(started > 0, "nothing was launched, so this probe measured nothing");
 
-        // Which attempt started twice, if any — theorising about a race is how it stays unfixed.
-        var perAttempt = (await File.ReadAllLinesAsync(Evidence, ct))
-            .Select(l => l.Trim())
-            .Where(l => l.Length > 0)
-            .GroupBy(l => l)
-            .Where(g => g.Count() > 1)
-            .Select(g => $"attempt {g.Key} started {g.Count()} times")
+        // Which attempt announced two launches, and what it said — theorising about a race is how it stays
+        // unfixed, so the report itself travels with the failure.
+        var twice = reports
+            .Select((report, attempt) => (attempt, report, starts: Starts(report)))
+            .Where(each => each.starts > 1)
+            .Select(each => $"attempt {each.attempt} announced {each.starts} launches: {Flatten(each.report)}")
             .ToArray();
 
-        Assert.True(perAttempt.Length == 0, string.Join("; ", perAttempt));
-        Assert.Equal(Attempts, launches);
+        Assert.True(twice.Length == 0, string.Join(" | ", twice));
+        Assert.Equal(Attempts, started);
     }
+
+    /// <summary>Counts the launches a run of the command announced.</summary>
+    /// <remarks>
+    /// Matched against the sentence <c>StartAsync</c> writes when it has actually launched something, rather
+    /// than against the word "started", which also appears in the sentence naming agents somebody else's node
+    /// is already running.
+    /// </remarks>
+    private static int Starts(string report) =>
+        report.Split('\n').Count(line => line.Contains(": started (", StringComparison.Ordinal));
+
+    /// <summary>Puts a multi-line report on one line, so a failure message stays one line.</summary>
+    private static string Flatten(string report) =>
+        string.Join(
+            " / ",
+            report.Split('\n').Select(line => line.Trim()).Where(line => line.Length > 0));
 
     private const int Attempts = 10;
 
-    private async Task OnceAsync(NodeCatalogue catalogue, CancellationToken ct)
+    /// <summary>
+    /// Runs one pair of simultaneous starts and hands back what the command itself reported.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The report is the measurement, and counting launched processes is not.</b> A second process is
+    /// started for two different reasons — the race this exists to catch, and the wholly correct restart of
+    /// a resident that has died, which <c>A_turn_for_a_resident_whose_process_has_died_is_cleared_and_named</c>
+    /// requires. **Nothing outside the command can tell those apart after the fact**, because the loser is
+    /// gone from the table either way.
+    /// </para>
+    /// <para>
+    /// <c>StartAsync</c> announces the two cases differently — a fresh <c>started</c> against a
+    /// <c>restarted … the previous process had gone</c> — so two *fresh* launches in one attempt is the
+    /// guard having admitted both callers, and that is unambiguous. An earlier version of this probe
+    /// asserted on lines appended by the launched processes, which cannot make that distinction: it passed
+    /// alone and failed in the full suite, where load widens the window in which the first process dies.
+    /// </para>
+    /// <para>
+    /// <b>The distinction had to be built before it could be asserted</b>, and doing so found the leak
+    /// beside it: the replacement path overwrote the dead resident instead of disposing it, dropping a
+    /// Process handle and two output pumps every time an agent died.
+    /// </para>
+    /// </remarks>
+    private static async Task<string> OnceAsync(NodeCatalogue catalogue, CancellationToken ct)
     {
         var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
+
+        // Both callers write into one writer, so it has to be safe for both of them.
+        var said = new StringWriter();
+        var report = TextWriter.Synchronized(said);
 
         // Both node loops reach the start for the same identity at once.
         await Task.WhenAll(
             Task.Run(
                 async () => await NodeCommand.StartAsync(
                     new Wire.StartAgent { Agent = "orders@" + NodeCatalogue.Machine, Because = "alpha asked" },
-                    catalogue, "alpha", residents, TextWriter.Null, ct),
+                    catalogue, "alpha", residents, report, ct),
                 ct),
             Task.Run(
                 async () => await NodeCommand.StartAsync(
                     new Wire.StartAgent { Agent = "billing@" + NodeCatalogue.Machine, Because = "beta asked" },
-                    catalogue, "beta", residents, TextWriter.Null, ct),
+                    catalogue, "beta", residents, report, ct),
                 ct));
 
         // One entry, whatever happened to the processes.
         var resident = Assert.Single(residents).Value;
 
-        // **And it is still running.** A resident that had already exited would make the second caller's
-        // restart correct rather than a race — that is the rule
-        // `A_turn_for_a_resident_whose_process_has_died_is_cleared_and_named` holds — and the count below
-        // could not tell the two apart. An earlier version of this probe launched something that exited at
-        // once and reported three legitimate restarts as three defects, under load, in the full suite only.
-        Assert.True(resident.IsAlive, "the launched process died before the second caller looked");
-
-        // Let whatever launched write its line before the next attempt.
-        await Task.Delay(250, ct);
-
         await resident.DisposeAsync();
+
+        return said.ToString();
     }
 }

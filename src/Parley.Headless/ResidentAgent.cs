@@ -317,9 +317,25 @@ public sealed class ResidentAgent : IAsyncDisposable
         {
             _process.StandardInput.Close();
         }
-        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        catch (Exception ex)
+            when (ex is IOException or ObjectDisposedException or InvalidOperationException)
         {
-            // Already gone. The wait below settles it either way.
+            // Already gone, or still being written to. The wait below settles it either way.
+            //
+            // **InvalidOperationException is the one this method's own design makes ordinary.** A
+            // StreamWriter refuses Close() while an asynchronous write is still in flight, saying "the
+            // stream is currently in use by a previous operation" — and the remark above deliberately
+            // declines to synchronise a shutdown against a turn, because waiting on a turn's lock would
+            // let one wedged agent stop the whole fleet from stopping. Dispatching a turn and stopping
+            // the agent are therefore allowed to collide, and this is what the collision throws.
+            //
+            // Swallowing it is right rather than merely convenient: closing standard input is only the
+            // polite form of stopping, and everything that actually guarantees the process is gone —
+            // the bounded wait, then Kill — is below and runs regardless.
+            //
+            // Left uncaught it escaped ShutdownAsync into whoever was stopping the fleet, so one agent
+            // being mid-turn could abandon the stop of every agent after it. That is the shape the
+            // review gate's fourth finding already closed once, reached here by a different route.
         }
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

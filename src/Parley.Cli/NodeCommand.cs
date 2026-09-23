@@ -521,12 +521,29 @@ public static class NodeCommand
 
         try
         {
-            if (residents.TryGetValue(identity, out var existing) && existing.IsAlive)
+            var replacing = false;
+
+            if (residents.TryGetValue(identity, out var existing))
             {
-                // Already here, and "here" is machine-wide rather than this node's own. This is also how one
-                // checkout stays one process when a second project asks for it under another name.
-                DispatchTurn(existing, output, cancellationToken);
-                return;
+                if (existing.IsAlive)
+                {
+                    // Already here, and "here" is machine-wide rather than this node's own. This is also how
+                    // one checkout stays one process when a second project asks for it under another name.
+                    DispatchTurn(existing, output, cancellationToken);
+                    return;
+                }
+
+                // **Ours, and dead — so the corpse is disposed rather than overwritten.** `TurnAsync` takes
+                // exactly this care and says why: the object holding a departed process still owns a Process
+                // handle and the two pumps draining its output, so letting the reference fall out of the
+                // dictionary leaks both, once per agent that ever dies. The assignment below is what would
+                // have dropped it.
+                if (residents.TryRemove(identity, out var corpse))
+                {
+                    await corpse.DisposeAsync().ConfigureAwait(false);
+                }
+
+                replacing = true;
             }
 
             if (catalogue.CommandFor(identity) is not { } command)
@@ -546,8 +563,14 @@ public static class NodeCommand
                 var resident = ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System);
                 residents[identity] = resident;
 
+                // **A replacement says so, and that is not decoration.** Starting an agent because nothing
+                // was running is an ordinary event; starting one because the process behind an attached
+                // session had gone is an anomaly worth a line, and `TurnAsync` already names the same state
+                // where it meets it. Reading a node's log, the two are completely different pieces of news.
                 await output.WriteLineAsync(
-                    $"  {agent.Value}: started ({start.Because}).").ConfigureAwait(false);
+                    replacing
+                        ? $"  {agent.Value}: restarted ({start.Because}) — the previous process had gone."
+                        : $"  {agent.Value}: started ({start.Because}).").ConfigureAwait(false);
 
                 DispatchTurn(resident, output, cancellationToken);
             }

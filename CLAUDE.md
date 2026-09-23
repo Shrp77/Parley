@@ -629,8 +629,8 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   closed and says the field is not self-declared — argued there rather than stepped around, and the cost is
   recorded: the claim narrows again, and anchoring gets worse rather than better.
 
-- **The review gate on this branch found four defects in its first four probes, two of them high** — fixed
-  at **0.31.2**, and the
+- **The review gate on this branch found six defects in its first five probes, two of them high** — fixed
+  at **0.31.2** and **0.31.3**, and the
   count stands at **zero clean runs on lens 1**. `REVIEW-LEDGER.md` carries each with the probe that produced
   it. Two are 017's and two are 018's, and the 018 pair are both consequences of one change — sharing the
   resident table across every project a process hosts, which closed one hazard and opened two.
@@ -655,9 +655,38 @@ below in the form Spec Kit's checks read; this file remains the authority when t
     of this shape**; this is the same class one level down, introduced by the same feature. Whoever makes the
     table stops it now.
 
+  - **Stopping an agent mid-turn threw, and took the rest of the fleet's shutdown with it** (0.31.3).
+    `ShutdownAsync` closes the agent's standard input as the polite form of stopping, and caught
+    `IOException` and `ObjectDisposedException` around it — but a `StreamWriter` refuses `Close()` while an
+    asynchronous write is in flight, and throws `InvalidOperationException`. **The method's own remark makes
+    that collision ordinary rather than exotic**: it deliberately declines to synchronise a shutdown against
+    a turn, because waiting on a turn's lock would let one wedged agent stop the whole fleet from stopping.
+    So the design permits the race and the catch did not cover what the race throws, and the exception
+    escaped into whoever was stopping the fleet — one agent mid-turn abandoning the stop of every agent
+    after it. **The same shape as the fourth finding, reached by a different route.** Swallowing it is
+    correct rather than convenient: closing standard input guarantees nothing, and the bounded wait and the
+    kill below run regardless.
+
+  - **Replacing a dead agent leaked the one it replaced** (0.31.3). `StartAsync` reaches its start when a
+    resident is absent *or* has died, and the assignment that records the new one overwrote the dead one
+    without disposing it — dropping a `Process` handle and the two pumps draining that process's output,
+    once per agent that ever dies. **`TurnAsync`, forty lines away, takes exactly this care and says why**,
+    which is what makes it a defect rather than an oversight: one of the two places that meets a corpse
+    clears it and the other did not. **And the replacement now says so**: starting an agent because nothing
+    was running and starting one because the process behind an attached session had gone are different news
+    to anybody reading a node's log, and were one sentence.
+
   **Recorded honestly**: the fourth was found by reading rather than by driving. Two node loops over two
   brokers is a fixture this suite does not have, and the mechanism is unambiguous — but a test that drives it
   is owed, and the ledger says so.
+
+  **And the fifth was found by deleting a sleep.** `OneCheckoutOneProcessTests` waited 250 ms before
+  disposing, to let the launched processes write their evidence — and that sleep was also, unintentionally,
+  long enough for every dispatched turn to finish writing. Removing it surfaced a product race that had been
+  masked since the probe was written. **The probe was also unsound and is rewritten**: it counted processes
+  launched, which cannot distinguish the race it names from the entirely correct restart of a resident that
+  has died, so it passed alone and failed only in the full suite where load widens the window. It reads the
+  command's own announcements now.
 
 - **Previous plan**: `specs/018-agent-identity/` — **0.31.1, built through T028 and green across every suite.
   The review gate is owed, the manifest still carries a field nothing reads, and nothing is pushed.** An agent
