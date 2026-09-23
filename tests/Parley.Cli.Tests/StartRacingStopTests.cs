@@ -49,17 +49,6 @@ public sealed class StartRacingStopTests : IDisposable
         }
     }
 
-    /// <summary>A command that stays alive exactly as long as something holds its input.</summary>
-    /// <remarks>
-    /// <c>--input-format</c> stops <c>InvocationCommand.Parse</c> appending Claude Code's protocol
-    /// arguments, which any other runner refuses — see <c>OneCheckoutOneProcessTests</c>, where a fixture
-    /// that did not opt out was dying in twenty milliseconds and made the probe measure nothing.
-    /// </remarks>
-    private static string Standing =>
-        OperatingSystem.IsWindows()
-            ? "cmd /c echo --input-format >nul & more"
-            : "sh -c \"cat\" --input-format";
-
     private const int Attempts = 40;
 
     [Fact]
@@ -103,7 +92,7 @@ public sealed class StartRacingStopTests : IDisposable
                 {
                   "agents": {
                     "{{identity}}": {
-                      "command": {{System.Text.Json.JsonSerializer.Serialize(Standing)}},
+                      "command": {{System.Text.Json.JsonSerializer.Serialize(StandingAgent.Command)}},
                       "workspace": {{System.Text.Json.JsonSerializer.Serialize(workspace)}}
                     }
                   }

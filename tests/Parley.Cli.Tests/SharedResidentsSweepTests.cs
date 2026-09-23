@@ -72,42 +72,10 @@ public sealed class SharedResidentsSweepTests : IAsyncDisposable
 
     /// <summary>A command that really does stay alive, so that anything killing it is the thing under test.</summary>
     /// <remarks>
-    /// <para>
-    /// <b><c>--input-format</c> is load-bearing and is not a typo.</b> <c>InvocationCommand.Parse</c> appends
-    /// Claude Code's protocol arguments to every template *except* one that already names its own input
-    /// format — deliberately, since appending them to a different runner produces a command line that means
-    /// nothing to either. A fixture that does not opt out therefore launches
-    /// <c>ping … --output-format stream-json …</c>, which ping refuses, so the process exits at once.
-    /// </para>
-    /// <para>
-    /// <b>That is not hypothetical: it is why the probe next door was flaky.</b>
-    /// <c>OneCheckoutOneProcessTests</c> believed it was launching something that lived for thirty seconds
-    /// and was launching something that died immediately, so under load its second caller kept finding a
-    /// dead resident and correctly starting a replacement — which that probe counted as the race it was
-    /// looking for. A fixture whose process does not outlive the assertion measures nothing here.
-    /// </para>
-    /// <para>
-    /// <b>The token is carried by an <c>echo</c> into nul, and <c>rem</c> was tried first and is wrong.</b>
-    /// <c>rem</c> comments out the remainder of the line — including the <c>&amp;</c> — so
-    /// <c>rem --input-format &amp; …</c> runs nothing at all and returns in twenty milliseconds. Timed
-    /// rather than reasoned: 4.07s for a bare five-count ping, 0.021s with <c>rem</c>, 0.020s with the
-    /// protocol arguments appended. On Unix, arguments after <c>sh -c "…"</c> become positional parameters
-    /// the script ignores, so the token simply rides along.
-    /// </para>
-    /// <para>
-    /// <b>It waits on standard input rather than sleeping, which makes it both honest and quick.</b> A
-    /// timed sleep is alive for as long as the number says and has to be killed after the shutdown grace
-    /// expires, which put forty seconds on this suite. Reading standard input instead means the process is
-    /// alive exactly while something holds that stream — which is what a resident agent *is* — and exits
-    /// the instant it closes. That is also the path <c>ShutdownAsync</c> describes as the polite form,
-    /// where end of input is end of conversation, so the fixture exercises the real ending rather than the
-    /// kill that backs it up. Measured: blocks 5.04s against an open pipe, exits in 0.044s at end of input.
-    /// </para>
+    /// <see cref="StandingAgent"/> carries why this is not the obvious string, and why a copy of it that
+    /// drifts would not fail but would quietly stop measuring anything.
     /// </remarks>
-    private static string Standing =>
-        OperatingSystem.IsWindows()
-            ? "cmd /c echo --input-format >nul & more"
-            : "sh -c \"cat\" --input-format";
+    private static string Standing => StandingAgent.Command;
 
     [Fact]
     public async Task One_node_loop_ending_leaves_another_nodes_agents_running()

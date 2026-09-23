@@ -60,31 +60,14 @@ public sealed class OneCheckoutOneProcessTests : IDisposable
     /// process does not outlive the second call cannot measure the race at all.
     /// </para>
     /// <para>
-    /// <b><c>--input-format</c> is what makes it true, and its absence is why this probe was flaky.</b>
-    /// <c>InvocationCommand.Parse</c> appends Claude Code's protocol arguments to every template that does
-    /// not name its own input format, so the earlier version launched
-    /// <c>ping … -p --input-format stream-json …</c>, which ping refuses: the process exited in twenty
-    /// milliseconds rather than running for thirty seconds. Under load the second caller therefore kept
-    /// finding a dead resident and correctly starting a replacement, which this probe counted as the defect
-    /// it was hunting. Measured, not reasoned: 4.07s for a bare five-count ping against 0.020s with those
-    /// arguments appended.
-    /// </para>
-    /// <para>
-    /// The token rides in on an <c>echo</c> to nul. <c>rem</c> cannot carry it: it comments out the rest of
-    /// the line, <c>&amp;</c> included, so the real command never runs.
-    /// </para>
-    /// <para>
-    /// <b>It then waits on standard input rather than sleeping for a fixed time.</b> A sleep is alive for a
-    /// number of seconds somebody guessed and must be killed after the shutdown grace expires, which cost
-    /// this suite forty seconds a run. Waiting on the stream means the process is alive exactly while
-    /// something holds it — which is what a resident agent is — and exits the moment it closes, through the
-    /// polite ending <c>ShutdownAsync</c> is written around.
+    /// <see cref="StandingAgent"/> carries why the command is not the obvious one — and this probe is the
+    /// reason that file exists. It believed it was launching something that lived thirty seconds and was
+    /// launching something that exited in twenty milliseconds, so under load its second caller kept
+    /// finding a dead resident and correctly starting a replacement, which this counted as the defect it
+    /// was hunting.
     /// </para>
     /// </remarks>
-    private string Marking(int attempt) =>
-        OperatingSystem.IsWindows()
-            ? $"cmd /c echo {attempt} >> \"{Evidence}\" & echo --input-format >nul & more"
-            : $"sh -c \"echo {attempt} >> '{Evidence}'; cat\" --input-format";
+    private string Marking(int attempt) => StandingAgent.Recording(Evidence, attempt);
 
     [Fact]
     public async Task Two_projects_asking_at_the_same_moment_start_it_once()
