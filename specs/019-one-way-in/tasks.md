@@ -262,6 +262,39 @@ name — and is independently demonstrable without any of the removals, the migr
 - T099–T104 (documents) at any time after Phase 7
 - Phase 7 entirely, alongside Phases 3–6
 
+## Open decision: the terminal's "Name the running deployment"
+
+**Neither `spec.md` nor `plan.md` mentions this flow, and 019 makes it unexpressible.** Found while
+converting the terminal suite, not while planning.
+
+`Naming.OpenNameRunningAsync` exists to adopt a broker *already serving* on a store and a port taken from
+the autostart entry — its own comment says "every answer is already in the entry, so the one thing typed is
+the name". A project's store is now derived from its name and its port is claimed, so there is nowhere for
+either answer to go.
+
+**The trap, and the reason this is a decision rather than an edit.** Deriving a fresh store and keeping the
+stated endpoint compiles, passes, and points the newly named project at an *empty* database while the
+running broker still holds the real one. Every conversation in that deployment would appear to have
+vanished. Nothing in the type system or the suite objects.
+
+Two honest options:
+
+1. **Fold it into the migration (US6).** Adopting a running store means moving it, which means stopping the
+   broker, which is exactly what the migration command already has to state before it acts. Fewer doors onto
+   one destructive act, which is the argument `SurfaceTests` enforces elsewhere.
+2. **Keep it on the terminal as a door onto that same migration**, behind a description and the project's
+   name typed back — consistent with `Removing` and `Withdrawing`, and with the owner's twice-stated
+   principle that a surface which can create a thing should be able to remove it.
+
+**Tied to it:** `Naming.EndpointProblem` is dead in `src` and named only by the tests. `--listen` survives
+for a broker meant to be reachable off this machine (FR-020), so either the create form keeps an optional
+endpoint field or stating an endpoint becomes CLI-only. `Naming.ProposedStore` and the `Store`/`StoreWhy`
+fields of `Proposed` were unambiguously dead and have gone; `Naming.StoreProblem` is dead too and goes with
+whichever option is taken.
+
+`NamingTests.The_running_deployment_is_named_from_a_form_that_is_already_filled_in` is **left red on
+purpose** until this is settled, rather than made to pass in a way that encodes a guess.
+
 ## What must be true at the end
 
 | | |

@@ -74,10 +74,8 @@ internal static class Naming
             projects,
             entry,
             new Proposed(
-                Store: entry.Store!,
                 Endpoint: entry.Listen ?? DefaultEndpoint,
                 NodeConfig: entry.NodeConfig,
-                StoreWhy: "the database the running broker owns; every project has its own file",
                 EndpointWhy: "where the running broker listens; change it only if this project's "
                              + "broker is on another machine"),
             queue,
@@ -127,11 +125,8 @@ internal static class Naming
             projects,
             entry,
             new Proposed(
-                Store: null,
                 Endpoint: FreeEndpoint(taken),
                 NodeConfig: null,
-                StoreWhy: "a new database file; every project has its own, and the broker creates "
-                          + "it on first start",
                 EndpointWhy: "where this project's broker will listen; a port nothing here holds "
                              + "was chosen, so change it only if it must be reachable from elsewhere"),
             queue,
@@ -239,30 +234,6 @@ internal static class Naming
         return held is null
             ? null
             : $"'{held.Name}' already listens there; each project's broker needs its own port";
-    }
-
-    /// <summary>Where a new project's store should go, next to the ones this machine has.</summary>
-    /// <param name="name">The project being created.</param>
-    /// <param name="projects">What the manifest already names.</param>
-    /// <param name="entry">The installed entry, if any.</param>
-    /// <returns>A path beside the existing stores.</returns>
-    /// <remarks>
-    /// Beside the existing stores rather than in a fresh default, because a machine that keeps
-    /// its stores somewhere has already decided where, and a second convention is a second place
-    /// to look. Named after the project, as SPEC.md §4.1 draws it: <c>alpha.db</c>, <c>beta.db</c>.
-    /// </remarks>
-    internal static string ProposedStore(
-        string name, IReadOnlyList<ProjectSettings> projects, InstalledEntry? entry)
-    {
-        ArgumentNullException.ThrowIfNull(projects);
-
-        var beside = projects.Select(p => Path.GetDirectoryName(p.Store))
-            .FirstOrDefault(d => !string.IsNullOrEmpty(d))
-            ?? (entry?.Store is { } running ? Path.GetDirectoryName(running) : null)
-            ?? Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".parley");
-
-        return Path.Combine(beside, name + ".db");
     }
 
     /// <summary>The default endpoint if nothing holds it, otherwise a free loopback port.</summary>
@@ -422,10 +393,14 @@ internal static class Naming
     }
 
     /// <summary>What a form proposes for each field, and the one line saying why.</summary>
+    /// <summary>What a form should open already holding.</summary>
+    /// <remarks>
+    /// <b>The store went with the field that asked for it.</b> A project's store is derived from its
+    /// name, so there is nothing to propose and nothing to explain — which is what removing the question
+    /// bought, rather than a better default for it.
+    /// </remarks>
     private sealed record Proposed(
-        string? Store,
         string Endpoint,
         string? NodeConfig,
-        string StoreWhy,
         string EndpointWhy);
 }
