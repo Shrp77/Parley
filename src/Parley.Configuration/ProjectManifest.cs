@@ -484,9 +484,7 @@ public static class ProjectManifest
     public static StringComparer PathComparer { get; } =
         OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
 
-    /// <summary>The name of the lock held while a manifest is being changed.</summary>
-    /// <param name="path">The manifest being changed.</param>
-    /// <returns>The path of its lock file.</returns>
+    /// <summary>The name of the lock held while this machine's projects are being changed.</summary>
     /// <remarks>
     /// <para>
     /// A sibling rather than something under the temporary directory, so two writers agree about
@@ -502,7 +500,10 @@ public static class ProjectManifest
     /// pair that disagreed would be the pair nobody thought to test together.
     /// </para>
     /// </remarks>
-    public static string LockFor(string path) => path + ".lock";
+    /// <param name="root">The machine's root.</param>
+    /// <returns>The lock file's path, which need not exist.</returns>
+    /// <exception cref="ArgumentException"><paramref name="root"/> is blank.</exception>
+    public static string LockFor(string root) => Path.Combine(ProjectFolder.ProjectsIn(root), ".lock");
 
     /// <summary>
     /// Changes the manifest under a lock, so a read and the write that depends on it are one act.
@@ -562,8 +563,14 @@ public static class ProjectManifest
             // **Inside the projects directory rather than at the root**, because FR-008 gives the root
             // exactly two files that are not a project. A file there is invisible to the reader, which
             // lists directories — so the lock cannot be mistaken for a project whose name is not one.
+            //
+            // **Through LockFor rather than composed here**, and that is not tidiness. Composing it
+            // inline is what broke the grant gate during 019: `Catalogues.GateAsync` takes this same
+            // lock so that a bulk enrolment and a manifest rewrite exclude each other, and it went on
+            // asking `LockFor` while this moved — two implementations of one rule, agreeing until one
+            // of them changed. 018 paid for exactly this once already, in `LaunchKey`.
             Directory.CreateDirectory(ProjectFolder.ProjectsIn(path));
-            held = Hold(Path.Combine(ProjectFolder.ProjectsIn(path), ".lock"), out refused);
+            held = Hold(LockFor(path), out refused);
         }
         catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
         {

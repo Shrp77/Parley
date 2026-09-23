@@ -44,7 +44,9 @@ public sealed class HostedNodeTests : IDisposable
         }
     }
 
-    private string ManifestPath => Path.Combine(_directory, "projects.json");
+    // **The root rather than the manifest file.** `--config` and PARLEY_CONFIG name the directory
+    // this machine keeps its Parley files in; the projects are the folders under it.
+    private string Root => _directory;
 
     private static ProjectSettings Project(string name, string store, string endpoint) =>
         new(ProjectName.Create(name), store, endpoint, null);
@@ -61,7 +63,7 @@ public sealed class HostedNodeTests : IDisposable
         // to every project this process serves and there is nothing left to disambiguate. What the old
         // test protected is now unrepresentable rather than guarded.
         ProjectManifest.Write(
-            ManifestPath,
+            Root,
             [
                 Project("orders", Path.Combine(_directory, "a.db"), $"http://127.0.0.1:{FreePort()}"),
                 Project("billing", Path.Combine(_directory, "b.db"), $"http://127.0.0.1:{FreePort()}"),
@@ -73,7 +75,7 @@ public sealed class HostedNodeTests : IDisposable
             catalogue, """{"agents":{}}""", TestContext.Current.CancellationToken);
 
         using var process = ToolProcess.Launch(
-            [(ProjectManifest.PathVariable, ManifestPath)],
+            [(ProjectManifest.PathVariable, Root)],
             "serve", "--with-node", "--node-config", catalogue);
 
         var log = ToolLog.Of(process);
@@ -120,14 +122,14 @@ public sealed class HostedNodeTests : IDisposable
         var ct = TestContext.Current.CancellationToken;
 
         ProjectManifest.Write(
-            ManifestPath,
+            Root,
             [
                 Project("orders", Path.Combine(_directory, "a.db"), $"http://127.0.0.1:{FreePort()}"),
                 Project("billing", Path.Combine(_directory, "b.db"), $"http://127.0.0.1:{FreePort()}"),
             ]);
 
         using var process = ToolProcess.Launch(
-            [(ProjectManifest.PathVariable, ManifestPath)], "serve", "--with-node");
+            [(ProjectManifest.PathVariable, Root)], "serve", "--with-node");
 
         var log = ToolLog.Of(process);
 
@@ -180,10 +182,10 @@ public sealed class HostedNodeTests : IDisposable
         var before = Project("orders", Path.Combine(_directory, "a.db"), $"http://127.0.0.1:{FreePort()}");
         var after = Project("orders", Path.Combine(_directory, "a.db"), $"http://127.0.0.1:{FreePort()}");
 
-        ProjectManifest.Write(ManifestPath, [before]);
+        ProjectManifest.Write(Root, [before]);
 
         using var process = ToolProcess.Launch(
-            [(ProjectManifest.PathVariable, ManifestPath), ("PARLEY_NODE_CONFIG", catalogue)],
+            [(ProjectManifest.PathVariable, Root), ("PARLEY_NODE_CONFIG", catalogue)],
             "serve", "--with-node");
 
         var log = ToolLog.Of(process);
@@ -194,7 +196,7 @@ public sealed class HostedNodeTests : IDisposable
 
             Assert.True(Hosted(log) == 1, $"the node was not hosted from the variable at start:{Environment.NewLine}{log}");
 
-            ProjectManifest.Write(ManifestPath, [after]);
+            ProjectManifest.Write(Root, [after]);
 
             await log.UntilAsync(l => Hosted(l) >= 2 || Declined(l), TimeSpan.FromSeconds(20), ct);
         }
@@ -232,7 +234,7 @@ public sealed class HostedNodeTests : IDisposable
         // node and `up` is the command that runs one -- and it used to do precisely what typing
         // nothing does, exit zero, and say nothing.
         var (code, error) = ToolProcess.Run(
-            [(ProjectManifest.PathVariable, ManifestPath)], verb, "--with-node");
+            [(ProjectManifest.PathVariable, Root)], verb, "--with-node");
 
         Assert.Equal(64, code);
         Assert.Contains("--with-node", error, StringComparison.Ordinal);

@@ -42,7 +42,7 @@ public sealed class ScanNeedsNoProjectTests : IDisposable
         Directory.CreateDirectory(Path.Combine(Checkouts, "orders", ".git"));
 
         ProjectManifest.Write(
-            ManifestPath,
+            Root,
             [
                 new ProjectSettings(
                     ProjectName.Create("alpha"), Path.Combine(_directory, "a.db"), "http://127.0.0.1:2", null),
@@ -63,7 +63,9 @@ public sealed class ScanNeedsNoProjectTests : IDisposable
         }
     }
 
-    private string ManifestPath => Path.Combine(_directory, "projects.json");
+    // **The root rather than the manifest file.** `--config` and PARLEY_CONFIG name the directory
+    // this machine keeps its Parley files in; the projects are the folders under it.
+    private string Root => _directory;
 
     private string Checkouts => Path.Combine(_directory, "checkouts");
 
@@ -73,7 +75,7 @@ public sealed class ScanNeedsNoProjectTests : IDisposable
     public void Scanning_is_not_refused_for_naming_no_project()
     {
         var (code, _, error) = ToolProcess.RunFully(
-            [(ProjectManifest.PathVariable, ManifestPath)], "enroll", "scan", Checkouts, Output, "--none");
+            [(ProjectManifest.PathVariable, Root)], "enroll", "scan", Checkouts, Output, "--none");
 
         Assert.Equal(0, code);
         Assert.DoesNotContain("alpha, beta", error, StringComparison.Ordinal);
@@ -84,7 +86,7 @@ public sealed class ScanNeedsNoProjectTests : IDisposable
     public void What_it_writes_names_the_repository_and_no_project()
     {
         _ = ToolProcess.RunFully(
-            [(ProjectManifest.PathVariable, ManifestPath)], "enroll", "scan", Checkouts, Output, "--none");
+            [(ProjectManifest.PathVariable, Root)], "enroll", "scan", Checkouts, Output, "--none");
 
         var written = File.ReadAllText(Output);
 
@@ -102,7 +104,7 @@ public sealed class ScanNeedsNoProjectTests : IDisposable
         // The narrowness is the whole of it. `plan` reports the `parley-<project>` key it would write, so a plan that
         // guessed would describe changes to a deployment nobody named — and this machine has two.
         var (code, error) = ToolProcess.Run(
-            [(ProjectManifest.PathVariable, ManifestPath)], "enroll", "plan", Output);
+            [(ProjectManifest.PathVariable, Root)], "enroll", "plan", Output);
 
         Assert.Equal(78, code);
         Assert.Contains("alpha, beta", error, StringComparison.Ordinal);
@@ -115,7 +117,7 @@ public sealed class ScanNeedsNoProjectTests : IDisposable
         // explicit-address exemption beside it holds, and for the same reason: a misspelling answered by silence is
         // how somebody enrols against a deployment they did not mean.
         var (code, error) = ToolProcess.Run(
-            [(ProjectManifest.PathVariable, ManifestPath)],
+            [(ProjectManifest.PathVariable, Root)],
             "--project", "gamma", "enroll", "scan", Checkouts, Output, "--none");
 
         Assert.Equal(78, code);

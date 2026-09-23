@@ -317,12 +317,18 @@ public static class ProjectResolution
     }
 
     /// <summary>Where this machine's catalogue sits when nothing names one.</summary>
-    /// <param name="manifestPath">The manifest, or null.</param>
+    /// <param name="root">The machine's root, or null.</param>
     /// <returns>The path.</returns>
-    private static string BesideTheManifest(string? manifestPath) =>
-        manifestPath is { Length: > 0 } manifest
-        && Path.GetDirectoryName(Path.GetFullPath(manifest)) is { Length: > 0 } directory
-            ? Path.Combine(directory, NodeCatalogue.DefaultFileName)
+    /// <remarks>
+    /// <b>At the root, which used to mean "the directory holding the manifest".</b> The two were the same
+    /// place and the code said the second, so when <c>--config</c> came to name the root itself this
+    /// resolved one directory too high — a catalogue beside somebody's <c>Parley</c> folder rather than in
+    /// it, on a machine that is perfectly well configured. FR-008 gives the root exactly two files that
+    /// are not a project, and this is one of them.
+    /// </remarks>
+    private static string BesideTheManifest(string? root) =>
+        root is { Length: > 0 } configured
+            ? Path.Combine(Path.GetFullPath(configured), NodeCatalogue.DefaultFileName)
             : NodeCatalogue.DefaultFileName;
 
     private static Resolved Choose(

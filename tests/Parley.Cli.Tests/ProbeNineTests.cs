@@ -33,7 +33,7 @@ public sealed class ProbeNineTests : IDisposable
         Directory.CreateDirectory(Workspace);
         Directory.CreateDirectory(Path.Combine(Workspace, ".git"));
 
-        ProjectManifest.Write(ManifestPath, [Project(catalogue: null)]);
+        ProjectManifest.Write(Root, [Project(catalogue: null)]);
     }
 
     public void Dispose()
@@ -47,7 +47,9 @@ public sealed class ProbeNineTests : IDisposable
         }
     }
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **The root rather than the manifest file.** `--config` and PARLEY_CONFIG name the directory
+    // this machine keeps its Parley files in; the projects are the folders under it.
+    private string Root => _root;
 
     private string Workspace => Path.Combine(_root, "orders").Replace(Path.DirectorySeparatorChar, '/');
 
@@ -71,7 +73,7 @@ public sealed class ProbeNineTests : IDisposable
         // manifest, and the enrolment follows. Both take the same lock now. They are sequential and
         // must stay so — a version that took the gate first and wrote the manifest inside it would
         // wait two seconds and fail, on the ordinary path of adding the first agent to a project.
-        ProjectManifest.Write(ManifestPath, [Project(CataloguePath)]);
+        ProjectManifest.Write(Root, [Project(CataloguePath)]);
 
         var enrolling = Enrolment.AddAsync(
             Entry(Workspace),
@@ -80,7 +82,7 @@ public sealed class ProbeNineTests : IDisposable
             Path.Combine(Workspace, "CLAUDE.md"),
             TestContext.Current.CancellationToken,
             [Project(CataloguePath)],
-            ManifestPath);
+            Root);
 
         var finished = await Task.WhenAny(enrolling, Task.Delay(10_000, TestContext.Current.CancellationToken));
 
@@ -97,7 +99,7 @@ public sealed class ProbeNineTests : IDisposable
         // The interaction run 8 created. Whether the write waits, or is refused, is a judgement — but
         // it must not leave the manifest unreadable, and it must not leave a half-written sibling
         // that a later read mistakes for the real thing.
-        using var gate = await Catalogues.GateAsync(ManifestPath, TestContext.Current.CancellationToken);
+        using var gate = await Catalogues.GateAsync(Root, TestContext.Current.CancellationToken);
 
         Assert.NotNull(gate);
 
@@ -105,10 +107,10 @@ public sealed class ProbeNineTests : IDisposable
         // the only writer that takes the lock. `Write` is the raw primitive underneath it and takes
         // nothing — the probe used that first and reported a finding that was its own mistake.
         ProjectManifest.TryUpdate(
-            ManifestPath, _ => [Project(CataloguePath)], out _);
+            Root, _ => [Project(CataloguePath)], out _);
 
         Assert.True(
-            ProjectManifest.TryRead(ManifestPath, out var projects, out var problem),
+            ProjectManifest.TryRead(Root, out var projects, out var problem),
             $"the manifest is no longer readable after a write during a grant: {problem}");
 
         Assert.Single(projects);
@@ -120,10 +122,10 @@ public sealed class ProbeNineTests : IDisposable
         // What sharing one lock is *for*. If both went ahead, a grant would be deciding against a
         // deployment that changed underneath it — the thing the gate exists to prevent, arriving by
         // the other door.
-        using var gate = await Catalogues.GateAsync(ManifestPath, TestContext.Current.CancellationToken);
+        using var gate = await Catalogues.GateAsync(Root, TestContext.Current.CancellationToken);
 
         var wrote = ProjectManifest.TryUpdate(
-            ManifestPath, _ => [Project(CataloguePath)], out var problem);
+            Root, _ => [Project(CataloguePath)], out var problem);
 
         Assert.False(wrote, "a manifest change went ahead while a grant held the lock");
         Assert.NotNull(problem);
@@ -133,15 +135,15 @@ public sealed class ProbeNineTests : IDisposable
     public async Task The_manifest_can_be_written_again_once_the_grant_is_over()
     {
         // The other half: a lock that is never released is worse than one never taken.
-        var gate = await Catalogues.GateAsync(ManifestPath, TestContext.Current.CancellationToken);
+        var gate = await Catalogues.GateAsync(Root, TestContext.Current.CancellationToken);
 
         gate?.Dispose();
 
         Assert.True(
-            ProjectManifest.TryUpdate(ManifestPath, _ => [Project(CataloguePath)], out var problem),
+            ProjectManifest.TryUpdate(Root, _ => [Project(CataloguePath)], out var problem),
             problem);
 
-        Assert.True(ProjectManifest.TryRead(ManifestPath, out var projects, out _));
+        Assert.True(ProjectManifest.TryRead(Root, out var projects, out _));
         _ = Assert.Single(projects);
     }
 }

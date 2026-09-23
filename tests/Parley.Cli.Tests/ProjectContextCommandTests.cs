@@ -22,7 +22,7 @@ public sealed class ProjectContextCommandTests : IDisposable
         Directory.CreateDirectory(_root);
 
         ProjectManifest.Write(
-            ManifestPath,
+            Root,
             [
                 new ProjectSettings(ProjectName.Create("alpha"), Path.Combine(_root, "a.db"), "http://127.0.0.1:2", null),
                 new ProjectSettings(ProjectName.Create("beta"), Path.Combine(_root, "b.db"), "http://127.0.0.1:3", null),
@@ -41,12 +41,14 @@ public sealed class ProjectContextCommandTests : IDisposable
         }
     }
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **The root rather than the manifest file.** `--config` and PARLEY_CONFIG name the directory
+    // this machine keeps its Parley files in; the projects are the folders under it.
+    private string Root => _root;
 
     private (string Name, string Value)[] Environment(string? terminalProject = null) =>
         terminalProject is null
-            ? [(ProjectManifest.PathVariable, ManifestPath)]
-            : [(ProjectManifest.PathVariable, ManifestPath), (EnrollmentPlan.ProjectVariable, terminalProject)];
+            ? [(ProjectManifest.PathVariable, Root)]
+            : [(ProjectManifest.PathVariable, Root), (EnrollmentPlan.ProjectVariable, terminalProject)];
 
     [Fact]
     public void A_terminals_project_is_the_one_a_command_acts_on_and_it_says_so()

@@ -40,11 +40,13 @@ public sealed class ServeSelectionTests : IDisposable
         }
     }
 
-    private string ManifestPath => Path.Combine(_directory, "projects.json");
+    // **The root rather than the manifest file.** `--config` and PARLEY_CONFIG name the directory
+    // this machine keeps its Parley files in; the projects are the folders under it.
+    private string Root => _directory;
 
     private void WriteManifest(string? catalogue = null) =>
         ProjectManifest.Write(
-            ManifestPath,
+            Root,
             [
                 new ProjectSettings(
                     ProjectName.Create("orders"),
@@ -66,10 +68,10 @@ public sealed class ServeSelectionTests : IDisposable
 
         using var process = byVariable
             ? ToolProcess.Launch(
-                [(ProjectManifest.PathVariable, ManifestPath), (DeploymentEnvironment.DatabaseVariable, store)],
+                [(ProjectManifest.PathVariable, Root), (DeploymentEnvironment.DatabaseVariable, store)],
                 "serve", "--listen", "http://127.0.0.1:0")
             : ToolProcess.Launch(
-                [(ProjectManifest.PathVariable, ManifestPath)],
+                [(ProjectManifest.PathVariable, Root)],
                 "serve", "--db", store, "--listen", "http://127.0.0.1:0");
 
         var log = ToolLog.Of(process);
@@ -103,8 +105,8 @@ public sealed class ServeSelectionTests : IDisposable
         WriteManifest();
 
         using var process = ToolProcess.Launch(
-            [(ProjectManifest.PathVariable, ManifestPath), (DeploymentEnvironment.DatabaseVariable, leftover)],
-            "serve", "--config", ManifestPath);
+            [(ProjectManifest.PathVariable, Root), (DeploymentEnvironment.DatabaseVariable, leftover)],
+            "serve", "--config", Root);
 
         var log = ToolLog.Of(process);
 
@@ -134,7 +136,7 @@ public sealed class ServeSelectionTests : IDisposable
 
         (string Name, string Value)[] environment =
         [
-            (ProjectManifest.PathVariable, ManifestPath),
+            (ProjectManifest.PathVariable, Root),
             (NodeCatalogue.PathVariable, fromVariable),
         ];
 
@@ -151,7 +153,7 @@ public sealed class ServeSelectionTests : IDisposable
     private async Task<string> HostedFromAsync(
         (string Name, string Value)[] environment, Action whileRunning, CancellationToken ct)
     {
-        using var process = ToolProcess.Launch(environment, "serve", "--config", ManifestPath, "--with-node");
+        using var process = ToolProcess.Launch(environment, "serve", "--config", Root, "--with-node");
 
         var log = ToolLog.Of(process);
 

@@ -60,17 +60,22 @@ internal static class Catalogues
         string? manifestPath,
         CancellationToken cancellationToken)
     {
-        if (manifestPath is not { Length: > 0 } path || !File.Exists(path))
+        // **Directory.Exists, and the change is load-bearing.** This took a *file* path and checked for
+        // the file; it takes the root now, and `File.Exists` on a directory is false — so the guard
+        // would have returned null every time and the gate would never have been taken at all, silently,
+        // on a machine that is perfectly well configured. A guard that fails open is worse than no guard,
+        // because the thing it protects goes on looking protected.
+        if (manifestPath is not { Length: > 0 } path || !Directory.Exists(path))
         {
             return null;
         }
 
-        // **The manifest's own lock file, not the manifest.** The first version held the manifest
-        // itself with `FileShare.None`, which locked out every *reader* for the length of a bulk
-        // enrolment — the terminal, the web UI, the node and every operator command begin by reading
-        // it, and each would have reported it unreadable rather than busy. `ProjectManifest` already
-        // keeps a lock beside it for serialising its own writes, so this takes that one: readers are
-        // untouched, and a grant and a manifest rewrite exclude each other, which they should.
+        // **The projects' own lock file, not any configuration file.** The first version held the
+        // manifest itself with `FileShare.None`, which locked out every *reader* for the length of a
+        // bulk enrolment — the terminal, the web UI, the node and every operator command begin by
+        // reading, and each would have reported it unreadable rather than busy. `ProjectManifest`
+        // already keeps a lock for serialising its own writes, so this takes that one: readers are
+        // untouched, and a grant and a project rewrite exclude each other, which they should.
         var lockPath = ProjectManifest.LockFor(path);
 
         for (var attempt = 0; ; attempt++)

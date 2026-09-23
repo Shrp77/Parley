@@ -41,7 +41,9 @@ public sealed class NodeCatalogueWatchTests : IDisposable
         }
     }
 
-    private string ManifestPath => Path.Combine(_directory, "projects.json");
+    // **The root rather than the manifest file.** `--config` and PARLEY_CONFIG name the directory
+    // this machine keeps its Parley files in; the projects are the folders under it.
+    private string Root => _directory;
 
     private string CataloguePath => Path.Combine(_directory, "node.json");
 
@@ -182,11 +184,11 @@ public sealed class NodeCatalogueWatchTests : IDisposable
     }
 
     private Process Serve() =>
-        ToolProcess.Launch([(ProjectManifest.PathVariable, ManifestPath)], "serve", "--with-node");
+        ToolProcess.Launch([(ProjectManifest.PathVariable, Root)], "serve", "--with-node");
 
     private void WriteManifest() =>
         ProjectManifest.Write(
-            ManifestPath,
+            Root,
             [
                 new ProjectSettings(
                     ProjectName.Create("acme"),

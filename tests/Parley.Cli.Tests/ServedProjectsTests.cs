@@ -45,17 +45,22 @@ public sealed class ServedProjectsTests : IDisposable
         }
     }
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **The root rather than the manifest file.** `--config` and PARLEY_CONFIG name the directory
+    // this machine keeps its Parley files in; the projects are the folders under it.
+    private string Root => _root;
 
     private void Write(params (string Name, string? Catalogue)[] projects)
     {
+        // **The store is derived rather than chosen**, so the fixture cannot put one somewhere of its
+        // own. Naming one here is what made this file's assertions compare against a path nothing
+        // writes — the reader answers with what the layout says, whatever a fixture asked for.
         var settings = projects.Select((project, index) => new ProjectSettings(
             ProjectName.Create(project.Name),
-            Path.Combine(_root, $"{project.Name}.db"),
+            ProjectFolder.StoreFor(Root, ProjectName.Create(project.Name)),
             $"http://127.0.0.1:{7100 + index}",
             null)).ToArray();
 
-        ProjectManifest.Write(ManifestPath, settings);
+        ProjectManifest.Write(Root, settings);
     }
 
     [Fact]
@@ -64,7 +69,7 @@ public sealed class ServedProjectsTests : IDisposable
         // The whole point: a two-project machine must not print what a one-project machine prints.
         Write(("alpha", Path.Combine(_root, "alpha-node.json")), ("beta", Path.Combine(_root, "beta-node.json")));
 
-        var lines = AutostartCommand.ServedProjects(ManifestPath);
+        var lines = AutostartCommand.ServedProjects(Root);
 
         Assert.Contains(lines, line => line.Contains("alpha", StringComparison.Ordinal));
         Assert.Contains(lines, line => line.Contains("beta", StringComparison.Ordinal));
@@ -80,10 +85,11 @@ public sealed class ServedProjectsTests : IDisposable
         // naming the manifest alone was not enough.
         Write(("alpha", Path.Combine(_root, "alpha-node.json")));
 
-        var text = string.Join("\n", AutostartCommand.ServedProjects(ManifestPath));
+        var text = string.Join("\n", AutostartCommand.ServedProjects(Root));
 
         Assert.Contains("alpha", text, StringComparison.Ordinal);
-        Assert.Contains(Path.Combine(_root, "alpha.db"), text, StringComparison.Ordinal);
+        Assert.Contains(
+            ProjectFolder.StoreFor(Root, ProjectName.Create("alpha")), text, StringComparison.Ordinal);
         Assert.Contains("http://127.0.0.1:7100", text, StringComparison.Ordinal);
     }
 
@@ -103,7 +109,7 @@ public sealed class ServedProjectsTests : IDisposable
             ("alpha", Path.Combine(_root, "alpha-node.json")),
             ("beta", Path.Combine(_root, "beta-node.json")));
 
-        var text = string.Join("\n", AutostartCommand.ServedProjects(ManifestPath));
+        var text = string.Join("\n", AutostartCommand.ServedProjects(Root));
 
         Assert.DoesNotContain("alpha-node.json", text, StringComparison.Ordinal);
         Assert.DoesNotContain("beta-node.json", text, StringComparison.Ordinal);
@@ -111,13 +117,20 @@ public sealed class ServedProjectsTests : IDisposable
     }
 
     [Fact]
-    public void A_manifest_that_cannot_be_read_says_nothing_here()
+    public void A_project_that_cannot_be_read_says_nothing_here()
     {
-        // Silent on purpose: both callers have their own words for an unreadable manifest, and two
-        // messages about one file is how they come to disagree about it.
-        File.WriteAllText(ManifestPath, "{ this is not json");
+        // Silent on purpose: both callers have their own words for a configuration they cannot read, and
+        // two messages about one file is how they come to disagree about it.
+        //
+        // **Repointed at a project's own file**, which is where an unreadable configuration lives now.
+        // The old spelling wrote over the manifest; writing over the root would be writing a file where
+        // a directory is, which tests the filesystem rather than this.
+        Directory.CreateDirectory(ProjectFolder.For(Root, ProjectName.Create("alpha")));
 
-        Assert.Empty(AutostartCommand.ServedProjects(ManifestPath));
+        File.WriteAllText(
+            ProjectFolder.ConfigurationFor(Root, ProjectName.Create("alpha")), "{ this is not json");
+
+        Assert.Empty(AutostartCommand.ServedProjects(Root));
     }
 
     [Fact]
@@ -131,7 +144,7 @@ public sealed class ServedProjectsTests : IDisposable
 
         Assert.Equal(
             Path.GetFullPath(Path.Combine(_root, NodeCatalogue.DefaultFileName)),
-            AutostartCommand.MachineCatalogue(null, ManifestPath));
+            AutostartCommand.MachineCatalogue(null, Root));
     }
 
     [Fact]
@@ -157,7 +170,7 @@ public sealed class ServedProjectsTests : IDisposable
 
             Assert.Equal(
                 Path.GetFullPath(Path.Combine(_root, NodeCatalogue.DefaultFileName)),
-                AutostartCommand.MachineCatalogue(null, ManifestPath));
+                AutostartCommand.MachineCatalogue(null, Root));
         }
         finally
         {
@@ -174,6 +187,6 @@ public sealed class ServedProjectsTests : IDisposable
 
         var named = Path.Combine(_root, "chosen.json");
 
-        Assert.Equal(named, AutostartCommand.MachineCatalogue(named, ManifestPath));
+        Assert.Equal(named, AutostartCommand.MachineCatalogue(named, Root));
     }
 }

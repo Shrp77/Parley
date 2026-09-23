@@ -54,13 +54,16 @@ namespace Parley.Setup;
 /// used here anyway, because replacing the file would break the very hold that makes the claim safe.
 /// </para>
 /// </remarks>
-public static class PortLedger
+// **Internal, because only `project add` and `project remove` claim a port**, and both live in this
+// assembly. Neither tool names this type, so making it public would widen the surface for the tests'
+// benefit — which SetupSurfaceJustifiedTests exists to catch, and did, on this very type.
+internal static class PortLedger
 {
     /// <summary>What the record is called, at the root.</summary>
-    public const string FileName = "ports.json";
+    internal const string FileName = "ports.json";
 
     /// <summary>The lowest port handed out.</summary>
-    public const int BandFirst = 19100;
+    internal const int BandFirst = 19100;
 
     /// <summary>The highest port handed out.</summary>
     /// <remarks>
@@ -87,7 +90,7 @@ public static class PortLedger
     /// rather than a setting until somebody needs it to be one.
     /// </para>
     /// </remarks>
-    public const int BandLast = 19355;
+    internal const int BandLast = 19355;
 
     /// <summary>The member naming which project holds which port.</summary>
     private const string HandedOut = "handed_out";
@@ -115,7 +118,7 @@ public static class PortLedger
     /// <param name="root">The machine's root.</param>
     /// <returns>The path, which need not exist.</returns>
     /// <exception cref="ArgumentException"><paramref name="root"/> is blank.</exception>
-    public static string PathIn(string root)
+    internal static string PathIn(string root)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
 
@@ -129,7 +132,7 @@ public static class PortLedger
     /// <b>Takes no hold</b>, because nothing that reads may block a claim — and because what it returns
     /// is bookkeeping, so a reader that needs the truth reads the projects.
     /// </remarks>
-    public static IReadOnlyDictionary<string, int> Read(string root)
+    internal static IReadOnlyDictionary<string, int> Read(string root)
     {
         try
         {
@@ -154,7 +157,7 @@ public static class PortLedger
     /// <param name="problem">Why no port could be handed out, when this returns false.</param>
     /// <returns><see langword="true"/> when a port was claimed and recorded.</returns>
     /// <exception cref="ArgumentException"><paramref name="root"/> is blank.</exception>
-    public static bool TryClaim(string root, ProjectName name, out string? endpoint, out string? problem) =>
+    internal static bool TryClaim(string root, ProjectName name, out string? endpoint, out string? problem) =>
         TryClaim(root, name, CanBind, out endpoint, out problem);
 
     /// <summary>Hands a project a port, given a way to ask whether one is available.</summary>
@@ -181,7 +184,7 @@ public static class PortLedger
     /// start on a held port is what reports that, and already does.
     /// </para>
     /// </remarks>
-    public static bool TryClaim(
+    internal static bool TryClaim(
         string root,
         ProjectName name,
         Func<int, bool> free,
@@ -262,7 +265,7 @@ public static class PortLedger
     /// and <c>project remove</c> releases it by the same route as any other.
     /// </para>
     /// </remarks>
-    public static bool TryReserve(string root, ProjectName name, string endpoint, out string? problem) =>
+    internal static bool TryReserve(string root, ProjectName name, string endpoint, out string? problem) =>
         TryReserve(root, name, endpoint, CanBindAt, out problem);
 
     /// <summary>Records a stated port, given a way to ask whether its address is available.</summary>
@@ -274,7 +277,7 @@ public static class PortLedger
     /// <returns><see langword="true"/> when the endpoint was recorded as this project's.</returns>
     /// <exception cref="ArgumentException"><paramref name="root"/> is blank.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="free"/> is null.</exception>
-    public static bool TryReserve(
+    internal static bool TryReserve(
         string root, ProjectName name, string endpoint, Func<Uri, bool> free, out string? problem)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
@@ -334,7 +337,7 @@ public static class PortLedger
     /// A project the record does not name is not a failure: the record is bookkeeping, and being asked
     /// to forget something it never knew is the state the caller wanted.
     /// </remarks>
-    public static bool TryRelease(string root, ProjectName name, out string? problem)
+    internal static bool TryRelease(string root, ProjectName name, out string? problem)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
 
@@ -367,7 +370,7 @@ public static class PortLedger
     /// supported. It cannot be picked automatically: nothing here knows which interface a person means
     /// to expose, and guessing would put a broker on a network by accident.
     /// </remarks>
-    public static string Loopback(int port) =>
+    internal static string Loopback(int port) =>
         string.Create(CultureInfo.InvariantCulture, $"http://127.0.0.1:{port}");
 
     /// <summary>Takes the hold, retrying while somebody else has it.</summary>

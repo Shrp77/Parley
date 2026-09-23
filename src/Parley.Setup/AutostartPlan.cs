@@ -201,13 +201,14 @@ public sealed record AutostartPlan(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(manifestPath);
 
-        var manifest = Path.GetFullPath(manifestPath);
+        // The root, which used to be "the directory holding the manifest". Same place, said the other
+        // way, and taking the parent of it now would put the broker's log beside the Parley folder.
+        var root = Path.GetFullPath(manifestPath);
 
-        var log = Path.Combine(
-            Path.GetDirectoryName(manifest) ?? ".", Name + ".log");
+        var log = Path.Combine(root, Name + ".log");
 
         var arguments = string.Create(CultureInfo.InvariantCulture,
-            $"serve --config {Quote(manifest)} --log {Quote(log)} --with-node");
+            $"serve --config {Quote(root)} --log {Quote(log)} --with-node");
 
         if (consoleOn is { Length: > 0 } front)
         {

@@ -32,7 +32,7 @@ public sealed class ExplicitBrokerSelectionTests : IDisposable
         Directory.CreateDirectory(_directory);
 
         ProjectManifest.Write(
-            ManifestPath,
+            Root,
             [
                 new ProjectSettings(ProjectName.Create("alpha"), Path.Combine(_directory, "a.db"), "http://127.0.0.1:2", null),
                 new ProjectSettings(ProjectName.Create("beta"), Path.Combine(_directory, "b.db"), "http://127.0.0.1:3", null),
@@ -51,12 +51,14 @@ public sealed class ExplicitBrokerSelectionTests : IDisposable
         }
     }
 
-    private string ManifestPath => Path.Combine(_directory, "projects.json");
+    // **The root rather than the manifest file.** `--config` and PARLEY_CONFIG name the directory
+    // this machine keeps its Parley files in; the projects are the folders under it.
+    private string Root => _directory;
 
     [Fact]
     public void Naming_nothing_on_a_machine_with_several_projects_is_still_refused()
     {
-        var (code, error) = ToolProcess.Run([(ProjectManifest.PathVariable, ManifestPath)], "registry");
+        var (code, error) = ToolProcess.Run([(ProjectManifest.PathVariable, Root)], "registry");
 
         Assert.Equal(78, code);
         Assert.Contains("alpha, beta", error, StringComparison.Ordinal);
@@ -65,7 +67,7 @@ public sealed class ExplicitBrokerSelectionTests : IDisposable
     [Fact]
     public void An_address_given_on_the_command_line_is_where_it_connects()
     {
-        var (code, error) = ToolProcess.Run([(ProjectManifest.PathVariable, ManifestPath)], "--broker", Nowhere, "waiting", "orders@test");
+        var (code, error) = ToolProcess.Run([(ProjectManifest.PathVariable, Root)], "--broker", Nowhere, "waiting", "orders@test");
 
         Assert.Equal(69, code);
         Assert.Contains("127.0.0.1:1", error, StringComparison.Ordinal);
@@ -75,7 +77,7 @@ public sealed class ExplicitBrokerSelectionTests : IDisposable
     public void An_address_in_the_environment_is_where_it_connects()
     {
         var (code, error) = ToolProcess.Run(
-            [(ProjectManifest.PathVariable, ManifestPath), (BrokerEndpoint.Variable, Nowhere)], "registry");
+            [(ProjectManifest.PathVariable, Root), (BrokerEndpoint.Variable, Nowhere)], "registry");
 
         Assert.Equal(69, code);
         Assert.Contains("127.0.0.1:1", error, StringComparison.Ordinal);
@@ -85,7 +87,7 @@ public sealed class ExplicitBrokerSelectionTests : IDisposable
     public void A_project_the_manifest_does_not_describe_is_refused_even_with_an_address()
     {
         var (code, error) = ToolProcess.Run(
-            [(ProjectManifest.PathVariable, ManifestPath)], "--broker", Nowhere, "--project", "gamma", "registry");
+            [(ProjectManifest.PathVariable, Root)], "--broker", Nowhere, "--project", "gamma", "registry");
 
         Assert.Equal(78, code);
         Assert.Contains("No project named 'gamma'", error, StringComparison.Ordinal);
