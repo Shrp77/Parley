@@ -97,7 +97,6 @@ public sealed class ActionShapeTests
             Adding.ConfirmTitle,
             AgentsRegion.JoinTitle,
             Naming.CreateTitle,
-            Naming.NameRunningTitle,
             Onboarding.Title,
             Participation.ResultTitle,
             Participation.RequestTitle,

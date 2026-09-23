@@ -81,25 +81,22 @@ public sealed class NoManifestParityTests : IDisposable
         Assert.True(ProjectResolution.TrySelect(null, [], out var project, out _));
         Assert.Null(project);
 
-        Assert.Null(ProjectResolution.Store(null, NoVariables, project).Value);
         Assert.Equal(BrokerEndpoint.Default, ProjectResolution.Endpoint(null, NoVariables, project).Value);
         Assert.Equal(NodeCatalogue.DefaultFileName, ProjectResolution.NodeConfig(null, NoVariables, null).Value);
     }
 
     [Theory]
-    [InlineData(DeploymentEnvironment.DatabaseVariable, "/from/env.db")]
+    // PARLEY_DB was here and resolves nothing now: a project's store is derived from its name, so
+    // there is no variable a machine could set to change it.
     [InlineData(BrokerEndpoint.Variable, "http://env:1")]
     [InlineData(NodeCatalogue.PathVariable, "/from/env-node.json")]
     public void With_no_manifest_the_environment_still_decides(string name, string value)
     {
         Func<string, string?> variables = asked => asked == name ? value : null;
 
-        var resolved = name switch
-        {
-            DeploymentEnvironment.DatabaseVariable => ProjectResolution.Store(null, variables, null),
-            BrokerEndpoint.Variable => ProjectResolution.Endpoint(null, variables, null),
-            _ => ProjectResolution.NodeConfig(null, variables, null),
-        };
+        var resolved = name == BrokerEndpoint.Variable
+            ? ProjectResolution.Endpoint(null, variables, null)
+            : ProjectResolution.NodeConfig(null, variables, null);
 
         Assert.Equal(value, resolved.Value);
         Assert.Equal(ValueSource.Environment, resolved.Source);
@@ -110,17 +107,23 @@ public sealed class NoManifestParityTests : IDisposable
     [Fact]
     public void An_explicit_value_still_wins_over_a_project_and_says_so()
     {
-        // FR-009. Somebody who has always passed --db keeps passing --db, and the report says
-        // which input won — because the only thing worse than the wrong path is the wrong path
-        // with nothing to say where it came from.
+        // FR-009: the report says which input won, because the only thing worse than the wrong value is
+        // the wrong value with nothing to say where it came from.
+        //
+        // **This was about `--db` beating a project's store, and that pairing no longer exists** — a
+        // store is derived from the project's name, so there is nothing to override it with. The rule
+        // survives its subject: `--broker` still beats a project's endpoint, and still says so.
         var project = new ProjectSettings(
-            ProjectName.Create("orders"), "/srv/orders.db", "http://127.0.0.1:51801", null);
+            ProjectName.Create("orders"),
+            "/srv/orders.db",
+            "http://127.0.0.1:51801",
+            null);
 
-        var store = ProjectResolution.Store("/given/here.db", NoVariables, project);
+        var endpoint = ProjectResolution.Endpoint("http://given:2", NoVariables, project);
 
-        Assert.Equal("/given/here.db", store.Value);
-        Assert.Equal(ValueSource.Argument, store.Source);
-        Assert.Contains("(given)", store.ToString(), StringComparison.Ordinal);
+        Assert.Equal("http://given:2", endpoint.Value);
+        Assert.Equal(ValueSource.Argument, endpoint.Source);
+        Assert.Contains("(given)", endpoint.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

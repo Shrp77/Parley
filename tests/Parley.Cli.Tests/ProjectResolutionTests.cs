@@ -84,7 +84,6 @@ public sealed class ProjectResolutionTests
     [Fact]
     public void With_no_project_every_value_resolves_as_it_did_before()
     {
-        Assert.Null(ProjectResolution.Store(null, NoVariables, null).Value);
         Assert.Equal(BrokerEndpoint.Default, ProjectResolution.Endpoint(null, NoVariables, null).Value);
         Assert.Equal(NodeCatalogue.DefaultFileName, ProjectResolution.NodeConfig(null, NoVariables, null).Value);
     }
@@ -100,7 +99,6 @@ public sealed class ProjectResolutionTests
             _ => null,
         };
 
-        Assert.Equal("/from/env.db", ProjectResolution.Store(null, variables, null).Value);
         Assert.Equal("http://env:1", ProjectResolution.Endpoint(null, variables, null).Value);
         Assert.Equal("/from/env-node.json", ProjectResolution.NodeConfig(null, variables, null).Value);
     }
@@ -153,11 +151,13 @@ public sealed class ProjectResolutionTests
     [Fact]
     public void Precedence_applies_per_value_independently()
     {
-        // A project supplies the store while an explicit endpoint overrides only the endpoint.
-        // Resolving them together would make one flag silently discard two unrelated values.
+        // **A store was resolved here until 019 and is not resolved at all now**: it is `parley.db`
+        // inside the project's own folder, so there is no argument, no variable and no precedence rule.
+        // What is left resolving is the endpoint and the machine's catalogue, and an explicit endpoint
+        // still overrides only the endpoint — resolving them together would make one flag silently
+        // discard two unrelated values.
         var project = Project();
 
-        Assert.Equal(ValueSource.Project, ProjectResolution.Store(null, NoVariables, project).Source);
         Assert.Equal(ValueSource.Argument, ProjectResolution.Endpoint("http://given:2", NoVariables, project).Source);
 
         // The catalogue is the machine's, so no project supplies it and the argument still wins.
@@ -184,10 +184,11 @@ public sealed class ProjectResolutionTests
     public void A_resolved_value_says_where_it_came_from()
     {
         // This line is the point of the feature: it is what was missing when enrolling would have
-        // written consent into a catalogue nothing reads.
+        // written consent into a catalogue nothing reads. Read off the endpoint since 019, because a
+        // store no longer resolves from anywhere — it is derived.
         Assert.Contains(
             "(project \"orders\")",
-            ProjectResolution.Store(null, NoVariables, Project()).ToString(),
+            ProjectResolution.Endpoint(null, NoVariables, Project()).ToString(),
             StringComparison.Ordinal);
 
         Assert.Contains(

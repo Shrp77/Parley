@@ -1,6 +1,5 @@
 ﻿using Parley.Client;
 using Parley.Configuration;
-using Parley.Core;
 using Parley.Setup;
 using Xunit;
 
@@ -116,93 +115,45 @@ public sealed class NamingTests : IDisposable
     }
 
     [Fact]
-    public async Task The_running_deployment_is_named_from_a_form_that_is_already_filled_in()
+    public void Naming_a_running_deployment_is_not_offered_at_all_any_more()
     {
-        // Every answer is already in the autostart entry, so the form is pre-filled from it. The
-        // one thing typed is the name.
-        var entry = new InstalledEntry(
-            Store: Path.Combine(_directory, "running.db"),
-            Listen: "http://127.0.0.1:1",
-            NodeConfig: Path.Combine(_directory, "node.json"),
-            Console: null,
-            Manifest: null);
+        // **Three tests lived here and the flow they drove has gone.** "Name the running deployment"
+        // adopted a broker already serving, reading its store and port out of an autostart entry:
+        // `The_running_deployment_is_named_from_a_form_that_is_already_filled_in`,
+        // `A_second_project_is_not_proposed_the_first_ones_port`, and
+        // `A_name_a_store_or_a_port_already_taken_is_refused_in_the_field` between them covered the
+        // form, the port it proposed, and the three fields it validated.
+        //
+        // `CanNameRunning` required an entry serving one explicit store — an entry written with
+        // `--db`. Nothing can write one now, so no machine will have one again; and adopting a store
+        // where it lies is not something 019 can do, because a project's store is derived from its
+        // name. Deriving a fresh one and keeping the stated endpoint would have compiled and passed
+        // while pointing the named project at an empty database.
+        //
+        // Asserted as an absence rather than dropped, because a suite that merely lost those three
+        // would leave the next reader unable to tell a rule that was removed from one nobody wrote.
+        var surface = typeof(Naming);
 
-        using var driving = Driving.Open();
-        using var shell = await OpenAsync(driving, entry);
+        foreach (var gone in new[]
+                 {
+                     "NameRunningTitle", "CanNameRunning", "OpenNameRunningAsync",
+                     "ProposedStore", "StoreProblem", "EndpointProblem", "FreeEndpoint",
+                 })
+        {
+            Assert.True(
+                surface.GetMember(gone, Bindings).Length == 0,
+                $"Naming.{gone} is back: it belonged to a flow 019 removed, and a form that "
+                + "proposes a store or a port is a form asking a question that no longer exists");
+        }
 
-        await shell.NameRunning();
-
-        var form = (FormDialog)driving.Find(Naming.NameRunningTitle);
-
-        Assert.Equal(entry.Store, form.Values[1]);
-        Assert.Equal(entry.Listen, form.Values[2]);
-
-        form.Fill(0, "prod");
-        form.Finish(taken: true);
-
-        await shell.Settled;
-
-        Assert.True(ProjectManifest.TryRead(Root, out var projects, out var problem), problem);
-
-        var named = Assert.Single(projects);
-
-        Assert.Equal(entry.Store, named.Store);
-        Assert.Equal(entry.Listen, named.Endpoint);
-
-        // And what to do next: the entry serves one store and will not serve this manifest until
-        // it is reinstalled without one.
-        Assert.Contains("Re-run `parley autostart install`", shell.Said, StringComparison.Ordinal);
-
-        // Named, so it is no longer offered: the entry's store is claimed.
-        Assert.DoesNotContain(shell.Actions(), action => action.Label == Naming.NameRunningTitle);
+        Assert.Empty(typeof(Shell).GetMember("NameRunning", Bindings));
     }
 
-    [Fact]
-    public void A_second_project_is_not_proposed_the_first_ones_port()
-    {
-        // The default port when nothing holds it — an MCP server told nothing about a broker
-        // looks there — and a free one otherwise, because a second deployment cannot share it.
-        Assert.Equal(Naming.DefaultEndpoint, Naming.FreeEndpoint([]));
-
-        var second = Naming.FreeEndpoint([Naming.DefaultEndpoint]);
-
-        Assert.NotEqual(Naming.DefaultEndpoint, second);
-        Assert.StartsWith("http://127.0.0.1:", second, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void A_name_a_store_or_a_port_already_taken_is_refused_in_the_field()
-    {
-        var alpha = new ProjectSettings(
-            ProjectName.Create("alpha"), Path.Combine(_directory, "alpha.db"), "http://127.0.0.1:1", null);
-
-        Assert.Contains("lowercase", Naming.NameProblem("Alpha", [alpha]), StringComparison.Ordinal);
-        Assert.Contains("already named", Naming.NameProblem("alpha", [alpha]), StringComparison.Ordinal);
-        Assert.Null(Naming.NameProblem("beta", [alpha]));
-
-        Assert.Contains("already owns", Naming.StoreProblem(alpha.Store, [alpha]), StringComparison.Ordinal);
-        Assert.Null(Naming.StoreProblem(Path.Combine(_directory, "beta.db"), [alpha]));
-
-        Assert.Contains("already listens", Naming.EndpointProblem("http://127.0.0.1:1/", [alpha]), StringComparison.Ordinal);
-        Assert.Contains("not an absolute address", Naming.EndpointProblem("nowhere", [alpha]), StringComparison.Ordinal);
-        Assert.Null(Naming.EndpointProblem("http://127.0.0.1:2", [alpha]));
-    }
-
-    [Fact]
-    public void The_running_deployment_is_offered_only_while_nothing_names_it()
-    {
-        var store = Path.Combine(_directory, "running.db");
-        var explicitEntry = new InstalledEntry(store, null, null, null, null);
-        var manifestEntry = new InstalledEntry(null, null, null, null, Root);
-
-        var claimed = new ProjectSettings(
-            ProjectName.Create("prod"), store, "http://127.0.0.1:1", null);
-
-        Assert.True(Naming.CanNameRunning([], explicitEntry));
-        Assert.False(Naming.CanNameRunning([claimed], explicitEntry));
-        Assert.False(Naming.CanNameRunning([], manifestEntry));
-        Assert.False(Naming.CanNameRunning([], null));
-    }
+    private const System.Reflection.BindingFlags Bindings =
+        System.Reflection.BindingFlags.Public
+        | System.Reflection.BindingFlags.NonPublic
+        | System.Reflection.BindingFlags.Static
+        | System.Reflection.BindingFlags.Instance;
 
     /// <summary>Opens the surface on this test's manifest.</summary>
     /// <param name="driving">The application.</param>

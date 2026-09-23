@@ -48,7 +48,6 @@ public sealed class ReadmeDescribesTheTerminalTests
         foreach (var offered in new[]
                  {
                      ("create a new project", Naming.CreateTitle),
-                     ("name the deployment this machine already runs", Naming.NameRunningTitle),
                      ("a project can be removed", Removing.Title),
                      ("typed back", Removing.Destroy),
                      ("a seat", AgentsRegion.JoinTitle),

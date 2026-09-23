@@ -1,3 +1,4 @@
+using Parley.Configuration;
 using Parley.Core;
 using Xunit;
 using static Parley.Cli.Tests.Loopback;
@@ -45,6 +46,18 @@ public sealed class SecondServeTests : IDisposable
             // Best effort, as elsewhere in this suite.
         }
     }
+
+    /// <summary>One project at a chosen endpoint, in a throwaway root.</summary>
+    /// <remarks>
+    /// `serve` takes projects now: a store is derived from a project's name and its endpoint is its own,
+    /// so a rig names a root and writes a project into it rather than passing two paths.
+    /// </remarks>
+    private static ProjectSettings At(string root, string endpoint, string name = "probe") =>
+        new(
+            Parley.Core.ProjectName.Create(name),
+            ProjectFolder.StoreFor(root, Parley.Core.ProjectName.Create(name)),
+            endpoint,
+            null);
 
     [Fact]
     public async Task A_second_serve_for_a_served_project_names_the_server_and_exits_cleanly()
@@ -153,12 +166,15 @@ public sealed class SecondServeTests : IDisposable
         // session types it again.
         var ct = TestContext.Current.CancellationToken;
 
-        var store = Path.Combine(_directory, "single.db");
+        // **One project, served twice.** It was one store served twice; the property is the same and
+        // the second broker must still decline rather than clear the first one's liveness.
         var endpoint = $"http://127.0.0.1:{FreePort()}";
+        var project = At(_directory, endpoint);
 
         using var stopFirst = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-        var first = ServeCommand.RunAsync(store, endpoint, null, TextWriter.Null, TextWriter.Null, cancellationToken: stopFirst.Token);
+        var first = ServeCommand.RunAsync(
+            [project], null, TextWriter.Null, TextWriter.Null, cancellationToken: stopFirst.Token);
 
         try
         {
@@ -166,7 +182,8 @@ public sealed class SecondServeTests : IDisposable
 
             var said = new StringWriter();
 
-            var code = await ServeCommand.RunAsync(store, endpoint, null, said, TextWriter.Null, cancellationToken: ct)
+            var code = await ServeCommand.RunAsync(
+                [project], null, said, TextWriter.Null, cancellationToken: ct)
                 .WaitAsync(Patience, ct);
 
             Assert.Equal(0, code);

@@ -1,3 +1,4 @@
+using Parley.Configuration;
 ﻿using System.Globalization;
 using System.Runtime.InteropServices;
 using Parley.Core;
@@ -24,6 +25,18 @@ namespace Parley.Cli.Tests;
 /// </remarks>
 public sealed class StartupBannerTests
 {
+    /// <summary>One project at a chosen endpoint, in a throwaway root.</summary>
+    /// <remarks>
+    /// `serve` takes projects now: a store is derived from a project's name and its endpoint is its own,
+    /// so a rig names a root and writes a project into it rather than passing two paths.
+    /// </remarks>
+    private static ProjectSettings At(string root, string endpoint, string name = "probe") =>
+        new(
+            Parley.Core.ProjectName.Create(name),
+            ProjectFolder.StoreFor(root, Parley.Core.ProjectName.Create(name)),
+            endpoint,
+            null);
+
     [Fact]
     public async Task The_broker_says_its_address_is_not_a_web_page()
     {
@@ -91,9 +104,10 @@ public sealed class StartupBannerTests
 
         try
         {
+            // A store that is a directory, reached the only way it can be now: the project's own
+            // `parley.db` path is taken by a directory somebody made there.
             var code = await ServeCommand.RunAsync(
-                directory,
-                "http://127.0.0.1:0",
+                [At(directory, "http://127.0.0.1:0")],
                 null,
                 output,
                 error,
@@ -442,12 +456,11 @@ public sealed class StartupBannerTests
         try
         {
             await ServeCommand.RunAsync(
-                store,
-                "http://127.0.0.1:0",
+                [At(store, "http://127.0.0.1:0")],
                 null,
                 output,
                 error,
-                whenListening: async (_, _, _) =>
+                nodeFor: async (_, _, _, _) =>
                 {
                     await stopping.CancelAsync().ConfigureAwait(false);
 
