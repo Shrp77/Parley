@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Globalization;
 using Grpc.Core;
 using Grpc.Net.Client;
@@ -118,6 +118,18 @@ public static class NodeCommand
         // broker it joins, and each used to keep its own table as a local — so two projects asking for one
         // checkout started two processes, which is the hazard the per-project catalogue was partitioned to
         // avoid. Shared and keyed by what a checkout *is*, two asks find one process.
+        // **Whoever makes this table is whoever stops it**, and the review gate found the other rule was
+        // machine-wide harm. The sweep below used to run whenever *any* node loop returned — and 018 made
+        // this table shared across every project one process hosts, so one project stopping swept every
+        // agent on the machine, including the ones still serving other projects. `serve` stops and restarts
+        // a project whose store or endpoint changed, and `project remove` ends one outright: either of them
+        // silently took down every agent Parley was running. SPEC.md §12 says what that costs — the process
+        // is what held everything each agent had learned.
+        //
+        // 018 already fixed one instance of this shape, where recording a catalogue on a project restarted
+        // the broker and dropped every agent attached to it. This is the same class, one level down.
+        var ours = residents is null;
+
         residents ??= new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
 
         // Turns now run concurrently and each reports its own outcome, so more than one of them can
@@ -254,7 +266,12 @@ public static class NodeCommand
         }
         finally
         {
-            await StopEveryoneAsync(residents, output).ConfigureAwait(false);
+            // Only the table this call created. A caller that supplied one owns its lifetime and sweeps it
+            // when the process ends, which is the one moment every agent on the machine should be sent away.
+            if (ours)
+            {
+                await StopEveryoneAsync(residents, output).ConfigureAwait(false);
+            }
         }
 
         return 0;
@@ -459,7 +476,7 @@ public static class NodeCommand
     /// collected, which is how the person finds out.
     /// </para>
     /// </remarks>
-    private static async Task StartAsync(
+    internal static async Task StartAsync(
         Wire.StartAgent start,
         NodeCatalogue catalogue,
         string? project,
@@ -487,44 +504,72 @@ public static class NodeCommand
             return;
         }
 
-        if (residents.TryGetValue(identity, out var existing) && existing.IsAlive)
-        {
-            // Already here, and "here" is now machine-wide rather than this node's own. The broker checks
-            // before asking, but the check and the command are not one operation — so this is the race, and
-            // losing it must not produce a second process for an agent that needed one. It is also how one
-            // checkout stays one process when a second project asks for it under another name.
-            DispatchTurn(existing, output, cancellationToken);
-            return;
-        }
-
-        if (catalogue.CommandFor(identity) is not { } command)
-        {
-            await output.WriteLineAsync(
-                $"  {agent.Value}: asked for, but this machine has no way to start it.")
-                .ConfigureAwait(false);
-
-            return;
-        }
+        // **Looking and starting are one act, and until the review gate probed it they were not.**
+        // `TryGetValue` followed later by an assignment is a check-then-act, and 018 made this table shared
+        // across every project one process hosts — so two projects' node loops reach here for one identity
+        // at the same moment, both miss, and both launch. Twenty-five concurrent pairs produced **forty-seven
+        // processes**: the hazard 009's FR-013 partitioned the catalogues to avoid, arriving by the route the
+        // partition's removal opened.
+        //
+        // The second half was worse than the first. `residents[identity] = resident` overwrote the loser, so
+        // the process it had started was no longer in the table `StopEveryoneAsync` walks — an agent nothing
+        // would ever stop, accumulating one per race.
+        //
+        // One semaphore for the whole process rather than one per identity: starting is rare, it is already
+        // slower than any lock, and a table shared by every project wants a guard with the same reach.
+        await Starting.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
-            var invocation = InvocationCommand.Parse(command);
-            var workspace = catalogue.WorkspaceFor(identity) ?? Directory.GetCurrentDirectory();
+            if (residents.TryGetValue(identity, out var existing) && existing.IsAlive)
+            {
+                // Already here, and "here" is machine-wide rather than this node's own. This is also how one
+                // checkout stays one process when a second project asks for it under another name.
+                DispatchTurn(existing, output, cancellationToken);
+                return;
+            }
 
-            var resident = ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System);
-            residents[identity] = resident;
+            if (catalogue.CommandFor(identity) is not { } command)
+            {
+                await output.WriteLineAsync(
+                    $"  {agent.Value}: asked for, but this machine has no way to start it.")
+                    .ConfigureAwait(false);
 
-            await output.WriteLineAsync(
-                $"  {agent.Value}: started ({start.Because}).").ConfigureAwait(false);
+                return;
+            }
 
-            DispatchTurn(resident, output, cancellationToken);
+            try
+            {
+                var invocation = InvocationCommand.Parse(command);
+                var workspace = catalogue.WorkspaceFor(identity) ?? Directory.GetCurrentDirectory();
+
+                var resident = ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System);
+                residents[identity] = resident;
+
+                await output.WriteLineAsync(
+                    $"  {agent.Value}: started ({start.Because}).").ConfigureAwait(false);
+
+                DispatchTurn(resident, output, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                await output.WriteLineAsync($"  {agent.Value}: could not start — {exception.Message}")
+                    .ConfigureAwait(false);
+            }
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        finally
         {
-            await output.WriteLineAsync($"  {agent.Value}: could not start — {exception.Message}")
-                .ConfigureAwait(false);
+            _ = Starting.Release();
         }
     }
+
+    /// <summary>Serialises starting, so that looking for a resident and creating one are one act.</summary>
+    /// <remarks>
+    /// Process-wide, because the table it protects is: 018 gave every project one resident table so that a
+    /// checkout answering in two projects is one process. A guard narrower than the thing it guards would
+    /// leave exactly the gap this closes.
+    /// </remarks>
+    private static readonly SemaphoreSlim Starting = new(1, 1);
 
     /// <summary>Gives a turn to an agent this node already holds.</summary>
     /// <param name="turn">Which agent, and why.</param>
@@ -833,7 +878,7 @@ public static class NodeCommand
     /// untidy — they would hold sessions the broker still counts, and nothing would be left that
     /// could stop them.
     /// </remarks>
-    private static async Task StopEveryoneAsync(
+    internal static async Task StopEveryoneAsync(
         ConcurrentDictionary<AgentIdentity, ResidentAgent> residents, TextWriter output)
     {
         foreach (var identity in residents.Keys.ToArray())

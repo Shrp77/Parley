@@ -139,8 +139,27 @@ public sealed class Draft
     /// pressed; what is left here is the message.
     /// </para>
     /// <para>
-    /// Each chip is removed once, at the first place it appears, so a person who writes an agent's name again
-    /// on purpose keeps the second one.
+    /// <b>Each chip is removed at the <i>last</i> place it appears, and that is not a preference.</b>
+    /// <see cref="Completion.Fills"/> completes only a trailing fragment — it returns the line unchanged
+    /// unless it ends with what was typed — so a completion always writes at the end of the box. At the
+    /// moment a chip is recorded it is therefore the last occurrence of itself, by construction.
+    /// </para>
+    /// <para>
+    /// <b>Removing the first was wrong, and the review gate caught it by probe.</b> Somebody who had typed
+    /// the agent's name into their sentence and then completed that same agent had the words they wrote
+    /// taken out of the middle of the message, while the addressing the surface wrote was the part that
+    /// went on to be sent — the exact inversion of this method's purpose. The paragraph above used to end
+    /// "so a person who writes an agent's name again on purpose keeps the second one", which was true in
+    /// the only case it considered and backwards in the one that mattered: what they keep is the one they
+    /// typed.
+    /// </para>
+    /// <para>
+    /// <b>A chip the person has since edited is left alone</b>, and that is deliberate. It no longer matches
+    /// what the surface wrote, so it is prose they have touched; taking it out would mean hunting through
+    /// the words for something that looks like addressing, which is what this design refuses to do. What is
+    /// left is at worst an <c>@name</c> inside a payload, which §13's envelope already tells the receiver to
+    /// treat as inert data — where removing the wrong run corrupts a person's message, which nothing
+    /// downstream can repair.
     /// </para>
     /// </remarks>
     public string Says(string? written)
@@ -149,7 +168,7 @@ public sealed class Draft
 
         foreach (var chip in _chips)
         {
-            var at = said.IndexOf(chip, StringComparison.Ordinal);
+            var at = said.LastIndexOf(chip, StringComparison.Ordinal);
 
             if (at >= 0)
             {

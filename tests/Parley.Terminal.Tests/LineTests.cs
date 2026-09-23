@@ -1,4 +1,4 @@
-using Grpc.Net.Client;
+﻿using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
@@ -100,6 +100,82 @@ public sealed class LineTests : IAsyncDisposable
         using var shell = await SeatedAsync(driving, directory, seats, _connection, ct);
 
         shell.Line.Written = "who owns the invoice total?";
+        shell.Line.Accept();
+
+        await shell.Settled;
+
+        var export = await new BrokerClient(_broker.Operators).ExportAsync(Conversation, ct);
+
+        Assert.All(
+            export?.Messages ?? [],
+            m => Assert.DoesNotContain(Orders.Value, m.PayloadJson, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_completed_name_is_still_addressing_after_the_room_is_refilled()
+    {
+        // **017's review gate, lens 1.** The test above sends prose that never contained an agent's name, so
+        // it holds nothing about the mechanism that takes addressing back out — there was no chip to lose.
+        //
+        // This one completes a name and then has the room refilled before Enter. The refill rebuilds the
+        // draft, carrying the text but — until the gate found it — not the record of which runs in that text
+        // were addressing. `Says` then had nothing to remove and `@name` went into the payload, which is the
+        // one thing §13's envelope exists to have ignored, with nothing on screen saying so.
+        //
+        // Driven by re-opening the conversation, because that is what calls the refill. The three-second
+        // follow does not: `FollowOnceAsync` updates the transcript alone and never touches the draft — which
+        // the probe only established by asserting the draft had actually been replaced. Two earlier versions
+        // of this test passed while exercising nothing.
+        var ct = TestContext.Current.CancellationToken;
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var seats = new SeatBook(directory.AgentsFor);
+        using var shell = await SeatedAsync(driving, directory, seats, _connection, ct);
+
+        shell.Focus(shell.Panes.ToList().FindIndex(p => p is LineRegion));
+
+        shell.Line.Written = "@ord";
+
+        await shell.Settled;
+
+        Assert.Contains(shell.Line.Offering, row => row.Contains(Orders.Value, StringComparison.Ordinal));
+
+        shell.NewKeyDownEvent(global::Terminal.Gui.Input.Key.Tab);
+
+        await shell.Settled;
+
+        // **Guarded against passing by vacuity.** If the completion list were empty, Tab would do nothing,
+        // no chip would exist to be lost, and the assertion at the end would hold while testing nothing —
+        // which is the shape `The_document_contains_a_schema` exists to prevent in the spec suite.
+        Assert.Contains(Orders.Value, shell.Line.Written, StringComparison.Ordinal);
+
+        // **A peer says something, which is the only reason the transcript follows at all.** Without a
+        // change the refill has nothing to redraw and the draft is never rebuilt, so a probe that skipped
+        // this would exercise nothing.
+        var peer = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await peer.StartAsync(Orders, T0.AddMinutes(2), ct);
+
+        var landed = await peer.RequestAsync(
+            Orders, shell.Held!.Seat.Name, "model-a", """{"ask":"and is the licence check in it?"}""",
+            T0.AddMinutes(3), Conversation, ct);
+
+        Assert.True(landed.Exchange is not null, $"the peer's message was refused: {landed.Admission.Rejection}");
+
+        // Opening the conversation again, which is what rebuilds the draft.
+        var was = shell.Drafting;
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+
+        // Guard: if the draft was not replaced, everything below holds by not having happened.
+        Assert.NotSame(was, shell.Drafting);
+
+        // The precise question: does the rebuilt draft still know that run was addressing?
+        Assert.DoesNotContain(
+            Orders.Value, shell.Drafting!.Says(shell.Line.Written), StringComparison.Ordinal);
+
+        shell.Line.Written += "which file validates the licence key?";
         shell.Line.Accept();
 
         await shell.Settled;

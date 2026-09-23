@@ -600,7 +600,65 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/018-agent-identity/` — **0.31.0, built through T028 and green across every suite.
+- **Current plan**: `specs/019-one-way-in/plan.md` — **specified and planned, nothing built.** One place for a
+  machine's files and one door per job. A project becomes a folder under one root, named by the project, holding
+  its own configuration and its own store — so naming a project is the whole of creating one, and `--db`,
+  `--listen` and every other way to point outside a project go. A port is handed out from a record at the root,
+  claimed under a hold that nothing on the serving path ever takes. Starting Parley serves everything or Parley
+  is not running. And the command line sheds sixteen verbs a person cannot use, because there is no
+  `parley conversations` and every one of them takes an identifier nobody can obtain.
+
+  **Three of the four things the spec feared were already solved here, and reading the code rather than
+  reasoning found them.** The serve watcher already *polls* through a `reread` function, so feature 015's
+  filesystem-watching hazards do not apply at all — only `reread` changes. `StoreLock` already holds a file
+  exclusively across Windows and Linux, so the port claim is that mechanism held transiently. And
+  `project remove --destroy` already enumerates everything belonging to a store, with the ordering the migration
+  needs: take the lock first, as the check that nothing is serving.
+
+  **What the inventories found that nobody predicted.** `PluginTests` asserts the verb sets in `Program.cs` and
+  the operator skill are exactly equal, extracted by regex over the whole source — so a removal stub reading
+  "`parley export` moved to the terminal" puts the verb back and fails the build. The five `/parley:files-*`
+  slash commands execute `parley files` on the agent's behalf, so that verb stays. And the test rig cannot call
+  `project add`, because the band is per machine while a root is per test: parallel classes would each be handed
+  19000. The conversion is 26 files, not the 14 a grep suggested. Also recorded: the live deployment's ports,
+  51707 and 53283, sit inside both operating systems' ephemeral ranges, which is a latent logon-time bind failure
+  the new band avoids.
+
+  `specs/020-what-an-agent-owns/` follows it: an agent is *asked* what it owns and the answer is discussed to
+  agreement, replacing a worksheet a person filled in from memory. It amends SPEC.md §17 question 10, which is
+  closed and says the field is not self-declared — argued there rather than stepped around, and the cost is
+  recorded: the claim narrows again, and anchoring gets worse rather than better.
+
+- **The review gate on this branch found four defects in its first four probes, two of them high**, and the
+  count stands at **zero clean runs on lens 1**. `REVIEW-LEDGER.md` carries each with the probe that produced
+  it. Two are 017's and two are 018's, and the 018 pair are both consequences of one change — sharing the
+  resident table across every project a process hosts, which closed one hazard and opened two.
+
+  - **A chip came out of the wrong place.** `Draft.Says` removed each recorded chip at its *first*
+    occurrence, so somebody who typed an agent's name into their sentence and then completed that same agent
+    had their own words taken out of the middle of the message while the addressing went on to be sent — the
+    exact inversion of what the method exists to do, and the opposite of what its own remark claimed. Last
+    rather than first is correct by construction: `Completion.Fills` only completes a trailing fragment.
+  - **The room refill dropped the chips.** `Text` was carried to the rebuilt draft and the record of which
+    runs in it were addressing was not, so `Says` had nothing to remove. **Three versions of that probe
+    passed while exercising nothing** — no focus, then an entry point that returns immediately, then the same
+    again. Only asserting that the draft had *actually been replaced* exposed it. A probe that cannot fail is
+    a probe that has not run.
+  - **Two projects starting one checkout produced two processes.** 018's headline claim, measured:
+    **forty-seven processes from twenty-five concurrent pairs.** `TryGetValue` and the assignment after it
+    are not one act, and the loser was overwritten in the table — so its process was invisible to
+    `StopEveryoneAsync` and nothing would ever stop it. Looking and starting are one act now.
+  - **One project stopping sent away every agent on the machine.** The sweep ran in each node loop's
+    `finally` on a table shared by all of them, so `project remove` on an unrelated project — or changing
+    another project's store — took down everything Parley was running. **018 had already fixed one instance
+    of this shape**; this is the same class one level down, introduced by the same feature. Whoever makes the
+    table stops it now.
+
+  **Recorded honestly**: the fourth was found by reading rather than by driving. Two node loops over two
+  brokers is a fixture this suite does not have, and the mechanism is unambiguous — but a test that drives it
+  is owed, and the ledger says so.
+
+- **Previous plan**: `specs/018-agent-identity/` — **0.31.1, built through T028 and green across every suite.
   The review gate is owed, the manifest still carries a field nothing reads, and nothing is pushed.** An agent
   is an identity, not a name: a stable identifier keys one catalogue per machine, and a name is what a project
   calls it. The owner's model, stated on 2026-09-22 after a message reached one agent and not another — one

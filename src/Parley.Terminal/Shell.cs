@@ -3849,9 +3849,20 @@ internal sealed class Shell : Window
                 Drafting.Flip(peer.Peer);
             }
 
-            // **And the addressing, which is the person's own decision and not the deployment's.** The
-            // transcript follows every three seconds, so a draft narrowed to one agent would otherwise widen
-            // itself back to the room while somebody was still typing to them.
+            // **And the chips, or the words stop being words.** `Text` is carried above, so a name a
+            // completion wrote is still in the box — while the record that it was *addressing* lived only on
+            // the draft being replaced. Losing it means `Says` has nothing to take back out, and the next
+            // Enter puts `@name` into a payload: the one thing §13's envelope exists to have ignored, with
+            // nothing on screen saying so. Found by 017's review gate, lens 1, driven by re-opening the
+            // conversation with a completion already in the box.
+            foreach (var chip in was.Chips)
+            {
+                Drafting.Chip(chip);
+            }
+
+            // **And the addressing, which is the person's own decision and not the deployment's.** A draft
+            // narrowed to one agent would otherwise widen itself back to the room while somebody was still
+            // typing to them.
             if (was.Narrowed)
             {
                 Drafting.AddressTo([.. was.Recipients]);

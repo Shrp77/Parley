@@ -606,14 +606,22 @@ if (verb == "serve" && rest.Length == 0)
     // `Hosting` connects to the address the broker actually bound rather than the one it was
     // asked for, because --listen may name port 0 and a node told to connect to port 0 connects
     // to nothing.
-    return await UntilInterrupted(token =>
+    // **One table of running agents for this whole process, keyed by identity** (018 R5). A node is
+    // hosted per broker and each used to keep its own, so two projects asking for one checkout started
+    // two processes in one working directory — the hazard the per-project catalogue was partitioned to
+    // avoid, reached by the route the partition created. Shared, the second ask finds the first's
+    // process. Passed rather than static, because test classes run in parallel.
+    //
+    // **Declared out here, and swept out here, because this is what owns it** (review gate, lens 1). While
+    // it was made inside, every node loop swept it on its way out — so one project stopping sent away every
+    // agent on the machine, including the ones still serving other projects. A node sweeps only a table it
+    // made itself now; this is the one that ends when the process does.
+    var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
+
+    try
     {
-        // **One table of running agents for this whole process, keyed by identity** (018 R5). A node is
-        // hosted per broker and each used to keep its own, so two projects asking for one checkout started
-        // two processes in one working directory — the hazard the per-project catalogue was partitioned to
-        // avoid, reached by the route the partition created. Shared, the second ask finds the first's
-        // process. Passed rather than static, because test classes run in parallel.
-        var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
+        return await UntilInterrupted(token =>
+        {
 
         // **One catalogue for this machine, whatever project is asking** (018 R6, FR-003). It was resolved
         // per project, from the entry that named it — which is what made a checkout startable in one project
@@ -867,7 +875,15 @@ if (verb == "serve" && rest.Length == 0)
                 hostNode ? HostingNode : null,
                 hostWebUi ? HostingWebUi : null,
                 token);
-    }).ConfigureAwait(false);
+        }).ConfigureAwait(false);
+    }
+    finally
+    {
+        // **Every agent this machine started is sent away here, and only here.** A node loop sweeps only a
+        // table it created itself; this one it did not create, so ending them belongs to the process that
+        // did. While the sweep lived in the loop, one project stopping took down every agent on the machine.
+        await NodeCommand.StopEveryoneAsync(residents, Console.Out).ConfigureAwait(false);
+    }
 }
 
 // Beside `serve`, because it installs `serve`. It is not a client either: registering a
