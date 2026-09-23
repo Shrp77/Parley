@@ -23,16 +23,18 @@ namespace Parley.Cli.Tests;
 /// </remarks>
 public sealed class AutostartManifestPlanTests
 {
-    private const string Manifest = "/tmp/parley/projects.json";
+    // **The root rather than the manifest file.** `--config` names the directory this machine keeps its
+    // Parley files in; the projects are the folders under it.
+    private const string Root = "/tmp/parley";
 
     [Fact]
     public void A_manifest_entry_names_the_manifest_and_no_store()
     {
         var plan = AutostartPlan.DescribeManifest(
-            Manifest, executable: "/usr/local/bin/parley", consoleOn: "http://127.0.0.1:5280");
+            Root, executable: "/usr/local/bin/parley", consoleOn: "http://127.0.0.1:5280");
 
         Assert.StartsWith(
-            $"serve --config {Path.GetFullPath(Manifest)}", plan.Arguments, StringComparison.Ordinal);
+            $"serve --config {Path.GetFullPath(Root)}", plan.Arguments, StringComparison.Ordinal);
         Assert.DoesNotContain("--db", plan.Arguments, StringComparison.Ordinal);
         Assert.DoesNotContain("--listen", plan.Arguments, StringComparison.Ordinal);
 
@@ -46,29 +48,32 @@ public sealed class AutostartManifestPlanTests
     }
 
     [Fact]
-    public void The_manifest_entrys_log_sits_beside_the_manifest()
+    public void The_entrys_log_sits_at_the_root()
     {
-        // There is no single store to be beside, and the manifest's directory is the one this
-        // machine's configuration already lives in.
-        var plan = AutostartPlan.DescribeManifest(Manifest, executable: "parley");
+        // There is no single store to be beside, and the root is the directory this machine's
+        // configuration already lives in.
+        //
+        // **This said "beside the manifest", which was the same place reached by taking a parent.** Once
+        // `--config` named the root, taking its parent put the broker's log outside everything Parley
+        // keeps — asserted here directly rather than as a relationship between two derived paths, since
+        // that is what let the two agree while both were wrong.
+        var plan = AutostartPlan.DescribeManifest(Root, executable: "parley");
 
-        Assert.Equal(
-            Path.GetDirectoryName(Path.GetFullPath(Manifest)),
-            Path.GetDirectoryName(plan.LogPath));
+        Assert.Equal(Path.GetFullPath(Root), Path.GetDirectoryName(plan.LogPath));
     }
 
     [Fact]
     public void A_manifest_entry_reads_back_as_serving_the_manifest()
     {
         var plan = AutostartPlan.DescribeManifest(
-            Manifest, executable: "parley", consoleOn: "http://127.0.0.1:5280");
+            Root, executable: "parley", consoleOn: "http://127.0.0.1:5280");
 
         var entry = InstalledEntry.Parse(plan.Arguments);
 
         Assert.NotNull(entry);
         Assert.True(entry.ServesManifest);
         Assert.Null(entry.Store);
-        Assert.Equal(Path.GetFullPath(Manifest), entry.Manifest);
+        Assert.Equal(Path.GetFullPath(Root), entry.Manifest);
         Assert.Equal("http://127.0.0.1:5280", entry.Console);
         Assert.Contains("every project in", entry.Serves, StringComparison.Ordinal);
     }

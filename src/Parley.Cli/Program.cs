@@ -840,22 +840,64 @@ if (verb == "serve" && rest.Length == 0)
         // the serve refuses to host one across several projects; a console reads this machine's
         // manifest and is at its best across all of them. Handing both through the one hook is
         // what made `serve --with-console` over two projects throw rather than start.
-        // The manifest, read again whenever its stamp moves, so a project named while this runs
-        // gets its broker within seconds rather than at the next logon. Only when the manifest
-        // is what is being served: a process told one project by name serves that one, and a
-        // machine that named nothing has no file to watch.
-        var manifestStamp = File.Exists(manifestPath) ? File.GetLastWriteTimeUtc(manifestPath) : DateTime.MinValue;
+        // The projects, read again whenever any of them changes, so one named while this runs gets its
+        // broker within seconds rather than at the next logon. Only when this machine's projects are what
+        // is being served: a process told one project by name serves that one, and a machine that named
+        // nothing has nothing to watch.
+        //
+        // **Polled, not watched, and that was the largest risk in 019's plan until the code was read.**
+        // The spec feared what feature 015 recorded — a rename in a watched folder raising a creation and
+        // a change that each replace the pending look. No `FileSystemWatcher` is involved in serving and
+        // never was: this wakes on a timer and reads. So the change is here and nowhere else.
+        //
+        // **One stamp over every project, because there is no single file to stamp any more.** Stamping
+        // one path was how this silently stopped noticing anything at all: the manifest file does not
+        // exist, `File.Exists` is false, the stamp never moves, and a machine goes on serving whatever it
+        // started with while `project add` reports success. What it costs is N directory entries and N
+        // small reads every two seconds, on a machine with a handful of projects — not worth engineering
+        // around, and the alternative costs a great deal.
+        string ProjectsStamp()
+        {
+            try
+            {
+                var directory = ProjectFolder.ProjectsIn(manifestPath);
+
+                if (!Directory.Exists(directory))
+                {
+                    return string.Empty;
+                }
+
+                // The set of configurations and when each was last written. A project added, removed or
+                // edited moves this; nothing else does, so a broker is not restarted for a file somebody
+                // dropped beside it.
+                return string.Join(
+                    "\n",
+                    Directory.GetDirectories(directory)
+                        .Select(folder => Path.Combine(folder, ProjectFolder.ConfigurationFileName))
+                        .Where(File.Exists)
+                        .Order(StringComparer.Ordinal)
+                        .Select(file => $"{file}|{File.GetLastWriteTimeUtc(file).Ticks}"));
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // Nothing is stopped on the strength of a directory that could not be listed, which is
+                // the rule the watcher already keeps for a file somebody is halfway through editing.
+                return string.Empty;
+            }
+        }
+
+        var projectsStamp = ProjectsStamp();
 
         IReadOnlyList<ProjectSettings>? RereadManifest()
         {
-            var stamp = File.Exists(manifestPath) ? File.GetLastWriteTimeUtc(manifestPath) : DateTime.MinValue;
+            var stamp = ProjectsStamp();
 
-            if (stamp == manifestStamp)
+            if (string.Equals(stamp, projectsStamp, StringComparison.Ordinal))
             {
                 return null;
             }
 
-            manifestStamp = stamp;
+            projectsStamp = stamp;
 
             return ProjectManifest.TryRead(manifestPath, out var current, out _) ? current : null;
         }

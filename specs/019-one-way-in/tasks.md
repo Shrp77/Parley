@@ -95,7 +95,7 @@ Read these before starting; each has a test that fails the build rather than a c
 **This phase is load-bearing work, not cleanup.** R3 inventories 26 files.
 
 - [ ] T032 [US2] Remove `--db`/`-d` and `PARLEY_DB` from `src/Parley.Cli/Program.cs` and from `serve` (FR-007, FR-031)
-- [ ] T033 [US2] Remove `--db` from `project add` — the only way a store path is set today (R3's first scope question)
+- [X] T033 [US2] Remove `--db` from `project add` — the only way a store path is set today (R3's first scope question)
 - [ ] T034 [US2] Remove `--node-config` from `project add` and `project set`, which wrote a field nothing reads (FR-052)
 - [ ] T035 [US2] Keep `InstalledEntry.Parse`'s `case "--db":` read path so `autostart status` can describe an entry a previous version wrote (R3, FR-063; 0.22.0's *stop writing, stop accepting, keep reading*)
 - [ ] T036 [US2] Convert `tests/Parley.Cli.Tests/BrokerProcess.cs`: `Start` takes a root and a project name, writes `<root>/projects/<name>/project.json` **directly** with a `FreePort()` endpoint, and keeps reading the real address off stdout (R3 — the rig must not allocate, because the band is per machine and the root is per test)
@@ -136,7 +136,8 @@ Read these before starting; each has a test that fails the build rather than a c
 
 **Goal**: starting Parley serves every project; no option serves fewer.
 
-- [ ] T058 [US4] Change `ServeCommand`'s `reread` to list the projects directory and parse each `project.json` — **and change nothing else about the watcher**, which already polls every two seconds (R2)
+- [X] T058 [US4] Change `ServeCommand`'s `reread` to list the projects directory and parse each `project.json` — **and change nothing else about the watcher**, which already polls every two seconds (R2)
+  - **Done early, because it was not optional once the layout landed.** The stamp was one file's write time; that file no longer exists, so `File.Exists` was false, the stamp never moved, and the watcher silently stopped noticing anything at all — a machine going on serving whatever it started with while `project add` reported success. Caught by `HostedNodeTests`, not by reading. The stamp is now every project's configuration and when each was last written, which is also what keeps a broker from being restarted for a file somebody dropped beside one. R2 held: nothing else about the watcher changed.
 - [ ] T059 [US4] Remove `--listen`, `--db`, `--with-web-ui`, `--web-ui`, `--no-web-ui` from `serve` (FR-031, FR-039)
 - [ ] T060 [US4] Serve every project and report by name any whose store cannot be opened, without preventing the others (FR-030, FR-032)
 - [ ] T061 [US4] Stay up and report why when no project can be opened or none exists, so a project named next is served without a restart (FR-033)

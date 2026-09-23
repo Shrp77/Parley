@@ -130,14 +130,18 @@ public sealed class ProjectResolutionTests
     }
 
     [Fact]
-    public void The_manifest_decides_where_the_machines_catalogue_is()
+    public void The_root_decides_where_the_machines_catalogue_is()
     {
         // **A project used to supply this and 018 took it away.** Its entry named a catalogue, which made
         // "what this machine can start" a per-project fact — and a checkout answering in two projects was
         // startable in whichever project's file named it and unstartable in the other, while being
         // addressable in both. One catalogue per machine cannot express that, so there is no project in
         // this resolution at all: what is left is the flag, the variable, and the manifest's own folder.
-        var resolved = ProjectResolution.NodeConfig(null, NoVariables, "/etc/parley/projects.json");
+        // **And 019 moved what supplies it one level.** This read "the directory holding the manifest",
+        // which was the same place said the other way — so when `--config` came to name the root itself,
+        // the catalogue resolved one directory *above* where it belongs. FR-008 gives the root exactly
+        // two files that are not a project, and this is one of them.
+        var resolved = ProjectResolution.NodeConfig(null, NoVariables, "/etc/parley");
 
         Assert.Equal(
             Path.Combine(Path.GetFullPath("/etc/parley"), NodeCatalogue.DefaultFileName),

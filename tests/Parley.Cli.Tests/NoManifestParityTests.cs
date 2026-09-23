@@ -51,8 +51,14 @@ public sealed class NoManifestParityTests : IDisposable
         }
     }
 
-    /// <summary>A path in this test's own directory where no file has been written.</summary>
-    private string Absent => Path.Combine(_directory, "projects.json");
+    /// <summary>A root in this test's own directory that has never been created.</summary>
+    /// <remarks>
+    /// **It named <c>projects.json</c> and names a directory now.** Keeping the old spelling would have
+    /// tested the compatibility rule rather than the absent case: a value whose final segment is the
+    /// manifest's file name resolves to its parent, so this would have pointed at a directory that
+    /// exists and holds this test's own scratch files.
+    /// </remarks>
+    private string Absent => Path.Combine(_directory, "never-configured");
 
     // ---- nothing configured resolves exactly as it did ----------------------------------------
 
