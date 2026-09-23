@@ -518,7 +518,7 @@ public static class NodeCommand
         //
         // One semaphore for the whole process rather than one per identity: starting is rare, it is already
         // slower than any lock, and a table shared by every project wants a guard with the same reach.
-        await Starting.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await Residency.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -594,17 +594,31 @@ public static class NodeCommand
         }
         finally
         {
-            _ = Starting.Release();
+            _ = Residency.Release();
         }
     }
 
-    /// <summary>Serialises starting, so that looking for a resident and creating one are one act.</summary>
+    /// <summary>Serialises every change to who lives in the resident table.</summary>
     /// <remarks>
+    /// <para>
+    /// Two callers take it. A start, so that looking for a resident and creating one are one act — the
+    /// gate's third finding, where a check-then-act let two projects each launch one checkout. And the
+    /// sweep, so that a start cannot record a process into a table the sweep has already walked — the
+    /// seventh, where that process was left running with nothing remaining that would stop it.
+    /// </para>
+    /// <para>
+    /// <b>It was called <c>Starting</c>, which stopped being true when the sweep began taking it.</b> A
+    /// lock named for one of the two things it serialises is how the next reader concludes the other one
+    /// is unguarded. Renamed by lens 3, which is the run that exists to catch a name that has drifted from
+    /// its behaviour.
+    /// </para>
+    /// <para>
     /// Process-wide, because the table it protects is: 018 gave every project one resident table so that a
     /// checkout answering in two projects is one process. A guard narrower than the thing it guards would
     /// leave exactly the gap this closes.
+    /// </para>
     /// </remarks>
-    private static readonly SemaphoreSlim Starting = new(1, 1);
+    private static readonly SemaphoreSlim Residency = new(1, 1);
 
     /// <summary>Gives a turn to an agent this node already holds.</summary>
     /// <param name="turn">Which agent, and why.</param>
@@ -919,12 +933,12 @@ public static class NodeCommand
         ArgumentNullException.ThrowIfNull(residents);
 
         // **The sweep takes the same gate a start does, and shuts the table afterwards.** Recording a
-        // resident happens inside `Starting`, so without this a start already past that gate lands its
+        // resident happens inside `Residency`, so without this a start already past that gate lands its
         // process in the table *after* the sweep has walked it — and this is the last thing the process
         // does, so nothing sweeps again. That is an agent still running with nothing left that would stop
         // it, which is the third finding's harm reached from the other side, and it breaks the promise
         // SPEC.md §12 makes: stopping a node tells every agent it started to quit.
-        await Starting.WaitAsync().ConfigureAwait(false);
+        await Residency.WaitAsync().ConfigureAwait(false);
 
         try
         {
@@ -944,7 +958,7 @@ public static class NodeCommand
         }
         finally
         {
-            _ = Starting.Release();
+            _ = Residency.Release();
         }
     }
 
