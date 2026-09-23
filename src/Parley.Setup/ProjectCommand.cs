@@ -103,11 +103,9 @@ public static class ProjectCommand
         TextWriter output,
         TextWriter error)
     {
-        if (fields.Endpoint is null && fields.Description is null)
+        if (fields.Description is null)
         {
-            await error.WriteLineAsync(
-                "Nothing to change. Give at least one of --listen or --description.")
-                .ConfigureAwait(false);
+            await error.WriteLineAsync("Nothing to change. Give --description.").ConfigureAwait(false);
 
             return Usage;
         }
@@ -133,18 +131,15 @@ public static class ProjectCommand
                     return null;
                 }
 
-                // **A store is not among the things that can be changed, and that is FR-007.** It is
-                // derived from the project's name, so there is no value to set — moving a project's
-                // data is moving its folder, which is a different act than editing a field.
+                // **Neither a store nor an endpoint is among the things that can be changed.** The store
+                // is derived from the project's name and the endpoint was claimed when it was created, so
+                // neither has a value to set — moving a project's data is moving its folder, and moving
+                // its port is a claim, both of which are acts rather than edits.
                 //
-                // An empty value clears an optional field; the endpoint cannot be emptied, and the
-                // rules below say so.
+                // An empty value clears the one optional field there is.
                 changed = current with
                 {
-                    Endpoint = fields.Endpoint ?? current.Endpoint,
-                    Description = fields.Description is null
-                        ? current.Description
-                        : fields.Description.Length == 0 ? null : fields.Description,
+                    Description = fields.Description is { Length: > 0 } about ? about : null,
                 };
 
                 faults.AddRange(changed.Problems());
@@ -310,32 +305,21 @@ public static class ProjectCommand
         // **The port is claimed before anything is created**, so a claim that fails leaves no folder and
         // no half-written configuration behind (FR-015). The claim is also the only thing here that can
         // collide with another command running at the same moment.
-        string endpoint;
-        string? refused;
-
-        if (fields.Endpoint is { Length: > 0 } stated)
-        {
-            if (!PortLedger.TryReserve(root, name, stated, out refused))
-            {
-                await error.WriteLineAsync(refused).ConfigureAwait(false);
-
-                return Config;
-            }
-
-            endpoint = stated;
-        }
-        else if (!PortLedger.TryClaim(root, name, out var claimed, out refused))
+        //
+        // **There is no way to state one, and that is the owner's call on 2026-09-23.** An earlier draft
+        // kept `--listen` for a broker meant to be reachable from another machine, which SPEC.md §16
+        // permits. What that bought was one more thing a person supplies and two rules about which source
+        // wins — and this feature exists because a deployment had been arrived at one flag at a time. A
+        // project that must be reachable elsewhere has its endpoint edited in its own `project.json`,
+        // which is one place, readable, and the same place every reader already looks.
+        if (!PortLedger.TryClaim(root, name, out var endpoint, out var refused))
         {
             await error.WriteLineAsync(refused).ConfigureAwait(false);
 
             return Config;
         }
-        else
-        {
-            endpoint = claimed!;
-        }
 
-        var settings = new ProjectSettings(name, ProjectFolder.StoreFor(root, name), endpoint, fields.Description);
+        var settings = new ProjectSettings(name, ProjectFolder.StoreFor(root, name), endpoint!, fields.Description);
         var faults = new List<string>();
 
         try
@@ -793,14 +777,14 @@ public static class ProjectCommand
 /// <summary>
 /// The values `project add` writes, taken from the command line before dispatch.
 /// </summary>
-/// <param name="Endpoint">
-/// The transport address, from <c>--listen</c>, or null to be handed one from the band.
-/// </param>
+
 /// <param name="Description">One line for the operator, from <c>--description</c>, or null.</param>
 /// <remarks>
 /// <para>
-/// <b>There is no store here, and that is FR-007.</b> A project's store is derived from its name, so
-/// there is nothing a person could name and nothing for two places to disagree about.
+/// <b>There is neither a store nor an endpoint here.</b> A project's store is derived from its name and
+/// its endpoint is claimed when it is created, so neither has a value a command line could supply — which
+/// is what "everything is project centric" means at this layer. A description is the one thing left that
+/// is somebody's to choose.
 /// </para>
 /// <para>
 /// Passed in rather than parsed here, because the entry point consumes every option before any
@@ -808,4 +792,4 @@ public static class ProjectCommand
 /// tool does not have. A command that parsed its own flags would never receive them.
 /// </para>
 /// </remarks>
-public sealed record ProjectFields(string? Endpoint, string? Description);
+public sealed record ProjectFields(string? Description);

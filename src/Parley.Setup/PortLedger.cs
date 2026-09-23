@@ -239,94 +239,6 @@ internal static class PortLedger
         return false;
     }
 
-    /// <summary>Records a port somebody stated, rather than choosing one.</summary>
-    /// <param name="root">The machine's root.</param>
-    /// <param name="name">The project being created.</param>
-    /// <param name="endpoint">The address they asked to serve on.</param>
-    /// <param name="problem">Why it cannot be used, when this returns false.</param>
-    /// <returns><see langword="true"/> when the endpoint was recorded as this project's.</returns>
-    /// <exception cref="ArgumentException"><paramref name="root"/> is blank.</exception>
-    /// <remarks>
-    /// <para>
-    /// <b>A stated endpoint bypasses the band, and it has to.</b> SPEC.md §16 confines the transport to a
-    /// loopback connection, a private network somebody controls, or a tunnel authenticated outside this
-    /// protocol — so a broker reachable from another machine is supported, and an early draft of this
-    /// feature assumed it away. It cannot be chosen automatically: nothing here knows which interface a
-    /// person means to expose, and guessing would put a broker on a network by accident. The band is for
-    /// what is handed out, and what is handed out is loopback.
-    /// </para>
-    /// <para>
-    /// <b>The availability check binds the address named, not loopback.</b> <c>127.0.0.1:n</c> binding
-    /// says nothing about <c>0.0.0.0:n</c>, and the difference would surface at the next start, on the
-    /// interface nobody was watching.
-    /// </para>
-    /// <para>
-    /// Recorded as spoken for even though it did not come from the band, so a later claim steps over it
-    /// and <c>project remove</c> releases it by the same route as any other.
-    /// </para>
-    /// </remarks>
-    internal static bool TryReserve(string root, ProjectName name, string endpoint, out string? problem) =>
-        TryReserve(root, name, endpoint, CanBindAt, out problem);
-
-    /// <summary>Records a stated port, given a way to ask whether its address is available.</summary>
-    /// <param name="root">The machine's root.</param>
-    /// <param name="name">The project being created.</param>
-    /// <param name="endpoint">The address they asked to serve on.</param>
-    /// <param name="free">Answers whether that address can be bound.</param>
-    /// <param name="problem">Why it cannot be used, when this returns false.</param>
-    /// <returns><see langword="true"/> when the endpoint was recorded as this project's.</returns>
-    /// <exception cref="ArgumentException"><paramref name="root"/> is blank.</exception>
-    /// <exception cref="ArgumentNullException"><paramref name="free"/> is null.</exception>
-    internal static bool TryReserve(
-        string root, ProjectName name, string endpoint, Func<Uri, bool> free, out string? problem)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(root);
-        ArgumentNullException.ThrowIfNull(free);
-
-        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var address) || address.Port <= 0)
-        {
-            problem = $"'{endpoint}' is not an absolute address, so '{name}' has not been created.";
-
-            return false;
-        }
-
-        using var held = Hold(PathIn(root), out problem);
-
-        if (held is null)
-        {
-            return false;
-        }
-
-        var document = Parse(held);
-        var recorded = Recorded(document);
-
-        foreach (var (other, port) in recorded)
-        {
-            if (port == address.Port && !string.Equals(other, name.Value, StringComparison.Ordinal))
-            {
-                // Worded exactly as ProjectManifest.Collisions words it, because they are the same rule
-                // met from two directions — one when a person states a port, one when a file already
-                // holds two. Two sentences for one rule is how they come to disagree.
-                problem =
-                    $"'{name}' and '{other}' share an endpoint (port {address.Port}): "
-                    + "only one broker can hold a port. Nothing has been created.";
-
-                return false;
-            }
-        }
-
-        if (!free(address))
-        {
-            problem =
-                $"Nothing can bind {address.Host}:{address.Port} right now, so '{name}' has not been "
-                + "created. Something else is holding it, or the address is not one this machine has.";
-
-            return false;
-        }
-
-        return Commit(held, document, name, address.Port, out problem);
-    }
-
     /// <summary>Gives a project's port back.</summary>
     /// <param name="root">The machine's root.</param>
     /// <param name="name">The project being removed.</param>
@@ -554,35 +466,6 @@ internal static class PortLedger
 
             return false;
         }
-    }
-
-    /// <summary>Whether a stated address can be bound right now.</summary>
-    /// <remarks>
-    /// The address named rather than loopback, which is the whole point of the distinction: a host this
-    /// machine does not have fails here rather than at the next start, and a wildcard is asked about as a
-    /// wildcard.
-    /// </remarks>
-    private static bool CanBindAt(Uri address)
-    {
-        if (!IPAddress.TryParse(address.Host, out var ip))
-        {
-            // A name rather than a literal. Resolving it here would ask a DNS server whether somebody
-            // else's record points at this machine, which is not the question — what matters is whether
-            // the port can be held, so it is asked on every address the name has here, and a name this
-            // machine cannot resolve is reported rather than guessed at.
-            try
-            {
-                var resolved = Dns.GetHostAddresses(address.Host);
-
-                return resolved.Length > 0 && resolved.All(each => CanBind(each, address.Port));
-            }
-            catch (Exception failure) when (failure is SocketException or ArgumentException)
-            {
-                return false;
-            }
-        }
-
-        return CanBind(ip, address.Port);
     }
 
     /// <summary>Whether a port can be bound on loopback right now.</summary>

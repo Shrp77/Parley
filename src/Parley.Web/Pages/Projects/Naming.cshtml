@@ -31,11 +31,13 @@
     </p>
 
     <pre><code>parley project remove @Model.Project
-parley project add &lt;new name&gt; --db @Model.Store --listen @Model.Endpoint</code></pre>
+parley project add &lt;new name&gt;</code></pre>
 
     <p>
-        Copy the two paths exactly as they appear above; they are what this machine currently has
-        recorded. Then come back to <a href="/">the project list</a> and the new name is there.
+        The new project gets its own folder, its own store and a port of its own — there is nothing
+        to copy across. <strong>What it does not get is this project's conversations</strong>: they
+        are in the old store, which <code>remove</code> leaves exactly where it is. Come back to
+        <a href="/">the project list</a> and the new name is there.
     </p>
 }
 else
@@ -48,11 +50,13 @@ else
         name. Give it a real one:
     </p>
 
-    <pre><code>parley project add &lt;name&gt; --db &lt;path to the store&gt; --listen @Model.Endpoint</code></pre>
+    <pre><code>parley project add &lt;name&gt;</code></pre>
 
     <p>
-        The store is the file the broker owns — <code>parley autostart status</code> prints the
-        path it was registered with. Once named, it appears on
-        <a href="/">the project list</a> in place of the stand-in.
+        Naming it is the whole of creating it: the project gets a folder of its own, a store inside
+        it, and a port claimed for it. <strong>It will not be the broker above</strong> — that one
+        was started by hand or by an older entry, and it keeps its own store until it is migrated.
+        Once named, the new project appears on <a href="/">the project list</a> in place of the
+        stand-in.
     </p>
 }

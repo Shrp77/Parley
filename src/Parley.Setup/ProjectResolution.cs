@@ -236,27 +236,6 @@ public static class ProjectResolution
     }
 
     /// <summary>
-    /// Resolves the store this command should open.
-    /// </summary>
-    /// <param name="argument">A path given on the command line, or null.</param>
-    /// <param name="variable">Reads an environment variable.</param>
-    /// <param name="project">The selected project, or null.</param>
-    /// <returns>The value and its source.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="variable"/> is null.</exception>
-    public static Resolved Store(string? argument, Func<string, string?> variable, ProjectSettings? project)
-    {
-        ArgumentNullException.ThrowIfNull(variable);
-
-        return Choose(
-            argument,
-            variable,
-            DeploymentEnvironment.DatabaseVariable,
-            project?.Store,
-            project?.Name.Value,
-            fallback: null);
-    }
-
-    /// <summary>
     /// Resolves the broker a command should connect to.
     /// </summary>
     /// <param name="argument">An address given on the command line, or null.</param>

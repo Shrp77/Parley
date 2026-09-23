@@ -1436,12 +1436,13 @@ internal sealed class Shell : Window
         [
             new RegionAction('c', Naming.CreateTitle, Create),
 
-            // Offered only while there is a running deployment nothing names yet. Offered always,
-            // it would invite somebody to name the same broker twice, which is two projects
-            // sharing a store and is what §4.1 forbids.
-            .. Naming.CanNameRunning(Projects.Projects, Installed)
-                ? new[] { new RegionAction('n', Naming.NameRunningTitle, NameRunning) }
-                : [],
+            // **"Name the running deployment" was here and has gone.** It adopted a broker already
+            // serving on a store and port taken from an autostart entry written with `--db` and
+            // `--listen`. Neither flag exists, so no entry can be like that again, and a machine that
+            // still has one needs its store *moved* rather than named where it lies — which is a
+            // migration, with a broker stopped and agents sent away, not a form that pre-fills two
+            // paths. Keeping it would have meant a second door onto that act, or a screen that quietly
+            // pointed a named project at an empty database.
 
             new RegionAction('r', Removing.Title, Remove),
             new RegionAction('y', HealthTitle, ShowHealth),
@@ -1810,26 +1811,6 @@ internal sealed class Shell : Window
         App is { } app && Manifest() is { } manifest
             ? Naming.OpenCreateAsync(app, manifest, Projects.Projects, Installed, Queue, Reporting)
             : Task.CompletedTask;
-
-    /// <summary>Opens the form that names the deployment this machine already runs.</summary>
-    /// <returns>When the form is open.</returns>
-    internal Task NameRunning()
-    {
-        if (App is not { } app || Manifest() is not { } manifest)
-        {
-            return Task.CompletedTask;
-        }
-
-        if (Installed is not { Store: not null } entry)
-        {
-            Said = "This machine has no autostart entry to name, so there is nothing to pre-fill. "
-                + $"Use '{Naming.CreateTitle}'.";
-
-            return Task.CompletedTask;
-        }
-
-        return Naming.OpenNameRunningAsync(app, manifest, Projects.Projects, entry, Queue, Reporting);
-    }
 
     /// <summary>Opens the dialog that removes a project from this machine.</summary>
     /// <returns>When the dialog is open.</returns>

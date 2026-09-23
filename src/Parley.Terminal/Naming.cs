@@ -37,9 +37,6 @@ namespace Parley.Terminal;
 /// </remarks>
 internal static class Naming
 {
-    /// <summary>What the form naming the running deployment is called.</summary>
-    internal const string NameRunningTitle = "Name the running deployment";
-
     /// <summary>What the form creating a project is called.</summary>
     internal const string CreateTitle = "Create a project";
 
@@ -48,39 +45,6 @@ internal static class Naming
 
     /// <summary>What is said when it did not.</summary>
     internal const string Named = "Named. It is on the project list now.";
-
-    /// <summary>Opens the form that names the deployment this machine already runs.</summary>
-    /// <param name="app">The application the form opens in.</param>
-    /// <param name="manifestPath">The manifest to write into.</param>
-    /// <param name="projects">What the manifest already names.</param>
-    /// <param name="entry">The installed entry, whose paths pre-fill the form.</param>
-    /// <param name="queue">Runs the command, so the caller can wait for it.</param>
-    /// <param name="done">Told what to say when the form has been dealt with.</param>
-    /// <returns>When the form is open.</returns>
-    internal static Task OpenNameRunningAsync(
-        IApplication app,
-        string manifestPath,
-        IReadOnlyList<ProjectSettings> projects,
-        InstalledEntry entry,
-        Action<Func<CancellationToken, Task>> queue,
-        Func<string, Task> done)
-    {
-        ArgumentNullException.ThrowIfNull(entry);
-
-        return OpenAsync(
-            app,
-            NameRunningTitle,
-            manifestPath,
-            projects,
-            entry,
-            new Proposed(
-                Endpoint: entry.Listen ?? DefaultEndpoint,
-                NodeConfig: entry.NodeConfig,
-                EndpointWhy: "where the running broker listens; change it only if this project's "
-                             + "broker is on another machine"),
-            queue,
-            done);
-    }
 
     /// <summary>Opens the form that creates a project that does not exist yet.</summary>
     /// <param name="app">The application the form opens in.</param>
@@ -131,25 +95,6 @@ internal static class Naming
                              + "was chosen, so change it only if it must be reachable from elsewhere"),
             queue,
             done);
-    }
-
-    /// <summary>Whether there is a running deployment that nothing in the manifest names yet.</summary>
-    /// <param name="projects">What the manifest already names.</param>
-    /// <param name="installed">The installed entry, if any.</param>
-    /// <returns>Whether the form has anything to pre-fill from.</returns>
-    /// <remarks>
-    /// An entry that serves the manifest is already serving whatever is named there, so there is
-    /// no unnamed deployment to name — and an entry whose store some project already claims has
-    /// been named once. Offering it either way would invite somebody to name the same broker
-    /// twice, which is two projects sharing a store and is what §4.1 forbids.
-    /// </remarks>
-    internal static bool CanNameRunning(
-        IReadOnlyList<ProjectSettings> projects, InstalledEntry? installed)
-    {
-        ArgumentNullException.ThrowIfNull(projects);
-
-        return installed is { ServesManifest: false, Store: { Length: > 0 } store }
-            && !projects.Any(p => ProjectManifest.PathComparer.Equals(p.Store, store));
     }
 
     /// <summary>Why a typed name would be refused, or null.</summary>
@@ -356,9 +301,7 @@ internal static class Naming
         var code = await ProjectCommand.RunAsync(
             ["add", values[0]],
             manifestPath,
-            new ProjectFields(
-                Endpoint: null,
-                values[1].Length == 0 ? null : values[1]),
+            new ProjectFields(values[1].Length == 0 ? null : values[1]),
             said,
             complained,
             cancellationToken: CancellationToken.None).ConfigureAwait(false);

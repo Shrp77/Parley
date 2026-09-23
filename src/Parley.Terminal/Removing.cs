@@ -211,7 +211,7 @@ internal static class Removing
         var code = await ProjectCommand.RunAsync(
             ["remove", project.Name.Value],
             manifestPath,
-            new ProjectFields(null, null),
+            new ProjectFields(null),
             said,
             complained,
             destroy,

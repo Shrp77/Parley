@@ -1,7 +1,6 @@
 ﻿using Parley.Setup;
 using System.Diagnostics;
 using System.Globalization;
-using Parley.Core;
 
 namespace Parley.Cli;
 
@@ -130,17 +129,16 @@ public static class AutostartCommand
         TextWriter error,
         CancellationToken cancellationToken)
     {
-        databasePath ??= Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable);
-
+        // **The store and the endpoint come from a project or from nowhere.** They were also read from
+        // `--db` and `PARLEY_DB`, which is why this once fell back to a variable — and a supervisor
+        // starts the broker with no shell environment, so a variable read here named something that
+        // would not be set at logon. Both are gone; what is left is the project `--project` selected.
         if (manifestToServe is null && string.IsNullOrWhiteSpace(databasePath))
         {
             await error.WriteLineAsync(
-                "No database and no projects. Pass --db <path>, set " +
-                $"{DeploymentEnvironment.DatabaseVariable}, or name a project first with " +
-                "`parley project add` and this entry will serve every project named. A " +
-                "supervisor starts the broker with no shell environment, so what it serves has " +
-                "to be written into the entry rather than read from a variable that will not be " +
-                "set at logon.").ConfigureAwait(false);
+                "This machine has no projects yet, so there is nothing for an entry to serve. Create "
+                + "one with `parley project add <name>`, then run this again — the entry will serve "
+                + "every project on the machine, including any named afterwards.").ConfigureAwait(false);
 
             return Config;
         }

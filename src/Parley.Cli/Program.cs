@@ -33,14 +33,14 @@ using Wire = Parley.Transport;
 const string Help = """
     parley — the broker, this machine's node, and the operator operations of SPEC.md 10.2.
 
-      parley serve [--listen <url>] [--log <path>]     run the broker: the one process that
-                   [--with-node]                        opens the store, and what everything
-                   [--with-web-ui [--web-ui <url>]]     else connects to. It serves every
-                   [--db <path>]                        project this machine names. --with-node
-                                                       also runs this machine's node in it, and
-                                                       --with-web-ui starts the web UI beside
-                                                       it. --db serves one store by hand and
-                                                       is for testing only
+      parley serve [--log <path>] [--with-node]        run the broker: the one process that
+                   [--with-web-ui [--web-ui <url>]]     opens the stores, and what everything
+                                                       else connects to. It serves every project
+                                                       on this machine, each on the port that
+                                                       project was given. --with-node also runs
+                                                       this machine's node in it, and
+                                                       --with-web-ui starts the web UI beside it.
+                                                       --project serves one alone, for testing
 
       parley terminal                                  a deployment from this terminal: the
                                                        projects, who is in each, and their
@@ -61,11 +61,9 @@ const string Help = """
 
       parley autostart install [--web-ui <url>]        start the broker when you log in, with
                                [--no-web-ui]           the web UI. The entry serves every
-                               [--db <path>]           project in the manifest, each with its
-                               [--node-config <path>]  own node, including one named later.
-                                                       --no-web-ui leaves the web UI out.
-                                                       --db and --node-config register one
-                                                       store by hand and are for testing only
+                               [--node-config <path>]  project on this machine, each with its
+                                                       own node, including one named later.
+                                                       --no-web-ui leaves the web UI out
       parley autostart remove                          stop doing that
       parley autostart status                          say whether it is set up, and what it
                                                        was registered to run
@@ -76,14 +74,10 @@ const string Help = """
 
       parley project list                              what this machine is configured for
       parley project add <name>                        naming it is the whole of creating it:
-                        [--listen <url>]               its store is parley.db in its own folder
-                        [--description <text>]         and its port is claimed, not chosen.
-                                                       --listen states an address instead, for a
-                                                       broker meant to be reachable off this
-                                                       machine
-      parley project set <name> [--listen <url>]       change what one says; only the fields
-                        [--description <text>]         given change, and an empty value
-                                                       clears an optional one
+                        [--description <text>]         its store is parley.db in its own folder
+                                                       and its port is claimed, not chosen
+      parley project set <name> [--description <text>] change what it says about itself; an
+                                                       empty value clears the description
       parley project remove <name> [--destroy]         forget how to reach one; deletes nothing
                                                        without --destroy, which also stops its
                                                        broker and deletes its store and
@@ -171,11 +165,10 @@ const string Help = """
     --broker or PARLEY_BROKER, and defaults to the local one. Nothing works until a broker is
     running: `parley autostart install` starts one at every logon, serving every project named.
 
-    serve opens the stores its projects name — and it is the only command that touches a file.
-    --db, or PARLEY_DB, names one store instead of the manifest; that is for testing only, and a
-    machine's deployment names its stores with `parley project add`. PARLEY_DB never replaces a
-    manifest named with --config, which is how the logon entry names the one it serves. It migrates the schema,
-    which nothing else does. prune applies the policy the broker was started with, from
+    serve opens its projects' stores — and it is the only command that touches a file. There is no
+    way to name one: a project's store is parley.db inside its own folder and its port was claimed
+    when it was created, so --project is the only thing that narrows what serve does. It migrates
+    the schema, which nothing else does. prune applies the policy the broker was started with, from
     PARLEY_RETENTION_IDLE_HOURS and PARLEY_RETENTION_MAX_AGE_HOURS on the broker's machine; it
     removes text permanently, so export first if you want to keep a discussion.
 
@@ -265,8 +258,6 @@ var hostNode = TakeFlag("--with-node");
 // what makes it safe.
 var hostWebUi = TakeFlag("--with-web-ui");
 var destroy = TakeFlag("--destroy");
-var databasePath = TakeOption("--db", "-d");
-var listenOn = TakeOption("--listen", "-l");
 var brokerAddress = TakeOption("--broker", "-b");
 var logPath = TakeOption("--log", null);
 var webUiOn = TakeOption("--web-ui", null);
@@ -312,6 +303,24 @@ var stray = forwarding
     ? null
     : arguments.Find(a => a.StartsWith('-')
         && !(arguments.Count > 0 && arguments[0] == "files" && FilesCommand.OwnOptions.Contains(a)));
+
+// **Named rather than left to the refusal below, and this is the 0.22.0 pattern rather than a
+// reprieve.** `--db`, `-d`, `--listen` and `-l` are gone: a project's store is `parley.db` inside its
+// own folder and its endpoint is claimed when it is named, so neither has a value a command line could
+// supply. But every deployment on every machine set up before 019 was made with them, and they are in
+// scripts, in shell history and in people's fingers — so "'--db' is not an option this command takes"
+// would be true and useless. It is said once, with what replaced it.
+if (!forwarding
+    && arguments.Find(a => a is "--db" or "-d" or "--listen" or "-l") is { } removed)
+{
+    await Console.Error.WriteLineAsync(
+        $"'{removed}' was removed: a project's store and endpoint are its own, and nothing outside it "
+        + "names either. `parley project add <name>` creates a project, deriving its store and claiming "
+        + "its port; `parley serve` serves every project on this machine. To work on one alone, name it "
+        + "with --project.").ConfigureAwait(false);
+
+    return Usage;
+}
 
 if (stray is not null)
 {
@@ -455,24 +464,10 @@ if (verb == "use")
 
 if (verb == "project")
 {
-    // **Said rather than ignored.** `project add --db <path>` was how every deployment on this machine
-    // was made, so somebody will type it again from memory or from a script — and a flag silently passed
-    // over is a person believing their store went where they said. A project's store is derived from its
-    // name now, so there is no value this could still honour.
-    if (databasePath is not null)
-    {
-        await Console.Error.WriteLineAsync(
-            "--db is no longer part of naming a project. A project's store is `parley.db` inside its own "
-            + $"folder under {ProjectFolder.ProjectsIn(manifestPath)}, derived from its name, so there is "
-            + "nothing to point at. `parley project add <name>` is the whole of it.").ConfigureAwait(false);
-
-        return Usage;
-    }
-
     return await ProjectCommand.RunAsync(
         rest,
         manifestPath,
-        new ProjectFields(listenOn, projectDescription),
+        new ProjectFields(projectDescription),
         Console.Out,
         Console.Error,
         destroy: destroy).ConfigureAwait(false);
@@ -550,22 +545,14 @@ if (verb == "serve" && rest.Length == 0)
 {
     var serving = new List<ProjectSettings>();
 
-    // **One store named explicitly is served instead of the manifest**, which is what the help and the README say --db and
-    // PARLEY_DB are for, by hand and for testing only. A machine whose manifest named projects served those and ignored
-    // the store it was told: a flag accepted and ignored, found by the gate when a probe that had not isolated its
-    // manifest served this machine's projects rather than its own store.
-    // Blank is unset. A launcher that clears a variable by giving it an empty value -- the suite's does -- would otherwise
-    // name a store called nothing, and every serve it started would refuse for want of one.
-    var fromEnvironment = Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable) is { } variable
-        && !string.IsNullOrWhiteSpace(variable)
-            ? variable
-            : null;
-    // **The variable never replaces a manifest named on the command line**, which is how the logon entry names the one it
-    // serves. A PARLEY_DB left in somebody's environment from a test would otherwise turn that entry into a broker for the
-    // test store at the next logon, and every project would stop being served -- which the first version of this rule
-    // did, found by the gate's next probe. The flag is typed for this run, so it wins over both.
-    var oneStore = databasePath is not null || (fromEnvironment is not null && configPath is null);
-
+    // **There is no store to serve but a project's own.** `--db` and `PARLEY_DB` named one by hand,
+    // "for testing only", and the arrangement cost more than it bought: a machine whose manifest named
+    // projects served those and ignored the store it was told, and a variable left in somebody's
+    // environment from a test turned the logon entry into a broker for the test store. Both were found
+    // by the review gate, one after the other, and both were rules about which of two sources wins —
+    // which is a question that only exists while there are two.
+    //
+    // So serving is: every project on this machine, or the one named with --project. Nothing else.
     if (!string.IsNullOrWhiteSpace(projectName))
     {
         if (!ProjectResolution.TrySelect(projectName, configuredProjects, out var named, out var whyNot))
@@ -576,7 +563,7 @@ if (verb == "serve" && rest.Length == 0)
 
         serving.Add(named!);
     }
-    else if (!oneStore)
+    else
     {
         serving.AddRange(configuredProjects);
     }
@@ -645,19 +632,6 @@ if (verb == "serve" && rest.Length == 0)
         var machineCatalogue = ProjectResolution.NodeConfig(
             nodeConfigPath, Environment.GetEnvironmentVariable, manifestPath).Value
             ?? NodeCatalogue.DefaultFileName;
-
-        async Task<int> HostingNode(
-            IReadOnlyList<string> addresses, TextWriter reporting, CancellationToken stopping)
-        {
-            await reporting.WriteLineAsync($"Hosting this machine's node, from {hostedCatalogue}.")
-                .ConfigureAwait(false);
-
-            using var channel = GrpcChannel.ForAddress(addresses[0]);
-
-            return await NodeCommand.RunAsync(
-                channel, addresses[0], hostedFrom, reporting, null, residents, stopping)
-                .ConfigureAwait(false);
-        }
 
         // **Every project hosts from the same catalogue, and announces what the repositories say it may
         // start for that project.** The lone-project dance that used to be here decided which of several
@@ -872,36 +846,23 @@ if (verb == "serve" && rest.Length == 0)
             return ProjectManifest.TryRead(manifestPath, out var current, out _) ? current : null;
         }
 
-        // **A manifest named on the command line that names no project yet is still the manifest being served.** That
-        // is the entry the installer registers on a machine nobody has configured: it waits, hosting the web UI, and
-        // starts the first project named. It used to fall through to one default store, which served a deployment
-        // nobody had named and was not in the manifest anybody would then read.
-        var awaitingFirstProject = serving.Count == 0
-            && string.IsNullOrWhiteSpace(projectName)
-            && configPath is not null
-            && databasePath is null;
+        // **A machine that names no project yet is still a machine being served.** That is the entry the
+        // installer registers on a machine nobody has configured: it waits, hosting the web UI, and starts
+        // the first project named. It used to fall through to one default store, which served a deployment
+        // nobody had named and that nothing would then read.
+        var awaitingFirstProject = serving.Count == 0 && string.IsNullOrWhiteSpace(projectName);
 
         var watching = string.IsNullOrWhiteSpace(projectName) && (serving.Count > 0 || awaitingFirstProject);
 
-        return serving.Count > 0 || awaitingFirstProject
-            ? ServeCommand.RunAsync(
-                serving,
-                logPath,
-                Console.Out,
-                Console.Error,
-                hostNode ? HostingNodeFor : null,
-                hostWebUi ? HostingWebUi : null,
-                watching ? RereadManifest : null,
-                token)
-            : ServeCommand.RunAsync(
-                databasePath ?? fromEnvironment,
-                listenOn,
-                logPath,
-                Console.Out,
-                Console.Error,
-                hostNode ? HostingNode : null,
-                hostWebUi ? HostingWebUi : null,
-                token);
+        return ServeCommand.RunAsync(
+            serving,
+            logPath,
+            Console.Out,
+            Console.Error,
+            hostNode ? HostingNodeFor : null,
+            hostWebUi ? HostingWebUi : null,
+            watching ? RereadManifest : null,
+            token);
         }).ConfigureAwait(false);
     }
     finally
@@ -932,16 +893,9 @@ if (verb == "serve" && rest.Length == 0)
 // nothing else.
 if (verb == "autostart" && rest.Length == 1)
 {
-    // --db and the variable are explicit; a project named is explicit; nothing said is the
-    // manifest being served, whether or not it names a project yet -- a machine just installed
-    // names none, and its entry waits for the first. Precedence as §4.1 states it: an explicit
-    // path or variable still wins over anything a project says.
-    var explicitStore = databasePath
-        ?? (Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable) is { } storeVariable
-            && !string.IsNullOrWhiteSpace(storeVariable)
-                ? storeVariable
-                : null);
-
+    // **A project named is the only way to narrow this.** `--db` and `PARLEY_DB` used to name a store
+    // the entry would serve regardless of what any project said, with a precedence rule to settle which
+    // won. Neither exists now: an entry serves this machine, or the one project it names.
     ProjectSettings? named = null;
 
     if (!string.IsNullOrWhiteSpace(projectName)
@@ -951,26 +905,23 @@ if (verb == "autostart" && rest.Length == 1)
         return Config;
     }
 
-    var servesManifest = explicitStore is null && named is null;
+    var servesManifest = named is null;
 
-    // Refused rather than ignored. An entry serving three projects has three endpoints and up to
-    // three catalogues, all in the manifest; a flag that names one of either has nowhere to go,
-    // and an install that accepted it and wrote none of it would be the flag-accepted-and-ignored
-    // failure this file already refuses elsewhere.
-    if (servesManifest && (listenOn is not null || nodeConfigPath is not null))
+    // Refused rather than ignored. An entry serving three projects has three catalogues' worth of
+    // machine, and a flag naming one has nowhere to go — an install that accepted it and wrote none of
+    // it would be the flag-accepted-and-ignored failure this file already refuses elsewhere.
+    if (servesManifest && nodeConfigPath is not null)
     {
         await Console.Error.WriteLineAsync(
-            "--listen and --node-config describe one deployment, and this entry would serve every "
-            + $"project in {manifestPath}. Each project's endpoint and catalogue live in its "
-            + "manifest entry (`parley project add <name> --listen <url> --node-config <path>`). "
-            + "To install an entry for one deployment instead, name it with --project or --db.")
-            .ConfigureAwait(false);
+            "--node-config describes one deployment, and this entry would serve every project under "
+            + $"{ProjectFolder.ProjectsIn(manifestPath)}. To install an entry for one project instead, "
+            + "name it with --project.").ConfigureAwait(false);
 
         return Usage;
     }
 
-    var entryStore = explicitStore ?? named?.Store;
-    var listenAddress = listenOn ?? named?.Endpoint;
+    var entryStore = named?.Store;
+    var listenAddress = named?.Endpoint;
 
     // A catalogue nobody named is used only if it is actually there. Every other resolution ends
     // at `node.json`, which is the right answer for a command typed in a directory and the wrong
@@ -1061,7 +1012,6 @@ if (project is not null && configuredProjects.Count > 1)
     await Console.Error.WriteLineAsync($"Project: {project.Name.Value} ({projectSource}).").ConfigureAwait(false);
 }
 
-var resolvedStore = ProjectResolution.Store(databasePath, Environment.GetEnvironmentVariable, project);
 var resolvedEndpoint = ProjectResolution.Endpoint(brokerAddress, Environment.GetEnvironmentVariable, project);
 var resolvedNodeConfig = ProjectResolution.NodeConfig(
     nodeConfigPath, Environment.GetEnvironmentVariable, manifestPath);
@@ -1111,15 +1061,7 @@ if (verb == "enroll")
         manifestPath).ConfigureAwait(false);
 }
 
-if (databasePath is not null)
-{
-    await Console.Error.WriteLineAsync(
-        "--db is only for `parley serve` and `parley autostart install`. Every other command reaches the broker over the " +
-        "transport and never opens the store: pass --broker, or set " +
-        $"{BrokerEndpoint.Variable}.").ConfigureAwait(false);
 
-    return Usage;
-}
 
 string endpoint;
 
@@ -1539,7 +1481,7 @@ string? TakeOption(string longName, string? shortName)
 string? Repeated()
 {
     var index = arguments.FindIndex(
-        a => a is "--db" or "-d" or "--listen" or "-l" or "--broker" or "-b" or "--log");
+        a => a is "--broker" or "-b" or "--log");
 
     return index < 0
         ? null
