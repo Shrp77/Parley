@@ -50,19 +50,41 @@ public sealed class OneCheckoutOneProcessTests : IDisposable
     private string Evidence => Path.Combine(_root, "launched.txt");
 
     /// <summary>
-    /// A command that leaves one line behind per launch and then stays alive.
+    /// A command that leaves one line behind per launch and then genuinely stays alive.
     /// </summary>
     /// <remarks>
-    /// <b>Staying alive is what makes this measure the right thing.</b> The first version exited at once,
-    /// so the second caller found a resident that was no longer running and started a replacement — which
-    /// is correct (<c>A_turn_for_a_resident_whose_process_has_died_is_cleared_and_named</c> holds the same
-    /// rule) and is not the race. It counted three legitimate restarts as three defects, under load, in the
-    /// full suite only. A live process is what the second caller is supposed to find.
+    /// <para>
+    /// <b>Staying alive is what makes this measure the right thing.</b> A resident that has already exited
+    /// makes the second caller's restart correct rather than a race — that is the rule
+    /// <c>A_turn_for_a_resident_whose_process_has_died_is_cleared_and_named</c> holds — so a fixture whose
+    /// process does not outlive the second call cannot measure the race at all.
+    /// </para>
+    /// <para>
+    /// <b><c>--input-format</c> is what makes it true, and its absence is why this probe was flaky.</b>
+    /// <c>InvocationCommand.Parse</c> appends Claude Code's protocol arguments to every template that does
+    /// not name its own input format, so the earlier version launched
+    /// <c>ping … -p --input-format stream-json …</c>, which ping refuses: the process exited in twenty
+    /// milliseconds rather than running for thirty seconds. Under load the second caller therefore kept
+    /// finding a dead resident and correctly starting a replacement, which this probe counted as the defect
+    /// it was hunting. Measured, not reasoned: 4.07s for a bare five-count ping against 0.020s with those
+    /// arguments appended.
+    /// </para>
+    /// <para>
+    /// The token rides in on an <c>echo</c> to nul. <c>rem</c> cannot carry it: it comments out the rest of
+    /// the line, <c>&amp;</c> included, so the real command never runs.
+    /// </para>
+    /// <para>
+    /// <b>It then waits on standard input rather than sleeping for a fixed time.</b> A sleep is alive for a
+    /// number of seconds somebody guessed and must be killed after the shutdown grace expires, which cost
+    /// this suite forty seconds a run. Waiting on the stream means the process is alive exactly while
+    /// something holds it — which is what a resident agent is — and exits the moment it closes, through the
+    /// polite ending <c>ShutdownAsync</c> is written around.
+    /// </para>
     /// </remarks>
     private string Marking(int attempt) =>
         OperatingSystem.IsWindows()
-            ? $"cmd /c echo {attempt} >> \"{Evidence}\" & ping -n 30 127.0.0.1"
-            : $"sh -c \"echo {attempt} >> '{Evidence}'; sleep 30\"";
+            ? $"cmd /c echo {attempt} >> \"{Evidence}\" & echo --input-format >nul & more"
+            : $"sh -c \"echo {attempt} >> '{Evidence}'; cat\" --input-format";
 
     [Fact]
     public async Task Two_projects_asking_at_the_same_moment_start_it_once()
