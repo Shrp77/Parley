@@ -600,7 +600,13 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/019-one-way-in/plan.md` — **specified and planned, nothing built.** One place for a
+- **Current plan**: `specs/019-one-way-in/` — **specified, planned and broken into 111 tasks; nothing built.**
+  `tasks.md` orders them by what blocks what rather than by requirement number: the MVP is phases 1–3, an
+  operator brings up a deployment by typing one name, with none of the removals, the migration or the
+  enrolment work. Three of its tasks exist because the plan found traps rather than because a requirement
+  named them — the removal stub that puts a verb back into `Program.cs` and fails `PluginTests`, the test rig
+  conversion that is 26 files with one needing a decision rather than an edit, and the two races that each
+  carry a probe which must be watched to fail first. One place for a
   machine's files and one door per job. A project becomes a folder under one root, named by the project, holding
   its own configuration and its own store — so naming a project is the whole of creating one, and `--db`,
   `--listen` and every other way to point outside a project go. A port is handed out from a record at the root,
@@ -631,7 +637,8 @@ below in the form Spec Kit's checks read; this file remains the authority when t
 
 - **The review gate found seven defects in its first six probes, two of them high** — fixed
   at **0.31.2**, **0.31.3** and **0.31.4**, and the
-  count stands at **zero clean runs on lens 1**. `REVIEW-LEDGER.md` carries each with the probe that produced
+  gate has since been **met on all three lenses** on `019-one-way-in` — nine clean runs, with lens 1 reset
+  once and lens 3 twice by findings along the way. `REVIEW-LEDGER.md` carries each with the probe that produced
   it. Two are 017's and two are 018's, and the 018 pair are both consequences of one change — sharing the
   resident table across every project a process hosts, which closed one hazard and opened two.
 

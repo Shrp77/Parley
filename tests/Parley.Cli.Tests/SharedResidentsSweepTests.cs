@@ -78,7 +78,7 @@ public sealed class SharedResidentsSweepTests : IAsyncDisposable
     private static string Standing => StandingAgent.Command;
 
     [Fact]
-    public async Task One_node_loop_ending_leaves_another_nodes_agents_running()
+    public async Task One_node_loop_ending_leaves_the_shared_tables_agents_running()
     {
         var ct = TestContext.Current.CancellationToken;
         var identity = AgentIdentity.Mint();
