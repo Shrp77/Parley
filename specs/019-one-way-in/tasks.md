@@ -41,17 +41,18 @@ Read these before starting; each has a test that fails the build rather than a c
 **Purpose**: everything below depends on a machine's projects being a directory listing rather than a file.
 **No user story can start until this phase is done.**
 
-- [ ] T003 [P] Remove `NodeConfig` from `src/Parley.Core/ProjectSettings.cs` and fix every compile error it produces (FR-068; this is 018's owed T027, absorbed here)
-- [ ] T004 Add `src/Parley.Configuration/ProjectFolder.cs`: given a root and a name, where that project's `project.json` and store are (FR-003, FR-006). Pure path composition, no I/O beyond existence
-- [ ] T005 Add `project.json` read/write to `ProjectFolder`: `endpoint` required and an absolute URI, `description` optional, **no `name`, no `store`, no `node_config`** (data-model.md)
-- [ ] T006 Rewrite `src/Parley.Configuration/ProjectManifest.cs` to derive the project set from the projects directory (FR-005), keeping the type name so callers move in one step
-- [ ] T007 Implement the five bad-folder outcomes as reports rather than failures: no `project.json`, unparseable JSON, missing/invalid `endpoint`, folder name not a project name, and two projects on one endpoint (FR-026 to FR-029)
-- [ ] T008 Delete `ProjectManifest.Collisions`' store and endpoint checks; keep name uniqueness as a property of the filesystem (plan.md, Principle V)
-- [ ] T009 Change `ProjectManifest.Locate` so `--config`/`PARLEY_CONFIG` names the **root**, resolving a value whose final segment is the old manifest file name to its parent — **by name, never by testing existence** (R4, FR-062)
-- [ ] T010 [P] Test in `tests/Parley.Cli.Tests/`: a folder with no `project.json` is silently not a project; an unparseable one is reported naming project and file while the others are read
-- [ ] T011 [P] Test: a folder whose name is not a valid project name is reported and skipped, and does not stop the rest being read
-- [ ] T012 [P] Test: two projects claiming one endpoint are both reported by name and neither is preferred (FR-028)
-- [ ] T013 [P] Test: `--config` given the old `projects.json` path resolves to the directory containing it, and given a directory resolves to itself — including when neither exists yet (R4)
+- [X] T003 [P] Remove `NodeConfig` from `src/Parley.Core/ProjectSettings.cs` and fix every compile error it produces (FR-068; this is 018's owed T027, absorbed here)
+- [X] T004 Add `src/Parley.Configuration/ProjectFolder.cs`: given a root and a name, where that project's `project.json` and store are (FR-003, FR-006). Pure path composition, no I/O beyond existence
+- [X] T005 Add `project.json` read/write to `ProjectFolder`: `endpoint` required and an absolute URI, `description` optional, **no `name`, no `store`, no `node_config`** (data-model.md)
+- [X] T006 Rewrite `src/Parley.Configuration/ProjectManifest.cs` to derive the project set from the projects directory (FR-005), keeping the type name so callers move in one step
+- [X] T007 Implement the five bad-folder outcomes as reports rather than failures: no `project.json`, unparseable JSON, missing/invalid `endpoint`, folder name not a project name, and two projects on one endpoint (FR-026 to FR-029)
+- [X] T008 Delete `ProjectManifest.Collisions`' store and endpoint checks; keep name uniqueness as a property of the filesystem (plan.md, Principle V)
+  - **Done as store and *name*, not store and endpoint.** This task's wording contradicts FR-028 and its own T012, both of which require two projects on one endpoint to be reported by name. The endpoint is the one collision the layout cannot prevent — nothing about a folder stops two of them naming one port — so it is the one check that had to stay. Name and store went, because neither is expressible: a name is a directory entry and a store is derived from it.
+- [X] T009 Change `ProjectManifest.Locate` so `--config`/`PARLEY_CONFIG` names the **root**, resolving a value whose final segment is the old manifest file name to its parent — **by name, never by testing existence** (R4, FR-062)
+- [X] T010 [P] Test in `tests/Parley.Cli.Tests/`: a folder with no `project.json` is silently not a project; an unparseable one is reported naming project and file while the others are read
+- [X] T011 [P] Test: a folder whose name is not a valid project name is reported and skipped, and does not stop the rest being read
+- [X] T012 [P] Test: two projects claiming one endpoint are both reported by name and neither is preferred (FR-028)
+- [X] T013 [P] Test: `--config` given the old `projects.json` path resolves to the directory containing it, and given a directory resolves to itself — including when neither exists yet (R4)
 
 **Checkpoint**: a machine's projects can be read from a directory; nothing yet writes one.
 
