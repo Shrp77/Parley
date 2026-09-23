@@ -71,17 +71,17 @@ Read these before starting; each has a test that fails the build rather than a c
 - [X] T018 [US1] Reconcile before choosing (FR-013): inside the hold, list the projects and treat every endpoint found in a `project.json` as spoken for, whether or not `ports.json` lists it
 - [X] T019 [US1] Choose from the band **19100–19355** and bind-test the candidate inside the hold before recording it (R1; the bind is what `FreePort` lacked, the hold is what serialises it)
 - [X] T020 [US1] Report exhaustion and create nothing (R1, FR-015)
-- [ ] T021 [US1] Rewrite `project add` in `src/Parley.Setup/ProjectCommand.cs` to take a name alone: claim a port, create the folder, write `project.json`, and report the endpoint and the store location (FR-016, FR-017)
-- [ ] T022 [US1] Make `project add` create nothing when the claim fails — no folder, no partial `project.json` (FR-015)
-- [ ] T023 [US1] Keep `--listen` on `project add` for a stated endpoint, bypassing the band, and record it as spoken for (FR-020)
-- [ ] T024 [US1] Check a stated endpoint's availability **on the address it names**, not on loopback (FR-021)
-- [ ] T025 [US1] Keep `--description`, and keep `project set` able to change it (FR-019)
-- [ ] T026 [US1] Release a project's port on `project remove` (FR-014)
-- [ ] T027 [US1] Make `project add` work with no broker running (FR-018)
-- [ ] T028 [P] [US1] **Race probe**: N concurrent `project add` calls against one root must produce N distinct endpoints, repeated enough times that a one-in-many failure is seen (SC-008). Must fail against a version that chooses without the hold
-- [ ] T029 [P] [US1] Test: deleting `ports.json` costs a rebuild and nothing else — every project keeps its endpoint and the next add gets an unused port (SC-009)
-- [ ] T030 [P] [US1] Test each `ports.json` state from data-model.md: missing, empty, lost entries, naming a dead project, naming a port a project does not have
-- [ ] T031 [P] [US1] Test: an unreadable `ports.json` fails the claim and **affects nothing that serves** (FR-011)
+- [X] T021 [US1] Rewrite `project add` in `src/Parley.Setup/ProjectCommand.cs` to take a name alone: claim a port, create the folder, write `project.json`, and report the endpoint and the store location (FR-016, FR-017)
+- [X] T022 [US1] Make `project add` create nothing when the claim fails — no folder, no partial `project.json` (FR-015)
+- [X] T023 [US1] Keep `--listen` on `project add` for a stated endpoint, bypassing the band, and record it as spoken for (FR-020)
+- [X] T024 [US1] Check a stated endpoint's availability **on the address it names**, not on loopback (FR-021)
+- [X] T025 [US1] Keep `--description`, and keep `project set` able to change it (FR-019)
+- [X] T026 [US1] Release a project's port on `project remove` (FR-014)
+- [X] T027 [US1] Make `project add` work with no broker running (FR-018)
+- [X] T028 [P] [US1] **Race probe**: N concurrent `project add` calls against one root must produce N distinct endpoints, repeated enough times that a one-in-many failure is seen (SC-008). Must fail against a version that chooses without the hold
+- [X] T029 [P] [US1] Test: deleting `ports.json` costs a rebuild and nothing else — every project keeps its endpoint and the next add gets an unused port (SC-009)
+- [X] T030 [P] [US1] Test each `ports.json` state from data-model.md: missing, empty, lost entries, naming a dead project, naming a port a project does not have
+- [X] T031 [P] [US1] Test: an unreadable `ports.json` fails the claim and **affects nothing that serves** (FR-011)
 
 **Checkpoint**: US1 is independently demonstrable — `project add orders`, then serve, then connect.
 

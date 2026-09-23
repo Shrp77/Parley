@@ -75,14 +75,15 @@ const string Help = """
                                                        with no project says which one is in use and why
 
       parley project list                              what this machine is configured for
-      parley project add <name> --db <path>            name a deployment, so commands stop
-                        --listen <url>                 being told its paths one at a time
-                        [--node-config <path>]
-                        [--description <text>]
-      parley project set <name> [--db <path>]          change what one says; only the fields
-                        [--listen <url>]               given change, and an empty value
-                        [--node-config <path>]         clears an optional one
-                        [--description <text>]
+      parley project add <name>                        naming it is the whole of creating it:
+                        [--listen <url>]               its store is parley.db in its own folder
+                        [--description <text>]         and its port is claimed, not chosen.
+                                                       --listen states an address instead, for a
+                                                       broker meant to be reachable off this
+                                                       machine
+      parley project set <name> [--listen <url>]       change what one says; only the fields
+                        [--description <text>]         given change, and an empty value
+                                                       clears an optional one
       parley project remove <name> [--destroy]         forget how to reach one; deletes nothing
                                                        without --destroy, which also stops its
                                                        broker and deletes its store and
@@ -454,10 +455,24 @@ if (verb == "use")
 
 if (verb == "project")
 {
+    // **Said rather than ignored.** `project add --db <path>` was how every deployment on this machine
+    // was made, so somebody will type it again from memory or from a script — and a flag silently passed
+    // over is a person believing their store went where they said. A project's store is derived from its
+    // name now, so there is no value this could still honour.
+    if (databasePath is not null)
+    {
+        await Console.Error.WriteLineAsync(
+            "--db is no longer part of naming a project. A project's store is `parley.db` inside its own "
+            + $"folder under {ProjectFolder.ProjectsIn(manifestPath)}, derived from its name, so there is "
+            + "nothing to point at. `parley project add <name>` is the whole of it.").ConfigureAwait(false);
+
+        return Usage;
+    }
+
     return await ProjectCommand.RunAsync(
         rest,
         manifestPath,
-        new ProjectFields(databasePath, listenOn, projectDescription),
+        new ProjectFields(listenOn, projectDescription),
         Console.Out,
         Console.Error,
         destroy: destroy).ConfigureAwait(false);

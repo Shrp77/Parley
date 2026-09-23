@@ -42,7 +42,13 @@ public sealed class ProjectDestroyTests : IDisposable
         }
     }
 
-    private string Manifest => Path.Combine(_directory, "projects.json");
+    /// <summary>Where this machine keeps its Parley files.</summary>
+    /// <remarks>
+    /// **It named the manifest file before 019 and names the root now.** Every reader and writer below
+    /// took the same value, so the change is one line here rather than one per test — which is the whole
+    /// reason `ProjectManifest` kept its type name through the conversion.
+    /// </remarks>
+    private string Root => _directory;
 
     [Fact]
     public async Task With_nothing_serving_the_store_is_deleted_and_the_machines_catalogue_is_not()
@@ -53,7 +59,7 @@ public sealed class ProjectDestroyTests : IDisposable
         var catalogue = Path.Combine(_directory, NodeCatalogue.DefaultFileName);
         var billing = Project("billing");
 
-        ProjectManifest.Write(Manifest, [billing]);
+        ProjectManifest.Write(Root, [billing]);
         await File.WriteAllTextAsync(billing.Store, string.Empty, TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(catalogue, "{}", TestContext.Current.CancellationToken);
 
@@ -65,7 +71,7 @@ public sealed class ProjectDestroyTests : IDisposable
         Assert.False(File.Exists(billing.Store), "the store survived");
         Assert.True(File.Exists(catalogue), "the machine's catalogue was deleted with one project");
 
-        Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
+        Assert.True(ProjectManifest.TryRead(Root, out var left, out _));
         Assert.Empty(left);
     }
 
@@ -80,7 +86,7 @@ public sealed class ProjectDestroyTests : IDisposable
         var orders = Project("orders");
         var billing = Project("billing");
 
-        ProjectManifest.Write(Manifest, [orders, billing]);
+        ProjectManifest.Write(Root, [orders, billing]);
 
         foreach (var path in new[] { orders.Store, billing.Store })
         {
@@ -99,7 +105,7 @@ public sealed class ProjectDestroyTests : IDisposable
     {
         var billing = Project("billing");
 
-        ProjectManifest.Write(Manifest, [billing]);
+        ProjectManifest.Write(Root, [billing]);
         await File.WriteAllTextAsync(billing.Store, string.Empty, TestContext.Current.CancellationToken);
 
         var (code, output, _) = await RemoveAsync("billing", destroy: false);
@@ -118,11 +124,11 @@ public sealed class ProjectDestroyTests : IDisposable
         var orders = Project("orders");
         var billing = Project("billing");
 
-        ProjectManifest.Write(Manifest, [orders, billing]);
+        ProjectManifest.Write(Root, [orders, billing]);
 
         // The real reread: the manifest file, when its stamp moves, exactly as the entry point
         // hands it to the command.
-        var stamp = File.GetLastWriteTimeUtc(Manifest);
+        var stamp = File.GetLastWriteTimeUtc(ProjectFolder.ConfigurationFor(Root, orders.Name));
 
         var output = new StringWriter();
 
@@ -135,7 +141,7 @@ public sealed class ProjectDestroyTests : IDisposable
             TextWriter.Null,
             reread: () =>
             {
-                var now = File.GetLastWriteTimeUtc(Manifest);
+                var now = File.GetLastWriteTimeUtc(ProjectFolder.ConfigurationFor(Root, orders.Name));
 
                 if (now == stamp)
                 {
@@ -144,7 +150,7 @@ public sealed class ProjectDestroyTests : IDisposable
 
                 stamp = now;
 
-                return ProjectManifest.TryRead(Manifest, out var current, out _) ? current : null;
+                return ProjectManifest.TryRead(Root, out var current, out _) ? current : null;
             },
             cancellationToken: stopping.Token);
 
@@ -187,7 +193,7 @@ public sealed class ProjectDestroyTests : IDisposable
 
         var project = new ProjectSettings(ProjectName.Create("byhand"), store, byHand.Address, null);
 
-        ProjectManifest.Write(Manifest, [project]);
+        ProjectManifest.Write(Root, [project]);
 
         var started = DateTime.UtcNow;
         var (code, output, error) = await RemoveAsync("byhand", destroy: true);
@@ -204,7 +210,7 @@ public sealed class ProjectDestroyTests : IDisposable
 
         Assert.True(waited > TimeSpan.FromSeconds(20) && waited < TimeSpan.FromSeconds(60), $"waited {waited}");
 
-        Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
+        Assert.True(ProjectManifest.TryRead(Root, out var left, out _));
         Assert.Empty(left);
 
         // And the broker is untouched by any of it.
@@ -212,26 +218,43 @@ public sealed class ProjectDestroyTests : IDisposable
     }
 
     [Fact]
-    public async Task The_manifest_itself_cannot_be_named_as_a_store_and_so_cannot_be_destroyed()
+    public async Task The_machines_own_files_cannot_be_named_as_a_store_and_so_cannot_be_destroyed()
     {
-        // Lens 2 probe. --destroy deletes whatever the entry names as its store. The one file
-        // whose deletion takes every project with it is the manifest, so an entry naming it must
-        // be refused on the way in -- by `add`, which validates the path -- rather than caught
-        // on the way out.
+        // **A lens 2 probe, and 019 closed it by construction rather than by a better refusal.**
+        // `--destroy` deletes whatever the project names as its store. The files whose deletion takes
+        // every project with it sit at the root — the port record, the machine's catalogue — so a project
+        // naming one of those had to be refused on the way in, by `add`, rather than caught on the way
+        // out.
+        //
+        // There is no way in now. A store is `parley.db` inside a folder named by the project, and no
+        // flag carries a path, so the value that made this possible cannot be supplied. What is asserted
+        // is the property the refusal was protecting: every store lies inside its own project's folder,
+        // so destroying one cannot reach anything the machine shares.
         var output = new StringWriter();
         var error = new StringWriter();
 
         var code = await ProjectCommand.RunAsync(
             ["add", "trap"],
-            Manifest,
-            new ProjectFields(Manifest, "http://127.0.0.1:1", null),
+            Root,
+            new ProjectFields(null, null),
             output,
             error,
             cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.NotEqual(0, code);
-        Assert.False(ProjectManifest.TryRead(Manifest, out var projects, out _) && projects.Count > 0,
-            "an entry naming the manifest as its store was written");
+        Assert.Equal(0, code);
+
+        Assert.True(ProjectManifest.TryRead(Root, out var projects, out var problem), problem);
+
+        var trap = Assert.Single(projects);
+        var folder = ProjectFolder.For(Root, trap.Name);
+
+        Assert.StartsWith(folder + Path.DirectorySeparatorChar, trap.Store, StringComparison.Ordinal);
+
+        // And the root's own files are outside every project folder, which is the other half: a store
+        // confined to a folder is only safe if what must survive is not in one.
+        Assert.False(
+            PortLedger.PathIn(Root).StartsWith(ProjectFolder.ProjectsIn(Root), StringComparison.Ordinal),
+            "the port record sits inside the projects directory, where a destroy could reach it");
     }
 
     [Fact]
@@ -247,7 +270,7 @@ public sealed class ProjectDestroyTests : IDisposable
         var project = new ProjectSettings(
             ProjectName.Create("dir"), directoryStore, "http://127.0.0.1:1", null);
 
-        ProjectManifest.Write(Manifest, [project]);
+        ProjectManifest.Write(Root, [project]);
 
         var (code, output, _) = await RemoveAsync("dir", destroy: true);
 
@@ -276,7 +299,7 @@ public sealed class ProjectDestroyTests : IDisposable
 
         var project = Project("held");
 
-        ProjectManifest.Write(Manifest, [project]);
+        ProjectManifest.Write(Root, [project]);
         await File.WriteAllTextAsync(project.Store, string.Empty, ct);
         await File.WriteAllTextAsync(project.Store + "-wal", string.Empty, ct);
 
@@ -290,7 +313,7 @@ public sealed class ProjectDestroyTests : IDisposable
         Assert.Contains("Removed 'held'", output, StringComparison.Ordinal);
         Assert.True(File.Exists(project.Store), "a held store was deleted");
 
-        Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
+        Assert.True(ProjectManifest.TryRead(Root, out var left, out _));
         Assert.Empty(left);
     }
 
@@ -310,7 +333,7 @@ public sealed class ProjectDestroyTests : IDisposable
 
         var project = Project("held-lock");
 
-        ProjectManifest.Write(Manifest, [project]);
+        ProjectManifest.Write(Root, [project]);
         await File.WriteAllTextAsync(project.Store, string.Empty, ct);
         await File.WriteAllTextAsync(project.Store + "-wal", string.Empty, ct);
 
@@ -336,7 +359,7 @@ public sealed class ProjectDestroyTests : IDisposable
 
         var project = Project("with-lock");
 
-        ProjectManifest.Write(Manifest, [project]);
+        ProjectManifest.Write(Root, [project]);
         await File.WriteAllTextAsync(project.Store, string.Empty, ct);
         await File.WriteAllTextAsync(project.Store + StoreFiles.Lock, string.Empty, ct);
         await File.WriteAllTextAsync(project.Store + StoreFiles.Owner, "pid=1", ct);
@@ -358,7 +381,7 @@ public sealed class ProjectDestroyTests : IDisposable
 
         var project = Project("with-files");
 
-        ProjectManifest.Write(Manifest, [project]);
+        ProjectManifest.Write(Root, [project]);
         await File.WriteAllTextAsync(project.Store, string.Empty, ct);
 
         var folder = Path.Combine(project.Store + StoreFiles.Files, "pricing");
@@ -381,8 +404,8 @@ public sealed class ProjectDestroyTests : IDisposable
 
         var code = await ProjectCommand.RunAsync(
             ["remove", name],
-            Manifest,
-            new ProjectFields(null, null, null),
+            Root,
+            new ProjectFields(null, null),
             output,
             error,
             destroy,
@@ -391,10 +414,13 @@ public sealed class ProjectDestroyTests : IDisposable
         return (code, output.ToString(), error.ToString());
     }
 
+    // **The store is derived, so the fixture cannot put one anywhere.** That is the layout, and it is
+    // also what closes two of the probes below: a store inside the project's own folder cannot be
+    // another project's, and cannot be the machine's own configuration.
     private ProjectSettings Project(string name) =>
         new(
             ProjectName.Create(name),
-            Path.Combine(_directory, name + ".db"),
+            ProjectFolder.StoreFor(Root, ProjectName.Create(name)),
             $"http://127.0.0.1:{FreePort()}",
             null);
 

@@ -331,14 +331,11 @@ internal static class Naming
                     typed => NameProblem(typed, projects),
                     Correct: NameCorrection,
                     Corrected: NameWasCorrected),
-                new FormField(
-                    "Database path — " + proposed.StoreWhy + ":",
-                    proposed.Store ?? ProposedStore("project", projects, entry),
-                    typed => StoreProblem(typed, projects)),
-                new FormField(
-                    "Broker address — " + proposed.EndpointWhy + ":",
-                    proposed.Endpoint,
-                    typed => EndpointProblem(typed, projects)),
+                // **Two fields went, and that is the feature rather than a tidy-up.** A person naming a
+                // project had to invent a filesystem path and pick a free port, on a form that could
+                // only tell them afterwards that one of them clashed. The store is derived from the name
+                // and the port is claimed, so both questions have gone rather than been given better
+                // defaults — which is what "the name is the address" buys, said on a screen.
                 new FormField(
                     "Description (optional) — one line shown beside the name:",
                     string.Empty),
@@ -389,9 +386,8 @@ internal static class Naming
             ["add", values[0]],
             manifestPath,
             new ProjectFields(
-                values[1],
-                values[2],
-                values[3].Length == 0 ? null : values[3]),
+                Endpoint: null,
+                values[1].Length == 0 ? null : values[1]),
             said,
             complained,
             cancellationToken: CancellationToken.None).ConfigureAwait(false);
