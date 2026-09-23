@@ -93,7 +93,7 @@ public sealed class WakeCoalescingTests
 
         // One command, not two. The count is the assertion: `WaitForCommandAsync` answers "did one
         // arrive", which cannot tell one from sixty.
-        Assert.Equal(1, await node.CountCommandsAsync(Settle));
+        Assert.Equal(1, await node.CountCommandsAsync(1, Settle));
     }
 
     [Fact]
@@ -112,7 +112,7 @@ public sealed class WakeCoalescingTests
         Assert.Equal(
             WakeOutcome.AlreadyComing, broker.Runtime.RequestAttentionForMail(Orders, "and told it"));
 
-        Assert.Equal(1, await node.CountCommandsAsync(Settle));
+        Assert.Equal(1, await node.CountCommandsAsync(1, Settle));
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class WakeCoalescingTests
 
         Assert.Equal(WakeOutcome.Started, broker.Runtime.RequestAttentionForMail(Orders, "second"));
 
-        Assert.Equal(2, await node.CountCommandsAsync(Settle));
+        Assert.Equal(2, await node.CountCommandsAsync(2, Settle));
     }
 
     [Fact]
@@ -190,6 +190,6 @@ public sealed class WakeCoalescingTests
         Assert.Equal(1, outcomes.Count(one => one == WakeOutcome.Started));
         Assert.Equal(59, outcomes.Count(one => one == WakeOutcome.AlreadyComing));
 
-        Assert.Equal(1, await node.CountCommandsAsync(Settle));
+        Assert.Equal(1, await node.CountCommandsAsync(1, Settle));
     }
 }

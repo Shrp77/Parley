@@ -75,7 +75,10 @@ public sealed class WakeUnderLoadTests
                 },
                 token)));
 
-            var commands = await node.CountCommandsAsync(Settle);
+            // At least one is owed — the assertion below says so — so it is waited for rather than
+            // slept over, and the settling window then catches any extras the ceiling should have
+            // suppressed. A fixed sleep alone could not tell "woke nobody" from "not yet".
+            var commands = await node.CountCommandsAsync(1, Settle);
 
             Assert.True(
                 commands <= recipients.Length,

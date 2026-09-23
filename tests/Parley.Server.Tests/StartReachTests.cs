@@ -151,7 +151,7 @@ public sealed class StartReachTests
                 cancellationToken: token);
         }
 
-        var commands = await node.CountCommandsAsync(TimeSpan.FromSeconds(2));
+        var commands = await node.CountCommandsAsync(5, TimeSpan.FromSeconds(2));
 
         Assert.Equal(5, commands);
     }

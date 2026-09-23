@@ -57,7 +57,7 @@ public sealed class WakeLifecycleTests
         Assert.False(broker.Runtime.AttentionPending(Orders));
 
         Assert.Equal(WakeOutcome.Started, broker.Runtime.RequestAttentionForMail(Orders, "again"));
-        Assert.Equal(1, await again.CountCommandsAsync(Settle));
+        Assert.Equal(1, await again.CountCommandsAsync(1, Settle));
     }
 
     [Fact]
@@ -94,12 +94,12 @@ public sealed class WakeLifecycleTests
             cancellationToken: token);
 
         Assert.True(broker.Runtime.AttentionPending(Orders));
-        Assert.Equal(2, await node.CountCommandsAsync(Settle));
+        Assert.Equal(2, await node.CountCommandsAsync(2, Settle));
 
         _ = await sender.Client.RequestAsync(
             Requests.Open("billing@alpha", "orders@alpha", "request after the drain"), cancellationToken: token);
 
-        Assert.Equal(2, await node.CountCommandsAsync(Settle));
+        Assert.Equal(2, await node.CountCommandsAsync(2, Settle));
     }
 
     [Fact]

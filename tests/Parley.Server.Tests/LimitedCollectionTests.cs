@@ -76,7 +76,7 @@ public sealed class LimitedCollectionTests
             }
 
             Assert.True(broker.Runtime.AttentionPending(Orders));
-            Assert.Equal(2, await node.CountCommandsAsync(Settle));
+            Assert.Equal(2, await node.CountCommandsAsync(2, Settle));
         }
     }
 
@@ -99,7 +99,7 @@ public sealed class LimitedCollectionTests
             }
 
             Assert.False(broker.Runtime.AttentionPending(Orders));
-            Assert.Equal(1, await node.CountCommandsAsync(Settle));
+            Assert.Equal(1, await node.CountCommandsAsync(1, Settle));
         }
     }
 }

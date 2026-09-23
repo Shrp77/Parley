@@ -50,19 +50,24 @@ public sealed class OneCheckoutOneProcessTests : IDisposable
     private string Evidence => Path.Combine(_root, "launched.txt");
 
     /// <summary>
-    /// A command that leaves one line behind per launch and then stays alive.
+    /// A command that leaves one line behind per launch and then genuinely stays alive.
     /// </summary>
     /// <remarks>
-    /// <b>Staying alive is what makes this measure the right thing.</b> The first version exited at once,
-    /// so the second caller found a resident that was no longer running and started a replacement — which
-    /// is correct (<c>A_turn_for_a_resident_whose_process_has_died_is_cleared_and_named</c> holds the same
-    /// rule) and is not the race. It counted three legitimate restarts as three defects, under load, in the
-    /// full suite only. A live process is what the second caller is supposed to find.
+    /// <para>
+    /// <b>Staying alive is what makes this measure the right thing.</b> A resident that has already exited
+    /// makes the second caller's restart correct rather than a race — that is the rule
+    /// <c>A_turn_for_a_resident_whose_process_has_died_is_cleared_and_named</c> holds — so a fixture whose
+    /// process does not outlive the second call cannot measure the race at all.
+    /// </para>
+    /// <para>
+    /// <see cref="StandingAgent"/> carries why the command is not the obvious one — and this probe is the
+    /// reason that file exists. It believed it was launching something that lived thirty seconds and was
+    /// launching something that exited in twenty milliseconds, so under load its second caller kept
+    /// finding a dead resident and correctly starting a replacement, which this counted as the defect it
+    /// was hunting.
+    /// </para>
     /// </remarks>
-    private string Marking(int attempt) =>
-        OperatingSystem.IsWindows()
-            ? $"cmd /c echo {attempt} >> \"{Evidence}\" & ping -n 30 127.0.0.1"
-            : $"sh -c \"echo {attempt} >> '{Evidence}'; sleep 30\"";
+    private string Marking(int attempt) => StandingAgent.Recording(Evidence, attempt);
 
     [Fact]
     public async Task Two_projects_asking_at_the_same_moment_start_it_once()

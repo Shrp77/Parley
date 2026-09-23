@@ -444,13 +444,30 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
         return new JoinedNodeClient(nodes, machine, stream);
     }
 
-    /// <summary>Counts every command that arrived within a window.</summary>
+    /// <summary>Counts every command that arrived within a window, waiting for none of them.</summary>
     /// <param name="within">How long to collect for.</param>
     /// <returns>How many arrived.</returns>
     /// <remarks>
-    /// For asserting that N asks produce N commands rather than more. <c>WaitForCommandAsync</c>
-    /// answers "did one arrive", which cannot tell one from six -- and one keystroke becoming six
-    /// processes is exactly the failure worth checking on an operation that starts processes.
+    /// <para>
+    /// <b>Use this only where nothing is owed — an expectation of zero, or a ceiling.</b> It sleeps a
+    /// fixed window and counts, so a command still in flight is indistinguishable from one never sent.
+    /// Where a positive number is expected, that ambiguity is the whole assertion, and
+    /// <see cref="CountCommandsAsync(int, TimeSpan, TimeSpan?)"/> is the one to call: it waits for what is
+    /// owed first, then listens for what is not.
+    /// </para>
+    /// <para>
+    /// <b>This is written as a rule because following it halfway is what happened.</b> The waiting overload
+    /// was added with the argument beside it, and applied to exactly one of the fifteen call sites that
+    /// needed it. The other fourteen went on sleeping, and surfaced as two different tests failing in two
+    /// different full-suite runs — each passing every time its class ran alone, which is precisely the
+    /// signature the other overload's remarks describe. One implementation of a rule and fourteen
+    /// imitations of the thing it replaced.
+    /// </para>
+    /// <para>
+    /// Counting at all is still the point where something is owed: <c>WaitForCommandAsync</c> answers "did
+    /// one arrive", which cannot tell one from six — and one keystroke becoming six processes is exactly
+    /// the failure worth checking on an operation that starts processes.
+    /// </para>
     /// </remarks>
     public async Task<int> CountCommandsAsync(TimeSpan within)
     {
