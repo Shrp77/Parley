@@ -920,9 +920,6 @@ if (verb == "autostart" && rest.Length == 1)
         return Usage;
     }
 
-    var entryStore = named?.Store;
-    var listenAddress = named?.Endpoint;
-
     // A catalogue nobody named is used only if it is actually there. Every other resolution ends
     // at `node.json`, which is the right answer for a command typed in a directory and the wrong
     // one to write into a logon task: relative there means "wherever the supervisor happens to
@@ -948,8 +945,8 @@ if (verb == "autostart" && rest.Length == 1)
 
     return await AutostartCommand.RunAsync(
         rest[0],
-        entryStore,
-        listenAddress,
+        manifestPath,
+        named?.Name.Value,
         hostFrom,
         webUiFor,
         servesManifest ? manifestPath : null,

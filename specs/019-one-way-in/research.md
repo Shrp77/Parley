@@ -60,14 +60,19 @@ a constant, not a setting, until somebody needs it to be one.
 **Exhaustion** is reported and nothing is created — the same shape as a failed claim. A machine with 256
 projects has a problem this command should not paper over.
 
-**The band is for what is handed out, and what is handed out is loopback.** SPEC.md §16 confines the
+**The band is for what is handed out, and everything handed out is loopback.** SPEC.md §16 confines the
 transport to *"a loopback connection, a private network somebody controls, or a tunnel authenticated
 outside this protocol"* — so a broker reachable from another machine is supported, and an early draft of
 this plan assumed it away. It cannot be chosen automatically: nothing here knows which interface a person
-means to expose, and guessing would put a broker on a network by accident. So a non-loopback endpoint is
-**stated** (FR-020), stating it bypasses the band, and the availability check binds **the address named**
-rather than loopback (FR-021) — because `127.0.0.1:n` binding says nothing about `0.0.0.0:n`, and the
-difference surfaces at the next start on the interface nobody was watching.
+means to expose, and guessing would put a broker on a network by accident.
+
+**Amended 2026-09-23, the owner's call.** This paragraph concluded that a non-loopback endpoint is
+*stated* on the command line (FR-020), bypassing the band, with the availability check binding the address
+named (FR-021). Both requirements are withdrawn and `--listen` is gone. The premise above survives intact
+— what changed is where the remedy lives: a deployment that must be reachable elsewhere has its endpoint
+edited in `projects/<name>/project.json`, which is one place rather than a flag plus a precedence rule.
+**The cost is real and is recorded rather than glossed: no command makes a broker reachable off this
+machine.**
 
 **Windows reserves ranges, and they move.** Besides the ephemeral range there are *excluded* port ranges,
 claimed by Hyper-V and WSL and **reallocated at boot**. On the machine that prompted this,
@@ -78,10 +83,10 @@ excluded block beginning at 53284.** A reallocation that shifts down by one take
 permissions fault rather than a taken port. 19100–19355 is clear of every exclusion on that machine, and
 the claim's bind test is what handles a range that moves later.
 
-**Existing projects keep their ports** (R6). What the migration does is report, and what it reports
-depends on whether the endpoint is reachable from off the machine — a loopback port is this machine's
-business alone and costs nothing to move, while a network endpoint is held by firewall rules, other
-machines' `PARLEY_BROKER`, and tunnels that no command here can rewrite.
+**There are no existing projects to keep ports for.** This paragraph planned what a migration would
+report about an endpoint reachable from off the machine. Nothing has been released, so there is nothing to
+migrate: `reset.ps1` clears what the old layout left on a developer's machine and every project is created
+fresh. See R6, withdrawn on the same grounds.
 
 **Reconciliation (FR-013).** The record is bookkeeping and the projects are the truth. On every claim,
 after taking the hold: read every project's configuration, and treat any endpoint found there as spoken
@@ -125,7 +130,7 @@ project's configuration*, and every consequence is already handled:
   seconds, and the failure line would fill the log."*
 - **An unreadable configuration** is already survivable: the loop's `catch` sets `current = null` and
   stops nothing, *"because nothing is stopped on the strength of a file somebody is halfway through
-  editing."* That generalises to one unreadable project among many, which is FR-020.
+  editing."* That generalises to one unreadable project among many, which is FR-029.
 
 **What the change does cost** is N directory entries and N small file reads every two seconds instead of
 one. At the scale this runs at — a machine with a handful of projects — that is not worth engineering
@@ -143,35 +148,32 @@ around, and the alternative costs a great deal.
 
 ## R4. What `--config` becomes
 
-**Decision.** `--config` and `PARLEY_CONFIG` name **the root directory**. A value that names a file is
-accepted and resolved to the directory containing it, for at least this release, with one line saying so.
+**Decision.** `--config` and `PARLEY_CONFIG` name **the root directory**, and nothing else.
 
-**The rule is stated once and read everywhere**, in the one place that resolves it today —
-`ProjectManifest.Locate`. Nothing else learns the old spelling, so there is one implementation of the
-compatibility rule rather than one per caller. That is the lesson `LaunchKey` cost during 018, where the
-launch-key rule grew a second implementation that happened to agree for one build.
+**Amended 2026-09-23, the owner's call.** This decision originally accepted a value naming the old
+manifest *file* and resolved it to the directory containing it, "for at least this release", because the
+owner's live scheduled task held that path verbatim. That accommodation is withdrawn: **nothing has been
+released**, the only machine carrying the old layout is the one this was written on, and `reset.ps1`
+clears it. A compatibility rule kept "for one release" on a product with no releases has no expiry, and
+this feature exists because a deployment was arrived at one accommodation at a time.
 
-**How the old spelling is recognised.** Not by testing whether the path exists — a machine being set up
-has neither file nor directory yet, and a rule that behaves differently before and after first run is a
-rule nobody can reason about. It is recognised **by name**: a value whose final segment is the manifest's
-own file name is treated as naming its parent. Anything else is a directory.
+**What happens instead is a refusal, and a loud one.** A value whose final segment is `projects.json` is
+reported — naming the directory to point at, and naming `reset.ps1` — rather than silently resolved.
+Recognised by name, never by asking the filesystem: a machine being set up has neither the file nor the
+directory, and a rule that behaves differently before and after first run is a rule nobody can reason
+about.
 
-**Why this matters more than it looks.** The owner's live scheduled task holds
-`--config C:\Users\Shrp7\AppData\Roaming\Parley\projects.json` verbatim. FR-063 says that entry must go on
-starting a Parley that serves everything, and it will: the value resolves to
-`C:\Users\Shrp7\AppData\Roaming\Parley`, which is the root. Without this rule the machine stops serving at
-its next logon, with nothing on screen connecting it to an upgrade.
-
-**`autostart status` says when an entry is in the old form** (FR-064), which is the only place an operator
-would learn it. `InstalledEntry` already reads options this version no longer writes, and already reports
-that — 0.22.0 established both the pattern and the wording.
+**Stated once, in `ProjectManifest`.** Nothing else learns the old spelling, so there is one
+implementation rather than one per caller — which is the lesson `LaunchKey` cost during 018, and which
+this feature then paid for again in `LockFor`.
 
 **Rejected:**
 
-- *Accepting a file path silently.* It would work and teach nobody. The entry is only rewritten when
+- *Accepting a file path silently.* It would work and teach nobody, and the entry is only rewritten when
   somebody knows it needs rewriting.
-- *Refusing the old spelling with a good message.* Correct in the abstract and it breaks a running
-  machine at logon, which is the one moment nobody is watching.
+- *Treating the old path as a root.* Worse than either: it would look for `projects.json/projects/`, find
+  nothing, and report a well-configured machine as having no projects — a green-looking answer to a
+  question nobody asked.
 - *A second variable for the root.* Two names for one thing, and every document then has to explain which
   is current.
 
@@ -179,58 +181,30 @@ that — 0.22.0 established both the pattern and the wording.
 
 ## R6. The migration command
 
-**Decision.** One command. It takes the lock on each store **first, as the check that nothing is serving**,
-then moves the store and every file belonging to it into the project's folder, then rewrites the
-configuration. It is resumable because it works one project at a time and each project's move is ordered
-so that an interruption leaves either the old location or the new one complete.
+**Withdrawn 2026-09-23, the owner's call: there is no migration.**
 
-**What travels with a store is already enumerated in this repository**, by `project remove --destroy` in
-`ProjectCommand.cs`. The list is the store itself and:
+This decision designed a command that took each store's lock first as the check that nothing was serving,
+moved the store and its companions into the project's folder, and rewrote the configuration — resumable,
+because it worked one project at a time.
 
-| | |
-|---|---|
-| `-wal`, `-shm`, `-journal` | SQLite's own companions |
-| `.lock` | the broker's exclusive claim (`StoreFiles.Lock`) |
-| `.owner` | who holds it (`StoreFiles.Owner`) |
-| `.files` | the file location of §9.5, a **directory** |
-| `.files-incoming` | staging for placements in progress, a **directory** |
+**None of it is needed, and the premise it rested on was never examined.** The plan assumed deployments
+existed to migrate. Nothing has been released. The only machine carrying the old layout is the one this
+was written on, and what it wants is a clean start.
 
-FR-057 is written as "every file belonging to a store" precisely so that it stays true if that set
-changes; the implementation reads the same list the destroy path does, rather than a second copy of it.
+**What replaces it is `reset.ps1`**, which is smaller and honest about what it does: it stops the broker,
+removes the autostart entry, reads the old manifest *before* deleting it so every store it named goes with
+its `-wal`, `-shm`, `.lock`, `.owner` and file-location companions, and **keeps `node.json`** so nobody
+re-enrols a repository by hand.
 
-**The lock is the check, not a file to tidy, and that ordering is inherited rather than invented.** The
-destroy path's comment says it exactly: *"A broker serving this store holds it for as long as it serves,
-so failing to delete it means something still is — a broker this command did not stop... Deleting the
-store out from under that broker, and then reporting that the lock could not go, would be the partial
-destruction this ordering exists to prevent."* The migration takes the lock for the same reason and gets
-the same guarantee: if it cannot, something is serving, and it stops before touching anything and says
-which process holds it (FR-056's cost statement, and the edge case about naming the holder).
+**One thing the migration design got right is kept**: the ordering. Take the lock first, because
+`StoreLock` holds a store with no sharing and a running broker cannot have its files deleted underneath
+it. The script does that by stopping the broker before it reads anything.
 
-**`.lock` and `.owner` are not moved — they are left behind and recreated.** Both describe a process that
-is not running, since the migration just proved that. Moving them would carry a stale owner record into a
-new location where the next refused broker would believe it. The old ones are deleted last, after the move
-has succeeded, for the same reason the destroy path deletes the lock first: a lock left at the old path is
-how two brokers come to serve one store.
-
-**Resumption (FR-060).** Per project, the order is: copy every file to the new location, verify, rewrite
-the configuration, then delete the old files. An interruption therefore leaves either (a) both copies with
-the configuration still naming the old one — resumable, and the old one is authoritative; or (b) both
-copies with the configuration naming the new one — resumable, and the new one is authoritative. **In both
-cases the configuration says which copy is real**, so re-running finishes rather than guessing. FR-049's
-never-overwrite makes (a) safe to repeat: a destination that already holds a file is not written, and a
-re-run compares rather than clobbers.
-
-**Rejected:**
-
-- *Move rather than copy-then-delete.* One step and atomic on the same volume — and not atomic across
-  volumes, which is exactly the case this feature exists for, since the stores being moved are on a
-  different drive from the root.
-- *Moving the lock and owner files.* They describe a dead process. Carrying them forward is carrying a
-  lie.
-- *Doing it inside `serve` on first start.* It needs the broker stopped, which a broker cannot arrange for
-  itself; and a data move that happens because something started is a data move nobody chose.
-
----
+**And one thing it got wrong is recorded.** The first version of the script sandboxed its *files* with a
+`-Root` parameter while `parley autostart remove` went on acting on the real machine — and removed a live
+logon entry on the machine that was writing it. `-FilesOnly` exists because of that. **A parameter that
+sandboxes the files and not the machine is not a sandbox**, which is the fourth time this repository has
+recorded a test reaching a real deployment through a seam that covered the wrong thing.
 
 ## R3. The test rig conversion
 

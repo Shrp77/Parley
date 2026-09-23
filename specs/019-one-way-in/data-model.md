@@ -50,7 +50,7 @@ One per project, inside that project's folder.
 
 **There is no `name`.** The folder is the name (FR-004), so the two cannot disagree. A reader takes the
 name from the directory entry and validates it as a project name; a folder whose name is not one is not a
-project and is reported (FR-021).
+project and is reported (FR-029).
 
 **There is no `store`.** It is derived: `<root>/projects/<name>/parley.db` (FR-006). FR-007 removes the
 ability to put it anywhere else, so there is nothing to record.
@@ -64,9 +64,9 @@ because this is the change that replaces the file it lived in.
 | Case | Result |
 |---|---|
 | Folder with no `project.json` | Not a project. Silent — half-created, or somebody's scratch directory. |
-| `project.json` that is not valid JSON | Reported naming the project and the file; the others are read (FR-020). |
+| `project.json` that is not valid JSON | Reported naming the project and the file; the others are read (FR-029). |
 | `endpoint` missing or not a URI | Same: reported, others read. |
-| Folder name not a valid project name | Reported, skipped (FR-021). |
+| Folder name not a valid project name | Reported, skipped (FR-027). |
 | Two projects with one `endpoint` | Both reported by name, neither preferred (FR-022). |
 
 The rule throughout is FR-023's: what cannot be read is reported *as that project's file*, never as the

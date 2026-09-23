@@ -48,7 +48,7 @@ Read these before starting; each has a test that fails the build rather than a c
 - [X] T007 Implement the five bad-folder outcomes as reports rather than failures: no `project.json`, unparseable JSON, missing/invalid `endpoint`, folder name not a project name, and two projects on one endpoint (FR-026 to FR-029)
 - [X] T008 Delete `ProjectManifest.Collisions`' store and endpoint checks; keep name uniqueness as a property of the filesystem (plan.md, Principle V)
   - **Done as store and *name*, not store and endpoint.** This task's wording contradicts FR-028 and its own T012, both of which require two projects on one endpoint to be reported by name. The endpoint is the one collision the layout cannot prevent — nothing about a folder stops two of them naming one port — so it is the one check that had to stay. Name and store went, because neither is expressible: a name is a directory entry and a store is derived from it.
-- [X] T009 Change `ProjectManifest.Locate` so `--config`/`PARLEY_CONFIG` names the **root**, resolving a value whose final segment is the old manifest file name to its parent — **by name, never by testing existence** (R4, FR-062)
+- [X] T009 Change `ProjectManifest.Locate` so `--config`/`PARLEY_CONFIG` names the **root** (R4). **The compatibility half was built and then removed 2026-09-23 with FR-062**: the old spelling is refused by name, naming the directory to point at and `reset.ps1`, rather than silently resolved
 - [X] T010 [P] Test in `tests/Parley.Cli.Tests/`: a folder with no `project.json` is silently not a project; an unparseable one is reported naming project and file while the others are read
 - [X] T011 [P] Test: a folder whose name is not a valid project name is reported and skipped, and does not stop the rest being read
 - [X] T012 [P] Test: two projects claiming one endpoint are both reported by name and neither is preferred (FR-028)
@@ -73,8 +73,8 @@ Read these before starting; each has a test that fails the build rather than a c
 - [X] T020 [US1] Report exhaustion and create nothing (R1, FR-015)
 - [X] T021 [US1] Rewrite `project add` in `src/Parley.Setup/ProjectCommand.cs` to take a name alone: claim a port, create the folder, write `project.json`, and report the endpoint and the store location (FR-016, FR-017)
 - [X] T022 [US1] Make `project add` create nothing when the claim fails — no folder, no partial `project.json` (FR-015)
-- [X] T023 [US1] Keep `--listen` on `project add` for a stated endpoint, bypassing the band, and record it as spoken for (FR-020)
-- [X] T024 [US1] Check a stated endpoint's availability **on the address it names**, not on loopback (FR-021)
+- [X] ~~T023 [US1] Keep `--listen` on `project add` for a stated endpoint~~ — **reversed 2026-09-23.** Built as written, then removed with FR-020: `--listen` is gone everywhere and an endpoint that must not be loopback is edited in `project.json`
+- [X] ~~T024 [US1] Check a stated endpoint's availability on the address it names~~ — **reversed with T023.** Nothing states an endpoint, so `PortLedger.TryReserve` and `CanBindAt` went with it
 - [X] T025 [US1] Keep `--description`, and keep `project set` able to change it (FR-019)
 - [X] T026 [US1] Release a project's port on `project remove` (FR-014)
 - [X] T027 [US1] Make `project add` work with no broker running (FR-018)
@@ -97,7 +97,7 @@ Read these before starting; each has a test that fails the build rather than a c
 - [ ] T032 [US2] Remove `--db`/`-d` and `PARLEY_DB` from `src/Parley.Cli/Program.cs` and from `serve` (FR-007, FR-031)
 - [X] T033 [US2] Remove `--db` from `project add` — the only way a store path is set today (R3's first scope question)
 - [ ] T034 [US2] Remove `--node-config` from `project add` and `project set`, which wrote a field nothing reads (FR-052)
-- [ ] T035 [US2] Keep `InstalledEntry.Parse`'s `case "--db":` read path so `autostart status` can describe an entry a previous version wrote (R3, FR-063; 0.22.0's *stop writing, stop accepting, keep reading*)
+- [ ] ~~T035 [US2] Keep `InstalledEntry.Parse`'s `case "--db":` read path~~ — **withdrawn with FR-063.** No previous version's entry needs describing; `reset.ps1` and a reinstall replace it
 - [ ] T036 [US2] Convert `tests/Parley.Cli.Tests/BrokerProcess.cs`: `Start` takes a root and a project name, writes `<root>/projects/<name>/project.json` **directly** with a `FreePort()` endpoint, and keeps reading the real address off stdout (R3 — the rig must not allocate, because the band is per machine and the root is per test)
 - [ ] T037 [US2] Remove `PARLEY_DB` from `ToolProcess.cs`'s variable clear-list, keeping the neutral working directory
 - [ ] T038 [US2] Delete `OneStoreIsForTestingTests.cs`, `ForeignDatabaseTests.cs`, `NoManifestParityTests.cs` — ~24 tests whose subject is `--db` itself
@@ -165,35 +165,37 @@ Read these before starting; each has a test that fails the build rather than a c
 
 ---
 
-## Phase 8: US6 — An existing deployment moves without losing anything (P2)
+## Phases 8 and 9 — withdrawn 2026-09-23, the owner's call
 
-**Goal**: one command puts an existing deployment into the layout, losing nothing.
+**US6 (an existing deployment moves) and US7 (a machine that has not been reinstalled still starts) are
+both cut. Nothing has been released, so there is nothing to move and nothing to strand.**
 
-- [ ] T076 [US6] Add `project migrate` to `src/Parley.Setup/ProjectCommand.cs`, working **one project at a time** (R6, FR-055)
-- [ ] T077 [US6] Take each store's lock **first, as the check that nothing is serving**, and stop before touching anything if it cannot be taken — naming the process that holds it (R6, FR-056)
-- [ ] T078 [US6] State before changing anything that the broker must stop and what that costs, and do not proceed without acceptance (FR-056)
-- [ ] T079 [US6] Move every file belonging to a store by reading **the same list `project remove --destroy` reads**, not a second copy: `-wal`, `-shm`, `-journal`, `.lock`, `.owner`, `.files/`, `.files-incoming/` (FR-057, R6)
-- [ ] T080 [US6] Copy, verify, rewrite the configuration, then delete — in that order, so an interruption leaves the configuration naming whichever copy is authoritative (R6, FR-060)
-- [ ] T081 [US6] Never overwrite anything at a destination (FR-058)
-- [ ] T082 [US6] Leave `.lock` and `.owner` behind and recreate them — they describe a process that is not running, and carrying them forward carries a lie (R6)
-- [ ] T083 [US6] Leave a project already in the standard place alone and report it as such (FR-059)
-- [ ] T084 [US6] Name the project it stopped on, leave a deployment that still starts, and be safe to run again (FR-060)
-- [ ] T085 [P] [US6] Test: a store, its WAL, its shared-memory file and both file directories all arrive; a conversation readable before is readable after (FR-061, SC-006)
-- [ ] T086 [P] [US6] Test: a move interrupted after the copy and before the delete finishes correctly on a second run (FR-060)
-- [ ] T087 [P] [US6] Test: a destination already holding a file is not written over, and the move says so (FR-058)
-- [ ] T088 [P] [US6] Test: a running broker's store cannot be migrated, and the refusal names the holding process rather than reporting a file in use
+Twenty-two tasks go with them — T076 to T093 — along with FR-046 to FR-064's compatibility half and
+research R6. They were careful work: take each store's lock first as the check that nothing is serving,
+copy then verify then rewrite then delete so an interruption leaves the configuration naming whichever
+copy is authoritative, never overwrite a destination, leave `.lock` and `.owner` behind because they
+describe a process that is not running and carrying them forward carries a lie.
 
----
+**All of it rested on a premise nobody examined: that deployments exist to migrate.** The only machine
+carrying the old layout is the one this was written on.
 
-## Phase 9: US7 — A machine that has not been reinstalled still starts (P2)
+**What replaces them is `reset.ps1`**, at the repository root:
 
-**Goal**: an entry in the old spelling goes on serving everything.
+- [X] T076 Add `reset.ps1`: stop the broker, remove the autostart entry, read the old manifest **before**
+  deleting it so every store it names goes with its `-wal`, `-shm`, `.lock`, `.owner`, `.files` and
+  `.files-incoming` companions
+- [X] T077 Keep `node.json` — the machine's agent catalogue is keyed by identity since 018 and unchanged
+  by 019, and deleting it would mean re-enrolling every repository by hand
+- [X] T078 Give it `-FilesOnly`, which skips every machine effect. **Its first run removed a live logon
+  entry**: `-Root` sandboxed the files while `parley autostart remove` went on acting on the real machine.
+  A parameter that sandboxes the files and not the machine is not a sandbox
+- [X] T079 Take the store list from the old manifest rather than guessing, because once it is deleted
+  nothing knows where those stores were
+- [ ] T080 An `install.sh` counterpart for the platforms `install.sh` covers
 
-- [ ] T089 [US7] Confirm T009's rule carries the owner's live entry: `--config <…>/projects.json` resolves to `<…>` and serves every project (FR-062, FR-063)
-- [ ] T090 [US7] Ignore options this version no longer offers when starting from such an entry, rather than refusing (FR-063)
-- [ ] T091 [US7] Make `autostart status` say when an entry is written in a form this version no longer produces, and name what to run to replace it (FR-064)
-- [ ] T092 [P] [US7] Test: an entry written in the old spelling, with old options, starts a Parley that serves everything (SC-007)
-- [ ] T093 [P] [US7] Test: `autostart status` reports the old form and names the remedy
+**One rule from the withdrawn work is kept and is load-bearing**: the broker stops first, because
+`StoreLock` holds a store with no sharing and a running broker cannot have its files deleted underneath
+it.
 
 ---
 
@@ -262,38 +264,26 @@ name — and is independently demonstrable without any of the removals, the migr
 - T099–T104 (documents) at any time after Phase 7
 - Phase 7 entirely, alongside Phases 3–6
 
-## Open decision: the terminal's "Name the running deployment"
+## Settled: the terminal's "Name the running deployment" is deleted
 
-**Neither `spec.md` nor `plan.md` mentions this flow, and 019 makes it unexpressible.** Found while
-converting the terminal suite, not while planning.
+**Decided 2026-09-23, and by the flags going rather than on its own merits.**
 
-`Naming.OpenNameRunningAsync` exists to adopt a broker *already serving* on a store and a port taken from
-the autostart entry — its own comment says "every answer is already in the entry, so the one thing typed is
-the name". A project's store is now derived from its name and its port is claimed, so there is nowhere for
-either answer to go.
+Neither `spec.md` nor `plan.md` mentioned this flow. It was found while converting the terminal suite:
+`Naming.OpenNameRunningAsync` adopted a broker *already serving*, reading its store and port out of an
+autostart entry — "every answer is already in the entry, so the one thing typed is the name."
 
-**The trap, and the reason this is a decision rather than an edit.** Deriving a fresh store and keeping the
-stated endpoint compiles, passes, and points the newly named project at an *empty* database while the
-running broker still holds the real one. Every conversation in that deployment would appear to have
-vanished. Nothing in the type system or the suite objects.
+`CanNameRunning` required an entry that serves one explicit store, which is an entry written with `--db`.
+**Nothing can write one now**, so no machine will have one again; and the owner's own entry served the
+manifest, so the screen was already unreachable there.
 
-Two honest options:
+**The trap it left behind is why this needed deciding rather than editing.** Deriving a fresh store and
+keeping the stated endpoint compiles, passes, and points the newly named project at an *empty* database
+while the running broker still holds the real one — every conversation in that deployment appearing to
+have vanished, with nothing objecting.
 
-1. **Fold it into the migration (US6).** Adopting a running store means moving it, which means stopping the
-   broker, which is exactly what the migration command already has to state before it acts. Fewer doors onto
-   one destructive act, which is the argument `SurfaceTests` enforces elsewhere.
-2. **Keep it on the terminal as a door onto that same migration**, behind a description and the project's
-   name typed back — consistent with `Removing` and `Withdrawing`, and with the owner's twice-stated
-   principle that a surface which can create a thing should be able to remove it.
-
-**Tied to it:** `Naming.EndpointProblem` is dead in `src` and named only by the tests. `--listen` survives
-for a broker meant to be reachable off this machine (FR-020), so either the create form keeps an optional
-endpoint field or stating an endpoint becomes CLI-only. `Naming.ProposedStore` and the `Store`/`StoreWhy`
-fields of `Proposed` were unambiguously dead and have gone; `Naming.StoreProblem` is dead too and goes with
-whichever option is taken.
-
-`NamingTests.The_running_deployment_is_named_from_a_form_that_is_already_filled_in` is **left red on
-purpose** until this is settled, rather than made to pass in a way that encodes a guess.
+Gone with it: `Naming.NameRunningTitle`, `CanNameRunning`, `OpenNameRunningAsync`, `Shell.NameRunning`,
+`Naming.ProposedStore`, `StoreProblem`, `EndpointProblem`, and the `Store`/`StoreWhy` fields of
+`Proposed`. The create form is two fields: a name, and an optional description.
 
 ## What must be true at the end
 

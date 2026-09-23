@@ -340,14 +340,25 @@ beside the machine catalogue — and not inferred by reading every project.*
 - **FR-017**: Creating a project MUST report the endpoint and the store location it chose.
 - **FR-018**: Creating a project MUST NOT require a running broker.
 - **FR-019**: An operator MUST be able to give a description, and to change it later.
-- **FR-020**: An operator MUST be able to state a project's endpoint explicitly, **including one that is
-  not loopback**, and it MUST take precedence over any endpoint that would have been handed out. A stated
-  endpoint MUST be recorded as spoken for so that nothing else is given its port.
-  *SPEC.md §16 permits a broker reachable over a private network or a tunnel. What this feature can choose
-  for somebody is a loopback endpoint and nothing else — it cannot know which interface a person means to
-  expose, and guessing would put a broker on a network by accident.*
-- **FR-021**: A stated endpoint MUST be checked for availability on **the address it names**, not on
-  loopback. *Binding `127.0.0.1:n` proves nothing about `0.0.0.0:n`.*
+> **FR-020 and FR-021 are withdrawn — amended 2026-09-23, the owner's call.** They required an operator
+> to be able to state an endpoint on the command line, including a non-loopback one, with the
+> availability check binding the address named.
+>
+> - ~~**FR-020**: An operator MUST be able to state a project's endpoint explicitly.~~
+> - ~~**FR-021**: A stated endpoint MUST be checked on the address it names.~~
+>
+> **The reasoning behind them survives and is worth keeping, because it is nearly right.** SPEC.md §16
+> does permit a broker on a private network somebody controls, and this feature genuinely cannot know
+> which interface a person means — so it never chooses one, and what it hands out is always loopback.
+>
+> What was wrong is the conclusion that the remedy belongs on a command line. `--listen` bought one more
+> thing a person supplies and two rules about which source wins, on a feature whose whole purpose is that
+> **a project is named rather than pathed**. A deployment that must be reachable from another machine has
+> its endpoint edited in `projects/<name>/project.json` — one place, readable, and where every reader
+> already looks.
+>
+> The cost is recorded rather than hidden: **there is no command that makes a broker reachable off this
+> machine.** That is a real reduction in what the tool does, taken deliberately.
 
 **Saying what listens where**
 
@@ -453,14 +464,29 @@ machine reach it?"*
   still starts, and MUST be safe to run again.
 - **FR-061**: Everything readable before a move MUST be readable after it.
 
-**Not stranding what already works**
+**Nothing to strand — amended 2026-09-23, the owner's call**
 
-- **FR-062**: A configuration location given in the previous form — a path to the old single file — MUST go
-  on being understood for at least one release, and MUST resolve to the root containing it.
-- **FR-063**: A supervisor entry written in the previous form, including options this version no longer
-  offers, MUST go on starting a Parley that serves everything.
-- **FR-064**: When a supervisor entry is written in a form this version no longer produces, the command
-  that reports what is installed MUST say so and name what to run to replace it.
+> **These three requirements are withdrawn.** They existed to keep an un-reinstalled machine serving
+> across the change, and rested on a premise that is not true: **nothing has been released.** The only
+> machine carrying the old layout is the one this was written on, and what it needs is a clean start
+> rather than a compatibility rule that would outlive every machine it was for.
+>
+> A rule kept "for at least one release" on a product with no releases is a rule with no expiry, and this
+> feature exists because a deployment was arrived at one accommodation at a time.
+>
+> - ~~**FR-062**: A configuration location given in the previous form MUST go on being understood.~~
+>   **Withdrawn.** The old spelling is *refused*, naming the directory to point at instead — loud, and
+>   at the one moment somebody can act on it. Silently resolving a path nothing writes any more is how a
+>   rule survives past the reason for it.
+> - ~~**FR-063**: A supervisor entry written in the previous form MUST go on starting a Parley.~~
+>   **Withdrawn.** Such an entry names `--db` and `--listen`, which no longer exist; it is replaced by
+>   re-running `parley autostart install`.
+> - ~~**FR-064**: The command that reports what is installed MUST say a previous form is installed.~~
+>   **Withdrawn with FR-063** — there is no previous form to report.
+>
+> **What replaces all three is `reset.ps1`**: it stops the broker, removes the autostart entry, reads the
+> old manifest *before* deleting it so each store it named can be removed with its companions, and keeps
+> `node.json` so nobody re-enrols a repository by hand.
 
 **What must not change**
 
@@ -517,9 +543,9 @@ machine reach it?"*
 
 - **The root is where the project manifest lives today** — the platform's per-user configuration
   directory. This feature moves what is under it, not where it is.
-- **The configuration variable and flag come to name the root**, with the previous spelling understood as
-  naming the root that file sits in. FR-062 makes that a requirement rather than a courtesy; how long it
-  is honoured beyond one release is a later decision.
+- **The configuration variable and flag name the root, and only the root.** An earlier draft had the
+  previous spelling understood as naming the root that file sits in; that was withdrawn with FR-062 when
+  the owner settled that nothing is released and there is nothing to strand.
 - **Naming a root is how a test rig isolates itself**, and it is what makes FR-007 affordable. Today
   fourteen test files start a broker by store path, through one shared helper — removing that option is a
   real cost, and it is payable only because creating a project in a throwaway root now costs one name and

@@ -41,8 +41,8 @@ public static class AutostartCommand
     /// Runs one autostart subcommand.
     /// </summary>
     /// <param name="action">install, remove or status.</param>
-    /// <param name="databasePath">The store, for install.</param>
-    /// <param name="listenOn">Where to listen, or null for the default.</param>
+    /// <param name="root">Where this machine keeps its Parley files.</param>
+    /// <param name="project">The one project to serve, or null to serve every project.</param>
     /// <param name="consoleOn">
     /// Where the installed entry should host the operator's console, or null to install one that
     /// hosts none.
@@ -63,8 +63,8 @@ public static class AutostartCommand
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     public static async Task<int> RunAsync(
         string action,
-        string? databasePath,
-        string? listenOn,
+        string root,
+        string? project,
         string? nodeConfig,
         string? consoleOn,
         string? manifestToServe,
@@ -88,7 +88,7 @@ public static class AutostartCommand
         return action switch
         {
             "install" => await InstallAsync(
-                databasePath, listenOn, nodeConfig, consoleOn, manifestToServe, output, error,
+                root, project, nodeConfig, consoleOn, manifestToServe, output, error,
                 cancellationToken)
                 .ConfigureAwait(false),
 
@@ -110,8 +110,8 @@ public static class AutostartCommand
     }
 
     /// <summary>Installs the supervisor entry.</summary>
-    /// <param name="databasePath">The store.</param>
-    /// <param name="listenOn">Where to listen.</param>
+    /// <param name="root">Where this machine keeps its Parley files.</param>
+    /// <param name="project">The one project to serve, or null to serve every project.</param>
     /// <param name="nodeConfig">The node catalogue to host from, or null for a broker alone.</param>
     /// <param name="consoleOn">Where the console should listen, or null to host none.</param>
     /// <param name="manifestToServe">The manifest to serve every project of, or null.</param>
@@ -120,8 +120,8 @@ public static class AutostartCommand
     /// <param name="cancellationToken">Cancels the work.</param>
     /// <returns>The exit code.</returns>
     private static async Task<int> InstallAsync(
-        string? databasePath,
-        string? listenOn,
+        string root,
+        string? project,
         string? nodeConfig,
         string? consoleOn,
         string? manifestToServe,
@@ -133,7 +133,7 @@ public static class AutostartCommand
         // `--db` and `PARLEY_DB`, which is why this once fell back to a variable — and a supervisor
         // starts the broker with no shell environment, so a variable read here named something that
         // would not be set at logon. Both are gone; what is left is the project `--project` selected.
-        if (manifestToServe is null && string.IsNullOrWhiteSpace(databasePath))
+        if (manifestToServe is null && string.IsNullOrWhiteSpace(project))
         {
             await error.WriteLineAsync(
                 "This machine has no projects yet, so there is nothing for an entry to serve. Create "
@@ -159,8 +159,7 @@ public static class AutostartCommand
 
         var plan = manifestToServe is not null
             ? AutostartPlan.DescribeManifest(manifestToServe, executable: null, consoleOn)
-            : AutostartPlan.Describe(
-                databasePath!, listenOn, executable: null, catalogue, consoleOn);
+            : AutostartPlan.Describe(root, project, executable: null, catalogue, consoleOn);
 
         // The directory, not the file. The broker creates the store on first run; what it cannot
         // do is create a directory that a supervisor will try to write a log into before it
@@ -505,7 +504,7 @@ public static class AutostartCommand
     private static async Task<int> RemoveAsync(
         TextWriter output, TextWriter error, CancellationToken cancellationToken)
     {
-        var plan = AutostartPlan.Describe("placeholder.db");
+        var plan = AutostartPlan.Describe("placeholder");
 
         var removed = plan.Supervisor switch
         {
@@ -580,7 +579,7 @@ public static class AutostartCommand
     /// <returns>Zero if it is, one if it is not.</returns>
     private static async Task<int> StatusAsync(TextWriter output, CancellationToken cancellationToken)
     {
-        var plan = AutostartPlan.Describe("placeholder.db");
+        var plan = AutostartPlan.Describe("placeholder");
 
         var present = plan.Supervisor switch
         {

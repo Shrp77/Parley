@@ -76,8 +76,10 @@ public sealed record AutostartPlan(
     /// <summary>
     /// Works out what installing would do on this machine.
     /// </summary>
-    /// <param name="databasePath">The store the broker will own.</param>
-    /// <param name="listenOn">Where it should listen, or null for the default.</param>
+    /// <param name="root">Where this machine keeps its Parley files.</param>
+    /// <param name="project">
+    /// The one project this entry should serve, or null to serve every project on the machine.
+    /// </param>
     /// <param name="executable">The broker binary, or null to use the running one.</param>
     /// <param name="nodeConfig">
     /// The node catalogue to host this machine's agents from, or null to install a broker that
@@ -87,7 +89,7 @@ public sealed record AutostartPlan(
     /// Where the operator's console should listen, or null to install a broker that hosts none.
     /// </param>
     /// <returns>The plan.</returns>
-    /// <exception cref="ArgumentException"><paramref name="databasePath"/> is blank.</exception>
+    /// <exception cref="ArgumentException"><paramref name="root"/> is blank.</exception>
     /// <remarks>
     /// <para>
     /// The database path is required and is resolved to an absolute one. A logon task has no
@@ -103,31 +105,34 @@ public sealed record AutostartPlan(
     /// </para>
     /// </remarks>
     public static AutostartPlan Describe(
-        string databasePath,
-        string? listenOn = null,
+        string root,
+        string? project = null,
         string? executable = null,
         string? nodeConfig = null,
         string? consoleOn = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(root);
 
-        var store = Path.GetFullPath(databasePath);
+        var machine = Path.GetFullPath(root);
 
-        // Beside the store, because that is the directory this deployment already owns and the
-        // one somebody looking for the broker will already have open.
-        var log = Path.Combine(
-            Path.GetDirectoryName(store) ?? ".", Name + ".log");
+        // At the root, because that is the directory this machine's Parley files already live in.
+        var log = Path.Combine(machine, Name + ".log");
 
         // --log rather than a shell redirection, which is the shape this took first. A
         // supervisor's Exec action runs a program, not a command line, so redirecting means
         // wrapping the broker in cmd.exe or sh -c and quoting a path twice -- for the one
         // feature whose absence is silent. The broker writing its own log needs no wrapper on
         // any platform, and the same argument is testable everywhere.
-        var arguments = listenOn is { Length: > 0 } endpoint
+        // **A narrowed entry names a project, not a store and a port.** It wrote
+        // `serve --db <path> --listen <url>`, which `serve` no longer accepts at all — so an entry
+        // installed with --project would have failed at the next logon, with nothing on screen
+        // connecting it to the flags going. The project is the whole of what narrows it now, and
+        // where its store is and what port it holds are that project's own business.
+        var arguments = project is { Length: > 0 } named
             ? string.Create(CultureInfo.InvariantCulture,
-                $"serve --db {Quote(store)} --listen {Quote(endpoint)} --log {Quote(log)}")
+                $"serve --config {Quote(machine)} --project {Quote(named)} --log {Quote(log)}")
             : string.Create(CultureInfo.InvariantCulture,
-                $"serve --db {Quote(store)} --log {Quote(log)}");
+                $"serve --config {Quote(machine)} --log {Quote(log)}");
 
         // The catalogue is written in absolute, for the same reason the store is: a logon task
         // has no working directory worth relying on.

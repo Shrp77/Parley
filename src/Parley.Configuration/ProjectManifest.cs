@@ -117,51 +117,12 @@ public static class ProjectManifest
 
         if (!string.IsNullOrWhiteSpace(explicitPath))
         {
-            return AsRoot(explicitPath);
+            return explicitPath;
         }
 
         var configured = variable(PathVariable);
 
-        return string.IsNullOrWhiteSpace(configured) ? DefaultPath : AsRoot(configured);
-    }
-
-    /// <summary>
-    /// Reads a configuration location given in either spelling, and answers with the root.
-    /// </summary>
-    /// <param name="given">What was named on the command line or in the environment.</param>
-    /// <returns>The root directory it means.</returns>
-    /// <remarks>
-    /// <para>
-    /// <b>The previous spelling named the file, and a machine that has not been reinstalled still uses
-    /// it.</b> The owner's logon entry holds the old path verbatim; refusing it would stop that machine
-    /// serving at its next start, which is the one moment nobody is watching. So a value whose final
-    /// segment is the manifest's own file name is read as naming its parent.
-    /// </para>
-    /// <para>
-    /// <b>Recognised by name, never by asking the filesystem.</b> A machine being set up has neither the
-    /// file nor the directory yet, so a rule that tested for existence would behave differently before and
-    /// after first run — which is a rule nobody can reason about. The name is decidable either way.
-    /// </para>
-    /// <para>
-    /// Stated here and nowhere else, because this is the one place a configuration location is resolved.
-    /// 018 paid for the alternative: the launch-key rule grew a second implementation that happened to
-    /// agree for one build.
-    /// </para>
-    /// </remarks>
-    public static string AsRoot(string given)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(given);
-
-        var trimmed = given.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-        if (trimmed.Length == 0)
-        {
-            return given;
-        }
-
-        return string.Equals(Path.GetFileName(trimmed), FileName, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
-            ? Path.GetDirectoryName(trimmed) is { Length: > 0 } parent ? parent : "."
-            : trimmed;
+        return string.IsNullOrWhiteSpace(configured) ? DefaultPath : configured;
     }
 
     /// <summary>
@@ -203,8 +164,11 @@ public static class ProjectManifest
                 OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
         {
             problem =
-                $"{root} names the manifest file this version replaced. The root is the directory " +
-                "holding it; resolve a configuration location with Locate rather than composing one.";
+                $"{root} is the manifest file 0.32.0 replaced, not a root. A machine keeps its projects "
+                + $"as folders under a directory — `{ProjectFolder.ProjectsDirectoryName}/<name>/` — each "
+                + "holding its own configuration and its own store. Point --config or "
+                + $"{PathVariable} at the directory that file is in, and run `reset.ps1` to clear what "
+                + "the old layout left behind.";
 
             return false;
         }
