@@ -63,13 +63,14 @@ Read these before starting; each has a test that fails the build rather than a c
 **Goal**: an operator types a name; the tool chooses the store location and the port and reports both.
 **Independent test**: on an empty root, add by name alone, start the broker, connect. No path, no port typed.
 
-- [ ] T014 [US1] Add `src/Parley.Configuration/PortLedger.cs` with the `ports.json` shape: optional `band`, required `handed_out` (data-model.md)
-- [ ] T015 [US1] Implement the exclusive hold: open `ports.json` with `FileShare.None`, read-modify-write, close — modelled on `StoreLock.Acquire`, and **never deleting the file** (R1; the Linux `flock`-belongs-to-an-open-file reason)
-- [ ] T016 [US1] Read a failed open as *held* only when the file exists afterwards, so a missing root is not reported as contention (R1, carried from `StoreLock`)
-- [ ] T017 [US1] Make contention ordinary rather than fatal: bounded retry with short backoff, and a refusal naming the contention when the budget runs out (R1, FR-015)
-- [ ] T018 [US1] Reconcile before choosing (FR-013): inside the hold, list the projects and treat every endpoint found in a `project.json` as spoken for, whether or not `ports.json` lists it
-- [ ] T019 [US1] Choose from the band **19100–19355** and bind-test the candidate inside the hold before recording it (R1; the bind is what `FreePort` lacked, the hold is what serialises it)
-- [ ] T020 [US1] Report exhaustion and create nothing (R1, FR-015)
+- [X] T014 [US1] Add `src/Parley.Configuration/PortLedger.cs` with the `ports.json` shape: optional `band`, required `handed_out` (data-model.md)
+  - **Built in `Parley.Setup`, not `Parley.Configuration`.** `Parley.Mcp` references Configuration and deliberately carries nothing about setting a machine up; a type that claims ports and binds sockets on an agent's own server is precisely the surface `Parley.Setup` exists to keep out of it, which is CLAUDE.md's own argument for that project existing. Both writers of the record — `project add` and `project remove` — already live there.
+- [X] T015 [US1] Implement the exclusive hold: open `ports.json` with `FileShare.None`, read-modify-write, close — modelled on `StoreLock.Acquire`, and **never deleting the file** (R1; the Linux `flock`-belongs-to-an-open-file reason)
+- [X] T016 [US1] Read a failed open as *held* only when the file exists afterwards, so a missing root is not reported as contention (R1, carried from `StoreLock`)
+- [X] T017 [US1] Make contention ordinary rather than fatal: bounded retry with short backoff, and a refusal naming the contention when the budget runs out (R1, FR-015)
+- [X] T018 [US1] Reconcile before choosing (FR-013): inside the hold, list the projects and treat every endpoint found in a `project.json` as spoken for, whether or not `ports.json` lists it
+- [X] T019 [US1] Choose from the band **19100–19355** and bind-test the candidate inside the hold before recording it (R1; the bind is what `FreePort` lacked, the hold is what serialises it)
+- [X] T020 [US1] Report exhaustion and create nothing (R1, FR-015)
 - [ ] T021 [US1] Rewrite `project add` in `src/Parley.Setup/ProjectCommand.cs` to take a name alone: claim a port, create the folder, write `project.json`, and report the endpoint and the store location (FR-016, FR-017)
 - [ ] T022 [US1] Make `project add` create nothing when the claim fails — no folder, no partial `project.json` (FR-015)
 - [ ] T023 [US1] Keep `--listen` on `project add` for a stated endpoint, bypassing the band, and record it as spoken for (FR-020)
