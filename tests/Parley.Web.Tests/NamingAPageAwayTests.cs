@@ -36,7 +36,9 @@ public sealed class NamingAPageAwayTests : IDisposable
     public NamingAPageAwayTests()
     {
         Directory.CreateDirectory(_folder);
-        _path = Path.Combine(_folder, "projects.json");
+        // **The root, not a manifest file.** `--config` names the directory this machine keeps its
+        // Parley files in, and a project is a folder under it.
+        _path = _folder;
     }
 
     [Fact]
@@ -57,7 +59,7 @@ public sealed class NamingAPageAwayTests : IDisposable
             _path,
             [new ProjectSettings(
                 ProjectName.Create("orders"),
-                Path.Combine(_folder, "orders.db"),
+                ProjectFolder.StoreFor(_path, ProjectName.Create("orders")),
                 "http://127.0.0.1:1",
                 null)]);
 
@@ -79,7 +81,7 @@ public sealed class NamingAPageAwayTests : IDisposable
             _path,
             [new ProjectSettings(
                 ProjectName.Create("billing"),
-                Path.Combine(_folder, "billing.db"),
+                ProjectFolder.StoreFor(_path, ProjectName.Create("billing")),
                 "http://127.0.0.1:1",
                 null)]);
 

@@ -347,7 +347,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
 
         // A test that names projects says which manifest the tool reads; every other one reads none, so the machine
         // running the suite never lends it a project.
-        start.Environment["PARLEY_CONFIG"] = _projects ?? Path.Combine(_workspace, "no-projects.json");
+        start.Environment["PARLEY_CONFIG"] = _projects ?? Path.Combine(_workspace, "never-configured");
 
         if (_machine is not null)
         {
@@ -589,13 +589,23 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
     /// </summary>
     private void NameTwoProjects()
     {
-        _projects = Path.Combine(_workspace, "projects.json");
+        // The root, not a manifest file: a project is a folder under it, and its store is derived from
+        // its name rather than chosen here.
+        _projects = _workspace;
 
         Parley.Configuration.ProjectManifest.Write(
             _projects,
             [
-                new ProjectSettings(ProjectName.Create("alpha"), Path.Combine(_workspace, "alpha.db"), _broker!.Addresses[0], null),
-                new ProjectSettings(ProjectName.Create("beta"), Path.Combine(_workspace, "beta.db"), "http://127.0.0.1:1", null),
+                new ProjectSettings(
+                    ProjectName.Create("alpha"),
+                    Parley.Configuration.ProjectFolder.StoreFor(_projects, ProjectName.Create("alpha")),
+                    _broker!.Addresses[0],
+                    null),
+                new ProjectSettings(
+                    ProjectName.Create("beta"),
+                    Parley.Configuration.ProjectFolder.StoreFor(_projects, ProjectName.Create("beta")),
+                    "http://127.0.0.1:1",
+                    null),
             ]);
     }
 

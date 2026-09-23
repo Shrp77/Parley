@@ -102,27 +102,25 @@ public sealed class UnnamedMachineTests
         // The rule that keeps this from being an inventory of guesses. A machine that has named
         // its deployments has said what it wants listed, and quietly adding an unnamed row would
         // be the console showing a project the operator did not configure.
-        var manifest = Path.Combine(
+        var root = Path.Combine(
             Path.GetTempPath(), $"parley-named-{Guid.NewGuid():N}");
 
-        Directory.CreateDirectory(manifest);
+        Directory.CreateDirectory(root);
 
-        var path = Path.Combine(manifest, "projects.json");
-
-        // Written the way `parley project add` writes it rather than by hand. A hand-rolled file
-        // that the reader rejects would make this pass for the wrong reason: no projects and no
-        // fallback row looks exactly like the fallback correctly declining to appear.
+        // Written the way `parley project add` writes it rather than by hand. A hand-rolled file that the
+        // reader rejects would make this pass for the wrong reason: no projects and no fallback row looks
+        // exactly like the fallback correctly declining to appear.
         Parley.Configuration.ProjectManifest.Write(
-            path,
+            root,
             [new ProjectSettings(
                 ProjectName.Create("alpha"),
-                Path.Combine(manifest, "alpha.db"),
+                Parley.Configuration.ProjectFolder.StoreFor(root, ProjectName.Create("alpha")),
                 "http://127.0.0.1:5301",
                 null)]);
 
         try
         {
-            using var directory = BrokerDirectory.FromManifest(path, new FallbackBroker("http://127.0.0.1:51707"));
+            using var directory = BrokerDirectory.FromManifest(root, new FallbackBroker("http://127.0.0.1:51707"));
 
             Assert.Null(directory.ManifestProblem);
 
@@ -132,7 +130,7 @@ public sealed class UnnamedMachineTests
         }
         finally
         {
-            Directory.Delete(manifest, recursive: true);
+            Directory.Delete(root, recursive: true);
         }
     }
 }

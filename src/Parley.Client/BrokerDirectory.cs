@@ -76,7 +76,9 @@ public sealed class BrokerDirectory : IDisposable
         ArgumentNullException.ThrowIfNull(connect);
 
         _connect = connect;
-        _snapshot = new Snapshot(projects, manifestProblem, default);
+        // A directory built from an explicit list follows nothing, so its stamp is never compared —
+        // Current returns the held snapshot whenever there is no manifest path.
+        _snapshot = new Snapshot(projects, manifestProblem, string.Empty);
     }
 
     /// <summary>Builds a directory that follows this machine's manifest.</summary>
@@ -147,7 +149,7 @@ public sealed class BrokerDirectory : IDisposable
             var stamp = StampOf(_manifestPath);
             var held = _snapshot;
 
-            if (stamp == held.Stamp)
+            if (string.Equals(stamp, held.Stamp, StringComparison.Ordinal))
             {
                 return held;
             }
@@ -204,7 +206,7 @@ public sealed class BrokerDirectory : IDisposable
     /// so; a console that went on rendering the old list would hide the edit that caused it, and
     /// the file is the authority whether or not this process liked the last version of it.
     /// </remarks>
-    private static Snapshot ReadManifest(string path, FallbackBroker? fallback, Stamp stamp)
+    private static Snapshot ReadManifest(string path, FallbackBroker? fallback, string stamp)
     {
         if (!ProjectManifest.TryRead(path, out var projects, out var problem))
         {
@@ -241,45 +243,15 @@ public sealed class BrokerDirectory : IDisposable
     /// this exists to avoid.
     /// </para>
     /// </remarks>
-    private static Stamp StampOf(string path)
-    {
-        try
-        {
-            var file = new FileInfo(path);
-
-            return file.Exists ? new Stamp(file.Length, file.LastWriteTimeUtc) : default;
-        }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
-        {
-            return default;
-        }
-    }
+    private static string StampOf(string path) => ProjectFolder.StampOf(path);
 
     /// <summary>What one read of the manifest found, and the file it found it in.</summary>
     /// <param name="Projects">The projects, in the order the manifest listed them.</param>
     /// <param name="Problem">Why the manifest could not be read, when it could not.</param>
-    /// <param name="Stamp">The stamp of the file this was read from.</param>
+    /// <param name="Stamp">What the projects looked like when this was read.</param>
     private sealed record Snapshot(
-        IReadOnlyList<ProjectSettings> Projects, string? Problem, Stamp Stamp);
+        IReadOnlyList<ProjectSettings> Projects, string? Problem, string Stamp);
 
-    /// <summary>Enough of a file to tell whether it is the one already read.</summary>
-    /// <param name="Length">Its size in bytes.</param>
-    /// <param name="WrittenUtc">When it was last written.</param>
-    /// <remarks>
-    /// The default value means <i>absent</i>, and is what a machine with no manifest holds — so a
-    /// machine that has never named a deployment does no reading at all, and the file appearing
-    /// is itself the change that provokes one.
-    /// </remarks>
-    private readonly record struct Stamp(long Length, DateTime WrittenUtc);
-
-    /// <summary>The single project a machine with no manifest is nonetheless running.</summary>
-    /// <param name="endpoint">Where its broker listens.</param>
-    /// <returns>A project standing for that broker.</returns>
-    /// <remarks>
-    /// Named <c>this machine</c> rather than for the endpoint, because the name is what appears
-    /// in every heading below it and an address there reads as a setting rather than as a place.
-    /// The endpoint is shown beside it on the list, as it is for every other project.
-    /// </remarks>
     private static ProjectSettings Unnamed(string endpoint) =>
         new(ProjectName.Create("this-machine"),
             string.Empty,

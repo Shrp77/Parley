@@ -856,41 +856,11 @@ if (verb == "serve" && rest.Length == 0)
         // started with while `project add` reports success. What it costs is N directory entries and N
         // small reads every two seconds, on a machine with a handful of projects — not worth engineering
         // around, and the alternative costs a great deal.
-        string ProjectsStamp()
-        {
-            try
-            {
-                var directory = ProjectFolder.ProjectsIn(manifestPath);
-
-                if (!Directory.Exists(directory))
-                {
-                    return string.Empty;
-                }
-
-                // The set of configurations and when each was last written. A project added, removed or
-                // edited moves this; nothing else does, so a broker is not restarted for a file somebody
-                // dropped beside it.
-                return string.Join(
-                    "\n",
-                    Directory.GetDirectories(directory)
-                        .Select(folder => Path.Combine(folder, ProjectFolder.ConfigurationFileName))
-                        .Where(File.Exists)
-                        .Order(StringComparer.Ordinal)
-                        .Select(file => $"{file}|{File.GetLastWriteTimeUtc(file).Ticks}"));
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                // Nothing is stopped on the strength of a directory that could not be listed, which is
-                // the rule the watcher already keeps for a file somebody is halfway through editing.
-                return string.Empty;
-            }
-        }
-
-        var projectsStamp = ProjectsStamp();
+        var projectsStamp = ProjectFolder.StampOf(manifestPath);
 
         IReadOnlyList<ProjectSettings>? RereadManifest()
         {
-            var stamp = ProjectsStamp();
+            var stamp = ProjectFolder.StampOf(manifestPath);
 
             if (string.Equals(stamp, projectsStamp, StringComparison.Ordinal))
             {

@@ -600,7 +600,9 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/019-one-way-in/` — **specified, planned and broken into 111 tasks; nothing built.**
+- **Current plan**: `specs/019-one-way-in/` — **0.32.0, the MVP part-built: the layout, the port claim and
+  `project add <name>` are in, and every suite is green. 31 of 111 tasks. The command removals, the migration
+  and the review gate are owed, and nothing is pushed.**
   `tasks.md` orders them by what blocks what rather than by requirement number: the MVP is phases 1–3, an
   operator brings up a deployment by typing one name, with none of the removals, the migration or the
   enrolment work. Three of its tasks exist because the plan found traps rather than because a requirement
@@ -629,6 +631,46 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   19000. The conversion is 26 files, not the 14 a grep suggested. Also recorded: the live deployment's ports,
   51707 and 53283, sit inside both operating systems' ephemeral ranges, which is a latent logon-time bind failure
   the new band avoids.
+
+  **What is built, and what each defect cost.** A project is a folder under `<root>/projects/` named by the project,
+  holding its own `project.json` and its own `parley.db`. **Two invariants stopped being checks and became facts**: a
+  name cannot repeat because it is a directory entry, and two projects cannot share a store because a store is derived
+  from the name. `Collisions` keeps exactly one rule — two projects on one endpoint — because that is the one the layout
+  cannot prevent. `parley project add orders` is the whole command; `--db` is gone and is *refused* rather than ignored,
+  because every deployment on this machine was made with it.
+
+  **A port is claimed, not probed.** `PortLedger` hands one out under an exclusive hold on `ports.json` — `StoreLock`'s
+  mechanism borrowed whole, with both of its rules: the file is never deleted, because on Linux a lock belongs to an open
+  file rather than a name, and a failed open is contention only when the file exists afterwards. One difference, and it is
+  the only one: two brokers on one store is a defect and is refused outright, while two people running `project add` at
+  once is a Tuesday, so the claim retries under a budget. **Mutation-checked**: with the hold opened `FileShare.ReadWrite`
+  instead of `None`, twenty-four concurrent claimants were handed 19100 nineteen times. The band is 19100–19355 for the
+  reason recorded just above.
+
+  **Six defects, and the compiler was happy with every one.**
+
+  - **A first draft of `ProjectFolder.Write` lost four rules the manifest had paid for** — unknown keys surviving a write,
+    the byte order mark and line endings surviving, an unparseable file refused rather than replaced, and the write
+    committed by rename. It was `File.WriteAllText` over a freshly built object. For a while there was **no atomic write
+    anywhere in the repository**, and every suite was green. `Keys_this_version_does_not_know_about_survive_a_write` found
+    it.
+  - **The grant gate and the project writer stopped excluding each other.** `TryUpdate` moved its lock into `projects/`
+    and composed the path inline while `Catalogues.GateAsync` went on calling `LockFor` — two implementations of one rule,
+    agreeing until one changed. **018's `LaunchKey` lesson, repeated inside one feature.**
+  - **And that gate would never have been taken at all.** Its guard was `File.Exists` on what is now a directory, so it
+    returned null every time and enrolment ran unguarded. **A guard that fails open is worse than no guard**, because what
+    it protects goes on looking protected.
+  - **The serve watcher noticed nothing.** It stamped one file's write time; that file no longer exists, so the stamp
+    never moved and a machine went on serving whatever it started with — while `project add` reported success and named
+    the port it had been given. SPEC.md's "served within seconds" was silently untrue.
+  - **The console had the same defect, and so did the terminal.** `BrokerDirectory` asked `FileInfo.Exists` about a
+    directory. **Three copies of one rule, all three broken the same way, none of them by a change anybody made to them**
+    — so the rule is `ProjectFolder.StampOf` now and all three ask it.
+  - **The machine's catalogue and the broker's log moved one directory up**, because both derived "the directory holding
+    the manifest" — the same place as the root, said the other way.
+
+  **Every one was found by a test rather than by reading.** `REVIEW-LEDGER.md` carries each with the probe that produced
+  it; the review gate itself has not started.
 
   `specs/020-what-an-agent-owns/` follows it: an agent is *asked* what it owns and the answer is discussed to
   agreement, replacing a worksheet a person filled in from memory. It amends SPEC.md §17 question 10, which is

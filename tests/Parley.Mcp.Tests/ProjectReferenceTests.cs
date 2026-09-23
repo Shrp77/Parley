@@ -1,4 +1,5 @@
 using System.Globalization;
+using Parley.Core;
 using Parley.Configuration;
 using Xunit;
 
@@ -58,15 +59,22 @@ public sealed class ProjectReferenceTests : IDisposable
     private static (string, string)[] Minimal =>
         [(ServerOptions.AgentVariable, "orders@test")];
 
-    /// <summary>Writes a manifest and returns where it is.</summary>
+    /// <summary>Writes one project's configuration verbatim, and returns the root.</summary>
+    /// <param name="name">The project, which is also its folder's name.</param>
     /// <param name="body">The file's contents, verbatim.</param>
-    /// <returns>The path.</returns>
-    private string Manifest(string body)
+    /// <returns>The root, which is what <c>PARLEY_CONFIG</c> names.</returns>
+    /// <remarks>
+    /// Verbatim rather than through the writer, because what these probe is a file the writer would
+    /// refuse — a half-finished hand edit, or one written by a version this does not know.
+    /// </remarks>
+    private string Manifest(string name, string body)
     {
-        var path = Path.Combine(_directory, "projects.json");
-        File.WriteAllText(path, body);
+        var folder = ProjectFolder.For(_directory, ProjectName.Create(name));
 
-        return path;
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, ProjectFolder.ConfigurationFileName), body);
+
+        return _directory;
     }
 
     /// <summary>Writes a manifest describing one project at an address.</summary>
@@ -74,17 +82,11 @@ public sealed class ProjectReferenceTests : IDisposable
     /// <param name="endpoint">Where its broker listens.</param>
     /// <returns>The path.</returns>
     private string ManifestFor(string name, string endpoint) =>
-        Manifest(string.Create(
+        Manifest(name, string.Create(
             CultureInfo.InvariantCulture,
             $$"""
               {
-                "projects": [
-                  {
-                    "name": "{{name}}",
-                    "store": "{{Path.Combine(_directory, name + ".db").Replace('\\', '/')}}",
-                    "endpoint": "{{endpoint}}"
-                  }
-                ]
+                "endpoint": "{{endpoint}}"
               }
               """));
 
@@ -205,7 +207,7 @@ public sealed class ProjectReferenceTests : IDisposable
         // a wrong-typed one cast away and replaced. Here it would be a wrong connection instead —
         // the manifest read as describing nothing, the project unknown, and every candidate
         // remedy pointing at the wrong file.
-        var manifest = Manifest("{ \"projects\": [ ");
+        var manifest = Manifest("orders", "{ \"endpoint\": ");
 
         var ex = Assert.Throws<InvalidOperationException>(() => ServerOptions.Read(Env(
         [
@@ -221,7 +223,7 @@ public sealed class ProjectReferenceTests : IDisposable
     [Fact]
     public void A_manifest_of_the_wrong_shape_refuses_too()
     {
-        var manifest = Manifest("{ \"projects\": \"orders\" }");
+        var manifest = Manifest("orders", "[\"not\", \"an\", \"object\"]");
 
         var ex = Assert.Throws<InvalidOperationException>(() => ServerOptions.Read(Env(
         [
@@ -230,7 +232,7 @@ public sealed class ProjectReferenceTests : IDisposable
             (ProjectManifest.PathVariable, manifest),
         ])));
 
-        Assert.Contains("not a list", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("does not hold an object", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -245,25 +247,33 @@ public sealed class ProjectReferenceTests : IDisposable
         // Asserted behaviourally rather than by reflecting for a method, because the linker keeps
         // ProjectManifest.Write in this binary whether or not anything calls it: what is worth
         // pinning is that the launch path leaves the bytes and the timestamp alone.
-        var manifest = ManifestFor("orders", "http://127.0.0.1:51801");
+        var root = ManifestFor("orders", "http://127.0.0.1:51801");
+        var configuration = ProjectFolder.ConfigurationFor(root, ProjectName.Create("orders"));
 
-        var before = File.ReadAllBytes(manifest);
-        var written = File.GetLastWriteTimeUtc(manifest);
+        var before = File.ReadAllBytes(configuration);
+        var written = File.GetLastWriteTimeUtc(configuration);
 
         ServerOptions.Read(Env(
         [
             .. Minimal,
             (ServerOptions.ProjectVariable, "orders"),
-            (ProjectManifest.PathVariable, manifest),
+            (ProjectManifest.PathVariable, root),
         ]));
 
-        Assert.Equal(before, File.ReadAllBytes(manifest));
-        Assert.Equal(written, File.GetLastWriteTimeUtc(manifest));
+        Assert.Equal(before, File.ReadAllBytes(configuration));
+        Assert.Equal(written, File.GetLastWriteTimeUtc(configuration));
 
-        // And nothing beside it either — the write path leaves a sibling behind while it works.
+        // And nothing beside it either — the write path leaves a sibling behind while it works, and the
+        // claim would leave a port record. **Both halves matter more now than they did**: an adapter that
+        // could take the port hold would be able to stall every `project add` on the machine, from a
+        // process a client launches at times nobody chose.
         Assert.Equal(
-            [Path.GetFileName(manifest)],
-            Directory.GetFiles(_directory).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+            [ProjectFolder.ConfigurationFileName],
+            Directory.GetFiles(ProjectFolder.For(root, ProjectName.Create("orders")))
+                .Select(Path.GetFileName)
+                .Order(StringComparer.Ordinal));
+
+        Assert.Empty(Directory.GetFiles(root));
     }
 
     [Fact]

@@ -83,6 +83,68 @@ public static class ProjectFolder
         Path.Combine(For(root, name), StoreFileName);
 
     /// <summary>
+    /// A value that changes when this machine's projects do, and not otherwise.
+    /// </summary>
+    /// <param name="root">The machine's root.</param>
+    /// <returns>An opaque stamp, compared with <see cref="StringComparison.Ordinal"/>.</returns>
+    /// <exception cref="ArgumentException"><paramref name="root"/> is blank.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>One implementation, because there are three callers and they have already disagreed.</b> The
+    /// serve watcher, the operator's console and the terminal each decide whether to re-read by asking
+    /// whether anything has moved. While the answer was one file's length and write time, each of them
+    /// spelled it separately and all three quietly stopped working the moment that file became a
+    /// directory: <see cref="FileInfo.Exists"/> is false for one, so every stamp was the default, no stamp
+    /// ever changed, and a machine went on serving and showing whatever it started with while
+    /// <c>project add</c> reported success.
+    /// </para>
+    /// <para>
+    /// <b>What it covers is every project's configuration and when each was last written</b> — so a
+    /// project appearing, going or being edited moves it, and a file somebody drops beside one does not.
+    /// A folder with no configuration is not a project (see <see cref="TryRead"/>), so it is not counted
+    /// here either; the two agree by construction rather than by a second rule.
+    /// </para>
+    /// <para>
+    /// <b>The accepted limit is inherited and is narrower than it was.</b> Windows updates a write time on
+    /// the system timer tick rather than per write, so two edits to one project inside about fifteen
+    /// milliseconds share a timestamp and the second is missed until something else touches the file.
+    /// Reaching it needs two runs of <c>parley project</c> inside one tick, each its own process launch,
+    /// against the same project. Written down rather than closed, because closing it means hashing every
+    /// file — which is the read this exists to avoid.
+    /// </para>
+    /// <para>
+    /// A root that cannot be listed stamps as empty, which is the same as having no projects. That is the
+    /// safe direction: a reader that held projects a moment ago holds a stamp this cannot equal, so the
+    /// mismatch sends it to a real read, where the failure becomes something an operator is shown rather
+    /// than a silence.
+    /// </para>
+    /// </remarks>
+    public static string StampOf(string root)
+    {
+        var directory = ProjectsIn(root);
+
+        try
+        {
+            if (!Directory.Exists(directory))
+            {
+                return string.Empty;
+            }
+
+            return string.Join(
+                "\n",
+                Directory.GetDirectories(directory)
+                    .Select(folder => Path.Combine(folder, ConfigurationFileName))
+                    .Where(File.Exists)
+                    .Order(StringComparer.Ordinal)
+                    .Select(file => $"{file}|{File.GetLastWriteTimeUtc(file).Ticks}"));
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
     /// Reads one project's configuration out of its folder.
     /// </summary>
     /// <param name="root">The machine's root.</param>
