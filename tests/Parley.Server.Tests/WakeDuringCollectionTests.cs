@@ -78,6 +78,6 @@ public sealed class WakeDuringCollectionTests
         // not reached the node yet rather than one never sent — the same build passed six runs alone.
         _ = await node.WaitForCommandAsync(TimeSpan.FromSeconds(5));
 
-        Assert.Equal(1, await node.CountCommandsAsync(Settle));
+        Assert.Equal(1, await node.CountCommandsAsync(1, Settle));
     }
 }

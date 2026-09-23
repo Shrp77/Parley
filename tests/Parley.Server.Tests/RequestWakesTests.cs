@@ -92,7 +92,7 @@ public sealed class RequestWakesTests
             Assert.True(Assert.Single((await sender.Client.RequestAsync(Request($"request {at}"), cancellationToken: token)).Outcomes).Ok);
         }
 
-        Assert.Equal(1, await node.CountCommandsAsync(Settle));
+        Assert.Equal(1, await node.CountCommandsAsync(1, Settle));
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public sealed class RequestWakesTests
 
         Assert.False(again.Ok);
         Assert.Equal(Wire.RequestRejection.Duplicate, again.Rejection);
-        Assert.Equal(1, await node.CountCommandsAsync(Settle));
+        Assert.Equal(1, await node.CountCommandsAsync(1, Settle));
     }
 
     [Fact]

@@ -67,7 +67,7 @@ public sealed class WakeProbeTests
                 },
                 token)));
 
-            Assert.Equal(1, await node.CountCommandsAsync(Settle));
+            Assert.Equal(1, await node.CountCommandsAsync(1, Settle));
         }
         finally
         {
@@ -101,7 +101,7 @@ public sealed class WakeProbeTests
                 cancellationToken: token);
         }
 
-        Assert.Equal(1, await node.CountCommandsAsync(Settle));
+        Assert.Equal(1, await node.CountCommandsAsync(1, Settle));
     }
 
     [Fact]
