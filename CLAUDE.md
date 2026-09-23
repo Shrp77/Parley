@@ -629,7 +629,8 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   closed and says the field is not self-declared — argued there rather than stepped around, and the cost is
   recorded: the claim narrows again, and anchoring gets worse rather than better.
 
-- **The review gate on this branch found four defects in its first four probes, two of them high**, and the
+- **The review gate on this branch found four defects in its first four probes, two of them high** — fixed
+  at **0.31.2**, and the
   count stands at **zero clean runs on lens 1**. `REVIEW-LEDGER.md` carries each with the probe that produced
   it. Two are 017's and two are 018's, and the 018 pair are both consequences of one change — sharing the
   resident table across every project a process hosts, which closed one hazard and opened two.
