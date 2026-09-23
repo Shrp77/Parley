@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Parley.Configuration;
@@ -521,6 +522,17 @@ public static class NodeCommand
 
         try
         {
+            // **A node that has swept starts nothing more.** Reached by a start that was queued on the
+            // gate while the sweep held it: launching now would put a process into a table nothing will
+            // walk again, and the sweep is the last thing the process does.
+            if (Shut.TryGetValue(residents, out _))
+            {
+                await output.WriteLineAsync(
+                    $"  {agent.Value}: not started — this node is stopping.").ConfigureAwait(false);
+
+                return;
+            }
+
             var replacing = false;
 
             if (residents.TryGetValue(identity, out var existing))
@@ -904,16 +916,50 @@ public static class NodeCommand
     internal static async Task StopEveryoneAsync(
         ConcurrentDictionary<AgentIdentity, ResidentAgent> residents, TextWriter output)
     {
-        foreach (var identity in residents.Keys.ToArray())
-        {
-            if (!residents.TryRemove(identity, out var resident))
-            {
-                continue;
-            }
+        ArgumentNullException.ThrowIfNull(residents);
 
-            await ShutDownAsync(resident, identity.ToString(), output).ConfigureAwait(false);
+        // **The sweep takes the same gate a start does, and shuts the table afterwards.** Recording a
+        // resident happens inside `Starting`, so without this a start already past that gate lands its
+        // process in the table *after* the sweep has walked it — and this is the last thing the process
+        // does, so nothing sweeps again. That is an agent still running with nothing left that would stop
+        // it, which is the third finding's harm reached from the other side, and it breaks the promise
+        // SPEC.md §12 makes: stopping a node tells every agent it started to quit.
+        await Starting.WaitAsync().ConfigureAwait(false);
+
+        try
+        {
+            // Shut before sweeping rather than after, so a start still queued on the gate finds the table
+            // closed when it gets in, instead of launching a process into one nobody will walk again.
+            Shut.AddOrUpdate(residents, Sentinel);
+
+            foreach (var identity in residents.Keys.ToArray())
+            {
+                if (!residents.TryRemove(identity, out var resident))
+                {
+                    continue;
+                }
+
+                await ShutDownAsync(resident, identity.ToString(), output).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _ = Starting.Release();
         }
     }
+
+    /// <summary>The tables that have been swept, so that nothing starts into one afterwards.</summary>
+    /// <remarks>
+    /// Keyed by the table rather than held as one flag for the process, because a flag would be a fact
+    /// about whichever node stopped last — and 018 gave one process a table shared by every project it
+    /// hosts, while a test host has many tables and no shutdown between them. Weak, so a table that goes
+    /// out of scope takes its entry with it.
+    /// </remarks>
+    private static readonly ConditionalWeakTable<
+        ConcurrentDictionary<AgentIdentity, ResidentAgent>, object> Shut = new();
+
+    /// <summary>What <see cref="Shut"/> records; its presence is the whole of the meaning.</summary>
+    private static readonly object Sentinel = new();
 
     /// <summary>
     /// What this machine can observe about itself.
