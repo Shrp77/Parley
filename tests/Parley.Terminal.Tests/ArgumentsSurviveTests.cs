@@ -1,3 +1,5 @@
+using Parley.Configuration;
+using Parley.Core;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
@@ -92,9 +94,18 @@ public sealed class ArgumentsSurviveTests
 
         Directory.CreateDirectory(directory);
 
-        var manifest = Path.Combine(directory, "projects.json");
+        // **A root with a project in it, rather than a manifest file.** What this is about is a path
+        // containing spaces arriving as one argument, so what matters is that the path is real and is
+        // read — and the root is now a directory, which cannot be written to with File.WriteAllText.
+        var manifest = directory;
 
-        File.WriteAllText(manifest, """{ "projects": [] }""");
+        ProjectManifest.Write(
+            manifest,
+            [new ProjectSettings(
+                ProjectName.Create("alpha"),
+                ProjectFolder.StoreFor(manifest, ProjectName.Create("alpha")),
+                "http://127.0.0.1:1",
+                null)]);
 
         try
         {
@@ -140,9 +151,18 @@ public sealed class ArgumentsSurviveTests
 
         Directory.CreateDirectory(directory);
 
-        var manifest = Path.Combine(directory, "projects.json");
+        // **A root with a project in it, rather than a manifest file.** What this is about is a path
+        // containing spaces arriving as one argument, so what matters is that the path is real and is
+        // read — and the root is now a directory, which cannot be written to with File.WriteAllText.
+        var manifest = directory;
 
-        File.WriteAllText(manifest, """{ "projects": [] }""");
+        ProjectManifest.Write(
+            manifest,
+            [new ProjectSettings(
+                ProjectName.Create("alpha"),
+                ProjectFolder.StoreFor(manifest, ProjectName.Create("alpha")),
+                "http://127.0.0.1:1",
+                null)]);
 
         var said = new StringWriter();
 

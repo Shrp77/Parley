@@ -62,7 +62,9 @@ public sealed class ProbeFiveTests : IAsyncDisposable
 
     private string Store => Path.Combine(_root, "acme.db");
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **The root, not a manifest file.** `--config` names the directory this machine keeps its
+    // Parley files in; the projects are the folders under it.
+    private string Root => _root;
 
     private string CataloguePath => Path.Combine(_root, "acme-node.json");
 
@@ -77,12 +79,12 @@ public sealed class ProbeFiveTests : IAsyncDisposable
         var project = new ProjectSettings(
             ProjectName.Create("acme"), Store, _broker.Address, null);
 
-        ProjectManifest.Write(ManifestPath, [project]);
+        ProjectManifest.Write(Root, [project]);
 
         await File.WriteAllTextAsync(
             CataloguePath, "{\n  \"agents\": {}\n}\n", TestContext.Current.CancellationToken);
 
-        var shell = TerminalCommand.Build(BrokerDirectory.FromManifest(ManifestPath), manifestPath: ManifestPath);
+        var shell = TerminalCommand.Build(BrokerDirectory.FromManifest(Root), manifestPath: Root);
 
         driving.Show(shell);
 

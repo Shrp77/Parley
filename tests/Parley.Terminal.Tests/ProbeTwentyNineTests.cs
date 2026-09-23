@@ -58,7 +58,9 @@ public sealed class ProbeTwentyNineTests : IAsyncDisposable
 
     private string Workspace => Path.Combine(_root, "orders");
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **The root, not a manifest file.** `--config` names the directory this machine keeps its
+    // Parley files in; the projects are the folders under it.
+    private string Root => _root;
 
     private string CataloguePath => Path.Combine(_root, "acme-node.json");
 
@@ -67,14 +69,14 @@ public sealed class ProbeTwentyNineTests : IAsyncDisposable
     private async Task<Shell> OpenAsync(Driving.Session driving)
     {
         ProjectManifest.Write(
-            ManifestPath,
+            Root,
             [new ProjectSettings(
                 ProjectName.Create("acme"), Path.Combine(_root, "acme.db"), _broker.Address, null)]);
 
         await File.WriteAllTextAsync(
             CataloguePath, "{\n  \"agents\": {}\n}\n", TestContext.Current.CancellationToken);
 
-        var shell = TerminalCommand.Build(BrokerDirectory.FromManifest(ManifestPath), manifestPath: ManifestPath);
+        var shell = TerminalCommand.Build(BrokerDirectory.FromManifest(Root), manifestPath: Root);
 
         driving.Show(shell);
 

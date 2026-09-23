@@ -46,8 +46,8 @@ internal static class LogTail
     /// <param name="installed">The autostart entry, or null for none or unknown.</param>
     /// <returns>The path, or <see langword="null"/> when nothing derivable names one.</returns>
     /// <remarks>
-    /// An entry serving the manifest writes one log for every project, beside the manifest, and
-    /// not beside any store. Derived from the entry when there is one, because the guess beside
+    /// An entry serving this machine writes one log for every project, at the root, and not beside any
+    /// store. Derived from the entry when there is one, because the guess beside
     /// the store is exactly wrong on the machine that switched entries: the old log is still
     /// there beside the old store, and following it shows a broker that stopped writing hours
     /// ago while the live one writes somewhere else. Found by reading the spec's assumption
@@ -56,13 +56,15 @@ internal static class LogTail
     /// </remarks>
     internal static string? For(ProjectSettings project, InstalledEntry? installed)
     {
-        if (installed is { ServesManifest: true, Manifest: { Length: > 0 } manifest })
+        if (installed is { ServesManifest: true, Manifest: { Length: > 0 } root })
         {
             try
             {
-                var beside = Path.GetDirectoryName(Path.GetFullPath(manifest));
-
-                return beside is null ? null : Path.Combine(beside, FileName);
+                // **At the root, which used to be "the directory holding the manifest".** The two were the
+                // same place and this said the second, so once `--config` came to name the root itself
+                // this resolved one directory too high — and it would have done it silently, following a
+                // file that does not exist and reporting the broker as not logging.
+                return Path.Combine(Path.GetFullPath(root), FileName);
             }
             catch (Exception failure) when (failure is ArgumentException
                                                     or NotSupportedException

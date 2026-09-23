@@ -51,7 +51,7 @@ public sealed class DescribedWritesTests : IDisposable
         Directory.CreateDirectory(Path.Combine(workspace, ".git"));
 
         var token = TestContext.Current.CancellationToken;
-        var manifest = Path.Combine(_root, "projects.json");
+        var manifest = _root;
         var catalogue = Path.Combine(_root, "alpha-node.json");
 
         ProjectManifest.Write(

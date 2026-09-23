@@ -109,19 +109,25 @@ public static class ProjectsView
     public const string Nothing =
         "This machine names no projects yet. Create one, or name the deployment already running.";
 
-    /// <summary>What to say when the manifest itself could not be read.</summary>
+    /// <summary>What to say when this machine's projects could not be read.</summary>
     /// <remarks>
-    /// A different fact from an empty machine, and 005 recorded why: "this machine names no
-    /// projects" is a machine waiting to be set up, and "the manifest could not be read" is
-    /// somebody's edit thirty seconds ago that they can undo. Showing the first for the second
-    /// hides the edit that caused it.
+    /// <para>
+    /// A different fact from an empty machine, and 005 recorded why: "this machine names no projects" is
+    /// a machine waiting to be set up, and "they could not be read" is somebody's edit thirty seconds ago
+    /// that they can undo. Showing the first for the second hides the edit that caused it.
+    /// </para>
+    /// <para>
+    /// <b>It said "the manifest" until 019, and there is no manifest.</b> Prose left describing a file
+    /// that has gone is the shape this repository keeps recording — a comment standing over a rule that
+    /// was removed, read by the next person as evidence the rule is still there.
+    /// </para>
     /// </remarks>
-    public const string Unreadable = "The manifest could not be read: ";
+    public const string Unreadable = "This machine's projects could not be read: ";
 
     /// <summary>Builds the rows from the manifest and what each broker said.</summary>
-    /// <param name="projects">What the manifest names.</param>
+    /// <param name="projects">This machine's projects.</param>
     /// <param name="health">What each broker answered, keyed by project name.</param>
-    /// <returns>One row per project, in the manifest's order.</returns>
+    /// <returns>One row per project, in name order.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="projects"/> is null.</exception>
     /// <remarks>
     /// The manifest's order rather than sorted, because it is a file a person edits and the order

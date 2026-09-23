@@ -75,7 +75,9 @@ public sealed class TwoProjectsTests : IAsyncDisposable
 
     private string Workspace => Path.Combine(_root, "orders");
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **The root, not a manifest file.** `--config` names the directory this machine keeps its
+    // Parley files in; the projects are the folders under it.
+    private string Root => _root;
 
     private string LaunchFile => Path.Combine(Workspace, ".mcp.json");
 
@@ -103,7 +105,7 @@ public sealed class TwoProjectsTests : IAsyncDisposable
                 null))
             .ToList();
 
-        ProjectManifest.Write(ManifestPath, projects);
+        ProjectManifest.Write(Root, projects);
 
         foreach (var project in projects)
         {
@@ -112,8 +114,8 @@ public sealed class TwoProjectsTests : IAsyncDisposable
         }
 
         var shell = TerminalCommand.Build(
-            BrokerDirectory.FromManifest(ManifestPath),
-            manifestPath: ManifestPath,
+            BrokerDirectory.FromManifest(Root),
+            manifestPath: Root,
             cataloguePath: CatalogueFor("alpha"));
 
         driving.Show(shell);
@@ -295,7 +297,7 @@ public sealed class TwoProjectsTests : IAsyncDisposable
                 $"http://127.0.0.1:{9100 + at}", null))
             .ToList();
 
-        ProjectManifest.Write(ManifestPath, deployment);
+        ProjectManifest.Write(Root, deployment);
 
         foreach (var project in deployment)
         {
@@ -310,7 +312,7 @@ public sealed class TwoProjectsTests : IAsyncDisposable
                 Path.Combine(Workspace, Adding.Instructions),
                 token,
                 deployment,
-                ManifestPath),
+                Root),
             token)));
 
         var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, token))!;

@@ -40,10 +40,12 @@ public sealed class NamingTests : IDisposable
         }
     }
 
-    private string Manifest => Path.Combine(_directory, "projects.json");
+    // **The root, not a manifest file.** `--config` names the directory this machine keeps its
+    // Parley files in; the projects are the folders under it.
+    private string Root => _directory;
 
     [Fact]
-    public async Task A_new_project_is_checked_as_it_is_typed_and_proposed_its_own_paths()
+    public async Task A_new_project_is_checked_as_it_is_typed_and_needs_nothing_but_a_name()
     {
         using var driving = Driving.Open();
         using var shell = await OpenAsync(driving, installed: null);
@@ -52,9 +54,13 @@ public sealed class NamingTests : IDisposable
 
         var form = (FormDialog)driving.Find(Naming.CreateTitle);
 
-        // The store is proposed rather than blank, and the port with it.
-        Assert.EndsWith(".db", form.Values[1], StringComparison.Ordinal);
-        Assert.Equal(Naming.DefaultEndpoint, form.Values[2]);
+        // **Two fields, and this asserted four.** It used to check that a store was proposed rather than
+        // blank, and a port with it — which was the best a form could do when a person still had to
+        // supply both. 019 removed the questions rather than improving the answers, so what is asserted
+        // is that they have gone: a name, and a description that is optional.
+        Assert.Equal(2, form.Values.Count);
+        Assert.Equal(string.Empty, form.Values[0]);
+        Assert.Equal(string.Empty, form.Values[1]);
 
         // **Corrected as it is typed, not refused after four more answers — and this assertion
         // changed shape rather than being deleted.** It used to fill "Alpha" and expect the words
@@ -80,20 +86,22 @@ public sealed class NamingTests : IDisposable
 
         Assert.Equal(string.Empty, form.Problems[0]);
 
-        form.Fill(2, "http://127.0.0.1:1");
-        form.Fill(3, "the first one");
+        form.Fill(1, "the first one");
         form.Finish(taken: true);
 
         await shell.Settled;
 
-        Assert.True(ProjectManifest.TryRead(Manifest, out var projects, out var problem), problem);
+        Assert.True(ProjectManifest.TryRead(Root, out var projects, out var problem), problem);
 
         var named = Assert.Single(projects);
 
         Assert.Equal("alpha", named.Name.Value);
-        Assert.EndsWith(".db", named.Store, StringComparison.Ordinal);
-        Assert.Equal("http://127.0.0.1:1", named.Endpoint);
         Assert.Equal("the first one", named.Description);
+
+        // **Both derived, neither typed**, which is the whole of what this form gave up. The store is
+        // inside the project's own folder and the port comes from the band.
+        Assert.Equal(ProjectFolder.StoreFor(Root, named.Name), named.Store);
+        Assert.InRange(new Uri(named.Endpoint).Port, 19100, 19355);
 
         Assert.Contains(Naming.Named, shell.Said, StringComparison.Ordinal);
 
@@ -134,7 +142,7 @@ public sealed class NamingTests : IDisposable
 
         await shell.Settled;
 
-        Assert.True(ProjectManifest.TryRead(Manifest, out var projects, out var problem), problem);
+        Assert.True(ProjectManifest.TryRead(Root, out var projects, out var problem), problem);
 
         var named = Assert.Single(projects);
 
@@ -185,7 +193,7 @@ public sealed class NamingTests : IDisposable
     {
         var store = Path.Combine(_directory, "running.db");
         var explicitEntry = new InstalledEntry(store, null, null, null, null);
-        var manifestEntry = new InstalledEntry(null, null, null, null, Manifest);
+        var manifestEntry = new InstalledEntry(null, null, null, null, Root);
 
         var claimed = new ProjectSettings(
             ProjectName.Create("prod"), store, "http://127.0.0.1:1", null);
@@ -202,8 +210,8 @@ public sealed class NamingTests : IDisposable
     /// <returns>The surface, with its projects read.</returns>
     private async Task<Shell> OpenAsync(Driving.Session driving, InstalledEntry? installed)
     {
-        var directory = BrokerDirectory.FromManifest(Manifest);
-        var shell = TerminalCommand.Build(directory, manifestPath: Manifest, installed: installed);
+        var directory = BrokerDirectory.FromManifest(Root);
+        var shell = TerminalCommand.Build(directory, manifestPath: Root, installed: installed);
 
         driving.Show(shell);
 

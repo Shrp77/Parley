@@ -35,7 +35,9 @@ public sealed class RemovingTests : IDisposable
         }
     }
 
-    private string Manifest => Path.Combine(_directory, "projects.json");
+    // **The root, not a manifest file.** `--config` names the directory this machine keeps its
+    // Parley files in; the projects are the folders under it.
+    private string Root => _directory;
 
     [Fact]
     public async Task Keeping_is_first_and_changes_nothing()
@@ -59,7 +61,7 @@ public sealed class RemovingTests : IDisposable
 
         Assert.Equal(Removing.Kept, shell.Said);
         Assert.True(File.Exists(alpha.Store));
-        Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
+        Assert.True(ProjectManifest.TryRead(Root, out var left, out _));
         Assert.Equal("alpha", Assert.Single(left).Name.Value);
     }
 
@@ -81,7 +83,7 @@ public sealed class RemovingTests : IDisposable
 
         Assert.Contains("Nothing was deleted", shell.Said, StringComparison.Ordinal);
         Assert.True(File.Exists(alpha.Store));
-        Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
+        Assert.True(ProjectManifest.TryRead(Root, out var left, out _));
         Assert.Empty(left);
     }
 
@@ -112,7 +114,7 @@ public sealed class RemovingTests : IDisposable
         await shell.Settled;
 
         Assert.True(File.Exists(alpha.Store), "a wrong name destroyed the store anyway");
-        Assert.True(ProjectManifest.TryRead(Manifest, out var still, out _));
+        Assert.True(ProjectManifest.TryRead(Root, out var still, out _));
         Assert.Single(still);
 
         // The right one destroys.
@@ -134,7 +136,7 @@ public sealed class RemovingTests : IDisposable
 
         Assert.Contains("Destroyed 'alpha'", shell.Said, StringComparison.Ordinal);
         Assert.False(File.Exists(alpha.Store), "the store survived");
-        Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
+        Assert.True(ProjectManifest.TryRead(Root, out var left, out _));
         Assert.Empty(left);
     }
 
@@ -195,13 +197,15 @@ public sealed class RemovingTests : IDisposable
 
         var orders = new ProjectSettings(
             ProjectName.Create("orders"),
-            Path.Combine(_directory, "orders.db"),
+            ProjectFolder.StoreFor(Root, ProjectName.Create("orders")),
             $"http://127.0.0.1:{FreePort()}",
             null);
 
-        ProjectManifest.Write(Manifest, [orders]);
+        ProjectManifest.Write(Root, [orders]);
 
-        var stamp = File.GetLastWriteTimeUtc(Manifest);
+        // The stamp the real watcher uses, rather than one file's write time — which is what this used
+        // and which has become a directory, so it never moved and the new project never came up.
+        var stamp = ProjectFolder.StampOf(Root);
 
         using var stopping = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
@@ -212,16 +216,16 @@ public sealed class RemovingTests : IDisposable
             TextWriter.Null,
             reread: () =>
             {
-                var now = File.GetLastWriteTimeUtc(Manifest);
+                var now = ProjectFolder.StampOf(Root);
 
-                if (now == stamp)
+                if (string.Equals(now, stamp, StringComparison.Ordinal))
                 {
                     return null;
                 }
 
                 stamp = now;
 
-                return ProjectManifest.TryRead(Manifest, out var current, out _) ? current : null;
+                return ProjectManifest.TryRead(Root, out var current, out _) ? current : null;
             },
             cancellationToken: stopping.Token);
 
@@ -229,8 +233,11 @@ public sealed class RemovingTests : IDisposable
         {
             Assert.True(await AnswersAsync(orders.Endpoint, ct), "the first project never came up");
 
-            var billingEndpoint = $"http://127.0.0.1:{FreePort()}";
-            var store = Naming.ProposedStore("billing", [orders], null);
+            // **The form takes a name and a description now.** It asked for a store and a port too, and
+            // both questions have gone rather than acquired better defaults: the store is derived from
+            // the name and the port is claimed. So what is asserted afterwards is the endpoint the
+            // command chose, read back from what it wrote, rather than one this test picked.
+            var store = ProjectFolder.StoreFor(Root, ProjectName.Create("billing"));
 
             using var driving = Driving.Open();
             using var shell = await OpenAsync(driving);
@@ -240,13 +247,18 @@ public sealed class RemovingTests : IDisposable
             var form = (FormDialog)driving.Find(Naming.CreateTitle);
 
             form.Fill(0, "billing");
-            form.Fill(1, store);
-            form.Fill(2, billingEndpoint);
             form.Finish(taken: true);
 
             await shell.Settled;
 
             Assert.Contains(Naming.Named, shell.Said, StringComparison.Ordinal);
+
+            Assert.True(ProjectManifest.TryRead(Root, out var named, out var unreadable), unreadable);
+
+            var billingEndpoint = named
+                .Single(p => p.Name.Value == "billing")
+                .Endpoint;
+
             Assert.True(
                 await AnswersAsync(billingEndpoint, ct),
                 "the project created from the form never came up");
@@ -295,8 +307,8 @@ public sealed class RemovingTests : IDisposable
     /// <returns>The surface, with its projects read.</returns>
     private async Task<Shell> OpenAsync(Driving.Session driving)
     {
-        var directory = BrokerDirectory.FromManifest(Manifest);
-        var shell = TerminalCommand.Build(directory, manifestPath: Manifest);
+        var directory = BrokerDirectory.FromManifest(Root);
+        var shell = TerminalCommand.Build(directory, manifestPath: Root);
 
         driving.Show(shell);
 
@@ -310,13 +322,17 @@ public sealed class RemovingTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
 
+        // **The store is derived, so the fixture cannot put one where it likes.** It used to name
+        // `alpha.db` beside the root and then create that file — which the writer now ignores, so
+        // `destroy` deleted the real store while the fixture's own file survived and the test read that
+        // as the store surviving. Naming it the same way the reader does is the whole fix.
         var alpha = new ProjectSettings(
             ProjectName.Create("alpha"),
-            Path.Combine(_directory, "alpha.db"),
+            ProjectFolder.StoreFor(Root, ProjectName.Create("alpha")),
             "http://127.0.0.1:1",
             null);
 
-        ProjectManifest.Write(Manifest, [alpha]);
+        ProjectManifest.Write(Root, [alpha]);
         await File.WriteAllTextAsync(alpha.Store, string.Empty, ct);
 
         return alpha;

@@ -62,7 +62,9 @@ public sealed class AddingTests : IAsyncDisposable
 
     private string Workspace => Path.Combine(_root, "orders");
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **The root, not a manifest file.** `--config` names the directory this machine keeps its
+    // Parley files in; the projects are the folders under it.
+    private string Root => _root;
 
     private string Store => Path.Combine(_root, "acme.db");
 
@@ -185,7 +187,7 @@ public sealed class AddingTests : IAsyncDisposable
 
         // And the manifest is untouched, so nothing restarts.
         Assert.DoesNotContain("broker restarts", shell.Said, StringComparison.Ordinal);
-        Assert.True(ProjectManifest.TryRead(ManifestPath, out var projects, out _));
+        Assert.True(ProjectManifest.TryRead(Root, out var projects, out _));
         _ = Assert.Single(projects);
     }
 
@@ -400,7 +402,7 @@ public sealed class AddingTests : IAsyncDisposable
             _broker.Address,
             null);
 
-        ProjectManifest.Write(ManifestPath, [project]);
+        ProjectManifest.Write(Root, [project]);
 
         if (catalogued)
         {
@@ -408,9 +410,9 @@ public sealed class AddingTests : IAsyncDisposable
                 CataloguePath, "{\n  \"agents\": {}\n}\n", TestContext.Current.CancellationToken);
         }
 
-        var directory = BrokerDirectory.FromManifest(ManifestPath);
+        var directory = BrokerDirectory.FromManifest(Root);
         var shell = TerminalCommand.Build(
-            directory, manifestPath: ManifestPath, cataloguePath: CataloguePath);
+            directory, manifestPath: Root, cataloguePath: CataloguePath);
 
         driving.Show(shell);
 

@@ -25,7 +25,7 @@ public sealed class LogLocationTests
     [Fact]
     public void An_entry_serving_the_manifest_logs_beside_the_manifest()
     {
-        var manifest = Path.Combine(Path.GetTempPath(), "config", "projects.json");
+        var manifest = Path.Combine(Path.GetTempPath(), "config");
         var entry = new InstalledEntry(null, null, null, null, manifest);
 
         Assert.Equal(
@@ -46,7 +46,7 @@ public sealed class LogLocationTests
         {
             var ct = TestContext.Current.CancellationToken;
 
-            var manifest = Path.Combine(directory, "config", "projects.json");
+            var manifest = Path.Combine(directory, "config");
             var project = new ProjectSettings(
                 ProjectName.Create("alpha"),
                 Path.Combine(directory, "store", "alpha.db"),

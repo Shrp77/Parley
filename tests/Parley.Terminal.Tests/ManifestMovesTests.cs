@@ -67,7 +67,9 @@ public sealed class ManifestMovesTests : IAsyncDisposable
         }
     }
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **The root, not a manifest file.** `--config` names the directory this machine keeps its
+    // Parley files in; the projects are the folders under it.
+    private string Root => _root;
 
     [Fact]
     public async Task A_project_added_beside_the_surface_appears_on_the_next_refresh()
@@ -75,7 +77,7 @@ public sealed class ManifestMovesTests : IAsyncDisposable
         Write("alpha");
 
         using var driving = Driving.Open();
-        using var directory = BrokerDirectory.FromManifest(ManifestPath);
+        using var directory = BrokerDirectory.FromManifest(Root);
         using var shell = new Shell(directory);
 
         driving.Show(shell);
@@ -101,7 +103,7 @@ public sealed class ManifestMovesTests : IAsyncDisposable
         Write("alpha", "beta");
 
         using var driving = Driving.Open();
-        using var directory = BrokerDirectory.FromManifest(ManifestPath);
+        using var directory = BrokerDirectory.FromManifest(Root);
         using var shell = new Shell(directory);
 
         driving.Show(shell);
@@ -134,14 +136,14 @@ public sealed class ManifestMovesTests : IAsyncDisposable
         Write("alpha");
 
         using var driving = Driving.Open();
-        using var directory = BrokerDirectory.FromManifest(ManifestPath);
+        using var directory = BrokerDirectory.FromManifest(Root);
         using var shell = new Shell(directory);
 
         driving.Show(shell);
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
 
-        ProjectManifest.Write(ManifestPath, []);
+        ProjectManifest.Write(Root, []);
 
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
@@ -178,7 +180,7 @@ public sealed class ManifestMovesTests : IAsyncDisposable
         Write("alpha");
 
         using var driving = Driving.Open();
-        using var directory = BrokerDirectory.FromManifest(ManifestPath);
+        using var directory = BrokerDirectory.FromManifest(Root);
         using var shell = new Shell(directory);
 
         driving.Show(shell);
@@ -187,7 +189,14 @@ public sealed class ManifestMovesTests : IAsyncDisposable
 
         Assert.Single(shell.Projects.Projects);
 
-        await File.WriteAllTextAsync(ManifestPath, "{ not json", TestContext.Current.CancellationToken);
+        // **Damage a project's own configuration, which is where a hand edit lands now.** The root is a
+        // directory, so there is nothing there to overwrite — and one unreadable project is the stronger
+        // case anyway: it must empty the list and say so rather than showing the projects it can still
+        // read as though nothing were wrong.
+        await File.WriteAllTextAsync(
+            ProjectFolder.ConfigurationFor(Root, ProjectName.Create("alpha")),
+            "{ not json",
+            TestContext.Current.CancellationToken);
 
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
@@ -204,7 +213,7 @@ public sealed class ManifestMovesTests : IAsyncDisposable
     /// </remarks>
     private void Write(params string[] names) =>
         ProjectManifest.Write(
-            ManifestPath,
+            Root,
             [.. names.Select((name, at) => new ProjectSettings(
                 ProjectName.Create(name),
                 Path.Combine(_root, name + ".db"),

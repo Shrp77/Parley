@@ -150,7 +150,7 @@ internal static class FilesOnScreen
     /// <returns>The surface, with its projects read.</returns>
     internal static async Task<Shell> OpenAsync(Driving.Session driving, FileLocationFixture files, string directory)
     {
-        var manifest = Path.Combine(directory, "projects.json");
+        var manifest = directory;
 
         ProjectManifest.Write(
             manifest,

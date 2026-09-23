@@ -79,13 +79,13 @@ internal sealed class ProjectsRegion : FrameView
     internal ListView List => _list;
 
     /// <summary>Draws the projects and what each broker said.</summary>
-    /// <param name="projects">The manifest's projects, in its order.</param>
+    /// <param name="projects">This machine's projects, in name order.</param>
     /// <param name="health">What each broker said, by project name.</param>
-    /// <param name="manifestProblem">Why the manifest could not be read, or null when it could.</param>
+    /// <param name="manifestProblem">Why the projects could not be read, or null when they could.</param>
     /// <remarks>
-    /// A manifest that could not be read empties the list rather than leaving the last good one on
-    /// screen. Somebody who has just broken their manifest needs to be told; a surface that went
-    /// on showing what it read a minute ago would hide the edit that caused it.
+    /// Projects that could not be read empty the list rather than leaving the last good ones on screen.
+    /// Somebody who has just broken a project's configuration needs to be told; a surface that went on
+    /// showing what it read a minute ago would hide the edit that caused it.
     /// </remarks>
     internal void Show(
         IReadOnlyList<ProjectSettings> projects,
@@ -100,7 +100,7 @@ internal sealed class ProjectsRegion : FrameView
         _projects = manifestProblem is null ? [.. projects] : [];
 
         var lines = manifestProblem is not null
-            ? [$"The manifest could not be read. {manifestProblem}"]
+            ? [$"This machine's projects could not be read. {manifestProblem}"]
             : _projects.Count == 0
                 ? new List<string> { Nothing }
                 : [.. _projects.Select(project => Line(project, health))];
