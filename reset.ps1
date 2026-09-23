@@ -27,6 +27,11 @@
         and the record is rebuilt from them anyway.
       * Anything under `projects/`, which is the new layout and is not this script's business.
 
+    **Windows only, and that is a gap rather than a decision about the design.** CI runs on Windows,
+    Linux and macOS and `install.sh` covers all three, so a developer setting Parley up on Linux or
+    macOS has no way to clear a pre-019 layout but by hand. A `reset.sh` is owed — see T080 in
+    `specs/019-one-way-in/tasks.md`; this file is the specification for it.
+
 .PARAMETER Root
     Where Parley keeps this machine's files. Defaults to the same location the tools resolve.
 

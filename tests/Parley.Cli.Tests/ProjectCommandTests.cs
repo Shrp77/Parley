@@ -76,7 +76,7 @@ public sealed class ProjectCommandTests : IDisposable
         var code = await ProjectCommand.RunAsync(
             arguments,
             Root,
-            fields ?? new ProjectFields(null, null),
+            fields ?? new ProjectFields(null),
             output,
             error,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -88,7 +88,7 @@ public sealed class ProjectCommandTests : IDisposable
     // anywhere in this file any more, which is the shape of the change more plainly than any assertion.
     private Task<(int Code, string Out, string Error)> AddAsync(
         string name, string? endpoint = null, string? description = null) =>
-        RunAsync(["add", name], new ProjectFields(endpoint, description));
+        RunAsync(["add", name], new ProjectFields(description));
 
     // ---- add -------------------------------------------------------------------------------
 

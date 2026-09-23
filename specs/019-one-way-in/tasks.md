@@ -191,7 +191,13 @@ carrying the old layout is the one this was written on.
   A parameter that sandboxes the files and not the machine is not a sandbox
 - [X] T079 Take the store list from the old manifest rather than guessing, because once it is deleted
   nothing knows where those stores were
-- [ ] T080 An `install.sh` counterpart for the platforms `install.sh` covers
+- [ ] T080 **A `reset.sh` counterpart — owed, not forgotten.** Windows only for now, on the owner's call
+  2026-09-23, because that is the machine carrying the old layout. **CI runs on Windows, Linux and macOS
+  and `install.sh` covers all three**, so a developer setting Parley up on Linux or macOS today has no way
+  to clear a pre-019 layout but by hand. The PowerShell script is the specification for it: stop the
+  broker, read the old manifest *before* deleting it, take every store with its `-wal`, `-shm`, `.lock`,
+  `.owner`, `.files` and `.files-incoming` companions, keep `node.json`, and carry `--files-only` — which
+  exists because the PowerShell one removed a live logon entry on its first run
 
 **One rule from the withdrawn work is kept and is load-bearing**: the broker stops first, because
 `StoreLock` holds a store with no sharing and a running broker cannot have its files deleted underneath

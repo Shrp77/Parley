@@ -24,14 +24,15 @@ namespace Parley.Cli.Tests;
 /// </remarks>
 public sealed class AutostartConsoleTests
 {
-    private const string Store = "/tmp/parley/parley.db";
+    // The root, not a store: a project's store is derived from its name and no entry names one.
+    private const string Root = "/tmp/parley";
     private const string Binary = "/usr/local/bin/parley";
 
     [Fact]
     public void The_entry_starts_a_console_when_one_is_asked_for()
     {
         var plan = AutostartPlan.Describe(
-            Store, listenOn: null, executable: Binary, nodeConfig: null,
+            Root, project: null, executable: Binary, nodeConfig: null,
             consoleOn: "http://127.0.0.1:5280");
 
         Assert.Contains("--with-web-ui", plan.Arguments, StringComparison.Ordinal);
@@ -45,7 +46,7 @@ public sealed class AutostartConsoleTests
         // absence is the question this exists to stop being asked. A default left implicit is a
         // default somebody has to already know.
         var plan = AutostartPlan.Describe(
-            Store, listenOn: null, executable: Binary, nodeConfig: null,
+            Root, project: null, executable: Binary, nodeConfig: null,
             consoleOn: WebUiAddress.Loopback);
 
         Assert.Contains(
@@ -56,7 +57,7 @@ public sealed class AutostartConsoleTests
     public void An_entry_asked_for_no_console_installs_none()
     {
         var plan = AutostartPlan.Describe(
-            Store, listenOn: null, executable: Binary, nodeConfig: null, consoleOn: null);
+            Root, project: null, executable: Binary, nodeConfig: null, consoleOn: null);
 
         Assert.DoesNotContain("--with-web-ui", plan.Arguments, StringComparison.Ordinal);
         Assert.DoesNotContain("--web-ui", plan.Arguments, StringComparison.Ordinal);
@@ -68,7 +69,7 @@ public sealed class AutostartConsoleTests
         // The property that makes the name still right. Three things start, and `remove` finds
         // all of them by the one handle `install` left behind.
         var plan = AutostartPlan.Describe(
-            Store, listenOn: null, executable: Binary,
+            Root, project: null, executable: Binary,
             nodeConfig: "/tmp/parley/node.json",
             consoleOn: WebUiAddress.Loopback);
 
@@ -85,7 +86,7 @@ public sealed class AutostartConsoleTests
         // split would install an entry that fails at logon, which is the failure nobody sees
         // until the machine is rebooted.
         var plan = AutostartPlan.Describe(
-            Store, listenOn: null, executable: Binary, nodeConfig: null,
+            Root, project: null, executable: Binary, nodeConfig: null,
             consoleOn: "http://127.0.0.1:5280");
 
         var split = AutostartPlan.Split(plan.Arguments);

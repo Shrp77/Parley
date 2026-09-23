@@ -15,9 +15,11 @@ namespace Parley.Cli.Tests;
 /// delete anything.
 /// </para>
 /// <para>
-/// <b>019 left it two fields.</b> <c>--db</c> is gone, because a project's store is derived from its name
-/// and there is no value to set: moving a project's data is moving its folder, which is a different act
-/// than editing a field. What survives is the endpoint and the description.
+/// <b>019 left it one field.</b> <c>--db</c> went because a project's store is derived from its name, and
+/// <c>--listen</c> went because its port is claimed when it is created — so neither has a value to set.
+/// Moving a project's data is moving its folder and moving its port is a claim; both are acts rather than
+/// edits. What survives is the description, which is the one thing about a project that is somebody's to
+/// choose.
 /// </para>
 /// </remarks>
 public sealed class ProjectSetTests : IDisposable
@@ -50,7 +52,7 @@ public sealed class ProjectSetTests : IDisposable
         var code = await ProjectCommand.RunAsync(
             arguments,
             Root,
-            fields ?? new ProjectFields(null, null),
+            fields ?? new ProjectFields(null),
             output,
             error,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -59,7 +61,7 @@ public sealed class ProjectSetTests : IDisposable
     }
 
     private Task<(int Code, string Out, string Error)> AddAsync(string name) =>
-        RunAsync(["add", name], new ProjectFields(null, null));
+        RunAsync(["add", name], new ProjectFields(null));
 
     private IReadOnlyList<ProjectSettings> Projects()
     {
@@ -79,7 +81,7 @@ public sealed class ProjectSetTests : IDisposable
         var was = EndpointOf("orders");
 
         var (code, output, error) = await RunAsync(
-            ["set", "orders"], new ProjectFields(null, "the one that started it all"));
+            ["set", "orders"], new ProjectFields("the one that started it all"));
 
         Assert.Equal(0, code);
         Assert.Empty(error);
@@ -100,29 +102,38 @@ public sealed class ProjectSetTests : IDisposable
         // The rule survived both: an empty value clears an optional one rather than being read as "leave
         // it alone", and `description` is what now has to hold it.
         await AddAsync("orders");
-        await RunAsync(["set", "orders"], new ProjectFields(null, "the one that started it all"));
+        await RunAsync(["set", "orders"], new ProjectFields("the one that started it all"));
 
         Assert.Equal("the one that started it all", Assert.Single(Projects()).Description);
 
-        var (code, _, _) = await RunAsync(["set", "orders"], new ProjectFields(null, string.Empty));
+        var (code, _, _) = await RunAsync(["set", "orders"], new ProjectFields(string.Empty));
 
         Assert.Equal(0, code);
         Assert.Null(Assert.Single(Projects()).Description);
     }
 
     [Fact]
-    public async Task A_change_that_collides_with_another_project_is_refused_whole()
+    public async Task A_project_cannot_be_moved_onto_another_projects_port_because_it_cannot_be_moved()
     {
+        // **This asserted a refusal and now asserts an absence.** `set --listen <another project's
+        // endpoint>` was refused whole, with the collision named and the project left exactly as it was.
+        //
+        // There is nothing to refuse: a port is claimed when a project is created and no command changes
+        // it afterwards, so two projects cannot be brought onto one port by any sequence of commands.
+        // Kept as a test, because a suite that simply dropped the case would leave the next reader unable
+        // to tell a rule that was removed from one nobody wrote.
         await AddAsync("orders");
         await AddAsync("billing");
 
         var ordersOn = EndpointOf("orders");
         var billingOn = EndpointOf("billing");
 
-        var (code, _, error) = await RunAsync(["set", "billing"], new ProjectFields(ordersOn, null));
+        Assert.NotEqual(ordersOn, billingOn);
 
-        Assert.Equal(78, code);
-        Assert.Contains("unchanged", error, StringComparison.Ordinal);
+        // Nothing `set` takes can touch an endpoint; the one thing it does take leaves both alone.
+        Assert.Equal(0, (await RunAsync(["set", "billing"], new ProjectFields("moved?"))).Code);
+
+        Assert.Equal(ordersOn, EndpointOf("orders"));
         Assert.Equal(billingOn, EndpointOf("billing"));
     }
 
@@ -149,11 +160,17 @@ public sealed class ProjectSetTests : IDisposable
 
         // And the option it would have taken is not one the tool has. Driven through the real binary,
         // because the refusal lives in the entry point.
-        var (code, _, refused) = ToolProcess.RunFully(
-            [], "project", "set", "billing", "--db", ProjectFolder.StoreFor(Root, ProjectName.Create("orders")));
+        foreach (var gone in new[] { "--db", "--listen" })
+        {
+            var (code, _, refused) = ToolProcess.RunFully([], "project", "set", "billing", gone, "anything");
 
-        Assert.Equal(64, code);
-        Assert.Contains("--db", refused, StringComparison.Ordinal);
+            Assert.Equal(64, code);
+            Assert.Contains(gone, refused, StringComparison.Ordinal);
+
+            // Named with what replaced it, rather than "not an option this command takes" — which would
+            // be true and useless to somebody typing what every deployment was made with.
+            Assert.Contains("parley project add <name>", refused, StringComparison.Ordinal);
+        }
 
         Assert.Equal(
             ProjectFolder.StoreFor(Root, ProjectName.Create("billing")),
@@ -165,7 +182,7 @@ public sealed class ProjectSetTests : IDisposable
     {
         await AddAsync("orders");
 
-        var (missing, _, notThere) = await RunAsync(["set", "billing"], new ProjectFields(null, "x"));
+        var (missing, _, notThere) = await RunAsync(["set", "billing"], new ProjectFields("x"));
 
         Assert.Equal(78, missing);
         Assert.Contains("No project named 'billing'", notThere, StringComparison.Ordinal);
@@ -175,9 +192,9 @@ public sealed class ProjectSetTests : IDisposable
         Assert.Equal(64, nothing);
         Assert.Contains("Nothing to change", empty, StringComparison.Ordinal);
 
-        // The refusal names what it would take, and the list is two now rather than four.
-        Assert.Contains("--listen", empty, StringComparison.Ordinal);
+        // The refusal names what it would take, and the list is one now rather than four.
         Assert.Contains("--description", empty, StringComparison.Ordinal);
         Assert.DoesNotContain("--db", empty, StringComparison.Ordinal);
+        Assert.DoesNotContain("--listen", empty, StringComparison.Ordinal);
     }
 }

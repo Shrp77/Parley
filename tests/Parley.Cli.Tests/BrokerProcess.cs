@@ -1,3 +1,5 @@
+using Parley.Configuration;
+using Parley.Core;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 
@@ -34,16 +36,53 @@ internal sealed partial class BrokerProcess : IDisposable
     /// <summary>Where this broker is listening.</summary>
     public string Address { get; }
 
-    /// <summary>Starts a broker over a database file.</summary>
-    /// <param name="databasePath">The store.</param>
+    /// <summary>What the project this harness serves is called.</summary>
+    internal const string ProjectName = "probe";
+
+    /// <summary>Where the store of the project this harness serves is, given a root.</summary>
+    /// <param name="root">The throwaway root.</param>
+    /// <returns>The store path, whether or not it exists yet.</returns>
+    /// <remarks>
+    /// Derived through <see cref="ProjectFolder"/> rather than composed here, so a test that opens the
+    /// store afterwards opens the one the broker opened. Composing it would be a second answer to where
+    /// a project's store is, which is exactly what 019 removed.
+    /// </remarks>
+    public static string StoreFor(string root) =>
+        ProjectFolder.StoreFor(root, Parley.Core.ProjectName.Create(ProjectName));
+
+    /// <summary>Starts a broker over a throwaway root, serving one project in it.</summary>
+    /// <param name="root">Where this rig keeps its Parley files. Created if absent.</param>
     /// <param name="environment">Variables to launch it with.</param>
     /// <returns>The running broker.</returns>
     /// <exception cref="InvalidOperationException">It did not report an address.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>This took a store path and a listen address until 019, and both options are gone.</b> A
+    /// project's store is derived from its name and its port is claimed when it is created, so a rig
+    /// names a root and writes a project into it.
+    /// </para>
+    /// <para>
+    /// <b>The project's endpoint is port zero, and that is what keeps the suite parallel.</b> Claiming a
+    /// real port would put every test class on the same band from the bottom — `PortLedger` reconciles
+    /// within one root, and a rig gives every class a root of its own, so two classes would both be
+    /// handed 19100 and one of them would fail to listen. Port zero lets the operating system choose and
+    /// the broker says which it got, which is the mechanism this harness already rested on.
+    /// </para>
+    /// </remarks>
     public static BrokerProcess Start(
-        string databasePath, params (string Name, string Value)[] environment)
+        string root, params (string Name, string Value)[] environment)
     {
-        var process = ToolProcess.Launch(
-            environment, "serve", "--db", databasePath, "--listen", "http://127.0.0.1:0");
+        Directory.CreateDirectory(root);
+
+        ProjectManifest.Write(
+            root,
+            [new ProjectSettings(
+                Parley.Core.ProjectName.Create(ProjectName),
+                StoreFor(root),
+                "http://127.0.0.1:0",
+                null)]);
+
+        var process = ToolProcess.Launch(environment, "serve", "--config", root);
 
         try
         {

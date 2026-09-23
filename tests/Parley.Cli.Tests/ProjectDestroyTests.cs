@@ -236,7 +236,7 @@ public sealed class ProjectDestroyTests : IDisposable
         var code = await ProjectCommand.RunAsync(
             ["add", "trap"],
             Root,
-            new ProjectFields(null, null),
+            new ProjectFields(null),
             output,
             error,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -405,7 +405,7 @@ public sealed class ProjectDestroyTests : IDisposable
         var code = await ProjectCommand.RunAsync(
             ["remove", name],
             Root,
-            new ProjectFields(null, null),
+            new ProjectFields(null),
             output,
             error,
             destroy,

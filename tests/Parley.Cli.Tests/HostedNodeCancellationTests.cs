@@ -1,3 +1,5 @@
+using Parley.Core;
+using Parley.Configuration;
 using Xunit;
 
 namespace Parley.Cli.Tests;
@@ -26,6 +28,19 @@ public sealed class HostedNodeCancellationTests : IDisposable
         Path.Combine(Path.GetTempPath(), "parley-hosted-stop-" + Guid.NewGuid().ToString("N"));
 
     public HostedNodeCancellationTests() => Directory.CreateDirectory(_directory);
+
+    /// <summary>The one project this rig serves, on a port the operating system picks.</summary>
+    /// <remarks>
+    /// Port zero rather than a claimed one: `PortLedger` reconciles within a root and every test class
+    /// has its own, so two classes would both be handed the bottom of the band and one would fail to
+    /// listen. See BrokerProcess, which rests on the same thing.
+    /// </remarks>
+    private ProjectSettings Project() =>
+        new(
+            Parley.Core.ProjectName.Create("probe"),
+            ProjectFolder.StoreFor(_directory, Parley.Core.ProjectName.Create("probe")),
+            "http://127.0.0.1:0",
+            null);
 
     public void Dispose()
     {
@@ -72,12 +87,11 @@ public sealed class HostedNodeCancellationTests : IDisposable
         }
 
         var serving = ServeCommand.RunAsync(
-            Path.Combine(_directory, "parley.db"),
-            "http://127.0.0.1:0",
+            [Project()],
             null,
             output,
             error,
-            Hosting,
+            (_, addresses, reporting, token) => Hosting(addresses, reporting, token),
             cancellationToken: stopping.Token);
 
         // The hook runs only once the port is open, which is the ordering the whole callback
@@ -123,12 +137,11 @@ public sealed class HostedNodeCancellationTests : IDisposable
         }
 
         var serving = ServeCommand.RunAsync(
-            Path.Combine(_directory, "parley.db"),
-            "http://127.0.0.1:0",
+            [Project()],
             null,
             output,
             error,
-            Hosting,
+            (_, addresses, reporting, token) => Hosting(addresses, reporting, token),
             cancellationToken: stopping.Token);
 
         await failed.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
