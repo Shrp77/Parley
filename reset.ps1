@@ -48,17 +48,41 @@
     `parley autostart remove` went on acting on the real machine, and removed a live logon entry.
     A parameter that sandboxes the files and not the machine is not a sandbox.
 
+.PARAMETER Everything
+    Leave nothing at all: the whole root goes, including `node.json`, `ports.json` and the new
+    `projects/` layout, and the old manifest's out-of-root stores go with it.
+
+    **Without this, the script clears the layout 019 replaced and not the one it introduced** --
+    it says so in the paragraph above about what it keeps, and that was right while the only thing
+    on a machine was scaffolding from before 019. It is wrong for the loop this is now used in:
+    setting the new layout up, finding a defect, and starting again. A reset that cannot remove the
+    thing the last run created works exactly once.
+
+    `node.json` goes too. Keeping it saves re-enrolling and costs correctness: it is this machine's
+    catalogue of which checkouts may be started, keyed by identity, and every entry in it names a
+    project that no longer exists after a wipe. Enrolment writes it again.
+
+.PARAMETER Repositories
+    A directory of checkouts. Every `parley` and `parley-<project>` key is taken out of each
+    repository's `.mcp.json`, and a file left with no servers is deleted.
+
+    Here because the launch configuration is the one piece of a deployment that does not live under
+    the root, so a wipe that ignored it would leave every repository pointing at a broker that is
+    gone -- and, across iterations that try different project names, accumulating a key per attempt.
+
 .EXAMPLE
     .\reset.ps1 -WhatIf
 
 .EXAMPLE
-    .\reset.ps1
+    .\reset.ps1 -Everything -Force -Repositories C:\DevHell\Github
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [string] $Root = (Join-Path $env:APPDATA 'Parley'),
     [switch] $Force,
-    [switch] $FilesOnly
+    [switch] $FilesOnly,
+    [switch] $Everything,
+    [string] $Repositories
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,7 +92,11 @@ function Write-Kept { param([string] $Text) Write-Host "    keeping $Text" -Fore
 
 Write-Step "Root: $Root"
 
-if (-not (Test-Path -LiteralPath $Root)) {
+# **Not an early exit when there are repositories to clear**, which is the second iteration of the
+# loop this script exists for: the root was removed last time and the launch entries it wrote are
+# still sitting in every checkout. Exiting here because the root is absent would report a clean
+# machine while leaving each repository pointing at a broker that no longer exists.
+if (-not (Test-Path -LiteralPath $Root) -and -not $Repositories) {
     Write-Host "Nothing to reset: $Root does not exist." -ForegroundColor Green
     exit 0
 }
@@ -102,10 +130,17 @@ if ($FilesOnly) {
         Write-Host '    `parley` is not on PATH; skipping the autostart entry.' -ForegroundColor Yellow
     }
 
-    Get-Process -Name 'parley' -ErrorAction SilentlyContinue | ForEach-Object {
-        if ($PSCmdlet.ShouldProcess("parley (pid $($_.Id))", 'Stop')) {
-            Write-Host "    stopping parley (pid $($_.Id))" -ForegroundColor DarkGray
-            $_ | Stop-Process -Force
+    # **Every tool, not just the broker.** `parley-web-ui` is started as a child the broker does not
+    # wait on, so killing the broker alone leaves it holding its port -- and the next `autostart
+    # install` then reports a web UI that could not bind, on a machine where nothing is using it.
+    # `parley-terminal` is included because a terminal left open holds a view of a deployment that
+    # is about to stop existing.
+    foreach ($name in @('parley', 'parley-web-ui', 'parley-terminal')) {
+        Get-Process -Name $name -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($PSCmdlet.ShouldProcess("$name (pid $($_.Id))", 'Stop')) {
+                Write-Host "    stopping $name (pid $($_.Id))" -ForegroundColor DarkGray
+                $_ | Stop-Process -Force
+            }
         }
     }
 }
@@ -114,6 +149,7 @@ if ($FilesOnly) {
 
 $manifest = Join-Path $Root 'projects.json'
 $stores = @()
+$catalogues = @()
 
 if (Test-Path -LiteralPath $manifest) {
     Write-Step "Reading $manifest"
@@ -124,6 +160,16 @@ if (Test-Path -LiteralPath $manifest) {
         foreach ($project in @($document.projects)) {
             if ($project.store) {
                 $stores += [pscustomobject]@{ Name = $project.name; Store = $project.store }
+            }
+
+            # **The per-project catalogue, which 018 deleted the meaning of and 019 the field.** An
+            # old manifest can name one anywhere, and a machine set up before 018 has one per project
+            # sitting outside the root -- so the root going does not take it, and the next run finds
+            # a catalogue describing repositories that answer in a project that no longer exists.
+            # Found on the first real wipe: a per-project catalogue outside the root survived a
+            # reset that reported itself complete.
+            if ($project.node_config) {
+                $catalogues += $project.node_config
             }
         }
     } catch {
@@ -187,6 +233,18 @@ foreach ($entry in $stores) {
     }
 }
 
+# Only the ones outside the root, since the root is removed whole under -Everything and this would
+# otherwise report removing a file that is about to go anyway.
+foreach ($catalogue in ($catalogues | Sort-Object -Unique)) {
+    if ((Test-Path -LiteralPath $catalogue -PathType Leaf) -and
+        -not $catalogue.StartsWith($Root, [StringComparison]::OrdinalIgnoreCase)) {
+        if ($PSCmdlet.ShouldProcess($catalogue, 'Delete')) {
+            Remove-Item -LiteralPath $catalogue -Force
+            Write-Host "    removed $catalogue" -ForegroundColor DarkGray
+        }
+    }
+}
+
 if (Test-Path -LiteralPath $manifest) {
     if ($PSCmdlet.ShouldProcess($manifest, 'Delete')) {
         Remove-Item -LiteralPath $manifest -Force
@@ -204,11 +262,96 @@ if (Test-Path -LiteralPath $log) {
     }
 }
 
-foreach ($kept in @('node.json', 'ports.json', 'projects')) {
-    $path = Join-Path $Root $kept
+# ---- 4. the layout 019 introduced ----------------------------------------------------------
+#
+# Only under -Everything, because clearing the new layout is destroying a working deployment
+# rather than removing scaffolding. Everything a project owns lives inside its own folder under
+# the root -- its `parley.db`, that store's companions, and the file location beside it -- so the
+# root going is the whole of it, and there is no second list of paths to keep in step.
 
-    if (Test-Path -LiteralPath $path) {
-        Write-Kept $path
+if ($Everything) {
+    Write-Step 'Everything: removing the whole root'
+
+    if (Test-Path -LiteralPath $Root) {
+        if ($PSCmdlet.ShouldProcess($Root, 'Delete')) {
+            # Read before deleting, purely so the report names what went. A count is the difference
+            # between "it worked" and knowing a project was there to be removed.
+            $projectsDirectory = Join-Path $Root 'projects'
+
+            if (Test-Path -LiteralPath $projectsDirectory) {
+                foreach ($folder in Get-ChildItem -LiteralPath $projectsDirectory -Directory -ErrorAction SilentlyContinue) {
+                    Write-Host "    removing project $($folder.Name)" -ForegroundColor DarkGray
+                }
+            }
+
+            Remove-Item -LiteralPath $Root -Recurse -Force
+            Write-Host "    removed $Root" -ForegroundColor DarkGray
+        }
+    }
+} else {
+    foreach ($kept in @('node.json', 'ports.json', 'projects')) {
+        $path = Join-Path $Root $kept
+
+        if (Test-Path -LiteralPath $path) {
+            Write-Kept $path
+        }
+    }
+}
+
+# ---- 5. the launch configurations, which are the one thing outside the root ------------------
+
+if ($Repositories) {
+    Write-Step "Clearing Parley launch entries under $Repositories"
+
+    if (-not (Test-Path -LiteralPath $Repositories)) {
+        Write-Host "    $Repositories is not a directory; nothing to clear." -ForegroundColor Yellow
+    } else {
+        $cleared = 0
+
+        foreach ($repository in Get-ChildItem -LiteralPath $Repositories -Directory -ErrorAction SilentlyContinue) {
+            $launch = Join-Path $repository.FullName '.mcp.json'
+
+            if (-not (Test-Path -LiteralPath $launch -PathType Leaf)) {
+                continue
+            }
+
+            try {
+                $document = Get-Content -LiteralPath $launch -Raw | ConvertFrom-Json
+            } catch {
+                # Left alone rather than rewritten. A file this cannot parse is one somebody else
+                # owns the shape of, and guessing at it is how a reset eats an editor's settings.
+                Write-Host "    $($repository.Name): .mcp.json is not JSON; left alone" -ForegroundColor Yellow
+                continue
+            }
+
+            if (-not $document.mcpServers) { continue }
+
+            # `parley` and `parley-<project>` are the keys this tooling owns, per LaunchKey. Nothing
+            # else is touched: an .mcp.json routinely holds servers that have no connection to Parley.
+            $ours = @($document.mcpServers.PSObject.Properties.Name |
+                Where-Object { $_ -eq 'parley' -or $_ -like 'parley-*' })
+
+            if ($ours.Count -eq 0) { continue }
+
+            if ($PSCmdlet.ShouldProcess($launch, "Remove $($ours -join ', ')")) {
+                foreach ($key in $ours) {
+                    $document.mcpServers.PSObject.Properties.Remove($key)
+                }
+
+                if ($document.mcpServers.PSObject.Properties.Name.Count -eq 0 -and
+                    $document.PSObject.Properties.Name.Count -eq 1) {
+                    Remove-Item -LiteralPath $launch -Force
+                    Write-Host "    $($repository.Name): removed .mcp.json (nothing else in it)" -ForegroundColor DarkGray
+                } else {
+                    $document | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $launch -Encoding utf8NoBOM
+                    Write-Host "    $($repository.Name): removed $($ours -join ', ')" -ForegroundColor DarkGray
+                }
+
+                $cleared++
+            }
+        }
+
+        Write-Host "    $cleared repositor$(if ($cleared -eq 1) { 'y' } else { 'ies' }) cleared" -ForegroundColor DarkGray
     }
 }
 
