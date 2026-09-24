@@ -72,7 +72,8 @@ internal sealed partial class BrokerProcess : IDisposable
     public static BrokerProcess Start(
         string root, params (string Name, string Value)[] environment)
     {
-        Directory.CreateDirectory(root);
+        try { Directory.CreateDirectory(root); }
+        catch (IOException probe) { throw new IOException($"root was '{root}'", probe); }
 
         ProjectManifest.Write(
             root,

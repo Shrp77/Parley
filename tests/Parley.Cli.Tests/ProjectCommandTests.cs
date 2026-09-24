@@ -1,11 +1,8 @@
-using Parley.Core;
-using Parley.Setup;
-using System.Globalization;
-using System.Net;
-using System.Net.Sockets;
 using Parley.Broker;
 using Parley.Configuration;
+using Parley.Core;
 using Parley.Server;
+using Parley.Setup;
 using Xunit;
 
 namespace Parley.Cli.Tests;
@@ -87,7 +84,7 @@ public sealed class ProjectCommandTests : IDisposable
     // **One argument.** The store and the endpoint used to be required here and are not supplied
     // anywhere in this file any more, which is the shape of the change more plainly than any assertion.
     private Task<(int Code, string Out, string Error)> AddAsync(
-        string name, string? endpoint = null, string? description = null) =>
+        string name, string? description = null) =>
         RunAsync(["add", name], new ProjectFields(description));
 
     // ---- add -------------------------------------------------------------------------------
@@ -200,37 +197,29 @@ public sealed class ProjectCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task A_stated_endpoint_is_taken_and_a_clash_with_it_is_refused()
+    public async Task An_endpoint_cannot_be_stated_at_all_and_the_refusal_says_where_it_lives()
     {
-        // `--listen` survives, for the case the band cannot serve: SPEC.md §16 permits a broker on a
-        // private network somebody controls, and nothing here knows which interface they mean.
-        var stated = $"http://127.0.0.1:{Closed().ToString(CultureInfo.InvariantCulture)}";
+        // **Two tests stood here, written to FR-020, which is withdrawn.** They checked that `--listen`
+        // took a stated endpoint — including a non-loopback one — and that a second project asking for
+        // the same port was refused. The reasoning behind them survives and is worth keeping: SPEC.md
+        // §16 does permit a broker on a private network, and nothing here can know which interface
+        // somebody means, so what is handed out is always loopback.
+        //
+        // What was wrong is the conclusion that the remedy belongs on a command line. It bought one more
+        // thing a person supplies and two rules about which source wins, on a feature whose whole point
+        // is that a project is named rather than pathed.
+        //
+        // **So the refusal has to say where the endpoint does live**, or this is a capability removed
+        // with nowhere to go. Driven through the real binary, because the refusal is in the entry point.
+        var (code, _, error) = ToolProcess.RunFully(
+            [], "project", "add", "orders", "--listen", "http://0.0.0.0:19100");
 
-        Assert.Equal(0, (await AddAsync("orders", endpoint: stated)).Code);
+        Assert.Equal(64, code);
+        Assert.Contains("--listen", error, StringComparison.Ordinal);
+        Assert.Contains("parley project add <name>", error, StringComparison.Ordinal);
 
-        Assert.True(ProjectManifest.TryRead(Root, out var projects, out _));
-        Assert.Equal(stated, Assert.Single(projects).Endpoint);
-
-        // Recorded as spoken for even though it did not come from the band, so a second project asking
-        // for it is refused rather than quietly given a port somebody is about to serve on.
-        var (code, _, error) = await AddAsync("billing", endpoint: stated);
-
-        Assert.Equal(78, code);
-        Assert.Contains("orders", error, StringComparison.Ordinal);
-        Assert.Contains("only one broker can hold a port", error, StringComparison.Ordinal);
-
-        Assert.True(ProjectManifest.TryRead(Root, out var after, out _));
-        Assert.Single(after);
-    }
-
-    [Fact]
-    public async Task A_stated_endpoint_that_is_not_an_address_is_refused_and_creates_nothing()
-    {
-        var (code, _, error) = await AddAsync("orders", endpoint: "nonsense");
-
-        Assert.Equal(78, code);
-        Assert.Contains("nonsense", error, StringComparison.Ordinal);
-        Assert.False(Directory.Exists(ProjectFolder.For(Root, ProjectName.Create("orders"))));
+        // And nothing was created on the way to refusing it.
+        Assert.False(Directory.Exists(ProjectFolder.ProjectsIn(Root)));
     }
 
     [Fact]
@@ -291,7 +280,10 @@ public sealed class ProjectCommandTests : IDisposable
 
         Assert.Equal(64, exitCode);
         Assert.Contains("--db", error, StringComparison.Ordinal);
-        Assert.Contains("derived from its name", error, StringComparison.Ordinal);
+
+        // Named with what replaced it. "Not an option this command takes" would be true and useless to
+        // somebody typing what every deployment on every machine was made with.
+        Assert.Contains("parley project add <name>", error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -390,9 +382,14 @@ public sealed class ProjectCommandTests : IDisposable
         // A real broker on a real port, because the check is a connection attempt and a listener that
         // does not speak HTTP/2 would be reported unreachable — which is the answer that makes this test
         // pass while proving nothing.
-        var endpoint = $"http://127.0.0.1:{Closed().ToString(CultureInfo.InvariantCulture)}";
+        // **The endpoint is read back rather than chosen.** It used to be stated with `--listen`; the
+        // project is handed one from the band now, and a broker started on that address is what makes
+        // the check a real connection attempt rather than a listener that cannot speak HTTP/2.
+        Assert.Equal(0, (await AddAsync("orders")).Code);
 
-        Assert.Equal(0, (await AddAsync("orders", endpoint: endpoint)).Code);
+        Assert.True(ProjectManifest.TryRead(Root, out var named, out var unreadable), unreadable);
+
+        var endpoint = Assert.Single(named).Endpoint;
 
         var runtime = BrokerRuntime.Open(
             Store("orders"), BrokerOptions.Default, TimeProvider.System);
@@ -483,20 +480,4 @@ public sealed class ProjectCommandTests : IDisposable
         Assert.Contains("the shop's own deployment", output, StringComparison.Ordinal);
     }
 
-    /// <summary>A port nothing is listening on.</summary>
-    /// <returns>A port number, free at the moment of asking.</returns>
-    /// <remarks>
-    /// Taken from the kernel and released, rather than picked. A hardcoded "nothing runs here" port is a
-    /// guess about the machine running the suite, and the failure it produces — a reachability probe that
-    /// succeeds against somebody else's service — reads as this feature being broken.
-    /// </remarks>
-    private static int Closed()
-    {
-        using var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
-        probe.Stop();
-
-        return port;
-    }
 }

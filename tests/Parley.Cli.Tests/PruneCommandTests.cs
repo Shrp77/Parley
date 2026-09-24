@@ -238,22 +238,21 @@ public sealed class PruneCommandTests : IAsyncDisposable
         // A root with one project in it, because `serve` takes no store and no port. What this
         // probes is unchanged: an unreadable retention value stops the broker rather than the
         // operator's shell, at the one moment somebody is watching.
-        var path = await ProjectDatabase();
-        var root = _directory;
-
         // **A project rather than a store and a port.** `serve` takes neither; a rig names a root and
-        // writes a project into it, and the endpoint it wants goes in that project's own file.
+        // writes a project into it, and the store this then checks is that project's own.
+        var path = await ProjectDatabase();
+
         ProjectManifest.Write(
-            root,
+            _directory,
             [new ProjectSettings(
-                ProjectName.Create("probe"),
-                ProjectFolder.StoreFor(root, ProjectName.Create("probe")),
+                ProjectName.Create(BrokerProcess.ProjectName),
+                path,
                 "http://127.0.0.1:0",
                 null)]);
 
         var (exitCode, error) = ToolProcess.Run(
             [(RetentionPolicyEnvironment.IdleVariable, "soon")],
-            "serve", "--config", root);
+            "serve", "--config", _directory);
 
         Assert.NotEqual(0, exitCode);
         Assert.Contains(RetentionPolicyEnvironment.IdleVariable, error, StringComparison.Ordinal);
@@ -273,7 +272,7 @@ public sealed class PruneCommandTests : IAsyncDisposable
         // nobody was looking.
         var path = await ProjectDatabase();
 
-        using var broker = BrokerProcess.Start(path);
+        using var broker = BrokerProcess.Start(_directory);
 
         var (exitCode, error) = ToolProcess.Run("--broker", broker.Address, verb, "");
 
@@ -290,7 +289,7 @@ public sealed class PruneCommandTests : IAsyncDisposable
         // better than the alternatives, both of which are wrong in a way that looks like success.
         var path = await ProjectDatabase();
 
-        using var broker = BrokerProcess.Start(path);
+        using var broker = BrokerProcess.Start(_directory);
 
         var (exitCode, _) = ToolProcess.Run("--broker", broker.Address, "prune", "pricing");
 
@@ -347,7 +346,7 @@ public sealed class PruneCommandTests : IAsyncDisposable
         // is also the demonstration that the operator's shell no longer decides anything.
         var path = await RecentlySettledDatabase();
 
-        using (var relaxed = BrokerProcess.Start(path))
+        using (var relaxed = BrokerProcess.Start(_directory))
         {
             var (unconfigured, _) = ToolProcess.Run("--broker", relaxed.Address, "prune");
 

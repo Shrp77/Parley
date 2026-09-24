@@ -187,10 +187,14 @@ public sealed class ProjectDestroyTests : IDisposable
         // must say so -- and the entry is gone regardless, which it must also say.
         var ct = TestContext.Current.CancellationToken;
 
-        var store = Path.Combine(_directory, "byhand.db");
+        // **A broker started by hand, in a root of its own.** That is what makes it "not the serving
+        // process's": it is serving a different machine's worth of projects entirely, and `--destroy`
+        // must neither kill it nor delete a store it still holds.
+        var elsewhere = Path.Combine(_directory, "by-hand-root");
 
-        using var byHand = BrokerProcess.Start(store);
+        using var byHand = BrokerProcess.Start(elsewhere);
 
+        var store = BrokerProcess.StoreFor(elsewhere);
         var project = new ProjectSettings(ProjectName.Create("byhand"), store, byHand.Address, null);
 
         ProjectManifest.Write(Root, [project]);
