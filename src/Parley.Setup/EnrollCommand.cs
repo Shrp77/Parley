@@ -268,6 +268,76 @@ public static class EnrollCommand
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>The git repositories directly under a directory, for a surface to offer.</summary>
+    /// <param name="root">The directory holding the checkouts.</param>
+    /// <returns>One row per repository, in a stable order, none of them ticked.</returns>
+    /// <remarks>
+    /// <b>Public so that the terminal can draw the picker and still enrol through this command.</b>
+    /// The alternative is the terminal finding repositories itself, which would be a second
+    /// implementation of the rule for what counts as one — and that rule decides which names end up
+    /// on a roster no agent will ever answer to. What a surface supplies is the choosing; what is
+    /// written stays this command's.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="root"/> is null.</exception>
+    public static IReadOnlyList<EnrollmentEntry> Find(string root)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+
+        return Directory.Exists(root)
+            ? Discover(root, new Dictionary<string, EnrollmentEntry>(StringComparer.OrdinalIgnoreCase))
+            : [];
+    }
+
+    /// <summary>Configures, catalogues and starts repositories a surface has already chosen.</summary>
+    /// <param name="chosen">The rows, with <c>Enroll</c> set on the ones to configure.</param>
+    /// <param name="describe">Report what would be configured and change nothing.</param>
+    /// <param name="nodeConfig">The catalogue this machine reads, as the caller resolved it.</param>
+    /// <param name="output">Where to report what happened.</param>
+    /// <param name="error">Where to report why it could not.</param>
+    /// <param name="project">The project being enrolled into, or null.</param>
+    /// <param name="deployment">Every project this machine describes.</param>
+    /// <param name="manifestPath">Where that lives, so the gate is held across the run.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>The exit code.</returns>
+    /// <remarks>
+    /// The other half of <see cref="Find"/>: a surface that drew its own picker hands the rows back
+    /// and this writes them. No approval of an <c>owns</c> line is asked for, because there is no
+    /// worksheet to tick — what a repository is responsible for is asked of the agent itself.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">A required argument is null.</exception>
+    public static async Task<int> EnrolAsync(
+        IReadOnlyList<EnrollmentEntry> chosen,
+        bool describe,
+        Resolved nodeConfig,
+        TextWriter output,
+        TextWriter error,
+        ProjectSettings? project = null,
+        IReadOnlyList<ProjectSettings>? deployment = null,
+        string? manifestPath = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(chosen);
+        ArgumentNullException.ThrowIfNull(nodeConfig);
+        ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(error);
+
+        return await ConfigureAsync(
+            chosen,
+            manifestNodeConfig: null,
+            unreadable: null,
+            unreadableCode: 0,
+            source: "the repositories chosen",
+            fromManifest: false,
+            write: !describe,
+            nodeConfig,
+            output,
+            error,
+            project,
+            deployment,
+            manifestPath,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>The git repositories directly under a directory, as enrolment rows.</summary>
     /// <param name="root">The directory holding the checkouts.</param>
     /// <param name="previous">

@@ -130,18 +130,35 @@ public sealed class PortLedgerTests : IDisposable
     [Fact]
     public void A_port_something_else_holds_is_stepped_over()
     {
-        // The bind test earns its keep here: the record has never heard of this port and the band would
-        // hand it out first.
+        // The bind test earns its keep here: the record has never heard of this port, and whatever the
+        // band would hand out first is held by something outside the record entirely.
+        //
+        // **Which port that is has to be discovered rather than assumed, and this test assumed it.** It
+        // bound `BandFirst` itself and claimed afterwards, which is correct only on a machine where
+        // nothing already holds 19100 — and the machine most likely to run this suite is one that is
+        // actually running Parley, where the first project ever named holds exactly that. It failed with
+        // `SocketException` from its own setup line, before reaching a single assertion, the first time
+        // the suite was run on a machine with a live 0.32.0 deployment on it.
+        //
+        // So: ask the ledger what it would hand out, give that port back, hold it, and ask again.
+        Assert.True(
+            PortLedger.TryClaim(_root, ProjectName.Create("orders"), out var first, out var whyNot),
+            whyNot);
+
+        var contested = PortOf(first!);
+
+        Assert.True(PortLedger.TryRelease(_root, ProjectName.Create("orders"), out var released), released);
+
         using var holder = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
 
-        holder.Bind(new IPEndPoint(IPAddress.Loopback, PortLedger.BandFirst));
+        holder.Bind(new IPEndPoint(IPAddress.Loopback, contested));
         holder.Listen();
 
         Assert.True(
             PortLedger.TryClaim(_root, ProjectName.Create("orders"), out var endpoint, out var problem),
             problem);
 
-        Assert.NotEqual(PortLedger.BandFirst, PortOf(endpoint!));
+        Assert.NotEqual(contested, PortOf(endpoint!));
     }
 
     [Fact]

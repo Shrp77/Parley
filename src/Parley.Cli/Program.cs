@@ -88,10 +88,9 @@ const string Help = """
                                                        the broker and start the agents on it
                                                        when a question arrives
 
-      parley enroll scan <dir> [<manifest>]            find repositories and tick the ones to
-                     [--all | --none]                  enroll; the flags skip the picker
-      parley enroll plan <manifest>                    say what enrolling them would change
-      parley enroll apply <manifest>                   configure the ticked ones as agents
+      parley enroll <dir> [--all | --none]             find the repositories under a directory,
+                    [--describe]                       tick the ones to enroll, and configure and
+                                                       start them; --describe changes nothing
 
       parley registry                                  every registered agent, with its workspace
       parley retire <agent>                            withdraw a registration
@@ -139,14 +138,24 @@ const string Help = """
     start the broker at logon and stop it at logout; a machine that must answer with nobody
     signed in wants a system service instead, and that does need privilege.
 
-    enroll configures several repositories at once: `scan` writes a manifest, you fill in what
-    each one owns, `plan` says what would change and `apply` changes it. `scan` needs no project
-    and is not asked to choose one -- it surveys a directory and writes a file, which is the step
-    you want most on a machine naming several. `plan` and `apply` do need one, because the key
-    they write into each repository is `parley-<project>`. It never composes an
-    owns line and never rewrites a `## Peers` section it did not write. Reading the roster is
-    still /parley:write-peers, run once per repository after the last one has registered --
-    every agent that registers makes every block already written stale.
+    enroll configures several repositories at once, in one act: it finds the git repositories
+    under a directory, offers them, and configures, catalogues and starts the ones chosen, so
+    that each registers itself. --all and --none skip the picker for scripts and CI; --describe
+    reports what would be configured and changes nothing. It needs a project, because the key it
+    writes into each repository is `parley-<project>`.
+
+    There was a file in the middle of this until 0.32.0 -- `scan` wrote a manifest, you filled in
+    what each repository owns, `plan` said what would change and `apply` changed it. The file was
+    a round trip through the disk between two halves of one operation, and the one thing it
+    bought was somewhere to type an owns line, which is a question the agent is asked rather than
+    one a person answers from memory.
+
+    Enrolling a repository is the consent to start it: a catalogued checkout can be started by a
+    peer's request with nobody watching. The command says so, and names the count, before it
+    configures anything. It never composes an owns line and never rewrites a `## Peers` section
+    it did not write. Reading the roster is still /parley:write-peers, run once per repository
+    after the last one has registered -- every agent that registers makes every block already
+    written stale.
 
     project names deployments so that a machine running more than one stops being told its paths
     a flag at a time. Each project carries a store and an endpoint. What this machine can start is

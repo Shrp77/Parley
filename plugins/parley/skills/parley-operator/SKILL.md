@@ -141,11 +141,10 @@ parley project set <name> [--description <text>]   change what it says about its
 parley project remove <name>          forget how to reach one; deletes nothing
 parley project remove <name> --destroy    ...and stop its broker, delete its store and catalogue
 
-parley enroll scan <dir> [<file>]     find repositories and tick the ones to enroll
-parley enroll scan <dir> --all        tick every one found, for scripts with no terminal
-parley enroll plan <manifest>         say what enrolling them would change
-parley enroll apply <manifest>        configure them all as agents, naming the project when
-                                      this machine resolves one (PARLEY_PROJECT)
+parley enroll <dir>                   find the repositories under a directory, tick the ones
+                                      to enroll, and configure, catalogue and start them
+parley enroll <dir> --all             tick every one found, for scripts with no terminal
+parley enroll <dir> --describe        say what enrolling them would change, and change nothing
 
 parley registry                       every registered agent, with its workspace
 parley retire <agent>                 withdraw a registration
@@ -181,8 +180,13 @@ parley --help                         the same list, on stdout, exiting zero
 
 `enroll` configures several repositories at once, and is a person's command rather than an
 agent's for the same reason the rest of this file is: it writes the launch configuration that
-decides what an agent *is*. Scanning writes a manifest, somebody fills in what each repository
-owns, `plan` says what would change and `apply` changes it.
+decides what an agent *is*. **One verb, and no file for anybody to author**: it finds the git
+repositories under a directory, offers them, and configures, catalogues and starts the ones
+chosen, so that each registers itself.
+
+**Enrolling a repository is the consent to start it.** A catalogued checkout can be started by a
+peer's request with nobody watching, which spends whatever that agent costs to run, so the
+command says so and names the count before it configures anything.
 
 **It never composes an `owns` line and never rewrites a `## Peers` section it did not write.** The
 first because SPEC.md §17 question 10 makes that field worth reading only when a person meant it;

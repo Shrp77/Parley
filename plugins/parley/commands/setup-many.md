@@ -1,5 +1,5 @@
 ---
-description: Configure several repositories as Parley agents in one pass, from a manifest the user fills in.
+description: Configure several repositories as Parley agents in one pass, choosing them from a picker.
 disable-model-invocation: true
 ---
 
@@ -39,119 +39,69 @@ machine names - but that is needed at restart time, not now.
 
 **If this machine runs more than one Parley deployment**, `parley project list` says which, and
 every command below takes `--project <name>` to say which one is being enrolled into. It matters
-here more than anywhere else: consent to run unattended is recorded in a node catalogue, there is
-one per project, and a run that writes to the wrong one records ten repositories as startable
-that nothing will ever start - reporting success. With one project configured, or none, nothing
-needs saying.
+here because the key written into each repository is `parley-<project>`, so a run against the
+wrong one leaves every repository answering in a deployment nobody meant. With one project
+configured, or none, nothing needs saying.
 
-## 2. Scan for the repositories
+Consent to run unattended lives in **one catalogue per machine**, keyed by identity, at the root.
+This step used to warn that there was one per project and that writing to the wrong one recorded
+repositories as startable that nothing would ever start; 018 removed the per-project catalogue,
+so that hazard is gone.
 
-```
-parley enroll scan <directory holding the repos> parley-agents.json
-```
-
-It lists every git repository directly under that directory and **asks which ones to enroll** -
-arrow keys to move, space to tick, `a` all, `n` none, enter to confirm, escape to back out.
-Repositories that already have an `.mcp.json` are marked so, because leaving a working agent
-unticked is how one quietly stops being offered.
-
-**Enrolling is opt-in and nothing is ticked to begin with.** That is not caution for its own
-sake: a scan finds every checkout under a directory, and most are usually not meant to be
-agents. It cannot be inferred from the `owns` line being filled in either, because an empty one
-is a legitimate state - an agent with no line is listed with none - so a blank field would
-otherwise mean both "boundary not agreed yet" and "I never looked at this row".
-
-The picker needs a terminal. In a script or CI, pass `--all` or `--none`; without one, nothing
-new is marked and the user is told to set `enroll` in the file.
-
-It suggests an agent name from the directory name, carries over the `agent` and `owns` of any
-repository that already has a `parley` entry in its `.mcp.json`, and **merges with an existing
-manifest at that path** - so re-running after new repositories appear keeps every line already
-written.
-
-**A repository configured once before still has its old line in git history**, even if `.mcp.json`
-was later deleted - which is the ordinary state of a deployment being reconfigured. `enroll`
-recovers it: `scan` reads the repository's own history and puts the earlier registration into
-`_evidence`, with the commit it came from and the name it used.
-
-That row is the strongest evidence there is and is not a suggestion at all - it is the user's own
-sentence, recovered rather than composed. Prefer it over anything you would write, say which
-commit it came from, and note that a boundary may have moved since. It still needs their yes:
-`owns_approved` is theirs to set.
-
-If git is missing or the repository has no such history the row is simply absent, and the rest of
-the evidence stands. Evidence is optional by design; nothing fails because it is thin.
-
-## 3. Have the user fill in the manifest
-
-**This is the step that is theirs, and the reason this command is not a single button.** The
-manifest arrives with every `owns` line empty and a `_evidence` list beside it: the repository's
-README line, its top-level directories, and any earlier registration recovered from its own git
-history.
-
-**Draft a suggestion into `owns`, and leave `owns_approved` false.** SPEC.md 17 question 10, as
-amended, permits this on three conditions, and the amendment is only honest if all three hold:
-
-1. **Cite the evidence for each suggestion** when you put it to the user - which line of which
-   README, which prior commit. They are approving a sentence against material, not against your
-   confidence. `_evidence` already carries it; quote from there rather than from your reading of
-   the tree.
-2. **`owns_approved` is theirs to set, never yours to assume.** `enroll` refuses any filled-in
-   `owns` that does not carry it, which is what keeps the field's claim true: the registry no
-   longer promises a person composed the line, only that a person read it and said yes. Set it
-   only after they actually say so, per repository, and never in a batch they did not look at.
-3. **Never invent the exclusion half.** A repository can show what it contains and cannot show
-   what it has decided not to own - no tax code in the tree does not mean tax belongs to somebody
-   else, only that nobody has written it yet. Draft the ownership half, leave the exclusion blank,
-   and say plainly that you have left it blank and why. Take "I do not know yet" for an answer:
-   an agent with no line is listed with none, and askers fall back to its name.
-
-**An earlier registration is not a suggestion at all** - it is the user's own sentence, recovered.
-Prefer it over anything you would write, say which commit it came from, and note that a boundary
-may have moved since. That is the strongest row in `_evidence` and usually ends the conversation
-for that repository.
-
-**A drafted line still anchors, and the amendment says so.** Somebody shown a plausible sentence
-agrees more readily than somebody facing a blank. You cannot remove that, so do not paper over it:
-put the evidence and the draft side by side and invite the correction rather than the nod.
-
-Two other fields need the user, not this agent:
-
-- **`agent`** is suggested from the directory name, which SPEC-wise is the wrong source - a name
-  should say what the repository owns, not where it sits. Walk the list with them. `enroll`
-  refuses duplicates, because two servers claiming one name means either may collect the other's
-  mail, but it cannot tell that `acme-orders-api` names a directory rather than a domain.
-- **`unattended`** is consent for a peer's request to start that repository with nobody watching,
-  spending their tokens. Ask per repository and take no for an answer. It is `false` by default
-  and reversible by removing the entry from `node.json`.
-
-**Scan for a boundary that two agents both claim** while reading the list. Two `owns` lines that
-overlap are worse than one that is vague: a peer with work to request has two plausible agents and
-no way to choose. Say so before enrolling, not after.
-
-## 4. Dry run, then apply
+## 2. Enrol them
 
 ```
-parley enroll plan parley-agents.json      what would change, without changing it
-parley enroll apply parley-agents.json     make the changes
+parley enroll <directory holding the repos>
 ```
 
-`plan` prints what would change in each repository and writes nothing. Read it with the user
-before running `apply`. Three behaviours are worth knowing so the output is not surprising:
+One verb. It lists every git repository directly under that directory and **asks which ones to
+enroll** - arrow keys to move, space to tick, `a` all, `n` none, enter to confirm, escape to back
+out. Then it configures the ticked ones, catalogues them, and starts each so that it registers
+itself.
+
+**There was a file in the middle of this until 0.32.0.** `scan` wrote `parley-agents.json`, the
+user filled in what each repository owns, `plan` said what would change and `apply` changed it.
+That file was a round trip through the disk between two halves of one operation, and the one
+thing it bought was somewhere to type an owns line - which Parley now asks the agent itself,
+rather than having a person answer it from memory. Do not look for the manifest; there is none.
+
+**Nothing is ticked to begin with.** A scan finds every checkout under a directory and most are
+usually not meant to be agents. Repositories that already have an `.mcp.json` are marked so,
+because leaving a working agent unticked is how one quietly stops being offered.
+
+**The picker needs a terminal.** In a script or CI, pass `--all` or `--none`. `parley terminal`
+has the same picker on its projects screen, under `e`, with a folder browser in front of it - on a
+machine where the user is at a keyboard, that is the easier way in.
+
+**`--describe` says what would change and changes nothing.** Read it with the user before the real
+run. Three behaviours are worth knowing so the output is not surprising:
 
 - **An existing `## Peers` section is left exactly as found.** That block holds three kinds of
   line and only two of them belong to any tool: the frame, the roster, and whatever the project
   has added about how the roster is to be read. Nothing there can tell the third from the second,
   so it never rewrites any of them - it reports and moves on. Those repositories still need
-  `/parley:write-peers` in step 5; they just do not get a placeholder they did not need.
+  `/parley:write-peers` in step 3; they just do not get a placeholder they did not need.
 - **`.mcp.json` is merged, never replaced.** Other servers are left alone and reported by count.
-- **Validation is whole-manifest and happens before any write.** A bad name in the ninth entry
+- **Validation is whole-run and happens before any write.** A bad name in the ninth repository
   stops the first eight from being written, because a half-enrolled set is worse than none: the
   repository that did not get its entry looks exactly like one nobody meant to include.
 
-## 5. Restart, then read the roster once
+**Enrolling is the consent to start it.** A catalogued repository can be started by a peer's
+request with nobody watching, which spends whatever that agent costs to run. The command says so,
+and names how many it is about to start, before it configures anything. This reverses a
+per-repository opt-in that defaulted to off - which produced, on a real machine, nineteen
+repositories that were enrolled, addressable and unstartable.
 
-`enroll apply` prints this, and it is the part that has to be done in order:
+**A repository configured once before still has its old line in git history**, even if `.mcp.json`
+was later deleted - which is the ordinary state of a deployment being reconfigured. Enrolment
+recovers it: it reads the repository's own history and puts the earlier registration into
+`_evidence`, with the commit it came from and the name it used. That is the user's own sentence,
+recovered rather than composed.
+
+
+## 3. Read the roster once
+
+Enrolment prints this, and it is the part that has to be done in order:
 
 1. A broker running, and this machine's node with it. `parley autostart install` serves every
    project on this machine from one process that starts again at every logon. One process,
@@ -166,7 +116,11 @@ before running `apply`. Three behaviours are worth knowing so the output is not 
    sentence wrote. The paragraph that followed it, about naming the catalogue explicitly rather
    than relying on `PARLEY_NODE_CONFIG`, was advice about a per-project entry that no longer
    exists. `node.json` sits beside the projects at the root and every project starts from it.
-2. Restart Claude Code in every enrolled repository, and check `/mcp` shows `parley` connected.
+2. Each repository started by the enrolment, and **registered**. Enrolment starts them itself and
+   reports which ones registered - one reported as *not known* has not failed, it simply had not
+   registered by the time the command stopped waiting. A session already open in a repository
+   loads a new launch entry only when it restarts, which is the likeliest reason for one that is
+   not seen.
 3. **Only then**, `/parley:write-peers` in each one.
 
 Step 3 last is the whole point of the command. Run it in the first repository before the last one

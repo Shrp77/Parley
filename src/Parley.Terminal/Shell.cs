@@ -1829,8 +1829,33 @@ internal sealed class Shell : Window
 
     /// <summary>Opens the enrolment dialog.</summary>
     /// <returns>When the dialog is open.</returns>
+    /// <summary>Opens the flow that makes a folder of repositories into agents.</summary>
+    /// <returns>When the first dialog is open.</returns>
+    /// <remarks>
+    /// <b><see cref="Current"/> rather than the projects region's selection</b>, for the reason
+    /// <see cref="Add"/> and <see cref="Withdraw"/> both say: a project view gives another region
+    /// the screen, so the projects list may be off screen and never filled, and the action would
+    /// run having silently acted on nothing. It is the fourth place that mistake has been made here.
+    ///
+    /// <para>
+    /// The folder browsed to is remembered in <see cref="_lastAdded"/>, the same field adding one
+    /// repository uses. They are the same question asked twice — which folder holds the checkouts —
+    /// and two memories of it would disagree the first time somebody used both.
+    /// </para>
+    /// </remarks>
     private Task Enrol() =>
-        App is { } app ? Onboarding.OpenAsync(app, Queue, Reporting) : Task.CompletedTask;
+        App is { } app
+            ? Onboarding.OpenAsync(
+                app,
+                Current,
+                Projects.Projects,
+                ManifestPath,
+                StartedIn,
+                _lastAdded,
+                folder => _lastAdded = folder,
+                Queue,
+                Reporting)
+            : Task.CompletedTask;
 
     /// <summary>Opens the selected project's broker log and follows it.</summary>
     /// <returns>When the view is open.</returns>
