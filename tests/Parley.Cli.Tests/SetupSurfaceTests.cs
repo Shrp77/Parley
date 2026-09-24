@@ -59,7 +59,6 @@ public sealed class SetupSurfaceTests
                 "ConsolePicker",
                 "EnrollCommand",
                 "EnrollmentEntry",
-                "EnrollmentManifest",
                 "EnrollmentPlan",
                 "Enrolment",
 

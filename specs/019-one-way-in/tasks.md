@@ -135,9 +135,9 @@ Read these before starting; each has a test that fails the build rather than a c
 
 **Goal**: one verb finds the repositories, configures them, starts them, and reports which answered.
 
-- [ ] T046 [US3] Collapse `enroll scan|plan|apply` into one verb in `src/Parley.Setup/EnrollCommand.cs`: `enroll <dir> [--all|--none] [--describe]` (FR-040). No file to author, no plan step
-- [ ] T047 [US3] Offer the git repositories found and allow choosing among them, with `--all`/`--none` for scripts (FR-041)
-- [ ] T048 [US3] Implement `--describe`: report what would be configured, change nothing (FR-042)
+- [X] T046 [US3] Collapse `enroll scan|plan|apply` into one verb in `src/Parley.Setup/EnrollCommand.cs`: `enroll <dir> [--all|--none] [--describe]` (FR-040). No file to author, no plan step — **done.** `parley enroll <dir>` is the whole command; `scan`, `plan` and `apply` are deleted along with `EnrollmentManifest` and the worksheet guidance it carried. The file was a round trip through the disk between two halves of one operation
+- [X] T047 [US3] Offer the git repositories found and allow choosing among them, with `--all`/`--none` for scripts (FR-041) — **done**, twice over: `ConsolePicker`/`RepositorySelection` on the command line, and `TickDialog` in `parley terminal` behind a folder browser, which is the owner's preferred way in
+- [X] T048 [US3] Implement `--describe`: report what would be configured, change nothing (FR-042) — **done** as `--describe`, taken centrally with the other flags so it reaches the command at all
 - [ ] T049 [US3] Catalogue every repository enrolled, so a peer's request can start it — **enrolling is the consent** (FR-043, reversing the per-repository opt-in)
 - [ ] T050 [US3] State before configuring that enrolling makes each repository startable by a peer, and name how many are about to be started (FR-044)
 - [ ] T051 [US3] Start each repository after configuring so each **registers itself**; write no registration on a repository's behalf (FR-045, FR-066)

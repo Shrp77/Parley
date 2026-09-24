@@ -59,8 +59,21 @@ public sealed record EnrollmentEntry(
     /// <para>
     /// SPEC.md §17 question 10, as amended, lets a tool put a suggested line in front of
     /// somebody — on condition that <b>approval is a recorded positive act, not a default</b>.
-    /// This is that record, and enrolling refuses a non-empty <see cref="Owns"/> that does not
-    /// carry it.
+    /// This is that record.
+    /// </para>
+    /// <para>
+    /// <b>It said "and enrolling refuses a non-empty <see cref="Owns"/> that does not carry it",
+    /// which stopped being true of every reachable path.</b> That refusal belonged to the worksheet:
+    /// a person typed a line into a manifest and ticked a box beside it, so a recorded yes was what
+    /// separated a draft nobody read from one somebody weighed. FR-040 removed the file, and with it
+    /// the only place the box could be ticked — so <c>EnrolAsync</c> asks
+    /// <c>EnrollmentPlan.Validate</c> not to enforce it, and every repository whose launch
+    /// configuration already carries an owns line would otherwise be unenrollable.
+    /// </para>
+    /// <para>
+    /// The field is kept because the promise is still the right one and 020 is what makes it true
+    /// again: an agent is <i>asked</i> what it is responsible for and the answer is discussed to
+    /// agreement, which is a recorded positive act by the only party that actually knows.
     /// </para>
     /// <para>
     /// It is what keeps the field's claim true after the amendment. What the registry now
@@ -86,16 +99,18 @@ public sealed record EnrollmentEntry(
     public IReadOnlyList<string>? Evidence { get; init; }
 }
 
-/// <summary>
-/// An enrollment manifest: the repositories, and where this machine's node configuration lives.
-/// </summary>
-/// <param name="Readme">Guidance carried in the file, for whoever fills it in.</param>
-/// <param name="NodeConfig">Where <c>node.json</c> is, or empty for the default beside the store.</param>
-/// <param name="Agents">The repositories to enroll.</param>
-public sealed record EnrollmentManifest(
-    [property: JsonPropertyName("_readme")] IReadOnlyList<string>? Readme,
-    [property: JsonPropertyName("node_config")] string? NodeConfig,
-    [property: JsonPropertyName("agents")] IReadOnlyList<EnrollmentEntry>? Agents);
+// **`EnrollmentManifest` was here: the file `enroll scan` wrote and `enroll apply` read.** It
+// carried the rows, a block of guidance for whoever filled it in, and a `node_config` naming where
+// consent should land.
+//
+// FR-040 removed it. Scanning built the rows in memory and applying deserialised them straight
+// back, so the file was a round trip through the disk between two halves of one operation, and the
+// one thing it bought was somewhere for a person to type what each repository owns — which 020 asks
+// the agent instead of having somebody answer from memory.
+//
+// Its `node_config` was the only other thing lost, and that is a simplification rather than a
+// reduction: a catalogue is still named explicitly with `--node-config`. What the field added was a
+// *second* explicit source, and with one source there is no precedence question left to get wrong.
 
 /// <summary>
 /// What enrolling one repository would do, and the file contents it would write.

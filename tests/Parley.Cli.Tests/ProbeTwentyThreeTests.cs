@@ -41,8 +41,6 @@ public sealed class ProbeTwentyThreeTests : IDisposable
 
     private string Checkouts => Path.Combine(_root, "checkouts");
 
-    private string ManifestPath => Path.Combine(_root, "enrol.json");
-
     private string Repository(string name, string? launch = null)
     {
         var path = Path.Combine(Checkouts, name);
@@ -56,23 +54,6 @@ public sealed class ProbeTwentyThreeTests : IDisposable
         }
 
         return path;
-    }
-
-    private async Task<JsonArray> ScanAsync()
-    {
-        var code = await EnrollCommand.RunAsync(
-            ["scan", Checkouts, ManifestPath],
-            selectAll: false,
-            new Resolved(Path.Combine(_root, "node.json"), ValueSource.Argument),
-            new StringWriter(),
-            new StringWriter(),
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal(0, code);
-
-        return JsonNode.Parse(
-            await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken))!["agents"]!
-            .AsArray();
     }
 
     /// <summary>A launch configuration claiming every consent a repository might want granted.</summary>
@@ -153,42 +134,17 @@ public sealed class ProbeTwentyThreeTests : IDisposable
         }
     }
 
-    [Fact]
-    public async Task Consent_a_person_gave_one_row_does_not_reach_another_on_a_rescan()
-    {
-        // A re-scan keeps what a person has written, which it must. The question is whether it keeps
-        // it against the right row: consent is carried by workspace, and two repositories being
-        // offered one person's approval is the same defect as one agent's withdrawal removing
-        // another's entry.
-        Repository("orders");
-        Repository("billing");
+    // **`Consent_a_person_gave_one_row_does_not_reach_another_on_a_rescan` was here and its subject
+    // has gone.** It asked whether a re-scan carried a person's consent forward against the right
+    // row, keyed by workspace — a real question while enrolment wrote a manifest that a later scan
+    // merged with. There is no manifest and so no previous run to merge with: `EnrollCommand.Find`
+    // is handed an empty carry-forward on purpose, and consent is not a thing this surface records
+    // at all any more, since enrolling a repository is itself the consent (FR-043).
+    //
+    // Recorded rather than deleted silently, because the property it protected — one person's
+    // approval never landing on another repository's row — is worth somebody recognising if a
+    // carry-forward is ever reintroduced.
 
-        await ScanAsync();
-
-        var manifest = JsonNode.Parse(
-            await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken))!;
-
-        foreach (var row in manifest["agents"]!.AsArray())
-        {
-            if (row!["agent"]!.GetValue<string>() == "orders")
-            {
-                row["enroll"] = true;
-                row["unattended"] = true;
-                row["owns_approved"] = true;
-            }
-        }
-
-        await File.WriteAllTextAsync(
-            ManifestPath, manifest.ToJsonString(), TestContext.Current.CancellationToken);
-
-        foreach (var row in await ScanAsync())
-        {
-            var granted = row!["agent"]!.GetValue<string>() == "orders";
-
-            Assert.Equal(granted, row["unattended"]!.GetValue<bool>());
-            Assert.Equal(granted, row["owns_approved"]!.GetValue<bool>());
-        }
-    }
 
     [Fact]
     public void Nothing_of_a_strangers_entry_survives_into_the_one_this_writes()

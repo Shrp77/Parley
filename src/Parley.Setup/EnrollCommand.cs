@@ -37,57 +37,6 @@ public static class EnrollCommand
     private const int Config = 78;         // EX_CONFIG
     private const int IoError = 74;        // EX_IOERR
 
-    private const string DefaultManifest = "parley-agents.json";
-
-    private static readonly string[] Guidance =
-    [
-        "Fill in `owns` for every repository you want enrolled, then:",
-        "    parley enroll plan <this file>      say what would change",
-        "    parley enroll apply <this file>     make the changes",
-        "",
-        "enroll: only rows with true are touched at all. Everything else in this file is",
-        "  ignored, including its agent name and owns line, so a row you are unsure about",
-        "  costs nothing to leave. Set it here, or re-run `parley enroll scan` and tick the",
-        "  ones you want.",
-        "",
-        "owns: one line, at most 100 characters, saying what the repository owns AND what it",
-        "  does not. The exclusion is the half that stops a peer asking the wrong agent.",
-        "  Leave it empty and the repository is still enrolled, listed with no line; askers",
-        "  fall back to its name.",
-        "",
-        "owns_approved: enrolling refuses a filled-in owns line that does not carry this. A",
-        "  suggestion may be drafted for you - see _evidence below for what it was drawn from -",
-        "  but what the registry promises is that a person read the line and said yes, so the",
-        "  yes has to be written down. Read it, edit it if it is wrong, then set this true.",
-        "",
-        "  Check the exclusion half yourself. A repository can show what it contains and cannot",
-        "  show what it has decided not to own: nothing here can tell that no tax code means",
-        "  somebody else owns tax, or only that nobody has written it yet.",
-        "",
-        "_evidence: what the repository already says about itself, quoted with where each piece",
-        "  came from. It is here so that approving a suggestion is checkable against something.",
-        "  Ignored when enrolling; delete it freely.",
-        "",
-        "  The 100 is a CHECK constraint in the broker's schema, not a style rule: this text is",
-        "  charged against every agent's working memory once per peer, every time the roster is",
-        "  listed. It is for routing a question, not for explaining the boundary - the",
-        "  explanation belongs in the answer you give when a peer asks. Control characters, line",
-        "  separators and bidirectional overrides are refused too, because a roster entry able to",
-        "  break its own line can imitate the entries around it.",
-        "",
-        "agent: taken from the directory name, which is a starting point and not an answer. It",
-        "  should name the domain the repository owns - orders, billing, inventory - not the",
-        "  directory, the framework or the model. Two repositories must never share one:",
-        "  identity is the single thing Parley makes unforgeable, and two servers claiming one",
-        "  name means either may collect the other's mail.",
-        "",
-        "unattended: true adds the repository to node.json, which is consent for a peer's",
-        "  question to start it with nobody watching, spending your tokens. Leave it false",
-        "  unless you mean it; withdraw it by removing the entry.",
-        "",
-        "Re-running scan against this file keeps what you have written here.",
-    ];
-
     /// <summary>
     /// Runs one enroll subcommand.
     /// </summary>
@@ -144,23 +93,15 @@ public static class EnrollCommand
 
         return arguments switch
         {
-            // **The one verb of FR-040, and it is matched first.** A single operand that is not one
-            // of the three old subcommand words is a directory of checkouts. The arms below are on
-            // their way out and are kept only until every caller has moved.
-            [var directory] when directory is not ("scan" or "plan" or "apply")
-                => await EnrollAsync(
-                        directory, selectAll, describe, nodeConfig, output, error,
-                        project, deployment, manifestPath, cancellationToken)
-                    .ConfigureAwait(false),
+            // **One verb, one operand** (FR-040). `scan`, `plan` and `apply` were here, and the file
+            // they passed between them is gone with them: scanning built the rows in memory and
+            // applying read them straight back, so the manifest was a round trip through the disk
+            // between two halves of one operation.
+            [var directory] => await EnrollAsync(
+                    directory, selectAll, describe, nodeConfig, output, error,
+                    project, deployment, manifestPath, cancellationToken)
+                .ConfigureAwait(false),
 
-            ["scan", var root] => await ScanAsync(root, DefaultManifest, selectAll, output, error, cancellationToken)
-                .ConfigureAwait(false),
-            ["scan", var root, var into] => await ScanAsync(root, into, selectAll, output, error, cancellationToken)
-                .ConfigureAwait(false),
-            ["plan", var manifest] => await ApplyAsync(manifest, write: false, nodeConfig, output, error, project, deployment, manifestPath, cancellationToken)
-                .ConfigureAwait(false),
-            ["apply", var manifest] => await ApplyAsync(manifest, write: true, nodeConfig, output, error, project, deployment, manifestPath, cancellationToken)
-                .ConfigureAwait(false),
             _ => await UsageAsync(error).ConfigureAwait(false),
         };
     }
@@ -168,10 +109,14 @@ public static class EnrollCommand
     private static async Task<int> UsageAsync(TextWriter error)
     {
         await error.WriteLineAsync(
-            "parley enroll scan <directory> [<manifest>]   find repositories and tick the ones to enroll\n" +
-            "                              [--all|--none]  skip the picker; for scripts and CI\n" +
-            "parley enroll plan <manifest>                 say what would change, without changing it\n" +
-            "parley enroll apply <manifest>                make the changes").ConfigureAwait(false);
+            "parley enroll <directory>            find the repositories under it, tick the ones to\n" +
+            "                                     enroll, and configure, catalogue and start them\n" +
+            "              [--all|--none]         skip the picker; for scripts and CI\n" +
+            "              [--describe]           say what would change, and change nothing\n" +
+            "\n" +
+            "Enrolling a repository is the consent to start it: a catalogued checkout can be started\n" +
+            "by a peer's request with nobody watching. The count is named before anything is written."
+            ).ConfigureAwait(false);
 
         return Usage;
     }
@@ -392,86 +337,6 @@ public static class EnrollCommand
         return entries;
     }
 
-    private static async Task<int> ScanAsync(
-        string root,
-        string into,
-        bool? selectAll,
-        TextWriter output,
-        TextWriter error,
-        CancellationToken cancellationToken)
-    {
-        if (!Directory.Exists(root))
-        {
-            await error.WriteLineAsync($"{root} is not a directory.").ConfigureAwait(false);
-            return Usage;
-        }
-
-        // Merged with whatever is already at the output path, so re-scanning after somebody has
-        // spent an afternoon writing owns lines does not throw them away. A scan that destroyed
-        // hand-written prose would be discovered exactly once, by the person who wrote it.
-        var previous = ReadManifest(into)?.Agents?
-            .ToDictionary(e => e.Workspace, StringComparer.OrdinalIgnoreCase)
-            ?? [];
-
-        var entries = Discover(root, previous);
-
-        if (entries.Count == 0)
-        {
-            await error.WriteLineAsync($"No git repositories directly under {root}.").ConfigureAwait(false);
-            return Usage;
-        }
-
-        var chosen = await ChooseAsync(entries, selectAll, output, error).ConfigureAwait(false);
-
-        if (chosen is null)
-        {
-            await output.WriteLineAsync("Cancelled. Nothing was written.").ConfigureAwait(false);
-            return 0;
-        }
-
-        entries = chosen;
-
-        var manifest = new EnrollmentManifest(Guidance, string.Empty, entries);
-        var json = JsonSerializer.Serialize(manifest, SerialisationOptions.Indented) + "\n";
-
-        try
-        {
-            await File.WriteAllTextAsync(into, json, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            await error.WriteLineAsync($"Could not write {into}: {ex.Message}").ConfigureAwait(false);
-            return IoError;
-        }
-
-        var enrolling = entries.Count(e => e.Enroll);
-        var described = entries.Count(e => e.Enroll && !string.IsNullOrEmpty(e.Owns));
-
-        await output.WriteLineAsync(
-            $"Wrote {into}: {enrolling} of {entries.Count} repositories marked for enrollment.")
-            .ConfigureAwait(false);
-
-        if (described > 0)
-        {
-            // Worth saying, because it is the difference between filling in eleven lines and
-            // filling in the two that are new.
-            await output.WriteLineAsync(
-                $"  {described} already had an owns line; those were carried over.").ConfigureAwait(false);
-        }
-
-        if (enrolling > described)
-        {
-            await output.WriteLineAsync(
-                $"  {enrolling - described} still need one. An empty owns line is allowed - the agent is " +
-                "listed\n  with only its name - but it is the field peers route by.").ConfigureAwait(false);
-        }
-
-        await output.WriteLineAsync(
-            $"Fill in the owns lines, then: parley enroll plan {into}").ConfigureAwait(false);
-
-        return 0;
-    }
-
     /// <summary>
     /// Settles which repositories are to be enrolled: by picker, by flag, or not at all.
     /// </summary>
@@ -557,29 +422,6 @@ public static class EnrollCommand
         var marker = Path.Combine(workspace, ".git");
 
         return File.Exists(marker) && !Directory.Exists(marker);
-    }
-
-    /// <summary>
-    /// Reads a manifest, treating an absent or unreadable one as nothing to carry over.
-    /// </summary>
-    /// <remarks>
-    /// Failing quietly is right here and only here: this is used to preserve a previous scan's
-    /// answers, so the worst outcome of not reading one is that somebody retypes what they
-    /// wrote. <see cref="ApplyAsync"/> reads the same file to act on it, and reports there.
-    /// </remarks>
-    private static EnrollmentManifest? ReadManifest(string path)
-    {
-        try
-        {
-            return File.Exists(path)
-                ? JsonSerializer.Deserialize<EnrollmentManifest>(
-                    File.ReadAllText(path), SerialisationOptions.Indented)
-                : null;
-        }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
-        {
-            return null;
-        }
     }
 
     /// <summary>
@@ -985,54 +827,6 @@ public static class EnrollCommand
         }
 
         return registered;
-    }
-
-    private static async Task<int> ApplyAsync(
-        string manifestPath,
-        bool write,
-        Resolved nodeConfig,
-        TextWriter output,
-        TextWriter error,
-        ProjectSettings? project,
-        IReadOnlyList<ProjectSettings>? deployment,
-        string? projectManifest,
-        CancellationToken cancellationToken)
-    {
-        EnrollmentManifest? manifest = null;
-        string? unreadable = null;
-        var unreadableCode = 0;
-
-        try
-        {
-            var text = await File.ReadAllTextAsync(manifestPath, cancellationToken).ConfigureAwait(false);
-            manifest = JsonSerializer.Deserialize<EnrollmentManifest>(text, SerialisationOptions.Indented);
-        }
-        catch (FileNotFoundException)
-        {
-            unreadable = $"{manifestPath} not found. Write one with: parley enroll scan <directory>";
-            unreadableCode = Usage;
-        }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
-        {
-            unreadable = $"Could not read {manifestPath}: {ex.Message}";
-            unreadableCode = Config;
-        }
-
-        return await ConfigureAsync(
-            manifest?.Agents,
-            manifest?.NodeConfig,
-            unreadable,
-            unreadableCode,
-            manifestPath,
-            fromManifest: true,
-            write,
-            nodeConfig,
-            output,
-            error,
-            project,
-            deployment,
-            projectManifest,
-            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

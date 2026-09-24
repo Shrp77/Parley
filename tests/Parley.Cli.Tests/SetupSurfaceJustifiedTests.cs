@@ -60,15 +60,17 @@ public sealed class SetupSurfaceJustifiedTests
         Assert.Contains("Enrolment", tools, StringComparison.Ordinal);
 
         // **Named exemptions with reasons, which is the whole complaint about the list this
-        // replaces.** These five predate the multi-project work and are the enrolment manifest's own
-        // shapes — `EnrollmentManifest` is the file `enroll scan` writes and `enroll apply` reads,
-        // and the other four are the picker's. They are reachable only through methods a tool does
-        // call, so making them internal is a cascade through public signatures rather than a flip,
-        // and doing it inside a feature about launch keys would be a diff nobody asked for. Recorded
-        // in REVIEW-LEDGER.md as low, and left for whoever touches that file next.
+        // replaces.** These predate the multi-project work: `RepositoryPlan` is what describing a
+        // repository returns, and the other three are the picker's. They are reachable only through
+        // methods a tool does call, so making them internal is a cascade through public signatures
+        // rather than a flip. Recorded in REVIEW-LEDGER.md as low, and left for whoever touches that
+        // file next.
+        //
+        // **`EnrollmentManifest` was a fifth and is gone**, deleted with the file it modelled when
+        // one verb replaced `scan`, `plan` and `apply`. An exemption left standing over a type that
+        // no longer exists is how this list comes to be believed without being read.
         var predating = new HashSet<string>(StringComparer.Ordinal)
         {
-            "EnrollmentManifest",
             "RepositoryPlan",
             "RepositorySelection",
             "SelectableRepository",

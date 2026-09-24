@@ -1010,27 +1010,19 @@ if (!ProjectResolution.TrySelect(
     var explicitBroker = !string.IsNullOrWhiteSpace(brokerAddress)
         || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(BrokerEndpoint.Variable));
 
-    // **`enroll scan` acts on no deployment, so naming none cannot be an error.** It walks one
-    // directory, decides which subdirectories are git repositories, and writes a file for a person
-    // to edit — no broker, no catalogue, no launch configuration, and nothing anywhere in it that
-    // names a project. `plan` and `apply` genuinely need one, because the key they write into each
-    // `.mcp.json` is `parley-<project>`; the refusal was applied to the verb rather than to the
-    // subcommand, so all three were held to the requirement of the two.
+    // **`enroll` had an exemption and no longer has a subject for one.** While enrolment was three
+    // steps, `scan` acted on no deployment at all — it walked one directory, decided which
+    // subdirectories were git repositories, and wrote a file for a person to edit, with no broker,
+    // no catalogue, no launch configuration and no project named anywhere in what it produced. The
+    // refusal to choose between several projects was applied to the verb rather than to the
+    // subcommand, so all three were held to the requirement of the two, and the one step whose
+    // whole job was to survey a machine was the one step that could not be run on a machine with
+    // several projects on it. Found by the owner re-enrolling nineteen repositories.
     //
-    // What that cost is the wrong way round: the one step whose whole job is to survey a machine
-    // was the one step that could not be run on a machine with several projects on it — which is
-    // the machine worth surveying. Found by the owner trying to re-enrol nineteen repositories.
-    //
-    // A project *named* and not described by the manifest is still refused, exactly as it is for
-    // an explicit address below: this exempts a command from having to choose, never from being
-    // told a name that is wrong.
-    var scanning = verb == "enroll"
-        && rest is ["scan", ..]
-        && string.IsNullOrWhiteSpace(projectName)
-        && string.IsNullOrWhiteSpace(projectFromVariable);
-
-    if (!scanning
-        && !(string.IsNullOrWhiteSpace(projectName) && string.IsNullOrWhiteSpace(projectFromVariable) && explicitBroker))
+    // One verb writes `parley-<project>` into every repository it configures, so there is no step
+    // left that could run without being told which deployment is meant. The exemption is gone
+    // rather than rewritten: keeping it would mean enrolling a folder into a project nobody named.
+    if (!(string.IsNullOrWhiteSpace(projectName) && string.IsNullOrWhiteSpace(projectFromVariable) && explicitBroker))
     {
         await Console.Error.WriteLineAsync(selectionProblem).ConfigureAwait(false);
         return Config;

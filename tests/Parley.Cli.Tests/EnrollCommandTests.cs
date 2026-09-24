@@ -2,7 +2,6 @@
 using Parley.Core;
 using Parley.Setup;
 using System.Text.Json.Nodes;
-using System.Text.Json;
 using System.Text;
 using Xunit;
 
@@ -14,8 +13,8 @@ namespace Parley.Cli.Tests;
 /// <remarks>
 /// <para>
 /// <see cref="EnrollmentPlanTests"/> covers every decision, because those are a pure function.
-/// This covers the part that is not: reading a manifest, writing into repositories, and the one
-/// file that does not belong to any of them — <c>node.json</c>, which is the operator's record
+/// This covers the part that is not: writing into repositories, and the one file that does not
+/// belong to any of them — <c>node.json</c>, which is the operator's record
 /// of what may be started with nobody watching.
 /// </para>
 /// <para>
@@ -61,80 +60,8 @@ public sealed class EnrollCommandTests : IDisposable
 
     private string NodePath => Path.Combine(_root, "node.json");
 
-    private string ManifestPath => Path.Combine(_root, "agents.json");
-
     private void Repository(string name) =>
         Directory.CreateDirectory(Path.Combine(Checkouts, name, ".git"));
-
-    private async Task<(int Code, string Out, string Error)> RunAsync(params string[] arguments) =>
-        await RunResolvedAsync(null, arguments);
-
-    /// <summary>Runs enroll as the entry point would having selected a project.</summary>
-    /// <param name="nodeConfigPath">The catalogue the entry point resolved, or null for none.</param>
-    /// <param name="arguments">The subcommand and its operands.</param>
-    /// <returns>The exit code and both streams.</returns>
-    private async Task<(int Code, string Out, string Error)> RunResolvedAsync(
-        string? nodeConfigPath, params string[] arguments)
-    {
-        var output = new StringWriter();
-        var error = new StringWriter();
-
-        // Argument-sourced, because that is what a path arriving here means: the entry point has
-        // already applied the precedence chain, and this is what won.
-        var code = await EnrollCommand.RunAsync(
-            arguments,
-            selectAll: true,
-            new Resolved(nodeConfigPath, ValueSource.Argument),
-            output,
-            error,
-            TestContext.Current.CancellationToken);
-
-        return (code, output.ToString(), error.ToString());
-    }
-
-    private Task WriteManifestAsync(bool unattended) => WriteManifestAsync(unattended, NodePath);
-
-    /// <summary>Writes an enrollment manifest, approved and ready to apply.</summary>
-    /// <param name="unattended">Whether each repository consents to running unattended.</param>
-    /// <param name="nodeConfig">
-    /// The catalogue to name in the manifest itself, or null to name none — which is what leaves
-    /// the resolved project in charge of where consent lands.
-    /// </param>
-    /// <returns>A task that completes when the file is written.</returns>
-    /// <remarks>
-    /// <b>Kept for the three tests below whose subject is the file itself</b> — the re-scan merge, a
-    /// catalogue named inside a manifest, and a manifest that is not there. Every other test in this
-    /// class takes its rows from <see cref="Chosen"/>, because the rows are what the file held and
-    /// the carrier decided none of what they assert.
-    /// </remarks>
-    private async Task WriteManifestAsync(bool unattended, string? nodeConfig)
-    {
-        await RunAsync("scan", Checkouts, ManifestPath);
-
-        var manifest = JsonSerializer.Deserialize<EnrollmentManifest>(
-            await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken),
-            SerialisationOptions.Indented)!;
-
-        var described = manifest with
-        {
-            NodeConfig = nodeConfig,
-            Agents = [.. manifest.Agents!.Select(a => a with
-            {
-                Owns = $"{a.Agent} things. Not other things.",
-                Unattended = unattended,
-
-                // Standing in for the person saying yes. Enrolling refuses a filled-in owns line
-                // without it, which is the point of the field — so every fixture that wants a
-                // successful run has to make the approval explicit, exactly as a user would.
-                OwnsApproved = true,
-            })],
-        };
-
-        await File.WriteAllTextAsync(
-            ManifestPath,
-            JsonSerializer.Serialize(described, SerialisationOptions.Indented),
-            TestContext.Current.CancellationToken);
-    }
 
     /// <summary>The repositories under the checkouts, described and ticked and ready to enrol.</summary>
     /// <param name="unattended">Whether each repository consents to running unattended.</param>
@@ -351,25 +278,16 @@ public sealed class EnrollCommandTests : IDisposable
         Assert.False(File.Exists(NodePath));
     }
 
-    [Fact]
-    public async Task Re_scanning_keeps_the_owns_lines_somebody_has_written()
-    {
-        // A scan that overwrote hand-written prose would be discovered exactly once, by the
-        // person who wrote it.
-        await WriteManifestAsync(unattended: false);
-        Repository("Acme.Stock");
-
-        await RunAsync("scan", Checkouts, ManifestPath);
-
-        var manifest = JsonSerializer.Deserialize<EnrollmentManifest>(
-            await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken),
-            SerialisationOptions.Indented)!;
-
-        Assert.Equal(3, manifest.Agents!.Count);
-        Assert.Equal(
-            "acme-orders things. Not other things.",
-            manifest.Agents.Single(a => a.Agent == "acme-orders").Owns);
-    }
+    // **`Re_scanning_keeps_the_owns_lines_somebody_has_written` was here and has no successor.** It
+    // asked whether a second scan preserved prose a person had typed into the manifest between runs,
+    // which mattered a great deal while there was a manifest to type into: overwriting it would have
+    // been discovered exactly once, by the person who wrote it.
+    //
+    // There is no file to carry anything forward from, and nothing asks a person to compose an owns
+    // line any more -- 020 asks the agent. What *is* still carried is whatever a repository's own
+    // launch configuration already says, and that is read from the repository every time rather than
+    // merged from a previous run:
+    // `OneVerbEnrolmentTests.What_a_repository_already_says_it_owns_is_carried_forward` holds it.
 
     [Fact]
     public async Task A_set_with_nothing_ticked_is_refused()
@@ -476,14 +394,10 @@ public sealed class EnrollCommandTests : IDisposable
         }
     }
 
-    [Fact]
-    public async Task A_missing_manifest_says_how_to_make_one()
-    {
-        var (code, _, error) = await RunAsync("apply", Path.Combine(_root, "absent.json"));
-
-        Assert.Equal(64, code);
-        Assert.Contains("parley enroll scan", error, StringComparison.Ordinal);
-    }
+    // **`A_missing_manifest_says_how_to_make_one` was here, and there is no manifest to be missing.**
+    // It asserted that applying an absent path exited 64 naming `parley enroll scan`, which was the
+    // command that would have written one. The directory taking its place has its own refusal, and
+    // `OneVerbEnrolmentTests.A_directory_that_is_not_one_is_refused_by_name` holds it.
 
     // ---- where consent lands -------------------------------------------------------------------
 
@@ -522,23 +436,16 @@ public sealed class EnrollCommandTests : IDisposable
         Assert.False(File.Exists(NodePath), $"a second catalogue was created at {NodePath}");
     }
 
-    [Fact]
-    public async Task Naming_a_catalogue_in_the_manifest_still_overrides_the_project()
-    {
-        // Precedence, in the one place it decides which file gets written. An explicit value has
-        // outranked everything else since before projects existed, and a project quietly winning
-        // here would move consent out from under somebody who wrote a path down.
-        var project = Path.Combine(_root, "project", "node.json");
-        Directory.CreateDirectory(Path.GetDirectoryName(project)!);
-
-        await WriteManifestAsync(unattended: true, nodeConfig: NodePath);
-
-        var (code, _, _) = await RunResolvedAsync(project, "apply", ManifestPath);
-
-        Assert.Equal(0, code);
-        Assert.True(File.Exists(NodePath), "the manifest's own catalogue was not written");
-        Assert.False(File.Exists(project), "the project's catalogue was written over the manifest's");
-    }
+    // **`Naming_a_catalogue_in_the_manifest_still_overrides_the_project` was here, and the source it
+    // gave precedence to has gone.** It asserted that a catalogue named inside the enrolment manifest
+    // outranked the project's, on the ground that an explicit value has outranked everything else
+    // since before projects existed.
+    //
+    // **The capability survives; only that one way of spelling it does not.** A catalogue is still
+    // named explicitly with `--node-config`, and `ResolveNodeConfig` still puts that above the
+    // environment and above the default. What the manifest added was a *second* explicit source, and
+    // with one gone there is no longer a precedence question here to get wrong -- which is the
+    // simplification, not a loss. `EnrolmentNextStepsTests` drives what is left.
 
     [Fact]
     public async Task The_same_repository_enrolls_into_two_projects_independently()
