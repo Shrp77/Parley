@@ -600,9 +600,20 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/019-one-way-in/` — **0.32.0, the MVP part-built: the layout, the port claim and
-  `project add <name>` are in, and every suite is green. 31 of 111 tasks. The command removals, the migration
-  and the review gate are owed, and nothing is pushed.**
+- **Current plan**: `specs/019-one-way-in/` — **0.32.0. The layout, the port claim, `project add <name>`,
+  and the removal of `--db`, `-d`, `PARLEY_DB`, `--listen` and `-l` from every command. 46 of 111 tasks,
+  every suite green, nothing pushed.**
+
+  **The migration is cut.** US6, US7 and FR-062 to FR-064 are withdrawn: nothing has been released, so
+  there is nothing to move and nothing to strand. `reset.ps1` at the root clears a developer's pre-019
+  layout — it stops the broker, reads the old manifest *before* deleting it so every store goes with its
+  companions, and keeps `node.json`. A `reset.sh` is owed for Linux and macOS (T080).
+
+  **FR-020 and FR-021 are withdrawn too**, on the owner's call: no command makes a broker reachable off
+  this machine. That is a real reduction, taken deliberately — a project that needs a non-loopback
+  endpoint has it edited in its own `project.json`, which is one place rather than a flag plus a
+  precedence rule. Still owed: the enrolment collapse (US3), the sixteen command removals (US5), the
+  `quickstart.md` walk, and **the review gate, which has not started**.
   `tasks.md` orders them by what blocks what rather than by requirement number: the MVP is phases 1–3, an
   operator brings up a deployment by typing one name, with none of the removals, the migration or the
   enrolment work. Three of its tasks exist because the plan found traps rather than because a requirement
@@ -2638,7 +2649,9 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   gate was discharged: `ListConversations` and `Export` were specified before being built, and
   004 is their second reader rather than a reason to add a third.
 - Previous: `specs/002-project-manifest/` — a per-machine manifest of named projects, merged.
-  Its obligation was discharged: SPEC.md §4.1 now illustrates `projects.json` rather than
-  `parley.yaml`. `tasks.md` carries the review record, including what five rounds turned up.
+  Its obligation was discharged: SPEC.md §4.1 illustrated `projects.json` rather than `parley.yaml`.
+  **019 replaced that file with a directory** and §4.1 illustrates the root now; the obligation stands
+  discharged either way, since what it required was that the document show what the code writes.
+  `tasks.md` carries the review record, including what five rounds turned up.
 - Previous: `specs/001-agent-routing-hints/`.
 <!-- SPECKIT END -->

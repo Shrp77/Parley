@@ -94,7 +94,7 @@ Read these before starting; each has a test that fails the build rather than a c
 
 **This phase is load-bearing work, not cleanup.** R3 inventories 26 files.
 
-- [ ] T032 [US2] Remove `--db`/`-d` and `PARLEY_DB` from `src/Parley.Cli/Program.cs` and from `serve` (FR-007, FR-031)
+- [X] T032 [US2] Remove `--db`/`-d` and `PARLEY_DB` from `src/Parley.Cli/Program.cs` and from `serve` (FR-007, FR-031)
 - [X] T033 [US2] Remove `--db` from `project add` — the only way a store path is set today (R3's first scope question)
 - [ ] T034 [US2] Remove `--node-config` from `project add` and `project set`, which wrote a field nothing reads (FR-052)
 - [X] T035 [US2] Keep `InstalledEntry.Parse`'s `case "--db":` read path (R3; 0.22.0's *stop writing, stop
@@ -105,16 +105,27 @@ Read these before starting; each has a test that fails the build rather than a c
     could not parse it would show blanks for a scheduled task that plainly exists, which is the shape this
     repository keeps recording: a green-looking answer to a question nobody asked. Reading costs nothing
     and writing is gone, which is exactly the line 0.22.0 drew for `--console`.
-- [ ] T036 [US2] Convert `tests/Parley.Cli.Tests/BrokerProcess.cs`: `Start` takes a root and a project name, writes `<root>/projects/<name>/project.json` **directly** with a `FreePort()` endpoint, and keeps reading the real address off stdout (R3 — the rig must not allocate, because the band is per machine and the root is per test)
+- [X] T036 [US2] Convert `tests/Parley.Cli.Tests/BrokerProcess.cs`: `Start` takes a root and a project name, writes `<root>/projects/<name>/project.json` **directly** with a `FreePort()` endpoint, and keeps reading the real address off stdout (R3 — the rig must not allocate, because the band is per machine and the root is per test)
 - [ ] T037 [US2] Remove `PARLEY_DB` from `ToolProcess.cs`'s variable clear-list, keeping the neutral working directory
-- [ ] T038 [US2] Delete `OneStoreIsForTestingTests.cs`, `ForeignDatabaseTests.cs`, `NoManifestParityTests.cs` — ~24 tests whose subject is `--db` itself
-- [ ] T039 [US2] Split `ServeSelectionTests.cs`: delete the two `--db` tests, move the catalogue-selection test elsewhere
-- [ ] T040 [P] [US2] Convert the eleven mechanical files listed in R3 (`PruneCommandTests`, `StartupBannerTests`, `WebUiContainmentTests`, `ChildLifetimeTests`, `SecondServeTests`, `InFlightWarningTests`, `SecondSessionTests`, `ProjectDestroyTests`, `DeploymentVariables`, `OwnershipRoutingTests`, `AutostartManifestPlanTests`)
-- [ ] T041 [US2] Convert `ProjectCommandTests` (17 tests) — the largest careful file, and the one the original surface inventory missed
-- [ ] T042 [US2] Convert `ProjectResolutionTests`, `EnrolmentNextStepsTests`, `AutostartPlanTests`, `InstallScriptManifestTests` — the store-naming mechanism is what they assert
-- [ ] T043 [US2] Convert `ProbeSevenTests` and `ProbeThirtyThreeTests`: keep the read-compatibility halves, drop the write halves (R3)
-- [ ] T044 [US2] **Re-decide** `tests/Parley.Terminal.Tests/NamingTests`: it drives adopting a broker somebody started by hand with an explicit store, which FR-007 makes impossible. The flow needs a decision, not a repointing (R3)
-- [ ] T045 [P] [US2] Test: a test rig naming a different root gets a wholly separate set of projects and needs no path beyond that root (US2 scenario 3)
+- [X] T038 [US2] Delete `OneStoreIsForTestingTests.cs`, `ForeignDatabaseTests.cs`, `NoManifestParityTests.cs` — ~24 tests whose subject is `--db` itself
+  - **Converted rather than deleted, except `OneStoreIsForTestingTests`.** Of `ForeignDatabaseTests`' ten,
+    six survive with their subject repointed — most importantly that a store Parley did not create is
+    refused, reached now by putting a foreign SQLite file where a project's `parley.db` goes.
+    `NoManifestParityTests` keeps nine of ten: "this machine names nothing" is still a state, and what
+    changed is that such a machine lacks a *project* rather than a store. Deleting a file because most of
+    it is about a removed flag loses the guards that were only living there.
+- [X] T039 [US2] Split `ServeSelectionTests.cs`: delete the two `--db` tests, move the catalogue-selection test elsewhere
+- [X] T040 [P] [US2] Convert the eleven mechanical files listed in R3 (`PruneCommandTests`, `StartupBannerTests`, `WebUiContainmentTests`, `ChildLifetimeTests`, `SecondServeTests`, `InFlightWarningTests`, `SecondSessionTests`, `ProjectDestroyTests`, `DeploymentVariables`, `OwnershipRoutingTests`, `AutostartManifestPlanTests`)
+- [X] T041 [US2] Convert `ProjectCommandTests` (17 tests) — the largest careful file, and the one the original surface inventory missed
+- [X] T042 [US2] Convert `ProjectResolutionTests`, `EnrolmentNextStepsTests`, `AutostartPlanTests`, `InstallScriptManifestTests` — the store-naming mechanism is what they assert
+- [X] T043 [US2] Convert `ProbeSevenTests` and `ProbeThirtyThreeTests`: keep the read-compatibility halves, drop the write halves (R3)
+- [X] T044 [US2] **Re-decide** `tests/Parley.Terminal.Tests/NamingTests` (R3)
+  - **Decided: the flow is deleted.** `CanNameRunning` required an autostart entry serving one explicit
+    store — an entry written with `--db`. Nothing can write one, so no machine will have one again. The
+    trap that made this a decision rather than an edit: deriving a fresh store and keeping the stated
+    endpoint compiles, passes, and points the named project at an *empty* database while the running
+    broker still holds the real one.
+- [X] T045 [P] [US2] Test: a test rig naming a different root gets a wholly separate set of projects and needs no path beyond that root (US2 scenario 3)
 
 **Checkpoint**: `SC-003` is demonstrable — no command or variable opens a store outside a project.
 
