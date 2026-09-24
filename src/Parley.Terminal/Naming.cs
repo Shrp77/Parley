@@ -1,9 +1,6 @@
-﻿using Parley.Setup;
-using System.Globalization;
-using System.Net;
-using System.Net.Sockets;
-using Parley.Configuration;
+﻿using System.Globalization;
 using Parley.Core;
+using Parley.Setup;
 using Terminal.Gui.App;
 
 namespace Parley.Terminal;
@@ -71,30 +68,11 @@ internal static class Naming
     {
         ArgumentNullException.ThrowIfNull(projects);
 
-        var taken = projects.Select(p => p.Endpoint).ToList();
-
-        if (entry?.Listen is { } listening)
-        {
-            taken.Add(listening);
-        }
-        else if (entry is { ServesManifest: false })
-        {
-            taken.Add(DefaultEndpoint);
-        }
-
-        return OpenAsync(
-            app,
-            CreateTitle,
-            manifestPath,
-            projects,
-            entry,
-            new Proposed(
-                Endpoint: FreeEndpoint(taken),
-                NodeConfig: null,
-                EndpointWhy: "where this project's broker will listen; a port nothing here holds "
-                             + "was chosen, so change it only if it must be reachable from elsewhere"),
-            queue,
-            done);
+        // **Nothing is proposed any more**, because nothing is asked for beyond a name. The endpoints
+        // already spoken for used to be gathered here so a free one could be offered; the port is
+        // claimed under a hold now, which is a stronger answer to the same question than a proposal a
+        // person could overwrite.
+        return OpenAsync(app, CreateTitle, manifestPath, projects, entry, queue, done);
     }
 
     /// <summary>Why a typed name would be refused, or null.</summary>
@@ -150,79 +128,14 @@ internal static class Naming
     internal static string NameCorrection(string? typed) =>
         Parley.Core.NameCorrection.Correct(typed);
 
-    /// <summary>Why a typed store would be refused, or null.</summary>
-    internal static string? StoreProblem(string typed, IReadOnlyList<ProjectSettings> projects)
-    {
-        if (string.IsNullOrWhiteSpace(typed))
-        {
-            return "a project needs a database file";
-        }
-
-        var held = projects.FirstOrDefault(p => ProjectManifest.PathComparer.Equals(p.Store, typed));
-
-        return held is null
-            ? null
-            : $"'{held.Name}' already owns that database; two projects cannot share one (SPEC.md §4.1)";
-    }
-
-    /// <summary>Why a typed endpoint would be refused, or null.</summary>
-    internal static string? EndpointProblem(string typed, IReadOnlyList<ProjectSettings> projects)
-    {
-        if (!Uri.TryCreate(typed, UriKind.Absolute, out _))
-        {
-            return $"not an absolute address; one looks like {DefaultEndpoint}";
-        }
-
-        var held = projects.FirstOrDefault(p =>
-            string.Equals(p.Endpoint.TrimEnd('/'), typed.TrimEnd('/'), StringComparison.OrdinalIgnoreCase));
-
-        return held is null
-            ? null
-            : $"'{held.Name}' already listens there; each project's broker needs its own port";
-    }
-
-    /// <summary>The default endpoint if nothing holds it, otherwise a free loopback port.</summary>
-    /// <param name="taken">Endpoints already spoken for on this machine.</param>
-    /// <returns>An endpoint nothing in <paramref name="taken"/> uses.</returns>
-    internal static string FreeEndpoint(IReadOnlyList<string> taken)
-    {
-        ArgumentNullException.ThrowIfNull(taken);
-
-        if (!taken.Any(t => Same(t, DefaultEndpoint)))
-        {
-            return DefaultEndpoint;
-        }
-
-        for (var attempt = 0; attempt < 16; attempt++)
-        {
-            var listener = new TcpListener(IPAddress.Loopback, 0);
-
-            listener.Start();
-
-            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-
-            listener.Stop();
-
-            var candidate = string.Create(
-                CultureInfo.InvariantCulture, $"http://127.0.0.1:{port}");
-
-            if (!taken.Any(t => Same(t, candidate)))
-            {
-                return candidate;
-            }
-        }
-
-        // Sixteen ports handed out by the system and every one already in the manifest is not a
-        // state a machine reaches; the proposal is left blank and the field asks.
-        return string.Empty;
-    }
-
-    /// <summary>The endpoint an MCP server looks for when told nothing.</summary>
-    internal static string DefaultEndpoint { get; } = string.Create(
-        CultureInfo.InvariantCulture, $"http://127.0.0.1:{BrokerEndpoint.DefaultPort}");
-
-    private static bool Same(string a, string b) =>
-        string.Equals(a.TrimEnd('/'), b.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+    // **Four members stood here and all four went with the fields that used them.** `StoreProblem`
+    // refused a store another project owned; `EndpointProblem` refused an address another project
+    // listened on; `FreeEndpoint` proposed one nothing held; `DefaultEndpoint` was the port an MCP
+    // server looks for when told nothing.
+    //
+    // A project's store is derived from its name and its port is claimed when it is created, so the
+    // form asks for neither and nothing is left to validate or propose. `DeadSurfaceTests` reported
+    // each of them as named only in its own file, which is exactly what that guard is for.
 
     /// <summary>Builds the form, checks every field as it is typed, and writes on confirmation.</summary>
     private static Task OpenAsync(
@@ -231,7 +144,6 @@ internal static class Naming
         string manifestPath,
         IReadOnlyList<ProjectSettings> projects,
         InstalledEntry? entry,
-        Proposed proposed,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done)
     {
@@ -335,15 +247,4 @@ internal static class Naming
         await done(Reports.Sentences(lines)).ConfigureAwait(false);
     }
 
-    /// <summary>What a form proposes for each field, and the one line saying why.</summary>
-    /// <summary>What a form should open already holding.</summary>
-    /// <remarks>
-    /// <b>The store went with the field that asked for it.</b> A project's store is derived from its
-    /// name, so there is nothing to propose and nothing to explain — which is what removing the question
-    /// bought, rather than a better default for it.
-    /// </remarks>
-    private sealed record Proposed(
-        string Endpoint,
-        string? NodeConfig,
-        string EndpointWhy);
 }
