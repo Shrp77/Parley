@@ -43,15 +43,23 @@ namespace Parley.Tests;
 /// </remarks>
 internal static class ManifestIsolation
 {
-    /// <summary>Where this assembly looks for a manifest: nowhere.</summary>
+    /// <summary>Where this assembly looks for this machine's projects: nowhere.</summary>
     /// <remarks>
-    /// Never created. Nothing in these assemblies writes to the resolved default, and if
-    /// something ever does, failing on the absent directory is the loud version of quietly
-    /// editing the developer's own configuration. Tests that want a manifest pass an explicit
-    /// path, which outranks this.
+    /// <para>
+    /// Never created. Nothing in these assemblies writes to the resolved default, and if something ever
+    /// does, failing on the absent directory is the loud version of quietly editing the developer's own
+    /// configuration. Tests that want projects pass an explicit root, which outranks this.
+    /// </para>
+    /// <para>
+    /// <b>It ended in <c>projects.json</c> until 019 and must not now.</b> The variable names a root, and
+    /// a value whose final segment is the old manifest file name is *refused* — so every test in the
+    /// assembly inherited a refusal from a module initializer, which is about as far from the failing
+    /// assertion as a cause can get. Found by one test that runs the real binary and checks it exits
+    /// zero.
+    /// </para>
     /// </remarks>
-    internal static readonly string NoManifest = Path.Combine(
-        Path.GetTempPath(), $"parley-tests-{Guid.NewGuid():N}", "projects.json");
+    internal static readonly string NoManifest =
+        Path.Combine(Path.GetTempPath(), $"parley-tests-{Guid.NewGuid():N}");
 
     /// <summary>Runs before any test in the assembly, and before any host is built.</summary>
     [ModuleInitializer]

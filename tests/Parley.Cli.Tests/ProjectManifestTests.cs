@@ -147,35 +147,54 @@ public sealed class ProjectManifestTests : IDisposable
         Assert.Equal(ProjectManifest.DefaultPath, ProjectManifest.Locate(null, _ => null));
     }
 
-    [Theory]
-    [InlineData("/somewhere/Parley/projects.json", "/somewhere/Parley")]
-    [InlineData("/somewhere/Parley", "/somewhere/Parley")]
-    [InlineData("/somewhere/Parley/", "/somewhere/Parley")]
-    public void The_old_spelling_names_the_root_beside_it(string given, string expected)
+    [Fact]
+    public void The_old_spelling_resolves_to_nothing_and_is_refused_when_it_is_read()
     {
-        // **FR-053, and the reason it is not optional.** `--config` and PARLEY_CONFIG named the
-        // manifest file, and the owner's logon entry holds that path verbatim. Refusing it would
-        // stop that machine serving at its next start, which is the one moment nobody is watching.
+        // **This asserted the opposite, and the compatibility it asserted is withdrawn.** `--config` and
+        // PARLEY_CONFIG named the manifest file, and a value ending in `projects.json` was resolved to the
+        // directory containing it — for at least one release, because the owner's logon entry held that
+        // path verbatim.
         //
-        // Checked through both doors, because an entry holds one and a shell holds the other.
-        Assert.Equal(expected, ProjectManifest.Locate(given, _ => null).Replace('\\', '/'));
-        Assert.Equal(expected, ProjectManifest.Locate(null, _ => given).Replace('\\', '/'));
+        // Nothing has been released. The only machine carrying the old layout is the one this was written
+        // on, and `reset.ps1` clears it. A rule kept "for one release" on a product with no releases has
+        // no expiry.
+        //
+        // So `Locate` passes it through untouched and the *reader* refuses it, which is the loud version:
+        // a path handed back as a root would have had `projects/` looked for inside a file, found nothing,
+        // and reported a well-configured machine as having no projects.
+        const string old = "/somewhere/Parley/projects.json";
+
+        Assert.Equal(old, ProjectManifest.Locate(old, _ => null));
+        Assert.Equal(old, ProjectManifest.Locate(null, _ => old));
+
+        Assert.False(ProjectManifest.TryRead(old, out var projects, out var problem));
+        Assert.Empty(projects);
+
+        // Named with what to do about it, at the one moment somebody can act on it.
+        Assert.Contains(ProjectManifest.FileName, problem, StringComparison.Ordinal);
+        Assert.Contains("reset.ps1", problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_root_is_taken_exactly_as_given()
+    {
+        // The other half: nothing is trimmed, resolved or second-guessed. A root is what was named.
+        Assert.Equal("/somewhere/Parley", ProjectManifest.Locate("/somewhere/Parley", _ => null));
     }
 
     [Fact]
     public void The_old_spelling_is_recognised_by_name_and_never_by_asking_the_filesystem()
     {
-        // The rule has to hold on a machine being set up, which has neither the file nor the
-        // directory yet — so a version that tested for existence would behave one way before
-        // first run and another way after, which is a rule nobody can reason about.
+        // The rule has to hold on a machine being set up, which has neither the file nor the directory
+        // yet — so a version that tested for existence would behave one way before first run and another
+        // after, which is a rule nobody can reason about.
         //
-        // Probed by naming a path under a directory that does not exist at all: if existence were
-        // consulted this would fall through and answer with the file.
-        var nowhere = Path.Combine(_root, "never-created", "projects.json");
+        // Probed by naming a path under a directory that does not exist at all: the refusal comes from the
+        // name, so it arrives either way.
+        var nowhere = Path.Combine(_root, "never-created", ProjectManifest.FileName);
 
-        Assert.Equal(
-            Path.Combine(_root, "never-created"),
-            ProjectManifest.Locate(nowhere, _ => null));
+        Assert.False(ProjectManifest.TryRead(nowhere, out _, out var problem));
+        Assert.Contains(ProjectManifest.FileName, problem, StringComparison.Ordinal);
 
         Assert.False(Directory.Exists(Path.Combine(_root, "never-created")));
     }
@@ -266,7 +285,7 @@ public sealed class ProjectManifestTests : IDisposable
 
         Assert.False(ProjectManifest.TryRead(file, out var projects, out var problem));
         Assert.Empty(projects);
-        Assert.Contains("Locate", problem, StringComparison.Ordinal);
+        Assert.Contains("reset.ps1", problem, StringComparison.Ordinal);
     }
 
     // ---- per-project rules ------------------------------------------------------------------
@@ -892,8 +911,9 @@ public sealed class ProjectManifestTests : IDisposable
         // Asserted on the path the tool prints rather than on the variable, because the variable
         // being set proves nothing about what was resolved from it -- which is the entire lesson
         // of the three failures in this class's own remarks.
-        var (exitCode, output, _) = ToolProcess.RunFully([], "project", "list");
+        var (exitCode, output, whyNot) = ToolProcess.RunFully([], "project", "list");
 
+        Assert.Equal(string.Empty, whyNot);
         Assert.Equal(0, exitCode);
 
         // Non-vacuous on every machine, including the ones with nothing configured at all: the

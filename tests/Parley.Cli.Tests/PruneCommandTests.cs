@@ -1,3 +1,4 @@
+using Parley.Configuration;
 ﻿using Microsoft.Data.Sqlite;
 using Parley.Broker;
 using Parley.Core;
@@ -189,7 +190,9 @@ public sealed class PruneCommandTests : IAsyncDisposable
     /// <summary>Builds a real Parley database with one message in it.</summary>
     private async Task<string> ProjectDatabase()
     {
-        var path = Path.Combine(_directory, "parley.db");
+        var path = BrokerProcess.StoreFor(_directory);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
         using (var connection = ParleyDatabase.OpenAndMigrate(path))
         {
@@ -232,11 +235,25 @@ public sealed class PruneCommandTests : IAsyncDisposable
         // `parley serve` rather than `parley prune`. That is a better place for it: the value
         // decides what a background sweep deletes on a schedule, and refusing at the one moment
         // somebody is watching beats refusing whenever they next happen to run a command.
+        // A root with one project in it, because `serve` takes no store and no port. What this
+        // probes is unchanged: an unreadable retention value stops the broker rather than the
+        // operator's shell, at the one moment somebody is watching.
         var path = await ProjectDatabase();
+        var root = _directory;
+
+        // **A project rather than a store and a port.** `serve` takes neither; a rig names a root and
+        // writes a project into it, and the endpoint it wants goes in that project's own file.
+        ProjectManifest.Write(
+            root,
+            [new ProjectSettings(
+                ProjectName.Create("probe"),
+                ProjectFolder.StoreFor(root, ProjectName.Create("probe")),
+                "http://127.0.0.1:0",
+                null)]);
 
         var (exitCode, error) = ToolProcess.Run(
             [(RetentionPolicyEnvironment.IdleVariable, "soon")],
-            "serve", "--db", path, "--listen", "http://127.0.0.1:0");
+            "serve", "--config", root);
 
         Assert.NotEqual(0, exitCode);
         Assert.Contains(RetentionPolicyEnvironment.IdleVariable, error, StringComparison.Ordinal);
