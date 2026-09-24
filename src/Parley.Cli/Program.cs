@@ -248,6 +248,12 @@ if (!forwarding && arguments.Exists(a => a is "--version" or "-v"))
 
 var selectAllRepositories = TakeFlag("--all");
 var selectNoRepositories = TakeFlag("--none");
+
+// **`enroll --describe` is what `enroll plan` was**, asked of a directory rather than of a file
+// (FR-042). Taken centrally with the rest, because everything left starting with a hyphen is
+// refused below as an option this tool does not have — a flag consumed by the command it belongs
+// to never arrives, which is how `--all` failed to reach `enroll` until it was taken here.
+var describeOnly = TakeFlag("--describe");
 var hostNode = TakeFlag("--with-node");
 // **The old spellings are gone, at the version 007 named and 008 moved them to.** `--with-console`,
 // `--console` and `--no-console` warned for two minor versions and are removed here. What is *not*
@@ -1075,7 +1081,8 @@ if (verb == "enroll")
         CancellationToken.None,
         project,
         configuredProjects,
-        manifestPath).ConfigureAwait(false);
+        manifestPath,
+        describeOnly).ConfigureAwait(false);
 }
 
 

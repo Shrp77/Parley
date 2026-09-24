@@ -119,6 +119,10 @@ public static class EnrollCommand
     /// Where that manifest lives, held for the length of the run so that two of them cannot each
     /// find no other project starting a workspace and then both record that theirs does.
     /// </param>
+    /// <param name="describe">
+    /// Report what the one verb would configure and change nothing (FR-042). It replaces the
+    /// <c>plan</c> subcommand, which asked the same question of a file rather than of a directory.
+    /// </param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     public static async Task<int> RunAsync(
@@ -130,7 +134,8 @@ public static class EnrollCommand
         CancellationToken cancellationToken = default,
         ProjectSettings? project = null,
         IReadOnlyList<ProjectSettings>? deployment = null,
-        string? manifestPath = null)
+        string? manifestPath = null,
+        bool describe = false)
     {
         ArgumentNullException.ThrowIfNull(arguments);
         ArgumentNullException.ThrowIfNull(nodeConfig);
@@ -139,6 +144,15 @@ public static class EnrollCommand
 
         return arguments switch
         {
+            // **The one verb of FR-040, and it is matched first.** A single operand that is not one
+            // of the three old subcommand words is a directory of checkouts. The arms below are on
+            // their way out and are kept only until every caller has moved.
+            [var directory] when directory is not ("scan" or "plan" or "apply")
+                => await EnrollAsync(
+                        directory, selectAll, describe, nodeConfig, output, error,
+                        project, deployment, manifestPath, cancellationToken)
+                    .ConfigureAwait(false),
+
             ["scan", var root] => await ScanAsync(root, DefaultManifest, selectAll, output, error, cancellationToken)
                 .ConfigureAwait(false),
             ["scan", var root, var into] => await ScanAsync(root, into, selectAll, output, error, cancellationToken)
@@ -162,27 +176,116 @@ public static class EnrollCommand
         return Usage;
     }
 
-    private static async Task<int> ScanAsync(
+    /// <summary>
+    /// Finds the repositories under a directory, offers them, and configures the ones chosen.
+    /// </summary>
+    /// <param name="root">The directory holding the checkouts.</param>
+    /// <param name="selectAll">True for all, false for none, null to offer a picker.</param>
+    /// <param name="describe">Report what would be configured and change nothing.</param>
+    /// <param name="nodeConfig">The catalogue this machine reads, as the entry point resolved it.</param>
+    /// <param name="output">Where to report what happened.</param>
+    /// <param name="error">Where to report why it could not.</param>
+    /// <param name="project">The project being enrolled into, or null.</param>
+    /// <param name="deployment">Every project this machine describes.</param>
+    /// <param name="projectManifest">Where that lives, so the gate can be held across the run.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>The exit code.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>One verb, and no file for anybody to author</b> (FR-040). The three-step form named its
+    /// first step <c>scan</c>, which was honest while that step only looked; this finds, configures
+    /// and starts, so it is not a scan and is not called one.
+    /// </para>
+    /// <para>
+    /// <b>What the removed file actually carried was nothing this needed.</b> Scanning built these
+    /// rows in memory, wrote them out, and applying read them straight back. The one thing the round
+    /// trip bought was a place for a person to type what each repository owns — and that is 020's
+    /// question to ask the repository, not a worksheet to fill in from memory. What a launch
+    /// configuration already says is carried forward by <see cref="Discover"/> reading it, which is
+    /// where it came from before the file existed.
+    /// </para>
+    /// </remarks>
+    private static async Task<int> EnrollAsync(
         string root,
-        string into,
         bool? selectAll,
+        bool describe,
+        Resolved nodeConfig,
         TextWriter output,
         TextWriter error,
+        ProjectSettings? project,
+        IReadOnlyList<ProjectSettings>? deployment,
+        string? projectManifest,
         CancellationToken cancellationToken)
     {
         if (!Directory.Exists(root))
         {
             await error.WriteLineAsync($"{root} is not a directory.").ConfigureAwait(false);
+
             return Usage;
         }
 
-        // Merged with whatever is already at the output path, so re-scanning after somebody has
-        // spent an afternoon writing owns lines does not throw them away. A scan that destroyed
-        // hand-written prose would be discovered exactly once, by the person who wrote it.
-        var previous = ReadManifest(into)?.Agents?
-            .ToDictionary(e => e.Workspace, StringComparer.OrdinalIgnoreCase)
-            ?? [];
+        // Nothing to carry: there is no previous run's file to merge with, which is the whole point.
+        var entries = Discover(root, new Dictionary<string, EnrollmentEntry>(StringComparer.OrdinalIgnoreCase));
 
+        if (entries.Count == 0)
+        {
+            await error.WriteLineAsync($"No git repositories directly under {root}.").ConfigureAwait(false);
+
+            return Usage;
+        }
+
+        var chosen = await ChooseAsync(entries, selectAll, output, error).ConfigureAwait(false);
+
+        if (chosen is null)
+        {
+            await output.WriteLineAsync("Cancelled. Nothing was configured.").ConfigureAwait(false);
+
+            return 0;
+        }
+
+        if (chosen.All(e => !e.Enroll))
+        {
+            await error.WriteLineAsync(
+                $"No repositories chosen under {root}. Nothing was configured.").ConfigureAwait(false);
+
+            return Config;
+        }
+
+        return await ConfigureAsync(
+            chosen,
+            manifestNodeConfig: null,
+            unreadable: null,
+            unreadableCode: 0,
+            source: root,
+            fromManifest: false,
+            write: !describe,
+            nodeConfig,
+            output,
+            error,
+            project,
+            deployment,
+            projectManifest,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>The git repositories directly under a directory, as enrolment rows.</summary>
+    /// <param name="root">The directory holding the checkouts.</param>
+    /// <param name="previous">
+    /// Rows from a previous run, keyed by workspace, so that what somebody has already typed or
+    /// approved survives. Empty when there is nothing to carry.
+    /// </param>
+    /// <returns>One row per repository, in a stable order.</returns>
+    /// <remarks>
+    /// Split out so that finding the repositories is one implementation with two callers: the
+    /// subcommand that writes a manifest, and the one verb that does not. While this was inline,
+    /// removing the manifest would have meant a second copy of the rule for what counts as a
+    /// repository — and that rule is load-bearing, since anything it admits wrongly becomes a name
+    /// on the roster no agent will ever answer to.
+    /// </remarks>
+    private static List<EnrollmentEntry> Discover(
+        string root,
+        IReadOnlyDictionary<string, EnrollmentEntry> previous)
+    {
         var entries = new List<EnrollmentEntry>();
 
         foreach (var directory in Directory.EnumerateDirectories(root).Order(StringComparer.Ordinal))
@@ -215,6 +318,32 @@ public static class EnrollCommand
                 Evidence = Evidence(directory),
             });
         }
+
+        return entries;
+    }
+
+    private static async Task<int> ScanAsync(
+        string root,
+        string into,
+        bool? selectAll,
+        TextWriter output,
+        TextWriter error,
+        CancellationToken cancellationToken)
+    {
+        if (!Directory.Exists(root))
+        {
+            await error.WriteLineAsync($"{root} is not a directory.").ConfigureAwait(false);
+            return Usage;
+        }
+
+        // Merged with whatever is already at the output path, so re-scanning after somebody has
+        // spent an afternoon writing owns lines does not throw them away. A scan that destroyed
+        // hand-written prose would be discovered exactly once, by the person who wrote it.
+        var previous = ReadManifest(into)?.Agents?
+            .ToDictionary(e => e.Workspace, StringComparer.OrdinalIgnoreCase)
+            ?? [];
+
+        var entries = Discover(root, previous);
 
         if (entries.Count == 0)
         {
@@ -799,12 +928,6 @@ public static class EnrollCommand
         string? projectManifest,
         CancellationToken cancellationToken)
     {
-        // Held for the whole run rather than around the check alone. Validation and writing are far
-        // apart here by design -- everything is refused before anything is written -- so a gate that
-        // spanned only one of them would leave the same window the probe found: two runs each seeing
-        // no other project starting a workspace, and both then recording that theirs does.
-        using var gate = await Catalogues.GateAsync(projectManifest, cancellationToken).ConfigureAwait(false);
-
         EnrollmentManifest? manifest = null;
         string? unreadable = null;
         var unreadableCode = 0;
@@ -825,7 +948,91 @@ public static class EnrollCommand
             unreadableCode = Config;
         }
 
-        // Said before the manifest is judged, and said even when it could not be read at all.
+        return await ConfigureAsync(
+            manifest?.Agents,
+            manifest?.NodeConfig,
+            unreadable,
+            unreadableCode,
+            manifestPath,
+            fromManifest: true,
+            write,
+            nodeConfig,
+            output,
+            error,
+            project,
+            deployment,
+            projectManifest,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Configures, catalogues and starts a set of repositories that have already been chosen.
+    /// </summary>
+    /// <param name="rows">
+    /// The repositories, ticked and unticked. A null element is kept rather than filtered, because
+    /// validation names it and silently dropping one is how a repository somebody meant to enrol
+    /// goes missing with nothing said. <b>Declared non-nullable although null elements are handled</b>
+    /// — that is what <c>EnrollmentManifest.Agents</c> declares, and a deserialiser hands back nulls
+    /// regardless of what the type says. Spelling it honestly here made the compiler reject four
+    /// downstream dereferences that have always been reachable, which is a real finding and a
+    /// separate change from moving this method.
+    /// </param>
+    /// <param name="manifestNodeConfig">A catalogue named by the source, or null.</param>
+    /// <param name="unreadable">Why the source could not be read, or null.</param>
+    /// <param name="unreadableCode">The exit code that goes with <paramref name="unreadable"/>.</param>
+    /// <param name="source">What to name in a refusal — a manifest path, or a directory.</param>
+    /// <param name="fromManifest">
+    /// Whether the rows came from a file somebody could edit. It decides one thing: whether a
+    /// non-empty <c>owns</c> must carry a recorded approval, which is only answerable where there
+    /// is a field to tick.
+    /// </param>
+    /// <param name="write">Whether to change anything, or only describe what would change.</param>
+    /// <param name="nodeConfig">The catalogue this machine reads, as the entry point resolved it.</param>
+    /// <param name="output">Where to report what happened.</param>
+    /// <param name="error">Where to report why it could not.</param>
+    /// <param name="project">The project being enrolled into, or null.</param>
+    /// <param name="deployment">Every project this machine describes.</param>
+    /// <param name="projectManifest">Where that lives, so the gate can be held across the run.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>The exit code.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Split out of <c>ApplyAsync</c> so that enrolling needs no file.</b> Scanning built these
+    /// rows in memory, serialised them to a manifest, and this half read them straight back — a
+    /// round trip through the disk between two halves of one operation. FR-040 removes the file, and
+    /// what makes that affordable is that nothing here ever needed it: the rows are the input, and
+    /// where they came from is one string used in refusals.
+    /// </para>
+    /// <para>
+    /// <b>The gate moved in here with it, and is taken later than it was.</b> It used to be held
+    /// across the manifest read as well. Nothing is written during a read and the gate protects a
+    /// decision about which project starts a workspace, so the window it closes is unchanged — and
+    /// holding it here is what lets both callers have it without each remembering to.
+    /// </para>
+    /// </remarks>
+    private static async Task<int> ConfigureAsync(
+        IReadOnlyList<EnrollmentEntry>? rows,
+        string? manifestNodeConfig,
+        string? unreadable,
+        int unreadableCode,
+        string source,
+        bool fromManifest,
+        bool write,
+        Resolved nodeConfig,
+        TextWriter output,
+        TextWriter error,
+        ProjectSettings? project,
+        IReadOnlyList<ProjectSettings>? deployment,
+        string? projectManifest,
+        CancellationToken cancellationToken)
+    {
+        // Held for the whole run rather than around the check alone. Validation and writing are far
+        // apart here by design -- everything is refused before anything is written -- so a gate that
+        // spanned only one of them would leave the same window the probe found: two runs each seeing
+        // no other project starting a workspace, and both then recording that theirs does.
+        using var gate = await Catalogues.GateAsync(projectManifest, cancellationToken).ConfigureAwait(false);
+
+        // Said before the source is judged, and said even when it could not be read at all.
         //
         // The catalogue is the file this command records consent to run unattended in, and naming
         // it is what stops a run writing ten repositories where nothing reads them. It used to be
@@ -836,7 +1043,7 @@ public static class EnrollCommand
         // Here it is true in both directions, and the provenance travels with it, because "which
         // of the four inputs won" is the question somebody reading this line is actually asking.
         await output.WriteLineAsync(
-            $"node catalogue: {Naming(manifest?.NodeConfig, nodeConfig)}").ConfigureAwait(false);
+            $"node catalogue: {Naming(manifestNodeConfig, nodeConfig)}").ConfigureAwait(false);
 
         if (unreadable is not null)
         {
@@ -844,13 +1051,13 @@ public static class EnrollCommand
             return unreadableCode;
         }
 
-        var rows = manifest?.Agents;
-
         if (rows is null || rows.Count == 0)
         {
-            await error.WriteLineAsync($"{manifestPath} names no agents.").ConfigureAwait(false);
+            await error.WriteLineAsync($"{source} names no agents.").ConfigureAwait(false);
             return Config;
         }
+
+        var manifestPath = source;
 
         // Only the chosen ones, and only they are validated. A row somebody deliberately left
         // out has no reason to be well formed, and refusing the run because an unselected
@@ -875,7 +1082,12 @@ public static class EnrollCommand
                 ? $"{entries.Length} repositories to enroll, {skipped} skipped."
                 : $"{entries.Length} repositories to enroll.").ConfigureAwait(false);
 
-        var problems = new List<string>(EnrollmentPlan.Validate(entries, Directory.Exists));
+        // **Approval is asked for only where somebody could give it**, which is the manifest. The one
+        // verb has no file to tick, and the owns line it carries came out of the repository's own
+        // launch configuration; 020 asks the agent what it is responsible for rather than having a
+        // person affirm a line they did not write.
+        var problems = new List<string>(
+            EnrollmentPlan.Validate(entries, Directory.Exists, row: null, requireOwnsApproval: fromManifest));
 
         // **FR-013's check was here, and 018 removed the rule it enforced.**
         //
@@ -928,7 +1140,7 @@ public static class EnrollCommand
             return Config;
         }
 
-        var nodePath = ResolveNodeConfig(manifest?.NodeConfig, nodeConfig.Value);
+        var nodePath = ResolveNodeConfig(manifestNodeConfig, nodeConfig.Value);
 
         // **Held from the read to the write, which is the whole run.** This reads the catalogue here
         // and writes it after the last repository, and without a hold two runs sharing one catalogue

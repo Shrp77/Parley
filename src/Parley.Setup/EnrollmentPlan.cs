@@ -200,6 +200,13 @@ public static class EnrollmentPlan
     /// schema's cap were both written through it. A caller with no manifest needs a way to name the
     /// thing being refused that does not read as a row number it does not have.
     /// </param>
+    /// <param name="requireOwnsApproval">
+    /// Whether a non-empty <c>owns</c> must carry a recorded approval. True for the manifest, which
+    /// is where somebody typed one and could tick it. False for <c>parley enroll &lt;directory&gt;</c>,
+    /// which has no such file: the line there came out of the repository's own launch configuration
+    /// and is carried forward unchanged (FR-048), and what a repository is responsible for is asked
+    /// of the agent itself rather than affirmed by a person reading a worksheet.
+    /// </param>
     /// <returns>One line per problem, empty when the manifest is usable.</returns>
     /// <remarks>
     /// Whole-manifest rather than per-repository, and before any write, because a half-enrolled
@@ -210,7 +217,8 @@ public static class EnrollmentPlan
     public static IReadOnlyList<string> Validate(
         IReadOnlyList<EnrollmentEntry?> entries,
         Func<string, bool> workspaceExists,
-        Func<int, string>? row = null)
+        Func<int, string>? row = null,
+        bool requireOwnsApproval = true)
     {
         ArgumentNullException.ThrowIfNull(entries);
         ArgumentNullException.ThrowIfNull(workspaceExists);
@@ -298,7 +306,18 @@ public static class EnrollmentPlan
             // person read it and said yes, and a draft that ships unread would make the promise
             // vacuous. Refused rather than warned about, because a warning in a run that
             // succeeds is a warning nobody acts on.
-            if (owns.Length > 0 && !entry.OwnsApproved)
+            // **The approval is a property of the worksheet, and the worksheet is going.** The rule
+            // above is right about the file it was written for: a person typed a line into a
+            // manifest, so a recorded yes is what separated a draft nobody read from one somebody
+            // weighed. `parley enroll <directory>` has no such file — FR-040 removes it — so there
+            // is nowhere to set the field and every repository whose launch configuration already
+            // carries an owns line would be unenrollable, which is most of them.
+            //
+            // Not replaced by a flag, because the question is already answered elsewhere: 020 has
+            // Parley *ask the agent* what it is responsible for after enrolling, and discuss the
+            // answer to agreement. What 019 owes is not losing the lines that exist (FR-048), and
+            // that is carrying them forward rather than approving them on somebody's behalf.
+            if (requireOwnsApproval && owns.Length > 0 && !entry.OwnsApproved)
             {
                 problems.Add(
                     $"{where}: owns is filled in but not approved. Read it against its evidence, " +
