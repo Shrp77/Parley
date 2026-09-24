@@ -1,3 +1,5 @@
+using Parley.Core;
+using Parley.Configuration;
 ﻿using System.Globalization;
 using Microsoft.Data.Sqlite;
 using Xunit;
@@ -42,9 +44,16 @@ public sealed class ForeignDatabaseTests : IDisposable
         }
     }
 
-    private string MakeForeignDatabase()
+    private string MakeForeignDatabase() => MakeForeignDatabaseAt(Path.Combine(_directory, "app.db"));
+
+    /// <summary>Somebody else's SQLite database, at a path this test chooses.</summary>
+    /// <remarks>
+    /// **Takes the path since 019**, because the only way to put a foreign database where Parley will
+    /// open it is to put it where a project's store goes. No flag names one any more.
+    /// </remarks>
+    private static string MakeForeignDatabaseAt(string path)
     {
-        var path = Path.Combine(_directory, "app.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
         using var connection = new SqliteConnection($"Data Source={path}");
         connection.Open();
@@ -77,13 +86,26 @@ public sealed class ForeignDatabaseTests : IDisposable
     [Fact]
     public void Pointing_the_broker_at_somebody_elses_database_changes_nothing()
     {
-        // Through `serve` now, because that is the only command that opens a file. The check
-        // moved there with the migration it guards rather than being dropped with the class it
-        // used to live in: one process creates every store, so it is the only thing left that
-        // can create one in the wrong place.
-        var path = MakeForeignDatabase();
+        // Through `serve`, because that is the only thing that opens a file. The check moved there
+        // with the migration it guards rather than being dropped with the class it used to live in:
+        // one process creates every store, so it is the only thing left that can create one in the
+        // wrong place.
+        //
+        // **Reached by putting the foreign file where the project's store goes**, which is the only
+        // way in now that no flag names a database — and it is a real way in: somebody copies a file
+        // into a project's folder, or restores a backup over one.
+        var root = Path.Combine(_directory, "root");
+        var name = Parley.Core.ProjectName.Create("probe");
 
-        var (exitCode, error) = ToolProcess.Run("serve", "--db", path);
+        ProjectManifest.Write(
+            root,
+            [new ProjectSettings(name, ProjectFolder.StoreFor(root, name), "http://127.0.0.1:0", null)]);
+
+        var path = ProjectFolder.StoreFor(root, name);
+
+        MakeForeignDatabaseAt(path);
+
+        var (exitCode, error) = ToolProcess.Run("serve", "--config", root);
 
         Assert.Equal(74, exitCode);
         Assert.Contains("Parley did not create", error, StringComparison.Ordinal);
@@ -109,25 +131,42 @@ public sealed class ForeignDatabaseTests : IDisposable
         var (exitCode, error) = ToolProcess.Run("--db", path, "registry");
 
         Assert.Equal(64, exitCode);
-        Assert.Contains("--db is only for `parley serve`", error, StringComparison.Ordinal);
+
+        // **Named with what replaced it, rather than "not an option this command takes."** Every
+        // deployment on every machine was made with this flag, so it is in scripts and in fingers, and
+        // a refusal that pretended never to have heard of it would be true and useless.
+        Assert.Contains("--db", error, StringComparison.Ordinal);
+        Assert.Contains("parley project add <name>", error, StringComparison.Ordinal);
         Assert.False(File.Exists(path));
     }
 
     [Fact]
     public void The_environment_variable_the_servers_are_launched_with_is_the_one_this_reads()
     {
-        // End to end through the real binary, because the name used to be spelled twice — a
-        // constant in the MCP server and a literal here — in assemblies that deliberately do not
-        // reference each other. Comparing two constants proves they are equal; running the
-        // process proves this is the variable it actually reads, which is the part that would
-        // have left an operator administering a database the agents were not using.
-        var path = MakeForeignDatabase();
+        // End to end through the real binary, because the name is spelled twice — a constant in the
+        // MCP server and one here — in assemblies that deliberately do not reference each other.
+        // Comparing two constants proves they are equal; running the process proves this is the
+        // variable it actually reads, which is the part that would have left an operator
+        // administering a deployment the agents were not using.
+        //
+        // **`PARLEY_DB` until 019 and `PARLEY_CONFIG` now.** The old variable named one store outside
+        // everything; this one names the root, which is the only thing left that says where anything
+        // is.
+        var root = Path.Combine(_directory, "from-the-variable");
+        var name = Parley.Core.ProjectName.Create("probe");
+
+        ProjectManifest.Write(
+            root,
+            [new ProjectSettings(name, ProjectFolder.StoreFor(root, name), "http://127.0.0.1:0", null)]);
+
+        MakeForeignDatabaseAt(ProjectFolder.StoreFor(root, name));
 
         var (exitCode, error) = ToolProcess.Run(
-            [(Parley.Core.DeploymentEnvironment.DatabaseVariable, path)], "serve");
+            [(ProjectManifest.PathVariable, root)], "serve");
 
-        // Refused for being a foreign database, which is only reachable if it opened this path —
-        // no --db was given, so the variable is the only way it could have found it.
+        // Refused for being a foreign database, which is only reachable if it opened that store —
+        // nothing was given on the command line, so the variable is the only way it could have found
+        // the root it lives under.
         Assert.Equal(74, exitCode);
         Assert.Contains("Parley did not create", error, StringComparison.Ordinal);
     }

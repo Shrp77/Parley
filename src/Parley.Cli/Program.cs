@@ -846,11 +846,31 @@ if (verb == "serve" && rest.Length == 0)
             return ProjectManifest.TryRead(manifestPath, out var current, out _) ? current : null;
         }
 
-        // **A machine that names no project yet is still a machine being served.** That is the entry the
-        // installer registers on a machine nobody has configured: it waits, hosting the web UI, and starts
-        // the first project named. It used to fall through to one default store, which served a deployment
-        // nobody had named and that nothing would then read.
-        var awaitingFirstProject = serving.Count == 0 && string.IsNullOrWhiteSpace(projectName);
+        // **A machine that names no project yet is still a machine being served — but only when
+        // something asked it to serve that machine.** That is the entry the installer registers on a
+        // machine nobody has configured: it waits, hosting the web UI, and starts the first project
+        // named.
+        //
+        // **`--config` is what distinguishes the two, and dropping that condition made `parley serve`
+        // hang.** A supervisor entry names the root explicitly and should wait, because a project named
+        // an hour later must come up without the entry changing. A person typing `parley serve` on a
+        // machine with nothing on it has made a mistake, and what they need is a sentence — not a
+        // process that sits there for ever writing nothing. The rig met the second case and the whole
+        // suite stopped: five orphaned brokers, 4,265 lines, and no failure.
+        var awaitingFirstProject = serving.Count == 0
+            && string.IsNullOrWhiteSpace(projectName)
+            && configPath is not null;
+
+        if (serving.Count == 0 && !awaitingFirstProject)
+        {
+            Console.Error.WriteLine(
+                "No projects on this machine, so there is nothing to serve. They live under "
+                + $"{ProjectFolder.ProjectsIn(manifestPath)}; create one with `parley project add "
+                + "<name>` and it gets its own store and its own port. `parley autostart install` "
+                + "then serves every project at logon, including any named afterwards.");
+
+            return Task.FromResult(Config);
+        }
 
         var watching = string.IsNullOrWhiteSpace(projectName) && (serving.Count > 0 || awaitingFirstProject);
 

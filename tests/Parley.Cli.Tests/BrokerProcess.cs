@@ -94,17 +94,40 @@ internal sealed partial class BrokerProcess : IDisposable
             // version every test that starts one failed at once, none of them for a reason to do
             // with what they were testing. What the banner promises is that an address appears,
             // not that it appears first.
+            // **Bounded, because an unbounded read here hangs the whole suite rather than failing a
+            // test.** `ReadLine` blocks until the process writes or exits, and `serve` has a path where
+            // it does neither: told a root with no projects in it, it *waits* for the first one to be
+            // named — which is right for a machine somebody has just installed and fatal for a rig.
+            //
+            // Measured: a suite left in that state stopped at 4,265 lines with five orphaned brokers
+            // behind it, and nothing said why. A named failure after thirty seconds is worth more than
+            // a correct answer that never arrives.
             var said = new List<string>();
-            string? announcement;
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+            var line = process.StandardOutput.ReadLineAsync();
 
-            while ((announcement = process.StandardOutput.ReadLine()) is not null)
+            while (DateTime.UtcNow < deadline)
             {
+                if (!line.Wait(TimeSpan.FromSeconds(1)))
+                {
+                    continue;
+                }
+
+                var announcement = line.Result;
+
+                if (announcement is null)
+                {
+                    break;
+                }
+
                 said.Add(announcement);
 
                 if (Listening().Match(announcement) is { Success: true } found)
                 {
                     return new BrokerProcess(process, found.Value);
                 }
+
+                line = process.StandardOutput.ReadLineAsync();
             }
 
             throw new InvalidOperationException(
