@@ -128,14 +128,15 @@ serves every project this machine names, so what is usually missing is a project
 or:
 
 ```
-parley project add <name> --db <path to the store> --listen <url>
+parley project add <name>
 ```
 
-The broker starts it within seconds. The store is one SQLite file shared by every repository that
-should be able to reach every other, so it lives outside all of them - a path under one repository
-makes that repository's clone a prerequisite for everybody else's agent. Something like
-`~/.parley/<project>.db` works. The file does not need to exist; the broker creates and migrates
-it, and nothing else does.
+The broker starts it within seconds. Naming it is the whole of creating it: the project gets a
+folder of its own, a `parley.db` inside it, and a port claimed for it. **You do not choose where
+the store goes, and that is the point** - it is one SQLite file shared by every repository that
+should be able to reach every other, so it must live outside all of them, and a path under one
+repository would make that repository's clone a prerequisite for everybody else's agent. The file
+does not need to exist; the broker creates and migrates it, and nothing else does.
 
 If a broker is running, show the user who is already registered before they choose a name:
 

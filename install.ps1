@@ -850,7 +850,7 @@ if (-not $named) {
         Write-Host '  parley terminal                                   and create a project on its first screen' -ForegroundColor White
     }
 
-    Write-Host '  parley project add <name> --db <path> --listen <url>' -ForegroundColor White
+    Write-Host '  parley project add <name>                         its store and port are its own' -ForegroundColor White
     Write-Host 'The broker starts it within seconds.' -ForegroundColor White
 
     if ($webUi) {

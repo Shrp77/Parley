@@ -235,20 +235,30 @@ Independent projects do not share a broker. Each gets its own database file and 
 transport endpoint:
 
 ```
-projects.json
-├── project "alpha"  → alpha.db   → endpoint A   (22 agents)
-├── project "beta"   → beta.db    → endpoint B   (4 agents)
-└── project "gamma"  → gamma.db   → endpoint C   (2 agents)
+<root>/
+├── node.json                     this machine's agents
+├── ports.json                    which port each project was handed
+└── projects/
+    ├── alpha/   project.json → endpoint A   parley.db   (22 agents)
+    ├── beta/    project.json → endpoint B   parley.db   (4 agents)
+    └── gamma/   project.json → endpoint C   parley.db   (2 agents)
 ```
 
-**Where that list lives is a property of the machine, not of the protocol.** It is one
-file per user, at the platform's conventional configuration location, naming each project
-with its store and its endpoint. Nothing in it is ever read by a broker, sent over the
-transport, or stored: it exists so
-that a person, and the tools a person runs, can say *which deployment* they mean without
-repeating three paths and without inferring any of them from a working directory. A
-deployment that names no projects is configured entirely by explicit paths, exactly as
-before, and remains a supported way to run.
+**Where that layout lives is a property of the machine, not of the protocol.** It is one
+root per user, at the platform's conventional configuration location, holding one folder
+per project. Nothing in it is ever read by a broker, sent over the transport, or stored:
+it exists so that a person, and the tools a person runs, can say *which deployment* they
+mean without repeating paths and without inferring any of them from a working directory.
+
+**The name is the address.** A project's folder is named by the project, its store is
+`parley.db` inside that folder, and its endpoint is recorded in its own `project.json`.
+Naming a project is therefore the whole of creating one: there is no path for a person to
+supply and none for them to get wrong.
+
+**A deployment configured by explicit paths was a supported way to run, and is not any
+more.** That sentence stood here while a store and an endpoint could be named on a command
+line. Both spellings are gone — a machine's deployment is the set of folders under its
+root, and nothing outside a project names its store or its port.
 
 **The protocol has no concept of a project, and must not acquire one.** Membership is
 which endpoint an agent connects to. There is no group column, no scoped query, and no

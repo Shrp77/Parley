@@ -241,7 +241,7 @@ catalogue of agents this machine may start for it. Name one from the first scree
 `parley terminal`, or:
 
 ```
-parley project add acme --db ~/.parley/acme.db --listen http://127.0.0.1:51707
+parley project add acme
 ```
 
 One process serves every project this machine names, each on its own store and port, and each
@@ -290,10 +290,10 @@ and you can take part from either.
 **More than one deployment on one machine.** Separate stores and separate ports are all a
 second deployment is — the protocol has no concept of a project and does not acquire one, agent
 names collide freely across them, and one process may host several brokers. What that used to
-cost was carrying three paths on every command line. `parley project` records them instead:
+cost was carrying three paths on every command line. Naming a project is the whole of creating one:
 
 ```
-parley project add acme --db /src/acme/.parley/parley.db --listen http://127.0.0.1:51707
+parley project add acme
 parley --project acme registry
 ```
 
@@ -319,19 +319,21 @@ parley use                          # which project a command here would act on,
 The choice lasts until the terminal closes. There is deliberately no saved "current project": chosen
 in one window, it would quietly apply to a purge in another.
 
-**Explicit paths still win.** `--broker` and the environment variables below override anything a
-project says. **`parley serve --db <path>`, `parley autostart install --db <path>` and `PARLEY_DB`
-are for testing only**: they run one store by hand, outside the manifest, so a test rig need name
-no project. A machine's deployment names its stores with `parley project add` and nothing else, and
-`PARLEY_DB` never replaces a manifest named with `--config`, which is how the logon entry names the one it serves. `parley project set <name>` changes what an entry says — only the
-fields given, and an empty value clears an optional one — and the process serving the manifest
-restarts that project on its new store, endpoint or catalogue within seconds; a description
-changes nothing running. `parley project remove` forgets an entry and deletes nothing — not
-the store, not the catalogue, not any repository's `.mcp.json` — and says so every time; the
-process serving the manifest stops that project's broker within seconds and leaves the rest
-running. `parley project remove <name> --destroy` is the deliberate version: it waits for the
-broker to stop, deletes the store and, unless another project shares it, the catalogue, and lists
-the repositories that were agents in it, whose `.mcp.json` still names it.
+**A project's store and port are its own, and nothing outside it names either.** `--broker`
+overrides which broker a *client* talks to; nothing overrides where a project keeps its data or
+what port it holds. There is no `--db`, no `--listen` and no `PARLEY_DB`: the store is `parley.db`
+inside the project's folder and the port was claimed when the project was named. A broker that must
+be reachable from another machine has its `endpoint` edited in `projects/<name>/project.json` —
+there is no command for it, which is a real limitation and is deliberate, because a command that
+chose an interface for you would put a broker on a network by accident.
+
+`parley project set <name> --description <text>` changes the one thing about a project that is
+yours to choose. `parley project remove` forgets a project and deletes nothing — not the store, not
+any repository's `.mcp.json` — and says so every time; the process serving this machine stops that
+project's broker within seconds and leaves the rest running. `parley project remove <name>
+--destroy` is the deliberate version: it waits for the broker to stop, deletes the store and
+everything beside it, and lists the repositories that were agents in it, whose `.mcp.json` still
+names it.
 
 The trade is that a user-level supervisor stops the broker at logout. For a machine somebody
 works at that is right — the agents are editor sessions, and there are none when nobody is
@@ -344,7 +346,6 @@ Everything that describes the deployment rather than one repository belongs to t
 because it is the one process applying it:
 
 ```
-PARLEY_DB=/src/acme/.parley/parley.db   # one store instead of the manifest: testing only
 PARLEY_RETENTION_IDLE_HOURS=72          # how long the log keeps what it carried
 PARLEY_RETENTION_MAX_AGE_HOURS=720
 PARLEY_TICK_SECONDS=5                   # how often deadlines are swept
@@ -405,9 +406,18 @@ the server says so on the way up, and a project this machine does not describe s
 rather than falling back to the default — an agent in the wrong deployment looks entirely normal
 from both ends of a message.
 
-For an agent on another machine, set `PARLEY_BROKER` to the broker's host and port, and start
-the broker with `--listen` on an address that machine can reach — `127.0.0.1` is the default
-and nothing outside the box can reach it.
+For an agent on another machine, set `PARLEY_BROKER` to the broker's host and port, and give the
+project an address that machine can reach. **There is no command for that**, deliberately: a
+project is handed a loopback port when it is named, because nothing here can know which interface
+you mean to expose and guessing would put a broker on a network by accident. Edit the `endpoint` in
+`projects/<name>/project.json` and the process serving this machine restarts that project on the
+new address within seconds:
+
+```json
+{
+  "endpoint": "http://0.0.0.0:19100"
+}
+```
 
 **Put that address on a trusted path, and treat this as the decision it is.** The wire carries
 no credentials, so anything that can reach the broker can claim to be any agent, read its mail
@@ -693,11 +703,11 @@ parley --help                       the same list, on stdout, exiting zero
 ```
 
 Every one of these except `serve`, `up` and `project` is a client: they connect to the broker at
-`--broker`, or `PARLEY_BROKER`, and default to the local one. `web-ui` reads this machine's named
-projects instead, and falls back to that same broker when none are named — so it works
-against a broker run by explicit paths, which is how a test rig runs. None of them opens the store, so none can be pointed at the wrong
-file — `--db` belongs to `parley serve` alone, and is for testing only. `prune` applies the policy the broker was started
-with, which is the only policy in the deployment; your shell no longer has an opinion about it.
+`--broker`, or `PARLEY_BROKER`, and default to the local one. `web-ui` reads this machine's projects
+instead, and falls back to that same broker when none are named. **None of them opens a store, and
+none of them can be pointed at one**: there is no option anywhere that names a database file, so a
+client cannot be aimed at the wrong one. `prune` applies the policy the broker was started with,
+which is the only policy in the deployment; your shell no longer has an opinion about it.
 
 Placed files live in a folder beside the broker's store, one folder for each conversation, and they
 are yours to read and change there: an edit is the file's new content and every agent that fetched

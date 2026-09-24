@@ -61,7 +61,7 @@ same agent name may appear in two of them without either knowing.
 `parley project add` records one, so commands stop being told its paths a flag at a time:
 
 ```
-parley project add orders --db C:/parley/orders.db --listen http://127.0.0.1:51707
+parley project add orders
 parley --project orders registry
 ```
 
@@ -113,18 +113,19 @@ and is started through the project that does start it.
 one process, hosts this machine's node in each project whose entry
 names a catalogue (on a machine with one project `PARLEY_NODE_CONFIG` wins when it is set, as it
 does for `parley up`), and starts a project named later within seconds. `parley autostart status`
-says which form is installed and, for the one-store form, how to switch. That form -
-`autostart install --db` - and `parley serve --db` and `PARLEY_DB` are for testing only: a
-deployment names its stores with `parley project add`.
+says which form is installed. There is only one form: an entry serves every project on the
+machine, and `--project` narrows it to one for testing. Nothing names a store or a port - a
+project's store is `parley.db` inside its own folder and its port was claimed when it was
+created.
 
 ## The commands
 
 ```
 parley serve                          run the broker: the one process that opens the stores
-parley serve --db <path>              one store by hand, outside the manifest: testing only
+parley serve --project <name>         one project alone: testing only
 parley serve --with-node              and this machine's node in the same process
 parley autostart install              start both whenever you log in, serving every project
-                                      in the manifest (--db: one store, testing only)
+                                      on this machine
 parley autostart remove               stop doing that
 parley autostart status               say whether it is set up, and what it serves
 parley up                             run this machine's node, so its agents can be started
@@ -135,8 +136,8 @@ parley terminal                       the same deployment in this terminal; need
 
 parley project list                   what this machine is configured for
 parley use [<name>] [--shell <name>]  the project this terminal's commands act on (--clear to stop)
-parley project add <name> --db <path> --listen <url>    name a deployment
-parley project set <name> [--db] [--listen] [--node-config] [--description]   change one
+parley project add <name>             create one: it gets its own store and its own port
+parley project set <name> [--description <text>]   change what it says about itself
 parley project remove <name>          forget how to reach one; deletes nothing
 parley project remove <name> --destroy    ...and stop its broker, delete its store and catalogue
 
@@ -208,10 +209,10 @@ there is a real service, which does need privilege.
 
 `serve` and `up` are the two that do not return.
 
-`serve` is the broker. It opens the store, migrates it, and serves every agent and node in the
-project. Nothing else opens the file - so this is also the only command that can create one, and
-the only one that takes `--db` - which is for testing only, since a deployment's stores are
-named with `parley project add`.
+`serve` is the broker. It opens each project's store, migrates it, and serves every agent and node
+in that project. Nothing else opens a store - so this is also the only command that creates one, and
+**there is no option anywhere that names one**: a project's store is derived from its name, which is
+what makes it impossible to point anything at the wrong file.
 
 `up` is this machine's node. It tells the broker the machine is here, which is what makes the
 agents registered to it startable rather than stranded, and starts one when a question arrives

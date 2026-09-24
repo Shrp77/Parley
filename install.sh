@@ -855,7 +855,7 @@ if [ "$named" != "1" ]; then
         echo "  parley terminal                                   and create a project on its first screen"
     fi
 
-    echo "  parley project add <name> --db <path> --listen <url>"
+    echo "  parley project add <name>                         its store and port are its own"
     echo "The broker starts it within seconds."
 
     if [ -n "$web_ui" ]; then

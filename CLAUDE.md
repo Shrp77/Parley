@@ -611,7 +611,8 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   carry a probe which must be watched to fail first. One place for a
   machine's files and one door per job. A project becomes a folder under one root, named by the project, holding
   its own configuration and its own store — so naming a project is the whole of creating one, and `--db`,
-  `--listen` and every other way to point outside a project go. A port is handed out from a record at the root,
+  `--listen`, `PARLEY_DB` and every other way to point outside a project are gone, from every command rather
+  than from some. A port is handed out from a record at the root,
   claimed under a hold that nothing on the serving path ever takes. Starting Parley serves everything or Parley
   is not running. And the command line sheds sixteen verbs a person cannot use, because there is no
   `parley conversations` and every one of them takes an identifier nobody can obtain.
@@ -1305,8 +1306,8 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   one-writer rule its naming page records. Found while installing for real: `parley-mcp --version` answered only
   with a launch configuration, so the installer's version check read its silence as a match; it answers now, and
   both scripts count an unreadable version as a failure. `serve --db`, `autostart install --db` and `PARLEY_DB`
-  remain, for testing only (below). **These are code edits after the review gate**, so its lenses owe
-  confirming runs.
+  remained at the time, for testing only — **019 removed all three**, which is the entry below.
+  **These are code edits after the review gate**, so its lenses owe confirming runs.
 
   **`parley top` became `parley terminal`, on the owner's call**: "top" is the name of a process monitor, not of a
   person's view of a deployment. The tool is `parley-terminal` in the package `Parley.Terminal`, and the owner then
@@ -1316,10 +1317,21 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   nothing was released under the old name, and both installers remove a `Parley.Top` package installed before —
   otherwise nothing ever would. Entries below this one say `parley top`, `Parley.Top` and `TopCommand` because those were the names then.
 
-  **`serve --db`, `autostart install --db` and `PARLEY_DB` are for testing only**, also the owner's call. They run
-  one store outside the manifest so a test rig need name no project, which is what the suites use them for; a
-  deployment names its stores with `parley project add`. `parley --help`, the README, the operator skill and
-  `/parley:setup-many` say so, and the last of those no longer tells anybody to deploy with them.
+  **`serve --db`, `autostart install --db` and `PARLEY_DB` were for testing only, and 019 removed them
+  outright** — this paragraph is kept because the arrangement it describes is the one that was reversed, and
+  because it records the reasoning that turned out to be wrong. It ran one store outside the manifest so a
+  test rig need name no project, which is what the suites used it for.
+
+  **What that cost was two defects and two precedence rules.** `serve --db` on a machine whose manifest named
+  projects served the projects and ignored the store it was told; a `PARLEY_DB` left in an environment from a
+  test turned the logon entry into a broker for the test store. The review gate found them one after the
+  other, and the fixes were both rules about which of two sources wins — a question that only exists while
+  there are two. The owner's call on 2026-09-23: *"We can't have some commands using DB and others not using
+  it. Everything is project centric."*
+
+  **The test rig pays for it by naming a root instead**, which is what made the removal affordable: a project
+  in a throwaway root costs one name and no paths, and `BrokerProcess` writes one with port zero so the
+  operating system still picks the port and the suite still runs in parallel.
 
   **The gate's confirming runs over these edits found nine more, each reproduced before it was fixed.** `serve --config
   <file> --with-web-ui` started a web UI reading this machine's own manifest instead of the one served. `parley serve`

@@ -276,7 +276,16 @@ public sealed class InstallScriptTests
         // stopped serving every project but one. The owner removed the parameter rather than guard it.
         var code = Code(RepositoryFile.Read(script));
 
-        foreach (var gone in new[] { "$Store", "-Store", "Resolve-Store", "$NodeConfig", "-NodeConfig", "--store", "$store", "resolve_store", "node_config", "--node-config" })
+        // **`--db`, `--listen` and `PARLEY_DB` joined this list in 019**, which is what makes their
+        // removal hold: both scripts printed `project add <name> --db <path> --listen <url>` as the
+        // closing "name your first project" line, and prose that tells somebody to type a flag the tool
+        // refuses is worse than no prose at all.
+        foreach (var gone in new[]
+                 {
+                     "$Store", "-Store", "Resolve-Store", "$NodeConfig", "-NodeConfig", "--store",
+                     "$store", "resolve_store", "node_config", "--node-config",
+                     "--db", "--listen", "PARLEY_DB",
+                 })
         {
             Assert.DoesNotContain(gone, code, StringComparison.Ordinal);
         }

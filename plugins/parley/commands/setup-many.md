@@ -158,8 +158,8 @@ before running `apply`. Three behaviours are worth knowing so the output is not 
    if it does not yet - and `parley autostart install` serves every project in the manifest,
    each with its own node, from one process that starts again at every logon. One process,
    because a node that is not running leaves every repository you just enrolled reading as
-   startable and never started. (`parley serve --db` and `parley autostart install --db` run one
-   store outside the manifest and are for testing only.)
+   startable and never started. (`parley serve --project <name>` serves one project alone and is
+   for testing only.)
    Name the catalogue explicitly in the project's entry rather than relying on `PARLEY_NODE_CONFIG` or a bare
    `node.json`: a logon entry has no working directory worth relying on, and whether it sees an
    environment variable depends on which supervisor it is. `setx` in particular does not affect
