@@ -54,25 +54,22 @@ public sealed class ScanReportsEveryProjectTests : IDisposable
         return workspace;
     }
 
-    private async Task<string> ScanAsync()
-    {
-        var manifest = Path.Combine(_root, "enrol.json");
-        var output = new StringWriter();
-        var error = new StringWriter();
-
-        await EnrollCommand.RunAsync(
-            ["scan", _root, manifest],
-            selectAll: false,
-            new Resolved(Path.Combine(_root, "node.json"), ValueSource.Argument),
-            output,
-            error,
-            TestContext.Current.CancellationToken);
-
-        return await File.ReadAllTextAsync(manifest, TestContext.Current.CancellationToken);
-    }
+    /// <summary>Everything the find says about every repository under the root.</summary>
+    /// <remarks>
+    /// The whole of each row rather than one field, because these assertions are about what a person
+    /// is shown and a row that quietly moved a fact from the evidence to the name would still be
+    /// telling them. It was the serialised manifest before the file went; the rows are what the file
+    /// held.
+    /// </remarks>
+    private string Scanned() =>
+        string.Join(
+            "\n",
+            EnrollCommand.Find(_root).Select(entry => string.Join(
+                "\n",
+                (string[])[entry.Workspace, entry.Agent, entry.Owns ?? string.Empty, .. entry.Evidence ?? []])));
 
     [Fact]
-    public async Task A_repository_in_three_projects_has_all_three_reported()
+    public void A_repository_in_three_projects_has_all_three_reported()
     {
         Repository("inventory", """
             {
@@ -87,7 +84,7 @@ public sealed class ScanReportsEveryProjectTests : IDisposable
             }
             """);
 
-        var written = await ScanAsync();
+        var written = Scanned();
 
         Assert.Contains("alpha", written, StringComparison.Ordinal);
         Assert.Contains("beta", written, StringComparison.Ordinal);
@@ -99,7 +96,7 @@ public sealed class ScanReportsEveryProjectTests : IDisposable
     }
 
     [Fact]
-    public async Task A_legacy_entry_is_reported_as_the_project_it_answers_in()
+    public void A_legacy_entry_is_reported_as_the_project_it_answers_in()
     {
         Repository("orders", """
             {
@@ -110,30 +107,30 @@ public sealed class ScanReportsEveryProjectTests : IDisposable
             }
             """);
 
-        Assert.Contains("answers in: alpha", await ScanAsync(), StringComparison.Ordinal);
+        Assert.Contains("answers in: alpha", Scanned(), StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task A_repository_enrolled_nowhere_says_nothing_about_projects()
+    public void A_repository_enrolled_nowhere_says_nothing_about_projects()
     {
         Repository("fresh", null);
 
-        Assert.DoesNotContain("answers in", await ScanAsync(), StringComparison.Ordinal);
+        Assert.DoesNotContain("answers in", Scanned(), StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task A_launch_configuration_that_cannot_be_read_is_not_the_same_as_no_enrolment()
+    public void A_launch_configuration_that_cannot_be_read_is_not_the_same_as_no_enrolment()
     {
         Repository("broken", "{ this is not json");
 
-        var written = await ScanAsync();
+        var written = Scanned();
 
         Assert.Contains("could not be read", written, StringComparison.Ordinal);
         Assert.DoesNotContain("answers in", written, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task An_entry_naming_no_project_is_reported_as_naming_none()
+    public void An_entry_naming_no_project_is_reported_as_naming_none()
     {
         // Every repository enrolled before projects existed. Reporting it as belonging nowhere would
         // be wrong — it belongs to whatever broker it reaches — and reporting a project it does not
@@ -146,6 +143,6 @@ public sealed class ScanReportsEveryProjectTests : IDisposable
             }
             """);
 
-        Assert.Contains("no project", await ScanAsync(), StringComparison.Ordinal);
+        Assert.Contains("no project", Scanned(), StringComparison.Ordinal);
     }
 }

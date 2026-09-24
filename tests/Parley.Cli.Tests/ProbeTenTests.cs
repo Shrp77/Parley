@@ -75,44 +75,33 @@ public sealed class ProbeTenTests : IAsyncDisposable
     private ProjectSettings Project(string name) =>
         name == "alpha" ? _alpha.Settings : _beta.Settings;
 
-    private async Task<string> ManifestForAsync(string project, string agent, string owns)
-    {
-        var manifest = Path.Combine(_root, $"enrol-{project}.json");
+    /// <summary>The row a surface hands back for this repository, ticked and approved.</summary>
+    /// <remarks>
+    /// It was a manifest per project that this wrote and the command read straight back; it is the
+    /// one row that file held. What the sequence below is about — two projects, one repository, and
+    /// each keeping its own name for it — is decided from the row either way.
+    /// </remarks>
+    private EnrollmentEntry Chosen(string agent, string owns) =>
+        new(Workspace.Replace(Path.DirectorySeparatorChar, '/'), agent, owns, Unattended: false)
+        {
+            Enroll = true,
+            OwnsApproved = true,
+        };
 
-        await File.WriteAllTextAsync(
-            manifest,
-            $$"""
-              {
-                "node_config": "{{CatalogueFor(project).Replace(Path.DirectorySeparatorChar, '/')}}",
-                "agents": [ {
-                  "workspace": "{{Workspace.Replace(Path.DirectorySeparatorChar, '/')}}",
-                  "agent": "{{agent}}",
-                  "owns": "{{owns}}",
-                  "unattended": false,
-                  "enroll": true,
-                  "owns_approved": true
-                } ]
-              }
-              """,
-            TestContext.Current.CancellationToken);
-
-        return manifest;
-    }
-
-    private async Task<(int Code, string Output)> ApplyAsync(string project, string manifest)
+    private async Task<(int Code, string Output)> ApplyAsync(string project, EnrollmentEntry chosen)
     {
         var output = new StringWriter();
 
-        var code = await EnrollCommand.RunAsync(
-            ["apply", manifest],
-            selectAll: null,
+        var code = await EnrollCommand.EnrolAsync(
+            [chosen],
+            describe: false,
             new Resolved(CatalogueFor(project), ValueSource.Argument),
             output,
             new StringWriter(),
-            TestContext.Current.CancellationToken,
             Project(project),
             [Project("alpha"), Project("beta")],
-            ManifestPath);
+            ManifestPath,
+            TestContext.Current.CancellationToken);
 
         return (code, output.ToString());
     }
@@ -127,13 +116,13 @@ public sealed class ProbeTenTests : IAsyncDisposable
         // User Story 1, through the surface rather than through Describe. Two applies, two projects,
         // one repository — and the second must leave the first exactly as it was, because that is
         // what "answers in both" means on disk.
-        var (first, _) = await ApplyAsync("alpha", await ManifestForAsync("alpha", "inventory", "Stock levels. Not pricing."));
+        var (first, _) = await ApplyAsync("alpha", Chosen("inventory", "Stock levels. Not pricing."));
 
         Assert.Equal(0, first);
 
         var alphaEntry = (await ServersAsync())["parley-alpha"]!.ToJsonString();
 
-        var (second, _) = await ApplyAsync("beta", await ManifestForAsync("beta", "stock", "What is on hand."));
+        var (second, _) = await ApplyAsync("beta", Chosen("stock", "What is on hand."));
 
         Assert.Equal(0, second);
 
@@ -149,8 +138,8 @@ public sealed class ProbeTenTests : IAsyncDisposable
     [Fact]
     public async Task Each_project_keeps_its_own_name_and_its_own_owns_line()
     {
-        await ApplyAsync("alpha", await ManifestForAsync("alpha", "inventory", "Stock levels. Not pricing."));
-        await ApplyAsync("beta", await ManifestForAsync("beta", "stock", "What is on hand."));
+        await ApplyAsync("alpha", Chosen("inventory", "Stock levels. Not pricing."));
+        await ApplyAsync("beta", Chosen("stock", "What is on hand."));
 
         var servers = await ServersAsync();
 
@@ -170,20 +159,11 @@ public sealed class ProbeTenTests : IAsyncDisposable
     {
         // FR-012 through the surface. A scan that reported one of them is how a repository comes to
         // be enrolled twice in the project it is already in.
-        await ApplyAsync("alpha", await ManifestForAsync("alpha", "inventory", "Stock levels. Not pricing."));
-        await ApplyAsync("beta", await ManifestForAsync("beta", "stock", "What is on hand."));
+        await ApplyAsync("alpha", Chosen("inventory", "Stock levels. Not pricing."));
+        await ApplyAsync("beta", Chosen("stock", "What is on hand."));
 
-        var scanned = Path.Combine(_root, "scanned.json");
-
-        await EnrollCommand.RunAsync(
-            ["scan", Checkouts, scanned],
-            selectAll: false,
-            new Resolved(CatalogueFor("alpha"), ValueSource.Argument),
-            new StringWriter(),
-            new StringWriter(),
-            TestContext.Current.CancellationToken);
-
-        var text = await File.ReadAllTextAsync(scanned, TestContext.Current.CancellationToken);
+        var row = Assert.Single(EnrollCommand.Find(Checkouts));
+        var text = string.Join("\n", row.Evidence ?? []);
 
         Assert.Contains("alpha", text, StringComparison.Ordinal);
         Assert.Contains("beta", text, StringComparison.Ordinal);
@@ -195,8 +175,8 @@ public sealed class ProbeTenTests : IAsyncDisposable
     {
         // User Story 3 at the end of User Story 1, which is the sequence a person actually performs:
         // enrol in two, decide one was wrong, take it out.
-        await ApplyAsync("alpha", await ManifestForAsync("alpha", "inventory", "Stock levels. Not pricing."));
-        await ApplyAsync("beta", await ManifestForAsync("beta", "stock", "What is on hand."));
+        await ApplyAsync("alpha", Chosen("inventory", "Stock levels. Not pricing."));
+        await ApplyAsync("beta", Chosen("stock", "What is on hand."));
 
         var outcome = await Enrolment.WithdrawAsync(
             Workspace, "stock", "beta", CatalogueFor("beta"), TestContext.Current.CancellationToken);
@@ -213,11 +193,11 @@ public sealed class ProbeTenTests : IAsyncDisposable
     public async Task Enrolling_into_the_same_project_twice_reports_no_change()
     {
         // FR-015 through the surface: the run must not claim a change it did not make.
-        var manifest = await ManifestForAsync("alpha", "inventory", "Stock levels. Not pricing.");
+        var chosen = Chosen("inventory", "Stock levels. Not pricing.");
 
-        await ApplyAsync("alpha", manifest);
+        await ApplyAsync("alpha", chosen);
 
-        var (code, output) = await ApplyAsync("alpha", manifest);
+        var (code, output) = await ApplyAsync("alpha", chosen);
 
         Assert.Equal(0, code);
         Assert.Contains("already correct", output, StringComparison.Ordinal);

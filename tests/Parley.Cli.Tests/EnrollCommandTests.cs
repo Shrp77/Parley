@@ -101,6 +101,12 @@ public sealed class EnrollCommandTests : IDisposable
     /// the resolved project in charge of where consent lands.
     /// </param>
     /// <returns>A task that completes when the file is written.</returns>
+    /// <remarks>
+    /// <b>Kept for the three tests below whose subject is the file itself</b> — the re-scan merge, a
+    /// catalogue named inside a manifest, and a manifest that is not there. Every other test in this
+    /// class takes its rows from <see cref="Chosen"/>, because the rows are what the file held and
+    /// the carrier decided none of what they assert.
+    /// </remarks>
     private async Task WriteManifestAsync(bool unattended, string? nodeConfig)
     {
         await RunAsync("scan", Checkouts, ManifestPath);
@@ -130,6 +136,53 @@ public sealed class EnrollCommandTests : IDisposable
             TestContext.Current.CancellationToken);
     }
 
+    /// <summary>The repositories under the checkouts, described and ticked and ready to enrol.</summary>
+    /// <param name="unattended">Whether each repository consents to running unattended.</param>
+    /// <returns>One row per repository found.</returns>
+    /// <remarks>
+    /// This wrote a manifest and the command read it straight back; the rows are what that file
+    /// held, and they are still found by the same walk of the same directory. What is asserted
+    /// below — which files are written, and which catalogue consent lands in — is decided from the
+    /// rows, never from the carrier they arrived in.
+    /// </remarks>
+    private EnrollmentEntry[] Chosen(bool unattended) =>
+        [.. EnrollCommand.Find(Checkouts).Select(a => a with
+        {
+            Owns = $"{a.Agent} things. Not other things.",
+            Unattended = unattended,
+
+            Enroll = true,
+
+            // Standing in for the person saying yes. The manifest refused a filled-in owns line
+            // without it, which is the point of the field — so every fixture that wants a
+            // successful run makes the approval explicit, exactly as a user would.
+            OwnsApproved = true,
+        })];
+
+    /// <summary>Enrols a set of rows as the entry point would having resolved a catalogue.</summary>
+    /// <param name="nodeConfigPath">The catalogue the entry point resolved, or null for none.</param>
+    /// <param name="describe">Whether to report what would change and change nothing.</param>
+    /// <param name="chosen">The rows to enrol.</param>
+    /// <returns>The exit code and both streams.</returns>
+    private async Task<(int Code, string Out, string Error)> EnrolAsync(
+        string? nodeConfigPath, bool describe, params EnrollmentEntry[] chosen)
+    {
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        // Argument-sourced, because that is what a path arriving here means: the entry point has
+        // already applied the precedence chain, and this is what won.
+        var code = await EnrollCommand.EnrolAsync(
+            chosen,
+            describe,
+            new Resolved(nodeConfigPath, ValueSource.Argument),
+            output,
+            error,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        return (code, output.ToString(), error.ToString());
+    }
+
     [Fact]
     public async Task An_unreadable_node_catalogue_is_refused_rather_than_replaced()
     {
@@ -145,9 +198,8 @@ public sealed class EnrollCommandTests : IDisposable
             """;
 
         await File.WriteAllTextAsync(NodePath, existing, TestContext.Current.CancellationToken);
-        await WriteManifestAsync(unattended: true);
 
-        var (code, _, error) = await RunAsync("apply", ManifestPath);
+        var (code, _, error) = await EnrolAsync(NodePath, describe: false, Chosen(unattended: true));
 
         Assert.Equal(78, code);
         Assert.Contains("not readable JSON", error, StringComparison.Ordinal);
@@ -160,11 +212,10 @@ public sealed class EnrollCommandTests : IDisposable
     public async Task Nothing_is_written_into_a_repository_when_the_catalogue_is_unreadable()
     {
         // Refused before the first repository is touched, not partway through. Half a run is the
-        // state the whole-manifest validation exists to prevent.
+        // state the whole-set validation exists to prevent.
         await File.WriteAllTextAsync(NodePath, "{ not json", TestContext.Current.CancellationToken);
-        await WriteManifestAsync(unattended: true);
 
-        await RunAsync("apply", ManifestPath);
+        await EnrolAsync(NodePath, describe: false, Chosen(unattended: true));
 
         Assert.False(File.Exists(Path.Combine(Checkouts, "Acme.Orders", ".mcp.json")));
     }
@@ -178,9 +229,8 @@ public sealed class EnrollCommandTests : IDisposable
         const string existing = """{"agents":["docs","billing"],"other":"kept"}""";
 
         await File.WriteAllTextAsync(NodePath, existing, TestContext.Current.CancellationToken);
-        await WriteManifestAsync(unattended: true);
 
-        var (code, _, error) = await RunAsync("apply", ManifestPath);
+        var (code, _, error) = await EnrolAsync(NodePath, describe: false, Chosen(unattended: true));
 
         Assert.Equal(78, code);
         Assert.Contains("not an object", error, StringComparison.Ordinal);
@@ -209,8 +259,7 @@ public sealed class EnrollCommandTests : IDisposable
             }.ToJsonString(),
             TestContext.Current.CancellationToken);
 
-        await WriteManifestAsync(unattended: true);
-        await RunAsync("apply", ManifestPath);
+        await EnrolAsync(NodePath, describe: false, Chosen(unattended: true));
 
         var node = await File.ReadAllTextAsync(NodePath, TestContext.Current.CancellationToken);
 
@@ -229,8 +278,7 @@ public sealed class EnrollCommandTests : IDisposable
     [Fact]
     public async Task A_repository_not_asking_to_run_unattended_stays_out_of_the_catalogue()
     {
-        await WriteManifestAsync(unattended: false);
-        await RunAsync("apply", ManifestPath);
+        await EnrolAsync(NodePath, describe: false, Chosen(unattended: false));
 
         Assert.False(File.Exists(NodePath));
     }
@@ -238,9 +286,7 @@ public sealed class EnrollCommandTests : IDisposable
     [Fact]
     public async Task Applying_writes_the_launch_configuration_and_the_frame()
     {
-        await WriteManifestAsync(unattended: false);
-
-        var (code, output, _) = await RunAsync("apply", ManifestPath);
+        var (code, output, _) = await EnrolAsync(NodePath, describe: false, Chosen(unattended: false));
 
         Assert.Equal(0, code);
         Assert.Contains("Enrolled 2 repositories", output, StringComparison.Ordinal);
@@ -269,8 +315,7 @@ public sealed class EnrollCommandTests : IDisposable
             new UTF8Encoding(encoderShouldEmitUTF8Identifier: true),
             TestContext.Current.CancellationToken);
 
-        await WriteManifestAsync(unattended: false);
-        await RunAsync("apply", ManifestPath);
+        await EnrolAsync(NodePath, describe: false, Chosen(unattended: false));
 
         var raw = await File.ReadAllBytesAsync(instructions, TestContext.Current.CancellationToken);
 
@@ -289,9 +334,7 @@ public sealed class EnrollCommandTests : IDisposable
             """{"mcpServers":["sqlite"],"inputs":[{"id":"token"}]}""",
             TestContext.Current.CancellationToken);
 
-        await WriteManifestAsync(unattended: false);
-
-        var (code, _, error) = await RunAsync("apply", ManifestPath);
+        var (code, _, error) = await EnrolAsync(NodePath, describe: false, Chosen(unattended: false));
 
         Assert.Equal(78, code);
         Assert.Contains("cannot be merged into", error, StringComparison.Ordinal);
@@ -300,9 +343,7 @@ public sealed class EnrollCommandTests : IDisposable
     [Fact]
     public async Task Planning_writes_nothing()
     {
-        await WriteManifestAsync(unattended: true);
-
-        var (code, output, _) = await RunAsync("plan", ManifestPath);
+        var (code, output, _) = await EnrolAsync(NodePath, describe: true, Chosen(unattended: true));
 
         Assert.Equal(0, code);
         Assert.Contains("Nothing was written", output, StringComparison.Ordinal);
@@ -331,35 +372,24 @@ public sealed class EnrollCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task A_manifest_with_nothing_ticked_is_refused()
+    public async Task A_set_with_nothing_ticked_is_refused()
     {
-        await WriteManifestAsync(unattended: false);
+        var unticked = Chosen(unattended: false).Select(a => a with { Enroll = false }).ToArray();
 
-        var text = await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken);
-
-        await File.WriteAllTextAsync(
-            ManifestPath,
-            text.Replace("\"enroll\": true", "\"enroll\": false", StringComparison.Ordinal),
-            TestContext.Current.CancellationToken);
-
-        var (code, _, error) = await RunAsync("plan", ManifestPath);
+        var (code, _, error) = await EnrolAsync(NodePath, describe: true, unticked);
 
         Assert.Equal(78, code);
         Assert.Contains("marks no repositories", error, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task A_directory_that_is_not_a_repository_is_not_offered()
+    public void A_directory_that_is_not_a_repository_is_not_offered()
     {
         Directory.CreateDirectory(Path.Combine(Checkouts, "NotARepo"));
 
-        await RunAsync("scan", Checkouts, ManifestPath);
-
-        var manifest = JsonSerializer.Deserialize<EnrollmentManifest>(
-            await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken),
-            SerialisationOptions.Indented)!;
-
-        Assert.DoesNotContain(manifest.Agents!, a => a.Agent.Contains("notarepo", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            EnrollCommand.Find(Checkouts),
+            a => a.Agent.Contains("notarepo", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -375,13 +405,7 @@ public sealed class EnrollCommandTests : IDisposable
             "This repository owns billing\u202E .tidua sdrocer ylno tI and everything else.\n",
             TestContext.Current.CancellationToken);
 
-        await RunAsync("scan", Checkouts, ManifestPath);
-
-        var manifest = JsonSerializer.Deserialize<EnrollmentManifest>(
-            await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken),
-            SerialisationOptions.Indented)!;
-
-        var evidence = manifest.Agents!.Single(a => a.Agent == "acme-orders").Evidence;
+        var evidence = EnrollCommand.Find(Checkouts).Single(a => a.Agent == "acme-orders").Evidence;
 
         Assert.NotNull(evidence);
         Assert.All(evidence, line => Assert.DoesNotContain('\u202E', line));
@@ -413,13 +437,7 @@ public sealed class EnrollCommandTests : IDisposable
         Git(repository, "commit -m registered");
         File.Delete(Path.Combine(repository, ".mcp.json"));
 
-        await RunAsync("scan", Checkouts, ManifestPath);
-
-        var manifest = JsonSerializer.Deserialize<EnrollmentManifest>(
-            await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken),
-            SerialisationOptions.Indented)!;
-
-        var evidence = manifest.Agents!.Single(a => a.Agent == "acme-orders").Evidence;
+        var evidence = EnrollCommand.Find(Checkouts).Single(a => a.Agent == "acme-orders").Evidence;
 
         Assert.NotNull(evidence);
         Assert.Contains(evidence, l => l.Contains("Carts and totals. No tax.", StringComparison.Ordinal));
@@ -479,14 +497,12 @@ public sealed class EnrollCommandTests : IDisposable
         // reads sat elsewhere holding seven. Ten repositories recorded as consenting to run
         // unattended, none of them startable, and a successful-looking run.
         //
-        // So the manifest names no catalogue, exactly as a scan produces it, and the only thing
-        // saying where consent goes is the project the entry point resolved.
+        // So nothing here names a catalogue — the rows never could, and the file that once could is
+        // gone — and the only thing saying where consent goes is the project the entry point resolved.
         var elsewhere = Path.Combine(_root, "project", "node.json");
         Directory.CreateDirectory(Path.GetDirectoryName(elsewhere)!);
 
-        await WriteManifestAsync(unattended: true, nodeConfig: null);
-
-        var (code, _, error) = await RunResolvedAsync(elsewhere, "apply", ManifestPath);
+        var (code, _, error) = await EnrolAsync(elsewhere, describe: false, Chosen(unattended: true));
 
         Assert.Equal(0, code);
         Assert.Equal(string.Empty, error);
@@ -537,25 +553,14 @@ public sealed class EnrollCommandTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(first)!);
         Directory.CreateDirectory(Path.GetDirectoryName(second)!);
 
-        await WriteManifestAsync(unattended: true, nodeConfig: null);
-        Assert.Equal(0, (await RunResolvedAsync(first, "apply", ManifestPath)).Code);
+        var chosen = Chosen(unattended: true);
+
+        Assert.Equal(0, (await EnrolAsync(first, describe: false, chosen)).Code);
 
         // A second project, and only one of this machine's repositories in it.
-        var manifest = JsonSerializer.Deserialize<EnrollmentManifest>(
-            await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken),
-            SerialisationOptions.Indented)!;
+        var again = chosen.Where(a => a.Agent.Contains("orders", StringComparison.Ordinal)).ToArray();
 
-        await File.WriteAllTextAsync(
-            ManifestPath,
-            JsonSerializer.Serialize(
-                manifest with
-                {
-                    Agents = [.. manifest.Agents!.Where(a => a.Agent!.Contains("orders", StringComparison.Ordinal))],
-                },
-                SerialisationOptions.Indented),
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal(0, (await RunResolvedAsync(second, "apply", ManifestPath)).Code);
+        Assert.Equal(0, (await EnrolAsync(second, describe: false, again)).Code);
 
         var inFirst = Assert.IsType<JsonObject>(
             JsonNode.Parse(await File.ReadAllTextAsync(first, TestContext.Current.CancellationToken))!["agents"]);

@@ -75,7 +75,7 @@ public sealed class ProbeEighteenTests : IDisposable
     }
 
     [Fact]
-    public async Task A_repository_whose_launch_configuration_is_enormous_does_not_end_the_scan()
+    public void A_repository_whose_launch_configuration_is_enormous_does_not_end_the_scan()
     {
         // A clone is somebody else's data and its `.mcp.json` is a tracked file of any size they
         // like. The scan's value is that it looks at everything at once, so one repository able to
@@ -90,14 +90,13 @@ public sealed class ProbeEighteenTests : IDisposable
         Repository("huge", new JsonObject { ["mcpServers"] = servers }.ToJsonString());
         Repository("ordinary");
 
-        var (code, manifest) = await ScanAsync();
-
-        Assert.Equal(0, code);
-        Assert.Contains("ordinary", manifest, StringComparison.Ordinal);
+        // The row for the other repository is what says the find got past this one: it is offered
+        // after `huge` in directory order, so a scan that stopped there would come back without it.
+        Assert.Contains(EnrollCommand.Find(Checkouts), entry => entry.Agent == "ordinary");
     }
 
     [Fact]
-    public async Task A_deeply_nested_launch_configuration_does_not_end_the_scan()
+    public void A_deeply_nested_launch_configuration_does_not_end_the_scan()
     {
         // The same attack in a few hundred bytes, which no size limit catches. A parser refuses this
         // rather than choking on it, and the question is whether the refusal is caught here or thrown
@@ -107,14 +106,11 @@ public sealed class ProbeEighteenTests : IDisposable
         Repository("bomb", "{\"mcpServers\": {\"parley\": {\"command\": " + deep + " }}}");
         Repository("ordinary");
 
-        var (code, manifest) = await ScanAsync();
-
-        Assert.Equal(0, code);
-        Assert.Contains("ordinary", manifest, StringComparison.Ordinal);
+        Assert.Contains(EnrollCommand.Find(Checkouts), entry => entry.Agent == "ordinary");
     }
 
     [Fact]
-    public async Task A_directory_name_that_is_not_a_name_does_not_become_one()
+    public void A_directory_name_that_is_not_a_name_does_not_become_one()
     {
         // Directory names become suggested agent names, and an agent name is an identity. A
         // suggestion that is not well formed must be visible as such rather than travelling into a
@@ -124,14 +120,12 @@ public sealed class ProbeEighteenTests : IDisposable
         Repository("orders_2");
         Repository("ORDERS");
 
-        var (code, manifest) = await ScanAsync();
+        var found = EnrollCommand.Find(Checkouts);
 
-        Assert.Equal(0, code);
+        Assert.Equal(3, found.Count);
 
-        foreach (var agent in JsonNode.Parse(manifest)!["agents"]!.AsArray())
+        foreach (var suggested in found.Select(entry => entry.Agent))
         {
-            var suggested = agent!["agent"]!.GetValue<string>();
-
             Assert.True(
                 EnrollmentPlan.IsWellFormedName(suggested),
                 $"the scan suggested '{suggested}', which is not a name any agent could have");
@@ -139,16 +133,15 @@ public sealed class ProbeEighteenTests : IDisposable
     }
 
     [Fact]
-    public async Task A_launch_configuration_that_is_not_json_leaves_the_row_blank_rather_than_stopping()
+    public void A_launch_configuration_that_is_not_json_leaves_the_row_blank_rather_than_stopping()
     {
         Repository("broken", "{ this is not json");
         Repository("ordinary");
 
-        var (code, manifest) = await ScanAsync();
+        var found = EnrollCommand.Find(Checkouts);
 
-        Assert.Equal(0, code);
-        Assert.Contains("ordinary", manifest, StringComparison.Ordinal);
-        Assert.Contains("broken", manifest, StringComparison.Ordinal);
+        Assert.Contains(found, entry => entry.Agent == "ordinary");
+        Assert.Contains(found, entry => entry.Agent == "broken");
     }
 
     [Fact]

@@ -2,7 +2,6 @@ using Parley.Configuration;
 using Parley.Core;
 using Parley.Setup;
 using System.Text.Json.Nodes;
-using System.Text.Json;
 using Xunit;
 
 namespace Parley.Cli.Tests;
@@ -90,7 +89,7 @@ public sealed class ProbeThreeTests : IAsyncDisposable
     [Fact]
     public async Task A_bulk_run_that_refuses_one_repository_has_not_written_the_ones_before_it()
     {
-        // `enroll apply` refuses a half-enrolled set by design — *"the repository that missed out is
+        // Enrolling refuses a half-enrolled set by design — *"the repository that missed out is
         // indistinguishable from one you never meant to enroll"* — and validates every row before
         // writing any. A refusal that arrives during the *writing* phase is a different thing, and this
         // asks whether it undoes that promise.
@@ -127,33 +126,34 @@ public sealed class ProbeThreeTests : IAsyncDisposable
               """,
             TestContext.Current.CancellationToken);
 
-        var manifest = Path.Combine(_root, "enrol.json");
-
-        await File.WriteAllTextAsync(
-            manifest,
-            JsonSerializer.Serialize(new
+        // The rows in the order a surface offers them, which is what makes "the ones before it"
+        // mean anything: `orders` is written first and the copied checkout is what refuses.
+        var chosen = new[]
+        {
+            new EnrollmentEntry(first, "orders", "Carts.", Unattended: true)
             {
-                node_config = CatalogueFor("beta"),
-                agents = new[]
-                {
-                    new { workspace = first, agent = "orders", owns = "Carts.", unattended = true, enroll = true, owns_approved = true },
-                    new { workspace = second, agent = "stock", owns = "Stock.", unattended = true, enroll = true, owns_approved = true },
-                },
-            }),
-            TestContext.Current.CancellationToken);
+                Enroll = true,
+                OwnsApproved = true,
+            },
+            new EnrollmentEntry(second, "stock", "Stock.", Unattended: true)
+            {
+                Enroll = true,
+                OwnsApproved = true,
+            },
+        };
 
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var code = await EnrollCommand.RunAsync(
-            ["apply", manifest],
-            selectAll: null,
+        var code = await EnrollCommand.EnrolAsync(
+            chosen,
+            describe: false,
             new Resolved(CatalogueFor("beta"), ValueSource.Argument),
             output,
             error,
-            TestContext.Current.CancellationToken,
             Project("beta"),
-            [Project("alpha"), Project("beta")]);
+            [Project("alpha"), Project("beta")],
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotEqual(0, code);
 

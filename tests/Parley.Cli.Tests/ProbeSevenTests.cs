@@ -10,7 +10,7 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Six runs have attacked writing. This one attacks <i>not</i> writing — `enroll plan` exists to say
+/// Six runs have attacked writing. This one attacks <i>not</i> writing — describing exists to say
 /// what would change without changing it, and run 6 moved the write inside the same method that
 /// decides, which is exactly the edit that turns a dry run into a live one. The failure would be
 /// silent and would land in somebody's repository.
@@ -56,39 +56,30 @@ public sealed class ProbeSevenTests : IDisposable
         }
     }
 
-    private async Task<string> ManifestAsync(string name = "enrol.json")
-    {
-        var manifest = Path.Combine(_root, name);
-        var repository = Repository.Replace(Path.DirectorySeparatorChar, '/');
+    /// <summary>The row a surface hands back, ticked and consenting.</summary>
+    /// <remarks>
+    /// It was a manifest this wrote and the command read straight back; it is the row that file held.
+    /// Nothing about what a dry run may touch turns on which of the two carried it here.
+    /// </remarks>
+    private EnrollmentEntry Chosen() =>
+        new(
+            Repository.Replace(Path.DirectorySeparatorChar, '/'),
+            "orders",
+            "Carts and totals. No tax.",
+            Unattended: true)
+        {
+            Enroll = true,
+            OwnsApproved = true,
+        };
 
-        await File.WriteAllTextAsync(
-            manifest,
-            $$"""
-              {
-                "node_config": "{{Catalogue.Replace(Path.DirectorySeparatorChar, '/')}}",
-                "agents": [ {
-                  "workspace": "{{repository}}",
-                  "agent": "orders",
-                  "owns": "Carts and totals. No tax.",
-                  "unattended": true,
-                  "enroll": true,
-                  "owns_approved": true
-                } ]
-              }
-              """,
-            TestContext.Current.CancellationToken);
-
-        return manifest;
-    }
-
-    private async Task<int> RunAsync(string verb, string manifest) =>
-        await EnrollCommand.RunAsync(
-            [verb, manifest],
-            selectAll: null,
+    private async Task<int> RunAsync(bool describe) =>
+        await EnrollCommand.EnrolAsync(
+            [Chosen()],
+            describe,
             new Resolved(Catalogue, ValueSource.Argument),
             new StringWriter(),
             new StringWriter(),
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
     [Fact]
     public async Task Planning_creates_nothing_at_all()
@@ -97,10 +88,9 @@ public sealed class ProbeSevenTests : IDisposable
         // which is the edit that turns this into a live run without anybody noticing — the files it
         // would create do not exist beforehand, so nothing complains and a repository quietly gains
         // a launch configuration from a command that said it was only looking.
-        var manifest = await ManifestAsync();
         var repository = Repository;
 
-        Assert.Equal(0, await RunAsync("plan", manifest));
+        Assert.Equal(0, await RunAsync(describe: true));
 
         Assert.False(File.Exists(Path.Combine(repository, ".mcp.json")), ".mcp.json was created by a plan");
         Assert.False(File.Exists(Path.Combine(repository, "CLAUDE.md")), "CLAUDE.md was created by a plan");
@@ -110,7 +100,6 @@ public sealed class ProbeSevenTests : IDisposable
     [Fact]
     public async Task Planning_over_files_that_exist_leaves_every_byte_of_them()
     {
-        var manifest = await ManifestAsync();
         var repository = Repository;
         var launch = Path.Combine(repository, ".mcp.json");
         var instructions = Path.Combine(repository, "CLAUDE.md");
@@ -126,7 +115,7 @@ public sealed class ProbeSevenTests : IDisposable
             await File.ReadAllBytesAsync(instructions, TestContext.Current.CancellationToken),
             await File.ReadAllBytesAsync(Catalogue, TestContext.Current.CancellationToken));
 
-        Assert.Equal(0, await RunAsync("plan", manifest));
+        Assert.Equal(0, await RunAsync(describe: true));
 
         Assert.Equal(before.Item1, await File.ReadAllBytesAsync(launch, TestContext.Current.CancellationToken));
         Assert.Equal(before.Item2, await File.ReadAllBytesAsync(instructions, TestContext.Current.CancellationToken));
@@ -136,10 +125,9 @@ public sealed class ProbeSevenTests : IDisposable
     [Fact]
     public async Task Applying_twice_writes_nothing_the_second_time()
     {
-        var manifest = await ManifestAsync();
         var repository = Repository;
 
-        Assert.Equal(0, await RunAsync("apply", manifest));
+        Assert.Equal(0, await RunAsync(describe: false));
 
         var launch = Path.Combine(repository, ".mcp.json");
         var before = await File.ReadAllBytesAsync(launch, TestContext.Current.CancellationToken);
@@ -148,7 +136,7 @@ public sealed class ProbeSevenTests : IDisposable
 
         await Task.Delay(30, TestContext.Current.CancellationToken);
 
-        Assert.Equal(0, await RunAsync("apply", manifest));
+        Assert.Equal(0, await RunAsync(describe: false));
 
         Assert.Equal(before, await File.ReadAllBytesAsync(launch, TestContext.Current.CancellationToken));
         Assert.Equal(catalogue, await File.ReadAllBytesAsync(Catalogue, TestContext.Current.CancellationToken));
@@ -163,28 +151,27 @@ public sealed class ProbeSevenTests : IDisposable
     {
         // If they could differ, the dry run would be a description of something else. They share one
         // decision function now, which is what makes this checkable rather than hopeful.
-        var manifest = await ManifestAsync();
         var repository = Repository;
 
         var planning = new StringWriter();
 
-        await EnrollCommand.RunAsync(
-            ["plan", manifest],
-            selectAll: null,
+        await EnrollCommand.EnrolAsync(
+            [Chosen()],
+            describe: true,
             new Resolved(Catalogue, ValueSource.Argument),
             planning,
             new StringWriter(),
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         var applying = new StringWriter();
 
-        await EnrollCommand.RunAsync(
-            ["apply", manifest],
-            selectAll: null,
+        await EnrollCommand.EnrolAsync(
+            [Chosen()],
+            describe: false,
             new Resolved(Catalogue, ValueSource.Argument),
             applying,
             new StringWriter(),
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         foreach (var note in new[] { "create", "orders" })
         {

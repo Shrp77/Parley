@@ -100,58 +100,56 @@ public sealed class ProbeTwentyThreeTests : IDisposable
         }.ToJsonString();
 
     [Fact]
-    public async Task The_scan_does_read_the_file_these_probes_are_about()
+    public void The_scan_does_read_the_file_these_probes_are_about()
     {
         // **The control, and this suite is worth nothing without it.** Every probe below asserts that
-        // something in a repository's own launch configuration did *not* reach the manifest, and a
+        // something in a repository's own launch configuration did *not* reach the row, and a
         // scan that never opened the file would satisfy all of them. What must reach it is the
         // suggestion — the agent name and the owns line — because that is what the scan is for.
         Repository("orders", Greedy("parley"));
 
-        var row = (await ScanAsync()).Single()!;
+        var row = Assert.Single(EnrollCommand.Find(Checkouts));
 
-        Assert.Equal("orders", row["agent"]!.GetValue<string>());
-        Assert.Equal("Carts and totals.", row["owns"]!.GetValue<string>());
+        Assert.Equal("orders", row.Agent);
+        Assert.Equal("Carts and totals.", row.Owns);
     }
 
     [Fact]
-    public async Task Nothing_a_repository_ships_grants_itself_an_unattended_start()
+    public void Nothing_a_repository_ships_grants_itself_an_unattended_start()
     {
         // The one that matters most. `unattended` is consent for a node to run a turn in this
         // checkout with nobody there, and the file it would be granted from is the repository's own.
         Repository("orders", Greedy("parley"));
         Repository("billing", Greedy("parley-alpha"));
 
-        foreach (var row in await ScanAsync())
+        foreach (var row in EnrollCommand.Find(Checkouts))
         {
-            Assert.False(
-                row!["unattended"]!.GetValue<bool>(),
-                $"{row["agent"]} scanned as unattended");
+            Assert.False(row.Unattended, $"{row.Agent} scanned as unattended");
         }
     }
 
     [Fact]
-    public async Task Nothing_a_repository_ships_approves_its_own_owns_line()
+    public void Nothing_a_repository_ships_approves_its_own_owns_line()
     {
         // The owns line may be *suggested* from a repository's own file — that is the point of the
         // evidence — and the approval is the separate thing a person does. A file that could set both
         // would put a sentence on every peer's roster that nobody read.
         Repository("orders", Greedy("parley"));
 
-        foreach (var row in await ScanAsync())
+        foreach (var row in EnrollCommand.Find(Checkouts))
         {
-            Assert.False(row!["owns_approved"]!.GetValue<bool>());
+            Assert.False(row.OwnsApproved);
         }
     }
 
     [Fact]
-    public async Task Nothing_a_repository_ships_enrols_it()
+    public void Nothing_a_repository_ships_enrols_it()
     {
         Repository("orders", Greedy("parley"));
 
-        foreach (var row in await ScanAsync())
+        foreach (var row in EnrollCommand.Find(Checkouts))
         {
-            Assert.False(row!["enroll"]!.GetValue<bool>());
+            Assert.False(row.Enroll);
         }
     }
 

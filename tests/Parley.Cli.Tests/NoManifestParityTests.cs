@@ -175,9 +175,18 @@ public sealed class NoManifestParityTests : IDisposable
         // Gating the report on a project having been selected, which is how it was first written,
         // shows it only to somebody who has already adopted the fix. It is asserted here rather
         // than in the project tests for exactly that reason.
+        //
+        // **Described rather than applied**, because the line is printed before anything is
+        // written and nothing here should configure the machine the suite runs on. `--all` is what
+        // reaches that line at all: with stdin redirected there is no picker, and a run with
+        // nothing ticked is refused before the catalogue is named.
+        var checkouts = Path.Combine(_directory, "checkouts");
+
+        Directory.CreateDirectory(Path.Combine(checkouts, "orders", ".git"));
+
         var (_, output, _) = ToolProcess.RunFully(
             [(ProjectManifest.PathVariable, Absent)],
-            "enroll", "plan", Path.Combine(_directory, "absent-manifest.json"));
+            "enroll", checkouts, "--all", "--describe");
 
         Assert.Contains("node catalogue:", output, StringComparison.Ordinal);
         Assert.Contains(NodeCatalogue.DefaultFileName, output, StringComparison.Ordinal);

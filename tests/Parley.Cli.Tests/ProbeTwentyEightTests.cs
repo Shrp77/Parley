@@ -1,5 +1,4 @@
 using Parley.Setup;
-using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Parley.Cli.Tests;
@@ -9,7 +8,7 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 2.14 asked what one repository's failed enrolment leaves behind. `parley enroll apply` writes a
+/// 2.14 asked what one repository's failed enrolment leaves behind. `parley enroll` writes a
 /// list of them, one after another, and a refusal on the fifth arrives with four already on disk. The
 /// same question one level up, and the level the command's own comment says it cares about: it refuses
 /// a half-enrolled set on principle, because "the repository that missed out is indistinguishable from
@@ -41,8 +40,6 @@ public sealed class ProbeTwentyEightTests : IDisposable
 
     private string Checkouts => Path.Combine(_root, "checkouts");
 
-    private string ManifestPath => Path.Combine(_root, "enrol.json");
-
     private string Workspace(string name) => Path.Combine(Checkouts, name);
 
     private string Repository(string name, string? launch = null)
@@ -60,42 +57,35 @@ public sealed class ProbeTwentyEightTests : IDisposable
         return path;
     }
 
-    /// <summary>A manifest enrolling three repositories, in a known order.</summary>
-    private async Task WriteManifestAsync(params string[] names)
-    {
-        var rows = new JsonArray();
-
-        foreach (var name in names)
+    /// <summary>Three repositories chosen for enrolment, in a known order.</summary>
+    /// <remarks>
+    /// The order is the whole of this probe: these were the rows of a manifest and they are the rows
+    /// a surface hands back, and either way the writing walks them one after another. Which carrier
+    /// they arrived in decides nothing about where a run stops.
+    /// </remarks>
+    private EnrollmentEntry[] Chosen(params string[] names) =>
+        [.. names.Select(name => new EnrollmentEntry(
+            Workspace(name).Replace('\\', '/'),
+            name,
+            $"What {name} owns. Not what it does not.",
+            Unattended: false)
         {
-            rows.Add(new JsonObject
-            {
-                ["workspace"] = Workspace(name).Replace('\\', '/'),
-                ["agent"] = name,
-                ["owns"] = $"What {name} owns. Not what it does not.",
-                ["unattended"] = false,
-                ["enroll"] = true,
-                ["owns_approved"] = true,
-            });
-        }
+            Enroll = true,
+            OwnsApproved = true,
+        })];
 
-        await File.WriteAllTextAsync(
-            ManifestPath,
-            new JsonObject { ["agents"] = rows }.ToJsonString(),
-            TestContext.Current.CancellationToken);
-    }
-
-    private async Task<(int Code, string Output, string Error)> ApplyAsync()
+    private async Task<(int Code, string Output, string Error)> ApplyAsync(params string[] names)
     {
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var code = await EnrollCommand.RunAsync(
-            ["apply", ManifestPath],
-            selectAll: null,
+        var code = await EnrollCommand.EnrolAsync(
+            Chosen(names),
+            describe: false,
             new Resolved(Path.Combine(_root, "node.json"), ValueSource.Argument),
             output,
             error,
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         return (code, output.ToString(), error.ToString());
     }
@@ -103,16 +93,14 @@ public sealed class ProbeTwentyEightTests : IDisposable
     [Fact]
     public async Task A_run_that_stops_on_the_second_repository_says_the_first_was_written()
     {
-        // The person's reasonable reading of "this manifest could not be applied" is that their
+        // The person's reasonable reading of "these repositories could not be enrolled" is that their
         // repositories are as they were. One of them is now announcing itself as an agent, and
         // nothing in the run says which.
         Repository("orders");
         Repository("billing", "{ \"mcpServers\": [] }");
         Repository("inventory");
 
-        await WriteManifestAsync("orders", "billing", "inventory");
-
-        var (code, output, error) = await ApplyAsync();
+        var (code, output, error) = await ApplyAsync("orders", "billing", "inventory");
 
         Assert.NotEqual(0, code);
 
@@ -134,9 +122,7 @@ public sealed class ProbeTwentyEightTests : IDisposable
         Repository("billing", "{ \"mcpServers\": [] }");
         Repository("inventory");
 
-        await WriteManifestAsync("orders", "billing", "inventory");
-
-        var (_, output, error) = await ApplyAsync();
+        var (_, output, error) = await ApplyAsync("orders", "billing", "inventory");
 
         Assert.False(
             File.Exists(Path.Combine(Workspace("inventory"), ".mcp.json")),
@@ -154,9 +140,7 @@ public sealed class ProbeTwentyEightTests : IDisposable
         Repository("billing");
         Repository("inventory");
 
-        await WriteManifestAsync("orders", "billing", "inventory");
-
-        var (code, _, error) = await ApplyAsync();
+        var (code, _, error) = await ApplyAsync("orders", "billing", "inventory");
 
         Assert.Equal(0, code);
         Assert.Empty(error);

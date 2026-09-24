@@ -42,8 +42,6 @@ public sealed class ProbeTwentySevenTests : IDisposable
 
     private string Checkouts => Path.Combine(_root, "checkouts");
 
-    private string ManifestPath => Path.Combine(_root, "enrol.json");
-
     /// <summary>A file outside every checkout, of the kind a person would mind sharing.</summary>
     private string Elsewhere => Path.Combine(_root, "private.key");
 
@@ -57,20 +55,20 @@ public sealed class ProbeTwentySevenTests : IDisposable
         return path;
     }
 
-    private async Task<string> ScanAsync()
-    {
-        var code = await EnrollCommand.RunAsync(
-            ["scan", Checkouts, ManifestPath],
-            selectAll: false,
-            new Resolved(Path.Combine(_root, "node.json"), ValueSource.Argument),
-            new StringWriter(),
-            new StringWriter(),
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal(0, code);
-
-        return await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken);
-    }
+    /// <summary>Everything the find quotes about every repository under the checkouts.</summary>
+    /// <remarks>
+    /// It was the serialised manifest before the file went, and it is the rows the file held: what
+    /// the scan reads out of a clone travels to a person either way, so the question this asks is
+    /// unchanged and only the carrier is. The whole of each row rather than one field, because a
+    /// secret that moved out of the evidence and into the suggested line would still be a secret
+    /// that left the checkout.
+    /// </remarks>
+    private string Scanned() =>
+        string.Join(
+            "\n",
+            EnrollCommand.Find(Checkouts).Select(entry => string.Join(
+                "\n",
+                (string[])[entry.Workspace, entry.Agent, entry.Owns ?? string.Empty, .. entry.Evidence ?? []])));
 
     [Fact]
     public async Task A_readme_that_is_a_link_out_of_the_checkout_is_not_quoted_into_the_manifest()
@@ -93,7 +91,7 @@ public sealed class ProbeTwentySevenTests : IDisposable
             return; // Without symlink privilege this probe can say nothing.
         }
 
-        Assert.DoesNotContain(Secret, await ScanAsync(), StringComparison.Ordinal);
+        Assert.DoesNotContain(Secret, Scanned(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -111,7 +109,7 @@ public sealed class ProbeTwentySevenTests : IDisposable
 
         Assert.Contains(
             "Carts, totals and the checkout flow",
-            await ScanAsync(),
+            Scanned(),
             StringComparison.Ordinal);
     }
 
@@ -152,7 +150,7 @@ public sealed class ProbeTwentySevenTests : IDisposable
             return;
         }
 
-        var manifest = await ScanAsync();
+        var manifest = Scanned();
 
         Assert.DoesNotContain(Secret, manifest, StringComparison.Ordinal);
         Assert.DoesNotContain("somebody-elses-agent", manifest, StringComparison.Ordinal);
@@ -174,6 +172,6 @@ public sealed class ProbeTwentySevenTests : IDisposable
 
         Repository("ordinary");
 
-        Assert.Contains("ordinary", await ScanAsync(), StringComparison.Ordinal);
+        Assert.Contains("ordinary", Scanned(), StringComparison.Ordinal);
     }
 }

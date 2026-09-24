@@ -12,8 +12,8 @@ namespace Parley.Cli.Tests;
 /// <remarks>
 /// <para>
 /// <c>Enrolment</c> exists because two writers of these files "would agree today and differ in six
-/// months" — the terminal adds one repository at a time and <c>enroll apply</c> drives a manifest in
-/// bulk. This feature gave the bulk path its own hold, its own decision function and its own
+/// months" — the terminal adds one repository at a time and <c>parley enroll</c> drives a whole
+/// directory in bulk. This feature gave the bulk path its own hold, its own decision function and its own
 /// catalogue handling, which is exactly the drift that argument warns about, and no probe has asked
 /// whether what they write is still the same thing.
 /// </para>
@@ -87,39 +87,34 @@ public sealed class ProbeElevenTests : IAsyncDisposable
             [Project()],
             ManifestPath);
 
-    /// <summary>What the command does: the same repository, through a manifest.</summary>
-    private async Task<int> CommandAsync(string name, string agent)
-    {
-        var manifest = Path.Combine(_root, $"enrol-{name}.json");
+    /// <summary>The row either surface hands to the bulk writer, ticked and approved.</summary>
+    /// <remarks>
+    /// It was a manifest the command wrote and read straight back; it is the row that file held. The
+    /// drift this probe is about is between two <i>writers</i>, and neither of them was ever the file.
+    /// </remarks>
+    private EnrollmentEntry Chosen(string name, string agent) =>
+        new(
+            Workspace(name).Replace(Path.DirectorySeparatorChar, '/'),
+            agent,
+            "What it owns. Not what it does not.",
+            Unattended: false)
+        {
+            Enroll = true,
+            OwnsApproved = true,
+        };
 
-        await File.WriteAllTextAsync(
-            manifest,
-            $$"""
-              {
-                "node_config": "{{Catalogue.Replace(Path.DirectorySeparatorChar, '/')}}",
-                "agents": [ {
-                  "workspace": "{{Workspace(name).Replace(Path.DirectorySeparatorChar, '/')}}",
-                  "agent": "{{agent}}",
-                  "owns": "What it owns. Not what it does not.",
-                  "unattended": false,
-                  "enroll": true,
-                  "owns_approved": true
-                } ]
-              }
-              """,
-            TestContext.Current.CancellationToken);
-
-        return await EnrollCommand.RunAsync(
-            ["apply", manifest],
-            selectAll: null,
+    /// <summary>What the command does: the same repository, in bulk.</summary>
+    private async Task<int> CommandAsync(string name, string agent) =>
+        await EnrollCommand.EnrolAsync(
+            [Chosen(name, agent)],
+            describe: false,
             new Resolved(Catalogue, ValueSource.Argument),
             new StringWriter(),
             new StringWriter(),
-            TestContext.Current.CancellationToken,
             Project(),
             [Project()],
-            ManifestPath);
-    }
+            ManifestPath,
+            TestContext.Current.CancellationToken);
 
     private async Task<JsonNode> EntryAsync(string name) =>
         JsonNode.Parse(await File.ReadAllTextAsync(
@@ -201,37 +196,18 @@ public sealed class ProbeElevenTests : IAsyncDisposable
         var before = await File.ReadAllBytesAsync(
             Path.Combine(Workspace("byTerminal"), ".mcp.json"), TestContext.Current.CancellationToken);
 
-        var manifest = Path.Combine(_root, "enrol-again.json");
-
-        await File.WriteAllTextAsync(
-            manifest,
-            $$"""
-              {
-                "node_config": "{{Catalogue.Replace(Path.DirectorySeparatorChar, '/')}}",
-                "agents": [ {
-                  "workspace": "{{Workspace("byTerminal").Replace(Path.DirectorySeparatorChar, '/')}}",
-                  "agent": "orders",
-                  "owns": "What it owns. Not what it does not.",
-                  "unattended": false,
-                  "enroll": true,
-                  "owns_approved": true
-                } ]
-              }
-              """,
-            TestContext.Current.CancellationToken);
-
         var output = new StringWriter();
 
-        await EnrollCommand.RunAsync(
-            ["apply", manifest],
-            selectAll: null,
+        await EnrollCommand.EnrolAsync(
+            [Chosen("byTerminal", "orders")],
+            describe: false,
             new Resolved(Catalogue, ValueSource.Argument),
             output,
             new StringWriter(),
-            TestContext.Current.CancellationToken,
             Project(),
             [Project()],
-            ManifestPath);
+            ManifestPath,
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("already correct", output.ToString(), StringComparison.Ordinal);
         Assert.Equal(before, await File.ReadAllBytesAsync(

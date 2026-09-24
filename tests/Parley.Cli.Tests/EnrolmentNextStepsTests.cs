@@ -6,7 +6,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// What `parley enroll apply` tells a person to do next, read off a real run in each of the shapes it distinguishes.
+/// What `parley enroll` tells a person to do next, read off a real run in each of the shapes it distinguishes.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -62,38 +62,33 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
 
     private async Task<string> ApplyAsync(string catalogue, bool unattended, ProjectSettings? project)
     {
-        var manifest = Path.Combine(_root, $"enrol-{Path.GetRandomFileName()}.json");
-
-        await File.WriteAllTextAsync(
-            manifest,
-            $$"""
-              {
-                "node_config": "{{catalogue.Replace(Path.DirectorySeparatorChar, '/')}}",
-                "agents": [ {
-                  "workspace": "{{Workspace.Replace(Path.DirectorySeparatorChar, '/')}}",
-                  "agent": "orders",
-                  "owns": "What it owns. Not what it does not.",
-                  "unattended": {{(unattended ? "true" : "false")}},
-                  "enroll": true,
-                  "owns_approved": true
-                } ]
-              }
-              """,
-            TestContext.Current.CancellationToken);
+        // The row a surface hands back. It was a manifest naming this catalogue and this
+        // repository, and what the next steps branch on — whether a project is named, and whether
+        // the catalogue written is the one that project's entry names — is unchanged by the row
+        // arriving in memory rather than through a file.
+        var chosen = new EnrollmentEntry(
+            Workspace.Replace(Path.DirectorySeparatorChar, '/'),
+            "orders",
+            "What it owns. Not what it does not.",
+            unattended)
+        {
+            Enroll = true,
+            OwnsApproved = true,
+        };
 
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var code = await EnrollCommand.RunAsync(
-            ["apply", manifest],
-            selectAll: null,
+        var code = await EnrollCommand.EnrolAsync(
+            [chosen],
+            describe: false,
             new Resolved(catalogue, ValueSource.Argument),
             output,
             error,
-            TestContext.Current.CancellationToken,
             project,
             project is null ? [] : [project],
-            ManifestPath);
+            ManifestPath,
+            TestContext.Current.CancellationToken);
 
         var said = output.ToString();
 

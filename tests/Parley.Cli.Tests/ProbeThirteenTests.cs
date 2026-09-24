@@ -57,7 +57,7 @@ public sealed class ProbeThirteenTests : IDisposable
     public async Task A_launch_configuration_that_is_a_link_does_not_carry_the_write_out_of_the_repository()
     {
         // **`.mcp.json` is a tracked file, so a repository can ship one as a symlink.** This tooling
-        // is pointed at directories of checkouts it did not create — `parley enroll scan /src` — and
+        // is pointed at directories of checkouts it did not create — `parley enroll /src` — and
         // then writes into each one. A write that follows a link writes wherever the link says.
         //
         // What this asserts is deliberately the weaker of the two possible rules: the *target* must
@@ -137,11 +137,12 @@ public sealed class ProbeThirteenTests : IDisposable
     }
 
     [Fact]
-    public async Task A_manifest_naming_a_directory_that_is_not_a_repository_says_so()
+    public async Task A_row_naming_a_directory_that_is_not_a_repository_says_so()
     {
-        // **The probe expected a refusal and the codebase's own rule is a warning.** `scan` only
-        // offers git repositories, so a directory without one arrived through a hand-edited manifest
-        // — the person typed the path. The worktree case decided this already, in as many words: said
+        // **The probe expected a refusal and the codebase's own rule is a warning.** Finding only
+        // offers git repositories, so a directory without one arrives from somewhere else — a row a
+        // surface built for itself, or a checkout that stopped being one between the finding and the
+        // writing. The worktree case decided this already, in as many words: said
         // rather than refused, because "it is the person's directory and there may be a reading of it
         // I have not thought of". Refusing here would be a second rule for one situation.
         //
@@ -150,34 +151,15 @@ public sealed class ProbeThirteenTests : IDisposable
 
         Directory.CreateDirectory(notARepository);
 
-        var manifest = Path.Combine(_root, "enrol.json");
-
-        await File.WriteAllTextAsync(
-            manifest,
-            $$"""
-              {
-                "node_config": "{{Path.Combine(_root, "node.json").Replace(Path.DirectorySeparatorChar, '/')}}",
-                "agents": [ {
-                  "workspace": "{{notARepository.Replace(Path.DirectorySeparatorChar, '/')}}",
-                  "agent": "orders",
-                  "owns": "Carts and totals.",
-                  "unattended": false,
-                  "enroll": true,
-                  "owns_approved": true
-                } ]
-              }
-              """,
-            TestContext.Current.CancellationToken);
-
         var output = new StringWriter();
 
-        await EnrollCommand.RunAsync(
-            ["plan", manifest],
-            selectAll: null,
+        await EnrollCommand.EnrolAsync(
+            [Entry(notARepository.Replace(Path.DirectorySeparatorChar, '/'))],
+            describe: true,
             new Resolved(Path.Combine(_root, "node.json"), ValueSource.Argument),
             output,
             new StringWriter(),
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Contains("not a git repository", output.ToString(), StringComparison.Ordinal);
     }

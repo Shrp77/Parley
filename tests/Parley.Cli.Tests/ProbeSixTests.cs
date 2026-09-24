@@ -41,10 +41,6 @@ public sealed class ProbeSixTests : IDisposable
 
     private string Checkouts => Path.Combine(_root, "checkouts");
 
-    private string ManifestPath => Path.Combine(_root, "enrol.json");
-
-    private const char Backslash = '\\';
-
     private const string Duplicated = """
         {"mcpServers":{
           "parley":{"command":"parley-mcp","env":{"PARLEY_AGENT":"orders","PARLEY_OWNS":"Carts."}},
@@ -76,25 +72,15 @@ public sealed class ProbeSixTests : IDisposable
         Git(repository, "commit -m registered");
         File.Delete(Path.Combine(repository, ".mcp.json"));
 
-        var output = new StringWriter();
-        var error = new StringWriter();
-
-        var code = await EnrollCommand.RunAsync(
-            ["scan", Checkouts, ManifestPath],
-            selectAll: false,
-            new Resolved(Path.Combine(_root, "node.json"), ValueSource.Argument),
-            output,
-            error,
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal(0, code);
-        Assert.True(File.Exists(ManifestPath), "the scan did not finish");
+        // The row coming back at all is the finish: the history is read while the row is built, so a
+        // refusal thrown out of `git show` would arrive before anything was returned.
+        Assert.Contains(EnrollCommand.Find(Checkouts), entry => entry.Agent == "orders");
     }
 
     [Fact]
     public async Task Six_bulk_runs_sharing_one_catalogue_lose_none_of_their_agents()
     {
-        // **Where 1.2 and 1.3 did not reach.** `enroll apply` does not go through `AddAsync`: it
+        // **Where 1.2 and 1.3 did not reach.** The bulk enrolment does not go through `AddAsync`: it
         // plans, calls `Enrolment.WriteAsync`, and saves the catalogue itself — three write paths
         // that never took the holds the single-repository path was given.
         //
@@ -111,36 +97,28 @@ public sealed class ProbeSixTests : IDisposable
             Directory.CreateDirectory(repository);
             Directory.CreateDirectory(Path.Combine(repository, ".git"));
 
-            var manifest = Path.Combine(_root, $"enrol-{i}.json");
-            var slashed = repository.Replace(Backslash, '/');
-            var catalogueSlashed = catalogue.Replace(Backslash, '/');
-
-            await File.WriteAllTextAsync(
-                manifest,
-                $$"""
-                  {
-                    "node_config": "{{catalogueSlashed}}",
-                    "agents": [ {
-                      "workspace": "{{slashed}}",
-                      "agent": "agent{{i}}",
-                      "owns": "What it owns. Not what it does not.",
-                      "unattended": true,
-                      "enroll": true,
-                      "owns_approved": true
-                    } ]
-                  }
-                  """,
-                TestContext.Current.CancellationToken);
+            // The rows a surface hands back, built here as the picker would: forward-slashed
+            // workspace, ticked, and consenting to an unattended start so each run has a line to
+            // add to the shared catalogue.
+            var chosen = new EnrollmentEntry(
+                repository.Replace('\\', '/'),
+                $"agent{i}",
+                "What it owns. Not what it does not.",
+                Unattended: true)
+            {
+                Enroll = true,
+                OwnsApproved = true,
+            };
 
             try
             {
-                var code = await EnrollCommand.RunAsync(
-                    ["apply", manifest],
-                    selectAll: null,
+                var code = await EnrollCommand.EnrolAsync(
+                    [chosen],
+                    describe: false,
                     new Resolved(catalogue, ValueSource.Argument),
                     new StringWriter(),
                     new StringWriter(),
-                    TestContext.Current.CancellationToken);
+                    cancellationToken: TestContext.Current.CancellationToken);
 
                 return code == 0 ? $"agent{i}" : null;
             }
