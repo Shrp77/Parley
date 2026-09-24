@@ -24,14 +24,29 @@ internal static class ToolProcess
 {
     /// <summary>Every variable the tool reads, cleared before each run.</summary>
     /// <remarks>
+    /// <para>
     /// Cleared rather than left alone so that whoever runs the suite cannot decide what a test
     /// reads. It is a list that has to grow with the tool: a variable added here and forgotten
     /// is one whose value leaks in from the developer's shell, which fails on one machine and
     /// nowhere else.
+    /// </para>
+    /// <para>
+    /// <b>It has to shrink with the tool too, and <c>PARLEY_DB</c> is the first entry to go</b>
+    /// (019, T037). The tool stopped reading it when <c>--db</c> went: a project's store is
+    /// <c>parley.db</c> inside its own folder, derived from its name. Clearing it would be
+    /// harmless and that is exactly the problem — this list is read as the answer to "what does
+    /// the tool take from an environment", and an entry that has stopped being true makes the
+    /// whole list evidence of nothing.
+    /// </para>
+    /// <para>
+    /// What guards the variable now is a test rather than a clear:
+    /// <c>ServeSelectionTests</c> sets it deliberately and asserts the store it names is not
+    /// opened, which is the stronger check — it fails if somebody starts reading the variable
+    /// again, where a cleared variable would simply go on being absent.
+    /// </para>
     /// </remarks>
     private static readonly string[] Configuration =
     [
-        Parley.Core.DeploymentEnvironment.DatabaseVariable,
         Parley.Core.RetentionPolicyEnvironment.IdleVariable,
         Parley.Core.RetentionPolicyEnvironment.MaximumAgeVariable,
 

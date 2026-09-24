@@ -22,6 +22,81 @@ public sealed class OneStoreIsForTestingTests
 {
     public static TheoryData<string> Printing => ["src/Parley.Setup/EnrollCommand.cs", "src/Parley.Cli/ServeCommand.cs", "src/Parley.Cli/AutostartCommand.cs"];
 
+    /// <summary>Every source that prints a command for an operator to type next.</summary>
+    /// <remarks>
+    /// Wider than <see cref="Printing"/> because the defect this catches was not about one store.
+    /// <c>src/Parley.WebUi</c> is deliberately absent: <c>parley-web-ui --listen</c> is that tool's
+    /// own option and has nothing to do with where a project's broker answers.
+    /// </remarks>
+    public static TheoryData<string> Offering =>
+    [
+        "src/Parley.Setup/EnrollCommand.cs",
+        "src/Parley.Setup/ProjectCommand.cs",
+        "src/Parley.Cli/ServeCommand.cs",
+        "src/Parley.Cli/AutostartCommand.cs",
+        "src/Parley.Cli/Program.cs",
+        "src/Parley.Terminal/Naming.cs",
+    ];
+
+    /// <summary>The spellings 019 removed, as a person would be told to type them.</summary>
+    /// <remarks>
+    /// <para>
+    /// Exact phrases rather than bare flag names, because two of these flags still exist on other
+    /// commands: <c>--node-config</c> names this machine's catalogue for <c>serve</c>,
+    /// <c>autostart</c> and <c>up</c>, and <c>--listen</c> is <c>parley-web-ui</c>'s own. Banning
+    /// the words would fail on every legitimate use and be suppressed within a week.
+    /// </para>
+    /// <para>
+    /// <c>project add &lt;name&gt; --</c> has no exception: the name is the whole of the command, so
+    /// any flag offered after it is one that no longer exists.
+    /// </para>
+    /// </remarks>
+    private static readonly string[] Removed =
+    [
+        "project add <name> --",
+        "project set <name> --node-config",
+        "autostart install --db",
+        "serve --db",
+        "with no --db",
+    ];
+
+    [Theory]
+    [MemberData(nameof(Offering))]
+    public void No_source_offers_a_command_whose_flags_were_removed(string source)
+    {
+        // **The class of defect, rather than the one case.** 019 took `--db`, `--listen` and the
+        // per-project `--node-config` out of the parser and left them standing in the text the tools
+        // print, so three separate places told an operator to run a command that would be refused:
+        // `project`'s own usage, `enroll apply`'s next steps, and the autostart advice repeated in
+        // both the CLI and the terminal. Each was found by reading rather than by a check, and the
+        // one test that covered this ground asserted the stale wording was *present*.
+        //
+        // Removing a flag is a sweep over prose, and prose is what nothing else here checks.
+        //
+        // **Comments are excluded, and the first run of this check is why.** It failed on two files
+        // whose comments quote the removed spelling in order to record that it was removed — which is
+        // the documentation style this repository asks for, and the only place a reader learns why a
+        // flag they remember is gone. A guard that forbade explaining a removal would be answered by
+        // deleting the explanation, so it would make the codebase worse while reading as stricter.
+        // What is checked is what the tool would *print*.
+        var text = string.Join(
+            '\n',
+            RepositoryFile.Read(source)
+                .Split('\n')
+                .Where(line =>
+                {
+                    var trimmed = line.TrimStart();
+
+                    return !trimmed.StartsWith("//", StringComparison.Ordinal)
+                        && !trimmed.StartsWith("*", StringComparison.Ordinal);
+                }));
+
+        foreach (var removed in Removed)
+        {
+            Assert.DoesNotContain(removed, text, StringComparison.Ordinal);
+        }
+    }
+
     [Theory]
     [MemberData(nameof(Printing))]
     public void No_printed_step_deploys_with_one_store(string source)
@@ -37,7 +112,16 @@ public sealed class OneStoreIsForTestingTests
     {
         var text = RepositoryFile.Read("src/Parley.Setup/EnrollCommand.cs");
 
-        Assert.Contains("parley project add <name> --db <path to the store> --listen <url>", text, StringComparison.Ordinal);
+        // **This asserted the flags rather than the step, and so held a defect in place.** It required
+        // the literal `parley project add <name> --db <path to the store> --listen <url>` — a command
+        // 019 made refusable — so the one check over this block was pinning text that could no longer
+        // be run, and would have failed had anybody corrected it.
+        //
+        // What the step actually promises is that a person with no project is told how to name one and
+        // how it comes to be served. That is what is asserted now, and it is spelled so that adding a
+        // flag back here fails rather than passes: the name is the whole of the command.
+        Assert.Contains("parley project add <name>", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("parley project add <name> --", text, StringComparison.Ordinal);
         Assert.Contains("parley autostart install", text, StringComparison.Ordinal);
     }
 }

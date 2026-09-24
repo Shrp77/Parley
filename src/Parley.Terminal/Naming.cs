@@ -233,10 +233,14 @@ internal static class Naming
                     "Nothing starts it yet. `parley autostart install` registers an entry that "
                     + "serves every project named here, and starts it now.",
 
+                // **`--db` is what used to narrow an entry to one store, and it has not existed
+                // since 019.** Telling somebody to re-run "with no --db" names a flag the tool now
+                // refuses, so the remedy read as a typo. What narrows an entry today is `--project`,
+                // and leaving it out is what makes the entry serve everything.
                 { ServesManifest: false } =>
-                    "The autostart entry serves one store by explicit paths and will not start "
-                    + "this one. Re-run `parley autostart install` with no --db to have it serve "
-                    + "every project in the manifest.",
+                    "The autostart entry serves one project and will not start this one. Re-run "
+                    + "`parley autostart install` with no --project to have it serve every project "
+                    + "on this machine.",
 
                 _ =>
                     "The broker serving the manifest starts it within a few seconds; the list "

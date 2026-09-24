@@ -31,8 +31,8 @@ Read these before starting; each has a test that fails the build rather than a c
 
 **Purpose**: the branch and the version, so that nothing later has to remember them.
 
-- [ ] T001 Confirm the working branch is `019-one-way-in` off `main`, and that `.specify/feature.json` names `specs/019-one-way-in`
-- [ ] T002 Bump `VersionPrefix` to `0.32.0` in `Directory.Build.props`, in the same commit as the first behaviour change rather than at the end
+- [X] T001 Confirm the working branch is `019-one-way-in` off `main`, and that `.specify/feature.json` names `specs/019-one-way-in` — **done.** The branch is `019-layout` rather than `019-one-way-in`; the spec directory is right and the branch name is cosmetic
+- [X] T002 Bump `VersionPrefix` to `0.32.0` in `Directory.Build.props`, in the same commit as the first behaviour change rather than at the end — **done.** `Directory.Build.props` reads 0.32.0, moved with the first behaviour change
 
 ---
 
@@ -73,7 +73,7 @@ Read these before starting; each has a test that fails the build rather than a c
 - [X] T020 [US1] Report exhaustion and create nothing (R1, FR-015)
 - [X] T021 [US1] Rewrite `project add` in `src/Parley.Setup/ProjectCommand.cs` to take a name alone: claim a port, create the folder, write `project.json`, and report the endpoint and the store location (FR-016, FR-017)
 - [X] T022 [US1] Make `project add` create nothing when the claim fails — no folder, no partial `project.json` (FR-015)
-- [X] ~~T023 [US1] Keep `--listen` on `project add` for a stated endpoint~~ — **reversed 2026-09-23.** Built as written, then removed with FR-020: `--listen` is gone everywhere and an endpoint that must not be loopback is edited in `project.json`
+- [X] ~~T023 [US1] Keep `--listen` on `project add` for a stated endpoint~~ — **reversed 2026-09-23, and the replacement reversed again 2026-09-24.** Built as written, then removed with FR-020. The note here used to end "an endpoint that must not be loopback is edited in `project.json`"; that is no longer the guidance. The owner asked for the capability back as `--private`/`--public`, and withdrew it once the exposure was costed — all three gRPC services share one port, so a bind address grants the operator operations, including `Instruct`. **Reaching a broker from another machine is an authenticated tunnel**; a hand-edited endpoint still works and is now warned about on every broker start
 - [X] ~~T024 [US1] Check a stated endpoint's availability on the address it names~~ — **reversed with T023.** Nothing states an endpoint, so `PortLedger.TryReserve` and `CanBindAt` went with it
 - [X] T025 [US1] Keep `--description`, and keep `project set` able to change it (FR-019)
 - [X] T026 [US1] Release a project's port on `project remove` (FR-014)
@@ -96,7 +96,7 @@ Read these before starting; each has a test that fails the build rather than a c
 
 - [X] T032 [US2] Remove `--db`/`-d` and `PARLEY_DB` from `src/Parley.Cli/Program.cs` and from `serve` (FR-007, FR-031)
 - [X] T033 [US2] Remove `--db` from `project add` — the only way a store path is set today (R3's first scope question)
-- [ ] T034 [US2] Remove `--node-config` from `project add` and `project set`, which wrote a field nothing reads (FR-052)
+- [X] T034 [US2] Remove `--node-config` from `project add` and `project set`, which wrote a field nothing reads (FR-052) — **done during T021.** `ProjectSettings` and `ProjectFields` carry no node configuration at all now, so `project add` and `project set` have no field to write. `--node-config` survives as a *machine-wide* option that `serve`, `autostart` and `enroll` read, which is a different thing and stays
 - [X] T035 [US2] Keep `InstalledEntry.Parse`'s `case "--db":` read path (R3; 0.22.0's *stop writing, stop
   accepting, keep reading*)
   - **Kept after all, and the reasoning is worth the two lines it costs.** FR-063 was withdrawn — nothing

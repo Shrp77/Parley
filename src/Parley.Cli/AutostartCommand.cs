@@ -623,10 +623,13 @@ public static class AutostartCommand
 
             if (!entry.ServesManifest)
             {
+                // **Said with `--db` until 019 removed it**, so the remedy named a flag the tool
+                // refuses. `--project` is what narrows an entry now, and omitting it is what widens
+                // one. The same sentence lives in `Naming.cs` and was corrected with it.
                 await output.WriteLineAsync(
                     "  A project named with `parley project add` is not served by this entry. " +
-                    "Re-run\n  `parley autostart install` with no --db to have it serve every " +
-                    "project in the manifest.").ConfigureAwait(false);
+                    "Re-run\n  `parley autostart install` with no --project to have it serve every " +
+                    "project on this machine.").ConfigureAwait(false);
             }
 
             // **The one place an operator can be told, and otherwise they are told nothing.** This

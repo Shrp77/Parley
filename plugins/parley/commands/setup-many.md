@@ -153,19 +153,19 @@ before running `apply`. Three behaviours are worth knowing so the output is not 
 
 `enroll apply` prints this, and it is the part that has to be done in order:
 
-1. A broker running, and this machine's node with it. The deployment is a named project whose
-   entry carries the catalogue - `parley project set <name> --node-config <path to node.json>`
-   if it does not yet - and `parley autostart install` serves every project in the manifest,
-   each with its own node, from one process that starts again at every logon. One process,
+1. A broker running, and this machine's node with it. `parley autostart install` serves every
+   project on this machine from one process that starts again at every logon. One process,
    because a node that is not running leaves every repository you just enrolled reading as
    startable and never started. (`parley serve --project <name>` serves one project alone and is
    for testing only.)
-   Name the catalogue explicitly in the project's entry rather than relying on `PARLEY_NODE_CONFIG` or a bare
-   `node.json`: a logon entry has no working directory worth relying on, and whether it sees an
-   environment variable depends on which supervisor it is. `setx` in particular does not affect
-   the session it is typed in, so the `parley up` somebody runs straight afterwards to check is
-   the one process that cannot see what they just set - it reports "can start nothing" and names
-   the file it read instead.
+
+   **There is nothing to point at a catalogue, and this step used to say otherwise.** It told you
+   to run `parley project set <name> --node-config <path to node.json>` so that a project's entry
+   carried its own catalogue. 018 made there be **one catalogue per machine**, keyed by identity,
+   at the root - so a project cannot name a different one - and 019 removed the field that
+   sentence wrote. The paragraph that followed it, about naming the catalogue explicitly rather
+   than relying on `PARLEY_NODE_CONFIG`, was advice about a per-project entry that no longer
+   exists. `node.json` sits beside the projects at the root and every project starts from it.
 2. Restart Claude Code in every enrolled repository, and check `/mcp` shows `parley` connected.
 3. **Only then**, `/parley:write-peers` in each one.
 

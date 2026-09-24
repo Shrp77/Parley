@@ -150,9 +150,14 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
 
         Assert.Contains("Name the project these repositories answer in", said, StringComparison.Ordinal);
 
-        // The catalogue no longer appears here: there is one per machine, so naming a project cannot
-        // point it at one and the flag that did has gone.
-        Assert.Contains("parley project add <name> --db <path to the store> --listen <url>", said, StringComparison.Ordinal);
+        // **The name is the whole of the command**, and this asserted three flags none of which
+        // still exist. The catalogue does not appear because there is one per machine, so naming a
+        // project cannot point it at one; `--db` and `--listen` do not appear because 019 removed
+        // them, and until now this test required both — so the step told an operator to run a
+        // command the tool would refuse, and the check over it insisted on that wording.
+        Assert.Contains("parley project add <name>", said, StringComparison.Ordinal);
         Assert.DoesNotContain("--node-config", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("--db", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("--listen", said, StringComparison.Ordinal);
     }
 }

@@ -1228,9 +1228,15 @@ public static class EnrollCommand
         // project cannot name a different one and no step could ask for it. A branch telling somebody to
         // run `project set --node-config` stood here until 019 removed the field it wrote, and it had
         // already been unreachable since 018 made that field mean nothing.
+        // **The name is the whole of the command, and this line said otherwise until 019's sweep
+        // reached it.** It read `project add <name> --db <path to the store> --listen <url>`, which is
+        // two flags the parser now refuses by name — so the tool finished a bulk enrolment and then
+        // told the operator to run something that cannot work. The comment above records `serve --db`
+        // and `autostart install --db` being taken out of this same block; `project add`'s own flags
+        // were left in it, which is what a sweep by grep for one spelling does.
         var start = named is null
             ? "  1. Name the project these repositories answer in:\n" +
-              "       parley project add <name> --db <path to the store> --listen <url>\n" +
+              "       parley project add <name>\n" +
               Serve
             : $"  1. A broker{(nodeChanged ? " and this machine's node" : string.Empty)} for {named}.\n" + Serve;
 
