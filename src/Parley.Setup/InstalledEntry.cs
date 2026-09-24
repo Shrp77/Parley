@@ -53,8 +53,15 @@ public sealed record InstalledEntry(
     /// </remarks>
     public IReadOnlyList<string> Removed { get; init; } = [];
 
-    /// <summary>Whether this entry serves the manifest rather than one explicit store.</summary>
-    public bool ServesManifest => Store is null;
+    /// <summary>The one project this entry serves, or null when it serves every project.</summary>
+    /// <remarks>
+    /// **What narrows an entry since 019.** It was narrowed by naming a store and a port, and both are a
+    /// project's own now — so an entry says which project it serves, or says nothing and serves them all.
+    /// </remarks>
+    public string? Project { get; init; }
+
+    /// <summary>Whether this entry serves every project rather than one named.</summary>
+    public bool ServesManifest => Store is null && Project is null;
 
     /// <summary>What the entry serves, in words for a status line.</summary>
     public string Serves =>
@@ -84,6 +91,7 @@ public sealed record InstalledEntry(
         string? node = null;
         string? console = null;
         string? manifest = null;
+        string? project = null;
         var removed = new List<string>();
 
         for (var i = 1; i < parts.Count; i++)
@@ -125,6 +133,14 @@ public sealed record InstalledEntry(
                     i++;
                     break;
 
+                // **The one thing that narrows an entry since 019.** It used to be narrowed by naming a
+                // store and a port; both are a project's own now, so an entry serves this machine or the
+                // one project it names — and `autostart status` has to be able to say which.
+                case "--project":
+                    project = value;
+                    i++;
+                    break;
+
                 case "--log":
                     i++;
                     break;
@@ -144,7 +160,11 @@ public sealed record InstalledEntry(
             }
         }
 
-        return new InstalledEntry(store, listen, node, console, manifest) { Removed = removed };
+        return new InstalledEntry(store, listen, node, console, manifest)
+        {
+            Removed = removed,
+            Project = project,
+        };
     }
 
     /// <summary>Reads the entry this machine's supervisor holds, if there is one.</summary>

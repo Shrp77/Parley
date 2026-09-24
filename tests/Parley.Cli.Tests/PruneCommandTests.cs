@@ -307,8 +307,11 @@ public sealed class PruneCommandTests : IAsyncDisposable
     /// </remarks>
     private async Task<string> RecentlySettledDatabase()
     {
-        var path = Path.Combine(_directory, "settled.db");
+        // The project's own store, so the broker this rig starts opens the one this fills.
+        var path = BrokerProcess.StoreFor(_directory);
         var then = DateTimeOffset.UtcNow.AddHours(-4);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
         using (var connection = ParleyDatabase.OpenAndMigrate(path))
         {
@@ -355,7 +358,7 @@ public sealed class PruneCommandTests : IAsyncDisposable
         }
 
         using (var strict = BrokerProcess.Start(
-            path,
+            _directory,
             (RetentionPolicyEnvironment.IdleVariable, "1"),
             (RetentionPolicyEnvironment.MaximumAgeVariable, "1")))
         {
@@ -376,7 +379,7 @@ public sealed class PruneCommandTests : IAsyncDisposable
         var path = await ProjectDatabase();
 
         using var broker = BrokerProcess.Start(
-            path,
+            _directory,
             (RetentionPolicyEnvironment.IdleVariable, "1"),
             (RetentionPolicyEnvironment.MaximumAgeVariable, "1"));
 

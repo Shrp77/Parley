@@ -188,17 +188,30 @@ public sealed class NoManifestParityTests : IDisposable
     }
 
     [Fact]
-    public void Serve_with_no_manifest_and_no_store_refuses_for_the_reason_it_always_did()
+    public void Serve_with_nothing_configured_refuses_and_says_how_to_configure_something()
     {
-        // The refusal must still be about the database. If the manifest had taken over the
-        // selection, this would now fail with something about projects — a different message for
-        // the same mistake, on every machine that has never heard of a project.
+        // **The refusal used to be about the database, and had to be.** While `--db` and `PARLEY_DB`
+        // existed, a machine with nothing configured was missing a *store*, and a message about
+        // projects would have been a different answer to the same mistake on every machine that had
+        // never heard of one.
+        //
+        // There is no store to be missing now. What such a machine lacks is a project, and the refusal
+        // says exactly that and how to make one — which is the whole of what it can usefully say.
+        //
+        // **And it must refuse rather than wait.** `serve --config <root>` waits, because that is the
+        // entry an installer registers and a project named an hour later must come up without it
+        // changing. `parley serve` typed by hand does not: making both wait hung the suite at 4,265
+        // lines with five orphaned brokers and no failure.
         var (code, error) = ToolProcess.Run(
             [(ProjectManifest.PathVariable, Absent)], "serve");
 
         Assert.Equal(78, code);
-        Assert.Contains(DeploymentEnvironment.DatabaseVariable, error, StringComparison.Ordinal);
-        Assert.DoesNotContain("--project", error, StringComparison.Ordinal);
+        Assert.Contains("nothing to serve", error, StringComparison.Ordinal);
+        Assert.Contains("parley project add <name>", error, StringComparison.Ordinal);
+
+        // Nothing about a store, because there is nothing a person could do about one.
+        Assert.DoesNotContain("--db", error, StringComparison.Ordinal);
+        Assert.DoesNotContain(DeploymentEnvironment.DatabaseVariable, error, StringComparison.Ordinal);
     }
 
     [Fact]

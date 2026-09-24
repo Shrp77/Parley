@@ -79,13 +79,18 @@ public sealed class AutostartManifestPlanTests
     }
 
     [Fact]
-    public void An_explicit_entry_reads_back_with_every_path_intact()
+    public void A_narrowed_entry_reads_back_with_every_path_intact()
     {
         // Paths with spaces on both sides of the round trip, because that is the case the quoting
         // exists for and the one a regular expression got wrong.
+        //
+        // **It carried a store and a port until 019 and carries a project name.** An entry cannot name
+        // either any more: both are a project's own, and one repeated in a scheduled task would be a
+        // second place the answer lives. What still has to survive quoting is the root and the
+        // catalogue, which are the two paths a person can put anywhere.
         var plan = AutostartPlan.Describe(
-            "C:/Some Folder/parley.db",
-            "http://127.0.0.1:9999",
+            "C:/Some Folder",
+            "orders",
             executable: "parley",
             nodeConfig: "C:/Some Folder/node.json",
             consoleOn: "http://127.0.0.1:5280");
@@ -93,12 +98,18 @@ public sealed class AutostartManifestPlanTests
         var entry = InstalledEntry.Parse(plan.Arguments);
 
         Assert.NotNull(entry);
-        Assert.False(entry.ServesManifest);
-        Assert.Equal(Path.GetFullPath("C:/Some Folder/parley.db"), entry.Store);
-        Assert.Equal("http://127.0.0.1:9999", entry.Listen);
+        Assert.Equal(Path.GetFullPath("C:/Some Folder"), entry.Manifest);
         Assert.Equal(Path.GetFullPath("C:/Some Folder/node.json"), entry.NodeConfig);
         Assert.Equal("http://127.0.0.1:5280", entry.Console);
-        Assert.Null(entry.Manifest);
+
+        // Neither is in the entry at all, which is the property this now protects.
+        Assert.Null(entry.Store);
+        Assert.Null(entry.Listen);
+        Assert.Contains("--project orders", plan.Arguments, StringComparison.Ordinal);
+
+        // And it reads back as the project it names, which is what `autostart status` reports.
+        Assert.Equal("orders", entry.Project);
+        Assert.False(entry.ServesManifest);
     }
 
     [Fact]

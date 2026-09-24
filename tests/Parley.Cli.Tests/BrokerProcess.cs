@@ -72,8 +72,19 @@ internal sealed partial class BrokerProcess : IDisposable
     public static BrokerProcess Start(
         string root, params (string Name, string Value)[] environment)
     {
-        try { Directory.CreateDirectory(root); }
-        catch (IOException probe) { throw new IOException($"root was '{root}'", probe); }
+        // **Named, because a rig that is handed a store path instead of a root fails obscurely.** It
+        // happened six times during 019's conversion: `Directory.CreateDirectory` reports that it
+        // cannot create `parley.db`, which reads as a defect in the layout rather than a caller passing
+        // the wrong thing.
+        if (root.EndsWith(ProjectFolder.StoreFileName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException(
+                $"'{root}' is a store, not a root. Pass the directory the projects live under; the "
+                + "store is derived from the project's name.",
+                nameof(root));
+        }
+
+        Directory.CreateDirectory(root);
 
         ProjectManifest.Write(
             root,
