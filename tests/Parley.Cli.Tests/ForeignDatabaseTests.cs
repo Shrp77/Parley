@@ -107,7 +107,12 @@ public sealed class ForeignDatabaseTests : IDisposable
 
         var (exitCode, error) = ToolProcess.Run("serve", "--config", root);
 
-        Assert.Equal(74, exitCode);
+        // **69 rather than 74 since 019.** The one-store path classified "could not open this file" as an
+        // I/O error; the projects path classifies "this project would not start" as unavailable, and
+        // every project failure now shares that code rather than one code per cause. The substance is
+        // the sentence, which is unchanged: Parley says it did not create this database and leaves it
+        // exactly as it found it.
+        Assert.Equal(69, exitCode);
         Assert.Contains("Parley did not create", error, StringComparison.Ordinal);
 
         var (version, tables) = Inspect(path);
@@ -167,7 +172,7 @@ public sealed class ForeignDatabaseTests : IDisposable
         // Refused for being a foreign database, which is only reachable if it opened that store —
         // nothing was given on the command line, so the variable is the only way it could have found
         // the root it lives under.
-        Assert.Equal(74, exitCode);
+        Assert.Equal(69, exitCode);
         Assert.Contains("Parley did not create", error, StringComparison.Ordinal);
     }
 
@@ -188,20 +193,23 @@ public sealed class ForeignDatabaseTests : IDisposable
     [Fact]
     public void Serving_without_a_database_says_so()
     {
-        // The other side. Naming a command means you know what you want, and then the missing
-        // database is the useful thing to be told.
+        // The other side. Naming a command means you know what you want, and then having nothing to
+        // serve is the useful thing to be told.
         //
-        // Only `serve` can be missing one. Every other command reaches the broker over the
-        // transport and has no opinion about where the store is, which is the point.
+        // **And it has to be told rather than waited through.** `serve` waits when it is given a root
+        // explicitly — that is the entry an installer registers, and a project named an hour later must
+        // come up without it changing. A person who typed `parley serve` on a machine with nothing on it
+        // gets a sentence. Making both cases wait hung the whole suite: 4,265 lines, five orphaned
+        // brokers, no failure.
         var (exitCode, error) = ToolProcess.Run("serve");
 
         Assert.Equal(78, exitCode);
-        Assert.Contains("No database:", error, StringComparison.Ordinal);
+        Assert.Contains("nothing to serve", error, StringComparison.Ordinal);
 
-        // The way on is a project. The one-store options are for testing, and a refusal naming only them sent a person
-        // to deploy by hand outside the manifest -- found by the gate over the installer change.
+        // The way on is a project, and it is the only way on now. A refusal naming a one-store option
+        // used to send a person to deploy by hand outside the manifest; there is no such option to name.
         Assert.Contains("parley project add", error, StringComparison.Ordinal);
-        Assert.Contains("for testing only", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("--db", error, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -223,26 +231,25 @@ public sealed class ForeignDatabaseTests : IDisposable
     }
 
     [Fact]
-    public void The_database_option_without_a_path_says_which_half_is_missing()
+    public void The_removed_options_are_named_with_what_replaced_them()
     {
-        // `parley --db`, having forgotten the path. It used to fall through to the stray-option
-        // refusal and be told that '--db' is not an option this command takes — false, and false
-        // in the most confusing direction: it names the one option the command does have and
-        // denies having it.
-        var (exitCode, error) = ToolProcess.Run("--db");
+        // **Two tests lived here about the grammar of an option that no longer exists**: `--db` with no
+        // path after it, and `--db` given twice. Both were real — the first was found by typing
+        // `parley --db` and forgetting the path, and getting told that `--db` is not an option this
+        // command takes, which is false in the most confusing direction.
+        //
+        // What replaces them is the one thing still worth checking: somebody who types either flag from
+        // memory or from a script is told what to do instead, rather than met with a refusal that
+        // pretends never to have heard of it. Every deployment on every machine was made with these.
+        foreach (var gone in new[] { "--db", "-d", "--listen", "-l" })
+        {
+            var (exitCode, error) = ToolProcess.Run(gone, "somewhere", "serve");
 
-        Assert.Equal(64, exitCode);
-        Assert.Contains("needs a value after it", error, StringComparison.Ordinal);
-        Assert.DoesNotContain("is not an option", error, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void The_database_option_given_twice_says_so()
-    {
-        var (exitCode, error) = ToolProcess.Run("--db", "one.db", "--db", "two.db", "serve");
-
-        Assert.Equal(64, exitCode);
-        Assert.Contains("was given more than once", error, StringComparison.Ordinal);
+            Assert.Equal(64, exitCode);
+            Assert.Contains(gone, error, StringComparison.Ordinal);
+            Assert.Contains("parley project add <name>", error, StringComparison.Ordinal);
+            Assert.Contains("parley serve", error, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -272,7 +279,10 @@ public sealed class ForeignDatabaseTests : IDisposable
             "--db", MakeForeignDatabase(), "export", "--verbose");
 
         Assert.Equal(64, exitCode);
-        Assert.Contains("is not an option", error, StringComparison.Ordinal);
+        // **Named rather than met with "is not an option this command takes."** That sentence was true
+        // and useless: `--db` is what every deployment was made with, so the refusal says what replaced
+        // it. The property this test is for is unchanged — a flag in the wrong place never becomes data.
+        Assert.Contains("was removed", error, StringComparison.Ordinal);
         Assert.DoesNotContain("No messages in", error, StringComparison.Ordinal);
     }
 }

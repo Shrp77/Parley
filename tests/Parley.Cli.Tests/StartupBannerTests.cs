@@ -265,16 +265,21 @@ public sealed class StartupBannerTests
     /// </remarks>
     private static async Task<IReadOnlyList<string>> ConsoleBlockAsync()
     {
-        var store = Path.Combine(
-            Path.GetTempPath(), "parley-banner-" + Guid.NewGuid().ToString("N") + ".db");
+        // A root with one project in it, on port zero so the operating system picks and the banner
+        // reports what it got — which is the thing this file reads.
+        var root = Path.Combine(Path.GetTempPath(), "parley-banner-" + Guid.NewGuid().ToString("N"));
+        var probe = Parley.Core.ProjectName.Create("probe");
+
+        ProjectManifest.Write(
+            root,
+            [new ProjectSettings(probe, ProjectFolder.StoreFor(root, probe), "http://127.0.0.1:0", null)]);
 
         var console = $"http://127.0.0.1:{Loopback.FreePort()}";
 
         var process = ToolProcess.Launch(
             [],
             "serve",
-            "--db", store,
-            "--listen", "http://127.0.0.1:0",
+            "--config", root,
             "--with-web-ui",
             "--web-ui", console);
 
@@ -336,8 +341,9 @@ public sealed class StartupBannerTests
 
             process.Dispose();
 
-            foreach (var leftover in Directory.GetFiles(
-                Path.GetDirectoryName(store)!, Path.GetFileName(store) + "*"))
+            foreach (var leftover in Directory.Exists(root)
+                         ? Directory.GetFiles(root, "*", SearchOption.AllDirectories)
+                         : [])
             {
                 try
                 {

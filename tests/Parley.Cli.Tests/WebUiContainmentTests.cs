@@ -1,3 +1,5 @@
+using Parley.Core;
+using Parley.Configuration;
 using System.Net;
 using System.Net.Sockets;
 using Xunit;
@@ -34,16 +36,20 @@ public sealed class WebUiContainmentTests
 
         held.Start();
 
-        var store = Path.Combine(
-            Path.GetTempPath(), $"parley-contain-{Guid.NewGuid():N}", "parley.db");
-
-        Directory.CreateDirectory(Path.GetDirectoryName(store)!);
-
+        var root = Path.Combine(Path.GetTempPath(), $"parley-contain-{Guid.NewGuid():N}");
         var brokerAt = $"http://127.0.0.1:{Loopback.FreePort()}";
+
+        // A project rather than a store and a port: `serve` takes neither, and the endpoint this test
+        // needs to dial goes in the project's own file.
+        var probe = Parley.Core.ProjectName.Create("probe");
+
+        ProjectManifest.Write(
+            root,
+            [new ProjectSettings(probe, ProjectFolder.StoreFor(root, probe), brokerAt, null)]);
 
         using var broker = ToolProcess.Launch(
             [],
-            "serve", "--db", store, "--listen", brokerAt, "--with-web-ui", "--web-ui", address);
+            "serve", "--config", root, "--with-web-ui", "--web-ui", address);
 
         try
         {
@@ -71,7 +77,7 @@ public sealed class WebUiContainmentTests
 
             try
             {
-                Directory.Delete(Path.GetDirectoryName(store)!, recursive: true);
+                Directory.Delete(root, recursive: true);
             }
             catch (IOException)
             {

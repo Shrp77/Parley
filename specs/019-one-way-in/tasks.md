@@ -97,7 +97,14 @@ Read these before starting; each has a test that fails the build rather than a c
 - [ ] T032 [US2] Remove `--db`/`-d` and `PARLEY_DB` from `src/Parley.Cli/Program.cs` and from `serve` (FR-007, FR-031)
 - [X] T033 [US2] Remove `--db` from `project add` — the only way a store path is set today (R3's first scope question)
 - [ ] T034 [US2] Remove `--node-config` from `project add` and `project set`, which wrote a field nothing reads (FR-052)
-- [ ] ~~T035 [US2] Keep `InstalledEntry.Parse`'s `case "--db":` read path~~ — **withdrawn with FR-063.** No previous version's entry needs describing; `reset.ps1` and a reinstall replace it
+- [X] T035 [US2] Keep `InstalledEntry.Parse`'s `case "--db":` read path (R3; 0.22.0's *stop writing, stop
+  accepting, keep reading*)
+  - **Kept after all, and the reasoning is worth the two lines it costs.** FR-063 was withdrawn — nothing
+    is released, so no entry needs to go on *working*. But `autostart status` still has to *describe* what
+    is installed, and a developer who has not yet run `reset.ps1` has an old entry right now. A reader that
+    could not parse it would show blanks for a scheduled task that plainly exists, which is the shape this
+    repository keeps recording: a green-looking answer to a question nobody asked. Reading costs nothing
+    and writing is gone, which is exactly the line 0.22.0 drew for `--console`.
 - [ ] T036 [US2] Convert `tests/Parley.Cli.Tests/BrokerProcess.cs`: `Start` takes a root and a project name, writes `<root>/projects/<name>/project.json` **directly** with a `FreePort()` endpoint, and keeps reading the real address off stdout (R3 — the rig must not allocate, because the band is per machine and the root is per test)
 - [ ] T037 [US2] Remove `PARLEY_DB` from `ToolProcess.cs`'s variable clear-list, keeping the neutral working directory
 - [ ] T038 [US2] Delete `OneStoreIsForTestingTests.cs`, `ForeignDatabaseTests.cs`, `NoManifestParityTests.cs` — ~24 tests whose subject is `--db` itself

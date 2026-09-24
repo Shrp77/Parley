@@ -55,64 +55,51 @@ public sealed class ServeSelectionTests : IDisposable
                     null),
             ]);
 
-    public static TheoryData<bool> ByVariable => [false, true];
-
-    [Theory]
-    [MemberData(nameof(ByVariable))]
-    public async Task A_store_named_beside_a_manifest_is_served_instead_of_it(bool byVariable)
+    [Fact]
+    public async Task Nothing_can_make_serve_open_a_store_this_machine_did_not_name()
     {
+        // **Two tests lived here and both were about which of two sources wins.**
+        // `A_store_named_beside_a_manifest_is_served_instead_of_it` checked that `--db` and `PARLEY_DB`
+        // beat a manifest; `A_store_variable_does_not_replace_a_manifest_named_on_the_command_line`
+        // checked that the variable did *not* beat `--config`. Both rules were written after the review
+        // gate found the defect each exists to prevent — a machine serving projects while ignoring the
+        // store it was told, and a stray variable turning the logon entry into a broker for a test store.
+        //
+        // **Both questions are gone, because there is one source.** A project's store is derived from its
+        // name; nothing names one. So what is asserted is that the flag and the variable are refused
+        // rather than honoured, and that what gets served is what the root holds.
         var ct = TestContext.Current.CancellationToken;
         var store = Path.Combine(_directory, "named.db");
 
         WriteManifest();
 
-        using var process = byVariable
-            ? ToolProcess.Launch(
-                [(ProjectManifest.PathVariable, Root), (DeploymentEnvironment.DatabaseVariable, store)],
-                "serve", "--listen", "http://127.0.0.1:0")
-            : ToolProcess.Launch(
-                [(ProjectManifest.PathVariable, Root)],
-                "serve", "--db", store, "--listen", "http://127.0.0.1:0");
-
-        var log = ToolLog.Of(process);
-
-        try
+        foreach (var attempt in new[]
+                 {
+                     new[] { "serve", "--db", store },
+                     new[] { "serve", "--listen", "http://127.0.0.1:0" },
+                 })
         {
-            await log.UntilAsync(l => l.Said("http://127.0.0.1:") || process.HasExited, TimeSpan.FromSeconds(20), ct);
-        }
-        finally
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-                _ = process.WaitForExit(5000);
-            }
+            var (code, _, error) = ToolProcess.RunFully([(ProjectManifest.PathVariable, Root)], attempt);
+
+            Assert.Equal(64, code);
+            Assert.Contains(attempt[1], error, StringComparison.Ordinal);
+            Assert.Contains("parley project add <name>", error, StringComparison.Ordinal);
         }
 
-        Assert.True(File.Exists(store), $"the named store was not opened. The tool said:{Environment.NewLine}{log}");
-        Assert.False(File.Exists(Path.Combine(_directory, "manifest.db")), $"the manifest's project was served. The tool said:{Environment.NewLine}{log}");
-        Assert.False(log.Said("orders"), $"the manifest's project was named. The tool said:{Environment.NewLine}{log}");
-    }
-
-    [Fact]
-    public async Task A_store_variable_does_not_replace_a_manifest_named_on_the_command_line()
-    {
-        // The logon entry names its manifest with --config. The first version of the rule above let a PARLEY_DB left in
-        // the environment turn that entry into a broker for the leftover store, serving none of the manifest's projects.
-        var ct = TestContext.Current.CancellationToken;
-        var leftover = Path.Combine(_directory, "leftover.db");
-
-        WriteManifest();
-
+        // And the variable that used to replace a manifest is simply not read: the root still decides.
         using var process = ToolProcess.Launch(
-            [(ProjectManifest.PathVariable, Root), (DeploymentEnvironment.DatabaseVariable, leftover)],
-            "serve", "--config", Root);
+            [
+                (ProjectManifest.PathVariable, Root),
+                (DeploymentEnvironment.DatabaseVariable, store),
+            ],
+            "serve");
 
         var log = ToolLog.Of(process);
 
         try
         {
-            await log.UntilAsync(l => l.Said("orders on http://127.0.0.1:") || process.HasExited, TimeSpan.FromSeconds(20), ct);
+            await log.UntilAsync(
+                l => l.Said("http://127.0.0.1:") || process.HasExited, TimeSpan.FromSeconds(20), ct);
         }
         finally
         {
@@ -123,9 +110,15 @@ public sealed class ServeSelectionTests : IDisposable
             }
         }
 
-        Assert.True(log.Said("orders on http://127.0.0.1:"), $"the manifest's project was not served. The tool said:{Environment.NewLine}{log}");
-        Assert.False(File.Exists(leftover), $"the leftover store was opened. The tool said:{Environment.NewLine}{log}");
+        Assert.False(
+            File.Exists(store),
+            $"a store named by PARLEY_DB was opened. The tool said:{Environment.NewLine}{log}");
+
+        Assert.True(
+            log.Said("orders"),
+            $"the root's own project was not served. The tool said:{Environment.NewLine}{log}");
     }
+
 
     [Fact]
     public async Task A_lone_project_hosts_from_the_same_catalogue_whether_it_was_named_before_the_start_or_after()
