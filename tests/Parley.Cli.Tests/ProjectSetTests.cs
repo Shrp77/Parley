@@ -27,7 +27,14 @@ public sealed class ProjectSetTests : IDisposable
     private readonly string _directory =
         Path.Combine(Path.GetTempPath(), "parley-project-set-" + Guid.NewGuid().ToString("N"));
 
-    public ProjectSetTests() => Directory.CreateDirectory(_directory);
+    public ProjectSetTests()
+    {
+        Directory.CreateDirectory(_directory);
+
+        // A band of this class's own, because every root otherwise starts at the bottom of the same
+        // one — see TestBand, and research.md R3, which predicted exactly this.
+        TestBand.GiveItsOwn(Root);
+    }
 
     public void Dispose()
     {

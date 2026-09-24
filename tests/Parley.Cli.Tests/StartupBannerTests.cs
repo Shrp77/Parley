@@ -42,7 +42,10 @@ public sealed class StartupBannerTests
     {
         var (output, _) = await ServeUntilListeningAsync();
 
-        Assert.Contains("not a web page", output, StringComparison.Ordinal);
+        // **Worded by the projects path now**, which is the only path there is: the one-store serve
+        // said "not a web page" and this says "None of them is a web page", because it is reporting
+        // several addresses rather than one.
+        Assert.Contains("None of them is a web page", output, StringComparison.Ordinal);
 
         // And still says the thing every other reader depends on.
         Assert.Contains("Ctrl+C stops", output, StringComparison.Ordinal);
@@ -57,7 +60,9 @@ public sealed class StartupBannerTests
 
         // Non-vacuous first. A harness that captured nothing would pass both
         // assertions below it and report a banner nobody had checked.
-        Assert.Contains("Parley broker on", output, StringComparison.Ordinal);
+        // Non-vacuous, and read off the line the projects path prints: `<project> on <addresses>,
+        // store at <path>, schema N`. The one-store path's "Parley broker on" went with the path.
+        Assert.Contains("probe on http://127.0.0.1:", output, StringComparison.Ordinal);
 
         Assert.DoesNotContain('\u001b', output);
         Assert.DoesNotContain('\u001b', error);
@@ -97,15 +102,18 @@ public sealed class StartupBannerTests
         var directory = Path.Combine(
             Path.GetTempPath(), "parley-banner-" + Guid.NewGuid().ToString("N"));
 
-        Directory.CreateDirectory(directory);
+        // **A directory where the project's `parley.db` goes**, which is the only way to reach this now
+        // that no flag names a store. Creating the root alone was not enough — the store path did not
+        // exist, SQLite happily created it, and the broker served for ever: the test hung rather than
+        // failing, and took the suite with it.
+        Directory.CreateDirectory(
+            ProjectFolder.StoreFor(directory, Parley.Core.ProjectName.Create("probe")));
 
         await using var output = new StringWriter();
         await using var error = new StringWriter();
 
         try
         {
-            // A store that is a directory, reached the only way it can be now: the project's own
-            // `parley.db` path is taken by a directory somebody made there.
             var code = await ServeCommand.RunAsync(
                 [At(directory, "http://127.0.0.1:0")],
                 null,
@@ -115,7 +123,10 @@ public sealed class StartupBannerTests
 
             // Non-vacuous: a run that started normally would prove nothing about the failing one.
             Assert.NotEqual(0, code);
-            Assert.Contains("Could not open", error.ToString(), StringComparison.Ordinal);
+            // Named by project: the projects path says `<project>: could not open ...`, where the
+            // one-store path had no project to name. That is the more useful sentence on a machine
+            // serving several, which is every machine now.
+            Assert.Contains("probe: could not open", error.ToString(), StringComparison.Ordinal);
         }
         finally
         {

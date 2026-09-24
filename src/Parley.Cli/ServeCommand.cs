@@ -316,8 +316,9 @@ public static class ServeCommand
             if (awaitingFirstProject)
             {
                 await output.WriteLineAsync(
-                    "No project is named yet. Name the first one from `parley terminal`, or with `parley project add " +
-                    "<name> --db <path> --listen <url>`; it starts here within seconds. Ctrl+C stops this.")
+                    "No project is named yet. Name the first one from `parley terminal`, or with " +
+                    "`parley project add <name>` — it gets its own store and its own port, and starts " +
+                    "here within seconds. Ctrl+C stops this.")
                     .ConfigureAwait(false);
             }
             else

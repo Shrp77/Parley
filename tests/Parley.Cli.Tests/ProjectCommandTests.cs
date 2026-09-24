@@ -37,7 +37,14 @@ public sealed class ProjectCommandTests : IDisposable
     private readonly string _directory =
         Path.Combine(Path.GetTempPath(), "parley-project-" + Guid.NewGuid().ToString("N"));
 
-    public ProjectCommandTests() => Directory.CreateDirectory(_directory);
+    public ProjectCommandTests()
+    {
+        Directory.CreateDirectory(_directory);
+
+        // A band of this class's own, because every root otherwise starts at the bottom of the same
+        // one — see TestBand, and research.md R3, which predicted exactly this.
+        TestBand.GiveItsOwn(Root);
+    }
 
     public void Dispose()
     {
@@ -92,7 +99,9 @@ public sealed class ProjectCommandTests : IDisposable
     [Fact]
     public async Task Adding_creates_the_layout_and_says_where_everything_went()
     {
-        Assert.False(Directory.Exists(Root));
+        // The projects directory, not the root: `TestBand` has written this class's band at the root
+        // already, which is what a machine looks like after anything has touched it.
+        Assert.False(Directory.Exists(ProjectFolder.ProjectsIn(Root)));
 
         var (code, output, error) = await AddAsync("orders");
 
@@ -128,7 +137,10 @@ public sealed class ProjectCommandTests : IDisposable
         var project = Assert.Single(projects);
         var port = new Uri(project.Endpoint).Port;
 
-        Assert.InRange(port, PortLedger.BandFirst, PortLedger.BandLast);
+        // **The band this root was given, not the built-in one.** `TestBand` writes a narrow band per
+        // class so parallel classes cannot be handed the same ports; what this asserts is that the port
+        // came from a band at all rather than from anywhere else.
+        Assert.InRange(port, 20000, 31000);
         Assert.Equal(Store("orders"), project.Store);
         Assert.StartsWith(ProjectFolder.For(Root, ProjectName.Create("orders")), project.Store, StringComparison.Ordinal);
     }

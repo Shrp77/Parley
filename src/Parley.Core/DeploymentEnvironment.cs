@@ -24,13 +24,23 @@ namespace Parley.Core;
 /// </remarks>
 public static class DeploymentEnvironment
 {
-    /// <summary>The variable naming the project's database file.</summary>
+    /// <summary>The variable that used to name a project's database file. <b>Nothing reads it.</b></summary>
     /// <remarks>
-    /// One file per project, per SPEC.md §4.1: independent projects do not share a broker, and
-    /// the isolation is the file boundary rather than a column anyone could forget to filter on.
-    /// So this variable is what says which project a process belongs to, and the operator's tool
-    /// and the agents' servers must read the same one or they are looking at different
-    /// deployments.
+    /// <para>
+    /// <b>Kept as a name, not as a mechanism.</b> 019 removed it along with <c>--db</c>: a project's
+    /// store is <c>parley.db</c> inside its own folder, derived from its name, so there is nothing for a
+    /// variable to say. What this constant is for now is the tests that assert it is <i>ignored</i> —
+    /// a check spelled with a literal would keep passing if somebody reintroduced the variable under a
+    /// slightly different name.
+    /// </para>
+    /// <para>
+    /// The paragraph that stood here argued the opposite, and is worth keeping because the reasoning is
+    /// still right about the thing it examined: one file per project, per SPEC.md §4.1, the isolation
+    /// being the file boundary rather than a column anyone could forget to filter on. What was wrong was
+    /// concluding that a <i>variable</i> should say which project a process belongs to. Two readers of
+    /// one variable is two places the answer lives, and the review gate found both ways that can go
+    /// wrong before it was removed.
+    /// </para>
     /// </remarks>
     public const string DatabaseVariable = "PARLEY_DB";
 
