@@ -191,6 +191,17 @@ public static class ServeCommand
                 $"{project.Name} on {string.Join(", ", server.Addresses)}, store at {project.Store}, schema {SchemaMigrator.LatestVersion}."))
                 .ConfigureAwait(false);
 
+            if (!OnlyThisMachine(project.Endpoint))
+            {
+                await output.WriteLineAsync(
+                    $"{project.Name}: WARNING -- this project answers on {project.Endpoint}, which is not "
+                    + "loopback, so anything that can reach that address can claim to be any agent in it, "
+                    + "read its mail, export its conversations and instruct a running agent. The wire "
+                    + "carries no credentials. No command puts a project here; reach a broker from another "
+                    + "machine with a tunnel instead (README, \"For an agent on another machine\").")
+                    .ConfigureAwait(false);
+            }
+
             // The sweep and, where there is one, the node, each contained on its own so that one
             // project's node failing leaves the others hosted.
             hosted.Tasks.Add(Quietly(SweepAsync(runtime, output, hosted.Stopping.Token)));
@@ -668,6 +679,42 @@ public static class ServeCommand
             output,
             cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>Whether a project's endpoint keeps its broker on the machine it runs on.</summary>
+    /// <param name="endpoint">The endpoint the project records.</param>
+    /// <returns><see langword="true"/> when nothing off this machine can reach it.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>No command writes a non-loopback endpoint, which is exactly why this is checked.</b> A
+    /// project is handed a loopback port when it is named and nothing offers to change it, so the
+    /// only way to arrive here is somebody editing <c>project.json</c> by hand. That is permitted —
+    /// SPEC.md §16 allows a private network the operator controls — and it is also the single most
+    /// consequential edit anybody can make to this deployment, because all three services share the
+    /// one port: reaching it grants the operator operations, which export conversations, purge
+    /// agents and instruct a running agent.
+    /// </para>
+    /// <para>
+    /// <b>Said on every start rather than once at the edit.</b> Whoever made the change is not
+    /// necessarily whoever reads the log six months later, and a broker started by a logon entry
+    /// has no console at all — the log is the only place the fact exists. Warning rather than
+    /// refusing, because refusing would break a deployment on a controlled network that the
+    /// protocol explicitly permits.
+    /// </para>
+    /// </remarks>
+    internal static bool OnlyThisMachine(string endpoint)
+    {
+        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var address))
+        {
+            // Undecidable, and treated as safe here on purpose: an endpoint nothing can parse is
+            // one no broker will bind either, so the start fails below with its own message. Warning
+            // about exposure as well would name the wrong fault.
+            return true;
+        }
+
+        return string.Equals(address.Host, "localhost", StringComparison.OrdinalIgnoreCase)
+            || (System.Net.IPAddress.TryParse(address.Host, out var parsed)
+                && System.Net.IPAddress.IsLoopback(parsed));
     }
 
     /// <summary>A sweep, as a task that reports nothing: it ends only when the process does.</summary>

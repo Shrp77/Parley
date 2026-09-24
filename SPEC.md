@@ -3286,11 +3286,30 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
   or a tunnel authenticated outside this protocol, such as key-based SSH. It must not be
   exposed to anything else.
 
+  **The reach is wider than an agent's mail, and this paragraph used to stop short of saying
+  so.** A broker serves the agent operations of §10.1, the operator operations of §10.2 and the
+  node operations of §12 on one address: they are separate services on the wire, and that
+  separation is a structural guard against an *adapter* binding the wrong one (§10.2), not a
+  boundary anything on a network has to cross. So whatever can reach the port can also export
+  every conversation in the deployment, retire and purge agents, destroy conversations, ask a node
+  to launch an agent, and issue an operator instruction — which is a turn, handed to an agent that
+  acts on it in a repository. Reaching the port is therefore closer to a shell on the machine than
+  to an inbox on it, and an operator confining the transport should be weighing that rather than
+  the opening sentence of this section alone.
+
   What would fix it properly is a credential per agent, presented on connect and checked by
   the broker, which is a real design with real key distribution behind it and is not in this
   document. It is worth naming precisely because the collision check of §4.1.1 looks like
   authentication and is not: refusing a second agent that claims a name in use is bookkeeping,
   and it stops a mistake rather than an attacker.
+
+  **Nothing in the reference implementation binds anything but loopback**, and that is a
+  deployment decision rather than a protocol rule. A project is handed a loopback port when it is
+  named and no command offers to move it off one, so reaching a broker from another machine is
+  done with an authenticated tunnel — the path this section already names. An operator may still
+  configure a non-loopback address by hand for the private network case above; the broker warns on
+  every start when one is configured, because the fact is otherwise invisible to whoever reads the
+  log rather than whoever made the edit.
 
   Files travel the same confined path, and who may replace or remove one rests on the same
   claimed identity: anything able to reach the broker as an agent can replace or remove that

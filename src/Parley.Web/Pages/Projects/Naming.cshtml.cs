@@ -9,11 +9,27 @@ namespace Parley.Web.Pages.Projects;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Instructions rather than a form, and for the same reason as agent registration: the manifest
-/// of SPEC.md §4.1 is read by two programs and written by exactly one of them. The console reads
-/// it; <c>Parley.Cli</c> writes it. A rename button here would make this a second writer of a
-/// file whose whole safety comes from having one, and the console does not even reference
-/// anything that could open it.
+/// Instructions rather than a form, and for the same reason as agent registration: the console
+/// reads the layout of SPEC.md §4.1 and does not write it. It has no route to the code that
+/// does — <c>Parley.Setup</c> is not on its graph — so a rename button here would mean adding
+/// one.
+/// </para>
+/// <para>
+/// <b>This used to say the file is "written by exactly one" program, and that was already untrue
+/// when it was written.</b> Two processes write it: <c>parley</c> from a shell and
+/// <c>parley-terminal</c> from a screen, both through <c>Parley.Setup</c>, which is one
+/// *implementation* rather than one writer. What makes that safe is not exclusivity but the lock
+/// — <c>ProjectManifest.TryUpdate</c> holds <c>projects/.lock</c> with no sharing, and the port
+/// ledger does the same. The distinction matters because the old wording made this page look like
+/// a structural impossibility when it is a decision: adding the reference is all that stands
+/// between here and a form, so the reason to keep it out has to be an argued one.
+/// </para>
+/// <para>
+/// <b>The argued one is that renaming is not worth a second caller.</b> It is rare, it is two
+/// commands, and the page below gives them. Where a surface genuinely needs to write, the shape
+/// is to call <c>Parley.Setup</c> rather than to write here — that keeps the one implementation
+/// and costs the console nothing on its dependency graph, since <c>Parley.Setup</c> reaches only
+/// <c>Configuration</c> and <c>Transport</c> and no store.
 /// </para>
 /// <para>
 /// The naming is a fact about this machine and nothing else. §4.1 gives the protocol no concept

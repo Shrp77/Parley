@@ -14,9 +14,10 @@
 </p>
 
 <p>
-    The console will not do it. This machine's manifest is read by two programs and written by
-    exactly one, and that one is <code>parley</code>; a rename button here would make the console
-    a second writer of the file whose safety comes from having a single one.
+    The console will not do it. It reads this machine's layout and does not write it — renaming is
+    rare and is two commands, which are below. <code>parley</code> and <code>parley-terminal</code>
+    are what write here, and they share one implementation so that they cannot disagree about what
+    a project is.
 </p>
 
 @if (Model.Named)

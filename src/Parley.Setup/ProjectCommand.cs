@@ -73,12 +73,9 @@ public static class ProjectCommand
     {
         await error.WriteLineAsync(
             "parley project list                        what this machine is configured for\n" +
-            "parley project add <name> --db <path>      add a project\n" +
-            "                          --listen <url>\n" +
-            "                          [--node-config <path>] [--description <text>]\n" +
-            "parley project set <name> [--db <path>]    change what a project says; only the\n" +
-            "                          [--listen <url>]  fields given are changed\n" +
-            "                          [--node-config <path>] [--description <text>]\n" +
+            "parley project add <name>                  add a project; the name is the whole of it\n" +
+            "                          [--description <text>]\n" +
+            "parley project set <name> --description <text>   change what a project says\n" +
             "parley project remove <name>               forget how to reach a project\n" +
             "                      [--destroy]          ...and stop its broker and delete\n" +
             "                                           its store and catalogue")
@@ -395,6 +392,17 @@ public static class ProjectCommand
         await output.WriteLineAsync($"Added '{name}'.").ConfigureAwait(false);
         await output.WriteLineAsync($"  serving on {endpoint}").ConfigureAwait(false);
         await output.WriteLineAsync($"  files in  {ProjectFolder.For(root, name)}").ConfigureAwait(false);
+
+        // **Said here because this is the one moment somebody is thinking about where a project
+        // answers.** There is no flag that binds a network address and there is deliberately never
+        // going to be one, so a person who needs an agent on another machine has nothing to discover
+        // by reading `--help` — the answer is a tunnel, which is a thing they do outside this tool
+        // entirely. Naming it once, at the moment the address is printed, is the difference between
+        // a capability that looks absent and one that looks confined.
+        await output.WriteLineAsync(
+            "  reachable from this machine only. An agent elsewhere reaches it through a tunnel "
+            + "to that port -- see the README; there is no flag that binds a network address, "
+            + "because the wire carries no credentials.").ConfigureAwait(false);
 
         return 0;
     }

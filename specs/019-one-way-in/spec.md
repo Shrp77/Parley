@@ -353,12 +353,33 @@ beside the machine catalogue — and not inferred by reading every project.*
 >
 > What was wrong is the conclusion that the remedy belongs on a command line. `--listen` bought one more
 > thing a person supplies and two rules about which source wins, on a feature whose whole purpose is that
-> **a project is named rather than pathed**. A deployment that must be reachable from another machine has
-> its endpoint edited in `projects/<name>/project.json` — one place, readable, and where every reader
-> already looks.
+> **a project is named rather than pathed**.
 >
 > The cost is recorded rather than hidden: **there is no command that makes a broker reachable off this
 > machine.** That is a real reduction in what the tool does, taken deliberately.
+>
+> **Reopened on 2026-09-24 and closed the same way, on stronger grounds.** The owner asked for the
+> capability back as `--private`/`--public` — two words rather than an address, so that nothing on a command
+> line is a bind address — and for both operator surfaces to offer it. It was withdrawn again once the
+> exposure was costed. **All three gRPC services share one port**: `ParleyServer` binds a single URL and maps
+> `Agents`, `Operators` and `Nodes` onto it, so reaching the port is reaching the control plane —
+> `Operators.Export` reads every conversation, `Operators.Start` launches a process, and
+> `Operators.Instruct` hands work to an agent that executes code in a repository. With no credentials on the
+> wire, a bind address is unauthenticated remote code execution by proxy, and no arrangement of flags
+> changes that.
+>
+> **So the supported path is an authenticated tunnel**, which is what §16 already named, and the README
+> gives the SSH recipe where somebody is about to need it. A hand-edited non-loopback endpoint still works,
+> because §16 permits a private network the operator controls — and the broker now warns about one on every
+> start, in the log, naming what reaching it grants.
+>
+> Three designs were costed and are recorded so the next person does not re-derive them: binding `0.0.0.0`
+> (fail-open — a decision taken once on a trusted network follows the machine onto every network it later
+> joins, with no event and no prompt); binding one pinned interface, re-resolved at start so a DHCP lease
+> can move under it (fails closed, defensible, still exposes the control plane); and splitting `Operators`
+> and `Nodes` onto a loopback-only bind while `Agents` is exposed — **the strongest of the three, and the
+> one to revisit if this is ever wanted again**, since it bounds the worst case to agent impersonation
+> within one project. None of the three is authentication, which is what §16 says the real fix is.
 
 **Saying what listens where**
 

@@ -322,10 +322,9 @@ in one window, it would quietly apply to a purge in another.
 **A project's store and port are its own, and nothing outside it names either.** `--broker`
 overrides which broker a *client* talks to; nothing overrides where a project keeps its data or
 what port it holds. There is no `--db`, no `--listen` and no `PARLEY_DB`: the store is `parley.db`
-inside the project's folder and the port was claimed when the project was named. A broker that must
-be reachable from another machine has its `endpoint` edited in `projects/<name>/project.json` —
-there is no command for it, which is a real limitation and is deliberate, because a command that
-chose an interface for you would put a broker on a network by accident.
+inside the project's folder and the port was claimed when the project was named. A broker is
+reached from another machine through a tunnel rather than by binding a network address — there is
+no command for the latter, which is deliberate and is explained where the tunnel is set up below.
 
 `parley project set <name> --description <text>` changes the one thing about a project that is
 yours to choose. `parley project remove` forgets a project and deletes nothing — not the store, not
@@ -406,28 +405,36 @@ the server says so on the way up, and a project this machine does not describe s
 rather than falling back to the default — an agent in the wrong deployment looks entirely normal
 from both ends of a message.
 
-For an agent on another machine, set `PARLEY_BROKER` to the broker's host and port, and give the
-project an address that machine can reach. **There is no command for that**, deliberately: a
-project is handed a loopback port when it is named, because nothing here can know which interface
-you mean to expose and guessing would put a broker on a network by accident. Edit the `endpoint` in
-`projects/<name>/project.json` and the process serving this machine restarts that project on the
-new address within seconds:
+For an agent on another machine, **tunnel to the broker rather than exposing it**, and point
+`PARLEY_BROKER` at your end of the tunnel. A project keeps the loopback port it was handed when it
+was named, and there is no command that puts it on a network — that is a decision rather than a
+gap, and the reason is below.
 
-```json
-{
-  "endpoint": "http://0.0.0.0:19100"
-}
+Key-based SSH is the supported path. One command on the machine that needs the agent:
+
+```bash
+ssh -N -L 19100:127.0.0.1:19100 you@the-broker-machine
 ```
 
-**Put that address on a trusted path, and treat this as the decision it is.** The wire carries
-no credentials, so anything that can reach the broker can claim to be any agent, read its mail
-and answer in its name — and can reach the operator commands too, which export whole
-conversations and purge agents. A private network you control, or a tunnel authenticated
-outside Parley such as key-based SSH, is what "trusted" means here; a broker bound to
-`0.0.0.0` on a network you share with anything else is not. This is not a hardening tip: the
-protocol's threat model puts a hostile network out of scope and says the transport **must not**
-be exposed to anything else, which makes confining it the operator's job rather than the
-broker's.
+After which the broker is at `127.0.0.1:19100` there, exactly as a local one would be:
+
+```bash
+PARLEY_BROKER=http://127.0.0.1:19100 PARLEY_AGENT=orders claude
+```
+
+`autossh`, a systemd unit or a scheduled task keeps it up across a reboot.
+
+**Why there is no flag for binding a network address.** The wire carries no credentials of any
+kind, so a reachable port *is* the whole of the authentication. Everything answers on that one
+port: not only the agent operations, but the operator ones — which export whole conversations,
+purge agents, and instruct a running agent, which is to say hand work to something that executes
+code in a repository. Anything able to open a connection can do all of it, as any agent it cares
+to name. A tunnel adds the authentication and encryption the protocol does not have and leaves no
+listening socket on the network; a bind address adds neither and removes the last thing standing
+between a deployment and whatever else is on the wire. The threat model puts a hostile network out
+of scope and says the transport **must not** be exposed to one, so confining it is the operator's
+job — and a command that chose an interface for you would be this tool making that call on a
+machine whose networks it cannot see.
 
 For Claude Code that file is `.mcp.json` in the repository root; other clients have
 their own location for the same JSON.
