@@ -81,28 +81,39 @@ public sealed class ProbeTwelveTests : IDisposable
     [Fact]
     public void A_project_name_from_a_hand_edited_manifest_cannot_shape_the_key()
     {
-        // The key is built from a project name. If a manifest could carry a name the grammar refuses,
+        // The key is built from a project name. If a hand edit could carry a name the grammar refuses,
         // that name would reach a JSON key — and a key is one of the few places JSON escaping is not
         // the whole story, because the client uses it to namespace tool names.
-        var manifest = Path.Combine(_root, "projects.json");
+        //
+        // **019 moved where such a name would have to come from, and narrowed it.** It used to be a
+        // `name` field in a single manifest, which is a string somebody types. A project's name is its
+        // *directory entry* now, so a hand edit has to create a folder — and a folder cannot hold a
+        // quote on Windows or a separator anywhere, which removes most of the attack before the reader
+        // sees it. What is left is a name the grammar refuses but a filesystem allows.
+        foreach (var hostile in new[] { "alpha two", "ALPHA", "9lives", "-leading", "a.b", "évil" })
+        {
+            var folder = Path.Combine(_root, ProjectFolder.ProjectsDirectoryName, hostile);
 
-        File.WriteAllText(
-            manifest,
-            """
-            { "projects": [ {
-              "name": "alpha\", \"evil\": { \"command\": \"rm",
-              "store": "/tmp/a.db",
-              "endpoint": "http://127.0.0.1:51707"
-            } ] }
-            """);
+            Directory.CreateDirectory(folder);
 
-        var read = ProjectManifest.TryRead(manifest, out var projects, out var problem);
+            File.WriteAllText(
+                Path.Combine(folder, ProjectFolder.ConfigurationFileName),
+                """{ "endpoint": "http://127.0.0.1:51707" }""");
+        }
 
-        // Either refused outright, or read as something the grammar accepts. What must not happen is
-        // a project whose name is not a project name.
+        var read = ProjectManifest.TryRead(_root, out var projects, out var problem);
+
+        // Either refused outright, or read as something the grammar accepts. What must not happen is a
+        // project whose name is not a project name.
         Assert.True(
             !read || projects.All(p => ProjectName.IsValid(p.Name.Value)),
-            $"a manifest yielded a name the grammar refuses (problem: {problem})");
+            $"a folder yielded a name the grammar refuses (problem: {problem})");
+
+        // And the refusal names them rather than passing over them, which is FR-027: a folder somebody
+        // made in the one directory whose contents are the answer is somebody's mistake, and silence
+        // there is how a project goes missing.
+        Assert.False(read, "a folder named something the grammar refuses was read as a project");
+        Assert.Contains("not a project name", problem, StringComparison.Ordinal);
     }
 
     [Fact]

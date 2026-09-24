@@ -158,17 +158,9 @@ public static class ProjectManifest
         // shape this repository keeps meeting, where a green-looking answer is given to a question nobody
         // asked. Named rather than absorbed, because Locate is where the compatibility rule lives and a
         // second implementation of it is what 018 paid for.
-        if (string.Equals(
-                Path.GetFileName(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
-                FileName,
-                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        if (NamesTheOldManifest(root))
         {
-            problem =
-                $"{root} is the manifest file 0.32.0 replaced, not a root. A machine keeps its projects "
-                + $"as folders under a directory — `{ProjectFolder.ProjectsDirectoryName}/<name>/` — each "
-                + "holding its own configuration and its own store. Point --config or "
-                + $"{PathVariable} at the directory that file is in, and run `reset.ps1` to clear what "
-                + "the old layout left behind.";
+            problem = OldManifestProblem(root);
 
             return false;
         }
@@ -448,6 +440,28 @@ public static class ProjectManifest
     public static StringComparer PathComparer { get; } =
         OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
 
+    /// <summary>Whether a path names the single file 0.32.0 replaced, rather than a root.</summary>
+    /// <remarks>
+    /// <b>By name, never by asking the filesystem.</b> A machine being set up has neither the file nor
+    /// the directory yet, so a rule that tested for existence would behave one way before first run and
+    /// another after — which is a rule nobody can reason about. Stated once and read by both the reader
+    /// and the writer, because a writer that accepted what the reader refuses would write what it cannot
+    /// read back.
+    /// </remarks>
+    private static bool NamesTheOldManifest(string path) =>
+        string.Equals(
+            Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
+            FileName,
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    /// <summary>What to say when somebody hands this the old spelling.</summary>
+    private static string OldManifestProblem(string path) =>
+        $"{path} is the manifest file 0.32.0 replaced, not a root. A machine keeps its projects "
+        + $"as folders under a directory — `{ProjectFolder.ProjectsDirectoryName}/<name>/` — each "
+        + "holding its own configuration and its own store. Point --config or "
+        + $"{PathVariable} at the directory that file is in, and run `reset.ps1` to clear what "
+        + "the old layout left behind.";
+
     /// <summary>The name of the lock held while this machine's projects are being changed.</summary>
     /// <remarks>
     /// <para>
@@ -647,6 +661,20 @@ public static class ProjectManifest
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(projects);
+
+        // **Refused here as well as on the read, because a writer that accepts what the reader refuses
+        // writes what it cannot read back.** `What_this_writes_it_can_read_back` holds that property for
+        // descriptions; this is the same property one level up. Without it, a caller handed the old
+        // spelling creates `projects.json/projects/<name>/` — a *directory* named after the file this
+        // version replaced — and every read of it afterwards is refused.
+        //
+        // Reached only by a caller that composed the path itself: `project add` goes through TryUpdate,
+        // which reads first and so already refuses. Five test fixtures were doing exactly that and
+        // passing, which is how this was found.
+        if (NamesTheOldManifest(root))
+        {
+            throw new InvalidDataException(OldManifestProblem(root));
+        }
 
         // Every rule reading applies, not just the ones about pairs. A writer that checked only
         // collisions would happily write a description containing a newline — valid JSON, refused by the

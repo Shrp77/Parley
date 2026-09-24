@@ -61,7 +61,10 @@ public sealed class ProbeElevenTests : IAsyncDisposable
 
     private string Checkouts => Path.Combine(_root, "checkouts");
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **A root, not the old manifest file.** Writing through a path ending in `projects.json`
+    // creates a *directory* of that name and every read of it afterwards is refused — which is
+    // why `ProjectManifest.Write` now refuses it too.
+    private string ManifestPath => _root;
 
     private string Catalogue => Path.Combine(_root, "alpha-node.json");
 

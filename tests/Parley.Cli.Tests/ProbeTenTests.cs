@@ -65,7 +65,10 @@ public sealed class ProbeTenTests : IAsyncDisposable
 
     private string LaunchFile => Path.Combine(Workspace, ".mcp.json");
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **A root, not the old manifest file.** Writing through a path ending in `projects.json`
+    // creates a *directory* of that name and every read of it afterwards is refused — which is
+    // why `ProjectManifest.Write` now refuses it too.
+    private string ManifestPath => _root;
 
     private string CatalogueFor(string project) => Path.Combine(_root, $"{project}-node.json");
 
