@@ -27,8 +27,15 @@ namespace Parley.Client.Tests;
 /// </remarks>
 public sealed class UnnamedMachineTests
 {
+    /// <summary>A root this machine has never created.</summary>
+    /// <remarks>
+    /// **It ended in `projects.json` until 019.** The variable and the flag name a root now, and a value
+    /// whose final segment is the old manifest file name is *refused* — so a fixture spelled the old way
+    /// no longer describes an unconfigured machine, it describes a misconfigured one, and every test
+    /// here failed for a reason that had nothing to do with fallbacks.
+    /// </remarks>
     private static string NoManifestHere =>
-        Path.Combine(Path.GetTempPath(), $"parley-absent-{Guid.NewGuid():N}", "projects.json");
+        Path.Combine(Path.GetTempPath(), $"parley-absent-{Guid.NewGuid():N}");
 
     [Fact]
     public void A_machine_with_no_manifest_offers_the_broker_its_commands_use()
