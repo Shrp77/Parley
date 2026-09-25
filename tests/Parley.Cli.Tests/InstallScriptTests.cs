@@ -575,6 +575,35 @@ public sealed class InstallScriptTests
             + "install then refuses on the process it just killed");
     }
 
+    [Fact]
+    public void The_help_reaches_the_usage_and_not_only_the_preamble()
+    {
+        // **`./install.sh --help` showed not one flag.** It printed lines 2 to 25 — the paragraphs
+        // explaining why the script exists — and the usage list starts at line 27. So the one part
+        // anybody runs `--help` for was the part it stopped immediately before.
+        //
+        // Found by running the script in a Linux container, which is the thing this class says in
+        // its own summary it cannot do. It had been true for as long as the flags have existed.
+        //
+        // The fix reads to the first non-comment line rather than to a number, so a paragraph
+        // added to the header is in the help by construction. This checks that: no line range, and
+        // every flag the parser takes named in the header it prints.
+        var text = RepositoryFile.Read("install.sh");
+
+        // Executable lines only. The comment explaining this fix necessarily quotes the range it
+        // replaced, and a check over the whole file is answered by the sentence describing the
+        // defect — which is the trap this repository records against removal stubs naming the verb
+        // they removed, met again here by the person writing the guard.
+        Assert.DoesNotContain("sed -n '2,25p'", Code(text), StringComparison.Ordinal);
+
+        var header = string.Join('\n', text.Split('\n').TakeWhile(line => line.StartsWith('#') || line.Length == 0));
+
+        foreach (var flag in new[] { "--uninstall", "--surfaces", "--only", "--force", "--hidden" })
+        {
+            Assert.Contains(flag, header, StringComparison.Ordinal);
+        }
+    }
+
     [Theory]
     [MemberData(nameof(BothScripts))]
     public void Each_script_leaves_the_terminal_able_to_take_typing(string script)

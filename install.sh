@@ -96,7 +96,15 @@ while [ $# -gt 0 ]; do
         --surfaces=*) surfaces="${1#--surfaces=}"; shift ;;
         --force) force=1; shift ;;
         --hidden) hidden=1; shift ;;
-        -h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \\?//'; exit 0 ;;
+        # **Every comment line after the shebang, not a line range.** This was `sed -n '2,25p'`,
+        # and the usage list starts at line 27 -- so `--help` printed the explanation and stopped
+        # immediately before the only part anybody asks for, showing not one of --uninstall,
+        # --surfaces, --only, --force or --hidden. Found by running the script in a Linux
+        # container, which is the one thing `InstallScriptTests` says it cannot do.
+        #
+        # Reads to the first non-comment line, so a paragraph added here is in the help by
+        # construction and there is no line number to keep in step.
+        -h|--help) awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
         *)
             echo "Unknown argument: $1" >&2
             echo "Usage: ./install.sh [--surfaces terminal|web-ui|both|none] [--only <command>] [--uninstall] [--force] [--hidden]" >&2
