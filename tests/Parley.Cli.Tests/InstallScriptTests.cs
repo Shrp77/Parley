@@ -412,4 +412,62 @@ public sealed class InstallScriptTests
                 && (line.Contains("Remove-Item", StringComparison.Ordinal)
                     || line.Contains("rm ", StringComparison.Ordinal)));
     }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void Each_script_can_register_an_entry_that_opens_no_window(string script)
+    {
+        // **The scripts register the entry themselves, which is what made this a gap.** A person
+        // installing Parley never types `autostart install`; the script does it for them. So a
+        // script with no way to ask for `--hidden` is a machine that gets a console window at
+        // every logon, and the only remedy is the one command the terminal cannot run -- on a
+        // deployment whose whole direction is that setting up happens on a screen, not in a shell.
+        //
+        // Reported by the owner as exactly that: "I am not going to use the CLI".
+        var code = Code(RepositoryFile.Read(script));
+
+        Assert.Contains("--hidden", code, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void Neither_script_hides_the_window_unless_it_was_asked_to(string script)
+    {
+        // **Opt-in, and the check is that the flag sits behind a condition.** A script that always
+        // passed it would change what every machine already installed does at logon, which is a
+        // decision for the person running it rather than for whoever edited the script -- and the
+        // surprise would be silent, since the symptom is a window that stops appearing.
+        //
+        // Checked as "the flag is never on the line that runs the command". A script that wired it
+        // into the invocation would pass it on every run, and that is the one shape this has to
+        // refuse. A first draft of this test asked instead whether the flag sat on a line
+        // containing `if` or `=`, which every reasonable line does -- it could not have failed.
+        var lines = Executable(RepositoryFile.Read(script));
+
+        var wired = lines
+            .Where(line => line.Contains("autostart install", StringComparison.Ordinal)
+                && line.Contains("--hidden", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.True(
+            wired.Length == 0,
+            $"{script} passes --hidden on the line that registers the entry, so every install "
+            + $"would get it: {string.Join(" | ", wired)}");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void Each_script_declares_the_switch_a_person_passes(string script)
+    {
+        // The other half of the pair above: "not wired into the call" is satisfied perfectly by a
+        // script that cannot pass the flag at all, which is the state this change started from. So
+        // the switch itself is named, in the place each shell declares one.
+        var code = Code(RepositoryFile.Read(script));
+
+        var declared = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? code.Contains("[switch] $Hidden", StringComparison.Ordinal)
+            : code.Contains("--hidden) hidden=1", StringComparison.Ordinal);
+
+        Assert.True(declared, $"{script} names --hidden somewhere but does not take it as an argument");
+    }
 }

@@ -75,11 +75,29 @@
     yet fails in exactly the way the guards exist to prevent -- so anything that survives is
     still fatal, and says so.
 
+.PARAMETER Hidden
+    Registers a logon entry that opens no console window, by passing --hidden to
+    `parley autostart install`.
+
+    The entry runs the broker in your own session, because the node's job is starting agents and
+    an agent is a CLI you have already signed in to -- so a broker outside your session would
+    start agents that cannot log in. Windows gives a console program in a session a console, and
+    the window is the price of being in the right one. --hidden is how it is not paid: the broker
+    lets go of the console and everything it would have said is in the log this script names.
+
+    Opt-in rather than the default, so that a machine installed without it behaves exactly as it
+    did before. Nothing is lost by passing it -- the window shows nothing the log does not hold --
+    but changing what an existing machine does at logon is not this script's decision to make
+    quietly.
+
 .EXAMPLE
     .\install.ps1
 
 .EXAMPLE
     .\install.ps1 -Force
+
+.EXAMPLE
+    .\install.ps1 -Hidden
 
 .EXAMPLE
     .\install.ps1 -Uninstall
@@ -89,6 +107,7 @@
 param(
     [switch] $Uninstall,
     [switch] $Force,
+    [switch] $Hidden,
     [string] $Surfaces,
     [string[]] $Only
 )
@@ -801,9 +820,19 @@ if ($manifest) {
     Write-Host "  serving every project in $manifest"
 }
 
+# **Splatted beside the verb rather than replacing it.** A first version built the whole command
+# as an array -- `@('autostart', 'install')` -- which reads fine and takes the words
+# `autostart install` out of this file, and `InstallScriptTests` looks for exactly that string to
+# check the script sets the broker up rather than printing the command for somebody to copy. The
+# guard is right and the spelling was wrong: the verb stays written where a reader and a test can
+# both see it, and only what varies is a variable.
+$extraArguments = @()
+
+if ($Hidden) { $extraArguments = @('--hidden') }
+
 # What the command says is shown as it is and read for two things: where the broker logs, and where the web UI it
 # starts listens. Read rather than assumed, because both are the command's to decide.
-$registered = @(& $parley autostart install)
+$registered = @(& $parley autostart install @extraArguments)
 $registeredExit = $LASTEXITCODE
 
 $registered | ForEach-Object { Write-Host $_ }

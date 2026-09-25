@@ -45,6 +45,15 @@
 #                                says the node stopping tells every agent it started to quit, and
 #                                the process is what held everything that agent had learned.
 #   ./install.sh --force         end whatever is holding the tools, rather than refusing
+#   ./install.sh --hidden        register a logon entry that opens no console window, by
+#                                passing --hidden to `parley autostart install`. The entry
+#                                runs the broker in your own session -- the node starts
+#                                agents, and an agent is a CLI you have already signed in
+#                                to -- and a console program in a session is given a
+#                                console. This is how that is not paid: the broker lets go
+#                                of it and everything it would have said is in the log
+#                                named below. Opt-in, so a machine installed without it
+#                                behaves at logon exactly as it did before.
 #
 # --force ends a broker somebody started by hand and the parley-mcp adapter of every editor
 # session with Parley configured. Those sessions keep running and lose Parley until the editor
@@ -59,6 +68,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 uninstall=0
 force=0
+hidden=0
 surfaces=""
 only=""
 
@@ -70,10 +80,11 @@ while [ $# -gt 0 ]; do
         --only=*) only="${only:+$only }${1#--only=}"; shift ;;
         --surfaces=*) surfaces="${1#--surfaces=}"; shift ;;
         --force) force=1; shift ;;
+        --hidden) hidden=1; shift ;;
         -h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \\?//'; exit 0 ;;
         *)
             echo "Unknown argument: $1" >&2
-            echo "Usage: ./install.sh [--surfaces terminal|web-ui|both|none] [--only <command>] [--uninstall] [--force]" >&2
+            echo "Usage: ./install.sh [--surfaces terminal|web-ui|both|none] [--only <command>] [--uninstall] [--force] [--hidden]" >&2
             exit 64
             ;;
     esac
@@ -788,9 +799,27 @@ fi
 # The broker binds a loopback port and writes under the invoking user's own home, so it needs no
 # privilege they do not already have, and asking for one would be asking for the tool's benefit.
 #
+# **An array rather than a second call in a branch.** Writing the command twice is two spellings
+# of one thing, and this one carries the arguments every reinstall depends on -- the way for them
+# to drift is for somebody to edit whichever branch they happened to be running.
+#
+# The words `autostart install` stay adjacent and unquoted on purpose: `InstallScriptTests` reads
+# this file for exactly that string, to check the script sets the broker up rather than printing
+# the command for a person to copy. Splitting them into two array elements would keep the script
+# working and quietly stop the guard seeing it.
+#
+# An array holding the whole command rather than only the extra, which is what install.ps1 does,
+# because expanding a possibly-empty array under `set -u` is an unbound variable in bash 3.2 --
+# which is what macOS still ships, and macOS is a platform this script runs on.
+install_arguments=(autostart install)
+
+if [ "$hidden" -eq 1 ]; then
+    install_arguments+=(--hidden)
+fi
+
 # What the command says is shown as it is and read for two things: where the broker logs, and where the web UI it
 # starts listens. Read rather than assumed, because both are the command's to decide.
-if ! registered="$("$parley_command" autostart install)"; then
+if ! registered="$("$parley_command" "${install_arguments[@]}")"; then
     printf '%s\n' "$registered"
     echo "Could not set the broker to start automatically. The tools are installed, so running" >&2
     echo "  parley serve" >&2
