@@ -511,6 +511,56 @@ public sealed class InstallScriptTests
 
     [Theory]
     [MemberData(nameof(BothScripts))]
+    public void Stopping_the_broker_clears_the_web_UI_it_orphaned(string script)
+    {
+        // **The loop the owner was stuck in.** Stopping a scheduled task or a systemd unit
+        // terminates the broker rather than asking it to exit, so it never reaches the code that
+        // ends the child it started. The child keeps running, keeps the port and keeps the binary
+        // busy — and then refuses the very install that stopped the broker. Same pid, twice, in a
+        // refusal naming a process they had never started and could not see.
+        //
+        // The test is that the parent is consulted. Ending every `parley-web-ui` by name would
+        // reach one somebody started themselves, which is the thing this script refuses to do
+        // anywhere else.
+        var code = Code(RepositoryFile.Read(script));
+
+        var byParent = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? code.Contains("ParentProcessId", StringComparison.Ordinal)
+            : code.Contains("ps -o ppid=", StringComparison.Ordinal);
+
+        Assert.True(
+            byParent,
+            $"{script} does not clear the web UI it orphans when it stops the broker, or does not "
+            + "tell an orphan from one somebody started");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void Each_script_leaves_the_terminal_able_to_take_typing(string script)
+    {
+        // **Reported three runs running: every mouse movement printing `[555;47;16M` at the
+        // prompt.** A terminal left in mouse-reporting mode, which belongs to the window rather
+        // than to any process and so outlives whatever set it.
+        //
+        // This script was established not to be what sets it — one of those runs refused before
+        // executing a single Parley binary and produced it anyway — so what it does is clear it.
+        // Disabling a mode that is already off does nothing, which makes this free on a healthy
+        // terminal and a repair on a stuck one, and means a terminal ruined after running this
+        // cannot be this script's doing.
+        var code = Code(RepositoryFile.Read(script));
+
+        foreach (var mode in new[] { 1003, 1015, 1006 })
+        {
+            Assert.Contains($"?{mode}l", code, StringComparison.Ordinal);
+        }
+
+        // The alternate screen is deliberately not among them: switching back to the main screen
+        // would throw away the screen of somebody running this from inside a full-screen program.
+        Assert.DoesNotContain("?1049l", code, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
     public void Each_script_declares_the_switch_a_person_passes(string script)
     {
         // The other half of the pair above: "not wired into the call" is satisfied perfectly by a

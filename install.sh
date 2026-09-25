@@ -64,6 +64,21 @@
 
 set -euo pipefail
 
+# **Leaves the console in a state a person can type in, before doing anything else.** Reported on
+# Windows as every mouse movement printing `[555;47;16M` at the prompt after this script ran: a
+# terminal left in mouse-reporting mode, which belongs to the window rather than to any process
+# and so outlives whatever set it. This script was established not to be what sets it -- a run
+# that refused before executing any Parley binary produced it too -- so this does the one useful
+# thing available, which is to clear it. Disabling a mode that is already off does nothing, so it
+# is free on a healthy terminal and repairs a stuck one.
+#
+# The three mouse modes and bracketed paste. The alternate screen is left alone: switching back to
+# the main screen would throw away what is on the screen of somebody running this from inside a
+# full-screen program, to fix a problem they do not have.
+if [ -t 1 ]; then
+    printf '[?1003l[?1015l[?1006l[?2004l[?25h'
+fi
+
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 uninstall=0
@@ -207,6 +222,21 @@ stop_broker() {
         [ -z "$(holding parley parley-web-ui)" ] && break
         sleep 0.2
         waited=$((waited + 1))
+    done
+
+    # **A web UI whose broker has gone is an orphan, and it is this script that orphaned it.**
+    # Stopping the unit terminates the process rather than asking it to exit, so the broker never
+    # reaches the code that ends the child it started. The child keeps running, keeps the port,
+    # and keeps the binary busy -- which refuses the very install that stopped the broker, every
+    # time. Told apart by its parent rather than by its name, because a web UI somebody started by
+    # hand is still theirs: an orphan's parent is init, which is pid 1.
+    for pid in $(holding parley-web-ui); do
+        parent="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')"
+
+        if [ "$parent" = "1" ]; then
+            echo "    ending the web UI the stopped broker left behind, pid $pid"
+            kill "$pid" 2>/dev/null || true
+        fi
     done
 }
 

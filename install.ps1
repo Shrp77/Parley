@@ -114,6 +114,45 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# **Leaves the console in a state a person can type in, before doing anything else.**
+#
+# The owner reported every mouse movement printing `[555;47;16M` at the prompt after running this
+# script, three runs in a row. It is a terminal left in mouse-reporting mode: something asked the
+# terminal to report movement and never asked it to stop, and the mode belongs to the window
+# rather than to any process, so it outlives whatever set it and ruins every command typed after.
+#
+# **This script is not what sets it, and that was established rather than assumed.** One of those
+# runs refused before executing a single Parley binary -- only `dotnet` had run -- and the garbage
+# appeared anyway; `dotnet` with its terminal logger forced on emits progress and hyperlink
+# sequences and no mouse mode at all. So the window was already in that state when the script
+# started.
+#
+# Which leaves this doing the one useful thing available: clearing it. Sending a disable for a
+# mode that is already off does nothing, so this is free on a healthy window and repairs a stuck
+# one -- and it means that from here on, a terminal ruined after running this script cannot be
+# this script's doing, which is worth more than the sequences cost.
+#
+# Four of the six modes `ConsoleRestore` handles: the three mouse ones and bracketed paste. The
+# alternate screen is left alone on purpose -- `?1049l` switches back to the main screen, and a
+# script that did that to somebody running it from inside a full-screen program would throw away
+# what was on their screen to fix a problem they did not have.
+#
+# Skipped when output is redirected, where these would land in somebody's log file as noise.
+#
+# Written out one mode at a time rather than built in a loop, so that the sequences are greppable:
+# `install.sh` spells them literally too, and the check that both scripts send them can only read
+# what is written. A loop over a list of numbers is tidier and says nothing to anybody searching
+# for `?1003l`.
+if (-not [Console]::IsOutputRedirected) {
+    $e = [char]27
+
+    [Console]::Write("$e[?1003l")
+    [Console]::Write("$e[?1015l")
+    [Console]::Write("$e[?1006l")
+    [Console]::Write("$e[?2004l")
+    [Console]::Write("$e[?25h")
+}
+
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 # Four columns rather than three. `Surface` says which of the two operator surfaces a tool is,
 # and empty means it is not one: the broker and the agent adapter are what Parley is, and every
@@ -245,6 +284,29 @@ function Stop-Broker {
     while ((Get-Process -Name 'parley', 'parley-web-ui' -ErrorAction SilentlyContinue) -and
            (Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 200
+    }
+
+    # **A web UI whose broker has gone is an orphan, and it is this script that orphaned it.**
+    # Stopping a scheduled task terminates the process; it does not ask it to exit, so the broker
+    # never reaches the code that ends the child it started. The child keeps running, keeps the
+    # port, and keeps `parley-web-ui.exe` mapped -- which refuses the very install that stopped
+    # the broker, every time, for ever. The owner hit exactly that loop: the same pid, twice, with
+    # a refusal naming a process they had never started and could not see.
+    #
+    # **Told apart by its parent rather than by its name**, because a web UI somebody started by
+    # hand is still theirs and this must not reach for it. An orphan has a parent id that no
+    # longer resolves; that is the whole test, and it is exact.
+    foreach ($stray in @(Get-CimInstance Win32_Process -Filter "Name = 'parley-web-ui.exe'" -ErrorAction SilentlyContinue)) {
+        if (Get-Process -Id $stray.ParentProcessId -ErrorAction SilentlyContinue) { continue }
+
+        Write-Note "ending the web UI the stopped broker left behind, pid $($stray.ProcessId)"
+
+        try {
+            Stop-Process -Id $stray.ProcessId -Force -ErrorAction Stop
+        }
+        catch {
+            # Reported by the guard that looks again below, which is the one that can refuse.
+        }
     }
 }
 
