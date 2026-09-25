@@ -64,8 +64,10 @@ const string Help = """
       parley autostart install [--web-ui <url>]        start the broker when you log in, with
                                [--no-web-ui]           the web UI. The entry serves every
                                [--node-config <path>]  project on this machine, each with its
-                                                       own node, including one named later.
-                                                       --no-web-ui leaves the web UI out
+                               [--hidden]              own node, including one named later.
+                                                       --no-web-ui leaves the web UI out, and
+                                                       --hidden stops a console window appearing
+                                                       on your desktop at every logon
       parley autostart remove                          stop doing that
       parley autostart status                          say whether it is set up, and what it
                                                        was registered to run
@@ -257,6 +259,10 @@ var hostWebUi = TakeFlag("--with-web-ui");
 var destroy = TakeFlag("--destroy");
 var brokerAddress = TakeOption("--broker", "-b");
 var logPath = TakeOption("--log", null);
+
+// **Let go of the console window a logon entry would otherwise put on somebody's desktop.** Read by
+// `serve`, which detaches, and by `autostart install`, which writes it into the entry it registers.
+var hidden = TakeFlag("--hidden");
 var webUiOn = TakeOption("--web-ui", null);
 var noWebUi = TakeFlag("--no-web-ui");
 var withFiles = TakeFlag("--with-files");
@@ -611,6 +617,21 @@ if (verb == "terminal")
 // acts on exactly one deployment and must refuse rather than pick.
 if (verb == "serve" && rest.Length == 0)
 {
+    // **Refused rather than obeyed, because the two together leave nothing anywhere.** Hiding the
+    // window takes away the only place the broker's output was going; a log is where it goes
+    // instead. Without one, a broker that will not start would say so to a console that has just
+    // been closed — invisible, with no record, on the arrangement whose whole purpose is to run
+    // unattended. The autostart entry always writes a log, so this only catches a hand-run.
+    if (hidden && string.IsNullOrWhiteSpace(logPath))
+    {
+        await Console.Error.WriteLineAsync(
+            "--hidden closes the console this would report to, so it needs somewhere to report "
+            + "instead: pass --log <path>. `parley autostart install` always does.")
+            .ConfigureAwait(false);
+
+        return Usage;
+    }
+
     var serving = new List<ProjectSettings>();
 
     // **There is no store to serve but a project's own.** `--db` and `PARLEY_DB` named one by hand,
@@ -942,6 +963,21 @@ if (verb == "serve" && rest.Length == 0)
 
         var watching = string.IsNullOrWhiteSpace(projectName) && (serving.Count > 0 || awaitingFirstProject);
 
+        // **Last, after every refusal above has had a console to say so on.** Each of those is a
+        // person's mistake answered at the moment they made it — no projects, a name this machine
+        // does not describe, a hidden run with nowhere to report — and detaching before them would
+        // close the one place that answer could appear. From here the broker runs until stopped and
+        // everything it has to say goes to the log.
+        //
+        // The console streams are pointed at nowhere rather than left alone: the standard handles
+        // are invalid once the console has gone, so anything still writing through them is writing
+        // into a broken handle. Redirecting once here means nothing downstream has to know.
+        if (hidden && Windowless.Detach())
+        {
+            Console.SetOut(TextWriter.Null);
+            Console.SetError(TextWriter.Null);
+        }
+
         return ServeCommand.RunAsync(
             serving,
             logPath,
@@ -1039,7 +1075,9 @@ if (verb == "autostart" && rest.Length == 1)
         webUiFor,
         servesManifest ? manifestPath : null,
         Console.Out,
-        Console.Error).ConfigureAwait(false);
+        Console.Error,
+        CancellationToken.None,
+        hidden).ConfigureAwait(false);
 }
 
 // **The project a command acts on comes from its context**, in this order: --project; PARLEY_PROJECT, which `parley use`

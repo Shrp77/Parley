@@ -63,6 +63,14 @@ public sealed record InstalledEntry(
     /// <summary>Whether this entry serves every project rather than one named.</summary>
     public bool ServesManifest => Store is null && Project is null;
 
+    /// <summary>Whether the entry tells the broker to let go of its console window.</summary>
+    /// <remarks>
+    /// Read so that <c>autostart status</c> can say it. An entry installed without it puts a console
+    /// window on somebody's desktop at every logon, and "why does a black window appear when I log
+    /// in" is a question answered by the status line or by nothing.
+    /// </remarks>
+    public bool Hidden { get; init; }
+
     /// <summary>What the entry serves, in words for a status line.</summary>
     public string Serves =>
         ServesManifest
@@ -93,6 +101,7 @@ public sealed record InstalledEntry(
         string? manifest = null;
         string? project = null;
         var removed = new List<string>();
+        var hidden = false;
 
         for (var i = 1; i < parts.Count; i++)
         {
@@ -141,6 +150,11 @@ public sealed record InstalledEntry(
                     i++;
                     break;
 
+                // A flag rather than an option, so nothing is consumed after it.
+                case "--hidden":
+                    hidden = true;
+                    break;
+
                 case "--log":
                     i++;
                     break;
@@ -164,6 +178,7 @@ public sealed record InstalledEntry(
         {
             Removed = removed,
             Project = project,
+            Hidden = hidden,
         };
     }
 

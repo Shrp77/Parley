@@ -88,6 +88,11 @@ public sealed record AutostartPlan(
     /// <param name="consoleOn">
     /// Where the operator's console should listen, or null to install a broker that hosts none.
     /// </param>
+    /// <param name="hidden">
+    /// Whether the broker should let go of its console window. A logon entry starts a console
+    /// program in the person's own session, so without this one appears on their desktop every time
+    /// they log in.
+    /// </param>
     /// <returns>The plan.</returns>
     /// <exception cref="ArgumentException"><paramref name="root"/> is blank.</exception>
     /// <remarks>
@@ -109,7 +114,8 @@ public sealed record AutostartPlan(
         string? project = null,
         string? executable = null,
         string? nodeConfig = null,
-        string? consoleOn = null)
+        string? consoleOn = null,
+        bool hidden = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
 
@@ -164,6 +170,17 @@ public sealed record AutostartPlan(
                 $"{arguments} --with-web-ui --web-ui {Quote(front)}");
         }
 
+        // **Last, so that `autostart status` reads it at the end where a person will see it.** The
+        // entry starts a console program in somebody's own session, which is what puts a window on
+        // their desktop at every logon; this is the broker letting go of it. Written into the
+        // arguments rather than into the task's own settings because Task Scheduler's `Hidden` flag
+        // controls whether the task is listed, not whether a window appears -- and because a systemd
+        // unit and a launchd job read arguments too, while none of them shares that setting.
+        if (hidden)
+        {
+            arguments = string.Create(CultureInfo.InvariantCulture, $"{arguments} --hidden");
+        }
+
         return Compose(executable ?? Environment.ProcessPath ?? "parley", arguments, log);
     }
 
@@ -174,6 +191,10 @@ public sealed record AutostartPlan(
     /// <param name="executable">The broker binary, or null to use the running one.</param>
     /// <param name="consoleOn">
     /// Where the operator's console should listen, or null to install a broker that hosts none.
+    /// </param>
+    /// <param name="hidden">
+    /// Whether the broker should let go of its console window, so that a logon does not put one on
+    /// the person's desktop.
     /// </param>
     /// <returns>The plan.</returns>
     /// <exception cref="ArgumentException"><paramref name="manifestPath"/> is blank.</exception>
@@ -202,7 +223,8 @@ public sealed record AutostartPlan(
     public static AutostartPlan DescribeManifest(
         string manifestPath,
         string? executable = null,
-        string? consoleOn = null)
+        string? consoleOn = null,
+        bool hidden = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(manifestPath);
 
@@ -219,6 +241,17 @@ public sealed record AutostartPlan(
         {
             arguments = string.Create(CultureInfo.InvariantCulture,
                 $"{arguments} --with-web-ui --web-ui {Quote(front)}");
+        }
+
+        // **Last, so that `autostart status` reads it at the end where a person will see it.** The
+        // entry starts a console program in somebody's own session, which is what puts a window on
+        // their desktop at every logon; this is the broker letting go of it. Written into the
+        // arguments rather than into the task's own settings because Task Scheduler's `Hidden` flag
+        // controls whether the task is listed, not whether a window appears -- and because a systemd
+        // unit and a launchd job read arguments too, while none of them shares that setting.
+        if (hidden)
+        {
+            arguments = string.Create(CultureInfo.InvariantCulture, $"{arguments} --hidden");
         }
 
         return Compose(executable ?? Environment.ProcessPath ?? "parley", arguments, log);

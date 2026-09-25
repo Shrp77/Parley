@@ -59,6 +59,11 @@ public static class AutostartCommand
     /// <param name="output">Where to report what happened.</param>
     /// <param name="error">Where to report why it could not.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
+    /// <param name="hidden">
+    /// Whether an installed entry should tell the broker to let go of its console window. A logon
+    /// entry starts a console program in the person's own session, so without this one appears on
+    /// their desktop at every logon.
+    /// </param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     public static async Task<int> RunAsync(
@@ -70,7 +75,8 @@ public static class AutostartCommand
         string? manifestToServe,
         TextWriter output,
         TextWriter error,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool hidden = false)
     {
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(error);
@@ -89,7 +95,7 @@ public static class AutostartCommand
         {
             "install" => await InstallAsync(
                 root, project, nodeConfig, consoleOn, manifestToServe, output, error,
-                cancellationToken)
+                cancellationToken, hidden)
                 .ConfigureAwait(false),
 
             "remove" => await RemoveAsync(output, error, cancellationToken).ConfigureAwait(false),
@@ -118,6 +124,7 @@ public static class AutostartCommand
     /// <param name="output">Where to report.</param>
     /// <param name="error">Where to report a failure.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
+    /// <param name="hidden">Whether the entry should tell the broker to let go of its console window.</param>
     /// <returns>The exit code.</returns>
     private static async Task<int> InstallAsync(
         string root,
@@ -127,7 +134,8 @@ public static class AutostartCommand
         string? manifestToServe,
         TextWriter output,
         TextWriter error,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool hidden)
     {
         // **The store and the endpoint come from a project or from nowhere.** They were also read from
         // `--db` and `PARLEY_DB`, which is why this once fell back to a variable — and a supervisor
@@ -158,8 +166,8 @@ public static class AutostartCommand
         var replacing = manifestToServe is not null ? InstalledEntry.Installed() : null;
 
         var plan = manifestToServe is not null
-            ? AutostartPlan.DescribeManifest(manifestToServe, executable: null, consoleOn)
-            : AutostartPlan.Describe(root, project, executable: null, catalogue, consoleOn);
+            ? AutostartPlan.DescribeManifest(manifestToServe, executable: null, consoleOn, hidden)
+            : AutostartPlan.Describe(root, project, executable: null, catalogue, consoleOn, hidden);
 
         // The directory, not the file. The broker creates the store on first run; what it cannot
         // do is create a directory that a supervisor will try to write a log into before it
@@ -620,6 +628,16 @@ public static class AutostartCommand
                     await output.WriteLineAsync(line).ConfigureAwait(false);
                 }
             }
+
+            // **Said either way, because both states are a question somebody asks.** Without it, "why
+            // does a black window appear when I log in" is answered by this line or by nothing; with
+            // it, somebody wondering where the broker's output went is told it is in the log.
+            await output.WriteLineAsync(
+                entry.Hidden
+                    ? "  window: none. The broker lets go of its console, so everything it says is "
+                      + "in the log above."
+                    : "  window: a console appears at logon. `parley autostart install --hidden` "
+                      + "installs an entry without one.").ConfigureAwait(false);
 
             if (!entry.ServesManifest)
             {
