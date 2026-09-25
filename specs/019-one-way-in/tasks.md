@@ -213,7 +213,7 @@ carrying the old layout is the one this was written on.
   A parameter that sandboxes the files and not the machine is not a sandbox
 - [X] T079 Take the store list from the old manifest rather than guessing, because once it is deleted
   nothing knows where those stores were
-- [ ] T080 **A `reset.sh` counterpart — owed, not forgotten.** Windows only for now, on the owner's call
+- [X] T080 **A `reset.sh` counterpart — owed, not forgotten.** Windows only for now, on the owner's call
   2026-09-23, because that is the machine carrying the old layout. **CI runs on Windows, Linux and macOS
   and `install.sh` covers all three**, so a developer setting Parley up on Linux or macOS today has no way
   to clear a pre-019 layout but by hand. The PowerShell script is the specification for it: stop the

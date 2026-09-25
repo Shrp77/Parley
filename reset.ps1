@@ -27,10 +27,15 @@
         and the record is rebuilt from them anyway.
       * Anything under `projects/`, which is the new layout and is not this script's business.
 
-    **Windows only, and that is a gap rather than a decision about the design.** CI runs on Windows,
-    Linux and macOS and `install.sh` covers all three, so a developer setting Parley up on Linux or
-    macOS has no way to clear a pre-019 layout but by hand. A `reset.sh` is owed — see T080 in
-    `specs/019-one-way-in/tasks.md`; this file is the specification for it.
+    **This file is the specification for `reset.sh`, and said so while that gap was open.** CI runs
+    on Windows, Linux and macOS and `install.sh` covers all three, so a developer setting Parley up
+    on Linux or macOS had no way to clear a pre-019 layout but by hand.
+
+    The counterpart was written on 2026-09-25 (T080) and exercised in a Linux container against
+    built layouts rather than reasoned about: an old manifest naming two stores with their
+    companions, a per-project catalogue outside the root, and three repositories including one
+    whose `.mcp.json` is not JSON. `ResetScriptTests` is what keeps the two in step; behaviour is
+    the same and only the shell differs.
 
 .PARAMETER Root
     Where Parley keeps this machine's files. Defaults to the same location the tools resolve.
