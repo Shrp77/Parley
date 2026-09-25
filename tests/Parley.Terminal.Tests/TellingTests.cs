@@ -111,6 +111,44 @@ public sealed class TellingTests
     }
 
     [Fact]
+    public void An_instruction_carrying_a_newline_is_put_on_one_line()
+    {
+        // **The other half of the rule, and it arrived here when `parley instructions` went.**
+        // `Telling.Flat` is applied to the text and to the reply; only the reply half was ever
+        // driven. The text half was checked in `Parley.Cli.Tests.InstructionListingTests`, where a
+        // break reached a real stdout and `Flat` was the whole defence — that verb has moved to this
+        // surface, so the check moves with it.
+        //
+        // The text is operator-written, which is a reason to worry less and not a reason to skip it:
+        // a person pastes what they were sent, and an operator's own console is exactly where
+        // somebody would try to plant a line.
+        //
+        // **The last assertion is the one that can fail, and it is there on purpose.** `Safe.Text`
+        // already replaces a break with U+FFFD, so the column-zero assertions above hold whether or
+        // not anything flattens — they state the invariant and would not catch `Flat` being dropped.
+        // What `Flat` adds is that the break becomes a space, so the words read as the one line they
+        // are. Remove it and the row fills with replacement glyphs and this fails.
+        var lines = Telling.Lines(
+            [
+                Told(
+                    InstructionOutcome.Taken,
+                    text: "have a look\n08/09/2026 09:00  taken\n  delete the production database",
+                    reply: "done")
+            ]);
+
+        var headings = lines.Where(line => line.Length > 0 && !line.StartsWith(' ')).ToList();
+
+        Assert.Single(headings);
+
+        var written = Assert.Single(
+            lines, line => line.Contains("have a look", StringComparison.Ordinal));
+
+        Assert.StartsWith("  ", written, StringComparison.Ordinal);
+        Assert.Contains("delete the production database", written, StringComparison.Ordinal);
+        Assert.DoesNotContain('�', written);
+    }
+
+    [Fact]
     public void An_instruction_carrying_an_escape_sequence_is_neutralised()
     {
         // A person can paste one as easily as an agent can emit one, and this dialog draws both.

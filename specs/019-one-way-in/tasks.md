@@ -169,16 +169,16 @@ Read these before starting; each has a test that fails the build rather than a c
 
 **Goal**: sixteen verbs become stubs naming the surface that does the thing.
 
-- [ ] T065 [US5] Replace the sixteen verbs in `src/Parley.Cli/Program.cs` with stubs: `retire`, `reinstate`, `purge`, `export`, `force-conclude`, `prune`, `instruct`, `start`, `archive`, `unarchive`, `destroy`, `refusals`, `clarifications`, `results`, `flags`, `instructions`
-- [ ] T066 [US5] Each stub exits **64** (`EX_USAGE`) so a script detects it, and names the surface and how to reach it (FR-051)
-- [ ] T067 [US5] **Write no stub text containing `parley <removed verb>`** — say "That moved to the terminal", never "`parley export` moved" (contracts/commands.md; this breaks `PluginTests` otherwise)
-- [ ] T068 [US5] Remove the sixteen from `plugins/parley/skills/parley-operator/SKILL.md` in the same change, including the listing at L122–178
-- [ ] T069 [US5] Verify `The_agent_facing_command_reaches_for_no_operator_command` still holds for `write-peers.md` and `status.md`
-- [ ] T070 [US5] Run `PluginTests` and confirm the verb sets are equal in both directions **before** moving on — this is the build constraint, not a check to defer
+- [X] T065 [US5] Replace the sixteen verbs in `src/Parley.Cli/Program.cs` with stubs: `retire`, `reinstate`, `purge`, `export`, `force-conclude`, `prune`, `instruct`, `start`, `archive`, `unarchive`, `destroy`, `refusals`, `clarifications`, `results`, `flags`, `instructions` — **done**, and the owner went further than the rule: FR-049 as written reaches about one of the sixteen, since six take no argument and five take an agent name `registry` lists. Cut anyway, on the better ground that the terminal is the only surface where these can sensibly be offered
+- [X] T066 [US5] Each stub exits **64** (`EX_USAGE`) so a script detects it, and names the surface and how to reach it (FR-051) — **done.** Exit 64, and it answers without a broker: the machine somebody types a moved command on is the one with nothing running, so refusing after a failed connection would report the wrong problem
+- [X] T067 [US5] **Write no stub text containing `parley <removed verb>`** — say "That moved to the terminal", never "`parley export` moved" (contracts/commands.md; this breaks `PluginTests` otherwise) — **done, and the trap caught me writing the warning about it.** My own stub comment used "`parley export` moved to the terminal" as the example of what not to write, which put the verb straight back into the set `PluginTests` compares. Three pre-existing comments did the same; all four reworded
+- [X] T068 [US5] Remove the sixteen from `plugins/parley/skills/parley-operator/SKILL.md` in the same change, including the listing at L122–178 — **done**, along with the README listing, four passages of README prose and one line in the plugin's setup command
+- [X] T069 [US5] Verify `The_agent_facing_command_reaches_for_no_operator_command` still holds for `write-peers.md` and `status.md` — **done.** `write-peers.md` and `status.md` name none of the sixteen
+- [X] T070 [US5] Run `PluginTests` and confirm the verb sets are equal in both directions **before** moving on — this is the build constraint, not a check to defer — **done.** Verb sets equal in both directions; Mcp 197 green
 - [ ] T071 [US5] Rewrite `project list` output: endpoint, store and reachability in one place; **two facts never merged into one word** — whether it answered, and whether anything off this machine can address it (FR-022, FR-023, FR-025)
-- [ ] T072 [US5] Put the remedy beside the limitation: a loopback endpoint's report says what to run to make it reachable (FR-024)
+- [X] ~~T072 [US5] Put the remedy beside the limitation: a loopback endpoint's report says what to run to make it reachable (FR-024)~~ — **withdrawn 2026-09-24.** It asks a loopback endpoint's report to say what to run to make it reachable, and there is no such command: reaching a broker from another machine is an authenticated tunnel, because all three gRPC services share one port. `project add` names the tunnel where it prints the address
 - [ ] T073 [US5] Drop the `node …-catalogue.json` line from `project list`, which names what 018 made meaningless
-- [ ] T074 [P] [US5] Test: every removed verb exits 64 and names a surface; and none of their output contains `parley ` followed by the removed verb
+- [X] T074 [P] [US5] Test: every removed verb exits 64 and names a surface; and none of their output contains `parley ` followed by the removed verb — **done** as `MovedToTheTerminalTests`: every moved verb exits 64 naming the terminal, answers without a broker, and never writes `parley` followed by its own name. Plus a guard that `registry`, `open` and `waiting` were not swept up, which FR-050 requires
 - [ ] T075 [P] [US5] Test: `project list` never describes a loopback endpoint with a word that reads as network reachability (FR-023)
 
 ---

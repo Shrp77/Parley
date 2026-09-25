@@ -147,34 +147,14 @@ parley enroll <dir> --all             tick every one found, for scripts with no 
 parley enroll <dir> --describe        say what enrolling them would change, and change nothing
 
 parley registry                       every registered agent, with its workspace
-parley retire <agent>                 withdraw a registration
-parley reinstate <agent>              the only thing that clears a retirement
-parley purge <agent>                  DESTROY an agent and everything it was party to
-parley export <conversation>          every message in a discussion, across agents
-parley force-conclude <conv> [<reason>]  close a conversation now, over its participants' votes
-parley prune                          apply the retention policy now
-parley instruct <agent> <words>       give an agent a person's words as a turn; it may decline
-parley start <agent>                  ask the machine that holds an agent to start it
-parley archive <conversation>         take a conversation off the list; deletes nothing
-parley unarchive <conversation>       put an archived conversation back
-parley destroy <conversation>         DESTROY a conversation and every message in it
 parley files list [--conversation <id>] [--full]  the files agents placed: size, sha256, who placed each
 parley files remove <name>... [--conversation <id>] [--yes]  remove files whoever placed them; describes them and asks
 parley files prune [--yes-remove-every-file]  REMOVE every file; asks for the project's name
 parley files open <name>... [--conversation <id>]  open files in their editor here, or say where they are
 parley files folder [--conversation <id>] open a conversation's folder, or say where it is
-parley refusals                       what the message size cap refused
-parley clarifications                 how deep clarification went, and whether a cap binds
-parley results                        what Results reported: outcomes, and what blocked
-parley flags                          open work nobody collected or nobody is moving, and
-                                      conversations waiting only on somebody's vote
 parley waiting <agent|role>           how many messages and polls await an agent
 parley open                           conversations with an exchange still open, and who is in
                                       them; what stopping the broker would interrupt
-parley instructions [<agent>]         what you told your agents, what became of each, and what
-                                      they said back. A turn can outlast the call that asked for
-                                      it, so "still running" is an ordinary answer and this is
-                                      where the reply turns up afterwards
 parley --help                         the same list, on stdout, exiting zero
 ```
 

@@ -355,7 +355,7 @@ cadences and pruned to two floors with nothing anywhere to say which was in forc
 
 Clarifications are not capped: an exchange can go back and forth for as long as its two sides
 need to converge, because cutting that off before they are finished leaves the work undone.
-`parley clarifications` reports how deep exchanges actually go, which is the evidence a
+The terminal's health view reports how deep exchanges actually go, which is the evidence a
 deployment would set a cap from.
 
 ### 3. Point each agent at the broker
@@ -569,7 +569,7 @@ characters, which is a context-poisoning defence rather than a buffer size: what
 send lands in somebody else's working memory.
 
 The number is a judgement, and it is the only one in the protocol that now leaves a
-record: every refusal for length is counted, so `parley refusals` will tell you how
+record: every refusal for length is counted, and the terminal's health view tells you how
 often agents hit the ceiling and by how much. Change it from that rather than from
 whoever complained most recently. No refused text is kept anywhere — only how long it
 was — because storing what was refused for being too long would retain exactly what the
@@ -591,7 +591,7 @@ With the setup above, `orders` sends one request:
 repository if that is what the answer implies, and sends the Result. Had the ask been unclear —
 which total, or from which release — billing would have sent a Clarify rather than guessing.
 Neither agent read or edited the other's files, and the whole exchange is recorded where an
-operator can read it back with `parley export`.
+operator can read it back from the terminal, which exports a conversation whole.
 
 ### Retention
 
@@ -604,9 +604,10 @@ it has been quiet for `PARLEY_RETENTION_IDLE_HOURS` (three days if unset), and n
 outlives `PARLEY_RETENTION_MAX_AGE_HOURS` (thirty days if unset).
 
 Set those **on the agents' servers**, not only in your own shell — the servers are what
-apply the policy, on every sweep. `parley prune` only brings the next sweep forward. Set
+apply the policy, on every sweep. Pruning from the terminal only brings the next sweep
+forward. Set
 them in one place and not the other and your agents quietly enforce the default while
-`parley prune` reports the numbers you meant.
+the numbers it reports are the ones you meant.
 
 A floor bounds the dial in the other direction, and is not configurable. Tightening
 retention can never delete a message nobody has collected yet, anything on an exchange
@@ -680,15 +681,11 @@ deployment where the two disagree is one where the adapter cannot attach at all.
 ```
 parley registry                     every agent, what it owns, and the workspace a peer
                                     never sees
-parley retire <agent>               withdraw a registration; its server then refuses to start
-parley reinstate <agent>            the only thing that clears a retirement
-parley purge <agent>                delete an agent and every conversation it was party
-                                    to, freeing its name; takes its peers' side of those
-                                    conversations too, and cannot be undone
-parley export <conversation>        every message in a discussion, across agents
-parley force-conclude <conv>        close a discussion over its participants' votes
-parley prune                        apply the retention policy now
-parley refusals                     what the message size cap refused, and how far over
+parley terminal                     everything else: retiring and purging agents,
+                                    exporting, archiving and destroying conversations,
+                                    instructing, pruning, and the health reports. They
+                                    take an identifier you have to have got from
+                                    somewhere, and the terminal is where the lists are
 parley waiting <agent|role>         how many messages and polls await an agent;
                                     --with-files adds the file notices waiting
 parley files list                   every placed file: size, sha256, who placed it, and how

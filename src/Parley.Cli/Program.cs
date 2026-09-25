@@ -93,18 +93,6 @@ const string Help = """
                                                        start them; --describe changes nothing
 
       parley registry                                  every registered agent, with its workspace
-      parley retire <agent>                            withdraw a registration
-      parley reinstate <agent>                         withdraw a retirement
-      parley purge <agent>                             DESTROY an agent and its conversations
-      parley export <conversation>                     emit every message in a discussion
-      parley force-conclude <conv> [<reason>]          close a conversation now; every open request
-                                                       in it is closed and its holders are told why
-      parley prune                                     apply the retention policy now
-      parley instruct <agent> <words>                  give an agent your words as a turn; it may decline
-      parley start <agent>                             ask the machine that holds an agent to start it
-      parley archive <conversation>                    take a conversation off the list; deletes nothing
-      parley unarchive <conversation>                  put an archived conversation back
-      parley destroy <conversation>                    DESTROY a conversation and every message in it
       parley files list [--conversation <id>]          the files agents placed: name, size, sha256,
                         [--full]                       who placed each, totals and placements
       parley files remove <name>... [--conversation <id>]  remove files whoever placed them;
@@ -114,12 +102,6 @@ const string Help = """
                                                        machine, or say which machine holds them
       parley files folder [--conversation <id>]        open a conversation's folder, or the whole
                                                        location, or say which machine holds it
-      parley refusals                                  what the message size cap refused
-      parley clarifications                            the clarify depth distribution, and whether the cap binds
-      parley results                                   what results reported: outcomes, blockers,
-                                                       who was relied on, how conversations ended
-      parley flags                                     open work nobody collected or nobody is
-                                                       moving, and requests that went in a circle
       parley open                                      every conversation with an exchange
                                                        still open, and who is in it. What a
                                                        broker restart would interrupt
@@ -128,8 +110,6 @@ const string Help = """
                                                        await it; a bare role means that role on
                                                        this machine
 
-      parley instructions [<agent>]                    what you told your agents, what became of
-                                                       each, and what they said back
 
       parley --version                                 this build, and the protocol it speaks
 
@@ -307,8 +287,8 @@ if (Repeated() is { } repeated)
 }
 
 // Anything left starting with a hyphen is an option this does not have, and refusing it is the
-// point rather than tidiness: without this, `parley export --broker` reaches the export with
-// "--broker" as the conversation identifier and runs a real query against it. A flag in the
+// point rather than tidiness: without this, a verb taking an identifier reaches it with
+// "--broker" as that identifier and runs a real query against it. A flag in the
 // wrong place silently becoming data is the worst reading of a mistyped command, because it
 // succeeds.
 //
@@ -346,11 +326,41 @@ if (stray is not null)
     return Usage;
 }
 
-// Before anything else, because `parley` on its own is somebody asking what this does, and
-// answering "no broker" tells them nothing they can act on — least of all that there is a list
-// of commands to see. Found by installing it and typing the name.
+// **`parley` on its own opens the terminal**, the owner's call on 2026-09-24 and the other half of
+// the sixteen operator operations moving there: if that is where a deployment is read and changed,
+// then typing the tool's name should put somebody in it. `htop` and `top` behave the same way, and
+// `parley --help` still answers the other question.
+//
+// **Only at a real terminal.** A redirected stream means a pipe, a script, or CI — `parley | grep`,
+// or something probing whether the tool exists — and launching a full-screen application into one
+// would hang a pipeline on a surface nobody can see. The same test `ConsolePicker.Available` makes,
+// for the same reason; the terminal separately refuses a redirected terminal, so this is the outer
+// of two guards rather than the only one.
+//
+// **And the help is still the answer when the terminal is not there.** `parley-terminal` is a
+// separate tool, installed separately so that changing it does not stop the broker — so a machine
+// can have this one and not that one. Somebody typing the name on such a machine is asking what
+// this does, and an install instruction with no command list beside it answers a question they did
+// not ask. Found by installing it and typing the name, which is also how the original version of
+// this branch was found.
 if (arguments.Count == 0)
 {
+    if (!Console.IsInputRedirected && !Console.IsOutputRedirected)
+    {
+        // **Named "The terminal" rather than by the command somebody typed**, which would be the
+        // bare word this tool is called — and `KeyRuleTests` allows that literal in three files, none
+        // of them this one. The rule is right: `"parley"` is a launch key, and a fourth meaning for
+        // it should be a decision somebody makes in that list rather than a spelling that drifts in
+        // here. The sentence reads better this way in any case.
+        var opened = await Forwarding.RunAsync(
+            "parley-terminal", "Parley.Terminal", "The terminal", [], Console.Error).ConfigureAwait(false);
+
+        if (opened != Unavailable)
+        {
+            return opened;
+        }
+    }
+
     await Console.Error.WriteLineAsync(Help).ConfigureAwait(false);
     return Usage;
 }
@@ -358,10 +368,23 @@ if (arguments.Count == 0)
 var verb = arguments[0];
 var rest = arguments.Skip(1).ToArray();
 
+// **The sixteen operator operations that are the terminal's now** (FR-049). Held as data rather than
+// as sixteen case arms so that the refusal, the help and the test that holds them read one list --
+// three copies of a set like this agree until one of them is edited.
+//
+// `registry` and `open` are deliberately not here: the installers invoke both, and FR-050 requires
+// every command this repository's own scripts and plugin call to go on answering.
+string[] Moved =
+[
+    "retire", "reinstate", "purge", "export", "force-conclude", "prune", "instruct", "start",
+    "archive", "unarchive", "destroy", "refusals", "clarifications", "results", "flags",
+    "instructions",
+];
+
 // Options are taken centrally, above the verb, because a flag consumed by the command it belongs
 // to never arrives -- `--all` did not reach `enroll` until it was taken here. The cost is that
-// the refusal below, which catches `parley export --broker` before "--broker" becomes a
-// conversation id, cannot see a flag that was legitimately taken for somebody else: every verb
+// the refusal below, which catches a stray `--broker` before it becomes an identifier,
+// cannot see a flag that was legitimately taken for somebody else: every verb
 // accepts every option and silently ignores the ones it has no use for.
 //
 // That is tolerable for a flag whose absence is visible and intolerable for this one. `parley up
@@ -458,6 +481,34 @@ if (destroy && verb != "project")
         "--destroy is only for `parley project remove`, which is the one command that deletes a "
         + $"project's store. `parley {verb}` does not.").ConfigureAwait(false);
 
+    return Usage;
+}
+
+// **The operator operations left the command line, and this is where they are answered** (FR-049 to
+// FR-051). Sixteen verbs that read or change a deployment -- retiring and purging agents, exporting,
+// archiving and destroying conversations, instructing, pruning, and the five health reports -- are
+// the terminal's now. The owner's call on 2026-09-24: it is the only surface where the control
+// surfaces can sensibly be offered, and a set of them split across three places is three places to
+// keep in step.
+//
+// **Before any endpoint is resolved and any channel is opened.** A command that has moved must say
+// so on a machine with no broker running, which is exactly the machine somebody is most likely to be
+// typing it on; refusing after a failed connection would report the wrong problem.
+//
+// **The sentence never writes `parley` followed by a removed verb.** `PluginTests` extracts every
+// `parley <word>` from the whole of this file -- comments and strings included -- and demands set
+// equality with the operator skill's list, so a stub naming a removed verb after the word `parley`
+// would put it back and fail the build. This comment is written carefully for that reason.
+if (Moved.Contains(verb, StringComparer.Ordinal))
+{
+    await Console.Error.WriteLineAsync(
+        $"'{verb}' is not a command here any more. Reading and changing a deployment happens in the "
+        + "terminal, which has the lists these used to take an identifier for:"
+        + $"{Environment.NewLine}{Environment.NewLine}    parley terminal{Environment.NewLine}"
+        + $"{Environment.NewLine}A machine with no terminal reaches the web UI over an SSH tunnel; "
+        + "the README has the recipe.").ConfigureAwait(false);
+
+    // EX_USAGE, so a script detects it rather than reading an empty success (FR-051).
     return Usage;
 }
 
@@ -1120,36 +1171,6 @@ try
         case "registry" when rest.Length == 0:
             return await commands.RegistryAsync(CancellationToken.None).ConfigureAwait(false);
 
-        case "retire" when rest.Length == 1:
-            return await WithAgent(rest[0], a => commands.RetireAsync(a, CancellationToken.None))
-                .ConfigureAwait(false);
-
-        case "reinstate" when rest.Length == 1:
-            return await WithAgent(rest[0], a => commands.ReinstateAsync(a, CancellationToken.None))
-                .ConfigureAwait(false);
-
-        case "purge" when rest.Length == 1:
-            return await WithAgent(rest[0], a => commands.PurgeAsync(a, CancellationToken.None))
-                .ConfigureAwait(false);
-
-        case "export" when rest.Length == 1:
-            return await WithConversation(
-                rest[0], id => commands.ExportAsync(id, CancellationToken.None))
-                .ConfigureAwait(false);
-
-        // Everything after the conversation is the reason, so it can be typed without quoting.
-        case "force-conclude" when rest.Length >= 1:
-            return await WithConversation(
-                rest[0],
-                id => commands.ForceConcludeAsync(
-                    id, rest.Length == 1 ? null : string.Join(' ', rest[1..]), CancellationToken.None))
-                .ConfigureAwait(false);
-
-        case "prune" when rest.Length == 0:
-            return await commands.PruneAsync(CancellationToken.None).ConfigureAwait(false);
-
-        // The file location (SPEC.md §9.5). Its own command, because five subcommands with confirmations and a
-        // launcher are more than a case each.
         case "files":
             return await new FilesCommand(
                     new BrokerClient(new Wire.Operators.OperatorsClient(channel)),
@@ -1161,49 +1182,6 @@ try
                 .RunAsync(rest, CancellationToken.None)
                 .ConfigureAwait(false);
 
-        // Everything after the agent is the instruction, so it can be typed without quoting.
-        case "instruct" when rest.Length >= 2:
-            return await WithAgent(
-                rest[0], a => commands.InstructAsync(a, string.Join(' ', rest[1..]), CancellationToken.None))
-                .ConfigureAwait(false);
-
-        case "start" when rest.Length == 1:
-            return await WithAgent(rest[0], a => commands.StartAgentAsync(a, CancellationToken.None))
-                .ConfigureAwait(false);
-
-        case "archive" when rest.Length == 1:
-            return await WithConversation(rest[0], id => commands.ArchiveAsync(id, CancellationToken.None))
-                .ConfigureAwait(false);
-
-        case "unarchive" when rest.Length == 1:
-            return await WithConversation(rest[0], id => commands.UnarchiveAsync(id, CancellationToken.None))
-                .ConfigureAwait(false);
-
-        case "destroy" when rest.Length == 1:
-            return await WithConversation(rest[0], id => commands.DestroyAsync(id, CancellationToken.None))
-                .ConfigureAwait(false);
-
-        case "refusals" when rest.Length == 0:
-            return await commands.RefusalsAsync(CancellationToken.None).ConfigureAwait(false);
-
-        case "clarifications" when rest.Length == 0:
-            return await commands.ClarificationsAsync(CancellationToken.None).ConfigureAwait(false);
-
-        case "results" when rest.Length == 0:
-            return await commands.ResultsAsync(CancellationToken.None).ConfigureAwait(false);
-
-        case "flags" when rest.Length == 0:
-            return await commands.FlagsAsync(CancellationToken.None).ConfigureAwait(false);
-
-        // Not an operator operation, and it is here because a caller that is not an agent needs
-        // it: an editor hook that wants to say "two answers are waiting" before a turn used to
-        // read the database, and cannot now. It discloses only counts, for one named agent, and
-        // §16 already says the wire cannot tell who is asking — so this adds no disclosure that
-        // was not already available to anything that could reach the broker.
-        // `--with-files` adds the change notices waiting as a third count (SPEC.md §9.5). Asked for rather than always
-        // printed, because a waiting hook installed before files existed splits this line on its first space and would
-        // read "0 1" as a number: it fails silently, which for that hook means never speaking again. Taken with the other
-        // flags above, because anything still starting with a hyphen here was refused before the verb ran.
         case "waiting" when rest.Length == 1:
             return await WithAgentHere(
                 rest[0],
@@ -1251,74 +1229,6 @@ try
                     CultureInfo.InvariantCulture,
                     $"{conversation.Id} {string.Join(",", conversation.Participants.Select(p => p.Value))}"))
                     .ConfigureAwait(false);
-            }
-
-            return 0;
-        }
-
-        // What an operator told their agents, and what each said back.
-        //
-        // **The reply was recorded and unreadable until this existed.** SPEC.md §10.2 says an
-        // agent's reply "is kept beside the instruction rather than in the message log" — true, and
-        // reachable only through the return value of the call that issued it, which blocks for the
-        // whole turn. Anything that interrupted that call lost the answer for ever while the broker
-        // still held it.
-        //
-        // **Unlike `parley open`, this prints the words**, and the difference is whose they are.
-        // That command lists conversations *between agents* and deliberately prints not one word of
-        // any payload, because an operator reading peer traffic out of a listing is the disclosure
-        // §10.1 withholds. An instruction is the operator's own words to their own agent, and the
-        // reply is that agent answering the operator directly. There is nobody to withhold it from.
-        case "instructions":
-        {
-            AgentName? only = null;
-
-            if (rest.Length > 0 && !rest[0].StartsWith('-'))
-            {
-                if (!AgentName.TryCreate(rest[0], out var named))
-                {
-                    await Console.Error.WriteLineAsync(
-                        $"'{rest[0]}' is not an agent name. Names are role@machine (SPEC.md §4.1.1).")
-                        .ConfigureAwait(false);
-
-                    return Usage;
-                }
-
-                only = named;
-            }
-
-            var page = await new BrokerClient(new Wire.Operators.OperatorsClient(channel))
-                .InstructionsAsync(only, cancellationToken: CancellationToken.None)
-                .ConfigureAwait(false);
-
-            foreach (var instruction in page.Instructions)
-            {
-                // The outcome first, because it is the thing somebody ran this to find out, and a
-                // running turn is said in words rather than left to be inferred from a blank reply.
-                var became = instruction.StillRunning
-                    ? "still running"
-                    : instruction.Outcome.ToString().ToLowerInvariant();
-
-                // **Flattened, like the reply below it.** The text is the operator's own words, which
-                // is a reason to worry less and not a reason to skip it: a person pastes what they
-                // were sent, this output is read by scripts, and a newline followed by something
-                // shaped like the line above would present an instruction nobody gave. The terminal
-                // has flattened both since it was written; this had flattened one, which is worse
-                // than either rule applied consistently.
-                await Console.Out.WriteLineAsync(string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"{instruction.Id} {instruction.Agent.Value} [{became}] "
-                    + $"{instruction.Text.ReplaceLineEndings(" ")}"))
-                    .ConfigureAwait(false);
-
-                if (instruction.Reply is { Length: > 0 } said)
-                {
-                    // Indented, so what the agent said cannot be mistaken for another instruction.
-                    // The transcript reaches the same arrangement from the same reasoning: a line
-                    // at column zero is this tool speaking, and nothing else sits there.
-                    await Console.Out.WriteLineAsync("    " + said.ReplaceLineEndings(" "))
-                        .ConfigureAwait(false);
-                }
             }
 
             return 0;
@@ -1414,29 +1324,6 @@ async Task<int> UntilInterrupted(Func<CancellationToken, Task<int>> run)
     {
         Console.CancelKeyPress -= Stop;
     }
-}
-
-// `parley export ""` used to reach the repository, hit an ArgumentException on the way in, and
-// print a .NET stack trace with exit code 127. That is the operator's own input coming back at
-// them as a crash — the same shape as the agent-input defects §7.3 exists to prevent, on the
-// side of the boundary where nobody was looking. Found by typing it.
-//
-// Blank only. The schema constrains the character set of a conversation identifier and refuses
-// to store one outside it, so an identifier this rejected but storage would have accepted is a
-// refusal the operator cannot act on — and an identifier storage would have rejected can only
-// ever match nothing, which "no messages in '...'" already says clearly.
-async Task<int> WithConversation(string conversationId, Func<string, Task<int>> run)
-{
-    if (string.IsNullOrWhiteSpace(conversationId))
-    {
-        await Console.Error.WriteLineAsync(
-            "A conversation identifier is required, and blank is not one. `parley open` lists the " +
-            "conversations with work in them, and `parley export <id>` reads one back.").ConfigureAwait(false);
-
-        return Usage;
-    }
-
-    return await run(conversationId).ConfigureAwait(false);
 }
 
 async Task<int> WithAgent(string name, Func<AgentName, Task<int>> run)

@@ -1,9 +1,12 @@
 using Parley.Configuration;
-﻿using Microsoft.Data.Sqlite;
+﻿using Grpc.Net.Client;
+using Microsoft.Data.Sqlite;
 using Parley.Broker;
+using Parley.Client;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
+using Wire = Parley.Transport;
 
 namespace Parley.Cli.Tests;
 
@@ -212,6 +215,32 @@ public sealed class PruneCommandTests : IAsyncDisposable
         return path;
     }
 
+    /// <summary>Asks a broker in another process, as a client of it rather than through the tool.</summary>
+    /// <typeparam name="T">What the operation answers with.</typeparam>
+    /// <param name="broker">The running broker.</param>
+    /// <param name="ask">The operation.</param>
+    /// <returns>Its answer.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>These checks were driven through <c>parley prune</c> and their subject was never the
+    /// command.</b> What they pin is the broker's own retention arithmetic — which floor it holds
+    /// to, and which numbers it read when it started — and the tool was only the thing that asked.
+    /// The verb moved to <c>parley terminal</c>, so the question is asked the way every other
+    /// surface asks it: over the wire, as an operator client.
+    /// </para>
+    /// <para>
+    /// A channel per call rather than one per class. The tests here start and stop brokers inside a
+    /// single method, and a channel outliving the broker it was opened against is a teardown that
+    /// waits rather than a test that fails.
+    /// </para>
+    /// </remarks>
+    private static async Task<T> AskAsync<T>(BrokerProcess broker, Func<BrokerClient, Task<T>> ask)
+    {
+        using var channel = GrpcChannel.ForAddress(broker.Address);
+
+        return await ask(new BrokerClient(new Wire.Operators.OperatorsClient(channel)));
+    }
+
     private async Task<long> MessageCount(string path)
     {
         using var connection = new SqliteConnection($"Data Source={path}");
@@ -261,40 +290,42 @@ public sealed class PruneCommandTests : IAsyncDisposable
         Assert.Equal(1, await MessageCount(path));
     }
 
-    [Theory]
-    [InlineData("export")]
-    [InlineData("force-conclude")]
-    public async Task A_blank_conversation_identifier_is_refused_rather_than_thrown(string verb)
-    {
-        // `parley export ""` used to reach the repository, hit an ArgumentException on the way
-        // in, and print a .NET stack trace with exit code 127 — the operator's own input coming
-        // back at them as a crash. Found by typing it, on the side of the trust boundary where
-        // nobody was looking.
-        var path = await ProjectDatabase();
+    // **`A_blank_conversation_identifier_is_refused_rather_than_thrown` was here, its subject has
+    // gone, and what it was guarding is now unguarded. Read this before deleting the paragraph.**
+    //
+    // It ran `parley export ""` and `parley force-conclude ""` and asserted 64 with "identifier is
+    // required". The defect it was written for: a blank reached the repository, hit an
+    // ArgumentException on the way in, and printed a .NET stack trace with exit code 127 — the
+    // operator's own input coming back at them as a crash. Found by typing it, on the side of the
+    // trust boundary where nobody was looking.
+    //
+    // **Both verbs moved to `parley terminal`, and the refusal they carried was the only one.**
+    // Re-pointing this at the broker was tried first and the probe failed, which is the finding
+    // rather than the obstacle: `OperatorsService.Export` and `OperatorsService.ForceConclude` pass
+    // `request.ConversationId` straight to `OperatorConsole`, so a blank still throws and comes back
+    // over the wire as
+    //
+    //     Unknown: Exception was thrown by handler.
+    //
+    // — the same crash, one process along, where it is now a broker falling over rather than a
+    // shell printing a trace. The store is untouched and the broker goes on serving, so it is not
+    // fatal; it is the operator's own input answered with an internal error.
+    //
+    // **Nothing is asserted here because asserting `Unknown` would record the defect as the rule.**
+    // The fix belongs in `src` — `Name` a few lines below those handlers is the shape it should
+    // take, an `RpcException` with `InvalidArgument` — and the probe belongs in
+    // `Parley.Server.Tests` beside `ExportShapeTests`, which already tells three answers of this
+    // surface apart and does not ask this one.
 
-        using var broker = BrokerProcess.Start(_directory);
-
-        var (exitCode, error) = ToolProcess.Run("--broker", broker.Address, verb, "");
-
-        Assert.Equal(64, exitCode);
-        Assert.DoesNotContain("Unhandled exception", error, StringComparison.Ordinal);
-        Assert.Contains("identifier is required", error, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Prune_takes_no_operand()
-    {
-        // `parley prune pricing` reads as "prune this conversation", and there is no such
-        // operation — §9.4 has no per-conversation exemption in either direction. Refusing is
-        // better than the alternatives, both of which are wrong in a way that looks like success.
-        var path = await ProjectDatabase();
-
-        using var broker = BrokerProcess.Start(_directory);
-
-        var (exitCode, _) = ToolProcess.Run("--broker", broker.Address, "prune", "pricing");
-
-        Assert.Equal(64, exitCode);
-    }
+    // **`Prune_takes_no_operand` was here and its subject has gone.** It asserted that
+    // `parley prune pricing` exits 64, because "prune this conversation" reads like an operation
+    // and §9.4 has no per-conversation exemption in either direction. `prune` is not a command on
+    // this tool any more, so the exit code it now returns is the one every moved verb returns and
+    // the check passed while measuring nothing -- `MovedToTheTerminalTests` is what asserts that
+    // refusal, once, for all sixteen.
+    //
+    // Recorded rather than deleted silently: the rule it stood for is real, and the surface that
+    // offers pruning now is the terminal, where there is no operand to give it.
 
     /// <summary>
     /// Builds a real Parley database holding one discussion that finished four hours ago.
@@ -343,17 +374,22 @@ public sealed class PruneCommandTests : IAsyncDisposable
     [Fact]
     public async Task The_configured_policy_is_the_one_the_process_applies()
     {
-        // End to end through two real binaries, and the same file twice. The variables belong
-        // to the broker now, so the way to see that they are read at all is to start two brokers
-        // over one store with different settings and watch them reach different answers — which
-        // is also the demonstration that the operator's shell no longer decides anything.
+        // Against a real broker, and the same file twice. The variables belong to the broker now,
+        // so the way to see that they are read at all is to start two brokers over one store with
+        // different settings and watch them reach different answers — which is also the
+        // demonstration that the operator's shell no longer decides anything.
+        //
+        // **This drove two binaries until `prune` left the command line.** It still starts the
+        // process whose settings are the subject; what changed is that the asking is done by a
+        // client in this process rather than by a second tool, which is what every surface that
+        // can still prune does.
         var path = await RecentlySettledDatabase();
 
         using (var relaxed = BrokerProcess.Start(_directory))
         {
-            var (unconfigured, _) = ToolProcess.Run("--broker", relaxed.Address, "prune");
+            var unconfigured = await AskAsync(relaxed, client => client.PruneAsync(Ct));
 
-            Assert.Equal(0, unconfigured);
+            Assert.Equal(0, unconfigured.Removed);
             Assert.Equal(2, await MessageCount(path));
         }
 
@@ -362,10 +398,9 @@ public sealed class PruneCommandTests : IAsyncDisposable
             (RetentionPolicyEnvironment.IdleVariable, "1"),
             (RetentionPolicyEnvironment.MaximumAgeVariable, "1")))
         {
-            var (configured, error) = ToolProcess.Run("--broker", strict.Address, "prune");
+            var configured = await AskAsync(strict, client => client.PruneAsync(Ct));
 
-            Assert.Equal(0, configured);
-            Assert.Equal("", error);
+            Assert.Equal(2, configured.Removed);
             Assert.Equal(0, await MessageCount(path));
         }
     }
@@ -383,9 +418,9 @@ public sealed class PruneCommandTests : IAsyncDisposable
             (RetentionPolicyEnvironment.IdleVariable, "1"),
             (RetentionPolicyEnvironment.MaximumAgeVariable, "1"));
 
-        var (exitCode, _) = ToolProcess.Run("--broker", broker.Address, "prune");
+        var pruned = await AskAsync(broker, client => client.PruneAsync(Ct));
 
-        Assert.Equal(0, exitCode);
+        Assert.Equal(0, pruned.Removed);
         Assert.Equal(1, await MessageCount(path));
     }
 }

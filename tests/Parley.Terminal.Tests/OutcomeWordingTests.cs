@@ -10,8 +10,9 @@ namespace Parley.Terminal.Tests;
 /// <b>Found by the review gate as a low finding, and this is the answer to it.</b> Two of the five
 /// outcomes need words rather than an enum name: *pending*, which must never read as a failure, and
 /// *declined*, which §10.2 requires told apart from one. Each surface carries its own literal —
-/// the command line, the terminal's dialog, and three places in the console — and they agree
-/// today. Four copies of a phrase agree until one of them is reworded.
+/// the terminal's dialog and three places in the console — and they agree today. Four copies of a
+/// phrase agree until one of them is reworded. The command line was a fifth until
+/// <c>parley instructions</c> moved to the terminal; it renders no outcome now.
 /// </para>
 /// <para>
 /// <b>The alternative was a shared constant and it was not taken.</b> It is the better shape and it
@@ -56,7 +57,11 @@ public sealed class OutcomeWordingTests
     /// <returns>The sources.</returns>
     private static IEnumerable<(string Where, string Text)> Surfaces()
     {
-        yield return ("the command line", Read("src", "Parley.Cli", "Program.cs"));
+        // **`src/Parley.Cli/Program.cs` was the first entry here and is not a surface any more.**
+        // `parley instructions` rendered an outcome for a person, and it moved to `parley terminal`
+        // with the other fifteen operator verbs — the tool keeps what brings a machine up and what a
+        // program calls, and neither puts an outcome into words. Left in the list it failed this
+        // check by absence, which would have read as drift rather than as a verb that has gone.
         yield return ("the terminal", Read("src", "Parley.Terminal", "Telling.cs"));
         yield return ("the agent's page", Read("src", "Parley.Web", "Pages", "Projects", "Agent.cshtml"));
         yield return ("the console's act page", Read("src", "Parley.Web", "Pages", "Projects", "Act.cshtml.cs"));

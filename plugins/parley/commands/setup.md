@@ -181,7 +181,7 @@ Substitute the real values. Four notes on the shape:
 - The clarify cap is **not** here. It used to be, set per repository, which meant one
   deployment could admit forty clarifications on one exchange and three on another with nothing
   to say why. It belongs to the broker now, and it is still the measurement SPEC.md 17 question
-  4 asks for rather than a considered limit - `parley clarifications` is what says where depth
+  4 asks for rather than a considered limit - the terminal's health view is what says where depth
   actually settles.
 - `PARLEY_AGENT` and `PARLEY_OWNS` are written plainly, with no fallback. Both are the same on
   every machine, because they name what this repository is rather than where it lives. Omit

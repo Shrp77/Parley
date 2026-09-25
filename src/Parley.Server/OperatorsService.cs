@@ -39,6 +39,40 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         _runtime = runtime;
     }
 
+    /// <summary>Refuses a conversation identifier that is blank, before anything opens the store.</summary>
+    /// <param name="conversationId">What the caller sent.</param>
+    /// <returns>The identifier, when there is one.</returns>
+    /// <exception cref="RpcException">It is blank.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>This guard was in the command line and is here because the command line stopped having
+    /// it.</b> `parley export ""` once reached the repository, threw on the way in, and printed a
+    /// stack trace with exit 127 — the operator's own input coming back at them as a crash. It was
+    /// fixed there, in a `WithConversation` helper, and 019 removed the sixteen operator verbs the
+    /// helper served. The defect came straight back one process along, where it is worse: a broker
+    /// answering `Unknown: Exception was thrown by handler`, which says nothing an operator can act
+    /// on and reads like a fault in the deployment.
+    /// </para>
+    /// <para>
+    /// <b>Found by a probe rather than by reading</b>, while re-pointing the test that used to hold
+    /// the old guard: it was rewritten to ask the broker directly and failed against real behaviour.
+    /// That is the argument for putting it here rather than back on a caller — a rule enforced by
+    /// whichever client happens to have it is a rule that leaves with that client.
+    /// </para>
+    /// <para>
+    /// Blank only, deliberately. The schema constrains the character set and refuses to store an
+    /// identifier outside it, so one this rejected but storage would have accepted is a refusal the
+    /// operator cannot act on; and one storage would have rejected can only ever match nothing,
+    /// which the "no messages in '...'" answer already says clearly.
+    /// </para>
+    /// </remarks>
+    private static string Identified(string conversationId) =>
+        string.IsNullOrWhiteSpace(conversationId)
+            ? throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                "A conversation identifier is required, and blank is not one."))
+            : conversationId;
+
     /// <inheritdoc/>
     /// <remarks>
     /// Participants still attached are nudged afterwards, so a receiver working in a live session learns the
@@ -54,13 +88,13 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason;
 
         var changed = await Console(
-            (console, now, ct) => console.ForceConcludeAsync(request.ConversationId, reason, now, ct),
+            (console, now, ct) => console.ForceConcludeAsync(Identified(request.ConversationId), reason, now, ct),
             context).ConfigureAwait(false);
 
         if (changed)
         {
             var exported = await Console(
-                (console, _, ct) => console.ExportAsync(request.ConversationId, ct), context).ConfigureAwait(false);
+                (console, _, ct) => console.ExportAsync(Identified(request.ConversationId), ct), context).ConfigureAwait(false);
 
             foreach (var told in exported.Messages
                          .Where(m => m.ResponderModel == Responder.Broker)
@@ -81,7 +115,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(context);
 
         var changed = await Console(
-            (console, now, ct) => console.SetConversationArchivedAsync(request.ConversationId, archived: true, now, ct),
+            (console, now, ct) => console.SetConversationArchivedAsync(Identified(request.ConversationId), archived: true, now, ct),
             context).ConfigureAwait(false);
 
         return new Wire.DidItReply { Changed = changed };
@@ -94,7 +128,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(context);
 
         var changed = await Console(
-            (console, now, ct) => console.SetConversationArchivedAsync(request.ConversationId, archived: false, now, ct),
+            (console, now, ct) => console.SetConversationArchivedAsync(Identified(request.ConversationId), archived: false, now, ct),
             context).ConfigureAwait(false);
 
         return new Wire.DidItReply { Changed = changed };
@@ -106,21 +140,25 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
+        // **Asked before anything is held**, unlike its siblings, which can ask inside the work
+        // because the work is all they do. This one takes a hold over every file in the deployment
+        // first, so a blank identifier reaching the guard further down would stop every download in
+        // progress on its way to being refused.
+        var conversationId = Identified(request.ConversationId);
+
         // Its files go with it (SPEC.md §14), once every download in progress has finished: the rows first, in the
         // destroy's own transaction, then the folder on disk — and only when the rows really went.
         var files = new FileWork(_runtime);
 
         using var held = await files.HoldEverythingAsync(context.CancellationToken).ConfigureAwait(false);
 
-        var folder = string.IsNullOrEmpty(request.ConversationId)
-            ? null
-            : await _runtime.UseConnectionAsync(
-                (connection, _, ct) => new Parley.Store.SharedFileRepository(connection)
-                    .GetFolderAsync(request.ConversationId, cancellationToken: ct),
-                context.CancellationToken).ConfigureAwait(false);
+        var folder = await _runtime.UseConnectionAsync(
+            (connection, _, ct) => new Parley.Store.SharedFileRepository(connection)
+                .GetFolderAsync(conversationId, cancellationToken: ct),
+            context.CancellationToken).ConfigureAwait(false);
 
         var outcome = await Console(
-            (console, now, ct) => console.DestroyConversationAsync(request.ConversationId, now, ct),
+            (console, now, ct) => console.DestroyConversationAsync(conversationId, now, ct),
             context).ConfigureAwait(false);
 
         await DeleteFoldersWhoseRowsWentAsync(files, folder is null ? [] : [folder], context).ConfigureAwait(false);
@@ -362,7 +400,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var exported = await Console((console, _, ct) => console.ExportAsync(request.ConversationId, ct), context)
+        var exported = await Console((console, _, ct) => console.ExportAsync(Identified(request.ConversationId), ct), context)
             .ConfigureAwait(false);
 
         var reply = new Wire.ExportReply();
