@@ -63,7 +63,15 @@ internal static class PortLedger
     internal const string FileName = "ports.json";
 
     /// <summary>The lowest port handed out.</summary>
-    internal const int BandFirst = 19100;
+    /// <remarks>
+    /// <b>The same number as <see cref="BrokerEndpoint.DefaultPort"/>, and read from it rather than
+    /// repeated.</b> The first project a machine names is handed this port, so "where a broker is
+    /// when nothing says otherwise" and "where this machine's broker is" are one address on the
+    /// ordinary machine — which is only true while the two numbers agree, and two constants agree
+    /// until one of them is edited. 019 shipped with them disagreeing: the band moved here and the
+    /// default was left pointing into the ephemeral range the band exists to avoid.
+    /// </remarks>
+    internal const int BandFirst = BrokerEndpoint.DefaultPort;
 
     /// <summary>The highest port handed out.</summary>
     /// <remarks>

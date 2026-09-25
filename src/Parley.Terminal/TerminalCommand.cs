@@ -148,9 +148,39 @@ public static class TerminalCommand
 
         using var shell = Build(directory, seats, manifestPath, installed, cataloguePath);
 
-        await shell.RefreshAsync(cancellationToken).ConfigureAwait(false);
+        // **Started, not awaited, so the screen is on before the brokers have answered.**
+        //
+        // This used to await the first read and then run, which meant nothing was drawn at all
+        // until every project's broker had replied or given up — and giving up costs the two-second
+        // `ConnectTimeout` in `BrokerDirectory.Connect`, per project. A deployment whose broker is
+        // down opened on a blank terminal for two seconds with nothing saying why, and somebody who
+        // typed `parley` had no way to tell it from a tool that had hung.
+        //
+        // The read still happens the moment the surface exists; what changed is that drawing no
+        // longer waits on it. Nothing here is novel: the transcript follower has refreshed
+        // concurrently with the run loop since 0.25.7, and `GuardedList` is what makes that safe —
+        // rows and the fields their colour derives from are swapped under the lock the draw takes.
+        // This is the first read joining the arrangement every later read already used.
+        //
+        // **Proven safe by the suite rather than argued**: every driven test calls `Show` and then
+        // `RefreshAsync`, so a shell drawn before its first read is the ordering 792 tests have
+        // been exercising all along. It was only production that did it the other way.
+        var first = shell.RefreshAsync(cancellationToken);
 
         app.Run(shell);
+
+        // Observed after the run so a fault is not left unwatched, and swallowed because by now
+        // the surface has gone: `RefreshAsync` reports what it could not ask on the message line,
+        // which is the screen this has just closed. Throwing here would turn "the broker was down
+        // while you were reading" into a stack trace printed over somebody's shell prompt.
+        try
+        {
+            await first.ConfigureAwait(false);
+        }
+        catch (Exception reported) when (reported is not OperationCanceledException)
+        {
+            // Said on the message line while the surface was up, and there is no surface now.
+        }
 
         return 0;
     }

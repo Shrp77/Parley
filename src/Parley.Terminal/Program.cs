@@ -119,8 +119,21 @@ catch (InvalidOperationException noHome)
 // The same fallback the web UI offers, so the two surfaces list the same deployments on a machine
 // that has named none. A person who can reach a broker from `parley registry` and not from here
 // would reasonably conclude this surface was broken.
-var fallback = ProjectResolution
-    .Endpoint(brokerAddress, Environment.GetEnvironmentVariable, null).Value;
+//
+// **Only when somebody said where, which is the half this was missing.** `Endpoint` answers with a
+// built-in default when nothing names a broker, and this passed that on regardless — so a machine
+// that has simply not named its first project yet was handed a made-up address to go and ask. The
+// screen does not draw until every broker has answered, and nothing is listening on a made-up
+// address, so the first thing a person saw after typing `parley` was two seconds of nothing: the
+// `ConnectTimeout` in `BrokerDirectory.Connect`, spent on an address no one chose. Worst during
+// setup, which is when `parley` is typed most.
+//
+// A deployment configured entirely by explicit paths still works, which is what the fallback is
+// for and what SPEC.md §4.1 permits: --broker and PARLEY_BROKER are exactly the ways of saying so,
+// and both are kept. What is dropped is the guess.
+var endpoint = ProjectResolution.Endpoint(brokerAddress, Environment.GetEnvironmentVariable, null);
+
+var fallback = endpoint.Source == ValueSource.Default ? null : endpoint.Value;
 
 return await TerminalCommand.RunAsync(manifestPath, fallback).ConfigureAwait(false);
 
