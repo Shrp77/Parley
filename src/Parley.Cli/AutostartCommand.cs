@@ -206,6 +206,20 @@ public static class AutostartCommand
         await output.WriteLineAsync($"  runs:  {plan.CommandLine()}").ConfigureAwait(false);
         await output.WriteLineAsync($"  logs:  {plan.LogPath}").ConfigureAwait(false);
 
+        // **Said outright rather than only inside the command line above.** It is in `runs:`, as
+        // `--web-ui <url>` at the end of a line long enough that nobody reads to the end of it --
+        // and it is the one thing this command prints that a person is going to type into a
+        // browser. Asked for by the owner on the first install that correctly produced no window:
+        // every other fact about the entry was on the screen and the address was not among them.
+        //
+        // A statement about the entry, not about what is listening. The broker starts the web UI
+        // and does not wait on it, so a held port leaves the broker serving and says so in the log
+        // -- which is the line above this one. Claiming the page answers would be this command
+        // reporting somebody else's success.
+        await output.WriteLineAsync(WebUiLine(
+            consoleOn, "none, because --no-web-ui was given. Re-run without it to add one."))
+            .ConfigureAwait(false);
+
         // Which half was installed, said plainly, because the two are one entry and therefore
         // indistinguishable in a task list. A deployment whose node was left out looks identical
         // to one whose node is running, until a request to a repository nobody has open waits,
@@ -629,6 +643,17 @@ public static class AutostartCommand
                 }
             }
 
+            // **Read out of the entry, for the same reason `install` says it: the address is in the
+            // arguments and nowhere a person can see it.** This is the command somebody runs days
+            // later to ask what is installed, which makes it the place they will look for the page's
+            // address once they have forgotten it -- and an entry written with `--no-web-ui` answers
+            // "why does that address not open" with a sentence instead of with nothing.
+            await output.WriteLineAsync(WebUiLine(
+                entry.Console,
+                "none. This entry starts the broker without one; `parley autostart install` "
+                + "registers one by default."))
+                .ConfigureAwait(false);
+
             // **Said either way, because both states are a question somebody asks.** Without it, "why
             // does a black window appear when I log in" is answered by this line or by nothing; with
             // it, somebody wondering where the broker's output went is told it is in the log.
@@ -668,6 +693,26 @@ public static class AutostartCommand
 
         return present ? 0 : 1;
     }
+
+    /// <summary>The line naming where the web UI an entry starts will listen.</summary>
+    /// <param name="address">Where it listens, or null or empty when the entry starts none.</param>
+    /// <param name="absent">What to say instead when there is none.</param>
+    /// <returns>The line, ready to print.</returns>
+    /// <remarks>
+    /// <para>
+    /// **One writer, because `install` and `status` answer the same question and would otherwise
+    /// answer it in two spellings.** They differ in what they can say when there is no web UI --
+    /// `install` knows `--no-web-ui` was given and `status` only sees an entry that names none --
+    /// so that half is the caller's, and the key a person scans for is not.
+    /// </para>
+    /// <para>
+    /// **It deliberately does not contain `--web-ui`.** `install.ps1` reads this command's output
+    /// back and scrapes the address out of the `runs:` line by that flag; a second line carrying
+    /// the spelling would give the scrape two things to match. `WebUiLineTests` pins it.
+    /// </para>
+    /// </remarks>
+    internal static string WebUiLine(string? address, string absent) =>
+        address is { Length: > 0 } front ? $"  web UI: {front}" : $"  web UI: {absent}";
 
     /// <summary>Names a supervisor the way somebody would look for it.</summary>
     /// <param name="supervisor">The supervisor.</param>
