@@ -971,10 +971,22 @@ public static class EnrollCommand
             return Config;
         }
 
+        if (skipped > 0)
+        {
+            await output.WriteLineAsync($"{skipped} skipped.").ConfigureAwait(false);
+        }
+
+        // **FR-044, and the command line did not have it.** It said how many repositories it had
+        // found and nothing about what enrolling them does — while the terminal's door said, before
+        // anything was written, that each becomes startable by a peer with nobody watching. The
+        // same act, its consequence stated on one surface and not the other, and the surface
+        // without it is the one a script reaches.
+        //
+        // The sentence is `EnrolmentConsent`'s, so both read one wording. `--describe` prints it
+        // too and then changes nothing, which is what makes describing worth running: it must show
+        // what a real run would put in front of somebody.
         await output.WriteLineAsync(
-            skipped > 0
-                ? $"{entries.Length} repositories to enroll, {skipped} skipped."
-                : $"{entries.Length} repositories to enroll.").ConfigureAwait(false);
+            EnrolmentConsent.Says(entries.Length, project?.Name)).ConfigureAwait(false);
 
         // **Approval is asked for only where somebody could give it**, which is the manifest. The one
         // verb has no file to tick, and the owns line it carries came out of the repository's own

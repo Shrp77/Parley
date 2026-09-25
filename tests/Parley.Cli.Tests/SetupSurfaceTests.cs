@@ -71,6 +71,14 @@ public sealed class SetupSurfaceTests
                 // agent's identity means every project shares the one entry, so there is no second
                 // shape to describe.
                 "Enrolment.Outcome",
+
+                // **One sentence, two surfaces, and the command line did not have it.** The
+                // terminal's door said before anything was written that each repository becomes
+                // startable by a peer with nobody watching; `parley enroll` said only how many it
+                // had found. Public because `Parley.Terminal` reads it — a consent notice with two
+                // spellings drifts, and the half that drifts is the half nobody is reading at the
+                // time.
+                "EnrolmentConsent",
                 "InstalledEntry",
                 "InterruptedEnrolment",
                 "ProjectCommand",

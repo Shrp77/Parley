@@ -139,7 +139,7 @@ Read these before starting; each has a test that fails the build rather than a c
 - [X] T047 [US3] Offer the git repositories found and allow choosing among them, with `--all`/`--none` for scripts (FR-041) — **done**, twice over: `ConsolePicker`/`RepositorySelection` on the command line, and `TickDialog` in `parley terminal` behind a folder browser, which is the owner's preferred way in
 - [X] T048 [US3] Implement `--describe`: report what would be configured, change nothing (FR-042) — **done** as `--describe`, taken centrally with the other flags so it reaches the command at all
 - [X] T049 [US3] Catalogue every repository enrolled, so a peer's request can start it — **enrolling is the consent** (FR-043, reversing the per-repository opt-in)
-- [ ] T050 [US3] State before configuring that enrolling makes each repository startable by a peer, and name how many are about to be started (FR-044)
+- [X] T050 [US3] State before configuring that enrolling makes each repository startable by a peer, and name how many are about to be started (FR-044)
 - [X] T051 [US3] Start each repository after configuring so each **registers itself**; write no registration on a repository's behalf (FR-045, FR-066)
 - [X] T052 [US3] Report per repository whether it registered, and report one that did not register in time as **not known**, never as failed (FR-046; 008's rule)
 - [X] T053 [US3] Enrolling a repository already enrolled elsewhere adds this project's name and leaves its identity and other projects alone (FR-047)

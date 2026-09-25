@@ -175,13 +175,15 @@ internal static class Onboarding
     {
         // FR-044: said before anything is configured, and it names the number. "Some repositories"
         // is a sentence somebody agrees to without weighing; a count is one they can.
+        //
+        // **The sentence moved to `EnrolmentConsent` when `parley enroll` gained it too.** This
+        // surface had it and the command line said only how many repositories it had found, so one
+        // act carried its consequence on one surface and not the other — and the surface without it
+        // is the one a script reaches. Two spellings would drift, and the half that drifts is the
+        // half nobody is reading at the time.
         var asking = Prompting.Choose(
             Apply,
-            $"{wanted.Count} repositories will be configured as agents"
-            + (project is { } named ? $" of {named.Name.Value}" : string.Empty)
-            + ". This writes into each one, and catalogues it so that a peer's request can start it "
-            + "with nobody watching — which spends whatever that agent costs to run. Each is then "
-            + $"started once so that it registers itself, so expect {wanted.Count} processes.",
+            EnrolmentConsent.Says(wanted.Count, project?.Name),
             ["Not now", Apply]);
 
         var token = Prompting.Open(app, asking);

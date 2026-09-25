@@ -119,6 +119,57 @@ public sealed class OneVerbEnrolmentTests : IDisposable
     }
 
     [Fact]
+    public async Task It_says_what_enrolling_costs_before_it_configures_anything()
+    {
+        // **FR-044, and the command line did not have it.** It said how many repositories it had
+        // found and nothing about what enrolling them does — while the terminal's door said,
+        // before anything was written, that each becomes startable by a peer with nobody watching
+        // and that a process is started per repository. The same act, its consequence stated on one
+        // surface and not the other, and the surface without it is the one a script reaches.
+        var (code, said, complained) = await RunAsync(selectAll: true, describe: false, Checkouts);
+
+        Assert.True(code == 0, $"exit {code}. stderr:\n{complained}\nstdout:\n{said}");
+
+        // The count, because "some repositories" is a sentence somebody agrees to without weighing.
+        Assert.Contains("2 repositories will be configured as agents", said, StringComparison.Ordinal);
+
+        // And what it costs: startable by a peer with nobody watching, and a process each.
+        Assert.Contains("with nobody watching", said, StringComparison.Ordinal);
+        Assert.Contains("expect 2 processes", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Describing_says_it_too_and_still_changes_nothing()
+    {
+        // A describe that hid the consequence would be worth less than not running it: the reason
+        // to ask what would happen is to read what you would be agreeing to.
+        var (_, said, _) = await RunAsync(selectAll: true, describe: true, Checkouts);
+
+        Assert.Contains("with nobody watching", said, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(_root, "node.json")));
+        Assert.False(File.Exists(LaunchFile(Path.Combine(Checkouts, "Acme.Orders"))));
+    }
+
+    [Fact]
+    public async Task Both_surfaces_say_one_sentence()
+    {
+        // Two spellings of a consent notice drift, and the half that drifts is the half nobody is
+        // reading at the time. Read off the source because the terminal's door cannot be driven
+        // from this project — what is pinned is that neither surface composes its own.
+        var terminal = RepositoryFile.Read("src/Parley.Terminal/Onboarding.cs");
+        var command = RepositoryFile.Read("src/Parley.Setup/EnrollCommand.cs");
+
+        Assert.Contains("EnrolmentConsent.Says(", terminal, StringComparison.Ordinal);
+        Assert.Contains("EnrolmentConsent.Says(", command, StringComparison.Ordinal);
+
+        // Neither writes the sentence itself, checked on its opening clause rather than on
+        // "with nobody watching" — which `Onboarding`'s own summary uses to explain what
+        // cataloguing means, and a guard tripped by a comment is as wrong as one answered by it.
+        Assert.DoesNotContain("will be configured as agents", terminal, StringComparison.Ordinal);
+        Assert.DoesNotContain("will be configured as agents", command, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Nothing_writes_a_manifest_for_a_person_to_author()
     {
         _ = await RunAsync(selectAll: true, describe: false, Checkouts);
