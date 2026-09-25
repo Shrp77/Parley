@@ -105,7 +105,15 @@ public sealed class ForeignDatabaseTests : IDisposable
 
         MakeForeignDatabaseAt(path);
 
-        var (exitCode, error) = ToolProcess.Run("serve", "--config", root);
+        // **`--project` names the one project, which is what keeps this a refusal rather than a
+        // wait.** Since FR-033 was built, a `serve` given only a root *watches*: none of its
+        // projects opening is a machine somebody is repairing, so it stays up and reports why
+        // rather than exiting. Naming a project says "serve this one", there is nothing to watch
+        // for, and a project that will not open is a failure with an exit code.
+        //
+        // The subject of this test is unchanged, and it was never the exit code: a foreign database
+        // is refused, and left exactly as it was found.
+        var (exitCode, error) = ToolProcess.Run("serve", "--config", root, "--project", name.Value);
 
         // **69 rather than 74 since 019.** The one-store path classified "could not open this file" as an
         // I/O error; the projects path classifies "this project would not start" as unavailable, and
@@ -166,8 +174,11 @@ public sealed class ForeignDatabaseTests : IDisposable
 
         MakeForeignDatabaseAt(ProjectFolder.StoreFor(root, name));
 
+        // `--project` for the reason given at the `serve` above: a root alone watches now, and a
+        // watching broker reports rather than exits. The variable is still what points at the root,
+        // which is the whole of what this test is about.
         var (exitCode, error) = ToolProcess.Run(
-            [(ProjectManifest.PathVariable, root)], "serve");
+            [(ProjectManifest.PathVariable, root)], "serve", "--project", name.Value);
 
         // Refused for being a foreign database, which is only reachable if it opened that store —
         // nothing was given on the command line, so the variable is the only way it could have found

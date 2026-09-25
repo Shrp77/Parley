@@ -281,7 +281,10 @@ public sealed class PruneCommandTests : IAsyncDisposable
 
         var (exitCode, error) = ToolProcess.Run(
             [(RetentionPolicyEnvironment.IdleVariable, "soon")],
-            "serve", "--config", _directory);
+            // `--project` for the reason `ForeignDatabaseTests` gives at its own `serve`: a root
+            // alone watches now, and a watching broker reports rather than exits. Naming the
+            // project is the "serve one alone" path, which still refuses.
+            "serve", "--config", _directory, "--project", BrokerProcess.ProjectName);
 
         Assert.NotEqual(0, exitCode);
         Assert.Contains(RetentionPolicyEnvironment.IdleVariable, error, StringComparison.Ordinal);

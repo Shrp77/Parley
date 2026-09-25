@@ -210,8 +210,12 @@ public sealed class MultiProjectServeTests : IDisposable
     }
 
     [Fact]
-    public async Task Starting_none_of_several_is_a_failure_rather_than_an_empty_machine()
+    public async Task Starting_none_of_several_with_nothing_watching_is_a_failure()
     {
+        // **No watcher here** — `ServeAsync` passes no `reread`, which is `serve --project x`: one
+        // project, named on the command line, and nothing that would ever notice a change. Nothing
+        // can change, so a process that stayed up would achieve nothing for ever, and its
+        // supervisor would read "running" as "working".
         var (code, output, error) = await ServeAsync(
             [Unopenable("orders"), Unopenable("billing")],
             () => Task.CompletedTask);
@@ -221,6 +225,58 @@ public sealed class MultiProjectServeTests : IDisposable
 
         // Nothing may claim to be serving. The banner is the line a person scans for.
         Assert.DoesNotContain("Ctrl+C stops", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Starting_none_of_several_while_watching_stays_up_and_says_why()
+    {
+        // **FR-033, the half that was not built.** "A machine whose projects can none of them be
+        // opened, or which has no projects, MUST stay up and report why, so that a project named
+        // next is served without anything being restarted." The empty-root half stayed up; this
+        // one exited 69 — and the test above asserted that it should, for every case rather than
+        // for the one where it is right.
+        //
+        // Every store unreadable is a moved directory or a permissions change: a thing somebody is
+        // actively repairing. Exiting meant the repair did nothing until the next logon, because a
+        // scheduled task does not restart a process that ran and stopped.
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        using var stopping = new CancellationTokenSource();
+
+        IReadOnlyList<ProjectSettings> projects = [Unopenable("orders"), Unopenable("billing")];
+
+        var serving = ServeCommand.RunAsync(
+            projects,
+            null,
+            output,
+            error,
+            reread: () => projects,
+            cancellationToken: stopping.Token);
+
+        // It is still running: nothing has completed the task, and the only thing that ends it is
+        // the interrupt below. A process that had exited would have completed it by now.
+        await Task.Delay(TimeSpan.FromMilliseconds(400), TestContext.Current.CancellationToken);
+
+        Assert.False(
+            serving.IsCompleted,
+            "the broker exited although it was watching, so a repaired store waits for a logon");
+
+        await stopping.CancelAsync();
+
+        _ = await serving.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+
+        var said = output.ToString();
+
+        // **Says why, and does not claim to be serving.** Those are two separate properties and the
+        // second is the one that would quietly mislead: "still running" must not read as "working".
+        Assert.Contains("Nothing is being served", said, StringComparison.Ordinal);
+        Assert.Contains("watching", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("Agents connect with PARLEY_AGENT set", said, StringComparison.Ordinal);
+
+        // And the failures were still named individually, with the store each could not open.
+        Assert.Contains("orders", error.ToString(), StringComparison.Ordinal);
+        Assert.Contains("billing", error.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

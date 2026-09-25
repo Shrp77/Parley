@@ -160,7 +160,7 @@ Read these before starting; each has a test that fails the build rather than a c
 - [~] T059 [US4] Remove `--listen`, `--db`, `--with-web-ui`, `--web-ui`, `--no-web-ui` from `serve` (FR-031, FR-039)
       **STALE (half done)** — `--db`, `-d`, `--listen`, `-l` are refused by name. `--with-web-ui`, `--web-ui` and `--no-web-ui` stay on `serve` by the later decision that the broker starts the web UI as a child; the installers pass them.
 - [X] T060 [US4] Serve every project and report by name any whose store cannot be opened, without preventing the others (FR-030, FR-032)
-- [ ] T061 [US4] Stay up and report why when no project can be opened or none exists, so a project named next is served without a restart (FR-033)
+- [X] T061 [US4] Stay up and report why when no project can be opened or none exists, so a project named next is served without a restart (FR-033)
 - [~] T062 [US4] Remove the four `autostart install` options; the entry serves everything and starts the surfaces (FR-039)
       **STALE** — `autostart install` deliberately carries `--web-ui`, `--no-web-ui`, `--node-config` and `--hidden`, the last added 2026-09-25 so a logon entry can open no console window.
 - [~] T063 [P] [US4] Test: three projects, all reachable after one start; and no option exists that would have served fewer (SC-004)

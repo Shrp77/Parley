@@ -287,13 +287,28 @@ public static class ServeCommand
                 }
             }
 
-            // **A manifest that names nothing yet, being watched, is a machine waiting for its first project**, not a
-            // failure. The installer registers exactly this entry before anybody has named a project, and a person
-            // names one from `parley terminal`; the watcher starts it within seconds. Without a
-            // watcher nothing could ever start here, and that stays the failure below says it is.
-            var awaitingFirstProject = projects.Count == 0 && reread is not null;
+            // **One rule, applied twice: stay up while something could still change.** A watcher is
+            // what "could still change" means here — it re-reads the root and starts what appears,
+            // so a project named next, or a store repaired next, is served without anything being
+            // restarted. Where there is no watcher nothing can ever change, and a process that
+            // stayed up would be a process achieving nothing for ever.
+            //
+            // **This used to be two rules and only one of them was FR-033's.** An empty root stayed
+            // up; a root whose projects could none of them be opened exited 69. FR-033 asks for
+            // both — "A machine whose projects can none of them be opened, or which has no
+            // projects, MUST stay up and report why" — and the second case is the one where
+            // staying up is worth most: every store unreadable is a moved directory or a
+            // permissions change, which is a thing somebody is actively repairing. Exiting meant
+            // the repair did nothing until the next logon, because a scheduled task does not
+            // restart a process that ran and stopped.
+            //
+            // The owner's call on 2026-09-25, taking the narrower of three options: not "always
+            // stay up", which would have a broker report healthy to its supervisor while serving
+            // nothing on a machine where nothing is watching.
+            var watching = reread is not null;
+            var awaitingFirstProject = projects.Count == 0 && watching;
 
-            if (started.Count == 0 && !awaitingFirstProject)
+            if (started.Count == 0)
             {
                 // Everything named is already served by another broker: a second launcher at logon,
                 // and a deployment that is working. Anything that genuinely failed beside it makes
@@ -307,10 +322,13 @@ public static class ServeCommand
                     return 0;
                 }
 
-                await error.WriteLineAsync(
-                    "No broker started. Nothing is serving.").ConfigureAwait(false);
+                if (!watching)
+                {
+                    await error.WriteLineAsync(
+                        "No broker started. Nothing is serving.").ConfigureAwait(false);
 
-                return Unavailable;
+                    return Unavailable;
+                }
             }
 
             if (failed > 0)
@@ -329,6 +347,19 @@ public static class ServeCommand
                 await output.WriteLineAsync(
                     "No project is named yet. Name the first one from `parley terminal` — it gets " +
                     "its own store and its own port, and starts here within seconds. Ctrl+C stops this.")
+                    .ConfigureAwait(false);
+            }
+            else if (started.Count == 0)
+            {
+                // **Staying up, and saying so without claiming to serve.** The distinction is the
+                // whole of what this line is for: a person reading it must not take "still running"
+                // for "working". The failures were already named one by one with their stores, so
+                // this says what the process is now doing and what would change it.
+                await output.WriteLineAsync(
+                    "Nothing is being served: no project here could be opened. The failures are "
+                    + "named above, with the store each one could not open. This is still watching "
+                    + "the root, so a store repaired or a project named is served within seconds "
+                    + "without restarting anything. Ctrl+C stops this.")
                     .ConfigureAwait(false);
             }
             else
