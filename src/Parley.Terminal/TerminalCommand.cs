@@ -92,6 +92,13 @@ public static class TerminalCommand
             // the status line says it too.
         }
 
+        // **Armed before the toolkit starts and disarmed after it stops**, which is why it is
+        // declared above `app`: locals are disposed in reverse, so the driver's own shutdown runs
+        // first and this is still watching until it has. What it covers is the paths that never
+        // reach that shutdown — Ctrl+C, which the comment above deliberately lets kill this
+        // process, and a crash, which ends it the same way. `ConsoleRestore` carries the argument.
+        using var restore = ConsoleRestore.Arm();
+
         using var app = Application.Create(TimeProvider.System as ITimeProvider);
 
         app.Init();
