@@ -216,10 +216,14 @@ stop_broker() {
     # goes -- but a moment later, and the next thing that happens is an uninstall of a binary the
     # child may still be running from. Waited for rather than assumed, which is the rule every
     # other guard in this script is written to.
+    # The broker alone here, and the web UI below. Waiting for both at once spends the whole
+    # budget on exactly the machine this exists to help: an orphaned web UI is never going to
+    # exit on its own, so the wait runs to its deadline and only then reaches the code that ends
+    # it.
     waited=0
 
     while [ "$waited" -lt 50 ]; do
-        [ -z "$(holding parley parley-web-ui)" ] && break
+        [ -z "$(holding parley)" ] && break
         sleep 0.2
         waited=$((waited + 1))
     done
@@ -237,6 +241,19 @@ stop_broker() {
             echo "    ending the web UI the stopped broker left behind, pid $pid"
             kill "$pid" 2>/dev/null || true
         fi
+    done
+
+    # **And then waited for.** `kill` asks; it does not wait -- the sentence `remove_holders`
+    # already carries a paragraph about, and which a first version of this reintroduced twenty
+    # lines above it: the script announced ending a pid and then refused the install naming that
+    # same pid, in consecutive lines. The same wait covers a web UI exiting with its broker on the
+    # ordinary path, where nothing was killed and the child simply goes a moment after its parent.
+    waited=0
+
+    while [ "$waited" -lt 50 ]; do
+        [ -z "$(holding parley-web-ui)" ] && break
+        sleep 0.2
+        waited=$((waited + 1))
     done
 }
 

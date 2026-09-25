@@ -499,14 +499,22 @@ public sealed class InstallScriptTests
         // failure, and excluding the web UI from the guard above is what would have opened it.
         var code = Code(RepositoryFile.Read(script));
 
-        var waits = script.EndsWith(".ps1", StringComparison.Ordinal)
-            ? code.Contains("Get-Process -Name 'parley', 'parley-web-ui'", StringComparison.Ordinal)
-            : code.Contains("holding parley parley-web-ui", StringComparison.Ordinal);
+        // Two waits, not one. A first version waited for the broker and the web UI together,
+        // which spends the whole budget on exactly the machine this exists to help: an orphaned
+        // web UI never exits on its own, so the combined wait runs to its deadline every time and
+        // only then reaches the code that ends it.
+        var waitsForBroker = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? code.Contains("Get-Process -Name 'parley' -ErrorAction", StringComparison.Ordinal)
+            : code.Contains("-z \"$(holding parley)\"", StringComparison.Ordinal);
+
+        var waitsForWebUi = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? code.Contains("Get-Process -Name 'parley-web-ui' -ErrorAction", StringComparison.Ordinal)
+            : code.Contains("-z \"$(holding parley-web-ui)\"", StringComparison.Ordinal);
 
         Assert.True(
-            waits,
-            $"{script} stops the broker without waiting for the web UI it started, so the "
-            + "uninstall can race a binary that is still mapped");
+            waitsForBroker && waitsForWebUi,
+            $"{script} stops the broker without waiting for it and for the web UI it started, so "
+            + "the uninstall can race a binary that is still mapped");
     }
 
     [Theory]
@@ -532,6 +540,39 @@ public sealed class InstallScriptTests
             byParent,
             $"{script} does not clear the web UI it orphans when it stops the broker, or does not "
             + "tell an orphan from one somebody started");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void The_orphan_is_waited_for_after_it_is_ended(string script)
+    {
+        // **A kill asks; it does not wait.** `Remove-Holders` carries a whole paragraph about
+        // this, and the first version of the orphan cleanup reintroduced it twenty lines above
+        // that paragraph: the script printed "ending the web UI the stopped broker left behind,
+        // pid 26996" and then refused the install naming pid 26996, in consecutive lines.
+        //
+        // Read as ordering: the wait for the web UI must come after the code that ends it. A wait
+        // before the kill is the defect, and it is the arrangement a careless edit produces.
+        var code = Code(RepositoryFile.Read(script));
+
+        var ends = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? code.IndexOf("Stop-Process -Id $stray.ProcessId", StringComparison.Ordinal)
+            : code.IndexOf("ending the web UI the stopped broker left behind", StringComparison.Ordinal);
+
+        // Anchored on the *wait*, not on the name: install.sh names `holding parley-web-ui` twice,
+        // once to enumerate the orphans and once to wait for them, and the enumeration comes
+        // first. A looser anchor found that one and reported the ordering defect against a script
+        // that had it right — which is the same class of mistake as the defect itself.
+        var waits = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? code.IndexOf("Get-Process -Name 'parley-web-ui' -ErrorAction", StringComparison.Ordinal)
+            : code.IndexOf("-z \"$(holding parley-web-ui)\"", StringComparison.Ordinal);
+
+        Assert.True(ends >= 0, $"{script} no longer ends the web UI it orphaned");
+        Assert.True(waits >= 0, $"{script} never waits for the web UI to go");
+        Assert.True(
+            waits > ends,
+            $"{script} waits for the web UI before ending it, so the kill is announced and the "
+            + "install then refuses on the process it just killed");
     }
 
     [Theory]

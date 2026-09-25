@@ -272,16 +272,13 @@ function Stop-Broker {
     # Waited for rather than assumed. Stopping a task asks the process to go; it goes once it has
     # closed its listener and its streams, which is quick but is not instant.
     #
-    # **The web UI is waited for as well, and leaving it out was a race this script's own comments
-    # describe as its worst failure.** The broker ends the child it started, so the child goes --
-    # but a moment later, and the next thing that happens here is `dotnet tool uninstall` on a
-    # binary the child may still have mapped. That fails, `dotnet tool install` then exits *zero*
-    # saying "is already installed", and the version check cannot tell, because the version it
-    # finds is the version it expected. A silent no-op on the machine most likely to be running
-    # the old build.
+    # **The broker alone here, and the web UI below.** A first version waited for both at once,
+    # which spends the whole ten seconds on exactly the machine this exists to help: an orphaned
+    # web UI is never going to exit on its own, so the wait runs to its deadline and only then
+    # reaches the code that ends it.
     $deadline = (Get-Date).AddSeconds(10)
 
-    while ((Get-Process -Name 'parley', 'parley-web-ui' -ErrorAction SilentlyContinue) -and
+    while ((Get-Process -Name 'parley' -ErrorAction SilentlyContinue) -and
            (Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 200
     }
@@ -307,6 +304,22 @@ function Stop-Broker {
         catch {
             # Reported by the guard that looks again below, which is the one that can refuse.
         }
+    }
+
+    # **And then waited for, which the first version of this did not do.** `Stop-Process` returns
+    # once the kill has been asked for, not once the process has gone -- the exact sentence
+    # `Remove-Holders` already carries a paragraph about, reintroduced twenty lines above it. The
+    # owner met it immediately: "ending the web UI the stopped broker left behind, pid 26996",
+    # followed by a refusal naming pid 26996. Ended it, then reported it as still holding the
+    # tools, in consecutive lines.
+    #
+    # The same wait covers a web UI exiting with its broker on the ordinary path, where nothing
+    # was killed at all and the child simply goes a moment after its parent.
+    $deadline = (Get-Date).AddSeconds(10)
+
+    while ((Get-Process -Name 'parley-web-ui' -ErrorAction SilentlyContinue) -and
+           (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 200
     }
 }
 
