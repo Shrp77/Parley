@@ -17,7 +17,8 @@ using Wire = Parley.Transport;
 //
 //   parley serve                     the broker of §4: the one process that opens the store
 //   parley up                        the node of §4: this machine's supervisor
-//   parley registry                  and the rest of §10.2, over the transport
+//   parley registry                  the reads a script needs, over the transport
+//   parley terminal                  everything else: §10.2 is read and changed there
 //
 // Everything but `serve` is a client. That is the whole shape of the change: this command used
 // to open the database itself, which was safe only while it and every agent were on one machine
@@ -31,7 +32,8 @@ using Wire = Parley.Transport;
 // configured with, and what it was configured with has no operator operation compiled into it.
 
 const string Help = """
-    parley — the broker, this machine's node, and the operator operations of SPEC.md 10.2.
+    parley — the broker, this machine's node, and what brings a machine up.
+    Reading and changing a deployment is `parley terminal`, or `parley` on its own.
 
       parley serve [--log <path>] [--with-node]        run the broker: the one process that
                    [--with-web-ui [--web-ui <url>]]     opens the stores, and what everything
