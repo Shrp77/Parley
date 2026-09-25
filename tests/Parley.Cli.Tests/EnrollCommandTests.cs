@@ -203,11 +203,23 @@ public sealed class EnrollCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task A_repository_not_asking_to_run_unattended_stays_out_of_the_catalogue()
+    public async Task A_repository_chosen_for_enrolment_is_catalogued_whatever_the_row_said()
     {
+        // **This asserted the opposite, and it was right when it was written.** Consent used to be
+        // a field somebody ticked in a worksheet, so a row that did not ask to run unattended
+        // stayed out of the catalogue. 019 deleted the worksheet and FR-043 reversed the rule:
+        // enrolling *is* the consent, granted once at a door that names the count and says what
+        // being startable costs.
+        //
+        // The reversal was specified and never wired up, so for the life of the one-verb enrolment
+        // the catalogue write was dead code — every repository enrolled from a folder came out
+        // enrolled, addressable and unstartable. This is that rule, the other way round: whatever
+        // the row says about `unattended`, choosing it is the asking.
         await EnrolAsync(NodePath, describe: false, Chosen(unattended: false));
 
-        Assert.False(File.Exists(NodePath));
+        Assert.True(
+            File.Exists(NodePath),
+            "a repository chosen for enrolment was not catalogued, so no peer's request can start it");
     }
 
     [Fact]

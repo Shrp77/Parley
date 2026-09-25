@@ -19,10 +19,24 @@ namespace Parley.Setup;
 /// made.
 /// </para>
 /// <para>
-/// <b><paramref name="Unattended"/> defaults to false</b> because listing a repository is the
-/// consent, not a description of it: it says a node may start that repository when a peer asks
-/// it something, which spends somebody's tokens with nobody watching. Withdrawing it later means
-/// removing the entry, nothing else and nowhere else.
+/// <b><paramref name="Unattended"/> says a node may start that repository when a peer asks it
+/// something</b>, which spends somebody's tokens with nobody watching. Withdrawing it later means
+/// removing the catalogue entry, nothing else and nowhere else.
+/// </para>
+/// <para>
+/// <b>It used to default to false, and the paragraph here explained why: ticking it in the
+/// worksheet was the consent.</b> 019 deleted the worksheet, and FR-043 reversed the rule —
+/// enrolling *is* the consent, granted once at a door that names the count and says what being
+/// startable costs. The default was left behind, so every repository enrolled from a folder
+/// arrived with it false and the catalogue write in <c>EnrollmentPlan</c> never ran: enrolled,
+/// addressable and unstartable, under a screen that said otherwise.
+/// </para>
+/// <para>
+/// The field survives the reversal because it is still a question with two answers. A workspace
+/// has one launch configuration and the catalogue is one per machine, so a checkout catalogued
+/// once is startable in every project it answers in — which <c>Enrolment</c> says out loud when
+/// an entry arrives beside one already there. What changed is who answers the question: the
+/// person at the door, rather than a line in a file.
 /// </para>
 /// </remarks>
 public sealed record EnrollmentEntry(

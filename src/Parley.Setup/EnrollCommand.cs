@@ -266,6 +266,8 @@ public static class EnrollCommand
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(error);
 
+        // The consent is granted in `ConfigureAsync`, where this and the command line's own picker
+        // both arrive. See the note there.
         return await ConfigureAsync(
             chosen,
             manifestNodeConfig: null,
@@ -319,6 +321,11 @@ public static class EnrollCommand
             var (agent, owns) = ReadExisting(directory);
             var carried = previous.GetValueOrDefault(workspace);
 
+            // **Never unattended from a scan, and a first fix for FR-043 set it here.**
+            // `ProbeTwentyThreeTests` caught it, which is exactly what that probe is for: a scan
+            // reads a directory of clones — content the repositories themselves wrote — so nothing
+            // it produces may carry consent. Enrolling is the consent (FR-043), and enrolling
+            // happens at a door, which is where the flag is now set.
             entries.Add(new EnrollmentEntry(
                 workspace,
                 carried?.Agent ?? agent ?? SuggestName(name),
@@ -920,6 +927,29 @@ public static class EnrollCommand
             await error.WriteLineAsync($"{source} names no agents.").ConfigureAwait(false);
             return Config;
         }
+
+        // **Enrolling is the consent, and this is where it is granted** (FR-043). Both callers
+        // arrive here — the command line after its picker, and the terminal after its door — and
+        // one place is the point: two grants agree until one is edited, and what they agree about
+        // is whether a peer may start somebody's checkout with nobody watching.
+        //
+        // **It was never granted at all, and the catalogue write was dead code.** `EnrollmentPlan`
+        // gates that write on `Unattended`, which used to come from a worksheet row somebody
+        // ticked — and 019 deleted the worksheet. Nothing set it afterwards on either surface, so
+        // every repository enrolled from a folder got a launch configuration and no catalogue
+        // line: the state `Onboarding`'s own summary warns against, enrolled and addressable and
+        // unstartable, an agent that cannot be started and so cannot answer. **And the screen said
+        // otherwise**, naming the catalogue and its cost in the sentence that asked for consent.
+        //
+        // **Not where the repositories are found.** A first fix set it in the scan and
+        // `ProbeTwentyThreeTests` — lens 2's run on who may grant consent — failed with "orders
+        // scanned as unattended". That probe is right: a scan reads content the repositories
+        // themselves wrote, so nothing it produces may carry consent. Only a person choosing can,
+        // and only what they chose is touched here.
+        //
+        // `describe` reaches this too, deliberately: it must predict what a real run would do, and
+        // it writes nothing on the way past.
+        rows = [.. rows.Select(row => row.Enroll ? row with { Unattended = true } : row)];
 
         var manifestPath = source;
 

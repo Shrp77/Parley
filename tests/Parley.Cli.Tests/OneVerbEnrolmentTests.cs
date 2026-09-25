@@ -86,6 +86,39 @@ public sealed class OneVerbEnrolmentTests : IDisposable
     }
 
     [Fact]
+    public async Task Every_repository_enrolled_is_catalogued_so_a_peer_can_start_it()
+    {
+        // **FR-043, and it was dead code.** `EnrollmentPlan` gates the catalogue write on
+        // `EnrollmentEntry.Unattended`, which was carried from a worksheet row somebody ticked —
+        // and 019 deleted the worksheet. Nothing on this path set it afterwards and nothing on the
+        // terminal's path set it either, so every repository enrolled from a folder got a launch
+        // configuration and no catalogue line.
+        //
+        // What that produces is the state `Onboarding`'s own summary warns against: enrolled,
+        // addressable and unstartable — an agent that cannot be started cannot answer. And the
+        // screen asking for consent said, in as many words, that each repository was being
+        // catalogued so a peer's request could start it with nobody watching. **The door described
+        // the reversal and the code never got it**, which is worse than the feature being absent:
+        // the operator was told it had happened.
+        var (code, said, complained) = await RunAsync(selectAll: true, describe: false, Checkouts);
+
+        Assert.True(code == 0, $"exit {code}. stderr:\n{complained}\nstdout:\n{said}");
+
+        var catalogue = Path.Combine(_root, "node.json");
+
+        Assert.True(
+            File.Exists(catalogue),
+            "nothing was catalogued, so no peer's request can start any of these repositories");
+
+        // Both of them, by workspace. Asserted on the file rather than on what the command printed,
+        // because what the command printed is exactly what was true while this was broken.
+        var written = await File.ReadAllTextAsync(catalogue, TestContext.Current.CancellationToken);
+
+        Assert.Contains("Acme.Orders", written, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Acme.Billing", written, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Nothing_writes_a_manifest_for_a_person_to_author()
     {
         _ = await RunAsync(selectAll: true, describe: false, Checkouts);

@@ -130,11 +130,19 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task No_consent_recorded_names_no_node()
+    public async Task Enrolling_records_the_consent_so_the_node_is_named()
     {
+        // **This asserted "no consent recorded names no node", and the state it named cannot
+        // happen any more.** Consent used to be a field ticked per repository in a worksheet, so
+        // an enrolment could record none and the next steps would name only a broker. 019 deleted
+        // the worksheet and FR-043 reversed the rule: enrolling is the consent.
+        //
+        // So the row's own `unattended` is passed as false here deliberately — it is the value the
+        // old design would have honoured — and the steps still name the node, because what grants
+        // the consent now is the choosing rather than the field.
         var said = await ApplyAsync(Catalogue, unattended: false, _alpha.Settings);
 
-        Assert.Contains("A broker for alpha.", said, StringComparison.Ordinal);
+        Assert.Contains("A broker and this machine's node for alpha.", said, StringComparison.Ordinal);
         Assert.DoesNotContain("node-config", said, StringComparison.Ordinal);
     }
 
