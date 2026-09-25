@@ -445,7 +445,23 @@ $adapters = @($tools |
 
 if (Wanted ($tools | Where-Object { $_.Command -eq 'parley-terminal' })) { $adapters += $retiredTerminal.Command }
 
-$holders = @(Get-Process -Name $adapters -ErrorAction SilentlyContinue)
+# **Empty is an ordinary answer and used to be a crash.** `-Only parley` wants exactly the tool this
+# list excludes by name, so nothing is left to look for -- and `Get-Process -Name @()` does not
+# return nothing, it refuses the argument: "the argument is null, empty, or an element of the
+# argument collection contains a null value". The install stopped there, after packing, having
+# installed nothing.
+#
+# Found by running it. `-Only parley` is the narrow install SC-001 rests on -- the one that replaces
+# the broker alone -- so the one arrangement this guard could not survive was the arrangement it
+# exists to serve.
+# Written as if/else rather than a ternary, and that is not taste: `?` is PowerShell's alias for
+# `Where-Object`, so a ternary broken across lines is read as a pipeline into it and fails with a
+# message about a `Property` parameter nobody wrote.
+if ($adapters.Count -eq 0) {
+    $holders = @()
+} else {
+    $holders = @(Get-Process -Name $adapters -ErrorAction SilentlyContinue)
+}
 
 if ($holders.Count -gt 0) {
     $listed = ($holders | ForEach-Object { "      $($_.ProcessName), pid $($_.Id), started $($_.StartTime.ToString('HH:mm'))" }) -join "`n"
