@@ -732,20 +732,14 @@ public static class ServeCommand
     /// protocol explicitly permits.
     /// </para>
     /// </remarks>
-    internal static bool OnlyThisMachine(string endpoint)
-    {
-        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var address))
-        {
-            // Undecidable, and treated as safe here on purpose: an endpoint nothing can parse is
-            // one no broker will bind either, so the start fails below with its own message. Warning
-            // about exposure as well would name the wrong fault.
-            return true;
-        }
-
-        return string.Equals(address.Host, "localhost", StringComparison.OrdinalIgnoreCase)
-            || (System.Net.IPAddress.TryParse(address.Host, out var parsed)
-                && System.Net.IPAddress.IsLoopback(parsed));
-    }
+    /// <remarks>
+    /// <b>The rule moved to <see cref="BrokerEndpoint.OnlyThisMachine"/> when `project list` became
+    /// its second caller</b>, and this stayed as the name the warning above and its own tests use.
+    /// One implementation, because a listing and a start-up warning disagreeing about whether an
+    /// endpoint is exposed is the disagreement that matters least until it matters most.
+    /// </remarks>
+    internal static bool OnlyThisMachine(string endpoint) =>
+        BrokerEndpoint.OnlyThisMachine(endpoint);
 
     /// <summary>A sweep, as a task that reports nothing: it ends only when the process does.</summary>
     /// <param name="sweep">The sweep.</param>

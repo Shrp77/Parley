@@ -107,4 +107,40 @@ public static class BrokerEndpoint
 
         return uri.ToString().TrimEnd('/');
     }
+
+    /// <summary>Whether nothing off this machine can address an endpoint.</summary>
+    /// <param name="endpoint">The endpoint a project records.</param>
+    /// <returns><see langword="true"/> when only this machine can reach it.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Here rather than beside either caller, because there are two and the answer must not
+    /// differ.</b> The broker warns on every start when a project is not loopback, and the listing
+    /// says of each project whether anything off the machine can address it — one rule, asked in
+    /// two places, and two copies of it would agree until one was edited.
+    /// </para>
+    /// <para>
+    /// <b>No I/O, which is what lets it live here.</b> It parses a string and asks
+    /// <see cref="System.Net.IPAddress"/> about the result; nothing is resolved, connected to or
+    /// looked up. A host name that is not an IP literal is therefore *not* loopback as far as this
+    /// is concerned even if it resolves to one — deliberately, because resolution is a fact about
+    /// this machine's configuration at this moment and the question being asked is about the
+    /// address as written.
+    /// </para>
+    /// <para>
+    /// <b>An endpoint nothing can parse is treated as loopback</b>, which is the safe answer for
+    /// both callers: a broker will not bind it either, so the start fails with its own message, and
+    /// warning about exposure as well would name the wrong fault.
+    /// </para>
+    /// </remarks>
+    public static bool OnlyThisMachine(string endpoint)
+    {
+        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var address))
+        {
+            return true;
+        }
+
+        return string.Equals(address.Host, "localhost", StringComparison.OrdinalIgnoreCase)
+            || (System.Net.IPAddress.TryParse(address.Host, out var parsed)
+                && System.Net.IPAddress.IsLoopback(parsed));
+    }
 }

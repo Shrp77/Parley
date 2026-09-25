@@ -926,9 +926,13 @@ $listedExit = $LASTEXITCODE
 $manifest = $null
 
 if ($listedExit -eq 0) {
-    $line = $listed | Where-Object { $_ -match '^manifest:\s+(.+)$' } | Select-Object -Last 1
+    # **`root:`, and this read `manifest:` and never matched.** `project list` printed
+    # `projects:`; nothing labelled `manifest:` has existed since 019 replaced the file with a
+    # directory. So the line below never ran, every reinstall skipped saying what it was about to
+    # serve, and the guard that declares this interface passed on a comment in the command's source.
+    $line = $listed | Where-Object { $_ -match '^root:\s+(.+)$' } | Select-Object -Last 1
 
-    if ($line -match '^manifest:\s+(.+)$') { $manifest = $Matches[1].Trim() }
+    if ($line -match '^root:\s+(.+)$') { $manifest = $Matches[1].Trim() }
 }
 
 $named = $listedExit -eq 0 -and ($listed -join "`n") -notmatch 'No projects configured'
@@ -987,7 +991,11 @@ do {
                 break
             }
         }
-        elseif ($listed -match '(?m)\sreachable$' -and $listed -notmatch 'not reachable') {
+        # **`answering`, not `reachable`.** The listing stopped saying `reachable` when FR-023
+        # was built: that one word meant "this process connected to it" and read as "reachable from
+        # the network", which is what a person planning a firewall rule would act on. Two facts now,
+        # and this poll wants the first -- did the broker answer.
+        elseif ($listed -match '(?m)\sanswering$' -and $listed -notmatch 'not answering') {
             $answering = $true
             $named = $true
             break

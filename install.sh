@@ -870,7 +870,11 @@ manifest=""
 named=0
 
 if listed="$("$parley_command" project list 2>/dev/null)"; then
-    manifest="$(printf '%s\n' "$listed" | sed -n 's/^manifest:[[:space:]]*//p' | tail -n 1)"
+    # **`root:`, and this read `manifest:` and never matched.** `project list` printed `projects:`,
+    # and nothing labelled `manifest:` has existed since 019 replaced the file with a directory --
+    # so every reinstall skipped the line saying what it was about to serve, and the guard that
+    # declares this interface passed on a comment in the command's own source.
+    manifest="$(printf '%s\n' "$listed" | sed -n 's/^root:[[:space:]]*//p' | tail -n 1)"
 
     if ! printf '%s' "$listed" | grep -q 'No projects configured'; then
         named=1
@@ -937,8 +941,12 @@ for _ in $(seq 1 80); do
                 answering=1
                 break
             fi
-        elif printf '%s\n' "$listed" | grep -q ' reachable$' \
-            && ! printf '%s\n' "$listed" | grep -q 'not reachable'; then
+        # **`answering`, not `reachable`.** The listing stopped saying `reachable` when FR-023 was
+        # built: one word meant "this process connected to it" and read as "reachable from the
+        # network", which is what somebody planning a firewall rule would act on. Two facts now, and
+        # this poll wants the first -- did the broker answer.
+        elif printf '%s\n' "$listed" | grep -q ' answering$' \
+            && ! printf '%s\n' "$listed" | grep -q 'not answering'; then
             answering=1
             named=1
             break

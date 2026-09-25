@@ -479,7 +479,12 @@ public sealed class ProjectCommandTests : IDisposable
 
         Assert.Equal(0, code);
         Assert.Contains("orders", output, StringComparison.Ordinal);
-        Assert.Contains("not reachable", output, StringComparison.Ordinal);
+        // **`not answering`, and it said `not reachable` until FR-023 was built.** That word meant
+        // "this process connected to it" and read as "reachable from the network" — which is what
+        // somebody planning a firewall rule would act on, and no rule they could write would make
+        // a loopback port reachable. The listing keeps the two facts apart now.
+        Assert.Contains("not answering", output, StringComparison.Ordinal);
+        Assert.Contains("only this machine can address it", output, StringComparison.Ordinal);
         Assert.Contains(Store("orders"), output, StringComparison.Ordinal);
         Assert.Contains(ProjectFolder.ProjectsIn(Root), output, StringComparison.Ordinal);
     }

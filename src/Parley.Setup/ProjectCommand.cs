@@ -224,10 +224,27 @@ public static class ProjectCommand
 
         foreach (var project in projects.OrderBy(p => p.Name.Value, StringComparer.Ordinal))
         {
-            var reachable = await ReachableAsync(project.Endpoint, cancellationToken).ConfigureAwait(false);
+            var answered = await ReachableAsync(project.Endpoint, cancellationToken).ConfigureAwait(false);
 
+            // **Two facts, never one word** (FR-022, FR-023). This printed `reachable`, meaning only
+            // that this process connected to it — and somebody planning a firewall rule reads that
+            // as reachable from the network. No rule they write can make it so, because nothing off
+            // the machine can address a loopback port. The spec quotes that listing as the defect.
+            //
+            // So: whether the broker *answered*, which is about right now and changes minute to
+            // minute; and whether anything off this machine could *address* it at all, which is a
+            // property of the endpoint and changes only when somebody edits `project.json`. They
+            // are on separate lines because a reader scanning a column is exactly who was misled.
             await output.WriteLineAsync(
-                $"{project.Name.Value,-16} {project.Endpoint,-28} {(reachable ? "reachable" : "not reachable")}")
+                $"{project.Name.Value,-16} {project.Endpoint,-28} {(answered ? "answering" : "not answering")}")
+                .ConfigureAwait(false);
+
+            // The same rule the broker warns on at every start, asked of the same method, so a
+            // listing and a start-up warning cannot come to disagree about one endpoint.
+            await output.WriteLineAsync(
+                BrokerEndpoint.OnlyThisMachine(project.Endpoint)
+                    ? "                 only this machine can address it"
+                    : "                 ANY MACHINE that can reach that address can address it, with no credentials")
                 .ConfigureAwait(false);
 
             await output.WriteLineAsync($"                 store  {project.Store}").ConfigureAwait(false);
@@ -238,7 +255,18 @@ public static class ProjectCommand
             }
         }
 
-        await output.WriteLineAsync($"\nprojects: {ProjectFolder.ProjectsIn(root)}").ConfigureAwait(false);
+        // **The root, labelled, because both installers read this line and neither could find it.**
+        // They match `^manifest:` and this printed `projects:` — so the scrape returned nothing,
+        // every reinstall skipped the line naming what it was about to serve, and no test noticed:
+        // the guard that declares this interface searched the whole source file, and "manifest: "
+        // appears in a comment forty lines below about something else. **A check answered by a
+        // comment is a check that has not run.**
+        //
+        // `root:` rather than `manifest:`, because there is no manifest. 019 replaced the file with
+        // a directory, and a label naming a file that no longer exists is how the next reader
+        // learns a vocabulary the code abandoned.
+        await output.WriteLineAsync($"\nroot:     {root}").ConfigureAwait(false);
+        await output.WriteLineAsync($"projects: {ProjectFolder.ProjectsIn(root)}").ConfigureAwait(false);
 
         return 0;
     }
