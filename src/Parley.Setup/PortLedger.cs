@@ -109,9 +109,8 @@ internal static class PortLedger
         "themselves are, and every claim reads them before choosing - so deleting this file costs a",
         "rebuild and nothing else.",
         "",
-        "It is also its own lock. `parley project add` and `parley project remove` open it with no",
-        "sharing for the whole of choosing a port; nothing that reads, starts or serves ever touches",
-        "it.",
+        "It is also its own lock. Creating and removing a project open it with no sharing for the",
+        "whole of choosing a port; nothing that reads, starts or serves ever touches it.",
     ];
 
     /// <summary>Where the record lives.</summary>

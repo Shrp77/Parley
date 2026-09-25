@@ -880,12 +880,17 @@ if [ "$named" != "1" ]; then
     # The first thing a person does on a machine just installed, said as the next step rather than left to be found.
     echo "No project is named yet, so nothing is being served. Name the first one:"
 
+    # Naming a project needs the terminal, and on a machine without one there is now no way at all:
+    # `parley project add` was the other route and it went on 2026-09-25, and the web UI has never
+    # been able to name a project by the one-writer rule its own naming page records. Said outright
+    # rather than left to be discovered as "name your first project" with nothing that can.
     if command -v parley-terminal >/dev/null 2>&1 || [ -x "$shims/parley-terminal" ]; then
         echo "  parley terminal                                   and create a project on its first screen"
+        echo "The broker starts it within seconds."
+    else
+        echo "Naming a project is done in the terminal, and this machine has not installed one." >&2
+        echo "  ./install.sh --only parley-terminal               installs it without stopping the broker"
     fi
-
-    echo "  parley project add <name>                         its store and port are its own"
-    echo "The broker starts it within seconds."
 
     if [ -n "$web_ui" ]; then
         echo "The web UI shows it once it is named: $web_ui"

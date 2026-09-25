@@ -228,7 +228,7 @@ public sealed class ProjectCommandTests : IDisposable
 
         Assert.Equal(64, code);
         Assert.Contains("--listen", error, StringComparison.Ordinal);
-        Assert.Contains("parley project add <name>", error, StringComparison.Ordinal);
+        Assert.Contains("parley terminal", error, StringComparison.Ordinal);
 
         // And nothing was created on the way to refusing it.
         Assert.False(Directory.Exists(ProjectFolder.ProjectsIn(Root)));
@@ -295,7 +295,7 @@ public sealed class ProjectCommandTests : IDisposable
 
         // Named with what replaced it. "Not an option this command takes" would be true and useless to
         // somebody typing what every deployment on every machine was made with.
-        Assert.Contains("parley project add <name>", error, StringComparison.Ordinal);
+        Assert.Contains("parley terminal", error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -449,8 +449,10 @@ public sealed class ProjectCommandTests : IDisposable
         Assert.Equal(0, code);
         Assert.Contains(ProjectFolder.ProjectsIn(Root), output, StringComparison.Ordinal);
 
-        // And it offers the whole command, which is now short enough to type from reading it.
-        Assert.Contains("parley project add <name>", output, StringComparison.Ordinal);
+        // And it says where to go. It offered the whole command until 2026-09-25, when creating a
+        // project became the terminal's — so a listing that still named `project add` would be the
+        // one place a person with no projects is looking, pointing at a command that refuses them.
+        Assert.Contains("parley terminal", output, StringComparison.Ordinal);
     }
 
     [Fact]

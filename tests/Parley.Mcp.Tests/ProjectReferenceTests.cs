@@ -196,7 +196,7 @@ public sealed class ProjectReferenceTests : IDisposable
         ])));
 
         Assert.Contains("orders", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("parley project add", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("parley terminal", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

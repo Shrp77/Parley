@@ -124,14 +124,15 @@ back, because connecting an agent to the wrong deployment looks entirely normal 
 The user needs one running. If nothing is listening, nothing works - the server exits at launch
 saying so rather than starting and failing every tool. The install script registers a broker that
 serves every project this machine names, so what is usually missing is a project. If
-`parley project list` names none, have the user name one - from the first screen of `parley terminal`,
-or:
+`parley project list` names none, have the user name one, on the first screen of:
 
 ```
-parley project add <name>
+parley terminal
 ```
 
-The broker starts it within seconds. Naming it is the whole of creating it: the project gets a
+That is the only place a project is created - `parley project add` was removed on 2026-09-25, so
+do not offer it. The broker starts the project within seconds. Naming it is the whole of creating
+it: the project gets a
 folder of its own, a `parley.db` inside it, and a port claimed for it. **You do not choose where
 the store goes, and that is the point** - it is one SQLite file shared by every repository that
 should be able to reach every other, so it must live outside all of them, and a path under one

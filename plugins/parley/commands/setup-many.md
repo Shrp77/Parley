@@ -110,7 +110,7 @@ Enrolment prints this, and it is the part that has to be done in order:
    for testing only.)
 
    **There is nothing to point at a catalogue, and this step used to say otherwise.** It told you
-   to run `parley project set <name> --node-config <path to node.json>` so that a project's entry
+   to run `project set <name> --node-config <path to node.json>` so that a project's entry
    carried its own catalogue. 018 made there be **one catalogue per machine**, keyed by identity,
    at the root - so a project cannot name a different one - and 019 removed the field that
    sentence wrote. The paragraph that followed it, about naming the catalogue explicitly rather

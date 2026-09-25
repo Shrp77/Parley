@@ -289,7 +289,7 @@ public static class ServeCommand
 
             // **A manifest that names nothing yet, being watched, is a machine waiting for its first project**, not a
             // failure. The installer registers exactly this entry before anybody has named a project, and a person
-            // names one from `parley terminal` or `parley project add`; the watcher starts it within seconds. Without a
+            // names one from `parley terminal`; the watcher starts it within seconds. Without a
             // watcher nothing could ever start here, and that stays the failure below says it is.
             var awaitingFirstProject = projects.Count == 0 && reread is not null;
 
@@ -327,9 +327,8 @@ public static class ServeCommand
             if (awaitingFirstProject)
             {
                 await output.WriteLineAsync(
-                    "No project is named yet. Name the first one from `parley terminal`, or with " +
-                    "`parley project add <name>` — it gets its own store and its own port, and starts " +
-                    "here within seconds. Ctrl+C stops this.")
+                    "No project is named yet. Name the first one from `parley terminal` — it gets " +
+                    "its own store and its own port, and starts here within seconds. Ctrl+C stops this.")
                     .ConfigureAwait(false);
             }
             else

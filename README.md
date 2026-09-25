@@ -158,8 +158,8 @@ That is the whole of it. The script packs the tools and installs them, registers
 start when you log in, starts it, and then checks that it answers. It never asks where a store
 goes: that is a project's to say. The broker serves every project this machine names, and on a
 machine that names none yet it waits for the first — so the script ends by telling you to name
-one, from the first screen of `parley terminal` or with `parley project add`. The broker starts it
-within seconds, and the web UI shows it.
+one, on the first screen of `parley terminal`. The broker starts it within seconds, and the web UI
+shows it.
 
 There are four tools, and which of them a machine wants is a real question:
 
@@ -237,11 +237,10 @@ somebody reinstalling a tool has not asked to lose their history or their launch
 
 The script already started one, so this is here to explain what it started rather than to be
 run. A deployment is a **project**: a store, the address its broker listens on, and optionally the
-catalogue of agents this machine may start for it. Name one from the first screen of
-`parley terminal`, or:
+catalogue of agents this machine may start for it. Name one on the first screen of:
 
 ```
-parley project add acme
+parley terminal
 ```
 
 One process serves every project this machine names, each on its own store and port, and each
@@ -290,10 +289,11 @@ and you can take part from either.
 **More than one deployment on one machine.** Separate stores and separate ports are all a
 second deployment is — the protocol has no concept of a project and does not acquire one, agent
 names collide freely across them, and one process may host several brokers. What that used to
-cost was carrying three paths on every command line. Naming a project is the whole of creating one:
+cost was carrying three paths on every command line. Naming a project is the whole of creating one,
+and it is done on the terminal's first screen:
 
 ```
-parley project add acme
+parley terminal
 parley --project acme registry
 ```
 
@@ -326,13 +326,18 @@ inside the project's folder and the port was claimed when the project was named.
 reached from another machine through a tunnel rather than by binding a network address — there is
 no command for the latter, which is deliberate and is explained where the tunnel is set up below.
 
-`parley project set <name> --description <text>` changes the one thing about a project that is
-yours to choose. `parley project remove` forgets a project and deletes nothing — not the store, not
-any repository's `.mcp.json` — and says so every time; the process serving this machine stops that
-project's broker within seconds and leaves the rest running. `parley project remove <name>
---destroy` is the deliberate version: it waits for the broker to stop, deletes the store and
-everything beside it, and lists the repositories that were agents in it, whose `.mcp.json` still
-names it.
+**Creating, changing and removing a project are done in the terminal, and not on the command line
+at all.** `parley project add`, `set` and `remove` were removed together on 2026-09-25: if a
+deployment is set up on a screen, it is set up on a screen. `parley project list` stays, because it
+reads and changes nothing — and because both install scripts call it.
+
+A project's description is the one thing about it that is yours to choose. Removing a project
+forgets it and deletes nothing — not the store, not any repository's `.mcp.json` — and the screen
+says so every time; the process serving this machine stops that project's broker within seconds and
+leaves the rest running. Destroying one is the deliberate version: it waits for the broker to stop,
+deletes the store and everything beside it, and lists the repositories that were agents in it,
+whose `.mcp.json` still names it. It takes the project's own name typed back, which is a door a
+command line could not offer and is most of why this moved.
 
 The trade is that a user-level supervisor stops the broker at logout. For a machine somebody
 works at that is right — the agents are editor sessions, and there are none when nobody is

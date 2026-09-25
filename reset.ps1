@@ -358,5 +358,5 @@ if ($Repositories) {
 Write-Host ''
 Write-Host 'Done. This machine has no projects now.' -ForegroundColor Green
 Write-Host ''
-Write-Host '  parley project add <name>        create one; it gets its own store and port' -ForegroundColor White
+Write-Host '  parley terminal                  create one; it gets its own store and port' -ForegroundColor White
 Write-Host '  parley autostart install         serve every project at logon' -ForegroundColor White

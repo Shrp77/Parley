@@ -73,10 +73,10 @@ public sealed class ProjectResolutionTests
     }
 
     [Fact]
-    public void Naming_a_project_on_a_machine_with_none_says_how_to_add_one()
+    public void Naming_a_project_on_a_machine_with_none_says_where_one_is_made()
     {
         Assert.False(ProjectResolution.TrySelect("orders", [], out _, out var problem));
-        Assert.Contains("parley project add", problem, StringComparison.Ordinal);
+        Assert.Contains("parley terminal", problem, StringComparison.Ordinal);
     }
 
     // ---- parity with the behaviour that came before -----------------------------------------

@@ -31,7 +31,9 @@ public sealed class BareCommandTests
 
         Assert.Equal(64, code);
         Assert.Contains("parley serve", output + error, StringComparison.Ordinal);
-        Assert.Contains("parley project add", output + error, StringComparison.Ordinal);
+        // The way on is the terminal now, not a command in this list: `project add` was removed on
+        // 2026-09-25 and the help stopped offering it with the tool.
+        Assert.Contains("parley terminal", output + error, StringComparison.Ordinal);
     }
 
     [Fact]

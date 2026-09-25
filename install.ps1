@@ -891,12 +891,19 @@ if (-not $named) {
     # The first thing a person does on a machine just installed, said as the next step rather than left to be found.
     Write-Host 'No project is named yet, so nothing is being served. Name the first one:' -ForegroundColor White
 
+    # **Naming a project needs the terminal, and on a machine without one there is now no way at
+    # all.** `parley project add` was the other route and it went on 2026-09-25; the web UI has
+    # never been able to name a project, by the one-writer rule its own naming page records. So a
+    # broker-only or web-UI-only machine is told outright rather than left to discover it -- the
+    # symptom otherwise is a person reading "name your first project" with nothing that can.
     if (Get-Command parley-terminal -ErrorAction SilentlyContinue) {
         Write-Host '  parley terminal                                   and create a project on its first screen' -ForegroundColor White
+        Write-Host 'The broker starts it within seconds.' -ForegroundColor White
     }
-
-    Write-Host '  parley project add <name>                         its store and port are its own' -ForegroundColor White
-    Write-Host 'The broker starts it within seconds.' -ForegroundColor White
+    else {
+        Write-Warning 'Naming a project is done in the terminal, and this machine has not installed one.'
+        Write-Host '  .\install.ps1 -Only parley-terminal               installs it without stopping the broker' -ForegroundColor White
+    }
 
     if ($webUi) {
         Write-Host "The web UI shows it once it is named: $webUi" -ForegroundColor White

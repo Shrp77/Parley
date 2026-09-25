@@ -25,14 +25,13 @@
     <h2>Rename it</h2>
 
     <p>
-        There is no single rename command yet, so it is two: forget the old name, then add the new
-        one with the same paths. <code>remove</code> deletes nothing — not the store, not a
-        conversation, not an agent's registration — it only forgets how this machine reaches the
-        deployment.
+        There is no single rename command yet, so it is two acts: forget the old name, then name
+        the new one. Forgetting deletes nothing — not the store, not a conversation, not an agent's
+        registration — it only forgets how this machine reaches the deployment. Both are done on
+        the terminal's project screen, which is the only place a project is created or removed.
     </p>
 
-    <pre><code>parley project remove @Model.Project
-parley project add &lt;new name&gt;</code></pre>
+    <pre><code>parley terminal</code></pre>
 
     <p>
         The new project gets its own folder, its own store and a port of its own — there is nothing
@@ -51,7 +50,7 @@ else
         name. Give it a real one:
     </p>
 
-    <pre><code>parley project add &lt;name&gt;</code></pre>
+    <pre><code>parley terminal</code></pre>
 
     <p>
         Naming it is the whole of creating it: the project gets a folder of its own, a store inside

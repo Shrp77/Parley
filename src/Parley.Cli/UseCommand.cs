@@ -88,7 +88,7 @@ internal static class UseCommand
             if (!projects.Any(p => string.Equals(p.Name.Value, project, StringComparison.Ordinal)))
             {
                 await error.WriteLineAsync(projects.Count == 0
-                    ? $"No project named '{project}' — this machine has none configured. Add one with `parley project add`."
+                    ? $"No project named '{project}' — this machine has none configured. Name one in `parley terminal`."
                     : $"No project named '{project}'. Configured: "
                       + string.Join(", ", projects.Select(p => p.Name.Value).Order(StringComparer.Ordinal)) + ".")
                     .ConfigureAwait(false);
@@ -119,7 +119,7 @@ internal static class UseCommand
 
         await output.WriteLineAsync(chosen is null
             ? "No project: this machine names none, so a command reaches the local broker. "
-              + "Name the first one with `parley project add`, or from `parley terminal`."
+              + "Name the first one in `parley terminal`."
             : $"{chosen.Name.Value} ({source}).").ConfigureAwait(false);
 
         return 0;

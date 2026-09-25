@@ -76,17 +76,9 @@ const string Help = """
                  [--clear]                             on: prints the line that sets PARLEY_PROJECT, or
                                                        with no project says which one is in use and why
 
-      parley project list                              what this machine is configured for
-      parley project add <name>                        naming it is the whole of creating it:
-                        [--description <text>]         its store is parley.db in its own folder
-                                                       and its port is claimed, not chosen
-      parley project set <name> [--description <text>] change what it says about itself; an
-                                                       empty value clears the description
-      parley project remove <name> [--destroy]         forget how to reach one; deletes nothing
-                                                       without --destroy, which also stops its
-                                                       broker and deletes its store and
-                                                       catalogue, and names the repositories
-                                                       that were agents in it
+      parley project list                              what this machine is configured for.
+                                                       Creating a project, changing what it says
+                                                       and removing one are the terminal's
 
       parley up [--node-config <path>]                 run this machine's node: report it to
                                                        the broker and start the agents on it
@@ -318,9 +310,9 @@ if (!forwarding
 {
     await Console.Error.WriteLineAsync(
         $"'{removed}' was removed: a project's store and endpoint are its own, and nothing outside it "
-        + "names either. `parley project add <name>` creates a project, deriving its store and claiming "
-        + "its port; `parley serve` serves every project on this machine. To work on one alone, name it "
-        + "with --project.").ConfigureAwait(false);
+        + "names either. Creating a project is `parley terminal`, where naming it derives its store "
+        + "and claims its port; `parley serve` serves every project on this machine. To work on one "
+        + "alone, name it with --project.").ConfigureAwait(false);
 
     return Usage;
 }
@@ -483,11 +475,17 @@ if (!ProjectManifest.TryRead(manifestPath, out var configuredProjects, out var m
 // that fixes "nothing is configured" cannot require something configured.
 // --destroy is refused everywhere but here, by the same rule as --with-node: a flag accepted
 // and ignored is worse than one refused, and this one names a deletion.
+//
+// **Still refused on every other verb although the one command that took it has moved.** The flag
+// now reaches nothing that reads it, so every spelling of it is a mistake -- and `project` is left
+// out of this so that `parley project remove --destroy` meets the sentence explaining where
+// removing a project went, rather than a sentence about a flag. Being told the flag is in the
+// wrong place, when the whole command is, sends somebody to fix the wrong half.
 if (destroy && verb != "project")
 {
     await Console.Error.WriteLineAsync(
-        "--destroy is only for `parley project remove`, which is the one command that deletes a "
-        + $"project's store. `parley {verb}` does not.").ConfigureAwait(false);
+        "--destroy named the one command that deleted a project's store, and removing a project "
+        + $"is the terminal's now. `parley {verb}` has never taken it.").ConfigureAwait(false);
 
     return Usage;
 }
@@ -534,6 +532,36 @@ if (verb == "use")
         RepositoryProjects.Read(Environment.CurrentDirectory),
         Console.Out,
         Console.Error).ConfigureAwait(false);
+}
+
+// **Creating, changing and removing a project are the terminal's** — the owner's call on
+// 2026-09-25, in their own words: "if we're doing everything in the terminal app, then we DO
+// everything in the terminal app."
+//
+// **Refused here rather than deleted from `ProjectCommand`, and that distinction is the whole
+// design.** The terminal does not reimplement naming a project: `Naming` and `Removing` call this
+// same command in process and print what it said, which is what makes a machine configured from a
+// screen configured exactly as one configured from a shell. Deleting the arms would take the
+// terminal's own creation and removal with them. What moves is the *command line*.
+//
+// **`list` stays, and it is not an oversight.** Both installers read it — for the manifest path,
+// and to check a project's broker actually answers rather than that a task was registered — and
+// FR-050 holds every caller in this repository's own scripts to going on working. It also reads
+// nothing and writes nothing, so it is not one of the acts this move is about.
+string[] MovedProjectActions = ["add", "set", "remove"];
+
+if (verb == "project" && rest.Length > 0 && MovedProjectActions.Contains(rest[0], StringComparer.Ordinal))
+{
+    await Console.Error.WriteLineAsync(
+        $"'project {rest[0]}' is not a command here any more. A project is created, changed and "
+        + "removed in the terminal, where naming one is the whole of it and everything it needs is "
+        + $"asked for on the same screen:{Environment.NewLine}{Environment.NewLine}"
+        + $"    parley terminal{Environment.NewLine}{Environment.NewLine}"
+        + "What this machine is configured for is still `project list`, which reads nothing else "
+        + "and changes nothing.").ConfigureAwait(false);
+
+    // EX_USAGE, so a script detects it rather than reading an empty success (FR-051).
+    return Usage;
 }
 
 if (verb == "project")
@@ -975,9 +1003,9 @@ if (verb == "serve" && rest.Length == 0)
         {
             Console.Error.WriteLine(
                 "No projects on this machine, so there is nothing to serve. They live under "
-                + $"{ProjectFolder.ProjectsIn(manifestPath)}; create one with `parley project add "
-                + "<name>` and it gets its own store and its own port. `parley autostart install` "
-                + "then serves every project at logon, including any named afterwards.");
+                + $"{ProjectFolder.ProjectsIn(manifestPath)}; create one in `parley terminal` and "
+                + "it gets its own store and its own port. `parley autostart install` then serves "
+                + "every project at logon, including any named afterwards.");
 
             return Task.FromResult(Config);
         }

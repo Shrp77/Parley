@@ -600,9 +600,51 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Current plan**: `specs/019-one-way-in/` — **0.32.0. The layout, the port claim, `project add <name>`,
+- **Current plan**: `specs/019-one-way-in/` — **0.32.0. The layout, the port claim, naming a project,
   and the removal of `--db`, `-d`, `PARLEY_DB`, `--listen` and `-l` from every command. 46 of 111 tasks,
   every suite green, nothing pushed.**
+
+  **Everything a person does to a deployment is the terminal's, and the command line no longer offers any
+  of it** — the owner's call on 2026-09-25, after US5 moved the sixteen operator verbs the day before:
+  *"if we're doing everything in the terminal app, then we DO everything in the terminal app."* So
+  `project add`, `project set` and `project remove` went as well. `project list` stays, because both
+  installers read it — for the manifest path, and to check a project's broker answers rather than that a
+  task was registered — and because it changes nothing.
+
+  **Refused at the entry point rather than deleted, and that distinction is load-bearing.** The terminal
+  does not reimplement naming a project: `Naming` and `Removing` call `ProjectCommand` in process and
+  print what it said, which is what makes a machine configured from a screen configured exactly as one
+  configured from a shell. Deleting the arms would have taken the terminal's own create and remove with
+  them. Every arm survives; what went is the dispatch in `parley`.
+
+  **The sweep was the work, not the removal.** Twelve tests failed, every one of them the same check —
+  *a refusal must name what replaced it* — pinned to a spelling that had moved. Eight further places
+  still sent people to `project add` and no test covered them: `parley use`, the MCP adapter's refusal
+  when `PARLEY_PROJECT` names a project the manifest lacks, the enrolment's next steps, `ProjectResolution`,
+  the web UI's naming page, and the header comments written into `project.json` and `ports.json`. **A
+  command is removed by grep over its own dispatch; a command is *replaced* by finding everything that
+  ever recommended it.**
+
+  **And it opened a gap that had to be closed rather than discovered.** The web UI has never been able to
+  name a project — the one-writer rule its own naming page records — so a machine installed without the
+  terminal now has no way to create one at all. Both installers check and say so, with the command that
+  adds the terminal without stopping the broker.
+
+  **The logon entry can be installed without a console window.** `autostart install --hidden` has the
+  broker let go of its console; both installers take a switch for it, opt-in, so a machine already
+  installed behaves at logon exactly as it did. Three defects on the way: the flag first *moved* the
+  window rather than removing it, because a child console program inherits its parent's console and the
+  web UI child therefore never needed `CreateNoWindow` — once the broker detaches there is nothing to
+  inherit and Windows allocates a fresh console; `autostart install` printed the web UI's address only
+  inside the command line it runs, at the end of the longest line it prints, so it is a line of its own
+  now on `install` and on `status`; and **leaving the terminal with Ctrl+C left mouse reporting switched
+  on for the life of that window**. Terminal.Gui enables six DEC private modes and disables them on
+  shutdown, and `TerminalCommand` deliberately lets Ctrl+C kill the process before that runs — an
+  argument that is right about the seat, which a dying connection releases, and silent about the console,
+  which nothing else puts back. `ConsoleRestore` is the missing half, and its guard reads the modes out
+  of the toolkit's own assembly rather than keeping a list: a hand-kept list is right the day it is
+  written and silently wrong at the next upgrade, and the symptom of being wrong is not a red test but
+  somebody's terminal.
 
   **The migration is cut.** US6, US7 and FR-062 to FR-064 are withdrawn: nothing has been released, so
   there is nothing to move and nothing to strand. `reset.ps1` at the root clears a developer's pre-019

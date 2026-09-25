@@ -118,10 +118,12 @@ public sealed class OneStoreIsForTestingTests
         // be run, and would have failed had anybody corrected it.
         //
         // What the step actually promises is that a person with no project is told how to name one and
-        // how it comes to be served. That is what is asserted now, and it is spelled so that adding a
-        // flag back here fails rather than passes: the name is the whole of the command.
-        Assert.Contains("parley project add <name>", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("parley project add <name> --", text, StringComparison.Ordinal);
+        // how it comes to be served. That is what is asserted, and the spelling moved once more on
+        // 2026-09-25: naming a project is the terminal's, so a step naming any `project` command at
+        // all would send somebody to one the tool refuses. The same defect as the one above, which is
+        // why the check is now on the step rather than on any command's arguments.
+        Assert.Contains("parley terminal", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("parley project add", text, StringComparison.Ordinal);
         Assert.Contains("parley autostart install", text, StringComparison.Ordinal);
     }
 }

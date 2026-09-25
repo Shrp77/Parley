@@ -95,7 +95,7 @@ public static class ProjectResolution
 
             problem = projects.Count == 0
                 ? $"No project named '{requested}' — this machine has none configured. " +
-                  "Add one with `parley project add`."
+                  "Name one in `parley terminal`."
                 : $"No project named '{requested}'. Configured: {Names(projects)}.";
 
             return false;
@@ -189,7 +189,7 @@ public static class ProjectResolution
 
             problem = projects.Count == 0
                 ? $"PARLEY_PROJECT is '{named}', and this machine has no projects configured. "
-                  + "Clear it with `parley use --clear`, or add the project with `parley project add`."
+                  + "Clear it with `parley use --clear`, or name the project in `parley terminal`."
                 : $"PARLEY_PROJECT is '{named}', and this machine names {Names(projects)}. "
                   + "Choose one with `parley use <name>`, clear it with `parley use --clear`, or name one with --project.";
 

@@ -150,7 +150,11 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
         // project cannot point it at one; `--db` and `--listen` do not appear because 019 removed
         // them, and until now this test required both — so the step told an operator to run a
         // command the tool would refuse, and the check over it insisted on that wording.
-        Assert.Contains("parley project add <name>", said, StringComparison.Ordinal);
+        // **And now the step names no project command at all.** Creating a project became the
+        // terminal's on 2026-09-25, so a step telling an operator to run one would be telling them
+        // to run something the tool refuses — the exact fault this comment was written about,
+        // arrived at a second time by a different route.
+        Assert.Contains("parley terminal", said, StringComparison.Ordinal);
         Assert.DoesNotContain("--node-config", said, StringComparison.Ordinal);
         Assert.DoesNotContain("--db", said, StringComparison.Ordinal);
         Assert.DoesNotContain("--listen", said, StringComparison.Ordinal);

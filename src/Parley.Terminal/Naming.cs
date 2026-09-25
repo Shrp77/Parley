@@ -10,9 +10,15 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Convenience rather than capability: <c>parley project add</c> has always done this, and it is
-/// done once per project. What it buys is not having to leave a full-screen application to run a
-/// command whose arguments are on the screen you left.
+/// <b>This is the only way to create a project now</b>, and for most of its life it was not: the
+/// command line could do it too, and this existed so that nobody had to leave a full-screen
+/// application to run a command whose arguments were on the screen they left. The owner removed
+/// the other half on 2026-09-25 — "if we're doing everything in the terminal app, then we DO
+/// everything in the terminal app" — so what was a convenience is the capability.
+/// </para>
+/// <para>
+/// Nothing below changed with it, which is the point of the arrangement: the command still exists
+/// and this still calls it. What went is the arm in <c>parley</c> that dispatched to it.
 /// </para>
 /// <para>
 /// <b>It calls <see cref="ProjectCommand"/> rather than writing the manifest itself</b>, which is

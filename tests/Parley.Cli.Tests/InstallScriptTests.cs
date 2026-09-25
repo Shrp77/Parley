@@ -299,9 +299,12 @@ public sealed class InstallScriptTests
         // last thing the person read, so it says the next step rather than leaving it to be found.
         var code = Code(RepositoryFile.Read(script));
 
+        // **And the terminal is the only next step there is now.** `parley project add` went on
+        // 2026-09-25, so a script still offering it would be handing somebody a command the tool
+        // refuses, at the one moment they have nothing else to go on.
         Assert.Contains("No projects configured", code, StringComparison.Ordinal);
-        Assert.Contains("parley project add", code, StringComparison.Ordinal);
         Assert.Contains("parley terminal", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("parley project add", code, StringComparison.Ordinal);
     }
 
     [Fact]

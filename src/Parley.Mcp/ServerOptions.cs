@@ -301,9 +301,9 @@ public sealed record ServerOptions(
 
             throw new InvalidOperationException(
                 $"{ProjectVariable} is '{named}', which {manifest} does not describe. {configured} " +
-                $"Add it with `parley project add {named}`, or set {BrokerVariable} to the " +
-                "broker's address. This server will not guess: connecting to another project's " +
-                "broker would put this agent in a roster it does not belong to.");
+                $"Name it in `parley terminal`, or set {BrokerVariable} to the broker's address. " +
+                "This server will not guess: connecting to another project's broker would put " +
+                "this agent in a roster it does not belong to.");
         }
 
         return (project.Endpoint, null);

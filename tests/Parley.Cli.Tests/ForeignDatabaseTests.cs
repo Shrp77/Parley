@@ -141,7 +141,7 @@ public sealed class ForeignDatabaseTests : IDisposable
         // deployment on every machine was made with this flag, so it is in scripts and in fingers, and
         // a refusal that pretended never to have heard of it would be true and useless.
         Assert.Contains("--db", error, StringComparison.Ordinal);
-        Assert.Contains("parley project add <name>", error, StringComparison.Ordinal);
+        Assert.Contains("parley terminal", error, StringComparison.Ordinal);
         Assert.False(File.Exists(path));
     }
 
@@ -208,7 +208,8 @@ public sealed class ForeignDatabaseTests : IDisposable
 
         // The way on is a project, and it is the only way on now. A refusal naming a one-store option
         // used to send a person to deploy by hand outside the manifest; there is no such option to name.
-        Assert.Contains("parley project add", error, StringComparison.Ordinal);
+        // Since 2026-09-25 the way to a project is the terminal, so that is what this has to say.
+        Assert.Contains("parley terminal", error, StringComparison.Ordinal);
         Assert.DoesNotContain("--db", error, StringComparison.Ordinal);
     }
 
@@ -247,7 +248,7 @@ public sealed class ForeignDatabaseTests : IDisposable
 
             Assert.Equal(64, exitCode);
             Assert.Contains(gone, error, StringComparison.Ordinal);
-            Assert.Contains("parley project add <name>", error, StringComparison.Ordinal);
+            Assert.Contains("parley terminal", error, StringComparison.Ordinal);
             Assert.Contains("parley serve", error, StringComparison.Ordinal);
         }
     }

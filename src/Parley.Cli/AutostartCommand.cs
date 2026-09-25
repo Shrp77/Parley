@@ -144,9 +144,9 @@ public static class AutostartCommand
         if (manifestToServe is null && string.IsNullOrWhiteSpace(project))
         {
             await error.WriteLineAsync(
-                "This machine has no projects yet, so there is nothing for an entry to serve. Create "
-                + "one with `parley project add <name>`, then run this again — the entry will serve "
-                + "every project on the machine, including any named afterwards.").ConfigureAwait(false);
+                "This machine has no projects yet, so there is nothing for an entry to serve. Name "
+                + "one in `parley terminal`, then run this again — the entry will serve every "
+                + "project on the machine, including any named afterwards.").ConfigureAwait(false);
 
             return Config;
         }
@@ -255,7 +255,7 @@ public static class AutostartCommand
                 && listedProjects.Count == 0)
             {
                 await output.WriteLineAsync(
-                    "  names: no project yet. Name the first one from `parley terminal`, or with `parley project add`;\n" +
+                    "  names: no project yet. Name the first one from `parley terminal`;\n" +
                     "         it starts within seconds, and the web UI shows it.")
                     .ConfigureAwait(false);
             }
@@ -670,7 +670,7 @@ public static class AutostartCommand
                 // refuses. `--project` is what narrows an entry now, and omitting it is what widens
                 // one. The same sentence lives in `Naming.cs` and was corrected with it.
                 await output.WriteLineAsync(
-                    "  A project named with `parley project add` is not served by this entry. " +
+                    "  A project named after this entry was written is not served by it. " +
                     "Re-run\n  `parley autostart install` with no --project to have it serve every " +
                     "project on this machine.").ConfigureAwait(false);
             }

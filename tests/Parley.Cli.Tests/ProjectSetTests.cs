@@ -176,7 +176,7 @@ public sealed class ProjectSetTests : IDisposable
 
             // Named with what replaced it, rather than "not an option this command takes" — which would
             // be true and useless to somebody typing what every deployment was made with.
-            Assert.Contains("parley project add <name>", refused, StringComparison.Ordinal);
+            Assert.Contains("parley terminal", refused, StringComparison.Ordinal);
         }
 
         Assert.Equal(

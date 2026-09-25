@@ -58,10 +58,12 @@ and its own agents, and no visibility of each other. SPEC.md 4.1 calls that a *p
 careful that it is a deployment concept only: nothing about a project crosses the wire, and the
 same agent name may appear in two of them without either knowing.
 
-`parley project add` records one, so commands stop being told its paths a flag at a time:
+A project is created in the terminal, where naming it is the whole of it - its store and its port
+are derived and claimed rather than supplied. Once it exists, commands stop being told its paths a
+flag at a time:
 
 ```
-parley project add orders
+parley terminal
 parley --project orders registry
 ```
 
@@ -78,17 +80,19 @@ needs naming.
 its absence, and every flag and environment variable that worked before still works and still
 wins over a project's values.
 
-`parley project set <name>` changes an entry in place - only the fields given, and an empty value
-clears an optional one. The process serving the manifest restarts that project on its new store,
-endpoint or catalogue within seconds; a description changes nothing running.
+**Creating, changing and removing a project are the terminal's, and are not on the command line at
+all** (2026-09-25). `parley project add`, `set` and `remove` were removed together, on the owner's
+call that if a deployment is set up on a screen then it is set up on a screen. The command line
+keeps `parley project list`, which reads and changes nothing.
 
-`parley project remove` takes out the entry and **deletes nothing** - not the store, not the node
-catalogue, not any repository's launch configuration. It says so each time, and names what is
-still there; the process serving the manifest stops that project's broker and leaves the rest.
-Removing a project and deleting its store are two decisions, so deleting has its own name:
-`parley project remove <name> --destroy` waits for the broker to stop, deletes the store and the
-catalogue, and lists the repositories that were agents in it, whose launch configuration still
-names it. A broker it does not own - one started by hand - is reported and left running.
+Changing what a project says about itself changes nothing running. Removing one **deletes nothing**
+- not the store, not the node catalogue, not any repository's launch configuration - and the screen
+says so each time and names what is still there; the process serving the manifest stops that
+project's broker and leaves the rest. Removing a project and deleting its store are two decisions,
+so destroying is its own act: it waits for the broker to stop, deletes the store and the catalogue,
+and lists the repositories that were agents in it, whose launch configuration still names it. A
+broker it does not own - one started by hand - is reported and left running. Destroying takes the
+project's own name typed back, which is the door a command line could not offer.
 
 **Retiring and purging an agent can also be done from `parley terminal`, since 2026-09-05.** The rule
 that kept them off it was that a purge behind a keystroke is a different risk from one behind a page
@@ -135,11 +139,8 @@ parley terminal                       the same deployment in this terminal; need
                                       (its own tool: parley-terminal, installed separately)
 
 parley project list                   what this machine is configured for
+                                      (creating, changing and removing one are in the terminal)
 parley use [<name>] [--shell <name>]  the project this terminal's commands act on (--clear to stop)
-parley project add <name>             create one: it gets its own store and its own port
-parley project set <name> [--description <text>]   change what it says about itself
-parley project remove <name>          forget how to reach one; deletes nothing
-parley project remove <name> --destroy    ...and stop its broker, delete its store and catalogue
 
 parley enroll <dir>                   find the repositories under a directory, tick the ones
                                       to enroll, and configure, catalogue and start them

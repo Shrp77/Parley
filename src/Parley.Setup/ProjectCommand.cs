@@ -73,12 +73,14 @@ public static class ProjectCommand
     {
         await error.WriteLineAsync(
             "parley project list                        what this machine is configured for\n" +
-            "parley project add <name>                  add a project; the name is the whole of it\n" +
-            "                          [--description <text>]\n" +
-            "parley project set <name> --description <text>   change what a project says\n" +
-            "parley project remove <name>               forget how to reach a project\n" +
-            "                      [--destroy]          ...and stop its broker and delete\n" +
-            "                                           its store and catalogue")
+            "\n" +
+            "Creating a project, changing what it says and removing one are done in the terminal:\n" +
+            "\n" +
+            "    parley terminal\n" +
+            "\n" +
+            "It is the same code this command runs, on a screen that asks for what it needs -- and\n" +
+            "removing a project there describes what goes with it and takes the project's own name\n" +
+            "typed back, which a command line cannot do.")
             .ConfigureAwait(false);
 
         return Usage;
@@ -214,7 +216,7 @@ public static class ProjectCommand
             // where a manifest would live is more use than saying it is missing.
             await output.WriteLineAsync(
                 $"No projects configured. One would live under {ProjectFolder.ProjectsIn(root)}.\n" +
-                "Add one with `parley project add <name>`.")
+                "Name the first one in `parley terminal`.")
                 .ConfigureAwait(false);
 
             return 0;
@@ -292,9 +294,14 @@ public static class ProjectCommand
         // claimed, so there is nothing left to get wrong.
         if (ProjectFolder.TryRead(root, name, out _, out _))
         {
+            // **Names no command, because this text is read on two surfaces.** The terminal runs
+            // this same method in process and prints what it said, so a sentence naming a command
+            // line would arrive on a screen where there is not one -- and the command lines it used
+            // to name have themselves moved here. What is left is the fact and what can be done
+            // about it, which is true wherever it is read.
             await error.WriteLineAsync(
-                $"'{name}' is already a project on this machine. Change it with `parley project set`, "
-                + "or take it out with `parley project remove`.").ConfigureAwait(false);
+                $"'{name}' is already a project on this machine. It can be described differently, "
+                + "or taken out, without being created again.").ConfigureAwait(false);
 
             return Config;
         }

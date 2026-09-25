@@ -19,9 +19,15 @@ namespace Parley.Terminal;
 /// <para>
 /// So it is not a keystroke. The project is described — store and broker — and forgetting
 /// it, which deletes nothing, is offered beside destroying it. Destroying takes the project's own
-/// name typed back, and nothing else is accepted: not a "y", not Enter. That is the same act
-/// <c>parley project remove --destroy</c> is, reached through the command it runs, which is the
-/// only writer of the manifest and the only thing that deletes a store.
+/// name typed back, and nothing else is accepted: not a "y", not Enter. It is reached through the
+/// command it runs, which is the only writer of the manifest and the only thing that deletes a
+/// store.
+/// </para>
+/// <para>
+/// <b>That command is no longer reachable from a shell</b>, as of 2026-09-25, so this door is the
+/// only one there is. The description and the typed name were always the better arrangement — a
+/// command line can offer neither — and the removal is what makes them unavoidable rather than
+/// merely available.
 /// </para>
 /// <para>
 /// <b>The word stays in this file.</b> <c>SurfaceTests</c> holds it here, so a second path to the

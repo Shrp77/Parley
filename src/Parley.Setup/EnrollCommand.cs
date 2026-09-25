@@ -1311,8 +1311,8 @@ public static class EnrollCommand
         // and `autostart install --db` being taken out of this same block; `project add`'s own flags
         // were left in it, which is what a sweep by grep for one spelling does.
         var start = named is null
-            ? "  1. Name the project these repositories answer in:\n" +
-              "       parley project add <name>\n" +
+            ? "  1. Name the project these repositories answer in, on the first screen of:\n" +
+              "       parley terminal\n" +
               Serve
             : $"  1. A broker{(nodeChanged ? " and this machine's node" : string.Empty)} for {named}.\n" + Serve;
 
