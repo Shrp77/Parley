@@ -779,7 +779,28 @@ if (verb == "serve" && rest.Length == 0)
             {
                 // The address the broker actually bound, not the one it was asked for: --listen may
                 // name port 0, and a web UI pointed at port 0 reaches nothing.
-                var start = new ProcessStartInfo(WebUiTool) { UseShellExecute = false };
+                //
+                // **`CreateNoWindow` is what makes `--hidden` mean anything**, and leaving it out
+                // made that flag move the window rather than remove it. A child console program
+                // inherits its parent's console when there is one, which is why this never needed
+                // the setting before; once the broker lets go of its console there is nothing to
+                // inherit, so Windows gives the child a fresh one, and the window somebody had just
+                // asked not to see came back reading "Parley web UI on ...". Reported within a
+                // minute of the flag being installed.
+                //
+                // Set unconditionally rather than only when hidden: with a console to inherit this
+                // changes nothing at all, so a condition here would be a second thing to keep in
+                // step with the first for no gain. `ResidentAgent` has had it since it was written,
+                // which is why agents never showed this and the web UI did.
+                //
+                // ASCII only in this region, comments included: `StartupBannerTests` holds it, and
+                // it caught the first draft of this comment. What that guard protects is the block
+                // printed on a console whose code page nobody chose.
+                var start = new ProcessStartInfo(WebUiTool)
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
 
                 start.ArgumentList.Add("--listen");
                 start.ArgumentList.Add(webUiAddress);

@@ -710,11 +710,15 @@ public static class AutostartCommand
     private static async Task<(int ExitCode, string Output)> RunAsync(
         string fileName, string[] arguments, CancellationToken cancellationToken)
     {
+        // `CreateNoWindow` for the same reason the web UI child carries it: this runs `schtasks`,
+        // `launchctl` or `systemctl`, and a console program started by a parent with no console of
+        // its own is given a fresh window. Brief, and a flash nobody asked for is still a flash.
         var start = new ProcessStartInfo(fileName)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            UseShellExecute = false
+            UseShellExecute = false,
+            CreateNoWindow = true,
         };
 
         foreach (var argument in arguments)
