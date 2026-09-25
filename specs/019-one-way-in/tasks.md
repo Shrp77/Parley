@@ -106,7 +106,7 @@ Read these before starting; each has a test that fails the build rather than a c
     repository keeps recording: a green-looking answer to a question nobody asked. Reading costs nothing
     and writing is gone, which is exactly the line 0.22.0 drew for `--console`.
 - [X] T036 [US2] Convert `tests/Parley.Cli.Tests/BrokerProcess.cs`: `Start` takes a root and a project name, writes `<root>/projects/<name>/project.json` **directly** with a `FreePort()` endpoint, and keeps reading the real address off stdout (R3 — the rig must not allocate, because the band is per machine and the root is per test)
-- [ ] T037 [US2] Remove `PARLEY_DB` from `ToolProcess.cs`'s variable clear-list, keeping the neutral working directory
+- [X] T037 [US2] Remove `PARLEY_DB` from `ToolProcess.cs`'s variable clear-list, keeping the neutral working directory
 - [X] T038 [US2] Delete `OneStoreIsForTestingTests.cs`, `ForeignDatabaseTests.cs`, `NoManifestParityTests.cs` — ~24 tests whose subject is `--db` itself
   - **Converted rather than deleted, except `OneStoreIsForTestingTests`.** Of `ForeignDatabaseTests`' ten,
     six survive with their subject repointed — most importantly that a store Parley did not create is
@@ -138,15 +138,16 @@ Read these before starting; each has a test that fails the build rather than a c
 - [X] T046 [US3] Collapse `enroll scan|plan|apply` into one verb in `src/Parley.Setup/EnrollCommand.cs`: `enroll <dir> [--all|--none] [--describe]` (FR-040). No file to author, no plan step — **done.** `parley enroll <dir>` is the whole command; `scan`, `plan` and `apply` are deleted along with `EnrollmentManifest` and the worksheet guidance it carried. The file was a round trip through the disk between two halves of one operation
 - [X] T047 [US3] Offer the git repositories found and allow choosing among them, with `--all`/`--none` for scripts (FR-041) — **done**, twice over: `ConsolePicker`/`RepositorySelection` on the command line, and `TickDialog` in `parley terminal` behind a folder browser, which is the owner's preferred way in
 - [X] T048 [US3] Implement `--describe`: report what would be configured, change nothing (FR-042) — **done** as `--describe`, taken centrally with the other flags so it reaches the command at all
-- [ ] T049 [US3] Catalogue every repository enrolled, so a peer's request can start it — **enrolling is the consent** (FR-043, reversing the per-repository opt-in)
+- [X] T049 [US3] Catalogue every repository enrolled, so a peer's request can start it — **enrolling is the consent** (FR-043, reversing the per-repository opt-in)
 - [ ] T050 [US3] State before configuring that enrolling makes each repository startable by a peer, and name how many are about to be started (FR-044)
-- [ ] T051 [US3] Start each repository after configuring so each **registers itself**; write no registration on a repository's behalf (FR-045, FR-066)
-- [ ] T052 [US3] Report per repository whether it registered, and report one that did not register in time as **not known**, never as failed (FR-046; 008's rule)
-- [ ] T053 [US3] Enrolling a repository already enrolled elsewhere adds this project's name and leaves its identity and other projects alone (FR-047)
-- [ ] T054 [US3] Carry forward an existing statement of what a repository owns; never ask a person to compose one (FR-048 — 020 owns the asking)
+- [X] T051 [US3] Start each repository after configuring so each **registers itself**; write no registration on a repository's behalf (FR-045, FR-066)
+- [X] T052 [US3] Report per repository whether it registered, and report one that did not register in time as **not known**, never as failed (FR-046; 008's rule)
+- [X] T053 [US3] Enrolling a repository already enrolled elsewhere adds this project's name and leaves its identity and other projects alone (FR-047)
+- [X] T054 [US3] Carry forward an existing statement of what a repository owns; never ask a person to compose one (FR-048 — 020 owns the asking)
 - [ ] T055 [P] [US3] Test: a git worktree is reported as sharing its checkout's launch configuration rather than silently written (edge case)
-- [ ] T056 [P] [US3] Test: enrolment with no broker running does what it can and says what it could not (edge case)
-- [ ] T057 [P] [US3] Test: a repository already enrolled in this project is reported as such, not duplicated, identity unchanged
+- [~] T056 [P] [US3] Test: enrolment with no broker running does what it can and says what it could not (edge case)
+      **STALE** — inverted deliberately: enrolment now *refuses* when the project's broker is unreachable, because a half-enrolled set is worse than none (`EnrolmentRegistersTests.A_broker_that_does_not_answer_is_a_reason_to_refuse`).
+- [X] T057 [P] [US3] Test: a repository already enrolled in this project is reported as such, not duplicated, identity unchanged
 
 ---
 
@@ -156,12 +157,15 @@ Read these before starting; each has a test that fails the build rather than a c
 
 - [X] T058 [US4] Change `ServeCommand`'s `reread` to list the projects directory and parse each `project.json` — **and change nothing else about the watcher**, which already polls every two seconds (R2)
   - **Done early, because it was not optional once the layout landed.** The stamp was one file's write time; that file no longer exists, so `File.Exists` was false, the stamp never moved, and the watcher silently stopped noticing anything at all — a machine going on serving whatever it started with while `project add` reported success. Caught by `HostedNodeTests`, not by reading. The stamp is now every project's configuration and when each was last written, which is also what keeps a broker from being restarted for a file somebody dropped beside one. R2 held: nothing else about the watcher changed.
-- [ ] T059 [US4] Remove `--listen`, `--db`, `--with-web-ui`, `--web-ui`, `--no-web-ui` from `serve` (FR-031, FR-039)
-- [ ] T060 [US4] Serve every project and report by name any whose store cannot be opened, without preventing the others (FR-030, FR-032)
+- [~] T059 [US4] Remove `--listen`, `--db`, `--with-web-ui`, `--web-ui`, `--no-web-ui` from `serve` (FR-031, FR-039)
+      **STALE (half done)** — `--db`, `-d`, `--listen`, `-l` are refused by name. `--with-web-ui`, `--web-ui` and `--no-web-ui` stay on `serve` by the later decision that the broker starts the web UI as a child; the installers pass them.
+- [X] T060 [US4] Serve every project and report by name any whose store cannot be opened, without preventing the others (FR-030, FR-032)
 - [ ] T061 [US4] Stay up and report why when no project can be opened or none exists, so a project named next is served without a restart (FR-033)
-- [ ] T062 [US4] Remove the four `autostart install` options; the entry serves everything and starts the surfaces (FR-039)
-- [ ] T063 [P] [US4] Test: three projects, all reachable after one start; and no option exists that would have served fewer (SC-004)
-- [ ] T064 [P] [US4] Test: one project with an unopenable store is named and the other two are served (FR-032)
+- [~] T062 [US4] Remove the four `autostart install` options; the entry serves everything and starts the surfaces (FR-039)
+      **STALE** — `autostart install` deliberately carries `--web-ui`, `--no-web-ui`, `--node-config` and `--hidden`, the last added 2026-09-25 so a logon entry can open no console window.
+- [~] T063 [P] [US4] Test: three projects, all reachable after one start; and no option exists that would have served fewer (SC-004)
+      **STALE** — the multi-project half is covered by `MultiProjectServeTests.Two_projects_are_both_served_from_one_process`; the second half cannot be made true, because `serve --project` still serves one alone for testing.
+- [X] T064 [P] [US4] Test: one project with an unopenable store is named and the other two are served (FR-032)
 
 ---
 
@@ -177,7 +181,7 @@ Read these before starting; each has a test that fails the build rather than a c
 - [X] T070 [US5] Run `PluginTests` and confirm the verb sets are equal in both directions **before** moving on — this is the build constraint, not a check to defer — **done.** Verb sets equal in both directions; Mcp 197 green
 - [ ] T071 [US5] Rewrite `project list` output: endpoint, store and reachability in one place; **two facts never merged into one word** — whether it answered, and whether anything off this machine can address it (FR-022, FR-023, FR-025)
 - [X] ~~T072 [US5] Put the remedy beside the limitation: a loopback endpoint's report says what to run to make it reachable (FR-024)~~ — **withdrawn 2026-09-24.** It asks a loopback endpoint's report to say what to run to make it reachable, and there is no such command: reaching a broker from another machine is an authenticated tunnel, because all three gRPC services share one port. `project add` names the tunnel where it prints the address
-- [ ] T073 [US5] Drop the `node …-catalogue.json` line from `project list`, which names what 018 made meaningless
+- [X] T073 [US5] Drop the `node …-catalogue.json` line from `project list`, which names what 018 made meaningless
 - [X] T074 [P] [US5] Test: every removed verb exits 64 and names a surface; and none of their output contains `parley ` followed by the removed verb — **done** as `MovedToTheTerminalTests`: every moved verb exits 64 naming the terminal, answers without a broker, and never writes `parley` followed by its own name. Plus a guard that `registry`, `open` and `waiting` were not swept up, which FR-050 requires
 - [ ] T075 [P] [US5] Test: `project list` never describes a loopback endpoint with a word that reads as network reachability (FR-023)
 
@@ -227,26 +231,27 @@ it.
 
 **Goal**: existing behaviour this change could silently break.
 
-- [ ] T094 [US8] Confirm the `failing` set still holds a project that will not start and retries only when its entry changes (R2)
-- [ ] T095 [US8] Confirm an unreadable `project.json` stops nothing, generalising the loop's existing `catch` to one bad project among many (R2, FR-029)
-- [ ] T096 [P] [US8] Test: a project added while Parley runs is reachable within ten seconds without a restart (FR-034, SC-010)
+- [X] T094 [US8] Confirm the `failing` set still holds a project that will not start and retries only when its entry changes (R2)
+- [X] T095 [US8] Confirm an unreadable `project.json` stops nothing, generalising the loop's existing `catch` to one bad project among many (R2, FR-029)
+- [X] T096 [P] [US8] Test: a project added while Parley runs is reachable within ten seconds without a restart (FR-034, SC-010)
 - [ ] T097 [P] [US8] Test: adding or changing one project does not disconnect agents attached to another (FR-035, SC-010) — the half that matters, and the half a restart would silently break
-- [ ] T098 [P] [US8] Test: a project folder removed by hand stops being served and the rest go on (FR-036)
+- [X] T098 [P] [US8] Test: a project folder removed by hand stops being served and the rest go on (FR-036)
 
 ---
 
 ## Phase 11: Polish, documents, and the gate
 
-- [ ] T099 [P] Update `SPEC.md` §4.1 — its illustration of a project manifest becomes the layout (Constitution Principle I; this is a document change first)
-- [ ] T100 [P] Sweep `SPEC.md` §10.2 for command-line spellings; **the operations do not change**, only how they are spelled at a prompt
-- [ ] T101 [P] Sweep `README.md` (~90 mentions), and make it direct a person who wants to take part to the terminal or the web UI — naming a way in that works with no terminal (FR-054)
+- [X] T099 [P] Update `SPEC.md` §4.1 — its illustration of a project manifest becomes the layout (Constitution Principle I; this is a document change first)
+- [X] T100 [P] Sweep `SPEC.md` §10.2 for command-line spellings; **the operations do not change**, only how they are spelled at a prompt
+- [X] T101 [P] Sweep `README.md` (~90 mentions), and make it direct a person who wants to take part to the terminal or the web UI — naming a way in that works with no terminal (FR-054)
 - [ ] T102 [P] Update `plugins/parley/README.md`
-- [ ] T103 [P] Update `plugins/parley/commands/setup.md`: `project add --db --listen` becomes `project add <name>`
-- [ ] T104 [P] Update `plugins/parley/commands/setup-many.md`: `enroll scan|plan|apply` becomes the one verb
-- [ ] T105 Confirm `plugins/parley/commands/files-*.md` are untouched — those five verbs stay, and a slash command has no terminal to be pointed at
-- [ ] T106 Confirm `plugins/parley/hooks/parley_waiting.py` still works: `parley waiting <agent> [--with-files]` with `--broker` or `--project` runs on nearly every turn of every session, and swallows errors by design (R5 — breaking it fails silently everywhere)
+- [~] T103 [P] Update `plugins/parley/commands/setup.md`: `project add --db --listen` becomes `project add <name>`
+      **STALE** — overtaken: `project add` was removed from the command line entirely on 2026-09-25, and `setup.md` already says so and points at the terminal.
+- [X] T104 [P] Update `plugins/parley/commands/setup-many.md`: `enroll scan|plan|apply` becomes the one verb
+- [X] T105 Confirm `plugins/parley/commands/files-*.md` are untouched — those five verbs stay, and a slash command has no terminal to be pointed at
+- [X] T106 Confirm `plugins/parley/hooks/parley_waiting.py` still works: `parley waiting <agent> [--with-files]` with `--broker` or `--project` runs on nearly every turn of every session, and swallows errors by design (R5 — breaking it fails silently everywhere)
 - [ ] T107 Confirm `install.ps1` and `install.sh` still work end to end: `project list` including the readiness poll, `open`, `autostart install`, `autostart remove`, `<tool> --version` (FR-050)
-- [ ] T108 Update `CLAUDE.md`'s current-plan entry to 019, naming 0.32.0 and what building it found
+- [X] T108 Update `CLAUDE.md`'s current-plan entry to 019, naming 0.32.0 and what building it found
 - [ ] T109 Walk `quickstart.md` against tools packed into a scratch path, with the live deployment left alone, and record every check in `REVIEW-LEDGER.md`
 - [ ] T110 Run the review gate: three consecutive clean runs per lens, each probing something the previous runs did not, logged in `REVIEW-LEDGER.md` — **including the clean runs**
 - [ ] T111 Hygiene: scan the **added lines of the branch's own diff** for the originating project's names, not the files, and include untracked files, which `git grep` cannot see
