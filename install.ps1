@@ -232,9 +232,17 @@ function Stop-Broker {
 
     # Waited for rather than assumed. Stopping a task asks the process to go; it goes once it has
     # closed its listener and its streams, which is quick but is not instant.
+    #
+    # **The web UI is waited for as well, and leaving it out was a race this script's own comments
+    # describe as its worst failure.** The broker ends the child it started, so the child goes --
+    # but a moment later, and the next thing that happens here is `dotnet tool uninstall` on a
+    # binary the child may still have mapped. That fails, `dotnet tool install` then exits *zero*
+    # saying "is already installed", and the version check cannot tell, because the version it
+    # finds is the version it expected. A silent no-op on the machine most likely to be running
+    # the old build.
     $deadline = (Get-Date).AddSeconds(10)
 
-    while ((Get-Process -Name 'parley' -ErrorAction SilentlyContinue) -and
+    while ((Get-Process -Name 'parley', 'parley-web-ui' -ErrorAction SilentlyContinue) -and
            (Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 200
     }
@@ -458,9 +466,28 @@ Write-Step 'Checking nothing holds the tools'
 # **Only the tools about to be replaced.** A surface this run is skipping is not going to be
 # unlinked, so a terminal somebody has open is no reason to refuse an install of the broker --
 # and refusing anyway would make -Surfaces useless on the machine most likely to want it.
+#
+# **The web UI is excluded with it, for the same reason and it was not.** The broker starts
+# `parley-web-ui` as a child and ends it when it ends, so a running web UI on a machine whose
+# broker is about to be stopped is not a process anybody has to close -- it is a process this
+# script is three steps from ending itself. Counting it as a holder made a perfectly ordinary
+# machine refuse the install: broker up, web UI up, and a refusal naming a window the person does
+# not have open and cannot close, telling them to use -Force to end something that was going to
+# stop anyway. Reported by the owner on the first run after `autostart install` had started one.
+#
+# A web UI somebody started by hand is a different matter, and is caught after the broker has been
+# stopped -- where it can be told apart, which is exactly what the broker's own exclusion does two
+# lines above.
 $adapters = @($tools |
     Where-Object { $_.Command -ne $broker -and (Wanted $_) } |
     ForEach-Object { $_.Command })
+
+$webUiCommand = 'parley-web-ui'
+$replacingBroker = @($tools | Where-Object { $_.Command -eq $broker -and (Wanted $_) }).Count -gt 0
+
+if ($replacingBroker) {
+    $adapters = @($adapters | Where-Object { $_ -ne $webUiCommand })
+}
 
 if (Wanted ($tools | Where-Object { $_.Command -eq 'parley-terminal' })) { $adapters += $retiredTerminal.Command }
 
@@ -520,6 +547,22 @@ $(($survived | ForEach-Object { "      $($_.ProcessName), pid $($_.Id)" }) -join
             $kinds += 'a terminal is a window somebody has open; Ctrl+Q leaves it'
         }
 
+        # **Reached only when no broker is being replaced, or when one was started by hand.** A web
+        # UI the broker started is excluded above, so anything named here is genuinely somebody's
+        # own process -- and it has no window at all, which is precisely why it needs a sentence:
+        # a person told to "close it" would look for something that was never on their screen.
+        if ($holders | Where-Object { $_.ProcessName -eq $webUiCommand }) {
+            $kinds += 'a web UI has no window; end it from the terminal it was started in, or with -Force'
+        }
+
+        # **Never empty, because the sentence is built from it.** With no kind matched this printed
+        # a line containing one full stop and nothing else, under a list of processes -- which is
+        # what the owner saw. A refusal that names what is wrong and then says nothing about what
+        # to do is the half that gets read.
+        if ($kinds.Count -eq 0) {
+            $kinds += 'end them, or re-run with -Force'
+        }
+
         Write-Error @"
 $($holders.Count) Parley process(es) are running and hold the files this would replace:
 $listed
@@ -540,8 +583,11 @@ Write-Note 'nothing is holding the tool store'
 # terminal unlinks a file the broker never opened, so there is nothing to stop: SPEC.md section 12
 # has the node telling every agent it started to quit, and each of those processes is what held
 # everything that agent had learned. Restarting a broker to change a terminal spends all of it.
-$replacingBroker = @($tools | Where-Object { $_.Command -eq $broker -and (Wanted $_) }).Count -gt 0
-
+#
+# Decided above, where the holder check needed the same answer: the web UI is only excluded from
+# that check because this is about to stop it. Two computations of one thing agree until one is
+# edited, and these two would disagree in the direction that matters -- a web UI excluded from the
+# guard and then never stopped is a locked file with nothing left to say so.
 if ($replacingBroker) {
     # **What stopping it will interrupt, said before it is stopped.**
     #
@@ -653,7 +699,8 @@ $(($survived | ForEach-Object { "      $($_.ProcessName), pid $($_.Id)" }) -join
         Write-Error @"
 Something is still holding the tools after the broker was stopped:
 $listed
-    A broker started by hand is not stopped by this script, on purpose. Stop it and run this
+    A broker started by hand is not stopped by this script, on purpose, and neither is a web UI
+    started beside it -- the one the autostart broker starts goes with it. Stop it and run this
     again, or re-run with -Force to end it. Nothing has been replaced; the autostart broker is
     stopped and will start again at logon, or now with: Start-ScheduledTask -TaskName $task
 "@

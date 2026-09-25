@@ -460,6 +460,57 @@ public sealed class InstallScriptTests
 
     [Theory]
     [MemberData(nameof(BothScripts))]
+    public void A_web_UI_the_broker_started_does_not_refuse_the_install(string script)
+    {
+        // **Reported by the owner: an ordinary machine refused its own install.** The broker was
+        // up, it had started `parley-web-ui` beside itself as it is meant to, and the pre-flight
+        // counted that child as a process somebody had to go and close — naming a pid with no
+        // window and offering -Force to end something the script was three steps from ending
+        // itself. The broker is excluded from that check for exactly this reason, in a comment
+        // that says so; the web UI was simply never added to it.
+        //
+        // Checked as "the exclusion is written", because what it guards is a process tree this
+        // suite cannot build. A hand-started web UI is still caught, after the broker stops, by
+        // the sweep over every replacing command — so this defers the question rather than
+        // dropping it.
+        var code = Code(RepositoryFile.Read(script));
+
+        Assert.Contains("parley-web-ui", code, StringComparison.Ordinal);
+
+        var excluded = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? code.Contains("$_ -ne $webUiCommand", StringComparison.Ordinal)
+            : code.Contains("\"${commands[$i]}\" = \"parley-web-ui\" ] && [ \"$replacing_broker\"", StringComparison.Ordinal);
+
+        Assert.True(
+            excluded,
+            $"{script} counts the broker's own web UI as a holder, so a machine with a running "
+            + "broker refuses its own install");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void Stopping_the_broker_waits_for_the_web_UI_it_started(string script)
+    {
+        // **The other half, and it is the dangerous one.** The broker ends its child, so the child
+        // goes — a moment later. Continuing straight on runs `dotnet tool uninstall` against a
+        // binary that may still be mapped, which fails; `dotnet tool install` then exits *zero*
+        // saying "is already installed"; and the version check cannot tell, because the version it
+        // finds is the version it expected. This script's own comments call that its worst
+        // failure, and excluding the web UI from the guard above is what would have opened it.
+        var code = Code(RepositoryFile.Read(script));
+
+        var waits = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? code.Contains("Get-Process -Name 'parley', 'parley-web-ui'", StringComparison.Ordinal)
+            : code.Contains("holding parley parley-web-ui", StringComparison.Ordinal);
+
+        Assert.True(
+            waits,
+            $"{script} stops the broker without waiting for the web UI it started, so the "
+            + "uninstall can race a binary that is still mapped");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
     public void Each_script_declares_the_switch_a_person_passes(string script)
     {
         // The other half of the pair above: "not wired into the call" is satisfied perfectly by a

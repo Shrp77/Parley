@@ -196,6 +196,18 @@ stop_broker() {
     elif command -v launchctl >/dev/null 2>&1; then
         launchctl bootout "gui/$(id -u)/$task" >/dev/null 2>&1 || true
     fi
+
+    # **The web UI is waited for as well.** The broker ends the child it started, so the child
+    # goes -- but a moment later, and the next thing that happens is an uninstall of a binary the
+    # child may still be running from. Waited for rather than assumed, which is the rule every
+    # other guard in this script is written to.
+    waited=0
+
+    while [ "$waited" -lt 50 ]; do
+        [ -z "$(holding parley parley-web-ui)" ] && break
+        sleep 0.2
+        waited=$((waited + 1))
+    done
 }
 
 # The pids of anything running under the given command names.
@@ -446,11 +458,32 @@ step "Checking nothing holds the tools"
 # **Only the tools about to be replaced.** A surface this run is skipping is not going to be
 # unlinked, so a terminal somebody has open is no reason to refuse an install of the broker --
 # and refusing anyway would make --surfaces useless on the machine most likely to want it.
+#
+# **The web UI is excluded with it, for the same reason and it was not.** The broker starts
+# parley-web-ui as a child and ends it when it ends, so a running web UI on a machine whose broker
+# is about to be stopped is not a process anybody has to close -- it is one this script is three
+# steps from ending itself. Counting it as a holder made an ordinary machine refuse the install,
+# naming a process with no window, and telling the person to use --force to end something that was
+# going to stop anyway. One started by hand is caught after the broker stops, where it can be told
+# apart, exactly as the broker's own exclusion works.
+replacing_broker=0
+
+for i in "${!commands[@]}"; do
+    if [ "${commands[$i]}" = "$broker" ] && is_wanted "$i"; then
+        replacing_broker=1
+    fi
+done
+
 adapters=()
 
 for i in "${!commands[@]}"; do
     [ "${commands[$i]}" = "$broker" ] && continue
     is_wanted "$i" || continue
+
+    if [ "${commands[$i]}" = "parley-web-ui" ] && [ "$replacing_broker" -eq 1 ]; then
+        continue
+    fi
+
     adapters+=("${commands[$i]}")
 
     if [ "${commands[$i]}" = "parley-terminal" ]; then
