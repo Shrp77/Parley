@@ -252,7 +252,7 @@ it.
 - [X] T106 Confirm `plugins/parley/hooks/parley_waiting.py` still works: `parley waiting <agent> [--with-files]` with `--broker` or `--project` runs on nearly every turn of every session, and swallows errors by design (R5 — breaking it fails silently everywhere)
 - [X] T107 Confirm `install.ps1` and `install.sh` still work end to end: `project list` including the readiness poll, `open`, `autostart install`, `autostart remove`, `<tool> --version` (FR-050)
 - [X] T108 Update `CLAUDE.md`'s current-plan entry to 019, naming 0.32.0 and what building it found
-- [ ] T109 Walk `quickstart.md` against tools packed into a scratch path, with the live deployment left alone, and record every check in `REVIEW-LEDGER.md`
+- [X] T109 Walk `quickstart.md` against tools packed into a scratch path, with the live deployment left alone, and record every check in `REVIEW-LEDGER.md`
 - [ ] T110 Run the review gate: three consecutive clean runs per lens, each probing something the previous runs did not, logged in `REVIEW-LEDGER.md` — **including the clean runs**
 - [X] T111 Hygiene: scan the **added lines of the branch's own diff** for the originating project's names, not the files, and include untracked files, which `git grep` cannot see
 

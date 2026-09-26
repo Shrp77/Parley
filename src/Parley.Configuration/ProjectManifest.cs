@@ -455,11 +455,18 @@ public static class ProjectManifest
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     /// <summary>What to say when somebody hands this the old spelling.</summary>
+    /// <remarks>
+    /// **Names the script this platform can actually run.** It said `reset.ps1` on every platform,
+    /// which was true while that was the only one — and a counterpart was owed and written on
+    /// 2026-09-25. A refusal that tells somebody on Linux to run a PowerShell script is a refusal
+    /// they cannot act on, which is the one thing a refusal has to be.
+    /// </remarks>
     private static string OldManifestProblem(string path) =>
         $"{path} is the manifest file 0.32.0 replaced, not a root. A machine keeps its projects "
         + $"as folders under a directory — `{ProjectFolder.ProjectsDirectoryName}/<name>/` — each "
         + "holding its own configuration and its own store. Point --config or "
-        + $"{PathVariable} at the directory that file is in, and run `reset.ps1` to clear what "
+        + $"{PathVariable} at the directory that file is in, and run "
+        + $"`{(OperatingSystem.IsWindows() ? "reset.ps1" : "./reset.sh")}` to clear what "
         + "the old layout left behind.";
 
     /// <summary>The name of the lock held while this machine's projects are being changed.</summary>
