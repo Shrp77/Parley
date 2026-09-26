@@ -587,6 +587,24 @@ implementation detail, and needs to be argued rather than assumed.
   from `parley refusals` rather than from judgement: SPEC.md §17 question 16 carries the
   evidence. It stays provisional on the same terms. Move it on that record, not because a
   message did not fit.
+
+  **The ownership statement is the one exception, and the constitution was amended to 3.0.0 to say
+  so** — the owner's call on 2026-09-26, for 020. `agents.owns` has **no bound by default**: the
+  constraint stays in storage and stands down at the top of its range, so a deployment may reinstate
+  one, and **the character class that stops a roster entry breaking, hiding or reordering its own line
+  is not relaxed**. Taken with the arithmetic rather than around it — nineteen peers at two thousand
+  characters each is about thirty-nine thousand charged to every agent on every roster listing, against
+  a cap of eight thousand — and both raising it to three hundred and keeping it at one hundred were
+  offered and declined.
+
+  **It is a reduction in this control and is recorded as one.** The reasoning is the one used for
+  §7.1's open-question cap and the clarification depth cap, that a cap censors the evidence that would
+  justify it — and **that precedent is weaker here**, because both of those capped *counts* and 006
+  says outright its cap "was never a technical bound". This one was, and measured: a roster entry costs
+  about seventy-five characters of structure, so ten peers at a hundred cost roughly what one message
+  is allowed to. What stands in its place is evidence rather than a number, on exactly the terms the
+  8,000 above stays provisional on. **Until that evidence exists, a roster may be the largest thing an
+  agent reads.**
 - **No agent has authority over another.** There is no orchestrator and no lead. Any design
   that introduces one contradicts the premise.
 - **Credentials are references, never values.** `env:`, `keychain:`, `file:`. The broker

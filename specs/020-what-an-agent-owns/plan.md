@@ -82,8 +82,22 @@ a roster may become the largest thing an agent reads.
 its own amendment *before* any implementation, because `/speckit-analyze` found changing it inside a
 feature's tasks a **blocking conflict** — and 015's amendment is the direct precedent, since it reversed
 "never files" in the same document. Principle IV should be amended to record that the ownership
-statement's bound is off by default, on this evidence and at this cost, bumping the constitution to
-**2.1.0**. Doing it inside `tasks.md` repeats a conflict this repository has already hit once.
+statement's bound is off by default, on this evidence and at this cost.
+
+**The bump is MAJOR — 3.0.0 — by the constitution's own rule, not 2.1.0 as a first draft of this plan
+said.** Governance: *"An amendment that changes what a principle permits is MAJOR even when its title is
+unchanged"*, and MAJOR covers *"a principle or boundary removed or redefined"*. Principle IV today
+requires a bound on text that crosses; amended, it permits one field to have none. That is a
+redefinition and not an expansion, however narrow the carve-out. 2.0.0 exists precisely because
+0.26.0's redefinition of Principle II shipped without a bump.
+
+**The carve-out is narrow on purpose**: the ownership statement specifically, named, with the evidence
+and the cost. Weakening Principle IV in general is neither what was decided nor defensible.
+
+**And it lands in three places or it is a defect.** Governance says this file is a projection of
+`CLAUDE.md` and `SPEC.md`, which remain the authority, and *"an amendment here that is not also made
+there is a defect"*. Doing any of it inside `tasks.md` repeats a conflict this repository has already
+hit once.
 
 ## Project Structure
 

@@ -1,4 +1,36 @@
 <!--
+Sync Impact Report — 2026-09-26
+Version change: 2.0.0 → 3.0.0 (MAJOR)
+  One backward-incompatible redefinition, amended BEFORE the feature that needs it is implemented —
+  which is what governance requires and what specs/015 established after /speckit-analyze found
+  changing a principle inside a feature's tasks a blocking conflict.
+  - Principle IV. Terseness is a security control — the ownership statement (`agents.owns`) has no
+    bound by default from specs/020 (0.33.0, schema 12). The constraint stays in storage and stands
+    down at the top of its range; the character class is NOT relaxed.
+  MAJOR rather than MINOR by this file's own rule: "an amendment that changes what a principle
+  permits is MAJOR even when its title is unchanged". Principle IV required a bound on text that
+  crosses; it now permits one named field to have none. That is a redefinition, however narrow.
+Modified principles:
+  - IV. Terseness is a security control — a named exception added, with the owner's decision of
+    2026-09-26, the arithmetic it was taken on, and the statement that it REDUCES this principle's
+    protection. The 006/007 precedent the spec argued from is recorded as weaker than it reads:
+    both of those capped counts and 006 says its cap was never a technical bound. This one was.
+Modified sections: none beyond Principle IV.
+Added sections: none. Removed sections: none.
+Templates and dependent documents:
+  ✅ specs/020-what-an-agent-owns/plan.md — Constitution Check carries Principle IV as a FINDING and
+     names this amendment as owed before /speckit-tasks; Complexity Tracking records the trade
+  ✅ specs/020-what-an-agent-owns/research.md R1 — the decision, the declined alternatives, and the
+     four probed migration routes
+  ✅ CLAUDE.md — the standing constraint "Terseness is a security control" gains the exception, since
+     governance makes CLAUDE.md the authority and an amendment not made there too is a defect
+  ⚠️ SPEC.md §17 question 10 and §18 — FR-027 and FR-028 of specs/020. NOT yet amended: they move
+     with the migration, in the feature's own tasks, and the schema in the document moves with them
+  ✅ .specify/templates/ — no principle-driven sections affected
+Deferred TODOs: SPEC.md, as above. It is the feature's T-task, not this amendment's.
+-->
+
+<!--
 Sync Impact Report — 2026-09-14
 Version change: 1.0.0 → 2.0.0 (MAJOR)
   Two backward-incompatible redefinitions, one of which had shipped without a bump:
@@ -81,6 +113,33 @@ repository and are never returned into a model's context by Parley. What an oper
 *about* files — names, sizes, hashes, lists, change notices — is text that crosses, and is
 bounded like any other: a name has a maximum length, and a list or a batch of notices has a
 maximum count per call.
+
+**The ownership statement is the one exception, and it is an exception rather than a
+reinterpretation.** From specs/020 (0.33.0, schema 12) an agent's `owns` line has **no bound by
+default**. The constraint stays in storage and stands down at the top of its range, so a
+deployment may reinstate one and it is still enforced below any code that could route around it
+(Principle V); the character class that stops a roster entry breaking, hiding or reordering its
+own line is **not** relaxed.
+
+The owner's decision, 2026-09-26, taken with the arithmetic rather than around it: nineteen peers
+at two thousand characters each is about thirty-nine thousand characters charged to every agent on
+every roster listing, against a message cap of eight thousand. Raising the bound to three hundred
+and keeping it at one hundred were both offered and both declined.
+
+**This is a reduction in this principle's protection and is recorded as one.** The reasoning is the
+one used twice before — for §7.1's open-question cap and for the clarification depth cap — that a
+cap censors the evidence that would justify it. **That precedent is weaker here and the difference
+is written down rather than glossed**: both of those capped *counts*, and specs/015's migration 006
+says outright that the cap it removed "was never a technical bound … it rations a peer's attention
+rather than any resource of the broker's". The ownership bound was a technical bound, measured: a
+roster entry costs about seventy-five characters of structure, so ten peers at one hundred cost
+roughly what one message is allowed to.
+
+What stands in its place is evidence rather than a number. The lengths agents propose and the
+lengths people accept are recorded, so a bound can later be chosen the way the message cap's 8,000
+was — from `parley refusals` and SPEC.md §17 question 16 — rather than from judgement. **Until that
+evidence exists, a roster may be the largest thing an agent reads.** Move the number on that
+record, not because a statement did not fit.
 
 ### V. Invariants live in storage
 
@@ -169,4 +228,4 @@ removed or redefined, MINOR for one added or materially expanded, PATCH for word
 amendment that changes what a principle permits is MAJOR even when its title is unchanged** —
 0.26.0's redefinition of Principle II shipped without a version change, and 2.0.0 records it.
 
-**Version**: 2.0.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-09-14
+**Version**: 3.0.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-09-26
