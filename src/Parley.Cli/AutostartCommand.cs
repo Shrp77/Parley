@@ -558,6 +558,48 @@ public static class AutostartCommand
         return 0;
     }
 
+    /// <summary>Whether the supervisor has this entry enabled, or null when it could not be asked.</summary>
+    /// <param name="plan">The entry.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>True, false, or null for could-not-tell.</returns>
+    /// <remarks>
+    /// <para>
+    /// **Three answers, because two would have to lie about one of them.** A unit file that exists
+    /// says an install got as far as writing it; whether the supervisor will act on it is a separate
+    /// question, and on a machine with no systemd at all it is a question nothing can answer. The
+    /// third answer is what keeps `status` from reporting good news it has not checked.
+    /// </para>
+    /// <para>
+    /// `is-enabled` answers non-zero for a unit that exists and is disabled, which is the state this
+    /// exists to catch, and also for one that is absent — harmless, since it is only asked when the
+    /// file is there. A missing `systemctl` throws or exits non-zero with nothing on stdout, and that
+    /// is the case told apart from a genuine "disabled" by there being no verdict to read.
+    /// </para>
+    /// </remarks>
+    private static async Task<bool?> EnabledAsync(AutostartPlan plan, CancellationToken cancellationToken)
+    {
+        if (plan.Supervisor == Supervisor.LaunchAgent)
+        {
+            var listed = await RunAsync(
+                "launchctl", ["print", $"gui/{await UidAsync(cancellationToken).ConfigureAwait(false)}/{plan.Label}"],
+                cancellationToken).ConfigureAwait(false);
+
+            return listed.Output.Length == 0 ? null : listed.ExitCode == 0;
+        }
+
+        var asked = await RunAsync(
+            "systemctl", ["--user", "is-enabled", plan.Label + ".service"], cancellationToken)
+            .ConfigureAwait(false);
+
+        // No verdict at all is a machine that could not be asked -- no systemd, or no session bus.
+        // A verdict of anything is an answer, and only "enabled" is a yes.
+        var said = asked.Output.Trim();
+
+        return said.Length == 0
+            ? null
+            : said.StartsWith("enabled", StringComparison.Ordinal);
+    }
+
     private static async Task<bool> RemoveSystemdAsync(
         AutostartPlan plan, CancellationToken cancellationToken)
     {
@@ -565,7 +607,18 @@ public static class AutostartCommand
             "systemctl", ["--user", "disable", plan.Label + ".service"], cancellationToken)
             .ConfigureAwait(false);
 
-        if (File.Exists(plan.UnitPath))
+        // **Read before the delete, because the delete is what this reports.** It returned whether
+        // `systemctl disable` succeeded — so on a machine where systemctl fails or is absent, this
+        // deleted the unit file and then told the operator there had been nothing to remove. An
+        // entry removed and reported as never installed is the worst of the three answers: the next
+        // thing they do is look for what is still there.
+        //
+        // `RemoveLaunchAgentAsync`, forty lines below, has always said `|| existed`. One of the two
+        // sibling methods had the rule and the other did not, which is this repository's recorded
+        // shape for exactly this mistake.
+        var existed = File.Exists(plan.UnitPath);
+
+        if (existed)
         {
             File.Delete(plan.UnitPath!);
         }
@@ -573,7 +626,7 @@ public static class AutostartCommand
         _ = await RunAsync("systemctl", ["--user", "daemon-reload"], cancellationToken)
             .ConfigureAwait(false);
 
-        return disabled.ExitCode == 0;
+        return disabled.ExitCode == 0 || existed;
     }
 
     private static async Task<bool> RemoveLaunchAgentAsync(
@@ -611,11 +664,36 @@ public static class AutostartCommand
             _ => File.Exists(plan.UnitPath)
         };
 
+        // **A unit file can exist and start nothing, and this said it would.** `install` writes the
+        // unit and then enables it, and reports honestly when the enable fails -- "Wrote <path>, but
+        // could not enable it". This read only whether the file was there, so the very next command
+        // said the broker starts at logon. Two commands, one machine, opposite answers, and the one
+        // a person believes is the one that sounds like good news.
+        //
+        // Asked of systemd rather than inferred, on the rule this repository already applies to a
+        // guard that cannot answer: say so, because "written but not enabled" and "enabled" lead
+        // somewhere completely different and are indistinguishable from the outside. Windows is
+        // unaffected -- `ScheduledTasks.Exists` asks the scheduler, which is the real question there.
+        var enabled = !present || plan.Supervisor == Supervisor.ScheduledTask
+            ? null
+            : await EnabledAsync(plan, cancellationToken).ConfigureAwait(false);
+
         await output.WriteLineAsync(
-            present
-                ? $"Parley's broker starts at logon, as {Describe(plan.Supervisor)}."
-                : "Parley's broker does not start on its own here. `parley autostart install` " +
-                  "registers it; until then something has to run `parley serve`.")
+            (present, enabled) switch
+            {
+                (false, _) => "Parley's broker does not start on its own here. `parley autostart "
+                    + "install` registers it; until then something has to run `parley serve`.",
+
+                (true, false) => $"Parley's broker has an entry here -- {Describe(plan.Supervisor)} "
+                    + "-- and it is NOT enabled, so it will not start at logon. Re-run `parley "
+                    + "autostart install`, which says why if it cannot enable it.",
+
+                (true, null) => $"Parley's broker has an entry here, as {Describe(plan.Supervisor)}. "
+                    + "Whether it is enabled could not be checked on this machine, so this cannot "
+                    + "say it will start at logon.",
+
+                _ => $"Parley's broker starts at logon, as {Describe(plan.Supervisor)}.",
+            })
             .ConfigureAwait(false);
 
         // What it serves, read back from the entry rather than remembered. "Registered" answered
