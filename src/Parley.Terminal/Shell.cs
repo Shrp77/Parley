@@ -1490,6 +1490,11 @@ internal sealed class Shell : Window
                 {
                     new RegionAction('w', ToldTitle + told.Name, ShowTold),
                     new RegionAction('o', Instructing.Title + told.Name, InstructSelected),
+
+                    // Never for a seat either, and for the same reason: an ownership line is how
+                    // peers decide who to send work to, and a person holding a seat is not somebody
+                    // work is routed to by a roster entry.
+                    new RegionAction('n', Ownership.Title + ": " + told.Name, OwnershipOfSelected),
                 }
                 : Array.Empty<RegionAction>(),
 
@@ -3632,6 +3637,31 @@ internal sealed class Shell : Window
         }
 
         return Instructing.OpenAsync(
+            app, new BrokerClient(_directory.ClientFor(project)), agent, Queue, said =>
+            {
+                Said = said;
+
+                return Task.CompletedTask;
+            });
+    }
+
+    /// <summary>Opens the form that records what the agent under the cursor owns.</summary>
+    /// <returns>When the form is open.</returns>
+    /// <remarks>
+    /// Guarded the same way <see cref="InstructSelected"/> is, including the seat exclusion: a seat
+    /// is a person, and an ownership line is how peers choose which <em>agent</em> to send work to.
+    /// </remarks>
+    private Task OwnershipOfSelected()
+    {
+        if (App is not { } app
+            || Current is not { } project
+            || Agents.Selected is not { Seat: false } row
+            || !AgentName.TryCreate(row.Name, out var agent))
+        {
+            return Task.CompletedTask;
+        }
+
+        return Ownership.OpenAsync(
             app, new BrokerClient(_directory.ClientFor(project)), agent, Queue, said =>
             {
                 Said = said;

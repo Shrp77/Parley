@@ -294,6 +294,32 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
+    public async Task<OwnershipRecord> RecordOwnershipAsync(
+        AgentName agent, OwnershipAcceptance acceptance, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(acceptance);
+
+        var reply = await _operators.RecordOwnershipAsync(
+            new Wire.RecordOwnershipRequest
+            {
+                Agent = agent.Value,
+                Statement = acceptance.Statement,
+                Source = Source(acceptance.Source),
+                ProposedLength = acceptance.ProposedLength ?? 0,
+                ConversationId = acceptance.Conversation ?? string.Empty
+            },
+            cancellationToken: cancellationToken);
+
+        return new OwnershipRecord(
+            reply.Recorded,
+            string.IsNullOrEmpty(reply.Problem) ? null : reply.Problem,
+            string.IsNullOrEmpty(reply.LiveStatement) ? null : reply.LiveStatement)
+        {
+            Pending = reply.Pending
+        };
+    }
+
+    /// <inheritdoc/>
     public async Task<bool> ReinstateAsync(AgentName agent, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.ReinstateAsync(new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
@@ -495,6 +521,21 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         Wire.MessageType.Result => MessageType.Result,
         _ => throw new InvalidOperationException(
             $"The broker sent a message type this build does not know ({type}). It speaks a different protocol.")
+    };
+
+    /// <summary>Puts how a person arrived at an ownership line onto the wire.</summary>
+    /// <param name="source">Which of the three routes produced it.</param>
+    /// <returns>The wire value.</returns>
+    /// <remarks>
+    /// Never <c>Unspecified</c>, which is what an unset field arrives as. Sending it would let the
+    /// broker refuse the call for a value this client chose rather than one a person did.
+    /// </remarks>
+    private static Wire.OwnershipSource Source(OwnershipSource source) => source switch
+    {
+        OwnershipSource.Proposed => Wire.OwnershipSource.Proposed,
+        OwnershipSource.Edited => Wire.OwnershipSource.Edited,
+        OwnershipSource.Composed => Wire.OwnershipSource.Composed,
+        _ => throw new ArgumentOutOfRangeException(nameof(source), source, "Not a defined source.")
     };
 
     private static Outcome Outcome(Wire.Outcome outcome) => outcome switch

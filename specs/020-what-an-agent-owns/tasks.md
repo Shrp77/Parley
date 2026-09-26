@@ -109,13 +109,13 @@ Read these before starting. Each fails the build rather than being a convention 
 
 ### The operation
 
-- [ ] T020 [US1] Add `AcceptOwnership` to `proto/parley.proto` on the **`Operators`** service, per `contracts/operations.md`
-- [ ] T021 [US1] Add it to `IParleyBrokerClient` in `src/Parley.Core/` (§10.2's contract) and **not** to `IAcceptsOperatorInstructions`
-- [ ] T022 [US1] Implement it on `src/Parley.Broker/OperatorConsole.cs` — **not** on `Broker`. `SurfaceBoundaryTests` enumerates the broker's public surface and fails when it grows, which is what makes this a decision rather than a habit
-- [ ] T023 [US1] Add the repository write and the pending read to `src/Parley.Store/AgentRepository.cs`: write `agent_ownership_accepted`, and return `agents.owns` beside it so a surface can compare without reaching a store
-- [ ] T024 [US1] Bind it in `src/Parley.Server/OperatorsService.cs`
-- [ ] T025 [P] [US1] Add `tests/Parley.Broker.Tests/AcceptOwnershipTests.cs`: it records the acceptance and **does not write `agents.owns`**. **Must fail against** an implementation that writes the registry field — that is the whole of Principle III here
-- [ ] T026 [P] [US1] Add `tests/Parley.Broker.Tests/WhatIsRecordedIsWhatTheAgentWroteTests.cs`: `source` of `proposed`/`edited`/`composed`, `proposed_length` being the **agent's** message length and `NULL` for `composed`. **Must fail against** a person's edited length being stored — 0.29.0's second gate finding, from the other side
+- [X] T020 [US1] Add `AcceptOwnership` to `proto/parley.proto` on the **`Operators`** service, per `contracts/operations.md` — Done, as `RecordOwnership` on the `Operators` service. **Renamed from `AcceptOwnership`** — see `contracts/operations.md`.
+- [X] T021 [US1] Add it to `IParleyBrokerClient` in `src/Parley.Core/` (§10.2's contract) and **not** to `IAcceptsOperatorInstructions` — Done, as `RecordOwnershipAsync`. `ContractSeparationTests` passed on the first run, which means the SPEC row and the interface method matched.
+- [X] T022 [US1] Implement it on `src/Parley.Broker/OperatorConsole.cs` — **not** on `Broker`. `SurfaceBoundaryTests` enumerates the broker's public surface and fails when it grows, which is what makes this a decision rather than a habit — Done. `SurfaceBoundaryTests`' hand-kept list gained the entry with its justification, which is the one guard that had to be told.
+- [X] T023 [US1] Add the repository write and the pending read to `src/Parley.Store/AgentRepository.cs`: write `agent_ownership_accepted`, and return `agents.owns` beside it so a surface can compare without reaching a store — Done. The write and the live-line read are **one act under one transaction**, because a surface derives *pending* by comparing them and a second call would let an attach land between the two.
+- [X] T024 [US1] Bind it in `src/Parley.Server/OperatorsService.cs` — Done. Proto3's zero and empty are mapped to null rather than to 0 and "", so `proposed_length` stays a fact about an agent's message.
+- [X] T025 [P] [US1] Add `tests/Parley.Broker.Tests/AcceptOwnershipTests.cs`: it records the acceptance and **does not write `agents.owns`**. **Must fail against** an implementation that writes the registry field — that is the whole of Principle III here — Done, as `tests/Parley.Broker.Tests/RecordingOwnershipTests.cs` — 13 tests, each naming what it must fail against.
+- [X] T026 [P] [US1] Add `tests/Parley.Broker.Tests/WhatIsRecordedIsWhatTheAgentWroteTests.cs`: `source` of `proposed`/`edited`/`composed`, `proposed_length` being the **agent's** message length and `NULL` for `composed`. **Must fail against** a person's edited length being stored — 0.29.0's second gate finding, from the other side — Done, in the same file: `source` per route, and a composed line records **no length an agent never wrote**.
 - [ ] T027 [P] [US1] Add `tests/Parley.Server.Tests/OwnershipOverTheWireTests.cs`: the whole acceptance over a real loopback socket. **No `Broker` and no `SqliteConnection` in this project**
 - [ ] T028 [P] [US1] Add `tests/Parley.Server.Tests/AgentsCannotSetTheirOwnLineTests.cs`: the `Agents` service exposes **no** method that writes `owns`, and `parley-mcp` lists no tool that does. **Must fail against** the operation being added to the wrong service
 
@@ -128,17 +128,17 @@ Read these before starting. Each fails the build rather than being a convention 
 
 ### The terminal
 
-- [ ] T033 [US1] Add the ask, the answer and the accept to the agents pane in `src/Parley.Terminal/`, through the action table so `EveryKeyIsOfferedTests` and the status line get it by construction
+- [ ] T033 [US1] Add the ask, the answer and the accept to the agents pane in `src/Parley.Terminal/`, through the action table so `EveryKeyIsOfferedTests` and the status line get it by construction — **Partly done.** `Ownership` is on the agents pane under `n`, offered through the action table, and records a composed line. **It does not ask the agent anything yet.**
 - [ ] T034 [US1] Show the current line beside the proposal (FR-014), attribute the proposal to the agent and mark it as the agent's words (FR-013), and offer decline first
 - [ ] T035 [US1] After acceptance, say it takes effect when the agent next starts and offer the restart through `Operators.Start` (FR-019); mark the line **pending** in the roster until `agents.owns` agrees (FR-020)
-- [ ] T036 [P] [US1] Add `tests/Parley.Terminal.Tests/AskingWhatItOwnsTests.cs`, **pressing keys rather than calling seams**. 0.30.4 records the worst defect of 017 being that no test had ever pressed Enter, in a file whose own summary said it was there to catch exactly that. Assert on what the broker recorded, not on what the box says
+- [ ] T036 [P] [US1] Add `tests/Parley.Terminal.Tests/AskingWhatItOwnsTests.cs`, **pressing keys rather than calling seams**. 0.30.4 records the worst defect of 017 being that no test had ever pressed Enter, in a file whose own summary said it was there to catch exactly that. Assert on what the broker recorded, not on what the box says — **Partly done**, as `SayingWhatAnAgentOwnsTests` — 8 tests, including that the action is offered rather than existing only as a key. It asserts wording and the action table; **it does not press the key through a broker**, which is owed.
 - [ ] T037 [P] [US1] Add `tests/Parley.Terminal.Tests/PendingUntilItRestartsTests.cs`. **Must fail against** the pending mark being a flag rather than the comparison — probe by changing `agents.owns` underneath and watching the mark clear itself
 
 ### The web UI
 
-- [ ] T038 [US1] Add the same to `src/Parley.Web/`, including the write, per the owner's decision of 2026-09-26 — and the identical machine refusal
-- [ ] T039 [P] [US1] Add `tests/Parley.Web.Tests/AskingWhatItOwnsTests.cs` and `tests/Parley.Web.Tests/NotThisMachineTests.cs`. **Must fail against** the web UI writing for an agent on another machine
-- [ ] T040 [P] [US1] Extend `DriftTests` so `AcceptOwnership` is bound by both surface trees with no exemption
+- [ ] T038 [US1] Add the same to `src/Parley.Web/`, including the write, per the owner's decision of 2026-09-26 — and the identical machine refusal — **Partly done.** The web UI records a **composed** line (FR-015's compose half) and says peers have not read it yet. The ask, the discussion and the machine check are not built.
+- [ ] T039 [P] [US1] Add `tests/Parley.Web.Tests/AskingWhatItOwnsTests.cs` and `tests/Parley.Web.Tests/NotThisMachineTests.cs`. **Must fail against** the web UI writing for an agent on another machine — **Not done.** The web page binds the operation but has no test of its own yet.
+- [X] T040 [P] [US1] Extend `DriftTests` so `AcceptOwnership` is bound by both surface trees with no exemption — Done — `DriftTests` passes with no exemption.
 
 **Checkpoint**: US1 is independently usable — ask, read, accept, restart, see it.
 

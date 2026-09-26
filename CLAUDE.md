@@ -845,6 +845,41 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   than deleted** — `ProbeThirtyOne` and `ProbeTwelve` both asserted a length was refused, and left alone both
   would have gone on passing against nothing.
 
+  **The operation is built end to end, and it is `record_ownership` rather than `accept_ownership`.**
+  §10.2 opens by warning about two operations whose names invite confusion across the agent/operator
+  boundary — which is why `force_conclude` is not `conclude` and `registry` is not `agents` — and
+  `AcceptOwnershipAsync` sits one reading away from the agent-facing `AcceptAsync`. The guards pass
+  either way, since `ContractSeparationTests` compares names exactly, so this was the convention rather
+  than the build. **The new name is also the more accurate one, which is what settled it: the person did
+  the accepting.** A name claiming the operation did it describes the wrong actor for something that
+  only writes down somebody else's decision — and it does not even write `owns`.
+
+  **What it deliberately cannot do is the point.** It records the statement, which of three routes
+  produced it (`proposed`, `edited`, `composed`), how long the *agent's own* message was, and the
+  conversation it was agreed in — and it **does not write `agents.owns`**. The registry is still filled
+  from the launch environment on attach, so *pending* is a comparison of two observations rather than a
+  third flag somebody has to clear, and the write and the live read are **one act under one transaction**,
+  because a second call would let an attach land between them and report a line as already live that
+  nobody had yet read. `RecordingOwnershipTests` drives thirteen cases, each naming what it must fail
+  against; the first is that `owns` is untouched, which is the obvious thing to write and is the route
+  around Principle III that §17 question 10 exists to keep shut.
+
+  **Two things the fixture found rather than the design.** `agent_ownership_accepted.conversation_id` is a
+  real foreign key, so a test naming a conversation that does not exist is refused — which is correct and
+  load-bearing: FR-011 says an accepted line must be traceable to the discussion that produced it, and an
+  identifier pointing at nothing is not traceable, so a fixture that stubbed it would have tested a weaker
+  rule than the schema holds. And the dump that produced `001_initial.sql` left **forty doubled statement
+  terminators** in it, which SQLite tolerates as empty statements — invisible, harmless, and noise in what
+  is now the canonical schema. Collapsed.
+
+  **Both surfaces bind it, and both only compose so far.** `DriftTests` requires the operation in both
+  trees with no exemption, and it is: the terminal has `Ownership` on the agents pane under `n`, offered
+  through the action table so the status line and the menu get it by construction, and the web UI has an
+  `ownership` action on `Act`. **Neither asks the agent anything yet** — what they record is a person's own
+  line, as `composed`, and both say so, because question 10's amendment turns on telling a person's words
+  from a model's. **Still owed**: the ask itself, the discussion, the launch-configuration write with its
+  machine check, the bulk ask, and the neighbours column.
+
   **An ask is recognised by the conversation it opens, never by a marker in a payload** — §13 promises a
   receiver that a payload is inert data, and 017's chip rule is what keeps that true. The identifier is
   derived (`owns-<role>-<timestamp>`), and the current proposal is the **latest** thing the agent said in that

@@ -147,8 +147,7 @@ CREATE TABLE nodes (
   connected      INTEGER NOT NULL DEFAULT 0 CHECK (connected IN (0, 1)),
   changed_utc    TEXT,
   first_seen_utc TEXT    NOT NULL
-) STRICT
-;;
+) STRICT;
 
 CREATE TABLE agents (
   -- role@machine, per §4.1.1. Stored whole because it is what every other table references
@@ -255,8 +254,7 @@ CREATE TABLE agents (
   CHECK (length(machine) BETWEEN 1 AND 64
          AND machine GLOB '[a-z0-9]*'
          AND machine NOT GLOB '*[^a-z0-9.-]*')
-) STRICT
-;;
+) STRICT;
 
 CREATE TABLE agent_ownership_accepted (
   -- What a person agreed this agent owns, and the evidence of how they arrived at it.
@@ -300,8 +298,7 @@ CREATE TABLE agent_credentials (
   CHECK (reference LIKE 'env:_%'
          OR reference LIKE 'keychain:_%'
          OR reference LIKE 'file:_%')
-) STRICT
-;;
+) STRICT;
 
 CREATE TABLE invocations (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -334,11 +331,9 @@ CREATE TABLE invocations (
   -- agent answers anyway and worse. Nothing else in the record distinguishes that from an agent
   -- that has simply become unhelpful.
   permission_denials INTEGER NOT NULL DEFAULT 0 CHECK (permission_denials >= 0)
-) STRICT
-;;
+) STRICT;
 
-CREATE INDEX ix_invocations_agent ON invocations(agent, started_utc)
-;;
+CREATE INDEX ix_invocations_agent ON invocations(agent, started_utc);
 
 CREATE TRIGGER tr_agent_declares_its_machine
 BEFORE INSERT ON agents
@@ -346,8 +341,7 @@ BEGIN
   INSERT INTO nodes (machine, connected, first_seen_utc)
   VALUES (substr(NEW.name, instr(NEW.name, '@') + 1), 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   ON CONFLICT(machine) DO NOTHING;
-END
-;;
+END;
 
 CREATE TABLE conversations (
   id          TEXT PRIMARY KEY,
@@ -371,8 +365,7 @@ CREATE TABLE conversations (
   CHECK (length(id) BETWEEN 1 AND 64
          AND id NOT GLOB '*[^a-zA-Z0-9._-]*'
          AND id NOT GLOB '*..*')
-) STRICT
-;;
+) STRICT;
 
 CREATE TABLE conversation_participants (
   conversation_id TEXT NOT NULL REFERENCES conversations(id),
@@ -387,8 +380,7 @@ CREATE TABLE conversation_participants (
   -- A vote without a poll is an agent answering a question nobody asked.
   CHECK (vote IS NULL OR polled_utc IS NOT NULL),
   CHECK ((vote IS NULL) = (voted_utc IS NULL))
-) STRICT
-;;
+) STRICT;
 
 CREATE TRIGGER tr_no_vote_after_closure BEFORE UPDATE ON conversation_participants
 WHEN NEW.vote IS NOT NULL
@@ -396,16 +388,14 @@ BEGIN
   SELECT RAISE(ABORT, 'conversation is closed')
    WHERE EXISTS (SELECT 1 FROM conversations
                   WHERE id = NEW.conversation_id AND state = 'CLOSED');
-END
-;;
+END;
 
 CREATE TABLE destroyed_conversations (
   id            TEXT PRIMARY KEY,
   destroyed_utc TEXT NOT NULL,
   messages      INTEGER NOT NULL CHECK (messages >= 0),
   participants  TEXT NOT NULL
-) STRICT
-;;
+) STRICT;
 
 CREATE TABLE "instructions" (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -433,11 +423,9 @@ CREATE TABLE "instructions" (
   -- yet cannot have said anything, and a row claiming otherwise would be read as an answer.
   CHECK ((outcome = 'pending') = (settled_utc IS NULL)),
   CHECK (outcome <> 'pending' OR reply IS NULL)
-) STRICT
-;;
+) STRICT;
 
-CREATE INDEX ix_instructions_agent ON instructions(agent, issued_utc)
-;;
+CREATE INDEX ix_instructions_agent ON instructions(agent, issued_utc);
 
 CREATE TABLE "exchanges" (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -472,8 +460,7 @@ CREATE TABLE "exchanges" (
   CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
   CHECK ((state = 'CLOSED') = (outcome IS NOT NULL)),
   CHECK (pair_key = min(requester, receiver) || char(31) || max(requester, receiver))
-) STRICT
-;;
+) STRICT;
 
 CREATE TABLE "messages" (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -500,8 +487,7 @@ CREATE TABLE "messages" (
 
   FOREIGN KEY (exchange_id, conversation_id)
     REFERENCES "exchanges"(id, conversation_id)
-) STRICT
-;;
+) STRICT;
 
 CREATE TABLE "size_refusals" (
   agent       TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
@@ -516,27 +502,22 @@ CREATE TABLE "size_refusals" (
 
   CHECK (worst > cap),
   CHECK (total >= worst)
-) STRICT
-;;
+) STRICT;
 
-CREATE UNIQUE INDEX ux_exchange_conversation ON exchanges(id, conversation_id)
-;;
+CREATE UNIQUE INDEX ux_exchange_conversation ON exchanges(id, conversation_id);
 
 CREATE UNIQUE INDEX ux_open_request
-  ON exchanges(requester, receiver, request_hash) WHERE state = 'OPEN'
-;;
+  ON exchanges(requester, receiver, request_hash) WHERE state = 'OPEN';
 
 CREATE UNIQUE INDEX ux_message_dedup
-  ON messages(content_hash, dedup_bucket)
-;;
+  ON messages(content_hash, dedup_bucket);
 
 CREATE TABLE conversation_cycles (
   exchange_id     INTEGER PRIMARY KEY REFERENCES exchanges(id),
   conversation_id TEXT    NOT NULL REFERENCES conversations(id),
   path            TEXT    NOT NULL CHECK (length(path) BETWEEN 1 AND 4000),
   recorded_utc    TEXT    NOT NULL
-) STRICT
-;;
+) STRICT;
 
 CREATE TABLE result_items (
   message_id      INTEGER NOT NULL,
@@ -553,8 +534,7 @@ CREATE TABLE result_items (
   PRIMARY KEY (message_id, item),
 
   CHECK ((outcome = 'blocked') = (blocker IS NOT NULL))
-) STRICT
-;;
+) STRICT;
 
 CREATE TABLE result_sources (
   message_id      INTEGER NOT NULL,
@@ -567,11 +547,9 @@ CREATE TABLE result_sources (
   PRIMARY KEY (message_id, item, source),
 
   CHECK (source <> from_agent)
-) STRICT
-;;
+) STRICT;
 
-CREATE INDEX ix_result_sources_source ON result_sources(from_agent, source)
-;;
+CREATE INDEX ix_result_sources_source ON result_sources(from_agent, source);
 
 CREATE TRIGGER tr_open_pair_cap BEFORE INSERT ON exchanges
 WHEN NEW.state = 'OPEN' AND NEW.open_pair_cap < 50
@@ -580,15 +558,13 @@ BEGIN
    WHERE (SELECT count(*) FROM exchanges
            WHERE state = 'OPEN' AND requester = NEW.requester AND receiver = NEW.receiver)
          >= NEW.open_pair_cap;
-END
-;;
+END;
 
 CREATE TRIGGER tr_closed_exchange_stays_closed BEFORE UPDATE OF state ON exchanges
 WHEN OLD.state = 'CLOSED' AND NEW.state <> 'CLOSED'
 BEGIN
   SELECT RAISE(ABORT, 'a closed exchange stays closed');
-END
-;;
+END;
 
 CREATE TRIGGER tr_an_outcome_has_its_result BEFORE UPDATE OF outcome ON exchanges
 WHEN NEW.outcome IS NOT NULL AND OLD.outcome IS NULL
@@ -605,16 +581,14 @@ BEGIN
      AND NOT EXISTS (SELECT 1 FROM messages
                       WHERE exchange_id = NEW.id AND type = 'result'
                         AND responder_model = 'parley:broker');
-END
-;;
+END;
 
 CREATE TRIGGER tr_closed_conversation_stays_closed BEFORE INSERT ON exchanges
 BEGIN
   SELECT RAISE(ABORT, 'conversation is closed')
    WHERE EXISTS (SELECT 1 FROM conversations
                   WHERE id = NEW.conversation_id AND state = 'CLOSED');
-END
-;;
+END;
 
 CREATE TRIGGER tr_result_is_well_formed BEFORE INSERT ON messages
 WHEN NEW.type = 'result' AND json_valid(NEW.payload_json)
@@ -660,8 +634,7 @@ BEGIN
    WHERE NEW.responder_model = 'parley:broker'
      AND EXISTS (SELECT 1 FROM json_each(NEW.payload_json, '$.outcomes')
                   WHERE json_extract(value, '$.outcome') <> 'closed');
-END
-;;
+END;
 
 CREATE TRIGGER tr_result_recorded AFTER INSERT ON messages
 FOR EACH ROW WHEN NEW.type = 'result' AND json_valid(NEW.payload_json)
@@ -679,8 +652,7 @@ BEGIN
          s.value, NEW.created_utc
     FROM json_each(NEW.payload_json, '$.outcomes') o,
          json_each(o.value, '$.sources') s;
-END
-;;
+END;
 
 CREATE TABLE conversation_folders (
   conversation_id TEXT PRIMARY KEY REFERENCES conversations(id),
@@ -698,14 +670,12 @@ CREATE TABLE conversation_folders (
              AND substr(folder, length(conversation_id) + 2) NOT GLOB '*[^0-9]*'
              AND substr(folder, length(conversation_id) + 2) NOT GLOB '0*'
              AND CAST(substr(folder, length(conversation_id) + 2) AS INTEGER) >= 2))
-) STRICT
-;;
+) STRICT;
 
 CREATE TRIGGER tr_conversation_folder_is_fixed BEFORE UPDATE ON conversation_folders
 BEGIN
   SELECT RAISE(ABORT, 'a conversation''s folder keeps its name');
-END
-;;
+END;
 
 CREATE TABLE file_fetches (
   agent           TEXT NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
@@ -716,8 +686,7 @@ CREATE TABLE file_fetches (
   fetched_utc     TEXT NOT NULL,
 
   PRIMARY KEY (agent, conversation_id, name_key)
-) STRICT
-;;
+) STRICT;
 
 CREATE TABLE file_notices (
   agent           TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
@@ -738,19 +707,16 @@ CREATE TABLE file_notices (
   -- A notice that nothing changed cannot exist: a change back to what was fetched deletes the row.
   CHECK (sha256_now IS NULL OR sha256_now <> sha256_had),
   CHECK ((sha256_now IS NULL) = (size_bytes IS NULL))
-) STRICT
-;;
+) STRICT;
 
-CREATE INDEX ix_file_notices_collection ON file_notices(agent, changed_utc)
-;;
+CREATE INDEX ix_file_notices_collection ON file_notices(agent, changed_utc);
 
 CREATE TABLE file_placements (
   agent      TEXT    NOT NULL PRIMARY KEY,
   placements INTEGER NOT NULL CHECK (placements > 0),
   bytes      INTEGER NOT NULL CHECK (bytes >= 0),
   last_utc   TEXT    NOT NULL
-) STRICT
-;;
+) STRICT;
 
 CREATE TABLE "shared_files" (
   conversation_id TEXT    NOT NULL REFERENCES conversation_folders(conversation_id),
@@ -784,16 +750,14 @@ CREATE TABLE "shared_files" (
   modified_ticks  INTEGER NOT NULL,
 
   PRIMARY KEY (conversation_id, name_key)
-) STRICT
-;;
+) STRICT;
 
 CREATE TRIGGER tr_placer_is_registered BEFORE INSERT ON shared_files
 WHEN NEW.placed_by IS NOT NULL
 BEGIN
   SELECT RAISE(ABORT, 'a file is placed by a registered agent or by the person')
    WHERE NOT EXISTS (SELECT 1 FROM agents WHERE name = NEW.placed_by);
-END
-;;
+END;
 
 CREATE TRIGGER tr_shared_file_stays_put
 BEFORE UPDATE OF conversation_id, placed_by, placed_utc ON shared_files
@@ -802,24 +766,21 @@ WHEN NEW.conversation_id IS NOT OLD.conversation_id
   OR NEW.placed_utc IS NOT OLD.placed_utc
 BEGIN
   SELECT RAISE(ABORT, 'a file keeps its conversation, its placer and when it was placed');
-END
-;;
+END;
 
 CREATE TRIGGER tr_shared_file_path_fits BEFORE INSERT ON shared_files
 BEGIN
   SELECT RAISE(ABORT, 'a file''s path inside the location is at most 255 characters')
    WHERE (SELECT length(folder) FROM conversation_folders
            WHERE conversation_id = NEW.conversation_id) + 1 + length(NEW.name) > 255;
-END
-;;
+END;
 
 CREATE TRIGGER tr_shared_file_path_fits_on_rename BEFORE UPDATE OF name ON shared_files
 BEGIN
   SELECT RAISE(ABORT, 'a file''s path inside the location is at most 255 characters')
    WHERE (SELECT length(folder) FROM conversation_folders
            WHERE conversation_id = NEW.conversation_id) + 1 + length(NEW.name) > 255;
-END
-;;
+END;
 
 CREATE TRIGGER tr_request_is_well_formed BEFORE INSERT ON messages
 WHEN NEW.type = 'request' AND json_valid(NEW.payload_json)
@@ -830,5 +791,4 @@ BEGIN
                      char(9, 10, 11, 12, 13, 32, 133, 160, 5760,
                           8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202,
                           8232, 8233, 8239, 8287, 12288))) = 0;
-END
-;;
+END;

@@ -158,6 +158,33 @@ internal static class Conversions
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a defined blocker.")
     };
 
+    /// <summary>Converts how a person arrived at an ownership line, for the wire.</summary>
+    /// <param name="source">Which of the three routes produced it.</param>
+    /// <returns>The wire value.</returns>
+    public static Wire.OwnershipSource Out(OwnershipSource source) => source switch
+    {
+        OwnershipSource.Proposed => Wire.OwnershipSource.Proposed,
+        OwnershipSource.Edited => Wire.OwnershipSource.Edited,
+        OwnershipSource.Composed => Wire.OwnershipSource.Composed,
+        _ => throw new ArgumentOutOfRangeException(nameof(source), source, "Not a defined source.")
+    };
+
+    /// <summary>Reads how a person arrived at an ownership line, off the wire.</summary>
+    /// <param name="source">The wire value.</param>
+    /// <returns>The domain value.</returns>
+    /// <remarks>
+    /// <c>Unspecified</c> is refused rather than defaulted. It is what an unset field arrives as, and
+    /// guessing <see cref="OwnershipSource.Proposed"/> would attribute a line to an agent that may
+    /// never have written one — which is the one thing the three values exist to keep apart.
+    /// </remarks>
+    public static OwnershipSource In(Wire.OwnershipSource source) => source switch
+    {
+        Wire.OwnershipSource.Proposed => OwnershipSource.Proposed,
+        Wire.OwnershipSource.Edited => OwnershipSource.Edited,
+        Wire.OwnershipSource.Composed => OwnershipSource.Composed,
+        _ => throw new ArgumentOutOfRangeException(nameof(source), source, "Not a defined source.")
+    };
+
     /// <summary>Converts who closed a conversation for the wire.</summary>
     /// <param name="closer">Who closed it, or <see langword="null"/> where nothing recorded it.</param>
     /// <returns>The wire value, or <c>Unspecified</c>.</returns>

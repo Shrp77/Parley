@@ -167,6 +167,21 @@ public interface IParleyBrokerClient
     /// <returns>Whether anything changed.</returns>
     Task<bool> ReinstateAsync(AgentName agent, CancellationToken cancellationToken = default);
 
+    /// <summary>Record that a person accepted a statement of what an agent owns.</summary>
+    /// <param name="agent">Whose line it is.</param>
+    /// <param name="acceptance">What was agreed, and how they arrived at it.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether it was recorded, and what peers read now beside what was accepted.</returns>
+    /// <remarks>
+    /// <b>It does not write the registry's <c>owns</c>.</b> That is filled from the launch
+    /// environment when the agent attaches (§12.3), so an accepted line takes effect on the agent's
+    /// next start and this returns both halves so a surface can say the two differ. No operation
+    /// accepts an <c>owns</c> line from the agent it describes, and this one records a person's
+    /// decision rather than making one.
+    /// </remarks>
+    Task<OwnershipRecord> RecordOwnershipAsync(
+        AgentName agent, OwnershipAcceptance acceptance, CancellationToken cancellationToken = default);
+
     /// <summary>Delete an agent and every conversation it was party to.</summary>
     /// <param name="agent">Who to purge.</param>
     /// <param name="cancellationToken">Cancels the call.</param>

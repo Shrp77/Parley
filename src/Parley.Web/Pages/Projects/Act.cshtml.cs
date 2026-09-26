@@ -140,6 +140,17 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 "instruct" => DescribeInstruction(
                     broker.InstructAsync(agent, Text ?? string.Empty, token)),
 
+                // Composed, because this surface has no ask yet: what a person types here is their
+                // own line and is recorded as theirs. A proposal an agent wrote arrives through the
+                // conversation it was agreed in, and carries that conversation with it -- which is
+                // why `source` exists at all rather than every acceptance being one thing.
+                "ownership" => DescribeOwnership(
+                    broker.RecordOwnershipAsync(
+                        agent,
+                        new OwnershipAcceptance(
+                            Text ?? string.Empty, OwnershipSource.Composed, null, null),
+                        token)),
+
                 _ => Task.FromResult("This is not something the console does.")
             }).ConfigureAwait(false)).ConfigureAwait(false);
 
@@ -150,6 +161,31 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
     private static async Task<string> Describe(Task<bool> action) =>
         await action.ConfigureAwait(false) ? "Done." : "Nothing changed.";
+
+    /// <summary>Says what became of an accepted ownership line.</summary>
+    /// <param name="action">The call.</param>
+    /// <returns>What to put in front of the person.</returns>
+    /// <remarks>
+    /// <b>It has to say that nothing an asker reads has changed yet</b>, which is the one thing a
+    /// person would otherwise assume. The registry is filled from the launch environment when the
+    /// agent attaches (§12.3), so an accepted line is a decision until the agent next starts —
+    /// reporting "Done." alone would be true about the record and false about the deployment.
+    /// </remarks>
+    private static async Task<string> DescribeOwnership(Task<OwnershipRecord> action)
+    {
+        var record = await action.ConfigureAwait(false);
+
+        if (!record.Recorded)
+        {
+            return $"Not recorded: {record.Problem}";
+        }
+
+        return record.Pending
+            ? "Recorded. Peers still read " +
+              (record.LiveStatement is null ? "no line for this agent" : $"'{record.LiveStatement}'") +
+              " until it next starts, because the line comes from its launch configuration."
+            : "Recorded, and it is what peers already read.";
+    }
 
     private static async Task<string> DescribePrune(Task<PruneResult> action)
     {

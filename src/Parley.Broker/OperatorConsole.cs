@@ -98,6 +98,57 @@ public sealed class OperatorConsole
     public async Task<bool> RetireAsync(AgentName agent, CancellationToken cancellationToken = default) =>
         await _agents.RetireAsync(agent, cancellationToken).ConfigureAwait(false) > 0;
 
+    /// <summary>Records that a person accepted a statement of what an agent owns (§10.2).</summary>
+    /// <param name="agent">Whose line it is.</param>
+    /// <param name="acceptance">What was agreed, and how they arrived at it.</param>
+    /// <param name="nowUtc">When it was accepted.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether it was recorded, and what peers read now beside it.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>It does not write <c>owns</c>.</b> The registry is filled from the launch environment when
+    /// the agent attaches (§12.3), so a line takes effect on the agent's next start — and the record
+    /// carries what peers read now so a surface can say the two differ without keeping a flag.
+    /// </para>
+    /// <para>
+    /// The statement is checked here as well as in storage, because the two answer different
+    /// questions: storage refuses what must never be held, and this returns the reason in the words
+    /// an operator reads rather than a constraint's name. §9.3's rule is that the invariant lives in
+    /// storage; it does not say the only message a person gets should be SQLite's.
+    /// </para>
+    /// </remarks>
+    public async Task<OwnershipRecord> RecordOwnershipAsync(
+        AgentName agent,
+        OwnershipAcceptance acceptance,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(acceptance);
+
+        if (acceptance.Problem() is { } wrong)
+        {
+            return new OwnershipRecord(Recorded: false, wrong, LiveStatement: null);
+        }
+
+        var (recorded, live) = await _agents
+            .RecordOwnershipAsync(agent, acceptance, nowUtc, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!recorded)
+        {
+            return new OwnershipRecord(
+                Recorded: false,
+                $"nothing has registered under '{agent.Value}', so nothing can be addressed to it " +
+                "and there is no line to accept. Start it and it registers as it attaches.",
+                LiveStatement: null);
+        }
+
+        return new OwnershipRecord(Recorded: true, Problem: null, live)
+        {
+            Pending = !string.Equals(live, acceptance.Statement, StringComparison.Ordinal)
+        };
+    }
+
     /// <summary>Withdraws a retirement (§10.2).</summary>
     /// <param name="agent">The agent to reinstate.</param>
     /// <param name="cancellationToken">Cancels the write.</param>

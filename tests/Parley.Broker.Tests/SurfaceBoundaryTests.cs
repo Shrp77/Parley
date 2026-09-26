@@ -92,6 +92,14 @@ public sealed class SurfaceBoundaryTests
             nameof(OperatorConsole.RetireAsync),
             nameof(OperatorConsole.ReinstateAsync),
 
+            // On this side because what it records is a PERSON'S decision about an agent, which is
+            // the one thing §17 question 10 says the field is worth reading for. An agent-facing
+            // version of this would let a model write its own charter, which is the whole of what
+            // that question closes. Note what it deliberately cannot do even here: it does not write
+            // `owns`. The registry is still filled from the launch environment on attach (§12.3), so
+            // no operation on either side sets the line an asker reads.
+            nameof(OperatorConsole.RecordOwnershipAsync),
+
             // On this side because it is a judgement about the registry that no agent may make
             // about itself or any other, which is the same reason retire is here — and the case
             // for keeping it here is now much stronger than when it was written. Purge once

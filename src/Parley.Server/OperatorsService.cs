@@ -215,6 +215,38 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
+    public override async Task<Wire.RecordOwnershipReply> RecordOwnership(
+        Wire.RecordOwnershipRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Name(request.Agent);
+
+        // Zero and empty are how proto3 spells "not set", and both mean something here: a composed
+        // line has no proposal to have a length and no conversation to name. Mapping them to null
+        // rather than to 0 and "" is what keeps `proposed_length` a fact about an agent's message
+        // rather than a number somebody's serialiser chose.
+        var acceptance = new OwnershipAcceptance(
+            request.Statement,
+            Conversions.In(request.Source),
+            request.ProposedLength > 0 ? request.ProposedLength : null,
+            string.IsNullOrEmpty(request.ConversationId) ? null : request.ConversationId);
+
+        var record = await Console(
+            (console, now, ct) => console.RecordOwnershipAsync(agent, acceptance, now, ct),
+            context).ConfigureAwait(false);
+
+        return new Wire.RecordOwnershipReply
+        {
+            Recorded = record.Recorded,
+            Problem = record.Problem ?? string.Empty,
+            LiveStatement = record.LiveStatement ?? string.Empty,
+            Pending = record.Pending
+        };
+    }
+
+    /// <inheritdoc/>
     public override async Task<Wire.DidItReply> Reinstate(Wire.AgentRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);

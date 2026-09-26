@@ -566,6 +566,11 @@ service Operators {
   rpc Reinstate(AgentRequest) returns (DidItReply);
   rpc Purge(AgentRequest) returns (PurgeReply);
 
+  // What a person agreed an agent owns, recorded with how they arrived at it (section 17 question 10).
+  // It does NOT write the registry's `owns`: that is filled from the launch environment when the agent
+  // attaches (section 12.3), so the reply carries what peers read now beside what was accepted.
+  rpc RecordOwnership(RecordOwnershipRequest) returns (RecordOwnershipReply);
+
   rpc DescribeRegistry(Empty) returns (RegistryReply);
   rpc DescribeRefusals(Empty) returns (RefusalsReply);
   rpc DescribeClarifications(Empty) returns (ClarificationsReply);
@@ -828,6 +833,25 @@ message WaitingEdge {
   int64 exchange_id = 3;
 }
 
+message RecordOwnershipRequest {
+  string agent = 1;
+  string statement = 2;
+  OwnershipSource source = 3;
+  // The length of the AGENT'S OWN message, or 0 when there was no proposal. A person's characters are
+  // never counted here: this is the evidence the removed bound on `owns` has to be chosen against.
+  int32 proposed_length = 4;
+  string conversation_id = 5;         // empty only when the line was composed with no ask
+}
+
+message RecordOwnershipReply {
+  bool recorded = 1;
+  string problem = 2;                 // empty when it was recorded
+  // What peers read RIGHT NOW, which is not what was accepted until the agent restarts. A surface says
+  // the line is pending by comparing the two rather than by keeping a flag somebody has to clear.
+  string live_statement = 3;
+  bool pending = 4;
+}
+
 message InstructRequest {
   string agent = 1;
   string text = 2;
@@ -951,6 +975,15 @@ enum MessageType {
 // What became of an instruction the person gave an agent. DECLINED against FAILED is the distinction
 // that matters most: an agent declines only for a blocker it names (section 11.5), and a surface
 // rendering that as a malfunction teaches whoever reads it to work around the agent.
+// How a person arrived at the ownership line they accepted. A person's own characters are never
+// attributed to a model, which is why `edited` and `composed` are told apart from `proposed` at all.
+enum OwnershipSource {
+  OWNERSHIP_SOURCE_UNSPECIFIED = 0;
+  OWNERSHIP_SOURCE_PROPOSED = 1;      // the agent's own words, untouched
+  OWNERSHIP_SOURCE_EDITED = 2;        // the agent's proposal, changed by the person
+  OWNERSHIP_SOURCE_COMPOSED = 3;      // written by the person, with no ask at all
+}
+
 enum InstructionOutcome {
   INSTRUCTION_OUTCOME_UNSPECIFIED = 0;
   INSTRUCTION_OUTCOME_PENDING = 1;

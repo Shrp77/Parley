@@ -1,5 +1,17 @@
 # Contract: the one new operation
 
+> **RENAMED WHILE BUILDING IT, 2026-09-26: the operation is `record_ownership`, not
+> `accept_ownership`.** `AcceptOwnershipAsync` sits one reading away from the agent-facing
+> `IAcceptsOperatorInstructions.AcceptAsync`, and §10.2 opens by warning about exactly that — two
+> operations across that boundary whose names invite confusion, which is why `force_conclude` is not
+> `conclude` and `registry` is not `agents`. The guards pass either way (`ContractSeparationTests`
+> compares names exactly), so this is the convention rather than the build.
+>
+> **And the new name is the more accurate one**, which is what settled it: the person did the
+> accepting. An operation called `accept_ownership` names the wrong actor for something that only
+> writes down a decision somebody else made — and it does not even write `owns`. Every occurrence
+> below should be read as `record_ownership` / `RecordOwnershipAsync`.
+
 §10.2 gains **one** operator operation. Nothing is added to §10.1, and no agent-facing operation is
 touched — FR-029 and Principle III.
 

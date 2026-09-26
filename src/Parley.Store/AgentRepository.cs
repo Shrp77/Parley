@@ -602,6 +602,119 @@ public sealed class AgentRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>
+    /// Records that a person accepted a statement of what an agent owns, and reports what its peers
+    /// read now.
+    /// </summary>
+    /// <param name="name">Whose line it is.</param>
+    /// <param name="acceptance">What was agreed, and how they arrived at it.</param>
+    /// <param name="nowUtc">When it was accepted.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>
+    /// Whether it was recorded, and the line the registry holds — which is what peers read, and is
+    /// not what was just accepted until the agent restarts.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>It does not touch <c>agents.owns</c>, and that is the whole design.</b> The registry is
+    /// filled from the launch environment when the agent attaches (SPEC.md §12.3), so a line takes
+    /// effect on the agent's next start. Writing both here would make this operation a second source
+    /// of the field the launch configuration owns, which is the route around Principle III that
+    /// §17 question 10 exists to keep shut.
+    /// </para>
+    /// <para>
+    /// The read and the write are one act, under one transaction, because a surface derives
+    /// <i>pending</i> by comparing them: taking the live line from a second call would let an attach
+    /// land between the two and report a line as already live that nobody had yet read.
+    /// </para>
+    /// <para>
+    /// Refuses an agent the registry does not hold, rather than writing a row whose foreign key
+    /// would fail with a message about a constraint. §14 counts an unregistered name unroutable, so
+    /// accepting a line for one would record a decision about an agent nothing can address.
+    /// </para>
+    /// </remarks>
+    public async Task<(bool Recorded, string? Live)> RecordOwnershipAsync(
+        AgentName name,
+        OwnershipAcceptance acceptance,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(acceptance);
+
+        using var scope = WriteScope.Begin(_connection, ambient: null);
+
+        var live = await _connection.QuerySingleOrDefaultAsync<LiveOwnership>(
+            new CommandDefinition(
+                "SELECT owns AS Owns, 1 AS Present FROM agents WHERE name = @Name;",
+                new { Name = name.Value },
+                transaction: scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        if (live is null)
+        {
+            return (false, null);
+        }
+
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                INSERT INTO agent_ownership_accepted
+                       (agent, statement, source, proposed_length, conversation_id, accepted_utc)
+                VALUES (@Name, @Statement, @Source, @ProposedLength, @Conversation, @AcceptedUtc)
+                ON CONFLICT(agent) DO UPDATE SET
+                       statement       = excluded.statement,
+                       source          = excluded.source,
+                       proposed_length = excluded.proposed_length,
+                       conversation_id = excluded.conversation_id,
+                       accepted_utc    = excluded.accepted_utc;
+                """,
+                new
+                {
+                    Name = name.Value,
+                    acceptance.Statement,
+                    Source = Recorded(acceptance.Source),
+                    acceptance.ProposedLength,
+                    Conversation = acceptance.Conversation,
+                    AcceptedUtc = ExchangeRow.FormatTimestamp(nowUtc)
+                },
+                transaction: scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        scope.Complete();
+
+        return (true, live.Owns);
+    }
+
+    /// <summary>How a source is spelled in storage.</summary>
+    /// <param name="source">The source.</param>
+    /// <returns>The stored spelling.</returns>
+    /// <remarks>
+    /// Spelled out rather than lower-cased from the member name, so that renaming the enum does not
+    /// silently rewrite what a CHECK constraint accepts.
+    /// </remarks>
+    private static string Recorded(OwnershipSource source) => source switch
+    {
+        OwnershipSource.Proposed => "proposed",
+        OwnershipSource.Edited => "edited",
+        OwnershipSource.Composed => "composed",
+        _ => throw new ArgumentOutOfRangeException(nameof(source), source, null)
+    };
+
+    /// <summary>What the registry holds for an agent, and that it holds it at all.</summary>
+    /// <remarks>
+    /// <c>Present</c> exists because a null <c>owns</c> and an absent agent are different answers
+    /// and a single nullable string cannot tell them apart — the first is an agent listed with no
+    /// line, which §17 question 10 says is ordinary, and the second is a name nothing can address.
+    /// </remarks>
+    private sealed record LiveOwnership
+    {
+        /// <summary>The line peers read, or null for none.</summary>
+        public string? Owns { get; init; }
+
+        /// <summary>Always 1; its presence is the answer.</summary>
+        public int Present { get; init; }
+    }
+
+    /// <summary>
     /// Marks every agent disconnected, for a broker that has just started.
     /// </summary>
     /// <param name="nowUtc">The instant.</param>
