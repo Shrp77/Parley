@@ -746,10 +746,65 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   **Every one was found by a test rather than by reading.** `REVIEW-LEDGER.md` carries each with the probe that produced
   it; the review gate itself has not started.
 
-  `specs/020-what-an-agent-owns/` follows it: an agent is *asked* what it owns and the answer is discussed to
-  agreement, replacing a worksheet a person filled in from memory. It amends SPEC.md §17 question 10, which is
-  closed and says the field is not self-declared — argued there rather than stepped around, and the cost is
-  recorded: the claim narrows again, and anchoring gets worse rather than better.
+  `specs/020-what-an-agent-owns/` follows it and is **planned, not built** — 0.33.0, schema 12, protocol 0.7
+  unchanged because 0.7 has never been released and §18's precedent is to record that rather than spend a
+  number. An agent is *asked* what it owns and the answer is discussed to agreement, replacing a worksheet a
+  person filled in from memory. It amends SPEC.md §17 question 10, which is closed and says the field is not
+  self-declared — argued there rather than stepped around, and the cost is recorded: the claim narrows again,
+  and anchoring gets worse rather than better.
+
+  **Three things carry its risk and all three were settled by probe or by the owner rather than by argument.**
+
+  **The hundred-character bound on `owns` goes, and that is a deliberate reduction in a control the
+  constitution names.** Principle IV calls a roster entry text that crosses and says a bound is part of its
+  design, and `001_initial.sql` records the hundred as *measured* — seventy-five characters of structure per
+  entry, so ten peers at a hundred cost about what one message is allowed to. The owner took the decision on
+  2026-09-26 with the arithmetic in front of them (nineteen peers at two thousand characters is ~39,000 against
+  a cap of 8,000) and declined both raising it to three hundred and keeping it. **The spec's 006/007 precedent
+  is weaker than it reads**: both of those capped *counts*, and 006 says outright its cap "was never a
+  technical bound". This one is. So `plan.md`'s Constitution Check carries it as a **finding**, and the
+  constitution should be amended to 2.1.0 *before* implementation — 015's amendment is the precedent, and
+  `/speckit-analyze` found changing it inside a feature's tasks a blocking conflict.
+
+  **The bound cannot be moved by altering anything, and four routes were probed before one was taken.** The
+  number is a literal inside a table-level CHECK on `agents`; SQLite cannot alter a CHECK; `ALTER TABLE DROP
+  COLUMN owns` is refused because `owns` appears in one; a trigger can refuse but never permit; and
+  `PRAGMA writable_schema` + `UPDATE sqlite_master` is **accepted and changes nothing**, on a fresh connection
+  too, while `integrity_check` still returns `ok` — the worst shape there is. So `agents` is **rebuilt**,
+  outside a transaction, because `PRAGMA foreign_keys = OFF` is a no-op inside one. **006's blocker holds here
+  with more force than where it was written**: `agents` is a parent of eleven tables and **six of them refuse a
+  cascade** — `invocations`, `exchanges`, `messages`, `conversation_participants`, `result_items`,
+  `result_sources`, which are exactly the tables a used store has rows in. **And the first probe was unsound,
+  which is recorded rather than tidied away**: it seeded `agent_credentials`, one of the few children declared
+  `ON DELETE CASCADE`, and reported that the blocker does not apply. A second check was unsound too —
+  `bound rewritten: True` was comparing the whole DDL string, which the table rename had already changed, so it
+  said True with the bound untouched and the rebuild then refused 400 characters. **Three triggers name
+  `agents` and two are on other tables**, and the RENAME validates every trigger in the schema, so with them
+  standing it fails outright. The cost is stated where somebody will read it before running it: **this is the
+  first migration here that runs outside a transaction, so a failure part-way leaves the store with no
+  `agents` table and no rollback.**
+
+  **An ask is recognised by the conversation it opens, never by a marker in a payload** — §13 promises a
+  receiver that a payload is inert data, and 017's chip rule is what keeps that true. The identifier is
+  derived (`owns-<role>-<timestamp>`), and the current proposal is the **latest** thing the agent said in that
+  exchange, which is 0.30.1's rule reused for its own reason.
+
+  **Both surfaces write the launch configuration, reversing the one-writer rule the web UI's naming page
+  records and 019 upheld six commits ago** — the owner's call. Designing it found the constraint that makes
+  the reversal defensible and that applies to the terminal just as much: **a launch configuration is a file on
+  the agent's machine, and neither surface is guaranteed to be on it.** So the rule is not "the web UI may not
+  write" but "no surface writes for an agent whose machine is not this one", checked identically by both. And
+  it restates a defect already paid for — 005's gate found a withdrawal deleting a *different* agent's launch
+  configuration because the workspace came from the registry, so the name is read back out of the file first.
+
+  One new operator operation, `Operators.AcceptOwnership`, and **five existing reads** — which is the evidence
+  that FR-002's "no new operation for the ask" was achievable rather than aspirational. It records the
+  acceptance and **does not write `agents.owns`**: the registry is still filled from the launch environment on
+  attach, so "accepted but not yet live" is a *comparison* of two facts rather than a third flag somebody has
+  to remember to clear. The file is written before the record, because a file with no record is repaired by a
+  later ask while a record with no file claims a person accepted a line peers will never read.
+
+  `specs/021-terminal-menu-bar/` is captured with the owner's four decisions and starts after this.
 
 - **The review gate found seven defects in its first six probes, two of them high** — fixed
   at **0.31.2**, **0.31.3** and **0.31.4**, and the
