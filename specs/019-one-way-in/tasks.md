@@ -144,7 +144,7 @@ Read these before starting; each has a test that fails the build rather than a c
 - [X] T052 [US3] Report per repository whether it registered, and report one that did not register in time as **not known**, never as failed (FR-046; 008's rule)
 - [X] T053 [US3] Enrolling a repository already enrolled elsewhere adds this project's name and leaves its identity and other projects alone (FR-047)
 - [X] T054 [US3] Carry forward an existing statement of what a repository owns; never ask a person to compose one (FR-048 — 020 owns the asking)
-- [ ] T055 [P] [US3] Test: a git worktree is reported as sharing its checkout's launch configuration rather than silently written (edge case)
+- [X] T055 [P] [US3] Test: a git worktree is reported as sharing its checkout's launch configuration rather than silently written (edge case)
 - [~] T056 [P] [US3] Test: enrolment with no broker running does what it can and says what it could not (edge case)
       **STALE** — inverted deliberately: enrolment now *refuses* when the project's broker is unreachable, because a half-enrolled set is worse than none (`EnrolmentRegistersTests.A_broker_that_does_not_answer_is_a_reason_to_refuse`).
 - [X] T057 [P] [US3] Test: a repository already enrolled in this project is reported as such, not duplicated, identity unchanged
@@ -234,7 +234,7 @@ it.
 - [X] T094 [US8] Confirm the `failing` set still holds a project that will not start and retries only when its entry changes (R2)
 - [X] T095 [US8] Confirm an unreadable `project.json` stops nothing, generalising the loop's existing `catch` to one bad project among many (R2, FR-029)
 - [X] T096 [P] [US8] Test: a project added while Parley runs is reachable within ten seconds without a restart (FR-034, SC-010)
-- [ ] T097 [P] [US8] Test: adding or changing one project does not disconnect agents attached to another (FR-035, SC-010) — the half that matters, and the half a restart would silently break
+- [X] T097 [P] [US8] Test: adding or changing one project does not disconnect agents attached to another (FR-035, SC-010) — the half that matters, and the half a restart would silently break
 - [X] T098 [P] [US8] Test: a project folder removed by hand stops being served and the rest go on (FR-036)
 
 ---
@@ -244,7 +244,7 @@ it.
 - [X] T099 [P] Update `SPEC.md` §4.1 — its illustration of a project manifest becomes the layout (Constitution Principle I; this is a document change first)
 - [X] T100 [P] Sweep `SPEC.md` §10.2 for command-line spellings; **the operations do not change**, only how they are spelled at a prompt
 - [X] T101 [P] Sweep `README.md` (~90 mentions), and make it direct a person who wants to take part to the terminal or the web UI — naming a way in that works with no terminal (FR-054)
-- [ ] T102 [P] Update `plugins/parley/README.md`
+- [X] T102 [P] Update `plugins/parley/README.md`
 - [~] T103 [P] Update `plugins/parley/commands/setup.md`: `project add --db --listen` becomes `project add <name>`
       **STALE** — overtaken: `project add` was removed from the command line entirely on 2026-09-25, and `setup.md` already says so and points at the terminal.
 - [X] T104 [P] Update `plugins/parley/commands/setup-many.md`: `enroll scan|plan|apply` becomes the one verb

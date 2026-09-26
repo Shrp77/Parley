@@ -308,8 +308,14 @@ public sealed class EnrollCommandTests : IDisposable
 
         var (code, _, error) = await EnrolAsync(NodePath, describe: true, unticked);
 
+        // **The refusal stopped naming a manifest, and this asserted the wording that did.** It
+        // read "<path> marks no repositories for enrollment. Set \"enroll\": true on the ones you
+        // want, or re-run `parley enroll scan` and tick them" — a file 019 deleted, a field nobody
+        // sets by hand any more, and a subcommand the tool now refuses. Three instructions, none of
+        // them followable, in the one message somebody reads when nothing happened.
         Assert.Equal(78, code);
-        Assert.Contains("marks no repositories", error, StringComparison.Ordinal);
+        Assert.Contains("No repositories were chosen", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("enroll scan", error, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -111,6 +111,38 @@ public sealed record EnrollmentEntry(
     /// </remarks>
     [JsonPropertyName("_evidence")]
     public IReadOnlyList<string>? Evidence { get; init; }
+
+    /// <summary>
+    /// What a person needs to know about this repository before ticking it, or empty.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>On the row because two surfaces show it and only one of them knew any of this.</b>
+    /// `EnrollCommand` worked the note out privately for its own picker — "worktree of another
+    /// checkout", "already an agent", "has an .mcp.json" — and the terminal's picker composed its
+    /// own from <c>Owns</c> alone, under a remark claiming it was "read off the row the command
+    /// produced ... so the note and what the command will do cannot disagree". They disagreed: on
+    /// the surface the owner actually enrols from, a worktree was offered with nothing said.
+    /// </para>
+    /// <para>
+    /// <b>A worktree is the one worth the trouble.</b> It is the *same repository* at another path,
+    /// and a folder of worktrees looks exactly like a folder of checkouts to a scan — so enrolling
+    /// one gives a second agent to one codebase, and because <c>.mcp.json</c> is a tracked file the
+    /// two agents' launch configurations are the same path on two branches. Whichever branch is
+    /// checked out decides which agent exists.
+    /// </para>
+    /// <para>
+    /// Reported and not refused: a worktree per branch with an agent on each is a reasonable
+    /// arrangement somebody may mean. What must not happen is it going unsaid, because the cost
+    /// arrives later as a launch configuration that changes under a branch switch.
+    /// </para>
+    /// <para>
+    /// Not serialised: it is computed from the repository every time the directory is read, and a
+    /// stored copy would be a fact about a checkout as it was.
+    /// </para>
+    /// </remarks>
+    [JsonIgnore]
+    public string Note { get; init; } = string.Empty;
 }
 
 // **`EnrollmentManifest` was here: the file `enroll scan` wrote and `enroll apply` read.** It

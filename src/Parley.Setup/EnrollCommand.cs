@@ -334,6 +334,14 @@ public static class EnrollCommand
             {
                 Enroll = carried?.Enroll ?? false,
 
+                // Computed once, here, so both pickers show the same thing. It was worked out
+                // privately for this command's own picker and the terminal composed its own from
+                // `Owns` alone — so a worktree was called out on one surface and offered silently on
+                // the other, which is the one people enrol from.
+                Note = Noted(
+                    workspace,
+                    carried?.Owns is { Length: > 0 } had ? had : owns ?? string.Empty),
+
                 // An approval already given survives a re-scan; one never given is not invented
                 // by re-running the command that would have asked for it.
                 OwnsApproved = carried?.OwnsApproved ?? false,
@@ -381,7 +389,7 @@ public static class EnrollCommand
             [.. entries.Select(e => new SelectableRepository(
                 Path.GetFileName(e.Workspace.TrimEnd('/')),
                 e.Workspace,
-                Note(e),
+                e.Note,
                 e.Enroll))]));
 
         if (selection.Status == SelectionStatus.Cancelled)
@@ -402,11 +410,16 @@ public static class EnrollCommand
     /// needs to recognise in a list of twenty, because leaving it unticked is how a working
     /// agent silently stops being offered.
     /// </remarks>
-    private static string Note(EnrollmentEntry entry) =>
-        IsWorktree(entry.Workspace) ? "worktree of another checkout"
-        : File.Exists(Path.Combine(entry.Workspace, ".mcp.json"))
-            && !string.IsNullOrEmpty(entry.Owns) ? "already an agent"
-        : File.Exists(Path.Combine(entry.Workspace, ".mcp.json")) ? "has an .mcp.json"
+    /// <remarks>
+    /// Takes the workspace and the owns line rather than an entry, because it is called while the
+    /// entry is being built — which is what puts the note on the row, where the terminal can read it
+    /// too. <see cref="EnrollmentEntry.Note"/> carries why that matters.
+    /// </remarks>
+    private static string Noted(string workspace, string owns) =>
+        IsWorktree(workspace) ? "worktree of another checkout"
+        : File.Exists(Path.Combine(workspace, ".mcp.json"))
+            && !string.IsNullOrEmpty(owns) ? "already an agent"
+        : File.Exists(Path.Combine(workspace, ".mcp.json")) ? "has an .mcp.json"
         : string.Empty;
 
     /// <summary>
@@ -964,9 +977,16 @@ public static class EnrollCommand
 
         if (entries.Length == 0)
         {
+            // **Said without naming a manifest or a deleted verb.** This read
+            // "<path> marks no repositories for enrollment. Set \"enroll\": true on the ones you
+            // want, or re-run `parley enroll scan` and tick them" — three things 019 removed: the
+            // file, the field somebody set by hand, and the subcommand. The path is still printed
+            // when there is one, because `--config` can name a root and saying which one was read
+            // is the difference between a refusal and a puzzle.
             await error.WriteLineAsync(
-                $"{manifestPath} marks no repositories for enrollment. Set \"enroll\": true on the ones " +
-                "you want,\nor re-run `parley enroll scan` and tick them.").ConfigureAwait(false);
+                manifestPath is { Length: > 0 } under
+                    ? $"No repositories were chosen under {under}. Nothing was configured."
+                    : "No repositories were chosen. Nothing was configured.").ConfigureAwait(false);
 
             return Config;
         }
@@ -1283,8 +1303,12 @@ public static class EnrollCommand
 
         if (!write)
         {
+            // **Named the verb that made these changes, and 019 deleted it.** This said to run the
+            // same manifest through `parley enroll apply` — a manifest that no longer exists and a
+            // subcommand the tool refuses. The one verb is the whole of it now: the same command
+            // without `--describe`.
             await output.WriteLineAsync(
-                "\nNothing was written. Run the same manifest through `parley enroll apply` to make these changes.")
+                "\nNothing was written. Run the same command without --describe to make these changes.")
                 .ConfigureAwait(false);
 
             return 0;

@@ -153,15 +153,43 @@ internal static class Onboarding
 
     /// <summary>What is worth knowing about a repository before ticking it.</summary>
     /// <remarks>
+    /// <para>
     /// Read off the row the command produced rather than worked out here, so the note and what the
-    /// command will do cannot disagree. The evidence a scan gathers is the repository's own text,
-    /// so it is neutralised: <see cref="Safe"/> exists because a control character in somebody
+    /// command will do cannot disagree. **That sentence was aspirational until 2026-09-26**: this
+    /// read <c>Owns</c> and nothing else, so the command's own picker said "worktree of another
+    /// checkout" and this surface said nothing. The evidence a scan gathers is the repository's own
+    /// text, so it is neutralised: <see cref="Safe"/> exists because a control character in somebody
     /// else's file can otherwise draw whatever it likes on this screen.
+    /// </para>
+    /// <para>
+    /// Internal rather than private so that a test can press on the composition itself. A test that
+    /// built the row from <see cref="EnrollmentEntry.Note"/> and read the screen would pass whatever
+    /// this method did — which is how the defect survived: the value was available and this composed
+    /// something else.
+    /// </para>
     /// </remarks>
-    private static string Note(EnrollmentEntry entry) =>
-        entry.Owns is { Length: > 0 } owns
+    internal static string Note(EnrollmentEntry entry)
+    {
+        // **The row's own note first, and this surface had none of them.** The remark above claimed
+        // the note was read off the row so that it and the command could not disagree; it read
+        // `Owns` and nothing else, while the command's own picker said "worktree of another
+        // checkout", "already an agent" or "has an .mcp.json". So a worktree — the same repository
+        // at another path, whose `.mcp.json` is a tracked file — was called out on the command line
+        // and offered silently here, which is the surface people enrol from.
+        //
+        // Not neutralised: it is one of three fixed phrases this program chooses. The owns line is,
+        // because that is the repository's own text.
+        var both = entry.Owns is { Length: > 0 } owns
             ? Safe.Text($"owns: {owns}")
             : string.Empty;
+
+        return (entry.Note, both) switch
+        {
+            ("", var said) => said,
+            (var note, "") => note,
+            (var note, var said) => $"{note} · {said}",
+        };
+    }
 
     /// <summary>States what enrolling costs, then does it.</summary>
     private static void Confirm(

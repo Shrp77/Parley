@@ -104,7 +104,7 @@ acceptance before the name. `force-conclude`, `instruct` and `prune` remain comm
 test fails the build if one appears on that surface.
 
 The terminal can also add an agent: a repository is picked by walking to it, and the same files
-`parley enroll apply` writes for one repository are written — the launch configuration, the
+`parley enroll` writes for one repository are written — the launch configuration, the
 repository's own instructions file, and a line in the project's catalogue. It then asks the machine
 to start the agent once, and the agent registers itself as it attaches: nothing on an operator's
 surface may register on a repository's behalf, so the start is a request and the registration is the

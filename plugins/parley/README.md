@@ -11,7 +11,7 @@
 | Component | What it is for |
 |---|---|
 | `/parley:setup` | Configures this repository as a Parley agent: checks the server is installed, writes `.mcp.json`, creates the database directory, and sends you to restart - which is when the tools appear, and therefore before `/parley:write-peers` can read anything |
-| `/parley:setup-many` | Configures several repositories in one pass, from a manifest you fill in. Does the nine tenths of setup that needs no tools; leaves the `owns` lines to you and the roster to `/parley:write-peers` |
+| `/parley:setup-many` | Configures several repositories in one pass: finds the git repositories under a directory, offers them to tick, then configures, catalogues and starts the ones chosen. Leaves the roster to `/parley:write-peers` |
 | `/parley:write-peers` | Writes or refreshes the `## Peers` block in this repository's standing instructions, from the live roster |
 | `/parley:files-list` | Shows the files agents have placed in the project: sizes, hashes, and who placed each |
 | `/parley:files-remove` | Removes named files, whoever placed them, after showing what goes and asking you |
@@ -87,8 +87,15 @@ once at the end costs *n*, and the blocks that come out are the only ones that w
 Nine tenths of setup does not need the tools at all: the launch configuration, the node entry and
 the placeholder frame are file writes against known values. Only the roster needs a bound server.
 So `/parley:setup-many` does that nine tenths for a list of repositories and refuses the rest -
-it never writes an `owns` line, never replaces an existing `## Peers` section, never replaces an
-`.mcp.json`, and writes nothing at all until a dry run has been read.
+it never writes an `owns` line, never replaces an existing `## Peers` section and never replaces
+an `.mcp.json`.
+
+**It used to write nothing until a dry run had been read**, because enrolment was three verbs
+around a worksheet: `scan` wrote a file, you filled it in, `plan` said what would change and
+`apply` changed it. 019 deleted all three. What stands in their place is a door: before anything
+is written, the count is named along with what being catalogued costs — a peer's request may start
+each repository with nobody watching — and `--describe` reports the same thing and changes
+nothing, for whoever wants to read it first rather than being made to.
 
 The work is `parley enroll`, a verb on the command-line tool, rather than a script shipped beside
 this file. That is not a preference. .NET is the only runtime a deployment is guaranteed to have
@@ -102,17 +109,24 @@ The `owns` line is the interesting one. SPEC.md 17 question 10 originally forbad
 from writing it: the field is worth routing by *because a person meant it*, and "a field a model
 could write would be no more trustworthy than the prose it replaces, merely centralised."
 
-That question has since been **amended**, because a blank field turned out not to be neutral
-either - onboarding eleven repositories asks for eleven statements in one sitting, and a field
-left empty routes nothing at all. A suggestion is now permitted on three conditions: it travels
-with the evidence it was drawn from, quoted and attributed; approval is a recorded positive act,
-so `enroll` refuses a filled-in line that nobody has affirmed; and the exclusion half - what a
-repository does *not* own - is never invented, because a tree can show what it contains and not
-what somebody decided to leave out.
+That question has since been **amended twice**, and the second amendment took the first one's
+machinery away.
 
-What the registry promises is therefore narrower than it was: not that a person composed the
-line, but that a person read it and said yes. The residual risk is anchoring, and the amendment
-records it as accepted rather than solved.
+The first: a blank field turned out not to be neutral either - onboarding eleven repositories asks
+for eleven statements in one sitting, and a field left empty routes nothing at all. So a suggestion
+was permitted on three conditions: it travelled with the evidence it was drawn from, quoted and
+attributed; approval was a recorded positive act, so `enroll` refused a filled-in line nobody had
+affirmed; and the exclusion half - what a repository does *not* own - was never invented, because a
+tree can show what it contains and not what somebody decided to leave out.
+
+The second: **nobody is asked to compose or affirm a line at all.** The recorded approval lived in
+the worksheet, which 019 deleted, so there is no longer a field to tick or a file to tick it in.
+Enrolment carries forward whatever a repository already says it owns and writes nothing of its own.
+`specs/020-what-an-agent-owns/` is where the line comes from now: the agent is asked what it is
+responsible for and the answer is discussed to agreement, which is a different claim from either
+earlier one and is argued where it is made.
+
+The residual risk is still anchoring, and it is still recorded as accepted rather than solved.
 
 ## What it deliberately does not ship
 
