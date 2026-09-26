@@ -115,15 +115,23 @@ internal static class Adding
     /// <param name="owns">What was typed.</param>
     /// <returns>The reason, or null.</returns>
     /// <remarks>
+    /// <para>
     /// Empty is legitimate and is not a gap: SPEC.md §17 question 10 allows an agent with no line,
-    /// listed with none, and askers fall back to its name. What is refused is a line too long for
-    /// the schema, which would otherwise be refused at registration — a long way from here, and
+    /// listed with none, and askers fall back to its name. What is refused is a line the schema
+    /// would refuse, which would otherwise be met at registration — a long way from here, and
     /// looking like an agent that simply never appeared.
+    /// </para>
+    /// <para>
+    /// <b>It asks <see cref="OwnershipStatement"/> rather than measuring a length itself.</b> It
+    /// used to compare against <c>OwnsLimit</c> and check nothing else, which meant a statement
+    /// carrying a line separator or a direction override passed here and was refused by the
+    /// database — the two halves of one rule, applied in two places, agreeing only by luck. Since
+    /// 0.33.0 removed the length bound the length half refuses nothing at all, so a field still
+    /// checking only that would have been a field checking nothing.
+    /// </para>
     /// </remarks>
     internal static string? OwnsProblem(string owns) =>
-        (owns ?? string.Empty).Trim().Length <= EnrollmentPlan.OwnsLimit
-            ? null
-            : $"At most {EnrollmentPlan.OwnsLimit} characters.";
+        OwnershipStatement.IsValid((owns ?? string.Empty).Trim(), out var error) ? null : error;
 
     /// <summary>What would be written, in the order it would be written.</summary>
     /// <param name="workspace">The repository.</param>

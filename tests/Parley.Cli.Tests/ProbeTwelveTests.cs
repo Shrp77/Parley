@@ -158,14 +158,24 @@ public sealed class ProbeTwelveTests : IDisposable
     }
 
     [Fact]
-    public void An_owns_line_is_still_bounded_and_still_refused_when_it_is_not_approved()
+    public void An_owns_line_that_could_break_its_roster_row_is_still_refused_per_entry()
     {
-        // Not new, and worth one assertion here because this feature multiplied the number of entries
-        // an `owns` line can be written into: what was one line per repository is now one per project.
+        // Not new, and worth one assertion here because this feature multiplied the number of
+        // entries an `owns` line can be written into: what was one line per repository is now one
+        // per project. A rule applied to the first entry and not to the rest is the shape this
+        // probe exists to catch.
+        //
+        // **It used to assert a length, and 0.33.0 removed the length.** Left as it was it would
+        // have gone on passing against nothing -- 500 characters is now perfectly legal -- which is
+        // worse than deleting it, because a green probe reads as a checked rule. What still refuses
+        // is the character rule, so that is what it drives.
         var problems = EnrollmentPlan.Validate(
-            [Entry("/src/orders", new string('x', 500))],
+            [Entry("/src/orders", "Carts." + (char)0x2028 + "No tax.")],
             _ => true);
 
         Assert.NotEmpty(problems);
+
+        // And the length half really is gone, which is the other half of the same statement.
+        Assert.Empty(EnrollmentPlan.Validate([Entry("/src/orders", new string('x', 500))], _ => true));
     }
 }

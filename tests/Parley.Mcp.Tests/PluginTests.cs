@@ -175,13 +175,21 @@ public sealed class PluginTests
         Assert.True(configuration.Success, "the setup command no longer shows a launch configuration");
         Assert.Contains(DeploymentEnvironment.OwnsVariable, configuration.Value, StringComparison.Ordinal);
 
-        // And it has to ask for the value rather than inventing one, so it has to say how long
-        // the value may be. A boundary is a decision somebody made; a directory listing does not
-        // imply it.
-        Assert.Contains(
+        // It used to have to say how long the value may be, and this asserted the number appeared
+        // in the prose. 0.33.0 removed the bound, so the number to assert would now be the sentinel
+        // -- and printing that in front of a person is the thing 0.25.8 established must never
+        // happen, because it names a limit nobody chose.
+        Assert.DoesNotContain(
             OwnershipStatement.MaxCharacters.ToString(CultureInfo.InvariantCulture),
             setup,
             StringComparison.Ordinal);
+
+        // What replaces it is the reason to be brief, which outlived the rule enforcing it: the
+        // line is read once per peer on every roster listing and charged against every reader's
+        // context. Guidance that dropped the number and said nothing else would leave a model with
+        // no reason at all to keep the line short.
+        Assert.Contains("roster", setup, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("read far more often than it is written", setup, StringComparison.Ordinal);
     }
 
     [Fact]

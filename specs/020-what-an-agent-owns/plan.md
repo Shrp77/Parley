@@ -2,7 +2,13 @@
 
 **Branch**: `019-layout` (this repository builds features on the working branch) | **Date**: 2026-09-26
 **Spec**: [spec.md](./spec.md)
-**Version**: 0.33.0 · **Schema**: 12 · **Protocol**: 0.7, unchanged
+**Version**: 0.33.0 · **Schema**: **1** · **Protocol**: 0.7, unchanged
+
+> **AMENDED 2026-09-26.** The schema was to be 12, by a migration that rebuilt `agents` outside a
+> transaction. Once the probes had priced that, the owner's call was *"don't worry about migration.
+> Go ahead and make the changes and call it schema #1. Nothing we have is worth keeping right now."*
+> The eleven migrations are folded into one `001_initial.sql`. Point 1 below is superseded; the
+> reasoning in it is why the collapse was preferred and is kept.
 
 ## Summary
 

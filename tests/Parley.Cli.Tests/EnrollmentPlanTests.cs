@@ -243,11 +243,13 @@ public sealed class EnrollmentPlanTests
     }
 
     [Fact]
-    public void An_owns_line_past_the_limit_is_refused()
+    public void A_long_owns_line_is_accepted_because_no_bound_is_in_force()
     {
-        var problems = Validate(Entry(owns: new string('x', EnrollmentPlan.OwnsLimit + 1)));
-
-        Assert.Contains(problems, p => p.Contains("limit is 100", StringComparison.Ordinal));
+        // This asserted "limit is 100" until 0.33.0 took the bound off, on the owner's decision of
+        // 2026-09-26: an agent asked what it owns answers in two halves and names a peer, which a
+        // hundred characters frequently will not hold. What still refuses is the character rule,
+        // which the theory below drives -- and that is the half the schema has always cared about.
+        Assert.Empty(Validate(Entry(owns: new string('x', 4_000))));
     }
 
     [Theory]
@@ -335,10 +337,14 @@ public sealed class EnrollmentPlanTests
     {
         // Whole-manifest rather than fail-fast, so somebody fixing a manifest of eleven does it
         // in one pass instead of eleven runs.
+        // The third entry's fault was a 200-character owns line until 0.33.0 removed the bound,
+        // at which point it stopped being a fault and this counted two. It carries a character the
+        // roster rule refuses instead, which is the fault that is left -- and keeping three faults
+        // is the point, since what is being measured is that all of them are reported at once.
         var problems = Validate(
             new EnrollmentEntry("/srv/a", "Orders", "A.", false) { OwnsApproved = true },
             new EnrollmentEntry("relative", "billing", "B.", false) { OwnsApproved = true },
-            new EnrollmentEntry("/srv/c", "stock", new string('x', 200), false) { OwnsApproved = true });
+            new EnrollmentEntry("/srv/c", "stock", "Stock." + (char)0x2028 + "All of it.", false) { OwnsApproved = true });
 
         Assert.Equal(3, problems.Count);
     }

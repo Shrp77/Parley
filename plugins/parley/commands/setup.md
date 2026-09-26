@@ -71,14 +71,21 @@ unforgeable, and it does that by taking the name from the launch environment and
 tool that mentions it - which is worth nothing if two servers claim the same name, because
 either one may then collect the other's mail.
 
-**What this repository owns.** One line, up to 100 characters, that every other agent sees
-beside this one's name when it lists the roster. It is how a peer decides whether a question
-is this repository's, so say what you own **and** what you do not - the exclusion is the half
-that stops somebody asking the wrong agent:
+**What this repository owns.** One line that every other agent sees beside this one's name when
+it lists the roster. It is how a peer decides whether a question is this repository's, so say
+what you own **and** what you do not - the exclusion is the half that stops somebody asking the
+wrong agent:
 
 > `Carts, orders and line totals. No tax, no stock.`
 >
 > `Invoicing, tax and payment capture. Does not price orders or reserve stock.`
+
+**Keep it to about a line, even though nothing enforces that any more.** The length bound came
+off so that an agent asked what it owns can answer in two halves and name a peer. What has not
+changed is the cost: this text is read far more often than it is written - once per peer, every
+time anybody lists the roster - and it is charged against the working memory of every agent that
+reads it. Both examples above are under eighty characters, and neither is short at the expense of
+saying what it means.
 
 **Put the repository's own words in front of them first, and do not write the line.** A cold
 prompt gets a vague answer or none, and there is something honest to offer instead: quote what

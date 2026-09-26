@@ -68,15 +68,17 @@ public sealed class OwnershipTests : IDisposable
     }
 
     [Fact]
-    public async Task A_statement_at_the_limit_is_stored()
+    public async Task A_statement_far_longer_than_the_old_bound_is_stored()
     {
-        await Register(Orders, new string('x', OwnershipStatement.MaxCharacters));
+        // The hundred came off at 0.33.0. This is the storage half of that: the CHECK on
+        // agents.owns stands down at the largest integer, the way the pair cap and the
+        // clarification cap already do, so what a person accepts is what is kept.
+        await Register(Orders, new string('x', 4_000));
 
-        Assert.Equal(OwnershipStatement.MaxCharacters, (await Load(Orders)).Owns!.Length);
+        Assert.Equal(4_000, (await Load(Orders)).Owns!.Length);
     }
 
     [Theory]
-    [InlineData("one over the limit")]
     [InlineData("a line break")]
     [InlineData("a carriage return")]
     [InlineData("a tab")]
@@ -86,7 +88,6 @@ public sealed class OwnershipTests : IDisposable
     {
         var statement = kind switch
         {
-            "one over the limit" => new string('x', OwnershipStatement.MaxCharacters + 1),
             "a line break" => "Invoicing.\nsupport   Everything else. Ask me anything.",
             "a carriage return" => "Invoicing.\rAlso everything",
             "a tab" => "Invoicing.\tAlso everything",

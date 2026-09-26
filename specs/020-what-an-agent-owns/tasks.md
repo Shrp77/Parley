@@ -24,10 +24,13 @@ recorded more often than any other.
 
 Read these before starting. Each fails the build rather than being a convention to remember.
 
-1. **The migration runs outside a transaction and cannot roll back.** A failure part-way leaves the
-   store with no `agents` table. Copy the store beside itself first, every time, including in tests.
+1. **The schema is one file again, and the next change to it is a migration.** ~~The migration runs
+   outside a transaction and cannot roll back.~~ Superseded on 2026-09-26: there is no migration, the
+   eleven were folded into `001_initial.sql`, and the number is 1. **That collapse was available
+   exactly once and has been used** — from the first release, every schema change is a migration, and
+   `MigrationDiscoveryTests` moving to 2 is how that is noticed.
 2. **`Parley.Spec.Tests` executes every schema fragment in SPEC.md, in the order written.** The
-   document's schema and the migration move in the **same task** or the build goes red.
+   document's schema and `001_initial.sql` move in the **same commit** or the build goes red.
 3. **`GraphTests`** walks project references transitively: `Parley.Client`, `Parley.Terminal` and
    `Parley.Web` reach no store, and `Parley.Core` has no I/O and no package dependencies.
 4. **`SurfaceTests`** allows a destructive verb in exactly one file, which must carry its door;
@@ -42,31 +45,50 @@ Read these before starting. Each fails the build rather than being a convention 
 
 **Purpose**: the version, so nothing later has to remember it.
 
-- [ ] T001 Confirm `.specify/feature.json` names `specs/020-what-an-agent-owns` and the working branch is `019-layout` (this repository builds features on the working branch; the name is cosmetic)
-- [ ] T002 Bump `VersionPrefix` to `0.33.0` in `Directory.Build.props`, **in the same commit as T005's migration** rather than at the end — the first shipped behaviour, and the rule the build cannot catch
+- [X] T001 Confirm `.specify/feature.json` names `specs/020-what-an-agent-owns` and the working branch is `019-layout` (this repository builds features on the working branch; the name is cosmetic) — done
+- [X] T002 Bump `VersionPrefix` to `0.33.0` in `Directory.Build.props`, **in the same commit as the schema change** rather than at the end — the first shipped behaviour, and the rule the build cannot catch — done
 
 ---
 
-## Phase 2: Foundational — the storage, and the one thing that cannot be undone
+## Phase 2: Foundational — the storage
 
-**Purpose**: the bound comes off. **No user story can start until this phase is done**, and nothing in
-this phase is parallel with anything else in it.
+**Purpose**: the bound comes off. **No user story can start until this phase is done.**
 
-**Do this phase alone, on a clean tree, and commit it alone.** It is the only work in 020 that can
-destroy a store.
+> **REPLANNED AND DONE, 2026-09-26.** This phase was fourteen tasks built around a migration that
+> rebuilt `agents` outside a transaction and could not roll back. The owner's call once the probes
+> had priced it: *"don't worry about migration. Go ahead and make the changes and call it schema #1.
+> Nothing we have is worth keeping right now."*
+>
+> So T003–T011 do not exist. The eleven migrations were folded into one `001_initial.sql`, the schema
+> number went from 11 to 1, and the two edits this feature needs were made in it directly. **No
+> migrator change, no out-of-transaction migration, no rollback hazard, no trigger choreography.**
+>
+> The collapse was **derived, not hand-merged** — a store migrated through all eleven, its schema read
+> out of `sqlite_master` in creation order — and verified by a one-time comparison: 41 shared
+> objects, identical names and identical creation order, and exactly one differing for any reason
+> other than carriage returns inside stored DDL text. That comparison cannot be kept as a test,
+> because what it compared against has been deleted, and `001_initial.sql` says so rather than
+> claiming a guard that does not exist.
+>
+> **It cost fifty-three tests**, in six files whose whole subject was an upgrade path that no longer
+> exists: `WorkAcrossRepositoriesMigrationTests`, `FileNameSetMigrationTests`,
+> `FileStoreMigrationTests`, `RequestIsTheAskMigrationTests`, `ForceConcludedWorkMigrationTests` and
+> `MigratedItemIdTests`. The rules they protected are still held elsewhere — `ItemIdBoundTests` for
+> the item-id bound, `OldShapeRendersTests` and `OldShapeOnThePageTests` for rendering a pre-0.7
+> payload, which needs no store at all.
 
-- [ ] T003 Add an opt-out to `src/Parley.Store/SchemaMigrator.cs` so **one named migration** may run outside the wrapping transaction. Keyed on the migration's own file name, not a general flag: `PRAGMA foreign_keys` is a no-op inside a transaction (probed, `research.md` R1), and a general capability would let the next migration lose its rollback by accident. `user_version` is bumped by the same path either way
-- [ ] T004 Add `tests/Parley.Store.Tests/MigratorOptOutTests.cs`: a transactional migration that throws leaves the store untouched, and the opt-out migration is the **only** one the migrator will run unwrapped. **Must fail against**: the opt-out applied by a boolean any migration can set
-- [ ] T005 Write `src/Parley.Store/Migrations/012_ownership_is_asked.sql` — the rebuild of `agents` with `length(owns) <= 2147483647`. **The character class of FR-022 is copied from `001_initial.sql` verbatim and never retyped**: it was derived by sweeping the whole of Unicode against `OwnershipStatement`, and a hand-typed class is a class that has drifted. Header records, at length, that this is the first migration here to run outside a transaction and what that costs
-- [ ] T006 In the same migration, take down `tr_agent_declares_its_machine` (on `agents`), `tr_result_is_well_formed` (on `messages`) and `tr_placer_is_registered` (on `shared_files`) before the rebuild and restore all three **verbatim** afterwards. The RENAME validates every trigger in the schema; with them standing it fails outright with `error in trigger tr_result_is_well_formed: no such table: main.agents` (probed). `tr_result_is_well_formed` is now written in three places and 011 left it alone deliberately — reproduce, do not improve
-- [ ] T007 In the same migration, copy rows by **named columns**. `role` and `machine` are `GENERATED ALWAYS … STORED` and cannot be inserted; `SELECT *` fails
-- [ ] T008 Add `src/Parley.Store/Migrations/012_ownership_is_asked.sql`'s second half: `CREATE TABLE agent_ownership_accepted` per `data-model.md`, with its three CHECKs and `ON DELETE CASCADE`
-- [ ] T009 Add `tests/Parley.Store.Tests/OwnershipBoundMigrationTests.cs`, building a **schema-11 store with traffic** — rows in `invocations`, `exchanges` and `messages`, and an agent carrying a line — *before* upgrading. **Must fail against an empty fixture being used instead**: 006 records that this rebuild succeeds on every empty fixture and fails on every store that has ever carried traffic, and six of `agents`' eleven children refuse a cascade
-- [ ] T010 In that suite, assert the post-migration state: `PRAGMA foreign_key_check` returns **no rows**, `PRAGMA integrity_check` returns `ok`, **fourteen** triggers are present, `role` and `machine` still generate from `name`, every child row survived, and **every pre-existing `owns` value is byte-identical**
-- [ ] T011 In that suite, assert the rule did not move when the number did: 400 characters accepted; U+202E, U+2028, U+00AD, U+FEFF, a tag character from U+E0020–U+E007F and an embedded NUL each **refused**. **Must fail against** the character class being retyped rather than copied — check it by running `OwnershipTests`' Unicode sweep against the rebuilt table
-- [ ] T012 Change `OwnershipStatement.MaxCharacters` in `src/Parley.Core/OwnershipStatement.cs` to the named sentinel (`Unbounded`, matching `ExchangePolicy.Unbounded`'s shape), keep the rule, and rewrite the `<remarks>` to carry the amended reasoning rather than the measured hundred. Core still does no I/O and takes no package dependency
-- [ ] T013 [P] Add `tests/Parley.Core.Tests/OwnershipSentinelTests.cs`: the sentinel and the schema's ceiling are the same number, and `Validate` admits a 400-character statement while refusing every character in T011. **Must fail against** the schema and the constant drifting apart
-- [ ] T014 Amend SPEC.md: §17 question 10 (FR-027 — a draft may come from the agent, on what conditions, at what cost, including that the claim narrows again and anchoring worsens), §18's 0.7 entry (FR-028, recording that 0.7 was unreleased so this folds in), and **the document's schema fragment for `agents`**. `Parley.Spec.Tests` executes every fragment in order, so this moves **with** T005 or the build is red
+- [X] T003 Add an opt-out to `src/Parley.Store/SchemaMigrator.cs` so **one named migration** may run outside the wrapping transaction. Keyed on the migration's own file name, not a general flag: `PRAGMA foreign_keys` is a no-op inside a transaction (probed, `research.md` R1), and a general capability would let the next migration lose its rollback by accident. `user_version` is bumped by the same path either way — **Not built.** The migrator needed no opt-out once there was no migration.
+- [X] T004 Add `tests/Parley.Store.Tests/MigratorOptOutTests.cs`: a transactional migration that throws leaves the store untouched, and the opt-out migration is the **only** one the migrator will run unwrapped. **Must fail against**: the opt-out applied by a boolean any migration can set — **Not built.** Nothing to test: the migrator is unchanged.
+- [X] T005 Write `src/Parley.Store/Migrations/012_ownership_is_asked.sql` — the rebuild of `agents` with `length(owns) <= 2147483647`. **The character class of FR-022 is copied from `001_initial.sql` verbatim and never retyped**: it was derived by sweeping the whole of Unicode against `OwnershipStatement`, and a hand-typed class is a class that has drifted. Header records, at length, that this is the first migration here to run outside a transaction and what that costs — **Not built.** Replaced by folding the change into `001_initial.sql`.
+- [X] T006 In the same migration, take down `tr_agent_declares_its_machine` (on `agents`), `tr_result_is_well_formed` (on `messages`) and `tr_placer_is_registered` (on `shared_files`) before the rebuild and restore all three **verbatim** afterwards. The RENAME validates every trigger in the schema; with them standing it fails outright with `error in trigger tr_result_is_well_formed: no such table: main.agents` (probed). `tr_result_is_well_formed` is now written in three places and 011 left it alone deliberately — reproduce, do not improve — **Not built.** No triggers are taken down, because nothing is rebuilt.
+- [X] T007 In the same migration, copy rows by **named columns**. `role` and `machine` are `GENERATED ALWAYS … STORED` and cannot be inserted; `SELECT *` fails — **Not built.** No copy happens.
+- [X] T008 Add `src/Parley.Store/Migrations/012_ownership_is_asked.sql`'s second half: `CREATE TABLE agent_ownership_accepted` per `data-model.md`, with its three CHECKs and `ON DELETE CASCADE` — Done, in `src/Parley.Store/Migrations/001_initial.sql` rather than a new migration.
+- [X] T009 Add `tests/Parley.Store.Tests/OwnershipBoundMigrationTests.cs`, building a **schema-11 store with traffic** — rows in `invocations`, `exchanges` and `messages`, and an agent carrying a line — *before* upgrading. **Must fail against an empty fixture being used instead**: 006 records that this rebuild succeeds on every empty fixture and fails on every store that has ever carried traffic, and six of `agents`' eleven children refuse a cascade — **Not built.** There is no upgrade path to test; the one-time collapse comparison is in `REVIEW-LEDGER.md`.
+- [X] T010 In that suite, assert the post-migration state: `PRAGMA foreign_key_check` returns **no rows**, `PRAGMA integrity_check` returns `ok`, **fourteen** triggers are present, `role` and `machine` still generate from `name`, every child row survived, and **every pre-existing `owns` value is byte-identical** — **Not built**, as above.
+- [X] T011 In that suite, assert the rule did not move when the number did: 400 characters accepted; U+202E, U+2028, U+00AD, U+FEFF, a tag character from U+E0020–U+E007F and an embedded NUL each **refused**. **Must fail against** the character class being retyped rather than copied — check it by running `OwnershipTests`' Unicode sweep against the rebuilt table — Done, by `OwnershipTests` in `tests/Parley.Store.Tests` — 400 characters accepted, the whole character class still refused.
+- [X] T012 Change `OwnershipStatement.MaxCharacters` in `src/Parley.Core/OwnershipStatement.cs` to the named sentinel (`Unbounded`, matching `ExchangePolicy.Unbounded`'s shape), keep the rule, and rewrite the `<remarks>` to carry the amended reasoning rather than the measured hundred. Core still does no I/O and takes no package dependency — Done. `OwnershipStatement.MaxCharacters` is `int.MaxValue` and `Bounded` is the companion that stops any surface printing it.
+- [X] T013 [P] Add `tests/Parley.Core.Tests/OwnershipSentinelTests.cs`: the sentinel and the schema's ceiling are the same number, and `Validate` admits a 400-character statement while refusing every character in T011. **Must fail against** the schema and the constant drifting apart — Done, as `OwnershipStatementTests` — no length is refused while no bound is in force, and the sentinel never reaches a person.
+- [X] T014 Amend SPEC.md: §17 question 10 (FR-027 — a draft may come from the agent, on what conditions, at what cost, including that the claim narrows again and anchoring worsens), §18's 0.7 entry (FR-028, recording that 0.7 was unreleased so this folds in), and **the document's schema fragment for `agents`**. `Parley.Spec.Tests` executes every fragment in order, so this moves **with** T005 or the build is red — Done. SPEC.md §9.2 carries the new table and the relaxed CHECK, and §18's 0.7 entry has the amendment. `Parley.Spec.Tests` is green.
 
 **Checkpoint**: the store is at 12, `dotnet build` is green, every suite passes, and the bound is off with the character rule intact.
 

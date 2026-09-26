@@ -150,7 +150,7 @@ public sealed class AgentFleetTests : IDisposable
         // Distinct per call, so a second Request between the same two agents is not refused as a duplicate.
         //
         // **A 0.7 Request is the ask and nothing else** (016). This wrote a 0.6 payload — `intent`, `items`
-        // and `done_when` — which schema 11 refuses outright with "a request carries an ask", so every test
+        // and `done_when` — which the schema refuses outright with "a request carries an ask", so every test
         // in this file that opened an exchange threw before it reached the fleet. Eighteen of them, since
         // 0.29.0, on a branch that was never pushed: `dotnet test` reports zero tests on this machine, so
         // nothing on it ran these, and CI never saw the branch.

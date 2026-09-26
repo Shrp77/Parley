@@ -49,13 +49,20 @@ public sealed class GuardOwnershipTests
     }
 
     [Fact]
-    public void The_ownership_limit_is_the_schemas_rather_than_a_number_typed_here()
+    public void The_ownership_rule_is_the_schemas_rather_than_one_written_here()
     {
-        // The cap is a CHECK in the broker's schema. A second copy here would eventually disagree
+        // The rule is a CHECK in the broker's schema. A second copy here would eventually disagree
         // with the one actually enforced, and the disagreement would surface as a registration
         // refused at launch -- which reads as an agent that simply never appeared.
-        Assert.Null(Adding.OwnsProblem(new string('a', EnrollmentPlan.OwnsLimit)));
-        Assert.NotNull(Adding.OwnsProblem(new string('a', EnrollmentPlan.OwnsLimit + 1)));
+        //
+        // It used to be a length, and 0.33.0 removed the length. The field therefore has to apply
+        // the rule that is left -- that the statement renders as what it says, on one line -- or it
+        // applies nothing at all while still looking like a guard.
+        Assert.Null(Adding.OwnsProblem("Carts and order totals. No tax, no stock."));
+        Assert.Null(Adding.OwnsProblem(new string('a', 4_000)));
+
+        Assert.NotNull(Adding.OwnsProblem("Carts." + (char)0x2028 + "No tax."));
+        Assert.NotNull(Adding.OwnsProblem("Carts." + (char)0x202E + "No tax."));
     }
 
     [Fact]

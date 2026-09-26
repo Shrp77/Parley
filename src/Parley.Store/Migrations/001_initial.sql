@@ -1,19 +1,129 @@
-﻿-- Parley schema, migration 001.
+﻿-- Parley schema, migration 001: the whole of it.
 -- Applied inside a transaction by SchemaMigrator; do not add BEGIN/COMMIT here.
 --
--- Requires SQLite 3.38 or later: STRICT tables (3.37), generated columns (3.31), and
--- unixepoch() (3.38). An older engine fails at the first CREATE TABLE with an error that
--- does not say which feature it objected to. See SPEC.md section 9.2.
+-- SPEC.md §9 is the authority for everything below, and tests/Parley.Spec.Tests executes that
+-- document's fragments against SQLite in the order written. The two must agree; the document is
+-- the specification and this is the implementation of it.
 --
--- This file is generated from SPEC.md section 9.2 and is deliberately not hand-edited.
--- SchemaConformanceTests compares the two structurally, and the way that check used to fail
--- was somebody changing one of them; generating the migration from the document removes the
--- opportunity. Change the schema in SPEC.md and regenerate.
+-- ============================================================================================
+-- THIS FILE WAS ELEVEN FILES, AND THE COLLAPSE IS THE OWNER'S CALL OF 2026-09-26
+-- ============================================================================================
 --
--- It replaces eight migrations. The store was rebuilt from empty when the broker stopped being
--- a file that every adapter opened (SPEC.md section 4), and carrying forward the accumulated
--- ALTER statements of a schema nobody would be upgrading was cost with no reader. The history
--- is in git.
+-- Migrations 002 to 011 were folded in here and deleted, and the schema number went from 11 to 1.
+-- The ground that permits it is the only one that ever permits it: **nothing has been released and
+-- no store outside a test process holds anything worth keeping.** The owner's words were "nothing
+-- we have is worth keeping right now".
+--
+-- It is the same ground 011 was edited on rather than being followed by a 012 — 0.29.0 was
+-- installed nowhere, so it had been applied in no store that mattered. This is that argument
+-- applied to the whole sequence at once, and it is the last time it will be available: the first
+-- release makes every future change a migration, because from then on somebody's conversations are
+-- in a file on their disk.
+--
+-- **A store written by an older build is not upgraded and is not readable.** There is no migration
+-- path from 11 to 1 and there is deliberately no attempt at one; `reset.ps1` and `reset.sh` at the
+-- repository root clear a developer's stores, which is what they exist for.
+--
+-- **THE STRUCTURE BELOW WAS DERIVED, NOT HAND-MERGED.** A store was migrated through all eleven
+-- and its schema read back out of `sqlite_master` in creation order, because hand-merging eleven
+-- files is how a collapse quietly loses a trigger — and four of the tables here (`messages`,
+-- `exchanges`, `size_refusals`, `shared_files`) existed in two shapes across that sequence, with
+-- fourteen triggers dropped and recreated between them.
+--
+-- **IT WAS VERIFIED BY A ONE-TIME PROBE, AND THAT PROBE CANNOT BE KEPT.** A store built from this
+-- file was compared object by object against one built by the eleven, before this file was
+-- trusted: **41 shared objects, with identical names and identical creation order**, plus the one
+-- table this feature adds. What it produces is 20 tables of ours beside SQLite's own
+-- `sqlite_sequence`, 7 indexes and 14 triggers. Twenty-two objects differed on raw bytes and twenty-one of those differed
+-- only by carriage returns inside the text SQLite stores in `sqlite_master` — the later migrations
+-- were LF files and this one is CRLF, which changes nothing a reader or a constraint can observe.
+-- **Exactly one object differed for any other reason: `agents`, by the one number this feature
+-- changes.** The transcript is in `REVIEW-LEDGER.md`.
+--
+-- That comparison is not a test and can never be one again, because the thing it compared against
+-- has been deleted. Saying otherwise in a comment here would be a claim nothing checks. What is
+-- checked from now on is narrower and is what `SchemaConformanceTests` and
+-- `tests/Parley.Spec.Tests` already do: this file and SPEC.md §9 agree, and every fragment in the
+-- document executes.
+--
+-- ============================================================================================
+-- WHAT THE DELETED FILES ARGUED, WHERE IT IS STILL TRUE
+-- ============================================================================================
+--
+-- Reasoning attached to a column or a constraint came with it and is inline below. What follows is
+-- the reasoning that lived in those files' headers and is still true of this schema. **What is not
+-- carried forward is every file's rebuild mechanics** — the order to drop triggers in, which
+-- generated column to leave out of a copy, which AFTER INSERT trigger would double-count a
+-- referral if the copy ran under it. Those were instructions for rebuilds that no longer happen,
+-- and keeping them in a file that creates each table exactly once would be archaeology dressed as
+-- guidance. They are in the git history of the deleted files.
+--
+-- **002 — an operator's instruction is not a message, and could not have been one.**
+-- `messages.from_agent` is a foreign key to `agents(name)` and an operator is not an agent. That
+-- is the key doing its job rather than an obstacle to route around: relaxing it to admit one
+-- sender that is not registered would admit every other unregistered sender in the same edit. So
+-- `instructions` is its own table, and it cascades on the agent the way `size_refusals` does,
+-- because §10.2's purge removes an agent and everything that referred to it.
+--
+-- **003 — the message cap is 8,000 and it is the first number here set from measurement.**
+-- §17 question 16 asked for `refusals()` showing "the same agents turned away repeatedly at
+-- similar sizes, rather than one agent once", and that is what it showed: six agents, forty-three
+-- refusals, worst case 6,195 characters, means between 4,328 and 4,556. Every refusal ever
+-- recorded fits under the number. It is a CHECK rather than a limit the broker enforces because
+-- §9.3 puts invariants in storage where application code cannot route around them, and that
+-- decision is worth its cost rather than regretted. It stays provisional on the same terms: move
+-- it on that record, not because a message did not fit.
+--
+-- **004 — the destroy invariant of §14 needs no cascade, and adding one would weaken it.**
+-- Every column referencing `conversations(id)` does so *without* `ON DELETE CASCADE`, which is
+-- exactly what the deletion relies on: the deletes are ordered inside one transaction with foreign
+-- keys deferred to commit, so a table nobody remembered fails the whole destroy rather than leaving
+-- a message pointing at a conversation that is gone. A cascade would remove that guard while
+-- looking like it strengthened it.
+--
+-- **005 — an agent's reply to an instruction carries the same cap as the instruction, and the
+-- review gate is why.** Lens 2 found `instructions.reply` bounded by nothing at all, on any path:
+-- a node — or anything able to reach the broker and claim to be one, which §16 says is anything on
+-- the network — could write an arbitrary blob into the operator's own record, and a
+-- 200,000-character reply was stored and read back whole. The same number as `text`, because what
+-- the cap defends is how much of somebody's context one piece of text can fill and a reply fills
+-- the same context an instruction does. Two numbers would also mean two arguments the next time
+-- evidence moves one.
+--
+-- **006 and 007 — two caps are off by default, and `2147483647` is how "off" is spelled.**
+-- §7.1's open-question cap and §5.2's clarification cap. Nothing cuts a line of work off before its
+-- participants are finished (principle 2.8), and **a cap censors the evidence that would justify
+-- it** — the reasoning this repository has now used three times. Zero was not available to either:
+-- for clarifications it already means no clarification at all, which a deployment may want, and
+-- the largest integer means nothing else. **What survives is the range**: a real cap is still held
+-- to its band by the triggers below, so a bug writing a large number is still refused rather than
+-- silently switching the rule off, and the one value beyond the band has to be written on purpose.
+-- 020 adds a third to the list and the constitution was amended to 3.0.0 to say so — see the
+-- `owns` column, whose bound is off on the same reasoning and at a cost recorded there.
+--
+-- **008 — protocol 0.5 made every message answered, and nothing times out.** `ORPHANED`,
+-- `ghosted` and the delivery and working windows are gone; an exchange that stops moving is
+-- flagged to a person rather than closed by a clock. An announcement is a Request answered
+-- `acknowledged`, which is why there is no standalone notification shape here.
+--
+-- **010 — `name_key` is `upper(name)` and that retired a caveat.** The key used to fold every
+-- letter so that two spellings of one accented name were one row. With a shared file's name held
+-- to A–Z, digits, '.', '_' and '-', SQLite's own `upper()` computes the same key — and a key that
+-- disagreed with its name would be a second name for one file.
+--
+-- **011 — protocol 0.7 reduced a Request to the ask, and no row was ever touched.** The old
+-- requirements lived in one BEFORE INSERT trigger, and a message is never updated: §9.4 prunes
+-- text, it does not rewrite it. Replacing the trigger decided what may be written from then on and
+-- said nothing about what had been written, because rewriting stored payloads would destroy words
+-- a participant wrote, which is the one thing the log exists to keep. That property is why this
+-- collapse is safe to do *now* and would not have been safe after a release.
+--
+-- `tr_result_is_well_formed` was deliberately left alone by 011 and is unchanged here. It never
+-- named an item identifier: it requires at least one outcome, holds a blocked outcome to naming its
+-- blocker, checks every source against the registry, and lets only the broker write 'closed'. All
+-- four are as true of one outcome named 'request' as of five named by a Request's items.
+--
+-- ============================================================================================
 
 CREATE TABLE nodes (
   -- Detected, never configured, per §4.1.1. The primary key rather than a surrogate, because
@@ -37,7 +147,8 @@ CREATE TABLE nodes (
   connected      INTEGER NOT NULL DEFAULT 0 CHECK (connected IN (0, 1)),
   changed_utc    TEXT,
   first_seen_utc TEXT    NOT NULL
-) STRICT;
+) STRICT
+;;
 
 CREATE TABLE agents (
   -- role@machine, per §4.1.1. Stored whole because it is what every other table references
@@ -113,7 +224,7 @@ CREATE TABLE agents (
   -- length() stops at a NUL while concatenation does not, so a value whose length is
   -- unchanged by appending a character is hiding bytes behind a terminator.
   CHECK (owns IS NULL
-         OR (length(owns) <= 100
+         OR (length(owns) <= 2147483647
              AND owns NOT GLOB '*[' ||
              char(1) || '-' || char(31) || char(127) || '-' || char(159) ||
              char(173) || '-' || char(173) || char(1536) || '-' || char(1541) ||
@@ -144,6 +255,39 @@ CREATE TABLE agents (
   CHECK (length(machine) BETWEEN 1 AND 64
          AND machine GLOB '[a-z0-9]*'
          AND machine NOT GLOB '*[^a-z0-9.-]*')
+) STRICT
+;;
+
+CREATE TABLE agent_ownership_accepted (
+  -- What a person agreed this agent owns, and the evidence of how they arrived at it.
+  --
+  -- SEPARATE FROM agents.owns ON PURPOSE, and the distinction is the whole of FR-020. This is
+  -- what somebody accepted; agents.owns is what peers actually read, and it is filled from the
+  -- launch environment when the agent attaches (SPEC.md §12.3). Until the agent restarts the
+  -- two differ, and a surface says so by comparing them rather than by keeping a third flag
+  -- somebody has to remember to clear. Both halves here are observations, so the state cannot
+  -- be wrong -- which is the shape 0.29.1 and 0.25.3 both argued for after collapsing two
+  -- questions into one made both unanswerable.
+  agent            TEXT    NOT NULL PRIMARY KEY
+                           REFERENCES agents(name) ON DELETE CASCADE,
+  statement        TEXT    NOT NULL,
+  -- Which of the three routes FR-015 admits. A person's characters are never attributed to a
+  -- model: 0.29.0's second review finding was a retry writing a length no agent composed into
+  -- size_refusals, which is the table §17 question 16 reads.
+  source           TEXT    NOT NULL CHECK (source IN ('proposed', 'edited', 'composed')),
+  -- The length of the AGENT'S OWN message, or NULL where there was no proposal. This is
+  -- FR-026's evidence, and the reason the bound above could be switched off at all: the
+  -- number that replaces it has to be chosen from what agents actually propose, the way the
+  -- message cap's 8,000 was chosen from `parley refusals`.
+  proposed_length  INTEGER          CHECK (proposed_length IS NULL OR proposed_length >= 0),
+  -- The discussion, so FR-011 is answerable from the agent rather than from somebody's memory.
+  conversation_id  TEXT             REFERENCES conversations(id),
+  accepted_utc     TEXT    NOT NULL,
+
+  CHECK (length(statement) >= 1),
+  -- A composed line had no proposal and no discussion; anything else had both.
+  CHECK (source <> 'composed' OR proposed_length IS NULL),
+  CHECK (source =  'composed' OR conversation_id IS NOT NULL)
 ) STRICT;
 
 CREATE TABLE agent_credentials (
@@ -156,17 +300,9 @@ CREATE TABLE agent_credentials (
   CHECK (reference LIKE 'env:_%'
          OR reference LIKE 'keychain:_%'
          OR reference LIKE 'file:_%')
-) STRICT;
+) STRICT
+;;
 
--- What giving an agent a turn has cost. Unbounded on purpose, like Notify (§17 question 1): the
--- decision about whether to bound it waits for evidence, and the evidence must outlive the
--- messages that produced it. An agent that answers without being asked is an agent that bills
--- without being asked, so what is recorded is chosen to make a runaway visible early -- not only
--- how many, but how long they took and how often they achieved nothing.
---
--- No output is kept. What the agent said travels as messages under §9.4's retention; capturing
--- it here would make a second, unpruned copy of everything an agent ever wrote, outside every
--- guard that governs the first.
 CREATE TABLE invocations (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   agent         TEXT    NOT NULL REFERENCES agents(name),
@@ -198,145 +334,27 @@ CREATE TABLE invocations (
   -- agent answers anyway and worse. Nothing else in the record distinguishes that from an agent
   -- that has simply become unhelpful.
   permission_denials INTEGER NOT NULL DEFAULT 0 CHECK (permission_denials >= 0)
-) STRICT;
+) STRICT
+;;
 
-CREATE INDEX ix_invocations_agent ON invocations(agent, started_utc);
+CREATE INDEX ix_invocations_agent ON invocations(agent, started_utc)
+;;
 
--- A machine appears in `nodes` the first time it registers an agent, which is what that table
--- means: one row per machine that has ever had agents on it. Written as a trigger rather than
--- left to the caller because `agents.machine` references it, so every writer would otherwise
--- have to insert the parent first and in the right order -- an obligation nothing states, that
--- fails as a foreign key error naming neither the machine nor the agent, and that a second
--- implementation would have to rediscover.
---
--- The machine is recomputed here from NEW.name rather than read from NEW.machine, because a
--- generated column is not guaranteed to be populated in a BEFORE trigger. The expression is the
--- same one the column is generated by, and it has to stay that way: the two disagreeing would
--- create a node row nothing referenced while the insert failed anyway.
---
--- `connected` starts at zero. Registering an agent says a machine exists, never that anything
--- on it is running -- and a node that reported itself up merely by being mentioned would be the
--- stored-liveness mistake of section 14 arriving through a side door.
 CREATE TRIGGER tr_agent_declares_its_machine
 BEFORE INSERT ON agents
 BEGIN
   INSERT INTO nodes (machine, connected, first_seen_utc)
   VALUES (substr(NEW.name, instr(NEW.name, '@') + 1), 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   ON CONFLICT(machine) DO NOTHING;
-END;
+END
+;;
 
--- Two trigger pairs stood here and both are gone, which is worth recording rather than
--- silently dropping.
---
--- The first refused a row that consented to unattended invocation without recording how to
--- start it. Neither column exists now: how to start an agent is the node's local
--- configuration and never leaves the machine it applies to (§4), so the broker holds no
--- executable command line at all -- a smaller trusted surface than the trigger was
--- protecting.
---
--- The second refused a status that was really a reading of a timestamp. There are now two
--- statuses and both are judgements a person made, so the CHECK on the column says everything
--- the trigger used to. Reachability is observed on a connection (§4.0) instead of inferred,
--- and lives in `connected` where it cannot be mistaken for a decision somebody recorded.
-
-CREATE TABLE exchanges (
-  id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  pair_key          TEXT    NOT NULL,
-  asker             TEXT    NOT NULL REFERENCES agents(name),
-  answerer          TEXT    NOT NULL REFERENCES agents(name),
-  owed_by           TEXT    NOT NULL REFERENCES agents(name),
-  state             TEXT    NOT NULL CHECK (state IN ('OPEN', 'CLOSED', 'ORPHANED')),
-  -- Set when this exchange was opened by a question addressed to a role (§5.5), and null
-  -- otherwise. It binds the exchanges of one fan-out together so an asker can tell which
-  -- answers belong to the same question; it does nothing else, and in particular no rule in §6
-  -- or §7 reads it. That is deliberate -- a group question is N ordinary exchanges, and giving
-  -- the group any authority over their states would make it the plural exchange §5.5 declines
-  -- to introduce.
-  --
-  -- Opaque and generated by the broker rather than supplied. An asker choosing its own would be
-  -- able to bind together exchanges that were never one question.
-  ask_group         TEXT
-                    CHECK (ask_group IS NULL
-                           OR (length(ask_group) BETWEEN 1 AND 64
-                               AND ask_group NOT GLOB '*[^a-zA-Z0-9._-]*')),
-  clarify_depth     INTEGER NOT NULL DEFAULT 0,
-  -- The column default is not the protocol default, which is 200 (17 question 4). The
-  -- broker resolves a policy before admission and always writes this column explicitly,
-  -- so this value is reached only by a row written by hand. Left at 3 deliberately: a
-  -- hand-written row is not a measurement, and the bound that matters is the trigger
-  -- below rather than this.
-  clarify_depth_cap INTEGER NOT NULL DEFAULT 3,
-  open_pair_cap     INTEGER NOT NULL DEFAULT 5
-                    CHECK (open_pair_cap BETWEEN 1 AND 50),
-  delivery_window_ms INTEGER NOT NULL,
-  working_window_ms  INTEGER NOT NULL,
-  -- Carried per exchange for the same reason the windows are, and it is the same argument:
-  -- an exchange must be able to reproduce its own deadlines from its own row. Held globally,
-  -- an operator lengthening the grace period would retroactively revive orphans already past
-  -- the old one, and shortening it would ghost a batch of live orphans at once.
-  grace_period_ms    INTEGER NOT NULL,
-  opened_utc        TEXT    NOT NULL,
-  expires_utc       TEXT    NOT NULL,
-  closed_utc        TEXT,
-  -- Which of the two windows in §6 is running. Derivable from the question message, and
-  -- denormalised here anyway: the reaper scans exchanges and would otherwise join to messages
-  -- on every sweep to answer a question the exchange already knows. It also makes the window
-  -- transition legible in the table rather than implied by an opaque expires_utc.
-  delivered_utc     TEXT,
-  is_decision       INTEGER NOT NULL DEFAULT 0,
-  decision_ref      TEXT,
-  question_hash     TEXT    NOT NULL,      -- content identity, §13.1
-  -- NULL while open. Set when the exchange closes, and the only column that distinguishes a
-  -- ghost from an answer once the message text has been pruned (§9.4). §15's health signals
-  -- are computed from this, so it outlives what it describes.
-  --
-  -- A rollup, not the whole story. §5.3 resolves each sub-question separately and that detail
-  -- lives in the answer payload, which retention eventually removes; this column is what
-  -- remains. It records the least resolved outcome among the sub-questions, ordered
-  -- ghosted < unknown < out_of_scope < answered, so an exchange counts as answered only when
-  -- every part of it was. Rolling up the other way would let one settled sub-question hide
-  -- four unsettled ones, and the resulting telemetry would report a healthier deployment the
-  -- more the agents failed to answer.
-  resolution        TEXT    CHECK (resolution IN ('answered','out_of_scope','unknown','ghosted')),
-  conversation_id   TEXT    REFERENCES conversations(id),  -- authoritative; see messages
-  version           INTEGER NOT NULL DEFAULT 0,
-
-  CHECK (asker <> answerer),
-  CHECK (owed_by IN (asker, answerer)),
-  CHECK (clarify_depth >= 0 AND clarify_depth <= clarify_depth_cap),
-  CHECK (delivery_window_ms > 0 AND working_window_ms > 0),
-  -- Bounded in both directions, because both ends defeat the rule rather than merely tuning
-  -- it. At zero an orphan is ghosted the instant it is created, so the resume policy in §14
-  -- never gets a chance to run and `always` becomes indistinguishable from `never`. At the
-  -- top end the exchange effectively never closes, which restores the unbounded retention
-  -- §9.4 relies on this to remove. One second to thirty days.
-  CHECK (grace_period_ms BETWEEN 1000 AND 2592000000),
-  CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
-  -- A closed exchange says why it closed; an open one cannot, since it has not.
-  CHECK ((state = 'CLOSED') = (resolution IS NOT NULL)),
-  CHECK (pair_key = min(asker, answerer) || char(31) || max(asker, answerer))
-) STRICT;
-
--- Composite parent key for the denormalised copy on messages. Redundant for uniqueness,
--- since id is already the primary key, and required because SQLite resolves a composite
--- foreign key only against indexed parent columns.
-CREATE UNIQUE INDEX ux_exchange_conversation ON exchanges(id, conversation_id);
-
--- Created by the broker on first reference, inside the same transaction that admits the
--- Question naming it, and idempotently: two agents may name the same new identifier at once
--- and neither should fail. Agents never create conversations explicitly, because a
--- conversation is not a thing to be set up before use — it is whatever its participants said
--- belonged together.
---
--- A conversation exists as a row so that it can carry a state. While it was only a string
--- on messages, no rule could ask whether a discussion was over without reconstructing it
--- from the traffic, and §9.4's idle rule could not be evaluated at all: it reasons about the
--- exchanges in a conversation, and exchanges did not carry the identifier.
 CREATE TABLE conversations (
   id          TEXT PRIMARY KEY,
   state       TEXT NOT NULL CHECK (state IN ('OPEN', 'CLOSING', 'CLOSED')),
   opened_utc  TEXT NOT NULL,
-  closed_utc  TEXT,
+  closed_utc  TEXT, archived_utc TEXT, closed_by TEXT
+  CHECK (closed_by IS NULL OR closed_by IN ('consensus', 'person')),
 
   CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
   -- A conversation is named by an agent and exported by name (SPEC.md 10.2), so this value
@@ -353,12 +371,9 @@ CREATE TABLE conversations (
   CHECK (length(id) BETWEEN 1 AND 64
          AND id NOT GLOB '*[^a-zA-Z0-9._-]*'
          AND id NOT GLOB '*..*')
-) STRICT;
+) STRICT
+;;
 
--- Membership is derived, not declared: a row appears when an agent first becomes party to
--- an exchange carrying the identifier. The vote column is the closure poll of §5.0. NULL
--- means not yet asked or not yet answered, which are the same thing to the rule that reads
--- it, since silence assents.
 CREATE TABLE conversation_participants (
   conversation_id TEXT NOT NULL REFERENCES conversations(id),
   agent           TEXT NOT NULL REFERENCES agents(name),
@@ -372,193 +387,128 @@ CREATE TABLE conversation_participants (
   -- A vote without a poll is an agent answering a question nobody asked.
   CHECK (vote IS NULL OR polled_utc IS NOT NULL),
   CHECK ((vote IS NULL) = (voted_utc IS NULL))
-) STRICT;
+) STRICT
+;;
 
-CREATE TRIGGER tr_open_pair_cap BEFORE INSERT ON exchanges WHEN NEW.state = 'OPEN'
-BEGIN
-  SELECT RAISE(ABORT, 'open_pair_cap reached')
-   WHERE (SELECT count(*) FROM exchanges
-           WHERE state = 'OPEN' AND asker = NEW.asker AND answerer = NEW.answerer)
-         >= NEW.open_pair_cap;
-END;
-
--- The clarify cap is itself bounded (§9.3), for the reason open_pair_cap is: a value written
--- outside the band would disable the rule while satisfying every constraint. A trigger rather
--- than a CHECK because the bound arrived after the table existed, and SQLite cannot add a CHECK
--- to a table that messages already references by foreign key.
-CREATE TRIGGER tr_clarify_cap_bounded_on_insert BEFORE INSERT ON exchanges
-FOR EACH ROW WHEN NEW.clarify_depth_cap NOT BETWEEN 0 AND 1000
-BEGIN
-  SELECT RAISE(ABORT, 'clarify_depth_cap must be between 0 and 1000');
-END;
-
--- Guards a path no operation takes today. The cap is written once at admission, and that is a
--- fact about the current broker rather than about the schema: raising it on a live exchange
--- would grant depth retroactively that was refused when it was asked for.
-CREATE TRIGGER tr_clarify_cap_bounded_on_update BEFORE UPDATE OF clarify_depth_cap ON exchanges
-FOR EACH ROW WHEN NEW.clarify_depth_cap NOT BETWEEN 0 AND 1000
-BEGIN
-  SELECT RAISE(ABORT, 'clarify_depth_cap must be between 0 and 1000');
-END;
-
--- Distinctness (§7.1). An index rather than a trigger: it is declarative, and it covers
--- every path that can produce an OPEN row, including the UPDATE that resumes an orphan.
-CREATE UNIQUE INDEX ux_open_question
-  ON exchanges(asker, answerer, question_hash) WHERE state = 'OPEN';
-
-
-
--- A ghost asserts that nobody answered (§14), so an exchange carrying an answer cannot be
--- one. Structural rather than textual: it does not inspect the answer, only whether one
--- exists, so there is nothing to word around.
-CREATE TRIGGER tr_ghost_needs_no_answer BEFORE UPDATE ON exchanges
-WHEN NEW.resolution = 'ghosted'
-BEGIN
-  SELECT RAISE(ABORT, 'ghosted requires that no answer was given')
-   WHERE EXISTS (SELECT 1 FROM messages WHERE exchange_id = NEW.id AND type = 'answer');
-END;
-
--- Section 5.0: closure is terminal, so a vote cast against a concluded discussion is an
--- agent answering a question that has already been settled. It changes no state -- nothing
--- reopens a closed conversation -- but it is stored, and the row then reads as a participant
--- declining a closure that had already happened. The log is what an operator reads when
--- something has gone wrong, and a stored contradiction is worse there than a refused write.
--- A CHECK cannot express this: it has to look at another table.
 CREATE TRIGGER tr_no_vote_after_closure BEFORE UPDATE ON conversation_participants
 WHEN NEW.vote IS NOT NULL
 BEGIN
   SELECT RAISE(ABORT, 'conversation is closed')
    WHERE EXISTS (SELECT 1 FROM conversations
                   WHERE id = NEW.conversation_id AND state = 'CLOSED');
-END;
+END
+;;
 
--- Section 5.0: a closed conversation stays closed. Closure is by consensus, and a single
--- agent naming a concluded identifier on a new Question would reopen the discussion
--- unilaterally -- defeating the poll, the decline veto and the silence rule all at once. In
--- storage rather than in the broker because the exchange is what carries the membership: an
--- exchange in a closed conversation is the state that must not exist, so the place to refuse
--- it is where it would be written. Reopening is not a special case because it is not a real
--- one; a discussion worth resuming is a new one, and identifiers are free.
-CREATE TRIGGER tr_closed_conversation_stays_closed BEFORE INSERT ON exchanges
-WHEN NEW.conversation_id IS NOT NULL
-BEGIN
-  SELECT RAISE(ABORT, 'conversation is closed')
-   WHERE EXISTS (SELECT 1 FROM conversations
-                  WHERE id = NEW.conversation_id AND state = 'CLOSED');
-END;
+CREATE TABLE destroyed_conversations (
+  id            TEXT PRIMARY KEY,
+  destroyed_utc TEXT NOT NULL,
+  messages      INTEGER NOT NULL CHECK (messages >= 0),
+  participants  TEXT NOT NULL
+) STRICT
+;;
 
--- Resuming an orphan is an UPDATE, which the trigger above never sees. Both are required.
-CREATE TRIGGER tr_open_pair_cap_resume BEFORE UPDATE ON exchanges
-WHEN NEW.state = 'OPEN' AND OLD.state <> 'OPEN'
-BEGIN
-  SELECT RAISE(ABORT, 'open_pair_cap reached on resume')
-   WHERE (SELECT count(*) FROM exchanges
-           WHERE state = 'OPEN' AND asker = NEW.asker AND answerer = NEW.answerer
-                 AND id <> NEW.id)
-         >= NEW.open_pair_cap;
-END;
+CREATE TABLE "instructions" (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent        TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  text         TEXT    NOT NULL,
+  outcome      TEXT    NOT NULL
+               CHECK (outcome IN ('pending', 'taken', 'declined', 'undeliverable', 'failed')),
+  reply        TEXT,
+  issued_utc   TEXT    NOT NULL,
+  settled_utc  TEXT,
 
-CREATE TABLE messages (
+  -- The same bound as a message (rule 8.5), and deliberately the same number rather than a
+  -- second one. SpecConsistencyTests holds the two together, because SQLite cannot say "the same
+  -- as that one" and they would otherwise drift at the worst moment -- when evidence moves the
+  -- message cap and this is left behind at a number nobody argued for.
+  CHECK (length(text) <= 8000),
+
+  -- And the agent's half of the same exchange, which had no bound at all. An operator's words are
+  -- typed by a person and an agent's are produced by a model; if either needed the cap less, it
+  -- was the one that already had it.
+  CHECK (reply IS NULL OR length(reply) <= 8000),
+
+  -- Settled and unsettled are one fact, so they move together or the row is lying about one of
+  -- them. A reply belongs to a settled instruction: an agent that has not been given the turn
+  -- yet cannot have said anything, and a row claiming otherwise would be read as an answer.
+  CHECK ((outcome = 'pending') = (settled_utc IS NULL)),
+  CHECK (outcome <> 'pending' OR reply IS NULL)
+) STRICT
+;;
+
+CREATE INDEX ix_instructions_agent ON instructions(agent, issued_utc)
+;;
+
+CREATE TABLE "exchanges" (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  pair_key            TEXT    NOT NULL,
+  requester           TEXT    NOT NULL REFERENCES agents(name),
+  receiver            TEXT    NOT NULL REFERENCES agents(name),
+  owed_by             TEXT    NOT NULL REFERENCES agents(name),
+  state               TEXT    NOT NULL CHECK (state IN ('OPEN', 'CLOSED')),
+  request_group       TEXT
+                      CHECK (request_group IS NULL
+                             OR (length(request_group) BETWEEN 1 AND 64
+                                 AND request_group NOT GLOB '*[^a-zA-Z0-9._-]*')),
+  clarify_depth       INTEGER NOT NULL DEFAULT 0,
+  clarify_depth_cap   INTEGER NOT NULL DEFAULT 2147483647,
+  open_pair_cap       INTEGER NOT NULL DEFAULT 50
+                      CHECK (open_pair_cap BETWEEN 1 AND 50),
+  uncollected_flag_ms INTEGER NOT NULL,
+  stalled_flag_ms     INTEGER NOT NULL,
+  opened_utc          TEXT    NOT NULL,
+  delivered_utc       TEXT,
+  closed_utc          TEXT,
+  request_hash        TEXT    NOT NULL,
+  outcome             TEXT    CHECK (outcome IN ('complete', 'blocked', 'closed')),
+  conversation_id     TEXT    NOT NULL REFERENCES conversations(id),
+  version             INTEGER NOT NULL DEFAULT 0,
+
+  CHECK (requester <> receiver),
+  CHECK (owed_by IN (requester, receiver)),
+  CHECK (clarify_depth >= 0 AND clarify_depth <= clarify_depth_cap),
+  CHECK (clarify_depth_cap BETWEEN 0 AND 1000 OR clarify_depth_cap = 2147483647),
+  CHECK (uncollected_flag_ms > 0 AND stalled_flag_ms > 0),
+  CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
+  CHECK ((state = 'CLOSED') = (outcome IS NOT NULL)),
+  CHECK (pair_key = min(requester, receiver) || char(31) || max(requester, receiver))
+) STRICT
+;;
+
+CREATE TABLE "messages" (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  exchange_id     INTEGER REFERENCES exchanges(id),  -- NULL for Notify
-  type            TEXT    NOT NULL
-                  -- Four an agent may send, and one only the broker writes: 'ghost' is §14's
-                  -- notice that no answer is coming. It needs a type of its own because none of
-                  -- the other four can carry it — an 'answer' is refused on a ghosted exchange
-                  -- by tr_ghost_needs_no_answer, and a 'notify' may not name an exchange.
-                  CHECK (type IN ('question', 'clarify', 'answer', 'notify', 'ghost')),
+  exchange_id     INTEGER NOT NULL REFERENCES "exchanges"(id),
+  type            TEXT    NOT NULL CHECK (type IN ('request', 'clarify', 'result')),
   from_agent      TEXT    NOT NULL REFERENCES agents(name),
   to_agent        TEXT    NOT NULL REFERENCES agents(name),
-  responder_model TEXT    NOT NULL,       -- see §11.3
+  responder_model TEXT    NOT NULL,
   payload_json    TEXT    NOT NULL,
-  content_hash    TEXT    NOT NULL,       -- see §13.1
-  -- References conversations(id) directly, which the composite key below cannot do for a
-  -- Notify: that key is satisfied by a NULL in either column, and a Notify always has a NULL
-  -- exchange_id. Without it a notification could name a discussion that does not exist.
-  conversation_id TEXT REFERENCES conversations(id),  -- denormalised from the exchange
+  content_hash    TEXT    NOT NULL,
+  conversation_id TEXT    NOT NULL REFERENCES conversations(id),
   created_utc     TEXT    NOT NULL,
   dedup_bucket    INTEGER GENERATED ALWAYS AS (unixepoch(created_utc) / 60) STORED,
   delivered_utc   TEXT,
 
   CHECK (from_agent <> to_agent),
-  CHECK ((type = 'notify') = (exchange_id IS NULL)),
-  CHECK (length(payload_json) <= 4000),
+  CHECK (length(payload_json) <= 8000),
   CHECK (json_valid(payload_json)),
-
-  -- Rule 1: a Question states what the asker will do with each possible answer. §5.1 calls
-  -- consequences the highest-leverage field in the protocol, and §4.2 gives it a second job as
-  -- the asker's own note to itself when the answer arrives hours later, so a Question without
-  -- it is not merely impolite: it is unanswerable well and unusable on return.
-  --
-  -- The length floor does real work. Requiring only that the key be present admits "n/a",
-  -- which satisfies a check and states nothing. Forty characters is about the shortest honest
-  -- statement of a consequence and is cheap to clear.
-  CHECK (type <> 'question'
-         OR length(coalesce(json_extract(payload_json, '$.consequences'), '')) >= 40),
   CHECK (length(responder_model) BETWEEN 1 AND 64
          AND responder_model NOT GLOB '*[^a-zA-Z0-9._:/-]*'),
   CHECK (length(content_hash) = 64
          AND content_hash NOT GLOB '*[^0-9a-f]*'),
   CHECK (unixepoch(created_utc) IS NOT NULL),
-  CHECK (conversation_id IS NULL
-         OR (length(conversation_id) BETWEEN 1 AND 64
-             AND conversation_id NOT GLOB '*[^a-zA-Z0-9._-]*'
-             AND conversation_id NOT GLOB '*..*')),
 
-  -- The exchange holds the authoritative conversation (§5.0); this column repeats it, and
-  -- the composite foreign key below is what stops the copy becoming a second opinion. A
-  -- message may not name a conversation its exchange is not in, nor one that does not exist.
-  --
-  -- Kept deliberately, against the usual rule that one fact belongs in one column. The rule
-  -- guards against silent drift, and there is none to guard against once the copy cannot
-  -- differ. What it buys is that the message log answers "what happened in this
-  -- conversation" on its own, at the moment someone is looking because something has gone
-  -- wrong and the exchange rows are what they are trying to check.
-  --
-  -- One gap remains and is the acceptable direction. A composite foreign key is satisfied by
-  -- a NULL in either column, so a message may carry NULL where its exchange carries an
-  -- identifier. That loses the shortcut without misreporting anything: the value is still one
-  -- join away. The copy can fail to help; it cannot lie.
-  --
-  -- It also makes an exchange's conversation immutable once any message exists in it, because
-  -- the UPDATE that would move it is refused while children reference the old value. §5.0
-  -- states that nobody may reassign an exchange, only add to a conversation. That was a
-  -- convention until now.
   FOREIGN KEY (exchange_id, conversation_id)
-    REFERENCES exchanges(id, conversation_id)
-) STRICT;
+    REFERENCES "exchanges"(id, conversation_id)
+) STRICT
+;;
 
--- What the size cap actually refused, so the next value for it is measured rather than
--- judged. Rule 8.5 fixes a number that no evidence has ever been offered for; this is the
--- evidence, and §17 says the same thing about the clarify cap without ever collecting it.
---
--- **No payload is stored, ever.** Only how long it was. Recording the text that was refused
--- for being too long would keep the exact material the cap exists to keep out, put it beyond
--- the retention policy that governs messages, and make instrumenting a poisoning control a
--- poisoning vector. The measurement is the whole point and the text is none of it.
---
--- One row per agent and message type rather than one per event, so the table is bounded by
--- the registry rather than by how often an agent misbehaves: an agent looping on an oversized
--- answer updates a row instead of filling a disk. What is lost is the distribution; what is
--- kept is how often, how far over at worst, and how far over on average, which is what
--- choosing a number needs.
---
--- Deliberately outside the retention policy of §9.4, which is the one surprise here and so is
--- said rather than left to be noticed. That policy forgets message text on a schedule because
--- an unbounded log recreates the shared store the protocol replaces; these rows carry no text
--- at all, and their whole value is being readable years after the traffic they describe is
--- gone. A count pruned on the same schedule as the thing it counts answers nothing.
---
--- total is 64-bit because it accumulates: fifty thousand refusals at forty thousand characters
--- passes what 32 bits holds, which is one looping agent for an afternoon.
-CREATE TABLE size_refusals (
+CREATE TABLE "size_refusals" (
   agent       TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
-  type        TEXT    NOT NULL CHECK (type IN ('question', 'clarify', 'answer', 'notify')),
+  type        TEXT    NOT NULL CHECK (type IN ('request', 'clarify', 'result')),
   refusals    INTEGER NOT NULL CHECK (refusals > 0),
   worst       INTEGER NOT NULL CHECK (worst > 0),
   total       INTEGER NOT NULL CHECK (total > 0),
-  -- The cap in force at the most recent refusal. Without it a row recorded under one cap is
-  -- unreadable after the cap moves, which is precisely when this table is consulted.
   cap         INTEGER NOT NULL CHECK (cap > 0),
   last_utc    TEXT    NOT NULL,
 
@@ -566,217 +516,319 @@ CREATE TABLE size_refusals (
 
   CHECK (worst > cap),
   CHECK (total >= worst)
-) STRICT;
+) STRICT
+;;
 
--- The two triggers below sit after the table they guard rather than beside the rules they
--- enforce. SQLite compiles a trigger against a table that must already exist, so the
--- document's order is the order a database is built in, not a reading order.
+CREATE UNIQUE INDEX ux_exchange_conversation ON exchanges(id, conversation_id)
+;;
 
--- Rule 2: gates are syntactic, unambiguous and acyclic. A trigger because reaching into an
--- array needs json_each, which is a subquery, and CHECK forbids those.
---
--- The second clause is the whole rule and does more than it appears to. Requiring a gate to
--- name an *earlier* sub-question makes the dependency graph a DAG by construction, so a cycle
--- cannot be expressed rather than being detected and rejected: no recursive walk, and nothing
--- to get subtly wrong. It subsumes three failures at once — a gate on a missing id, a gate on
--- itself, and a mutual pair each waiting on the other forever. Verified against all three plus
--- a plain forward reference.
---
--- Uniqueness is checked first because without it "the earlier sub-question named q1" is not a
--- single thing, and the second clause would be satisfied by whichever duplicate came first.
---
--- Scoped to questions, unlike the referral trigger below, and the difference is deliberate.
--- redirect_to is a name whose leak potential does not depend on which message carries it, so
--- validating it only where it is currently read would leave it unguarded the day something
--- else reads it. sub_questions are defined only for a Question and mean nothing elsewhere, so
--- there is no later reader to be caught out by. The scope also matters here: Notify is
--- expected to be the highest-volume traffic (§5.4), and it would otherwise pay for two
--- json_each scans over a path it never has.
-CREATE TRIGGER tr_gates_are_syntactic BEFORE INSERT ON messages
-WHEN NEW.type = 'question' AND json_valid(NEW.payload_json)
-BEGIN
-  SELECT RAISE(ABORT, 'sub_question ids are not unique')
-   WHERE (SELECT count(*) FROM json_each(NEW.payload_json, '$.sub_questions'))
-      <> (SELECT count(DISTINCT json_extract(value, '$.id'))
-            FROM json_each(NEW.payload_json, '$.sub_questions'));
-
-  SELECT RAISE(ABORT, 'a gate must reference an earlier sub_question')
-   WHERE EXISTS (
-     SELECT 1 FROM json_each(NEW.payload_json, '$.sub_questions') q
-      WHERE json_extract(q.value, '$.gate.on') IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM json_each(NEW.payload_json, '$.sub_questions') p
-           WHERE p.key < q.key
-             AND json_extract(p.value, '$.id') = json_extract(q.value, '$.gate.on')));
-END;
-
--- Every referral names a registered agent. A trigger rather than a CHECK because reaching
--- inside a JSON array needs json_tree, which is a subquery: CHECK forbids those, triggers
--- permit them.
---
--- The key test is deliberately two-sided. json_tree reports an array element under a path
--- containing redirect_to, but a bare string under the parent's path with redirect_to as its
--- key, so matching on path alone silently ignores a malformed scalar — and a malformed value
--- that disables a guard is exactly how a rule becomes decorative. Verified against both forms.
---
--- Not restricted to answers, although only an answer carries a referral today. A redirect_to
--- in any other message type is inert, and inert data is how a guard lapses: the day something
--- reads it, the check that was scoped to the old reader is silently absent. The same mistake
--- as scoping the cap trigger to INSERT and meeting the resume path an UPDATE later.
--- Guarded on json_valid because SQLite runs BEFORE triggers ahead of CHECK constraints, and
--- json_tree raises 'malformed JSON' on a payload that is not JSON at all. Without the guard
--- this trigger preempts the json_valid CHECK below and reports a referral problem for a
--- message that has no referral, only broken syntax. A trigger should not answer for a
--- constraint that exists to answer for itself.
--- A ghost is the broker's, and this is the one place authorship can be enforced rather than
--- trusted. SPEC.md 11.3 is explicit that responder_model cannot distinguish the broker writing
--- its own name from the broker faithfully recording an adapter that supplied it, because every
--- row is written by the broker either way. That argument is about the value; it does not apply
--- to the type, which no agent operation can set. So the type gates the write and the check ties
--- the two together: a 'ghost' must carry the broker's attribution, and nothing else may.
-CREATE TRIGGER tr_ghost_is_the_brokers BEFORE INSERT ON messages
-WHEN NEW.type = 'ghost'
-BEGIN
-  SELECT RAISE(ABORT, 'a ghost message must record parley:broker as its responder')
-   WHERE NEW.responder_model <> 'parley:broker';
-END;
-
--- The converse does not hold and must not be added. 'parley:broker' is also what a forced
--- 'unknown' records when the clarify cap breaks (SPEC.md 7, 11.3, 15), which is an 'answer' the
--- broker writes -- so a trigger reserving the attribution for ghosts would refuse the other
--- broker-authored message the protocol already has. That an adapter cannot claim the namespace
--- is enforced where 11.3 says it must be, at the point adapter-supplied values enter the broker,
--- because every row here is written by the broker either way and the column cannot see which.
-
-CREATE TRIGGER tr_referral_targets_exist BEFORE INSERT ON messages
-WHEN json_valid(NEW.payload_json)
-BEGIN
-  SELECT RAISE(ABORT, 'redirect_to names an agent that is not registered')
-   WHERE EXISTS (
-     SELECT 1 FROM json_tree(NEW.payload_json) t
-      WHERE (t.path LIKE '%redirect_to%' OR t.key = 'redirect_to')
-        AND t.type = 'text'
-        AND t.value NOT IN (SELECT name FROM agents));
-
-  -- A sender referring to itself asserts both halves of a contradiction in one message:
-  -- out_of_scope says the boundary is not mine, and the referral says it is. Checked against
-  -- every entry rather than the first, so one cannot hide among valid targets.
-  SELECT RAISE(ABORT, 'redirect_to names the sender')
-   WHERE EXISTS (
-     SELECT 1 FROM json_tree(NEW.payload_json) t
-      WHERE (t.path LIKE '%redirect_to%' OR t.key = 'redirect_to')
-        AND t.type = 'text' AND t.value = NEW.from_agent);
-END;
-
--- Referrals kept where retention cannot reach them. §15 wants the `out_of_scope` rate per pair
--- and calls it the signal that the ownership map is wrong somewhere; `redirect_to` lives only in
--- the payload, and §9.4 prunes by deleting the message, so that rate could never see further back
--- than the retention window. The same move `exchanges.resolution` already makes, and no prose:
--- three names, a sub-question identifier and a timestamp. §16 says this is a channel and not a
--- store, and names are not the log §9.4 is bounding.
-CREATE TABLE message_referrals (
-  -- Deliberately not a foreign key. A reference would make the prune fail once a referral
-  -- pointed at the row; ON DELETE CASCADE would delete the referral with the message, which is
-  -- what this table exists to prevent. It names a message that may no longer exist.
-  message_id      INTEGER NOT NULL,
-  -- This one is a real reference: nothing deletes an exchange, so the join stays sound.
-  exchange_id     INTEGER REFERENCES exchanges(id),
-  sub_question    TEXT    NOT NULL CHECK (length(sub_question) BETWEEN 1 AND 64),
-  from_agent      TEXT    NOT NULL REFERENCES agents(name),
-  to_agent        TEXT    NOT NULL REFERENCES agents(name),
-  redirected_to   TEXT    NOT NULL REFERENCES agents(name),
-  created_utc     TEXT    NOT NULL,
-
-  PRIMARY KEY (message_id, sub_question, redirected_to),
-
-  -- Both halves of the contradiction a referral can carry: out_of_scope says the boundary is not
-  -- the sender's, so naming the sender denies itself, and naming the asker answers "not mine,
-  -- ask yourself", which is not a referral.
-  CHECK (redirected_to <> from_agent),
-  CHECK (redirected_to <> to_agent),
-  CHECK (from_agent <> to_agent)
-) STRICT;
-
-CREATE INDEX ix_referrals_pair ON message_referrals(from_agent, redirected_to);
-
--- Populated by the schema on §9.3's argument: an invariant application code maintains is one it
--- can route around, and a referral made but not recorded is invisible in the way a missing
--- telemetry signal is. Anchored at $.resolutions[*].redirect_to rather than searched for anywhere
--- in the payload, so what is recorded is a subset of what tr_referral_targets_exist validated.
--- json_tree over the sub-object takes both shapes §5.3 admits: a bare name is one text node, a
--- list is one per element.
---
--- DISTINCT rather than OR IGNORE. OR IGNORE discards a row failing any constraint, not only a
--- duplicate key, so it silently swallowed the CHECKs above -- an answer referring the asker back
--- to itself was accepted and recorded as nothing. The duplicate it absorbed is a repeated name in
--- one list, which is identical across every column, so DISTINCT absorbs it while a contradiction
--- still aborts.
-CREATE TRIGGER tr_referrals_recorded AFTER INSERT ON messages
-FOR EACH ROW WHEN NEW.type = 'answer' AND json_valid(NEW.payload_json)
-BEGIN
-  INSERT INTO message_referrals
-      (message_id, exchange_id, sub_question, from_agent, to_agent, redirected_to, created_utc)
-  SELECT DISTINCT NEW.id, NEW.exchange_id, json_extract(r.value, '$.id'),
-         NEW.from_agent, NEW.to_agent, t.value, NEW.created_utc
-    FROM json_each(NEW.payload_json, '$.resolutions') r
-    JOIN json_tree(r.value, '$.redirect_to') t
-   WHERE t.type = 'text' AND json_extract(r.value, '$.id') IS NOT NULL;
-END;
-
--- What Notify costs, kept past the retention that removes the messages. §17 question 1 leaves
--- the type unbounded on purpose and says the decision comes from evidence; this is the evidence.
--- A rollup rather than a row per message, unlike message_referrals: a referral names a third
--- agent and a counter cannot hold which, while a notification's value is prose that is pruned
--- with the message and should be. Bounded by the roster, not by traffic.
-CREATE TABLE notify_volume (
-  from_agent  TEXT    NOT NULL REFERENCES agents(name),
-  to_agent    TEXT    NOT NULL REFERENCES agents(name),
-  sent        INTEGER NOT NULL CHECK (sent > 0),
-  characters  INTEGER NOT NULL CHECK (characters > 0),
-  -- A mean hides the shape: twenty short notices and one enormous one average out to something
-  -- unremarkable and are completely different problems.
-  largest     INTEGER NOT NULL CHECK (largest > 0),
-  -- Both ends, because a rate needs a span. Twenty in an hour and twenty in a month are the same
-  -- count and opposite findings.
-  first_utc   TEXT    NOT NULL,
-  last_utc    TEXT    NOT NULL,
-
-  PRIMARY KEY (from_agent, to_agent),
-
-  CHECK (from_agent <> to_agent),
-  -- A total smaller than its own largest member, or than one character per message, means the
-  -- accumulation went wrong -- which is invisible in a number that only ever grows.
-  CHECK (characters >= largest),
-  CHECK (characters >= sent)
-) STRICT;
-
--- Length is measured on payload_json, which is what rule 8.5 caps, so these sizes are directly
--- comparable to the limit they are weighed against. The §13 envelope is broker-authored and the
--- same for every message, so counting it would add a constant and change no comparison.
-CREATE TRIGGER tr_notify_volume_recorded AFTER INSERT ON messages
-FOR EACH ROW WHEN NEW.type = 'notify'
-BEGIN
-  INSERT INTO notify_volume
-      (from_agent, to_agent, sent, characters, largest, first_utc, last_utc)
-  VALUES (NEW.from_agent, NEW.to_agent, 1, length(NEW.payload_json),
-          length(NEW.payload_json), NEW.created_utc, NEW.created_utc)
-  ON CONFLICT(from_agent, to_agent) DO UPDATE SET
-      sent       = sent + 1,
-      characters = characters + excluded.characters,
-      largest    = max(largest, excluded.largest),
-      last_utc   = excluded.last_utc;
-END;
-
--- Whatever the message log still holds, counted when the table arrives. Without it the counter
--- starts at zero on a deployment that has been running for weeks, and its first reading
--- understates the volume by exactly what was already sent. A floor rather than a complete
--- history: the messages retention has already removed cannot be counted.
-INSERT INTO notify_volume (from_agent, to_agent, sent, characters, largest, first_utc, last_utc)
-SELECT from_agent, to_agent, count(*), sum(length(payload_json)), max(length(payload_json)),
-       min(created_utc), max(created_utc)
-  FROM messages
- WHERE type = 'notify'
- GROUP BY from_agent, to_agent;
+CREATE UNIQUE INDEX ux_open_request
+  ON exchanges(requester, receiver, request_hash) WHERE state = 'OPEN'
+;;
 
 CREATE UNIQUE INDEX ux_message_dedup
-  ON messages(content_hash, dedup_bucket);
+  ON messages(content_hash, dedup_bucket)
+;;
+
+CREATE TABLE conversation_cycles (
+  exchange_id     INTEGER PRIMARY KEY REFERENCES exchanges(id),
+  conversation_id TEXT    NOT NULL REFERENCES conversations(id),
+  path            TEXT    NOT NULL CHECK (length(path) BETWEEN 1 AND 4000),
+  recorded_utc    TEXT    NOT NULL
+) STRICT
+;;
+
+CREATE TABLE result_items (
+  message_id      INTEGER NOT NULL,
+  exchange_id     INTEGER NOT NULL REFERENCES exchanges(id),
+  item            TEXT    NOT NULL CHECK (length(item) BETWEEN 1 AND 64),
+  outcome         TEXT    NOT NULL
+                  CHECK (outcome IN ('done', 'answered', 'acknowledged', 'blocked', 'closed')),
+  blocker         TEXT    CHECK (blocker IN ('missing_information', 'conflict', 'permission')),
+  from_agent      TEXT    NOT NULL REFERENCES agents(name),
+  to_agent        TEXT    NOT NULL REFERENCES agents(name),
+  responder_model TEXT    NOT NULL,
+  created_utc     TEXT    NOT NULL,
+
+  PRIMARY KEY (message_id, item),
+
+  CHECK ((outcome = 'blocked') = (blocker IS NOT NULL))
+) STRICT
+;;
+
+CREATE TABLE result_sources (
+  message_id      INTEGER NOT NULL,
+  exchange_id     INTEGER NOT NULL REFERENCES exchanges(id),
+  item            TEXT    NOT NULL CHECK (length(item) BETWEEN 1 AND 64),
+  from_agent      TEXT    NOT NULL REFERENCES agents(name),
+  source          TEXT    NOT NULL REFERENCES agents(name),
+  created_utc     TEXT    NOT NULL,
+
+  PRIMARY KEY (message_id, item, source),
+
+  CHECK (source <> from_agent)
+) STRICT
+;;
+
+CREATE INDEX ix_result_sources_source ON result_sources(from_agent, source)
+;;
+
+CREATE TRIGGER tr_open_pair_cap BEFORE INSERT ON exchanges
+WHEN NEW.state = 'OPEN' AND NEW.open_pair_cap < 50
+BEGIN
+  SELECT RAISE(ABORT, 'open_pair_cap reached')
+   WHERE (SELECT count(*) FROM exchanges
+           WHERE state = 'OPEN' AND requester = NEW.requester AND receiver = NEW.receiver)
+         >= NEW.open_pair_cap;
+END
+;;
+
+CREATE TRIGGER tr_closed_exchange_stays_closed BEFORE UPDATE OF state ON exchanges
+WHEN OLD.state = 'CLOSED' AND NEW.state <> 'CLOSED'
+BEGIN
+  SELECT RAISE(ABORT, 'a closed exchange stays closed');
+END
+;;
+
+CREATE TRIGGER tr_an_outcome_has_its_result BEFORE UPDATE OF outcome ON exchanges
+WHEN NEW.outcome IS NOT NULL AND OLD.outcome IS NULL
+BEGIN
+  SELECT RAISE(ABORT, 'an exchange closes on a result from its receiver')
+   WHERE NEW.outcome <> 'closed'
+     AND NOT EXISTS (SELECT 1 FROM messages
+                      WHERE exchange_id = NEW.id AND type = 'result'
+                        AND from_agent = NEW.receiver
+                        AND responder_model <> 'parley:broker');
+
+  SELECT RAISE(ABORT, 'a closed exchange carries the broker''s closed result')
+   WHERE NEW.outcome = 'closed'
+     AND NOT EXISTS (SELECT 1 FROM messages
+                      WHERE exchange_id = NEW.id AND type = 'result'
+                        AND responder_model = 'parley:broker');
+END
+;;
+
+CREATE TRIGGER tr_closed_conversation_stays_closed BEFORE INSERT ON exchanges
+BEGIN
+  SELECT RAISE(ABORT, 'conversation is closed')
+   WHERE EXISTS (SELECT 1 FROM conversations
+                  WHERE id = NEW.conversation_id AND state = 'CLOSED');
+END
+;;
+
+CREATE TRIGGER tr_result_is_well_formed BEFORE INSERT ON messages
+WHEN NEW.type = 'result' AND json_valid(NEW.payload_json)
+BEGIN
+  SELECT RAISE(ABORT, 'a result carries an outcome for each item')
+   WHERE json_type(NEW.payload_json, '$.outcomes') IS NOT 'array'
+      OR json_array_length(NEW.payload_json, '$.outcomes') = 0;
+
+  SELECT RAISE(ABORT, 'every outcome names its own item')
+   WHERE (SELECT count(*) FROM json_each(NEW.payload_json, '$.outcomes'))
+      <> (SELECT count(DISTINCT json_extract(value, '$.id'))
+            FROM json_each(NEW.payload_json, '$.outcomes'));
+
+  SELECT RAISE(ABORT, 'an outcome is done, answered, acknowledged, blocked or closed')
+   WHERE EXISTS (SELECT 1 FROM json_each(NEW.payload_json, '$.outcomes')
+                  WHERE json_extract(value, '$.outcome') IS NULL
+                     OR json_extract(value, '$.outcome')
+                        NOT IN ('done', 'answered', 'acknowledged', 'blocked', 'closed'));
+
+  SELECT RAISE(ABORT, 'a blocked outcome names its blocker, and no other outcome does')
+   WHERE EXISTS (SELECT 1 FROM json_each(NEW.payload_json, '$.outcomes')
+                  WHERE (json_extract(value, '$.outcome') = 'blocked')
+                     <> (json_extract(value, '$.blocker') IS NOT NULL
+                         AND json_extract(value, '$.blocker')
+                             IN ('missing_information', 'conflict', 'permission')));
+
+  SELECT RAISE(ABORT, 'a source names a participant that is not registered')
+   WHERE EXISTS (SELECT 1 FROM json_each(NEW.payload_json, '$.outcomes') o,
+                               json_each(o.value, '$.sources') s
+                  WHERE s.type <> 'text' OR s.value NOT IN (SELECT name FROM agents));
+
+  SELECT RAISE(ABORT, 'a result does not name its own sender as a source')
+   WHERE EXISTS (SELECT 1 FROM json_each(NEW.payload_json, '$.outcomes') o,
+                               json_each(o.value, '$.sources') s
+                  WHERE s.value = NEW.from_agent);
+
+  SELECT RAISE(ABORT, 'only the broker records a closed outcome')
+   WHERE NEW.responder_model <> 'parley:broker'
+     AND EXISTS (SELECT 1 FROM json_each(NEW.payload_json, '$.outcomes')
+                  WHERE json_extract(value, '$.outcome') = 'closed');
+
+  SELECT RAISE(ABORT, 'the broker records only closed outcomes')
+   WHERE NEW.responder_model = 'parley:broker'
+     AND EXISTS (SELECT 1 FROM json_each(NEW.payload_json, '$.outcomes')
+                  WHERE json_extract(value, '$.outcome') <> 'closed');
+END
+;;
+
+CREATE TRIGGER tr_result_recorded AFTER INSERT ON messages
+FOR EACH ROW WHEN NEW.type = 'result' AND json_valid(NEW.payload_json)
+BEGIN
+  INSERT INTO result_items
+      (message_id, exchange_id, item, outcome, blocker, from_agent, to_agent, responder_model,
+       created_utc)
+  SELECT NEW.id, NEW.exchange_id, json_extract(o.value, '$.id'),
+         json_extract(o.value, '$.outcome'), json_extract(o.value, '$.blocker'),
+         NEW.from_agent, NEW.to_agent, NEW.responder_model, NEW.created_utc
+    FROM json_each(NEW.payload_json, '$.outcomes') o;
+
+  INSERT INTO result_sources (message_id, exchange_id, item, from_agent, source, created_utc)
+  SELECT DISTINCT NEW.id, NEW.exchange_id, json_extract(o.value, '$.id'), NEW.from_agent,
+         s.value, NEW.created_utc
+    FROM json_each(NEW.payload_json, '$.outcomes') o,
+         json_each(o.value, '$.sources') s;
+END
+;;
+
+CREATE TABLE conversation_folders (
+  conversation_id TEXT PRIMARY KEY REFERENCES conversations(id),
+  -- Unique ignoring case, because Windows and macOS hold 'Pricing' and 'pricing' as one folder.
+  -- NOCASE folds only ASCII, which is enough here: an identifier and its suffix are ASCII.
+  folder          TEXT NOT NULL COLLATE NOCASE UNIQUE
+                  CHECK (length(folder) BETWEEN 1 AND 72
+                         AND folder NOT GLOB '*[^a-zA-Z0-9._~-]*'),
+  created_utc     TEXT NOT NULL,
+
+  -- The identifier itself, or the identifier and a suffix of 2 or more. '~' cannot occur in an
+  -- identifier, so a suffixed folder can never be another conversation's own name.
+  CHECK (folder = conversation_id COLLATE BINARY
+         OR (substr(folder, 1, length(conversation_id) + 1) = conversation_id || '~'
+             AND substr(folder, length(conversation_id) + 2) NOT GLOB '*[^0-9]*'
+             AND substr(folder, length(conversation_id) + 2) NOT GLOB '0*'
+             AND CAST(substr(folder, length(conversation_id) + 2) AS INTEGER) >= 2))
+) STRICT
+;;
+
+CREATE TRIGGER tr_conversation_folder_is_fixed BEFORE UPDATE ON conversation_folders
+BEGIN
+  SELECT RAISE(ABORT, 'a conversation''s folder keeps its name');
+END
+;;
+
+CREATE TABLE file_fetches (
+  agent           TEXT NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  conversation_id TEXT NOT NULL REFERENCES conversations(id),
+  name_key        TEXT NOT NULL CHECK (length(name_key) >= 1 AND name_key = upper(name_key)),
+  name            TEXT NOT NULL,
+  sha256          TEXT NOT NULL CHECK (length(sha256) = 64 AND sha256 NOT GLOB '*[^0-9a-f]*'),
+  fetched_utc     TEXT NOT NULL,
+
+  PRIMARY KEY (agent, conversation_id, name_key)
+) STRICT
+;;
+
+CREATE TABLE file_notices (
+  agent           TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  conversation_id TEXT    NOT NULL,
+  name_key        TEXT    NOT NULL CHECK (length(name_key) >= 1 AND name_key = upper(name_key)),
+  name            TEXT    NOT NULL,
+  sha256_had      TEXT    NOT NULL
+                  CHECK (length(sha256_had) = 64 AND sha256_had NOT GLOB '*[^0-9a-f]*'),
+  -- NULL when the file is gone, and then so is its size.
+  sha256_now      TEXT    CHECK (sha256_now IS NULL
+                                 OR (length(sha256_now) = 64 AND sha256_now NOT GLOB '*[^0-9a-f]*')),
+  size_bytes      INTEGER CHECK (size_bytes IS NULL OR size_bytes >= 0),
+  changed_utc     TEXT    NOT NULL,
+
+  -- At most one per agent per file, carrying the latest state.
+  PRIMARY KEY (agent, conversation_id, name_key),
+
+  -- A notice that nothing changed cannot exist: a change back to what was fetched deletes the row.
+  CHECK (sha256_now IS NULL OR sha256_now <> sha256_had),
+  CHECK ((sha256_now IS NULL) = (size_bytes IS NULL))
+) STRICT
+;;
+
+CREATE INDEX ix_file_notices_collection ON file_notices(agent, changed_utc)
+;;
+
+CREATE TABLE file_placements (
+  agent      TEXT    NOT NULL PRIMARY KEY,
+  placements INTEGER NOT NULL CHECK (placements > 0),
+  bytes      INTEGER NOT NULL CHECK (bytes >= 0),
+  last_utc   TEXT    NOT NULL
+) STRICT
+;;
+
+CREATE TABLE "shared_files" (
+  conversation_id TEXT    NOT NULL REFERENCES conversation_folders(conversation_id),
+  -- The name in upper case. Every name is ASCII, so SQLite's upper() is the key, and every key on a
+  -- file is this: 'Readme.md' and 'README.md' are one row, as they are one file on the disks of
+  -- Windows and macOS.
+  name_key        TEXT    NOT NULL CHECK (name_key = upper(name)),
+  -- As placed, after renaming. Made of letters A to Z, digits, '.', '_' and '-', which every disk on
+  -- the three platforms accepts and which carries no text of the placer's beyond a word, ending .md
+  -- or .txt so that nothing placed has a handler that runs a program (§13). The folder, a separator
+  -- and the name together are bounded by tr_shared_file_path_fits.
+  name            TEXT    NOT NULL
+                  CHECK (length(name) BETWEEN 4 AND 254
+                         AND (lower(name) GLOB '*.md' OR lower(name) GLOB '*.txt')
+                         AND name NOT GLOB '*[^A-Za-z0-9._-]*'
+                         AND name NOT GLOB '.*'
+                         AND upper(substr(name, 1, instr(name, '.') - 1)) NOT IN
+                             ('CON', 'PRN', 'AUX', 'NUL',
+                              'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+                              'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9')),
+  size_bytes      INTEGER NOT NULL CHECK (size_bytes >= 0),
+  -- The broker's SHA-256 of the stored bytes, never the placer's.
+  sha256          TEXT    NOT NULL CHECK (length(sha256) = 64 AND sha256 NOT GLOB '*[^0-9a-f]*'),
+  -- An agent, or NULL for a file the person put there. Text rather than a key: purge deletes these
+  -- rows by name and reports them (§14), where a key would cascade silently or refuse the purge.
+  placed_by       TEXT,
+  placed_utc      TEXT    NOT NULL,
+  changed_utc     TEXT    NOT NULL,
+  -- The file's last-write time when it was last reconciled, so a change made outside Parley is
+  -- noticed on the next list or fetch without hashing every file again.
+  modified_ticks  INTEGER NOT NULL,
+
+  PRIMARY KEY (conversation_id, name_key)
+) STRICT
+;;
+
+CREATE TRIGGER tr_placer_is_registered BEFORE INSERT ON shared_files
+WHEN NEW.placed_by IS NOT NULL
+BEGIN
+  SELECT RAISE(ABORT, 'a file is placed by a registered agent or by the person')
+   WHERE NOT EXISTS (SELECT 1 FROM agents WHERE name = NEW.placed_by);
+END
+;;
+
+CREATE TRIGGER tr_shared_file_stays_put
+BEFORE UPDATE OF conversation_id, placed_by, placed_utc ON shared_files
+WHEN NEW.conversation_id IS NOT OLD.conversation_id
+  OR NEW.placed_by IS NOT OLD.placed_by
+  OR NEW.placed_utc IS NOT OLD.placed_utc
+BEGIN
+  SELECT RAISE(ABORT, 'a file keeps its conversation, its placer and when it was placed');
+END
+;;
+
+CREATE TRIGGER tr_shared_file_path_fits BEFORE INSERT ON shared_files
+BEGIN
+  SELECT RAISE(ABORT, 'a file''s path inside the location is at most 255 characters')
+   WHERE (SELECT length(folder) FROM conversation_folders
+           WHERE conversation_id = NEW.conversation_id) + 1 + length(NEW.name) > 255;
+END
+;;
+
+CREATE TRIGGER tr_shared_file_path_fits_on_rename BEFORE UPDATE OF name ON shared_files
+BEGIN
+  SELECT RAISE(ABORT, 'a file''s path inside the location is at most 255 characters')
+   WHERE (SELECT length(folder) FROM conversation_folders
+           WHERE conversation_id = NEW.conversation_id) + 1 + length(NEW.name) > 255;
+END
+;;
+
+CREATE TRIGGER tr_request_is_well_formed BEFORE INSERT ON messages
+WHEN NEW.type = 'request' AND json_valid(NEW.payload_json)
+BEGIN
+  SELECT RAISE(ABORT, 'a request carries an ask')
+   WHERE json_type(NEW.payload_json, '$.ask') IS NOT 'text'
+      OR length(trim(json_extract(NEW.payload_json, '$.ask'),
+                     char(9, 10, 11, 12, 13, 32, 133, 160, 5760,
+                          8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202,
+                          8232, 8233, 8239, 8287, 12288))) = 0;
+END
+;;

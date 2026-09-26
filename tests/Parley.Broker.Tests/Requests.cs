@@ -24,31 +24,13 @@ internal static class Requests
     public static string Request(string text = "is the price gross or net?") =>
         new JsonObject { ["ask"] = text }.ToJsonString();
 
-    /// <summary>A Request in the shape 0.5 and 0.6 stored, for the tests that answer one by its items.</summary>
-    /// <param name="subject">What it is about, which keeps two distinct.</param>
-    /// <param name="ids">The items' identifiers, in order.</param>
-    /// <returns>The payload as it was stored then.</returns>
-    /// <remarks>
-    /// Storage refuses this from schema 11 on, so a test using it writes into a store built at 10 and migrates, or
-    /// puts it straight into a fixture that does not go through the trigger. What it is for is the half of §5.3 that
-    /// did not change: an exchange opened before 0.7 is still answered by the identifiers its Request carried.
-    /// </remarks>
-    public static string OldRequestOf(string subject, params string[] ids)
-    {
-        var items = new JsonArray();
-
-        foreach (var id in ids)
-        {
-            items.Add(new JsonObject { ["id"] = id, ["kind"] = "question", ["text"] = $"{subject}: {id}" });
-        }
-
-        return new JsonObject
-        {
-            ["intent"] = "deciding where tax is added to an invoice",
-            ["items"] = items,
-            ["done_when"] = "the price is stated as gross or net of tax"
-        }.ToJsonString();
-    }
+    // `OldRequestOf` stood here: a Request in the shape 0.5 and 0.6 stored, for tests that answered
+    // one by its items. Its only route into a store was to build one at schema 10 and migrate, and
+    // there are no intermediate schemas since the eleven migrations were folded into one on
+    // 2026-09-26. Every test that used it went with them. Recorded rather than silently removed,
+    // because the half of §5.3 it exercised has not changed -- an exchange opened before 0.7 is
+    // still answered by the identifiers its Request carried, and `ItemIdBoundTests` is what holds
+    // that now.
 
     /// <summary>A Result giving each named item an outcome; a blocked one is written <c>blocked:kind</c>.</summary>
     /// <param name="outcomes">The items and what came of each, or none for <c>q1</c> answered.</param>

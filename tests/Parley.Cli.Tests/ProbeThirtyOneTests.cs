@@ -96,17 +96,21 @@ public sealed class ProbeThirtyOneTests : IDisposable
     }
 
     [Fact]
-    public async Task An_owns_line_past_the_schema_cap_is_refused_rather_than_written()
+    public async Task A_long_owns_line_is_written_because_the_schema_now_accepts_one()
     {
-        // The cap is a CHECK constraint in the broker's schema rather than a style rule, because the
-        // line is charged against every peer's working memory once per roster listing. Writing a
-        // longer one produces a launch configuration whose agent is refused at registration, which
-        // is a failure a long way from the person who caused it.
-        var failure = await Record.ExceptionAsync(
-            () => EnrolAsync("orders", new string('x', 5_000)));
+        // **This probe asserted the opposite until 0.33.0**, and the reason it is inverted rather
+        // than deleted is that what it is really about has not changed: what the enrolment writes
+        // must be what the schema accepts. A launch configuration carrying a line the broker
+        // refuses produces an agent refused at registration, which is a failure a long way from
+        // the person who caused it -- and that is just as true of a line refused for being long as
+        // of one written when nothing objects.
+        //
+        // The bound came off on the owner's decision of 2026-09-26 so that an agent asked what it
+        // owns can answer in two halves. The character rule is what still refuses, and the test
+        // below this one is the probe for it.
+        await EnrolAsync("orders", new string('x', 5_000));
 
-        Assert.NotNull(failure);
-        Assert.Null(await WrittenAgentAsync());
+        Assert.Equal("orders", await WrittenAgentAsync());
     }
 
     [Fact]

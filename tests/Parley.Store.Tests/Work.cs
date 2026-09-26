@@ -25,13 +25,6 @@ internal static class Work
     /// <summary>The responder every test message claims.</summary>
     public const string Model = "claude-opus-5";
 
-    /// <summary>The shape a Request had before 0.7, for the tests that prove a stored one still reads.</summary>
-    /// <remarks>
-    /// Written only into a store at schema 10 and then migrated: storage refuses it from 11 on, which is the
-    /// point. <see cref="OldRequest"/> builds it.
-    /// </remarks>
-    public const string DoneWhen = "the invoice total is stated as gross or net of tax";
-
     /// <summary>The conversation tests use when they have no reason to name one.</summary>
     public const string Conversation = "invoice-rounding";
 
@@ -41,20 +34,11 @@ internal static class Work
     public static string Request(string text = "is the invoice total gross or net?") =>
         new JsonObject { ["ask"] = text }.ToJsonString();
 
-    /// <summary>A Request payload in the shape 0.5 and 0.6 stored, for the tests that read one back.</summary>
-    /// <param name="text">What the item asks.</param>
-    /// <param name="kind">Work or a question.</param>
-    /// <param name="id">The item's identifier.</param>
-    /// <returns>The payload as it was stored then.</returns>
-    /// <remarks>Storage refuses this from schema 11 on, so a test using it writes at 10 and migrates.</remarks>
-    public static string OldRequest(
-        string text = "is the invoice total gross or net?", string kind = "question", string id = "q1") =>
-        new JsonObject
-        {
-            ["intent"] = "deciding where tax is added to an invoice",
-            ["items"] = new JsonArray(new JsonObject { ["id"] = id, ["kind"] = kind, ["text"] = text }),
-            ["done_when"] = DoneWhen
-        }.ToJsonString();
+    // `OldRequest` and `DoneWhen` stood here: a Request in the shape 0.5 and 0.6 stored. Their only
+    // route into a store was to build one at schema 10 and migrate, and there are no intermediate
+    // schemas since the eleven migrations were folded into one on 2026-09-26. The surfaces that
+    // render a pre-0.7 payload are still tested -- `OldShapeRendersTests` and `OldShapeOnThePageTests`
+    // each build the payload themselves, because rendering one needs no store at all.
 
     /// <summary>A Request payload whose ask names several things, for the Results that answer several items.</summary>
     /// <param name="subject">What the Request is about, which keeps two of them distinct.</param>

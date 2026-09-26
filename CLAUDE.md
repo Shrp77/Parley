@@ -582,8 +582,7 @@ implementation detail, and needs to be argued rather than assumed.
   transport behind an interface.
 - **Terseness is a security control.** The message cap is a context-poisoning defence, not a
   style preference. It lives in the schema so no code path can route around it, which is why
-  moving it is a table rebuild rather than a constant — see `003_message_cap.sql`, and note the
-  ordering hazards written down in it. The number is 8,000, and is the first value here set
+  moving it is a table rebuild rather than a constant. The number is 8,000, and is the first value here set
   from `parley refusals` rather than from judgement: SPEC.md §17 question 16 carries the
   evidence. It stays provisional on the same terms. Move it on that record, not because a
   message did not fit.
@@ -764,9 +763,9 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   **Every one was found by a test rather than by reading.** `REVIEW-LEDGER.md` carries each with the probe that produced
   it; the review gate itself has not started.
 
-  `specs/020-what-an-agent-owns/` follows it and is **planned, not built** — 0.33.0, schema 12, protocol 0.7
-  unchanged because 0.7 has never been released and §18's precedent is to record that rather than spend a
-  number. An agent is *asked* what it owns and the answer is discussed to agreement, replacing a worksheet a
+  `specs/020-what-an-agent-owns/` follows it. **Planned in full; its storage is built and green, and its
+  surfaces are not started** — 0.33.0, **schema 1**, protocol 0.7 unchanged because 0.7 has never been
+  released and §18's precedent is to record that rather than spend a number. An agent is *asked* what it owns and the answer is discussed to agreement, replacing a worksheet a
   person filled in from memory. It amends SPEC.md §17 question 10, which is closed and says the field is not
   self-declared — argued there rather than stepped around, and the cost is recorded: the claim narrows again,
   and anchoring gets worse rather than better.
@@ -784,23 +783,67 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   constitution should be amended to 2.1.0 *before* implementation — 015's amendment is the precedent, and
   `/speckit-analyze` found changing it inside a feature's tasks a blocking conflict.
 
-  **The bound cannot be moved by altering anything, and four routes were probed before one was taken.** The
-  number is a literal inside a table-level CHECK on `agents`; SQLite cannot alter a CHECK; `ALTER TABLE DROP
-  COLUMN owns` is refused because `owns` appears in one; a trigger can refuse but never permit; and
-  `PRAGMA writable_schema` + `UPDATE sqlite_master` is **accepted and changes nothing**, on a fresh connection
-  too, while `integrity_check` still returns `ok` — the worst shape there is. So `agents` is **rebuilt**,
-  outside a transaction, because `PRAGMA foreign_keys = OFF` is a no-op inside one. **006's blocker holds here
-  with more force than where it was written**: `agents` is a parent of eleven tables and **six of them refuse a
-  cascade** — `invocations`, `exchanges`, `messages`, `conversation_participants`, `result_items`,
-  `result_sources`, which are exactly the tables a used store has rows in. **And the first probe was unsound,
-  which is recorded rather than tidied away**: it seeded `agent_credentials`, one of the few children declared
-  `ON DELETE CASCADE`, and reported that the blocker does not apply. A second check was unsound too —
-  `bound rewritten: True` was comparing the whole DDL string, which the table rename had already changed, so it
-  said True with the bound untouched and the rebuild then refused 400 characters. **Three triggers name
-  `agents` and two are on other tables**, and the RENAME validates every trigger in the schema, so with them
-  standing it fails outright. The cost is stated where somebody will read it before running it: **this is the
-  first migration here that runs outside a transaction, so a failure part-way leaves the store with no
-  `agents` table and no rollback.**
+  **The bound cannot be moved by altering anything, and four routes were probed before the question was
+  handed back.** The number is a literal inside a table-level CHECK on `agents`; SQLite cannot alter a CHECK;
+  `ALTER TABLE DROP COLUMN owns` is refused because `owns` appears in one; a trigger can refuse but never
+  permit; and `PRAGMA writable_schema` + `UPDATE sqlite_master` is **accepted and changes nothing**, on a fresh
+  connection too, while `integrity_check` still returns `ok` — the worst shape there is. What was left was
+  rebuilding `agents` outside a transaction, because `PRAGMA foreign_keys = OFF` is a no-op inside one.
+  **006's blocker holds here with more force than where it was written**: `agents` is a parent of eleven tables
+  and **six of them refuse a cascade** — `invocations`, `exchanges`, `messages`, `conversation_participants`,
+  `result_items`, `result_sources`, which are exactly the tables a used store has rows in. Three triggers name
+  `agents` and two are on other tables, and the RENAME validates every trigger in the schema, so with them
+  standing it fails outright.
+
+  **Two of those probes were unsound before they were right, and both are recorded rather than tidied away.**
+  The first seeded `agent_credentials`, one of the few children declared `ON DELETE CASCADE`, and reported that
+  006's blocker does not apply — it had picked the one child that cannot refuse. The second reported
+  `bound rewritten: True` while comparing the whole DDL string, which the table rename had already changed, so
+  it said True with the bound untouched and the rebuild then went on to refuse 400 characters.
+
+  **So there is no migration: the schema is one file again and its number is 1.** The owner's call once the
+  rebuild had been priced — *"don't worry about migration. Go ahead and make the changes and call it schema #1.
+  Nothing we have is worth keeping right now."* Migrations 002–011 were folded into `001_initial.sql` and
+  deleted. **That is available exactly once and has now been used**: nothing has been released, so no store
+  outside a test process held anything worth keeping, and it is the same ground 011 was edited on rather than
+  being followed by a 012. **From the first release every schema change is a migration again**, which is what
+  `MigrationDiscoveryTests` moving off 1 is there to notice.
+
+  **Entries below this one name migration files by number and those files are gone**, as are the schema
+  numbers in SPEC.md §18's earlier entries. Both are left as written: they record what a change did at the
+  time, and rewriting them would turn a record of how this got here into a record of something that did not
+  happen. What each of those migrations decided is in `001_initial.sql` — the rules inline beside the columns
+  they constrain, and the file-level arguments carried into its header.
+
+  **The collapse was derived, not hand-merged.** A store was migrated through all eleven and its schema read
+  back out of `sqlite_master` in creation order, because hand-merging eleven files is how a collapse quietly
+  loses a trigger — and four tables existed in two shapes across that sequence. Verified by a one-time
+  comparison against a store built the old way: **41 shared objects, with identical names and identical creation
+  order**, plus the one table this feature adds — 20 tables of ours beside SQLite's own `sqlite_sequence`,
+  7 indexes and 14 triggers; twenty-two differed on raw bytes and twenty-one of those **only
+  by carriage returns inside the text SQLite stores in `sqlite_master`** — the later migrations were LF files
+  and this one is CRLF. **Exactly one differed for any other reason: `agents`, by the one number this feature
+  changes.** That comparison cannot be kept as a test, because the thing it compared against has been deleted,
+  and `001_initial.sql` says so rather than claiming a guard that does not exist.
+
+  **It cost fifty-three tests, in six files whose whole subject was an upgrade path that no longer exists.**
+  Each built a store at schema 7, 8, 9 or 10 from the embedded migrations. The rules they protected are still
+  held: `ItemIdBoundTests` for the item-id bound that lens 1 found, and `OldShapeRendersTests` and
+  `OldShapeOnThePageTests` for rendering a pre-0.7 payload, which needs no store at all. Three dead helpers
+  went with them — `Work.OldRequest`, `Work.DoneWhen` and `Requests.OldRequestOf` — each of which carried a
+  comment describing a schema-10 route that had stopped existing, which is how a reader concludes a check was
+  lost by accident.
+
+  **Removing the bound had a blast radius the plan had not costed, and it is the useful part.** Four places
+  built a string of `MaxCharacters` characters, which at `int.MaxValue` asks for two gigabytes, and two printed
+  the number into prose a person or a model reads. So `OwnershipStatement.Bounded` exists to keep 0.25.8's rule
+  — nothing prints the sentinel — and the plugin's setup guidance now states *why* to be brief instead of a
+  number that is gone. **`Adding.OwnsProblem` was the interesting one**: it compared a length and checked
+  nothing else, so a statement carrying `U+2028` passed the field and was refused by the database. With the
+  length gone it would have been a guard checking nothing while still looking like a guard; it asks
+  `OwnershipStatement` now, which is the one implementation. **Two review-gate probes had to be inverted rather
+  than deleted** — `ProbeThirtyOne` and `ProbeTwelve` both asserted a length was refused, and left alone both
+  would have gone on passing against nothing.
 
   **An ask is recognised by the conversation it opens, never by a marker in a payload** — §13 promises a
   receiver that a payload is inert data, and 017's chip rule is what keeps that true. The identifier is

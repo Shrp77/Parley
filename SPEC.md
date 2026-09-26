@@ -1084,11 +1084,26 @@ CREATE TABLE agents (
   CHECK (adapter_config IS NULL
          OR (json_valid(adapter_config) AND length(adapter_config) <= 4000)),
 
-  -- What this agent owns, in one line, written by whoever configured its launch. Bounded
-  -- here because terseness is a security control (principle 2.2) and this text is charged
-  -- against every agent's working memory once per peer, every time the roster is listed. The
-  -- number is measured: a roster entry costs about 75 characters of structure before the
-  -- statement, so ten peers at 100 cost roughly what one message is allowed to.
+  -- What this agent owns, in one line, written by whoever configured its launch.
+  --
+  -- NOT BOUNDED BY DEFAULT, and 2147483647 is how that is spelled -- the same spelling the
+  -- open-question cap and the clarification cap already use. It was 100, and the number was
+  -- measured rather than chosen: a roster entry costs about 75 characters of structure before
+  -- the statement, so ten peers at 100 cost roughly what one message is allowed to.
+  --
+  -- The bound came off in protocol 0.7, so that an agent asked what it owns can answer in two
+  -- halves -- what it owns, and what it does not, naming who it believes does -- which a
+  -- hundred characters frequently will not hold. See §17 question 10.
+  --
+  -- THIS IS A REDUCTION IN A CONTROL AND NOT A TIDY-UP. Principle 2.2 makes terseness a
+  -- security control and this text is charged against every agent's working memory once per
+  -- peer, every time the roster is listed. The reasoning for removing it is the one used for
+  -- the two caps above -- a cap censors the evidence that would justify it -- and that
+  -- precedent is weaker here, because both of those capped counts rather than text. What
+  -- replaces the number is evidence: what agents propose and what people accept is recorded,
+  -- so a bound can be chosen the way rule 8.4's 8,000 was. Until then a roster may be the
+  -- largest thing an agent reads. A deployment that wants a bound writes one here, and it is
+  -- still enforced in storage where no code path can route around it (§9.3).
   --
   -- It must also render as what it says, on one line, because it is put into a list
   -- of peers that every agent reads: anything able to break the line, hide itself, or
@@ -1108,7 +1123,7 @@ CREATE TABLE agents (
   -- length() stops at a NUL while concatenation does not, so a value whose length is
   -- unchanged by appending a character is hiding bytes behind a terminator.
   CHECK (owns IS NULL
-         OR (length(owns) <= 100
+         OR (length(owns) <= 2147483647
              AND owns NOT GLOB '*[' ||
              char(1) || '-' || char(31) || char(127) || '-' || char(159) ||
              char(173) || '-' || char(173) || char(1536) || '-' || char(1541) ||
@@ -1139,6 +1154,36 @@ CREATE TABLE agents (
   CHECK (length(machine) BETWEEN 1 AND 64
          AND machine GLOB '[a-z0-9]*'
          AND machine NOT GLOB '*[^a-z0-9.-]*')
+) STRICT;
+
+CREATE TABLE agent_ownership_accepted (
+  -- What a person agreed this agent owns, and the evidence of how they arrived at it.
+  --
+  -- SEPARATE FROM agents.owns ON PURPOSE. This is what somebody accepted; agents.owns is what
+  -- peers actually read, and it is filled from the launch environment when the agent attaches
+  -- (§12.3). Until the agent restarts the two differ, and a surface says so by comparing them
+  -- rather than by keeping a third flag somebody has to remember to clear. Both halves are
+  -- observations, so the state cannot be wrong.
+  agent            TEXT    NOT NULL PRIMARY KEY
+                           REFERENCES agents(name) ON DELETE CASCADE,
+  statement        TEXT    NOT NULL,
+  -- Which of the three routes produced it. A person's characters are never attributed to a
+  -- model: 'proposed' is the agent's words untouched, 'edited' is its proposal changed by the
+  -- person, 'composed' is a line written with no ask at all.
+  source           TEXT    NOT NULL CHECK (source IN ('proposed', 'edited', 'composed')),
+  -- The length of the AGENT'S OWN message, or NULL where there was no proposal. This is the
+  -- evidence the removed bound on agents.owns has to be chosen against, the way rule 8.4's
+  -- 8,000 was chosen from size_refusals.
+  proposed_length  INTEGER          CHECK (proposed_length IS NULL OR proposed_length >= 0),
+  -- The discussion, so how a line was arrived at is answerable from the agent rather than from
+  -- somebody's memory.
+  conversation_id  TEXT             REFERENCES conversations(id),
+  accepted_utc     TEXT    NOT NULL,
+
+  CHECK (length(statement) >= 1),
+  -- A composed line had no proposal and no discussion; anything else had both.
+  CHECK (source <> 'composed' OR proposed_length IS NULL),
+  CHECK (source =  'composed' OR conversation_id IS NOT NULL)
 ) STRICT;
 
 CREATE TABLE agent_credentials (
@@ -3928,7 +3973,38 @@ What a second implementation will observe:
   to what is written next. A Request written under 0.5 or 0.6 keeps its intent, items and `done_when`,
   still renders whole, and — since nothing times out (§14) — an exchange it opened may still be open,
   and is still answered by its own item identifiers.
-- **Schema 11** replaces one trigger and rewrites no row.
+- **Schema 1**, and that number is not a typo. See the amendment below.
+
+#### Amended, 2026-09-26: an agent is asked what it owns, and the schema became one file
+
+**0.7 has never been released**, so rather than spend a version number on a change nobody can
+have deployed, these fold into it — the practice this section already used for 0.6, whose own
+entry records the same thing. What a second implementation will observe, in addition to the
+above:
+
+- **`agents.owns` is not bounded by default.** The constraint stays in storage and stands down at
+  `2147483647`, the spelling the open-question and clarification caps already use, so a deployment
+  may reinstate a bound and it is still enforced below anything that could route around it (§9.3).
+  **The character rule is unchanged**: a statement that could break, hide or reorder its own roster
+  row is still refused. §17 question 10 carries the argument and the cost, and the bound is off so
+  that an agent *asked* what it owns can answer in two halves and name a peer.
+- **One new operator operation**, `accept_ownership` (§10.2). It records that a person accepted a
+  statement, which conversation it came from, and how long the agent's own proposal was. **It does
+  not write `owns`**: the registry is still filled from the launch environment on attach (§12.3),
+  so what peers read still comes from a launch configuration and no operation accepts a line from
+  the agent it describes. Nothing is added to §10.1.
+- **One new table**, `agent_ownership_accepted` (§9.2). What a person agreed, kept apart from what
+  peers read, so that "accepted but not yet live" is a comparison of two facts rather than a flag.
+- **The schema is version 1, where it was 11.** The eleven migrations were folded into one initial
+  schema and deleted. **This is available exactly once and has now been used**: nothing had been
+  released, so no store outside a test process held anything worth keeping. A store written by an
+  earlier build is not upgraded and is not readable — there is no path from 11 to 1 and deliberately
+  no attempt at one. **From the first release, every schema change is a migration again.**
+
+  **The schema numbers in the entries below are historical.** Each says what that protocol version
+  did to the schema at the time, and those numbers no longer name anything a build can reach: there
+  is one schema and it is 1. They are left as written because this section is a record of how the
+  protocol got here, and rewriting them would make it a record of something that did not happen.
 
 ### 0.6 — files cross between repositories
 

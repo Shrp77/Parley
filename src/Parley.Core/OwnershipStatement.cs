@@ -32,18 +32,47 @@ public static class OwnershipStatement
 {
     /// <summary>The longest statement the registry will hold.</summary>
     /// <remarks>
-    /// Long enough for a domain and an explicit exclusion — <i>"Invoicing, tax and payment
-    /// capture. Does not price orders or reserve stock."</i> is seventy-four characters — and
-    /// short enough that it cannot become a description of a system.
     /// <para>
-    /// The number came from measuring rather than from taste. A roster entry costs about
-    /// seventy-five characters of structure before the statement, so ten peers at a hundred
-    /// characters each cost roughly what one message is allowed to: finding out who to ask
-    /// stays cheaper than asking. At a hundred and sixty, which is where this started, ten
-    /// peers cost 2,352 characters and listing them cost more than a question.
+    /// <b>No bound, by default, and the largest integer is how that is spelled</b> — the same
+    /// spelling <see cref="ExchangePolicy.Unbounded"/> and
+    /// <see cref="ExchangePolicy.UnboundedClarifications"/> already use. Zero was not available: it
+    /// would refuse every statement.
+    /// </para>
+    /// <para>
+    /// <b>It was a hundred, and it was measured rather than chosen.</b> A roster entry costs about
+    /// seventy-five characters of structure before the statement, so ten peers at a hundred cost
+    /// roughly what one message is allowed to; at a hundred and sixty, which is where it started,
+    /// ten peers cost 2,352 characters and listing them cost more than asking. That arithmetic is
+    /// still true and is the reason this is recorded rather than deleted.
+    /// </para>
+    /// <para>
+    /// <b>It came off on the owner's decision of 2026-09-26, and it is a reduction in a control
+    /// rather than a tidy-up.</b> An agent is asked what it owns now, and a two-part answer naming
+    /// what it does not own and who it believes does will frequently not fit in a hundred
+    /// characters. The reasoning is the one used for the open-question cap and the clarification
+    /// depth cap — a cap censors the evidence that would justify it — and <b>that precedent is
+    /// weaker here, because both of those capped counts</b> while this one bounded text charged
+    /// against every agent's context on every roster listing. The constitution was amended to 3.0.0
+    /// to say so, naming this field, and it says that until the evidence exists a roster may be the
+    /// largest thing an agent reads.
+    /// </para>
+    /// <para>
+    /// <b>What survives is the character rule and the deployment's own bound.</b> Nothing below is
+    /// relaxed, and storage still holds a bound a deployment reinstates, so a number chosen from
+    /// what agents actually propose can be put back the way the message cap's 8,000 was put in.
     /// </para>
     /// </remarks>
-    public const int MaxCharacters = 100;
+    public const int MaxCharacters = int.MaxValue;
+
+    /// <summary>Whether a length bound is in force at all.</summary>
+    /// <remarks>
+    /// <b>Exists so that nothing has to print the sentinel.</b> 0.25.8 recorded the cost of not
+    /// having it: <c>parley clarifications</c> says <i>"Caps in force: none"</i> rather than the
+    /// number that spells <i>off</i>, because telling somebody a bound was set at 2,147,483,647
+    /// tells them a value nobody chose. Every surface that would otherwise name a limit asks this
+    /// first, and a surface that names the number when this is <see langword="false"/> is a defect.
+    /// </remarks>
+    public static bool Bounded => MaxCharacters != int.MaxValue;
 
     /// <summary>
     /// Reports whether a statement may be recorded, and why not when it may not.
@@ -95,7 +124,10 @@ public static class OwnershipStatement
         // objected to, which sends whoever wrote it looking for the wrong problem.
         var length = statement.EnumerateRunes().Count();
 
-        if (length > MaxCharacters)
+        // Unreachable while no bound is in force, and kept rather than deleted: a deployment that
+        // reinstates one gets this refusal back, naming the number actually in force. It can never
+        // name the sentinel, because it cannot be reached when the sentinel is what is set.
+        if (Bounded && length > MaxCharacters)
         {
             error =
                 $"it is {length} characters and the limit is {MaxCharacters}. It is read by " +

@@ -1,7 +1,15 @@
 # Data model: What an agent owns, asked rather than assumed
 
-**Schema 12**, by `012_ownership_is_asked.sql`. Two changes: `agents.owns` loses its length bound and
-keeps everything else, and one new table records what a person accepted and where it came from.
+> **AMENDED 2026-09-26: there is no migration, and the schema is 1.** The owner's call once the
+> probes had priced one — *"don't worry about migration … call it schema #1. Nothing we have is worth
+> keeping right now."* The eleven migrations were folded into one `001_initial.sql`; the rebuild
+> choreography described under *Why the table is rebuilt* below was **not** built and is kept because
+> it is the reasoning that made the collapse the better answer. What is true of the storage — the
+> constraint, the character class, the new table — is unchanged and is what shipped.
+
+**Schema 1**, by `001_initial.sql`. Two changes against what the eleven produced: `agents.owns` loses
+its length bound and keeps everything else, and one new table records what a person accepted and where
+it came from.
 
 Nothing here is a wire change to how a message is addressed, and nothing here is written by an agent.
 

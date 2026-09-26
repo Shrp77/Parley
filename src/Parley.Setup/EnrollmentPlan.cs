@@ -36,15 +36,6 @@ namespace Parley.Setup;
 /// </remarks>
 public static class EnrollmentPlan
 {
-    /// <summary>The longest an <c>owns</c> line may be.</summary>
-    /// <remarks>
-    /// Forwarded from <see cref="OwnershipStatement"/> rather than restated. The number is a
-    /// schema <c>CHECK</c> in the broker and a second copy of it here would eventually disagree
-    /// with the one that is actually enforced — and the disagreement would show up as a
-    /// registration refused at launch, which reads as an agent that simply never appeared.
-    /// </remarks>
-    public static int OwnsLimit => OwnershipStatement.MaxCharacters;
-
     /// <summary>The longest an agent name may be.</summary>
     public const int NameLimit = 32;
 

@@ -12,6 +12,33 @@ fail is the thing this repository keeps rediscovering.
 
 ## R1. The bound goes, and the rebuild is the only way to move it
 
+> **SUPERSEDED IN PART, 2026-09-26, by the owner: there is no migration at all.** Everything below
+> about *why* the bound cannot be moved by altering anything still holds and was still what settled
+> it — but once the probes had shown what a migration would cost, the owner's answer was *"don't
+> worry about migration. Go ahead and make the changes and call it schema #1. Nothing we have is
+> worth keeping right now."*
+>
+> So the eleven migrations were folded into one `001_initial.sql` and the schema number went from 11
+> to 1. **That is available exactly once** — nothing has been released, so no store outside a test
+> process held anything worth keeping — and it has now been used. There is no path from 11 to 1 and
+> deliberately no attempt at one; `reset.ps1` and `reset.sh` clear a developer's stores.
+>
+> **The collapse was derived rather than hand-merged.** A store was migrated through all eleven and
+> its schema read out of `sqlite_master` in creation order, because hand-merging is how a collapse
+> quietly loses a trigger — and four tables existed in two shapes across that sequence. Verified by a
+> one-time comparison: **41 shared objects, with identical names and identical creation
+> order**, plus the one table this feature adds — 20 tables of ours beside SQLite's own
+> `sqlite_sequence`, 7 indexes and 14 triggers. Twenty-two differed on raw bytes, twenty-one of those only by
+> carriage returns inside the text SQLite stores in `sqlite_master`, and **exactly one differed for
+> any other reason: `agents`, by the one number this feature changes.**
+>
+> What that removes from the plan: the `SchemaMigrator` opt-out, the out-of-transaction migration,
+> the rollback hazard, and the trigger choreography. What it costs: **fifty-three tests were deleted**
+> — six files whose whole subject was an upgrade path that no longer exists.
+>
+> The probes below are kept in full, unedited. They are why the collapse was chosen rather than the
+> migration, and one of them was unsound before it was right.
+
 **Decision — the owner's, taken 2026-09-26.** `agents.owns` stops being bounded at one hundred
 characters. The constraint stays in storage and stands down at `2147483647`, which is how 006 and 007
 spell *off*, so a deployment may reinstate a bound and it is still enforced below the code that would
