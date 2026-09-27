@@ -229,12 +229,14 @@ internal sealed class AttachedClient : IAsyncDisposable
     /// <param name="name">The agent name.</param>
     /// <param name="workspace">Where it is launching from, or null.</param>
     /// <param name="cancellationToken">Cancels the attach.</param>
+    /// <param name="owns">What the launch environment says this agent owns, or null for nothing.</param>
     /// <returns>The attached client.</returns>
     public static async Task<AttachedClient> AttachAsync(
         LoopbackBroker broker,
         string name,
         string? workspace = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? owns = null)
     {
         var client = broker.Connect();
 
@@ -245,6 +247,12 @@ internal sealed class AttachedClient : IAsyncDisposable
                 Adapter = "test",
                 Tier = Wire.AgentTier.Pull,
                 Workspace = workspace ?? string.Empty,
+
+                // **The only way a line reaches the registry** (§12.3): an adapter says what its
+                // launch environment carries, and no operator operation writes it. A test that needs
+                // an agent whose peers already read a line has to attach as one, which is also the
+                // honest shape -- there is no other route, and 020's whole point is that there is not.
+                Owns = owns ?? string.Empty,
 
                 // Announced, because the broker checks it. Taken from the constant rather than
                 // written out, so a version bump does not need this file edited -- and so the
