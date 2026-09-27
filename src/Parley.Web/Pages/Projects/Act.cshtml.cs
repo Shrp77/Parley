@@ -35,7 +35,15 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
     [BindProperty(SupportsGet = true)]
     public string? Project { get; set; }
 
-    /// <summary>What to do: retire, reinstate, purge, forceconclude, instruct, prune, ownership or askownership.</summary>
+    /// <summary>
+    /// What to do: retire, reinstate, purge, forceconclude, instruct, prune, ownership, askownership or
+    /// askeveryownership.
+    /// </summary>
+    /// <remarks>
+    /// The list is here as well as in the two switches, so it goes stale — it already had, missing
+    /// <c>askeveryownership</c>. What keeps the set honest is <c>EveryActionHasADoorTests</c>, which reads
+    /// the arms out of both switches and out of every page rather than out of any list.
+    /// </remarks>
     [BindProperty(SupportsGet = true)]
     public string? Action { get; set; }
 
@@ -43,7 +51,12 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
     [BindProperty(SupportsGet = true)]
     public string? Subject { get; set; }
 
-    /// <summary>The operator's words, when instructing.</summary>
+    /// <summary>The operator's own words: what to instruct, or the ownership line they are recording.</summary>
+    /// <remarks>
+    /// One field for both because both are the person's own text and neither is ever an agent's. What
+    /// makes the ownership line theirs is that nothing pre-fills this box — see <c>Act.cshtml</c>, where
+    /// the argument for leaving it empty is the one distinction 020 exists to keep.
+    /// </remarks>
     [BindProperty]
     public string? Text { get; set; }
 
@@ -107,6 +120,15 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
             "askownership" => ($"'{Subject}' will be asked what it owns, as one ordinary request from "
                              + "your seat, and answering costs it a turn. Nothing is written by "
                              + "asking: its answer is a message, and you accept it or you do not.", false),
+
+            // Described here as well as done below, because an action with an arm in the POST and none
+            // here reached a person as "this is not something the console does" above a button that did
+            // it anyway -- which is what this did until 0.34.1. Not destructive: it replaces one line in
+            // one launch entry, and the agent's peers go on reading the old one until it restarts.
+            "ownership" => ($"The line you write is recorded as yours and written into '{Subject}'s "
+                          + "launch configuration on this machine. Its peers go on reading whatever "
+                          + "line it started with until it next starts. To have the agent propose one "
+                          + "instead, ask it what it owns and accept the answer.", false),
 
             "prune" => ($"The broker for '{Project}' applies its retention policy now rather than at its next "
                       + "sweep. Message text past the policy is deleted permanently: export a conversation "
@@ -176,7 +198,7 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
                 // through the conversation it was agreed in and is accepted from that conversation,
                 // carrying it -- which is why `source` exists at all rather than every acceptance
                 // being one thing.
-                "ownership" => AcceptOwnership(broker, agent, Text ?? string.Empty, token),
+                "ownership" => AcceptOwnership(project, broker, agent, Text ?? string.Empty, token),
 
                 // The one action on this page that is a message rather than an operator operation, so
                 // the one that needs a seat. It adds nothing to the protocol: an ordinary Request,
@@ -196,6 +218,12 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
         await action.ConfigureAwait(false) ? "Done." : "Nothing changed.";
 
     /// <summary>Writes the line where it takes effect, then records that a person accepted it.</summary>
+    /// <param name="project">
+    /// The project whose launch entry to write. Named rather than left null, which is what 020's
+    /// quickstart walk found: enrolment writes <c>parley-&lt;project&gt;</c>, so asking for the unnamed key
+    /// refused every repository enrolled since 009 with "has no entry for this agent" — while the terminal,
+    /// which passes its project, wrote the same file happily.
+    /// </param>
     /// <param name="broker">This project's broker.</param>
     /// <param name="agent">Whose line it is.</param>
     /// <param name="statement">What the person typed. Their own words, so recorded as composed.</param>
@@ -215,7 +243,11 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
     /// </para>
     /// </remarks>
     private static async Task<string> AcceptOwnership(
-        BrokerClient broker, AgentName agent, string statement, CancellationToken token)
+        ProjectSettings project,
+        BrokerClient broker,
+        AgentName agent,
+        string statement,
+        CancellationToken token)
     {
         if (OwnershipLine.NotHere(agent) is { } elsewhere)
         {
@@ -232,7 +264,7 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
         }
 
         var wrong = await OwnershipLine
-            .WriteAsync(known.Workspace, null, agent, statement, token)
+            .WriteAsync(known.Workspace, project.Name.Value, agent, statement, token)
             .ConfigureAwait(false);
 
         if (wrong is not null)

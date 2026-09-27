@@ -45,10 +45,16 @@ public sealed class OperatorCommands
     /// </remarks>
     public async Task<int> RegistryAsync(CancellationToken cancellationToken)
     {
-        var reply = await _console.DescribeRegistryAsync(
-            new Wire.Empty(), cancellationToken: cancellationToken);
-
-        var agents = reply.Rows;
+        // Read through `BrokerClient` rather than off the wire directly, which is what puts the pending
+        // mark here: the rule for "accepted but not yet live" is a comparison of two observations
+        // (`AgentRecord.OwnsPending`), and spelling that comparison a second time here is how the three
+        // surfaces come to disagree about the state of one agent. 020's quickstart walk found this
+        // listing showing the live line with nothing said about a line already accepted, which FR-020
+        // forbids of any surface showing the line — and this is the listing somebody runs to check that
+        // an acceptance worked.
+        var agents = await new Parley.Client.BrokerClient(_console)
+            .RegistryAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         if (agents.Count == 0)
         {
@@ -59,7 +65,7 @@ public sealed class OperatorCommands
             return 0;
         }
 
-        foreach (var agent in agents.OrderBy(a => a.Name, StringComparer.Ordinal))
+        foreach (var agent in agents.OrderBy(a => a.Name.Value, StringComparer.Ordinal))
         {
             await _output.WriteLineAsync(string.Create(
                 CultureInfo.InvariantCulture,
@@ -78,8 +84,13 @@ public sealed class OperatorCommands
             // it finds out that nobody has. That is the whole of the nudge — a note on every
             // start-up would land in whichever log the client keeps for a server that is
             // misbehaving, which nobody reads while nothing is wrong.
+            //
+            // The mark is `Roster.PendingMark`, which is the one sentence the other two surfaces
+            // append, rather than a wording of its own: three spellings of one state is three
+            // chances for a reader to think they mean different things.
             await _output.WriteLineAsync(
-                $"  owns: {(agent.Owns is { Length: > 0 } owns ? owns : $"(unset — set {DeploymentEnvironment.OwnsVariable} where that agent's server is launched)")}")
+                $"  owns: {(agent.Owns is { Length: > 0 } owns ? owns : $"(unset — set {DeploymentEnvironment.OwnsVariable} where that agent's server is launched)")}"
+                + Parley.Client.Rendering.Roster.PendingMark(agent))
                 .ConfigureAwait(false);
         }
 

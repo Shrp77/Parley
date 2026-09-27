@@ -1086,7 +1086,7 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   to remember to clear. The file is written before the record, because a file with no record is repaired by a
   later ask while a record with no file claims a person accepted a line peers will never read.
 
-  `specs/021-terminal-menu-bar/` is **built, and ships as 0.34.0** — a minor because that is what each feature
+  `specs/021-terminal-menu-bar/` is **built, and shipped as 0.34.0; the walk of 020 below took it to 0.34.1** — a minor because that is what each feature
   on this branch has taken (019 was 0.32.0, 020 is 0.33.0), and nothing here is breaking. Every action was
   behind `?`, and `?` was behind knowing about `?`; there is a bar on the top row now, always visible.
 
@@ -1129,6 +1129,66 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   action with its reason rather than greying it — 0.28.2 records a hidden action being why the owner reached for
   Instruct — accelerators are shown because D2 makes them unambiguous, and the mouse is the toolkit's, with
   `ConsoleRestore` already reading the modes out of its assembly rather than keeping a list.
+
+  **020's `quickstart.md` was walked on 2026-09-27 (T062), and it found three defects — two of them made 020's
+  whole web UI half untrue. 0.34.1.** 77 checks against tools packed and installed into a scratch path, with a
+  root, a store and a port of their own; 72 passed and every one of the five failures was one of the first two.
+  **The confirming re-walk against the fix is 79 of 79.** `walk.ps1` sits beside the quickstart, as 019's does.
+
+  - **All three ownership actions were performed by the page model and linked from no page at all.** The agent
+    page offered *Instruct*, *Retire* and *Purge*; nothing anywhere named the ask, the bulk ask or the
+    acceptance, and `Act`'s `OnGet` answered the acceptance with *"This is not something the console does"*
+    above a form with no field to type a line into, while its `OnPostAsync` would have done it. **`DriftTests`
+    could not see it and is right not to** — it compares the operations `BrokerClient` offers against the two
+    surface trees, and `RecordOwnershipAsync` genuinely is in this tree, in the page model. What it cannot know
+    is whether anything a person touches leads there. **The fourth appearance of the shape this file already
+    records three of**, after `Shell.Said`, the colourless terminal and the line pane with no size: a property
+    the suite holds to and the screen never shows. `EveryActionHasADoorTests` reads the arms out of both
+    switches and fails the build when one is performed and unlinked, or linked and not performed, or done on a
+    POST and described on no GET.
+  - **And the acceptance asked for the wrong launch key.** It passed `project: null` to
+    `OwnershipLine.WriteAsync`, which looks at the unnamed `parley` entry — so every repository enrolled into a
+    named project, meaning every repository since 009, was refused with *"has no entry for this agent. Nothing
+    has been written."* The terminal passes its project and wrote the same file happily, so the two surfaces
+    disagreed about a repository they were both looking at. **It was invisible because the three existing tests
+    all run with no broker listening**, which is deliberate and right for what they check — each asserts a guard
+    applied before anything is sent — and the write is downstream of a registry read, so no test that refuses to
+    let the registry answer can reach it. `OwnershipConsole` is the fixture for that gap; the legacy unnamed key
+    is asserted too, because losing it is how a fix for this breaks the case it replaced.
+
+  - **And `parley registry` showed the live line while saying nothing about one already accepted.** FR-020 says
+    *any* surface showing the line must make that clear, and `DriftTests` names the command line as the third
+    surface — and **this is the listing somebody runs to check that an acceptance worked**, so what it showed
+    them was the old line and no reason to think anything had happened. Low, because no surface that *accepts*
+    a line was wrong and the mark clears itself on the next attach; fixed anyway, because a known contradiction
+    of the spec going into the combined gate means the gate reviews a surface the document forbids.
+    `OperatorCommands.RegistryAsync` reads through `BrokerClient` now, which is what gets it
+    `AgentRecord.OwnsPending` and `Roster.PendingMark` — **the comparison and the sentence, not a second
+    spelling of either**, since three spellings of one state is three chances for a reader to think they mean
+    different things.
+
+  **All three are mutation-checked**: put `null` back, remove one link, drop the `PendingMark` call, and five
+  tests fail naming exactly what went.
+
+  **What the walk could not measure is recorded in it rather than claimed.** Naming a project is the terminal's
+  and `parley terminal` refuses a redirected stream, so the project is written as the `project.json` the product
+  writes — 019's walk recorded the same gap. Every review dialog is on a screen no shell can drive. A NUL never
+  reaches the surface at all, because the host refuses the request before a page sees it, so that character is
+  checked against the table instead. Reinstating a cap is a rebuild, so 8.6 is cited to
+  `OwnershipStatement.Bounded` rather than walked. And **a real model's answer is the one thing that cannot be
+  walked with a scripted agent**, which is what makes T063 — asking this repository's own agent — the measurement
+  the feature actually turns on.
+
+  **The walk's own first attempt was not isolated, and that is worth more than the checks it ran.** It set
+  `PARLEY_CONFIG` and left the rest alone; this machine sets `PARLEY_NODE_CONFIG` to the live catalogue, so the
+  enrolment obeyed it — correctly — and wrote two entries for temporary repositories into the file somebody's
+  agents are started from. **018's incident, reached from a shell rather than from a surface**, and the product
+  was right both times. `walk.ps1` clears every `PARLEY_` variable as its first act and says why.
+
+  **And the script pinned the version it installed**, so the moment the fix moved it the install asked a local
+  feed for a package that no longer existed and every check below reported failure while measuring nothing. It
+  reads `Directory.Build.props` now — **a literal that was wrong within the hour**, which is why
+  `ProjectRecordTests` derives that number rather than being told it.
 
 - **The review gate found seven defects in its first six probes, two of them high** — fixed
   at **0.31.2**, **0.31.3** and **0.31.4**, and the

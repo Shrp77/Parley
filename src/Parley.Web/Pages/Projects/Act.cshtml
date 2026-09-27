@@ -24,6 +24,23 @@ else
             </p>
         }
 
+        @if (string.Equals(Model.Action, "ownership", StringComparison.OrdinalIgnoreCase))
+        {
+            @* No maxlength: the bound on this line was removed at 0.33.0 and no surface may print the
+               sentinel that replaced it (0.25.8's rule). What the field must not do is offer a cap the
+               store does not hold, which is how a person comes to trust a number nobody chose.
+
+               Empty rather than pre-filled with the line the agent currently has. This page records
+               what a person writes as *theirs*, and putting words in the box that came from somewhere
+               else is how the one distinction 020 exists to keep -- a person's line from a model's --
+               stops being reliable. The agent's own proposal is accepted from the conversation it was
+               argued in, which is the terminal's review dialog and not this form. *@
+            <p>
+                <label for="text">What does it own, and what does it not?</label><br />
+                <textarea id="text" name="text" rows="4" cols="70" required></textarea>
+            </p>
+        }
+
         @if (string.Equals(Model.Action, "forceconclude", StringComparison.OrdinalIgnoreCase))
         {
             <p>

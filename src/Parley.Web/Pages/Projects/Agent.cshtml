@@ -77,7 +77,13 @@ else
         following a link.
     </p>
 
+    @* Asking and recording sit first because they are the two that cost nothing and are the ones
+       somebody is most often here for. Both were built at 0.33.0 and linked from nowhere until
+       0.34.1, which is what 020's quickstart walk found: the operation existed, the page model
+       performed it, and no door led to it. *@
     <nav aria-label="Actions">
+        <a href="/Projects/Act?project=@Model.Project&amp;action=askownership&amp;subject=@agent.Name.Value">Ask what it owns</a>
+        <a href="/Projects/Act?project=@Model.Project&amp;action=ownership&amp;subject=@agent.Name.Value">Record what it owns</a>
         <a href="/Projects/Act?project=@Model.Project&amp;action=instruct&amp;subject=@agent.Name.Value">Instruct</a>
         @if (agent.Status == AgentStatus.Retired)
         {
