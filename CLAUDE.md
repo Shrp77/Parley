@@ -974,7 +974,58 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   absences — no seat, no draft, no conversation — into the seat's. **Mutation-checked**: putting
   `Projects.Selected` back fails the probe.
 
-  **Still owed**: the ask on a screen, the discussion, the bulk ask, and the neighbours column.
+  **The ask is on a screen now, on both surfaces, and it is two actions rather than one.** The agents pane
+  asks — `a`, where the row is the agent — and a transcript accepts, under `n`, which is what ownership is
+  keyed to in the agents pane as well, because it is one operation reached from the two ends. **An ownership
+  discussion is recognised by the conversation it opens and never by anything in a payload**, which is what
+  keeps §13's promise that a payload is inert data; the terminal offers the acceptance only in a conversation
+  whose identifier `OwnershipAsk.Recognises`, and a test asserts an ordinary conversation does not offer it —
+  accepting there would write whatever that agent last said about anything.
+
+  **The machine rule deliberately does not gate the ask, and saying why is the useful part.**
+  `OwnershipLine.NotHere` guards *writing a file on the agent's machine*; asking an agent a question is not
+  that. A broker reaches agents on machines neither surface will ever touch, so refusing to ask them would
+  withhold the operation from exactly the deployment it is worth most in. The refusal belongs at the accept,
+  and that is where both surfaces apply it.
+
+  **Whose line a discussion is about comes out of the discussion.** `OwnershipProposal.Subject` matches the
+  identifier against the agents the messages name, and **never parses the identifier back into a name** — it
+  carries a role and deliberately no machine, so `owns-orders-…` alone cannot say which `orders` was asked,
+  and guessing `orders@<this machine>` is 0.20.2's recorded defect of seating somebody at another desk. Two
+  agents of one role in one discussion returns **null rather than the first match**, because what follows an
+  acceptance is a write to somebody's launch configuration. An agent asked but still silent is still the
+  subject, found as the *recipient*, so the surface can say "not answered yet" about a named agent rather
+  than about nobody.
+
+  **The discussion is read again at the accept rather than taken off the screen.** A transcript is followed
+  every three seconds, so what was drawn is what was true a moment ago — and an agent that revised in that
+  moment would have had the sentence it retracted written to its launch configuration. One read answers both
+  questions, which also avoids the two-reads-on-one-keystroke shape 017 removed from the conversations list.
+
+  **Which words are whose is a comparison, not a flag.** The field opens holding the agent's own sentence, so
+  accepting is one keystroke and editing is ordinary typing; `Ownership.Chosen` compares the two and records
+  `proposed` or `edited`. A flag would be right every time somebody remembered to set it. The trim is the
+  dialog's and not the person's, so surrounding whitespace is not an edit — while a changed letter, case or
+  dash is, because what is being claimed is that the words are the agent's. **The length recorded is the
+  agent's own message**, never the accepted one, which is 0.29.0's lens 2 applied where it was aimed: the
+  evidence table exists so a bound can one day be set from what agents write.
+
+  **The ask is shown before it is sent**, on both surfaces, because FR-003 is a promise about what the agent
+  was *told* — a surface that summarised it would be the one place that promise could quietly stop being
+  true. The web UI describes it on a GET and sends only on a POST, so no link can spend anybody's turn, and
+  **a missing seat is said plainly rather than falling through to the operator's voice**: an instruction in
+  place of a message puts the question in front of the agent with nothing in the transcript and nothing owed
+  back. The terminal offers the ask whether or not a seat is held, which is 0.28.2's defect guarded from the
+  other side — the action hidden until a seat existed was the reason the owner reached for Instruct.
+
+  **The web UI's three tests are all run with no broker listening, and that is the point rather than a
+  compromise.** Each asserts a guard applied *before* anything is sent or written, so a console that deferred
+  either check downstream reports a transport failure instead of the sentence asserted.
+
+  **Still owed**: the accept driven through an attached agent, asserting the row in
+  `agent_ownership_accepted` rather than `Chosen` in isolation — that needs an agent-attachment fixture of
+  `FileLocationFixture`'s size, so it is its own increment rather than a rushed end to this one — the restart
+  offer and the pending mark (T035, T037), the discussion, the bulk ask, and the neighbours column.
 
   **An ask is recognised by the conversation it opens, never by a marker in a payload** — §13 promises a
   receiver that a payload is inert data, and 017's chip rule is what keeps that true. The identifier is

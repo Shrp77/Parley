@@ -1,4 +1,6 @@
+﻿using System.Globalization;
 using Parley.Client;
+using Parley.Client.Seating;
 using Parley.Core;
 using Parley.Setup;
 using Terminal.Gui.App;
@@ -10,12 +12,19 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>What this screen writes is the person's own line, and it says so.</b> §17 question 10's
-/// amendment permits a line an agent drafted, on the condition that approval is a recorded positive
-/// act — so a surface that could not tell a person's words from an agent's would make the record
-/// worth nothing. This one records <see cref="OwnershipSource.Composed"/>, because there is no ask
-/// here: a line an agent proposed arrives through the conversation it was agreed in, carries that
-/// conversation with it, and is recorded as the agent's.
+/// <b>Which words were whose is recorded, and that is the whole of what §17 question 10's amendment
+/// rests on.</b> The amendment permits a line an agent drafted only on the condition that approval is
+/// a recorded positive act, so a surface that could not tell a person's words from an agent's would
+/// make the record worth nothing. There are three routes and this file holds all three: a line typed
+/// here with no ask is <see cref="OwnershipSource.Composed"/>; a line an agent proposed and somebody
+/// accepted unchanged is <see cref="OwnershipSource.Proposed"/>, carrying the conversation it was
+/// agreed in; the same line changed before accepting is <see cref="OwnershipSource.Edited"/>.
+/// </para>
+/// <para>
+/// <b>Which of the last two happened is a comparison, not a flag.</b> The field opens holding the
+/// agent's own sentence, so accepting is one keystroke, and what is recorded is decided by comparing
+/// what was sent with what came back — asking a person to declare whether they had edited something
+/// would be asking them to remember what they had just done.
 /// </para>
 /// <para>
 /// <b>It has to say that nothing an asker reads has changed.</b> The registry is filled from the
@@ -34,6 +43,147 @@ internal static class Ownership
 
     /// <summary>Said when the person gives nothing.</summary>
     internal const string Nothing = "Nothing was typed, so nothing was recorded.";
+
+    /// <summary>The door asking an agent passes through.</summary>
+    internal const string AskTitle = "Ask what this agent owns";
+
+    /// <summary>Said when there is no seat to ask from.</summary>
+    /// <remarks>
+    /// <b>Offered without a seat rather than hidden, and 0.28.2 is why.</b> Starting a conversation
+    /// was hidden while no seat was held and nothing said a seat was needed, so the owner reached
+    /// for an instruction instead — which is not a message and never becomes one. An action a
+    /// person cannot find is indistinguishable from one that does not exist.
+    /// </remarks>
+    internal const string NoSeat =
+        "An ask is a message, so it is sent as somebody, and no seat is held here. Take one with "
+        + "'j' in this pane and ask again -- the agent's answer then comes back to that name.";
+
+    /// <summary>The choice that asks, which is never the one under the cursor.</summary>
+    internal const string Ask = "Ask it, and spend the turn";
+
+    /// <summary>The choice that changes nothing, which every dialog here opens on.</summary>
+    internal const string Leave = "Do not ask";
+
+    /// <summary>Said when the person declines.</summary>
+    internal const string Left = "Nothing was asked and nothing was spent.";
+
+    /// <summary>The door accepting what an agent proposed passes through.</summary>
+    internal const string AcceptTitle = "Accept what this agent proposed";
+
+    /// <summary>Said when the discussion holds nothing the agent has written.</summary>
+    /// <remarks>
+    /// Distinguished from an agent that answered badly, which comes back as it was written: this is
+    /// the agent having said nothing at all, which is a fact about the deployment rather than about
+    /// the answer, and 0.29.1 records what collapsing those two costs.
+    /// </remarks>
+    internal const string NothingProposed =
+        "This agent has not answered yet, so there is nothing to accept. Its answer will appear in "
+        + "this conversation when it takes its next turn.";
+
+    /// <summary>Said when the discussion does not say whose line it is about.</summary>
+    /// <remarks>
+    /// Reachable when two agents in one discussion share a role, which is an ordinary deployment —
+    /// and what follows an acceptance is a write to somebody's launch configuration, so being shown
+    /// one of the two would be the surface choosing whose file to edit.
+    /// </remarks>
+    internal const string NoSubject =
+        "This conversation does not say which single agent it is about, so nothing can be accepted "
+        + "from it. Say the line from the agents pane instead, where the agent is the row.";
+
+    /// <summary>Asks the agent what it owns, as one ordinary Request.</summary>
+    /// <param name="app">The application the dialog opens in.</param>
+    /// <param name="voice">The seat to ask from, or null when none is held.</param>
+    /// <param name="agent">Who to ask.</param>
+    /// <param name="now">When the ask is being made, which names the conversation.</param>
+    /// <param name="queue">Runs the send, so the caller can wait for it.</param>
+    /// <param name="done">Told what to say when it is over.</param>
+    /// <returns>When the dialog is open.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The machine rule of <see cref="OwnershipLine.NotHere"/> deliberately does not apply
+    /// here.</b> That rule is about writing a file on the agent's machine, and asking an agent a
+    /// question is not that: a broker reaches agents on machines this surface will never touch, and
+    /// refusing to ask them would withhold the operation from exactly the deployment it is worth
+    /// most in. The refusal belongs at the accept, which writes, and it is applied there.
+    /// </para>
+    /// <para>
+    /// <b>The person is shown the words before they are sent</b> (FR-003). The ask makes a promise
+    /// about what the agent was told, and a promise nobody can read before it is made is not one
+    /// somebody can be held to.
+    /// </para>
+    /// </remarks>
+    internal static Task AskAsync(
+        IApplication app,
+        SeatVoice? voice,
+        AgentName agent,
+        DateTimeOffset now,
+        Action<Func<CancellationToken, Task>> queue,
+        Func<string, Task> done)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(queue);
+        ArgumentNullException.ThrowIfNull(done);
+
+        if (voice is null)
+        {
+            _ = done(NoSeat);
+
+            return Task.CompletedTask;
+        }
+
+        var conversation = OwnershipAsk.Conversation(agent, now);
+        var asking = Prompting.Choose(AskTitle, Asked(agent, conversation), [Leave, Ask]);
+        var open = Prompting.Open(app, asking);
+
+        asking.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, open);
+
+            if (!string.Equals(chosen, Ask, StringComparison.Ordinal))
+            {
+                _ = done(Left);
+
+                return;
+            }
+
+            queue(async t =>
+            {
+                var said = await voice
+                    .RequestAsync(agent, OwnershipAsk.Text, conversation, t)
+                    .ConfigureAwait(false);
+
+                await done(Reports.Sentences([
+                    Safe.Text(said),
+                    $"Its answer arrives in conversation {Safe.Text(conversation)}, which is where "
+                    + "it is read and accepted.",
+                ])).ConfigureAwait(false);
+            });
+        };
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>What the person reads before the ask is sent.</summary>
+    /// <param name="agent">Who will be asked.</param>
+    /// <param name="conversation">The conversation it will open.</param>
+    /// <returns>The description.</returns>
+    /// <remarks>
+    /// Shows the ask itself rather than describing it. The whole of FR-003 is that the agent is told
+    /// what its answer is for, and a surface summarising those words would be the one place the
+    /// promise could quietly stop being true.
+    /// </remarks>
+    internal static string Asked(AgentName agent, string conversation) =>
+        $"""
+         {Safe.Text(agent.Value)}
+
+         This costs {Safe.Text(agent.Role)} one turn, and opens conversation
+         {Safe.Text(conversation)}. Nothing is written by asking: the answer is a message, and a
+         person accepts it or does not.
+
+         It will be sent these words:
+
+         {Safe.Lines(OwnershipAsk.Text)}
+         """;
 
     /// <summary>Opens the dialogs that record an ownership line.</summary>
     /// <param name="app">The application the dialogs open in.</param>
@@ -84,7 +234,14 @@ internal static class Ownership
                 return;
             }
 
-            queue(t => AcceptAsync(client, agent, workspace, project, statement, t, done));
+            queue(t => AcceptAsync(
+                client,
+                agent,
+                workspace,
+                project,
+                new OwnershipAcceptance(statement, OwnershipSource.Composed, null, null),
+                t,
+                done));
         };
 
         return Task.CompletedTask;
@@ -113,6 +270,201 @@ internal static class Ownership
          line itself comes from its launch configuration.
          """;
 
+    /// <summary>Reads what the agent proposed, and offers it for acceptance.</summary>
+    /// <param name="app">The application the dialog opens in.</param>
+    /// <param name="client">The operator's client for this project.</param>
+    /// <param name="conversationId">The discussion, which is recorded with the acceptance.</param>
+    /// <param name="roster">
+    /// What the registry says about an agent: the repository holding its line, and the line peers
+    /// read today. Asked only once the discussion has said whose line it is.
+    /// </param>
+    /// <param name="project">The project whose launch entry carries the line.</param>
+    /// <param name="queue">Runs the acceptance, so the caller can wait for it.</param>
+    /// <param name="done">Told what to say when it is over.</param>
+    /// <param name="cancellationToken">Cancels reading the discussion.</param>
+    /// <returns>When the dialog is open, or the refusal has been said.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The discussion is read again here rather than taken off the screen.</b> A transcript is
+    /// followed every few seconds, so what was drawn is what was true a moment ago — and an agent
+    /// that revised its answer in that moment would have the sentence it retracted written to its
+    /// launch configuration. The proposal a person accepts is the latest one at the instant they
+    /// accept it, which is 0.30.1's rule taken to its conclusion.
+    /// </para>
+    /// <para>
+    /// <b>Whose line it is comes out of the discussion, not off the screen.</b> One read answers both
+    /// questions — who was asked, and what they last said — where taking the agent from the cursor
+    /// would let a person accept one agent's sentence into another agent's file if the selection had
+    /// moved. Two reads on one keystroke is also one wasted export and two chances to disagree, which
+    /// 017 records removing from the conversations list.
+    /// </para>
+    /// <para>
+    /// <b>The machine refusal is applied before the dialog opens</b>, because this half writes a
+    /// file on the agent's machine (0.25.2) — and after the subject is known rather than before,
+    /// since until the discussion has been read there is no agent to apply it to.
+    /// </para>
+    /// </remarks>
+    internal static async Task ReviewAsync(
+        IApplication app,
+        BrokerClient client,
+        string conversationId,
+        Func<AgentName, (string? Workspace, string? Live)> roster,
+        string? project,
+        Action<Func<CancellationToken, Task>> queue,
+        Func<string, Task> done,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(roster);
+        ArgumentNullException.ThrowIfNull(queue);
+        ArgumentNullException.ThrowIfNull(done);
+
+        var read = await BrokerDirectory.ReadAsync(
+            async () => await client
+                .ExportAsync(conversationId, cancellationToken)
+                .ConfigureAwait(false))
+            .ConfigureAwait(false);
+
+        if (!read.Reachable)
+        {
+            await done($"The discussion could not be read: {Safe.Text(read.Problem!)}")
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        if (OwnershipProposal.Subject(read.Value!.Messages, conversationId) is not { } agent)
+        {
+            await done(NoSubject).ConfigureAwait(false);
+
+            return;
+        }
+
+        if (OwnershipLine.NotHere(agent) is { } elsewhere)
+        {
+            await done(Safe.Text(elsewhere)).ConfigureAwait(false);
+
+            return;
+        }
+
+        var (workspace, live) = roster(agent);
+
+        if (OwnershipProposal.Latest(read.Value.Messages, agent) is not { } proposal)
+        {
+            await done(NothingProposed).ConfigureAwait(false);
+
+            return;
+        }
+
+        var typing = Prompting.Text(
+            AcceptTitle,
+            Reviewed(agent, live, proposal),
+            proposal.Statement,
+            problem: typed => OwnershipStatement.IsValid(typed, out var wrong) ? null : wrong);
+
+        var open = Prompting.Open(app, typing);
+
+        typing.Done += (_, said) =>
+        {
+            Prompting.Close(app, open);
+
+            var statement = (said ?? string.Empty).Trim();
+
+            if (statement.Length == 0)
+            {
+                _ = done(Nothing);
+
+                return;
+            }
+
+            // **The agent's own length, never the accepted one, and 0.29.0's lens 2 is why.** The
+            // evidence table exists so a bound can one day be set from what agents actually write;
+            // a length a person typed is not that, and writing it would poison the only record
+            // FR-026 asks for.
+            var acceptance = new OwnershipAcceptance(
+                statement,
+                Chosen(statement, proposal.Statement),
+                proposal.Statement.Length,
+                conversationId);
+
+            queue(t => AcceptAsync(client, agent, workspace, project, acceptance, t, done));
+        };
+    }
+
+    /// <summary>What the person reads before they accept.</summary>
+    /// <param name="agent">Whose line it is.</param>
+    /// <param name="live">What peers read today.</param>
+    /// <param name="proposal">What the agent said.</param>
+    /// <returns>The description.</returns>
+    /// <remarks>
+    /// <b>Attributed, and marked as the agent's own words</b> (FR-013). The sender and the time are
+    /// both said, because the whole of question 10's amendment turns on a reader being able to tell
+    /// a model's sentence from a person's — and a screen that showed the text alone would make the
+    /// record of <c>proposed</c> versus <c>composed</c> a claim nobody could check.
+    /// </remarks>
+    internal static string Reviewed(AgentName agent, string? live, OwnershipProposal proposal)
+    {
+        ArgumentNullException.ThrowIfNull(proposal);
+
+        var now = OwnershipStatement.Read(live) is { } already
+            ? $"'{Safe.Text(already)}'"
+            : "nothing -- this agent has no line yet";
+
+        return $"""
+                {Safe.Text(agent.Value)}
+
+                Peers read {now} today.
+
+                {Safe.Text(agent.Value)} proposed this, at {When(proposal)} local time. These are
+                its words, not this screen's:
+
+                {Safe.Lines(proposal.Statement)}
+
+                Enter accepts it as it stands. Editing it first records it as yours rather than as
+                the agent's. Either way it reaches peers when the agent next starts, because the
+                line comes from its launch configuration.
+                """;
+    }
+
+    /// <summary>Whose words an accepted line is, decided by comparing them.</summary>
+    /// <param name="accepted">What the person accepted.</param>
+    /// <param name="proposed">What the agent had written.</param>
+    /// <returns>Which of the two routes produced it.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Ordinal, and deliberately strict about everything except the surrounding whitespace.</b>
+    /// The field trims, so a trailing space is the dialog's doing rather than the person's — but a
+    /// changed letter, a changed case or a changed dash is an edit, because what §17 question 10's
+    /// amendment rests on is being able to say the words are the agent's, and words that were altered
+    /// are not.
+    /// </para>
+    /// <para>
+    /// A comparison rather than a flag, so that no path can record <c>proposed</c> for something
+    /// somebody rewrote. A flag would be right every time it was set correctly.
+    /// </para>
+    /// </remarks>
+    internal static OwnershipSource Chosen(string accepted, string proposed) =>
+        string.Equals(
+            (accepted ?? string.Empty).Trim(),
+            (proposed ?? string.Empty).Trim(),
+            StringComparison.Ordinal)
+            ? OwnershipSource.Proposed
+            : OwnershipSource.Edited;
+
+    /// <summary>When a proposal was written, in the reader's own zone.</summary>
+    /// <param name="proposal">The proposal.</param>
+    /// <returns>The time, to the minute.</returns>
+    /// <remarks>
+    /// Local, and the caller says so in words, because every other time on this surface is local and
+    /// an unmarked UTC beside them is the defect 0.27.0 records paying for on three screens at once.
+    /// The culture is invariant so the spelling does not move with the machine.
+    /// </remarks>
+    private static string When(OwnershipProposal proposal) =>
+        proposal.Message.CreatedUtc
+            .ToLocalTime()
+            .ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+
     /// <summary>Writes the line where it takes effect, then records that a person accepted it.</summary>
     /// <remarks>
     /// <para>
@@ -132,12 +484,12 @@ internal static class Ownership
         AgentName agent,
         string? workspace,
         string? project,
-        string statement,
+        OwnershipAcceptance acceptance,
         CancellationToken cancellationToken,
         Func<string, Task> done)
     {
         var wrong = await OwnershipLine
-            .WriteAsync(workspace, project, agent, statement, cancellationToken)
+            .WriteAsync(workspace, project, agent, acceptance.Statement, cancellationToken)
             .ConfigureAwait(false);
 
         if (wrong is not null)
@@ -149,9 +501,7 @@ internal static class Ownership
 
         var outcome = await BrokerDirectory.ReadAsync(
             async () => await client.RecordOwnershipAsync(
-                agent,
-                new OwnershipAcceptance(statement, OwnershipSource.Composed, null, null),
-                cancellationToken).ConfigureAwait(false))
+                agent, acceptance, cancellationToken).ConfigureAwait(false))
             .ConfigureAwait(false);
 
         if (!outcome.Reachable)

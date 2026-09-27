@@ -153,4 +153,94 @@ public sealed class TheProposalIsTheLatestThingSaidTests
         Assert.Equal("Second.", OwnershipProposal.Latest(transcript, Orders)!.Statement);
         Assert.Equal("Second.", OwnershipProposal.Latest(transcript.Reverse(), Orders)!.Statement);
     }
+
+    [Fact]
+    public void Whose_line_a_discussion_is_about_comes_out_of_the_discussion()
+    {
+        // **Must fail against parsing the identifier back into a name.** It carries a role and
+        // deliberately no machine, so `owns-orders-...` alone cannot say which `orders` was asked --
+        // and a surface that guessed `orders@<this machine>` would write a file for an agent at
+        // another desk, which is 0.20.2's recorded defect.
+        var transcript = new[] { Said(Orders, Answer("Orders and invoicing."), minute: 1, id: 2) };
+
+        Assert.Equal(Orders, OwnershipProposal.Subject(transcript, "owns-orders-20260927-090000"));
+    }
+
+    [Fact]
+    public void An_agent_addressed_but_silent_is_still_the_subject()
+    {
+        // The person has asked and nothing has come back, which is the ordinary state for the first
+        // minutes of every discussion. Must fail against reading senders alone: the surface has to be
+        // able to say "not answered yet" about a named agent rather than about nobody.
+        var asked = new[]
+        {
+            Said(Person, Asked("What do you own?"), minute: 0, id: 1, MessageType.Request),
+        };
+
+        Assert.Equal(Orders, OwnershipProposal.Subject(asked, "owns-orders-20260927-090000"));
+        Assert.Null(OwnershipProposal.Latest(asked, Orders));
+    }
+
+    [Fact]
+    public void A_conversation_that_is_not_an_ownership_discussion_has_no_subject()
+    {
+        // Must fail against matching any conversation at all, which would offer to accept an
+        // ownership line out of an ordinary piece of work.
+        var transcript = new[] { Said(Orders, Answer("Orders and invoicing."), minute: 1, id: 2) };
+
+        Assert.Null(OwnershipProposal.Subject(transcript, "the-build-is-broken"));
+        Assert.Null(OwnershipProposal.Subject(transcript, null));
+    }
+
+    [Fact]
+    public void A_discussion_naming_two_agents_of_one_role_has_no_subject()
+    {
+        // **Two machines running one role is an ordinary deployment**, and what follows an acceptance
+        // is a write to somebody's launch configuration. Must fail against returning the first match,
+        // which would make the surface choose whose file to edit.
+        var elsewhere = AgentName.Create("orders@other");
+
+        var transcript = new[]
+        {
+            Said(Orders, Answer("Orders here."), minute: 1, id: 2),
+            new Message(
+                3,
+                1,
+                MessageType.Result,
+                elsewhere,
+                Person,
+                "some-model-9",
+                Answer("Orders there."),
+                "owns-orders-20260927-090000",
+                T0.AddMinutes(2),
+                null),
+        };
+
+        Assert.Null(OwnershipProposal.Subject(transcript, "owns-orders-20260927-090000"));
+    }
+
+    [Fact]
+    public void A_discussion_about_another_role_is_not_this_agents()
+    {
+        // The role in the identifier is what chooses, so a message from somebody else in a
+        // discussion named for `orders` does not make them its subject.
+        var billing = AgentName.Create("billing@test");
+
+        var transcript = new[]
+        {
+            new Message(
+                2,
+                1,
+                MessageType.Result,
+                billing,
+                Person,
+                "some-model-9",
+                Answer("Billing."),
+                "owns-orders-20260927-090000",
+                T0.AddMinutes(1),
+                null),
+        };
+
+        Assert.Null(OwnershipProposal.Subject(transcript, "owns-orders-20260927-090000"));
+    }
 }

@@ -1,8 +1,10 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Parley.Core;
 using Parley.Client;
+using Parley.Client.Seating;
 using Parley.Setup;
+using Parley.Web.Seating;
 
 namespace Parley.Web.Pages.Projects;
 
@@ -23,13 +25,17 @@ namespace Parley.Web.Pages.Projects;
 /// </para>
 /// </remarks>
 /// <param name="directory">The projects and their brokers.</param>
-public sealed class ActModel(BrokerDirectory directory) : PageModel
+/// <param name="seats">
+/// The seats people hold, because asking an agent what it owns is a message and a message is sent as
+/// somebody. Every other action on this page is an operator operation and needs no seat.
+/// </param>
+public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageModel
 {
     /// <summary>Which project.</summary>
     [BindProperty(SupportsGet = true)]
     public string? Project { get; set; }
 
-    /// <summary>What to do: retire, reinstate, purge, forceconclude or instruct.</summary>
+    /// <summary>What to do: retire, reinstate, purge, forceconclude, instruct, prune, ownership or askownership.</summary>
     [BindProperty(SupportsGet = true)]
     public string? Action { get; set; }
 
@@ -87,6 +93,13 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             "instruct" => ($"'{Subject}' will be given your words as a turn. It may decline, which "
                          + "is not a failure. The instruction is recorded as yours.", false),
 
+            // Named as a cost rather than as a risk. Nothing is destroyed and nothing is written, so
+            // `Destroys` stays false -- but a turn is spent on the agent's side and a person cannot
+            // un-spend it, which is the whole of what they are deciding.
+            "askownership" => ($"'{Subject}' will be asked what it owns, as one ordinary request from "
+                             + "your seat, and answering costs it a turn. Nothing is written by "
+                             + "asking: its answer is a message, and you accept it or you do not.", false),
+
             "prune" => ($"The broker for '{Project}' applies its retention policy now rather than at its next "
                       + "sweep. Message text past the policy is deleted permanently: export a conversation "
                       + "first if it is worth keeping. Nothing on an open exchange, and nothing not yet "
@@ -112,10 +125,13 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
         var broker = new BrokerClient(directory.ClientFor(project));
         var token = HttpContext.RequestAborted;
 
-        // The subject arrives in a URL, so it is whatever was typed there. Four of these five
-        // actions need it to be an agent name, and the parse is done once, here, rather than
-        // inside the switch: AgentName.Create throws on anything malformed, and an unhandled
-        // throw out of a page handler is a stack trace served to whatever asked for it.
+        // The subject arrives in a URL, so it is whatever was typed there. Every action but
+        // forceconclude and prune needs it to be an agent name, and the parse is done once, here,
+        // rather than inside the switch: AgentName.Create throws on anything malformed, and an
+        // unhandled throw out of a page handler is a stack trace served to whatever asked for it.
+        //
+        // The count this comment used to carry went stale the first time an action was added, so it
+        // names the two exceptions instead -- which is the fact that decides where the guard sits.
         var named = AgentName.TryCreate(Subject, out var agent);
 
         var read = await BrokerDirectory.ReadAsync(async () =>
@@ -141,11 +157,18 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 "instruct" => DescribeInstruction(
                     broker.InstructAsync(agent, Text ?? string.Empty, token)),
 
-                // Composed, because this surface has no ask yet: what a person types here is their
-                // own line and is recorded as theirs. A proposal an agent wrote arrives through the
-                // conversation it was agreed in, and carries that conversation with it -- which is
-                // why `source` exists at all rather than every acceptance being one thing.
+                // Composed, because what a person types *here* is their own line and is recorded as
+                // theirs. That is still true now the ask exists: a proposal an agent wrote arrives
+                // through the conversation it was agreed in and is accepted from that conversation,
+                // carrying it -- which is why `source` exists at all rather than every acceptance
+                // being one thing.
                 "ownership" => AcceptOwnership(broker, agent, Text ?? string.Empty, token),
+
+                // The one action on this page that is a message rather than an operator operation, so
+                // the one that needs a seat. It adds nothing to the protocol: an ordinary Request,
+                // opening an ordinary exchange, in a conversation named so that a surface can find the
+                // discussion again without a marker in anybody's payload (§13).
+                "askownership" => AskOwnership(project, agent, token),
 
                 _ => Task.FromResult("This is not something the console does.")
             }).ConfigureAwait(false)).ConfigureAwait(false);
@@ -208,6 +231,47 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 agent,
                 new OwnershipAcceptance(statement, OwnershipSource.Composed, null, null),
                 token)).ConfigureAwait(false);
+    }
+
+    /// <summary>Asks an agent what it owns, from the seat the person holds.</summary>
+    /// <param name="project">Which project's broker to ask through.</param>
+    /// <param name="agent">Who to ask.</param>
+    /// <param name="token">Cancels the send.</param>
+    /// <returns>What to put in front of the person.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A seat is required and its absence is said plainly</b>, because §13 rests on a receiver
+    /// being able to tell who spoke: an operator instruction in place of a message would put the
+    /// question in front of the agent with nothing in the transcript and nothing owed back.
+    /// </para>
+    /// <para>
+    /// <b>The machine rule deliberately does not apply here.</b> <c>OwnershipLine.NotHere</c> guards a
+    /// write to a file on the agent's machine, and asking is not that — a broker reaches agents on
+    /// machines this console will never touch, and refusing to ask them would withhold the operation
+    /// from exactly the deployment it is worth most in.
+    /// </para>
+    /// </remarks>
+    private async Task<string> AskOwnership(
+        ProjectSettings project, AgentName agent, CancellationToken token)
+    {
+        var here = SeatCookie.Read(Request);
+        var seated = here is null ? null : seats.Held(project.Name.Value, here);
+
+        if (seated is null)
+        {
+            return "Nothing was asked. An ask is a message, so it is sent as somebody, and no seat "
+                 + "is held here: take one on the inbox page and ask again. The agent's answer then "
+                 + "comes back to that name.";
+        }
+
+        var conversation = OwnershipAsk.Conversation(agent, DateTimeOffset.UtcNow);
+
+        var said = await new SeatVoice(directory.AgentsFor(project), seated.Seat)
+            .RequestAsync(agent, OwnershipAsk.Text, conversation, token)
+            .ConfigureAwait(false);
+
+        return said + " Its answer arrives in conversation " + conversation
+             + ", which is where it is read and accepted.";
     }
 
     /// <summary>Says what became of an accepted ownership line.</summary>

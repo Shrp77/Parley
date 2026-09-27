@@ -1501,6 +1501,17 @@ internal sealed class Shell : Window
                     // peers decide who to send work to, and a person holding a seat is not somebody
                     // work is routed to by a roster entry.
                     new RegionAction('n', Ownership.Title + ": " + told.Name, OwnershipOfSelected),
+
+                    // **Asking is offered whether or not a seat is held, and that is deliberate.**
+                    // An ask is a message and needs one, but hiding the action until somebody has a
+                    // seat is 0.28.2's recorded defect: the owner could not find how to start a
+                    // conversation and reached for an instruction, which is not a message at all.
+                    // So it is always here and says what is missing when it is pressed.
+                    new RegionAction(
+                        'a',
+                        Ownership.AskTitle + ": " + told.Name,
+                        AskWhatItOwns,
+                        Owing.Requesting),
                 }
                 : Array.Empty<RegionAction>(),
 
@@ -1618,6 +1629,18 @@ internal sealed class Shell : Window
                     new RegionAction(CopyKey, CopyTitle, Copy),
                     new RegionAction(FoldKey, Transcript.Folded ? UnfoldTitle : FoldTitle, Fold),
                 }
+                : Array.Empty<RegionAction>(),
+
+            // **Recognised by the conversation's identifier and never by anything in a payload.**
+            // §13 tells a receiver a payload is inert data, so an ownership discussion is known by
+            // the name it was opened under -- which is metadata the protocol already carries.
+            // `n` is what it is in the agents pane, because it is the same operation reached from
+            // the other end: there the row is the agent, here the conversation is.
+            //
+            // Needs no seat. Accepting is an operator operation and reading the transcript is how
+            // somebody decides to, which is the same reasoning that ungated copying.
+            .. OwnershipAsk.Recognises(Transcript.Open)
+                ? new[] { new RegionAction('n', Ownership.AcceptTitle, AcceptProposed) }
                 : Array.Empty<RegionAction>(),
         ],
 
@@ -3713,6 +3736,83 @@ internal sealed class Shell : Window
 
                 return Task.CompletedTask;
             });
+    }
+
+    /// <summary>Asks the agent under the cursor what it owns.</summary>
+    /// <returns>When the dialog is open.</returns>
+    /// <remarks>
+    /// The seat is read here and passed in, rather than looked up inside the dialog, for the reason
+    /// <see cref="Voice"/> exists at all: whether somebody can speak is a fact about this view and
+    /// its seat, and a screen that asked a different region would be the defect this file records
+    /// five times.
+    /// </remarks>
+    private Task AskWhatItOwns()
+    {
+        if (App is not { } app
+            || Agents.Selected is not { Seat: false } row
+            || !AgentName.TryCreate(row.Name, out var agent))
+        {
+            return Task.CompletedTask;
+        }
+
+        return Ownership.AskAsync(
+            app, Voice(), agent, DateTimeOffset.UtcNow, Queue, said =>
+            {
+                Said = said;
+
+                return Task.CompletedTask;
+            });
+    }
+
+    /// <summary>Offers what an agent proposed in the open discussion for acceptance.</summary>
+    /// <returns>When the discussion has been read and the dialog is open.</returns>
+    /// <remarks>
+    /// The roster is handed over as a lookup rather than a row, because which agent this is about is
+    /// decided by the discussion and not by the cursor — so what the registry says about it cannot
+    /// be gathered until afterwards.
+    /// </remarks>
+    private Task AcceptProposed()
+    {
+        if (App is not { } app
+            || Current is not { } project
+            || Transcript.Open is not { } conversation)
+        {
+            return Task.CompletedTask;
+        }
+
+        var client = new BrokerClient(_directory.ClientFor(project));
+
+        return Ownership.ReviewAsync(
+            app,
+            client,
+            conversation,
+            Registered,
+            project.Name.Value,
+            Queue,
+            said =>
+            {
+                Said = said;
+
+                return Task.CompletedTask;
+            },
+            _reading.Token);
+    }
+
+    /// <summary>What the roster says about one agent.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>Its workspace and the line peers read today, either of which may be absent.</returns>
+    /// <remarks>
+    /// Matched on the whole name rather than the role, because two machines running one role is an
+    /// ordinary deployment and the workspace returned is what decides which file gets written —
+    /// 005's gate found a withdrawal deleting a different agent's launch configuration by being
+    /// looser than this.
+    /// </remarks>
+    private (string? Workspace, string? Live) Registered(AgentName agent)
+    {
+        var row = Agents.Rows.FirstOrDefault(
+            r => !r.Seat && string.Equals(r.Name, agent.Value, StringComparison.Ordinal));
+
+        return row is null ? (null, null) : (row.Workspace, row.Owns);
     }
 
     /// <summary>Lists the selected project's files, and what can be done with each.</summary>

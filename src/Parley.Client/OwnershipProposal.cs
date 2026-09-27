@@ -22,6 +22,43 @@ namespace Parley.Client;
 /// </remarks>
 public sealed record OwnershipProposal(Message Message, string Statement)
 {
+    /// <summary>Whose line a discussion is about, read out of the discussion itself.</summary>
+    /// <param name="transcript">The conversation, in any order.</param>
+    /// <param name="conversationId">The identifier the discussion carries.</param>
+    /// <returns>The agent, or null when nobody in it matches the identifier.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The identifier is matched, never parsed back into a name.</b> It carries a role and
+    /// deliberately not a machine (<see cref="OwnershipAsk.Conversation"/>), so it cannot be turned
+    /// into an <see cref="AgentName"/> on its own — and a surface that guessed the machine half
+    /// would name an agent at a different desk, which is 0.20.2's recorded defect from the other
+    /// side. So the candidates come from the messages, which are facts, and the identifier only
+    /// chooses between them.
+    /// </para>
+    /// <para>
+    /// <b>Null rather than a guess when two agents in one discussion share a role.</b> Two machines
+    /// running the same role is an ordinary deployment, so a surface asking whose line this is must
+    /// be told it cannot know rather than shown one of them: what follows the answer is a write to
+    /// somebody's launch configuration.
+    /// </para>
+    /// </remarks>
+    public static AgentName? Subject(IEnumerable<Message>? transcript, string? conversationId)
+    {
+        if (transcript is null || !OwnershipAsk.Recognises(conversationId))
+        {
+            return null;
+        }
+
+        var named = transcript
+            .SelectMany(message => new[] { message.From, message.To })
+            .Where(agent => OwnershipAsk.Recognises(conversationId, agent))
+            .Distinct()
+            .Take(2)
+            .ToList();
+
+        return named.Count == 1 ? named[0] : null;
+    }
+
     /// <summary>The proposal a person should be shown, or null when the agent has said nothing.</summary>
     /// <param name="transcript">The conversation, in any order.</param>
     /// <param name="agent">Whose proposal to find.</param>
