@@ -1,4 +1,4 @@
-﻿# Parley
+# Parley
 
 A durable, vendor-neutral coordination protocol for AI coding agents. Lets per-repo
 agents ask each other questions and get answers, and hand each other files, without sharing
@@ -480,8 +480,8 @@ to.
 
 ### 4. Say what each agent owns
 
-`PARLEY_OWNS` is one line, written by you, that every other agent sees beside that agent's
-name when it lists the roster. It is how an asker picks who to ask:
+`PARLEY_OWNS` is one line that every other agent sees beside that agent's name when it lists
+the roster. It is how an asker picks who to ask:
 
 ```
 orders     Carts, orders, line totals. No tax, no stock.
@@ -489,23 +489,37 @@ billing    Invoicing, tax and payment capture. Does not price orders or reserve 
 inventory  Stock levels and reservations. Does not decide whether an order may be placed.
 ```
 
-Say what you own **and** what you do not — the exclusion is what stops a peer asking the
-wrong agent. It is capped at 100 characters, must be one line, and is refused at start-up if it is
-neither. That is not a buffer size: this text lands in every agent's working memory once per
-peer, every time somebody lists the roster. The number is measured rather than chosen — at a
-hundred characters, ten peers cost about what one message is allowed to, so finding out who
-to ask stays cheaper than asking.
+The line says what an agent owns **and** what it does not — the exclusion is what stops a peer
+asking the wrong agent, and it is the half nobody else can supply. A repository can be read to
+find out what it contains; it cannot be read to find out what it has decided not to own.
 
-It comes from the launch configuration and no tool can set it, which is the point. A field an
-agent could write would be worth no more than a model's opinion of itself; written by you, in
-the same file that fixes the agent's name, it is a statement a peer can act on. Change it and
-every peer sees the new one the next time that agent's server starts; delete it and the claim
-is withdrawn.
+**You get that line by asking the agent, not by writing it from memory.** Press `a` on an agent
+in `parley terminal`, or use the console's own ask: the agent answers in an ordinary
+conversation, you read the answer, you argue with it if it is wrong, and you accept what you
+agree on. What you accept is written into the launch configuration for you. Ask every agent in
+a project at once with `e`, which costs each of them one turn and says so before it spends
+them.
+
+**There is no length limit any more, and that is a deliberate reduction in a control.** Earlier
+versions capped it at a hundred characters, measured: a roster entry costs about seventy-five
+characters of structure, so ten peers at a hundred cost roughly what one message is allowed to.
+The cap was removed at 0.33.0 so that an agent asked what it owns can answer in two halves
+instead of being truncated into one. The reason to be brief has not changed — this text lands in
+every agent's working memory once per peer, every time somebody lists the roster, so **a roster
+may be the largest thing an agent reads**. A deployment can put a bound back: the constraint is
+still in storage and simply stands down at the top of its range.
+
+It comes from the launch configuration and **no tool an agent has can set it**, which is the
+point. A field an agent could write would be worth no more than a model's opinion of itself;
+a line an agent *proposed* and a person *accepted* is a statement a peer can act on, and which
+of those two produced it is recorded. Change it and every peer sees the new one the next time
+that agent's server starts — so an accepted line is a decision until then, and both surfaces
+mark it as one and offer the restart. Delete it and the claim is withdrawn.
 
 It is optional. An agent without one is listed without one, and requesters fall back to the
 name — which usually works, because a wrong guess costs one message: a receiver that does not own
-part of the work asks the agent that does, in the same conversation, rather than doing it badly. `parley registry` shows you which of your
-agents have not set it.
+part of the work asks the agent that does, in the same conversation, rather than doing it badly.
+`parley registry` shows you which of your agents have not set it.
 
 ### 5. Name the peers and the boundary
 

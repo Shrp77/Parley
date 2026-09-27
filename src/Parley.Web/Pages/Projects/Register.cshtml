@@ -23,7 +23,7 @@
       "command": "parley-mcp",
       "env": {
         "PARLEY_AGENT": "&lt;a short name, lower case&gt;",
-        "PARLEY_OWNS": "&lt;one sentence: what this repository owns, and what it does not&gt;",
+        "PARLEY_OWNS": "&lt;optional; obtained by asking the agent&gt;",
         "PARLEY_PROJECT": "@Model.Project"
       }
     }
@@ -52,8 +52,15 @@
 
 <p>
     The <code>owns</code> line is read by every other agent when it decides who to ask, so it is
-    worth writing as a boundary rather than as a description. Say what the repository does not own
-    as well as what it does.
+    worth stating as a boundary rather than as a description: say what the repository does not own
+    as well as what it does, because the exclusion is what stops a peer asking the wrong agent.
+</p>
+
+<p>
+    <strong>You do not have to write it here.</strong> Leave it out and ask the agent what it owns
+    once it has registered &mdash; it answers in an ordinary conversation, you accept or argue with
+    the answer, and what you agree on is written into this file for you. A line composed here is
+    recorded as yours, which is also fine; what matters is that the two are told apart.
 </p>
 
 <p>

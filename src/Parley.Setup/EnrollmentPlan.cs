@@ -572,7 +572,14 @@ public static class EnrollmentPlan
             // Said out loud rather than left to be noticed on a roster. An agent with no line is
             // listed with none and askers fall back to its name, which is a real fallback and a
             // worse one than a sentence somebody meant.
-            notes.Add(".mcp.json: no owns line; peers will see only the name");
+            //
+            // **And it says how to get one, because enrolment deliberately does not ask.** 020 made
+            // the line something the agent is asked for and a person accepts; a note reporting the
+            // absence without naming the remedy would leave somebody looking for a field to fill in
+            // that was removed on purpose.
+            notes.Add(
+                ".mcp.json: no owns line; peers will see only the name. Ask the agent what it owns "
+                + "from the terminal or the console, and accepting the answer writes it here.");
         }
 
         string? instructionsOutput = null;

@@ -1,4 +1,4 @@
-﻿---
+---
 description: Configure this repository as a Parley agent - check the server is installed, write the launch configuration, and name the peers.
 disable-model-invocation: true
 ---
@@ -167,7 +167,7 @@ The key is `parley-<project>`, or the bare `parley` when the deployment names no
       "env": {
         "PARLEY_AGENT": "<the agent name>",
         "PARLEY_PROJECT": "<project>",
-        "PARLEY_OWNS": "<what this repository owns, and what it does not>",
+        "PARLEY_OWNS": "<leave this out; it is obtained by asking the agent>",
         "PARLEY_WORKSPACE": "${PARLEY_WORKSPACE:-<absolute path to this repository>}"
       }
     }
@@ -192,9 +192,14 @@ Substitute the real values. Four notes on the shape:
   4 asks for rather than a considered limit - the terminal's health view is what says where depth
   actually settles.
 - `PARLEY_AGENT` and `PARLEY_OWNS` are written plainly, with no fallback. Both are the same on
-  every machine, because they name what this repository is rather than where it lives. Omit
-  `PARLEY_OWNS` entirely if the user had no answer; an empty string means the same as absent,
-  but a placeholder left in by accident is a claim they did not make.
+  every machine, because they name what this repository is rather than where it lives. **Omit
+  `PARLEY_OWNS` rather than guessing at it.** An empty string means the same as absent, and a
+  placeholder left in by accident is a claim the user did not make -- but the reason to leave it
+  out is stronger than that now: **the line is obtained by asking the agent, and a person
+  accepting the answer is what writes it.** Press `a` on an agent in `parley terminal`, or use
+  the console's ask, and the accepted line is written into this file for them. A line invented
+  here would be a worksheet answer standing where a measured one belongs, and the record of who
+  said it would be wrong.
 - `PARLEY_WORKSPACE` is optional and only an operator ever sees it; it is how `parley registry`
   tells two similarly named agents apart. Write the absolute path, not `.` - the server
   deliberately does not default it, because a plausible and wrong workspace is worse than an

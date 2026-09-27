@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 
 namespace Parley.Core;
@@ -15,11 +15,19 @@ namespace Parley.Core;
 /// to disagree with each other about the same boundary. See SPEC.md §17, the tenth question.
 /// </para>
 /// <para>
-/// <b>It is authored by an operator, not by the agent it describes.</b> That is the whole
-/// reason it is worth reading. A field a model could write would be exactly as trustworthy as
-/// the prose it replaces, merely centralised; sourced from the launch environment, it is
-/// declared by the same person in the same file that fixes the agent's name, and no operation
-/// accepts one. An agent can no more edit its charter than its identity.
+/// <b>An agent may draft it; only a person may accept it.</b> That is the whole reason it is worth
+/// reading, and it is narrower than it was: this paragraph used to say the line was authored by an
+/// operator and never by the agent it describes. 020 amended SPEC.md §17 question 10 to permit a
+/// drafted line, because the half nobody else can supply is what an agent has decided it does
+/// <em>not</em> own — a repository can be read to find out what it contains and cannot be read to
+/// find out what it has ruled out.
+/// </para>
+/// <para>
+/// <b>What did not move is the part that makes it trustworthy.</b> No agent-facing operation writes
+/// this field, the registry is still filled from the launch environment on attach (§12.3), and
+/// which of three routes produced a line — the agent's own words, its words edited, or a line a
+/// person composed with no ask — is recorded against it. An agent can no more set its charter than
+/// its identity; it can now be asked what it should be.
 /// </para>
 /// <para>
 /// Advisory, and deliberately so. Nothing routes on it, nothing is refused because of it, and
@@ -137,18 +145,28 @@ public static class OwnershipStatement
             return false;
         }
 
+        // **Counted as it goes, so the refusal can say where.** Naming the code point alone was enough
+        // while a statement was capped at a hundred characters; the bound came off in 0.33.0 so an
+        // agent asked what it owns can answer in two halves, and "it contains U+2028" is not
+        // actionable advice about a paragraph. The position is in text elements, like the length above,
+        // so the two numbers a person reads are counted the same way.
+        var at = 0;
+
         foreach (var rune in statement.EnumerateRunes())
         {
+            at++;
+
             if (!Forbidden(Rune.GetUnicodeCategory(rune)))
             {
                 continue;
             }
 
-            error =
-                $"it contains U+{rune.Value:X4}, which is not printable text. A statement is " +
-                "one line and renders as what it says: it is put into a list of peers that " +
-                "every agent reads, and anything that can break the line, hide itself, or " +
-                "reorder what follows can imitate the entries around it.";
+            error = string.Create(
+                CultureInfo.InvariantCulture,
+                $"it contains U+{rune.Value:X4} at position {at}, which is not printable text. A " +
+                $"statement is one line and renders as what it says: it is put into a list of peers " +
+                $"that every agent reads, and anything that can break the line, hide itself, or " +
+                $"reorder what follows can imitate the entries around it.");
 
             return false;
         }

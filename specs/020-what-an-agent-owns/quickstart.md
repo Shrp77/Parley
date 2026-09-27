@@ -148,26 +148,46 @@ Enrol two more repositories. Ask all of them.
 
 ---
 
-## Step 10: the migration, on a store that has carried traffic
+## Step 10: the schema, which is no longer a migration
 
-**Not on an empty one.** 006 records that this rebuild succeeds on every empty fixture and fails on every
-store that has ever been used, and that a migration with that shape is worse than no migration at all.
+**This step was written against a migration that does not exist, and it is rewritten rather than
+deleted — what it demanded is still worth checking, but the thing it demanded it of has gone.**
+
+It asked for `012_ownership_is_asked.sql` to be walked on a store that had carried traffic, because 006
+records that rebuilding `agents` succeeds on every empty fixture and fails on every store that has ever
+been used. The owner's decision of 2026-09-26 removed the question: *"don't worry about migration. Go
+ahead and make the changes and call it schema #1. Nothing we have is worth keeping right now."*
+Migrations 002 to 011 were folded into `001_initial.sql` and deleted, so **the schema is 1 and there is
+nothing to upgrade from.**
+
+That is available exactly once and has now been used. From the first release every schema change is a
+migration again, which is what `MigrationDiscoveryTests` moving off 1 exists to notice.
 
 ```powershell
-# Build the store at schema 11 first, give it traffic, then upgrade.
+# A fresh store, because there is no earlier shape to carry forward.
 ```
 
 | Check | Expected |
 |---|---|
-| 10.1 | The store is at 11, holds an agent with a line, and holds rows in `invocations`, `exchanges` and `messages` |
-| 10.2 | The upgrade completes and `user_version` is 12 |
-| 10.3 | `PRAGMA foreign_key_check` returns **no rows** |
-| 10.4 | `PRAGMA integrity_check` returns `ok` |
-| 10.5 | Every child row is still there, and every existing `owns` value is unchanged |
-| 10.6 | All **fourteen** triggers are present afterwards, including the two on other tables |
-| 10.7 | `role` and `machine` still generate correctly from `name` |
-| 10.8 | A 400-character statement is now accepted, and every character in 8.2–8.4 is still refused |
-| 10.9 | A copy of the store was taken before it started, because this one cannot roll back |
+| 10.1 | A new store opens and `user_version` is **1** |
+| 10.2 | `PRAGMA foreign_key_check` returns **no rows** |
+| 10.3 | `PRAGMA integrity_check` returns `ok` |
+| 10.4 | All **fourteen** triggers are present, including the two on tables other than `agents` |
+| 10.5 | `role` and `machine` still generate correctly from `name` |
+| 10.6 | A 400-character statement is accepted, and every character in 8.2–8.4 is still refused |
+| 10.7 | `agent_ownership_accepted` exists, and `conversation_id` is a real foreign key — a row naming a conversation that does not exist is refused |
+
+**What cannot be checked here, and is recorded instead:** that the collapsed file matches what eleven
+migrations produced. It was verified once, object by object, against a store built the old way — 41
+shared objects with identical names and creation order — and **the comparand has been deleted**, so no
+test can hold it. `001_initial.sql` says so in its own header rather than claiming a guard that does not
+exist.
+
+**An existing store cannot be opened by this build, and that is the cost of the decision above.**
+`SchemaMigrator` refuses a store whose `user_version` is greater than the latest migration it knows, so
+a store at 11 meets *"This store is at schema 11 and this Parley only knows 1"* — advice that then tells
+somebody to upgrade Parley, which is the opposite of what happened. The data loss was accepted; the
+misleading sentence is a defect and is recorded in `REVIEW-LEDGER.md`.
 
 ---
 
