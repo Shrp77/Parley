@@ -1,6 +1,7 @@
 # Feature Specification: a menu bar in the terminal
 
-**Status**: captured, not started. **Starts after 019's review gate is met.**
+**Status**: **built** on 2026-09-27 — D1, D2 and D3, with the three open questions settled below.
+The review gate is one gate over 019, 020 and 021 together, run on the owner's all-clear.
 **Created**: 2026-09-25
 **Owner's decisions**: taken 2026-09-25, recorded below with the reasoning.
 
@@ -101,18 +102,57 @@ be empty or padded with things that do not belong under them.
 - The narrow-terminal rule: the status line's ladder must still name the way back and `?` at every
   width.
 
-## Open questions
+## Open questions, settled while building
 
-1. **Availability.** Conditional actions are absent today — `Withdraw` or `Reinstate`, never both;
-   Join or Leave. A menu bar conventionally shows them disabled. Greyed is friendlier and needs each
-   action to carry an availability predicate *and* a reason, or it is a dead item with no
-   explanation. Not decided.
-2. **Accelerators.** `r` is remove-project and withdraw-agent; `l` is files and leave-seat.
-   Unambiguous scoped to focus, which D2 preserves — but a menu conventionally shows the key beside
-   the label, and two menus showing `r` for different things is worth a look before it ships.
-3. **Mouse.** A menu bar invites clicking. This surface has a recorded history of mouse reporting
-   being left switched on; `ConsoleRestore` handles the process dying, but nothing has deliberately
-   *used* the mouse here yet.
+Each was decided from precedent in this repository rather than from taste, and each is recorded so it
+can be overruled on evidence.
+
+1. **Availability — the action is shown, with the reason, and never hidden.** A menu bar conventionally
+   greys what cannot be taken; this surface has something stronger to go on. **0.28.2 records the owner
+   unable to find how to start a conversation because the action was hidden until a seat was held, and
+   reaching for Instruct instead** — which is not a message and never becomes one. An action nobody can
+   find is indistinguishable from one that does not exist. So 020's ask is offered with no seat and says
+   what is missing when it is pressed, and that is the pattern: offer it, and let the refusal explain.
+   No availability predicate was added, because nothing yet needs one that a worded refusal does not do
+   better.
+
+2. **Accelerators — the key is shown beside the label, and it is unambiguous because of D2.** `r` is
+   remove-project and withdraw-agent; `l` is files and leave-seat. Scoping the bar to the focused region
+   means the two are never on screen together, so the ambiguity the question feared cannot be rendered. A
+   menu that hid the key would teach somebody to reach for the mouse for something one keystroke does.
+
+3. **Mouse — left to the toolkit, deliberately and with the record checked.** The menus are
+   `Prompting.Choose` dialogs, which the toolkit already makes clickable, so nothing here enables mouse
+   reporting that was not enabled before. The recorded hazard is reporting left switched **on** after the
+   process dies, and `ConsoleRestore` handles that by reading the modes out of Terminal.Gui's own
+   assembly rather than keeping a list — so it covers whatever a dialog turns on without being told.
+
+## What was built, and what it cost
+
+**The bar is reached with Alt and a category's first letter**, not a bare letter. A focused view is
+offered a key before the surface's own handler is — 0.30.4's correction — so opening the Conversation
+menu had to work while somebody is typing into the composer, where `c` is a `c`.
+
+**A menu is a `Prompting.Choose` dialog rather than the toolkit's `MenuBarv2`.** It inherits what was
+paid for once: a description that sizes itself (0.18.10), a list that scrolls (0.25.1), labels that
+survive an underscore (0.25.2), and a session a test can drive. A second dialog written for menus would
+have inherited none of it.
+
+**`Category` is nullable rather than defaulted**, so an unclassified action is a build failure rather
+than a menu quietly growing an `Other` heading nobody meant. The region supplies the default and the
+handful the table files elsewhere say so themselves — Health, the log and the web UI belong to the
+deployment however they are reached.
+
+**`DeadSurfaceTests` found that `ActionCategory.Help` existed and nothing used it**, which was a real
+gap and not a tidy-up: the category had been built and the actions the table puts under it had not.
+*Keys* and *About* exist now, and About names this tool's build and protocol rather than the broker's,
+because they install separately.
+
+**The bar's row broke a promise, and an existing test caught it.** `Show()` computed the message line's
+room as `height - 1 - LeastRegionRows`, counting the status line and not the new row on top — so on a
+short terminal the message grew into the six rows the regions are guaranteed. The floor is what is
+protected; whichever chrome is added comes out of the message's room. Fixed at the arithmetic, not by
+loosening the test.
 
 ## Not in scope
 

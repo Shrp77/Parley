@@ -70,6 +70,11 @@ public sealed class EveryKeyIsOfferedTests
             offered.Add(shell.Status);
             offered.Add(shell.BackLabel ?? string.Empty);
             offered.AddRange(shell.Actions().Select(action => $"{action.Key}: {action.Label}"));
+
+            // **The third source, added with 021's menu bar.** What the keys are and which build this
+            // is belong to no region, so they are not in `Actions()` -- and a guard that read only the
+            // region's would stop covering them the moment they existed.
+            offered.AddRange(shell.Global().Select(action => $"{action.Stroke}: {action.Label}"));
             offered.Add(Shell.QuitLabel);
         }
 

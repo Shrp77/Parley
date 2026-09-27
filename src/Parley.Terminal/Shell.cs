@@ -89,6 +89,14 @@ internal sealed class Shell : Window
     /// </remarks>
     internal const string BackStroke = "Esc";
 
+    /// <summary>How many rows the menu bar takes, which is one and always.</summary>
+    /// <remarks>
+    /// Named rather than written as <c>1</c> at five sites, because the five have to agree: the panes
+    /// start below it and their heights are computed from what is left. A literal in four of five places
+    /// is how a row comes to be counted twice or not at all.
+    /// </remarks>
+    internal const int BarRows = 1;
+
     /// <summary>The most rows the message line may take.</summary>
     /// <remarks>
     /// A paragraph, which is what <see cref="FormDialog.Deepest"/> settles on for the same
@@ -506,6 +514,17 @@ internal sealed class Shell : Window
     private readonly BrokerDirectory _directory;
     private readonly Plain _status = new() { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
 
+    /// <summary>The menu bar, on the top row, always visible.</summary>
+    /// <remarks>
+    /// <b>021's D3, and it costs a row permanently.</b> The owner chose that over a popover summoned with
+    /// Alt, which costs none, on discoverability: the menus can be seen to exist without knowing to press
+    /// anything, which is the whole complaint -- every action was behind <c>?</c> and <c>?</c> was behind
+    /// knowing about <c>?</c>. The row joins <see cref="HeightsLocked"/>'s arithmetic rather than being
+    /// subtracted somewhere new, because this surface has been bitten three times by a row that came and
+    /// went and resized every region under it.
+    /// </remarks>
+    private readonly Plain _bar = new() { X = 0, Y = 0, Width = Dim.Fill(), Height = 1 };
+
     /// <summary>
     /// Where every outcome this surface reports is written.
     /// </summary>
@@ -737,6 +756,11 @@ internal sealed class Shell : Window
 
         // Every region joins the tree here and none ever leaves it. ArrangeLocked carries why:
         // reparenting on a change of view races the main loop's own walk of this list.
+        // Painted like the status line, because it is the same kind of thing: furniture that has to be
+        // found without being looked for. The two together bracket the screen.
+        _bar.SetScheme(Colours.StatusBar());
+
+        Add(_bar);
         Add(_message);
         Add(_status);
         Add(Projects);
@@ -994,7 +1018,7 @@ internal sealed class Shell : Window
             var only = panes[0];
 
             only.X = 0;
-            only.Y = 0;
+            only.Y = BarRows;
             only.Width = Dim.Fill();
             only.Height = Dim.Fill(1 + _messageRows);
         }
@@ -1010,7 +1034,7 @@ internal sealed class Shell : Window
             foreach (var pane in panes)
             {
                 pane.X = 0;
-                pane.Y = 0;
+                pane.Y = BarRows;
                 pane.Width = Dim.Fill();
                 pane.Height = Dim.Fill(1 + _messageRows);
             }
@@ -1026,13 +1050,13 @@ internal sealed class Shell : Window
             // whatever a peer wrote and wants every column it can have. A share would widen the one that
             // does not need it in step with the one that does.
             panes[0].X = 0;
-            panes[0].Y = 0;
+            panes[0].Y = BarRows;
             panes[0].Width = _place.Viewing == Viewing.Conversation
                 ? Dim.Absolute(Narrow)
                 : Dim.Percent(40);
 
             panes[1].X = Pos.Right(panes[0]);
-            panes[1].Y = 0;
+            panes[1].Y = BarRows;
             panes[1].Width = Dim.Fill();
 
             // **The third pane is the line, under the transcript rather than beside it.** A conversation is a
@@ -1074,16 +1098,18 @@ internal sealed class Shell : Window
         var panes = Panes;
         var below = 1 + _messageRows;
 
+        // The bar is above rather than below, so it is taken off the height and not added to `below`.
+        var usable = (Viewport.Height > 0 ? Viewport.Height : 24) - BarRows;
+
         if (panes.Count > 2 && !_stacked)
         {
             // **What the box asks for, until the transcript is down to its floor.** It was a constant twelve,
             // which is a ceiling on the message rather than a floor under the conversation -- and the box is
             // where an eight-thousand-character request is written.
-            var height = Viewport.Height > 0 ? Viewport.Height : 24;
             var rows = Math.Clamp(
                 Line.Rows,
                 LineRegion.LeastRows,
-                Math.Max(LineRegion.LeastRows, height - below - LineRegion.TranscriptFloor));
+                Math.Max(LineRegion.LeastRows, usable - below - LineRegion.TranscriptFloor));
 
             panes[0].Height = Dim.Fill(below);
             panes[1].Height = Dim.Fill(below + rows);
@@ -1153,6 +1179,8 @@ internal sealed class Shell : Window
     {
         var panes = Panes;
         var region = panes[FocusedRegion];
+
+        _bar.Text = BarText();
 
         // Stacked, the line says which of how many as well as which. A person who has pulled their
         // window in can otherwise see no evidence that the surface has four regions at all, which
@@ -1270,8 +1298,14 @@ internal sealed class Shell : Window
     /// </remarks>
     internal IReadOnlyList<RegionAction> Messaging() =>
     [
-        .. SaidMore ? new[] { new RegionAction(WholeKey, WholeTitle, Whole) } : [],
-        .. Said.Length > 0 ? new[] { new RegionAction(ClearKey, ClearTitle, Clear) } : [],
+        // **The view's, because the message line is the surface's own rows.** Neither of these
+        // touches the deployment: one shows what was said in full and the other gives the rows back.
+        .. SaidMore
+            ? new[] { new RegionAction(WholeKey, WholeTitle, Whole, Category: ActionCategory.View) }
+            : [],
+        .. Said.Length > 0
+            ? new[] { new RegionAction(ClearKey, ClearTitle, Clear, Category: ActionCategory.View) }
+            : [],
     ];
 
     /// <summary>The first of several status lines that fits, or the shortest when none does.</summary>
@@ -1433,7 +1467,163 @@ internal sealed class Shell : Window
     /// projects region. That is User Story 2's rule, and having the region answer for its own
     /// actions is what keeps the status line and the keys from drifting apart.
     /// </remarks>
-    internal IReadOnlyList<RegionAction> Actions() => Panes[FocusedRegion] switch
+    internal IReadOnlyList<RegionAction> Actions() =>
+        [.. Offered().Select(action => action with { Category = action.Category ?? Belongs() })];
+
+    /// <summary>What the menu bar says, across the top row.</summary>
+    /// <returns>The categories that have anything under them, with the key that opens each.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Alt and the category's first letter</b>, which is what a menu bar does everywhere else — and
+    /// it is free here, because every ordinary letter on this surface already belongs to an action or to
+    /// the text somebody is typing. A bar that bound bare letters would take them from the regions.
+    /// </para>
+    /// <para>
+    /// <b>What is on it is the focused region's, plus what belongs to no region</b> (D2). It therefore
+    /// changes as Tab moves, which is the point rather than a flicker: a menu offering <i>Withdraw…</i>
+    /// while the projects pane has focus would have no agent to act on.
+    /// </para>
+    /// </remarks>
+    internal string BarText() =>
+        string.Join(
+            "   ",
+            MenuRow.Menus(Bar()).Select(menu => $"Alt+{char.ToUpperInvariant(menu.Title[0])} {menu.Title}"));
+
+    /// <summary>Everything the bar reads: this region's actions, the message line's, and the global.</summary>
+    /// <returns>The actions, in no particular order — <c>MenuRow</c> decides the order.</returns>
+    /// <remarks>
+    /// One list assembled in one place, so the bar and the keys that open its menus cannot disagree
+    /// about what is on it. The three sources are the three that exist; a fourth would be added here.
+    /// </remarks>
+    private IReadOnlyList<RegionAction> Bar() => [.. Actions(), .. Messaging(), .. Global()];
+
+    /// <summary>Opens the bar's menu for a category, if the bar is showing one.</summary>
+    /// <param name="initial">The letter Alt was pressed with.</param>
+    /// <returns><see langword="true"/> when a menu opened.</returns>
+    /// <remarks>
+    /// <b>Built from <see cref="MenuRow"/> and run through <see cref="Prompting.Choose"/></b>, which is
+    /// the dialog every door on this surface already uses — so the menu inherits the things that were
+    /// paid for once: it sizes its own description, it scrolls, its label survives an underscore, and a
+    /// test can drive it. A second dialog written for menus would inherit none of them.
+    /// </remarks>
+    private bool OpenMenu(char initial)
+    {
+        if (App is not { } app)
+        {
+            return false;
+        }
+
+        var menus = MenuRow.Menus(Bar());
+
+        var chosen = menus.FirstOrDefault(
+            menu => char.ToUpperInvariant(menu.Title[0]) == char.ToUpperInvariant(initial));
+
+        if (chosen.Items is null)
+        {
+            return false;
+        }
+
+        // The separators are not offered: a rule is a line and never something to choose.
+        var items = chosen.Items.Where(item => !item.Divides).ToList();
+
+        var menu = Prompting.Choose(
+            chosen.Title,
+            $"{NameOf(Panes[FocusedRegion])} · {VersionLabel}",
+            [.. items.Select(item => $"{item.Stroke}: {item.Label}")]);
+
+        var open = Prompting.Open(app, menu);
+
+        menu.Done += (_, picked) =>
+        {
+            Prompting.Close(app, open);
+
+            var at = items.FindIndex(item => $"{item.Stroke}: {item.Label}" == picked);
+
+            if (at >= 0)
+            {
+                _ = items[at].Action!.Run();
+            }
+        };
+
+        return true;
+    }
+
+    /// <summary>What can be done wherever the cursor is, rather than to what it is on.</summary>
+    /// <returns>The actions no region owns.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A third source beside <see cref="Actions"/> and <see cref="Messaging"/>, and the reason is
+    /// D2.</b> The bar is scoped to the focused region because an action belongs to the region showing
+    /// the thing it acts on — but what the keys are, and which build this is, are about neither a
+    /// region nor a selection. Scoping them would put Help under six different menus or under none.
+    /// </para>
+    /// <para>
+    /// Both are already reachable: <c>?</c> opens the actions and the build is on the status line and
+    /// the menu's own title. What this adds is that they are <em>named</em> where somebody looking for
+    /// them would look, which is the whole complaint 021 exists to answer — the actions were
+    /// discoverable only to somebody who already knew to press <c>?</c>.
+    /// </para>
+    /// </remarks>
+    internal IReadOnlyList<RegionAction> Global() =>
+    [
+        // **Back and quit, because the owner's table puts them on the bar** — back under View and quit
+        // under Deployment. Both were already on the status line and in the `?` menu, and both are here
+        // for the reason the bar exists: 0.18.4 records Escape being the only way out of a project view
+        // for a whole release while nothing on the screen named it.
+        //
+        // They are not dispatched from `Global()`: Escape and the quit chord are answered further up,
+        // where they were before. What this adds is that they are *named* in a second place, and running
+        // them through the same delegates is what keeps the two from drifting.
+        .. _place.CanGoBack
+            ? new[]
+            {
+                new RegionAction(
+                    default,
+                    BackLabel ?? BackStroke,
+                    BackAsync,
+                    Category: ActionCategory.View,
+                    Chord: Key.Esc,
+                    Order: 1),
+            }
+            : Array.Empty<RegionAction>(),
+
+        new RegionAction(
+            ActionsKey, KeysTitle, Offer, Category: ActionCategory.Help, Order: 1),
+
+        new RegionAction(
+            default, AboutTitle, About, Category: ActionCategory.Help, Chord: Key.F1, Order: 2),
+    ];
+
+    /// <summary>What the focused region's actions are about, unless one says otherwise.</summary>
+    /// <returns>The category.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The region supplies the default and an action may override it.</b> 021's D1 says an action
+    /// carries metadata guiding the UI, and this is how the metadata gets there: the region a thing is
+    /// acted on from is nearly always what the thing is about, so stating it forty-five times would be
+    /// forty-five chances to state it inconsistently. What is left is the handful the owner's own table
+    /// files elsewhere — Health and the web UI belong to the deployment however they are reached — and
+    /// those say so at the point they are built.
+    /// </para>
+    /// <para>
+    /// The action still carries it once built, which is what the menu, the status line and the
+    /// <c>?</c> dialog read. None of them asks a region anything.
+    /// </para>
+    /// </remarks>
+    private ActionCategory Belongs() => Panes[FocusedRegion] switch
+    {
+        ProjectsRegion => ActionCategory.Project,
+        AgentsRegion => ActionCategory.Agent,
+        ConversationsRegion => ActionCategory.Conversation,
+        TranscriptRegion => ActionCategory.Conversation,
+        RoomRegion => ActionCategory.Conversation,
+        LineRegion => ActionCategory.Conversation,
+        _ => ActionCategory.View,
+    };
+
+    /// <summary>What the focused region offers, before a category is settled on any of it.</summary>
+    /// <returns>The actions, in the order the status line lists them.</returns>
+    private IReadOnlyList<RegionAction> Offered() => Panes[FocusedRegion] switch
     {
         // Naming the running deployment is offered only while there is one nothing names yet.
         // Offered always, it would invite somebody to name the same broker twice, which is two
@@ -1451,12 +1641,17 @@ internal sealed class Shell : Window
             // pointed a named project at an empty database.
 
             new RegionAction('r', Removing.Title, Remove),
-            new RegionAction('y', HealthTitle, ShowHealth),
+
+            // **Three of these belong to the deployment however they are reached**, which is the
+            // owner's own table: health is read across every project, the log is the broker's, and the
+            // web UI is another way into the whole thing. They are offered from this region because
+            // this is where somebody is standing, and that is not the same as what they are about.
+            new RegionAction('y', HealthTitle, ShowHealth, Category: ActionCategory.Deployment),
             new RegionAction('l', Files.ProjectTitle, ShowFiles),
             new RegionAction('p', Pruning.Title, PruneSelected),
-            new RegionAction('g', FollowLogTitle, FollowLog),
+            new RegionAction('g', FollowLogTitle, FollowLog, Category: ActionCategory.Deployment),
             new RegionAction('e', Onboarding.Title, Enrol),
-            new RegionAction('b', OpenConsoleTitle, OpenConsole),
+            new RegionAction('b', OpenConsoleTitle, OpenConsole, Category: ActionCategory.Deployment),
         ],
 
         AgentsRegion =>
@@ -1615,8 +1810,9 @@ internal sealed class Shell : Window
                 }
                 : Array.Empty<RegionAction>(),
 
-            new RegionAction('y', HealthTitle, ShowHealth),
-            new RegionAction('b', OpenConsoleTitle, OpenConsole),
+            // The deployment's, as on the projects region and for the same reason.
+            new RegionAction('y', HealthTitle, ShowHealth, Category: ActionCategory.Deployment),
+            new RegionAction('b', OpenConsoleTitle, OpenConsole, Category: ActionCategory.Deployment),
         ],
 
         // Taking part needs a seat, because every one of these speaks as somebody. Without one the
@@ -1641,8 +1837,15 @@ internal sealed class Shell : Window
             .. Transcript.Open is not null
                 ? new[]
                 {
-                    new RegionAction(CopyKey, CopyTitle, Copy),
-                    new RegionAction(FoldKey, Transcript.Folded ? UnfoldTitle : FoldTitle, Fold),
+                    // **What is on the screen rather than what is in the deployment.** Copying a
+                    // transcript and folding one change nothing anybody else can see, which is the
+                    // line the View category draws.
+                    new RegionAction(CopyKey, CopyTitle, Copy, Category: ActionCategory.View),
+                    new RegionAction(
+                        FoldKey,
+                        Transcript.Folded ? UnfoldTitle : FoldTitle,
+                        Fold,
+                        Category: ActionCategory.View),
                 }
                 : Array.Empty<RegionAction>(),
 
@@ -1655,7 +1858,13 @@ internal sealed class Shell : Window
             // Needs no seat. Accepting is an operator operation and reading the transcript is how
             // somebody decides to, which is the same reasoning that ungated copying.
             .. OwnershipAsk.Recognises(Transcript.Open)
-                ? new[] { new RegionAction('n', Ownership.AcceptTitle, AcceptProposed) }
+                ? new[]
+                {
+                    // **The agent's**, though it is reached from a transcript: what it decides is what
+                    // one agent's peers will read, and the conversation is only where it was agreed.
+                    new RegionAction(
+                        'n', Ownership.AcceptTitle, AcceptProposed, Category: ActionCategory.Agent),
+                }
                 : Array.Empty<RegionAction>(),
         ],
 
@@ -2028,6 +2237,54 @@ internal sealed class Shell : Window
     /// </remarks>
     internal static string VersionLabel { get; } = $"parley-terminal {BuildIdentity.Version}";
 
+    /// <summary>What the menu calls the list of everything the focused region can do.</summary>
+    internal const string KeysTitle = "Keys: what this region can do";
+
+    /// <summary>What the menu calls the build.</summary>
+    internal const string AboutTitle = "About this build";
+
+    /// <summary>Says which build this is and which protocol it speaks.</summary>
+    /// <returns>When the dialog is open.</returns>
+    /// <remarks>
+    /// <b>The tool's own build and never the broker's.</b> `parley-terminal` is installed apart from
+    /// the broker, so naming the broker's version here would be this program reporting somebody else's
+    /// — which 0.28.1 records both surfaces being corrected for. The protocol is the one this build
+    /// speaks; whether the broker agrees is what an attach settles, and it says so if it does not.
+    /// </remarks>
+    private Task About()
+    {
+        if (App is not { } app)
+        {
+            return Task.CompletedTask;
+        }
+
+        var saying = Prompting.Choose(
+            AboutTitle,
+            $"""
+             {VersionLabel}
+
+             Protocol {ProtocolVersion.Current}, spoken by this tool. A broker that speaks another
+             refuses an attach and names both, rather than half-working.
+
+             The broker and the web UI are installed separately and may be other versions.
+             """,
+            [CloseLabel]);
+
+        var open = Prompting.Open(app, saying);
+
+        saying.Done += (_, _) => Prompting.Close(app, open);
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>The one answer a dialog that only tells somebody something needs.</summary>
+    /// <remarks>
+    /// Private, because <see cref="About"/> is the only dialog here that tells rather than asks, and
+    /// <c>DeadSurfaceTests</c> is right to say that <c>internal</c> claims somebody else needs it. If a
+    /// second such dialog appears this moves rather than being widened on the guess that one will.
+    /// </remarks>
+    private const string CloseLabel = "Close";
+
     /// <summary>Where the web console listens when a broker hosts it.</summary>
     /// <remarks>
     /// <b>The one source of the number, not a second copy of it.</b> This was a literal
@@ -2129,7 +2386,12 @@ internal sealed class Shell : Window
     {
         var width = Viewport.Width > 0 ? Viewport.Width : Threshold;
         var height = Viewport.Height > 0 ? Viewport.Height : 24;
-        var room = Math.Clamp(height - 1 - LeastRegionRows, 1, MessageDeepest);
+        // **The bar's row is subtracted here as well, and leaving it out was a real regression.** This
+        // read `height - 1 - LeastRegionRows`, counting the status line and not the row 021 put on top —
+        // so on a short terminal the message line grew into the floor the regions are promised, and
+        // `On_a_short_terminal_the_regions_keep_their_floor` caught it. The floor is the thing being
+        // protected; whichever chrome is added, it comes out of the message's room and not out of that.
+        var room = Math.Clamp(height - BarRows - 1 - LeastRegionRows, 1, MessageDeepest);
 
         IReadOnlyList<string> pieces = _said.Length == 0
             ? [string.Empty]
@@ -3419,6 +3681,14 @@ internal sealed class Shell : Window
             return true;
         }
 
+        // **Before the regions, because Alt is nobody's letter.** A focused box wins every printable
+        // key -- 0.30.4's lesson -- and that is exactly why the bar is reached with a modifier: opening
+        // the Conversation menu must work while somebody is typing into the composer, where `c` is a `c`.
+        if (key.IsAlt && !key.IsCtrl && key.AsRune.Value is > 0 and < 128 && OpenMenu((char)key.AsRune.Value))
+        {
+            return true;
+        }
+
         foreach (var action in Actions())
         {
             if (action.Answers(key))
@@ -3433,6 +3703,21 @@ internal sealed class Shell : Window
         // screen, and a global key that shadowed a region's would take an action away from
         // wherever it was added later — silently, and only on the screens that had it.
         foreach (var action in Messaging())
+        {
+            if (action.Answers(key))
+            {
+                _ = action.Run();
+
+                return true;
+            }
+        }
+
+        // **Last of the three, and dispatched here because otherwise it would be offered and not
+        // taken.** `Global()` reaches the menu bar, so its keys are named on screen — and a key this
+        // surface names and then ignores is the inverse of the defect the rule above guards, and the
+        // worse half: an action nothing offers can still be found, while a key that does nothing
+        // teaches somebody the surface is broken.
+        foreach (var action in Global())
         {
             if (action.Answers(key))
             {
@@ -4697,6 +4982,17 @@ internal sealed class Shell : Window
 /// <param name="Costs">
 /// What taking it costs whoever it reaches, or null when it costs nobody anything.
 /// </param>
+/// <param name="Category">
+/// What this action is about, or <see langword="null"/> when nobody has said. Null rather than a
+/// default, because filing an action under a category somebody did not choose would be the surface
+/// inventing a fact — the bar shows an unclassified action under <c>Other</c>, visibly, and a test
+/// fails the build when anything lands there.
+/// </param>
+/// <param name="Group">
+/// The run of related actions this belongs to, or <see langword="null"/> for none. A record rather than
+/// a name so that a run's position is a property of the run: see <see cref="ActionGroup"/>.
+/// </param>
+/// <param name="Order">Where it sits inside its run.</param>
 /// <remarks>
 /// <para>
 /// A record rather than a method per action so that the status line and the key handler read the
@@ -4724,10 +5020,20 @@ internal sealed record RegionAction(
     string Label,
     Func<Task> Run,
     string? Costs = null,
-    Key? Chord = null)
+    Key? Chord = null,
+    ActionCategory? Category = null,
+    ActionGroup? Group = null,
+    int Order = 0)
 {
     /// <summary>How this action's key is written, wherever it is offered.</summary>
     public string Stroke => Chord?.ToString() ?? Key.ToString();
+
+    /// <summary>The run this action falls in, named or not.</summary>
+    /// <remarks>
+    /// Defaulted here rather than at every call site, so a caller states a group only when it has one
+    /// to state. <see cref="ActionGroup.Ungrouped"/> sorts last for the reason given on it.
+    /// </remarks>
+    public ActionGroup Grouping => Group ?? ActionGroup.Ungrouped;
 
     /// <summary>Whether a keystroke takes this action.</summary>
     /// <param name="key">What arrived.</param>

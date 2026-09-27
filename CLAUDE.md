@@ -1086,7 +1086,49 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   to remember to clear. The file is written before the record, because a file with no record is repaired by a
   later ask while a record with no file claims a person accepted a line peers will never read.
 
-  `specs/021-terminal-menu-bar/` is captured with the owner's four decisions and starts after this.
+  `specs/021-terminal-menu-bar/` is **built, and ships as 0.34.0** — a minor because that is what each feature
+  on this branch has taken (019 was 0.32.0, 020 is 0.33.0), and nothing here is breaking. Every action was
+  behind `?`, and `?` was behind knowing about `?`; there is a bar on the top row now, always visible.
+
+  **The action carries metadata and does not carry the UI**, which is the owner's D1 in their own words.
+  `RegionAction` gained `Category`, `Group` and `Order`, and `MenuRow` turns those into menus — sorted by
+  `(Group.Order, Order)`, a separator wherever the group changes. The status line, the `?` dialog and the bar
+  are three readings of one list. **`ActionGroup` is a record rather than a string** so a run's position is a
+  property of the run; a bare string would have every action repeating it, and two in one run would disagree
+  the first time one was edited.
+
+  **`Category` is nullable rather than defaulted, and that is the load-bearing choice.** An unclassified
+  action must still reach the screen, but filing one under a category nobody chose would be the bar inventing
+  a fact — so it goes visibly under `Other` and a test fails the build when anything lands there. **The region
+  supplies the default**, because stating it at forty-five sites is forty-five chances to disagree; what states
+  its own is the handful the owner's table files elsewhere — health, the log and the web UI are the
+  deployment's however they are reached.
+
+  **Alt and a category's first letter opens a menu, and a menu is a `Prompting.Choose` dialog.** Alt because a
+  focused view is offered a key before the surface's own handler is (0.30.4), so the Conversation menu had to
+  open while somebody is typing into the composer where `c` is a `c`. The dialog rather than the toolkit's own
+  menu bar because it inherits what was paid for once: a description that sizes itself, a list that scrolls,
+  labels that survive an underscore, and a session a test can drive.
+
+  **Three findings, two of them defects rather than tidy-ups.** `DeadSurfaceTests` reported that
+  `ActionCategory.Help` existed and nothing used it — the category was built and the actions the table puts
+  under it were not, so *Keys* and *About* exist now, About naming **this tool's** build rather than the
+  broker's. Giving About an F1 chord **would have advertised a key nothing dispatched**, because `Global()` was
+  not in the key handler: a key the surface names and then ignores is worse than an action nothing offers, since
+  one can still be found and the other teaches somebody the surface is broken. And **the bar's row broke the
+  regions' floor** — `Show()` computed the message line's room as `height - 1 - LeastRegionRows`, counting the
+  status line and not the new row, so on a short terminal the message grew into the six rows the regions are
+  promised. Caught by a test that already existed, fixed at the arithmetic, and `BarRows` is a named constant
+  because five sites have to agree about one row.
+
+  **One of my own tests was the mirror of a probe that cannot fail: one that could only ever fail.** It moved
+  focus on the projects view, which has exactly one pane, so `Focus(1)` moved nothing and the bar was rightly
+  identical. It drives into the project view now, which has two.
+
+  The spec's three open questions are settled in it from precedent rather than taste: availability shows the
+  action with its reason rather than greying it — 0.28.2 records a hidden action being why the owner reached for
+  Instruct — accelerators are shown because D2 makes them unambiguous, and the mouse is the toolkit's, with
+  `ConsoleRestore` already reading the modes out of its assembly rather than keeping a list.
 
 - **The review gate found seven defects in its first six probes, two of them high** — fixed
   at **0.31.2**, **0.31.3** and **0.31.4**, and the
