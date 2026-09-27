@@ -253,7 +253,25 @@ it.
 - [X] T107 Confirm `install.ps1` and `install.sh` still work end to end: `project list` including the readiness poll, `open`, `autostart install`, `autostart remove`, `<tool> --version` (FR-050)
 - [X] T108 Update `CLAUDE.md`'s current-plan entry to 019, naming 0.32.0 and what building it found
 - [X] T109 Walk `quickstart.md` against tools packed into a scratch path, with the live deployment left alone, and record every check in `REVIEW-LEDGER.md`
-- [ ] T110 Run the review gate: three consecutive clean runs per lens, each probing something the previous runs did not, logged in `REVIEW-LEDGER.md` — **including the clean runs**
+- [~] T110 Run the review gate: three consecutive clean runs per lens, each probing something the previous runs did not, logged in `REVIEW-LEDGER.md` — **including the clean runs**
+
+  > **DEFERRED TO ONE COMBINED GATE, on the owner's decision of 2026-09-26**: *"I'm never going to run
+  > the review gate on 019 because we're rolling all the changes together. The review gate will be 019,
+  > 20 and 21. The sum of all these actions."*
+  >
+  > So this task is **not** 019's any more and must not be run or ticked here. The gate runs once, over
+  > 019 + 020 + 021 together, as the last thing before anything merges. It is tracked as 020's T064 and
+  > 021's final task; whichever of the three finishes last owns it.
+  >
+  > **What that changes about the gate itself, and it is not nothing.** CLAUDE.md's rule is that the
+  > lenses run *after the last edit* — which is exactly why this is the right call rather than a
+  > deferral: three features on one branch means an early gate would have been three gates, two of them
+  > invalidated by the next feature's commits. 015's precedent is the cost of getting that wrong, where
+  > post-gate installer changes cost nine more defects in the confirming runs.
+  >
+  > **What it costs**: the surface under review is now three features wide, so each lens has more ground
+  > to cover per run and a finding anywhere resets that lens across all three. Nine clean runs is still
+  > the floor, not the expectation.
 - [X] T111 Hygiene: scan the **added lines of the branch's own diff** for the originating project's names, not the files, and include untracked files, which `git grep` cannot see
 
 ---

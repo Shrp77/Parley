@@ -194,6 +194,15 @@ Read these before starting. Each fails the build rather than being a convention 
 - [ ] T063 Ask **this repository's own agent** what it owns, through the built feature, and record the answer in SPEC.md §17 question 10. It is the one measurement the walk cannot make and the whole of the feature's value; CLAUDE.md's *Surveying the peers* is the precedent for the person running it and this agent doing the asking
 - [ ] T064 **Run the review gate** — three consecutive clean runs per lens, each probing something the previous runs did not, logged in `REVIEW-LEDGER.md` **including the clean runs**. Not before the last edit: this file has been caught three separate times reviewing while authoring
 
+  > **THIS IS THE ONE GATE FOR ALL THREE FEATURES, on the owner's decision of 2026-09-26**:
+  > *"The review gate will be 019, 20 and 21. The sum of all these actions."* 019's T110 is
+  > deferred into this one and must not be run separately.
+  >
+  > It runs after the last edit of the last of the three, which is what makes it right rather than
+  > merely later: three features on one branch would otherwise mean three gates, two of them
+  > invalidated by the next feature's commits. The surface is three features wide, so a finding
+  > anywhere resets that lens across all of it.
+
 ---
 
 ## Dependencies

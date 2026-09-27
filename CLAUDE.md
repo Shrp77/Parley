@@ -691,8 +691,19 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   An endpoint edited into `project.json` by hand still works, because §16 permits a private network the
   operator controls. It is now **warned about on every broker start**, in the log, naming what reaching it
   grants — `ServeCommand.OnlyThisMachine`. Warned rather than refused: refusing would break the arrangement
-  the protocol explicitly allows. Still owed: the enrolment collapse (US3), the sixteen command removals (US5), the
-  `quickstart.md` walk, and **the review gate, which has not started**.
+  the protocol explicitly allows. Everything 019 owed is now built and its `quickstart.md` is walked.
+
+  **019's review gate was never run, and will not be: there is one gate for 019, 020 and 021 together.** The
+  owner's decision of 2026-09-26 — *"I'm never going to run the review gate on 019 because we're rolling all
+  the changes together. The review gate will be 019, 20 and 21. The sum of all these actions."* It is tracked
+  as 020's T064; 019's T110 is deferred into it and must not be run or ticked separately.
+
+  **That is the correct reading of this file's own rule rather than a deferral of it.** The lenses run *after
+  the last edit*, and three features on one branch means an early gate would have been three gates with two of
+  them invalidated by the next feature's commits — which is 015's recorded cost from the other side, where
+  post-gate installer changes cost nine more defects in the confirming runs. **What it costs is that the
+  surface under review is three features wide**, so each lens covers more ground per run and a finding
+  anywhere resets that lens across all of it. Nine clean runs remains the floor, not the expectation.
   `tasks.md` orders them by what blocks what rather than by requirement number: the MVP is phases 1–3, an
   operator brings up a deployment by typing one name, with none of the removals, the migration or the
   enrolment work. Three of its tasks exist because the plan found traps rather than because a requirement
