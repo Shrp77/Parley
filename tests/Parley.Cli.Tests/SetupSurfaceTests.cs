@@ -79,8 +79,18 @@ public sealed class SetupSurfaceTests
                 // spellings drifts, and the half that drifts is the half nobody is reading at the
                 // time.
                 "EnrolmentConsent",
+
                 "InstalledEntry",
                 "InterruptedEnrolment",
+
+                // **The only thing that makes an accepted ownership line reach anybody.** The
+                // registry's `owns` is filled from the launch environment on attach and no operation
+                // writes it, so `record_ownership` stores a decision and this puts it where the
+                // decision takes effect. Public because both surfaces call it: 020 made accepting a
+                // line something the terminal and the web UI both do, which is the owner's reversal
+                // of the one-writer rule — and the rule that replaces it, that no surface writes for
+                // an agent whose machine is not this one, is `NotHere` here rather than twice.
+                "OwnershipLine",
                 "ProjectCommand",
                 "ProjectFields",
                 "ProjectResolution",

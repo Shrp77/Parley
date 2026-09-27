@@ -1,5 +1,6 @@
 using Parley.Client;
 using Parley.Core;
+using Parley.Setup;
 using Terminal.Gui.App;
 
 namespace Parley.Terminal;
@@ -38,6 +39,8 @@ internal static class Ownership
     /// <param name="app">The application the dialogs open in.</param>
     /// <param name="client">The operator's client for this project.</param>
     /// <param name="agent">Whose line it is.</param>
+    /// <param name="workspace">The repository holding it, as the registry records it.</param>
+    /// <param name="project">The project whose launch entry carries the line.</param>
     /// <param name="queue">Runs the operation, so the caller can wait for it.</param>
     /// <param name="done">Told what to say when it is over.</param>
     /// <returns>When the first dialog is open.</returns>
@@ -45,6 +48,8 @@ internal static class Ownership
         IApplication app,
         BrokerClient client,
         AgentName agent,
+        string? workspace,
+        string? project,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done)
     {
@@ -52,6 +57,16 @@ internal static class Ownership
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(done);
+
+        // **Refused before the form opens, not after it is filled in.** 0.25.2 records what the other
+        // order costs: a rule met after the form closed took somebody's words with it. Nothing about
+        // this machine or that repository will change while a person is typing.
+        if (OwnershipLine.NotHere(agent) is { } elsewhere)
+        {
+            _ = done(Safe.Text(elsewhere));
+
+            return Task.CompletedTask;
+        }
 
         var typing = Prompting.Text(Title, Described(agent));
         var typed = Prompting.Open(app, typing);
@@ -69,7 +84,7 @@ internal static class Ownership
                 return;
             }
 
-            queue(t => RecordAsync(client, agent, statement, t, done));
+            queue(t => AcceptAsync(client, agent, workspace, project, statement, t, done));
         };
 
         return Task.CompletedTask;
@@ -98,14 +113,40 @@ internal static class Ownership
          line itself comes from its launch configuration.
          """;
 
-    /// <summary>Records it, and says what peers read until the agent restarts.</summary>
-    private static async Task RecordAsync(
+    /// <summary>Writes the line where it takes effect, then records that a person accepted it.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The file first and the record second, and the order is chosen for which half is
+    /// recoverable.</b> A file written with no record leaves the line live and its provenance
+    /// unrecorded, which the next acceptance repairs; a record with no file would claim somebody
+    /// accepted a line that peers will never read, and nothing repairs a wrong record.
+    /// </para>
+    /// <para>
+    /// So a failed write stops before the broker is told anything — there is nothing to record yet —
+    /// and a failed record after a successful write says both halves, because the line really is on
+    /// its way to peers and only the provenance is missing.
+    /// </para>
+    /// </remarks>
+    private static async Task AcceptAsync(
         BrokerClient client,
         AgentName agent,
+        string? workspace,
+        string? project,
         string statement,
         CancellationToken cancellationToken,
         Func<string, Task> done)
     {
+        var wrong = await OwnershipLine
+            .WriteAsync(workspace, project, agent, statement, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (wrong is not null)
+        {
+            await done($"Not recorded: {Safe.Text(wrong)}").ConfigureAwait(false);
+
+            return;
+        }
+
         var outcome = await BrokerDirectory.ReadAsync(
             async () => await client.RecordOwnershipAsync(
                 agent,
@@ -115,7 +156,10 @@ internal static class Ownership
 
         if (!outcome.Reachable)
         {
-            await done(outcome.Problem!).ConfigureAwait(false);
+            await done(
+                $"Written to {Safe.Text(OwnershipLine.PathIn(workspace!))}, and it takes effect when "
+                + $"the agent next starts. The broker could not be told a person accepted it: "
+                + Safe.Text(outcome.Problem!)).ConfigureAwait(false);
 
             return;
         }

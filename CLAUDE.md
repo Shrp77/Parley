@@ -888,8 +888,37 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   through the action table so the status line and the menu get it by construction, and the web UI has an
   `ownership` action on `Act`. **Neither asks the agent anything yet** — what they record is a person's own
   line, as `composed`, and both say so, because question 10's amendment turns on telling a person's words
-  from a model's. **Still owed**: the ask itself, the discussion, the launch-configuration write with its
-  machine check, the bulk ask, and the neighbours column.
+  from a model's.
+
+  **And accepting now actually reaches peers, which it did not for one commit.** `record_ownership` stores a
+  decision and nothing else; the registry is filled from the launch environment on attach, so until
+  `OwnershipLine` existed an accepted line was `pending` for ever — a path that was half-built in the way
+  this repository keeps recording. It writes `PARLEY_OWNS` into the repository's `.mcp.json` **through
+  enrolment's own `HoldAsync`/`OverwriteHeldAsync`**, which is what FR-018 means by the one component that
+  already writes those files: the exclusive handle, the symlink refusal, the byte-order mark surviving a
+  round trip and cancellation being honoured before the write and never during it were all paid for once.
+
+  **The file is written first and the record second, and the order is chosen for which half is
+  recoverable.** A file with no record leaves the line live with its provenance unrecorded, which the next
+  acceptance repairs; a record with no file would claim somebody accepted a line peers will never read, and
+  nothing repairs a wrong record. Where the write succeeds and the broker cannot be told, the surface says
+  both halves.
+
+  **`Parley.Web` now references `Parley.Setup`, and that reference *is* the reversal of the one-writer
+  rule** — argued in the csproj where it lives, because a reference is where such a decision actually gets
+  made. Graph-legal rather than assumed: `Parley.Setup` reaches no store, so `GraphTests` still holds. The
+  rule that replaces one-writer is **not** "the web UI may not write" but **"no surface writes for an agent
+  whose machine is not this one"** — `OwnershipLine.NotHere`, applied by both, and the terminal applies it
+  *before the form opens* rather than after it is filled in, on 0.25.2's record of what the other order
+  costs. **005's gate finding is guarded from the other side too**: the name is read back out of the file
+  first, because the workspace comes from the registry and is what the agent said about itself.
+
+  **Eleven tests, and every refusal asserts the file's bytes are unchanged** rather than that a message came
+  back — plus one that other people's MCP servers survive the write, since a launch configuration is not
+  ours alone. Walking into it cost one recorded gotcha: a `--` inside an XML comment in the csproj, which
+  makes MSBuild reject the whole file, and which this file already warns about.
+
+  **Still owed**: the ask itself, the discussion, the bulk ask, and the neighbours column.
 
   **An ask is recognised by the conversation it opens, never by a marker in a payload** — §13 promises a
   receiver that a payload is inert data, and 017's chip rule is what keeps that true. The identifier is

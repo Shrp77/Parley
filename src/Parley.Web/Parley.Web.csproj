@@ -42,6 +42,22 @@
     <ProjectReference Include="..\Parley.Client\Parley.Client.csproj" />
     <ProjectReference Include="..\Parley.Configuration\Parley.Configuration.csproj" />
     <ProjectReference Include="..\Parley.Transport\Parley.Transport.csproj" />
+
+    <!--
+      **This reverses the one-writer rule, on the owner's decision of 2026-09-26**, and it is
+      recorded here because the reference is the whole of the reversal. The console's own naming page
+      says a launch configuration is written by one component; 020 makes accepting an ownership line
+      something both surfaces do, and the component that already writes those files is Parley.Setup.
+
+      What makes it defensible rather than a widening: the rule that replaces it is not "the web UI
+      may not write" but "no surface writes for an agent whose machine is not this one", which the
+      terminal needed anyway, since a launch configuration is a file on the agent's machine and
+      neither surface is guaranteed to be there. OwnershipLine.NotHere is that check, applied by both.
+
+      Graph-legal and checked, not assumed: Parley.Setup reaches no store, so GraphTests'
+      `Nothing_reachable_from_a_client_can_open_a_store` still holds for this project.
+    -->
+    <ProjectReference Include="..\Parley.Setup\Parley.Setup.csproj" />
   </ItemGroup>
 
   <!--

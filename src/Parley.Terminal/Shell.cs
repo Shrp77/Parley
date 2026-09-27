@@ -3662,7 +3662,13 @@ internal sealed class Shell : Window
         }
 
         return Ownership.OpenAsync(
-            app, new BrokerClient(_directory.ClientFor(project)), agent, Queue, said =>
+            app,
+            new BrokerClient(_directory.ClientFor(project)),
+            agent,
+            row.Workspace,
+            project.Name.Value,
+            Queue,
+            said =>
             {
                 Said = said;
 

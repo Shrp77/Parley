@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Parley.Core;
 using Parley.Client;
+using Parley.Setup;
 
 namespace Parley.Web.Pages.Projects;
 
@@ -144,12 +145,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 // own line and is recorded as theirs. A proposal an agent wrote arrives through the
                 // conversation it was agreed in, and carries that conversation with it -- which is
                 // why `source` exists at all rather than every acceptance being one thing.
-                "ownership" => DescribeOwnership(
-                    broker.RecordOwnershipAsync(
-                        agent,
-                        new OwnershipAcceptance(
-                            Text ?? string.Empty, OwnershipSource.Composed, null, null),
-                        token)),
+                "ownership" => AcceptOwnership(broker, agent, Text ?? string.Empty, token),
 
                 _ => Task.FromResult("This is not something the console does.")
             }).ConfigureAwait(false)).ConfigureAwait(false);
@@ -161,6 +157,58 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
     private static async Task<string> Describe(Task<bool> action) =>
         await action.ConfigureAwait(false) ? "Done." : "Nothing changed.";
+
+    /// <summary>Writes the line where it takes effect, then records that a person accepted it.</summary>
+    /// <param name="broker">This project's broker.</param>
+    /// <param name="agent">Whose line it is.</param>
+    /// <param name="statement">What the person typed. Their own words, so recorded as composed.</param>
+    /// <param name="token">Cancels the calls.</param>
+    /// <returns>What to put in front of the person.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The file first and the record second</b>, because a file with no record leaves the line live
+    /// and its provenance unrecorded — which the next acceptance repairs — while a record with no file
+    /// would claim somebody accepted a line peers will never read, and nothing repairs a wrong record.
+    /// </para>
+    /// <para>
+    /// <b>The workspace comes from the registry, which is what the agent said about itself</b> and may
+    /// be long out of date. That is why the write reads the name back out of the file before touching
+    /// it: 005's review gate found a withdrawal deleting a <em>different</em> agent's launch
+    /// configuration for exactly this reason.
+    /// </para>
+    /// </remarks>
+    private static async Task<string> AcceptOwnership(
+        BrokerClient broker, AgentName agent, string statement, CancellationToken token)
+    {
+        if (OwnershipLine.NotHere(agent) is { } elsewhere)
+        {
+            return $"Not recorded: {elsewhere}";
+        }
+
+        var registry = await broker.RegistryAsync(token).ConfigureAwait(false);
+        var known = registry.FirstOrDefault(r => r.Name == agent);
+
+        if (known is null)
+        {
+            return $"Not recorded: nothing has registered under '{agent.Value}', so there is no " +
+                   "repository recorded for it and no line to write.";
+        }
+
+        var wrong = await OwnershipLine
+            .WriteAsync(known.Workspace, null, agent, statement, token)
+            .ConfigureAwait(false);
+
+        if (wrong is not null)
+        {
+            return $"Not recorded: {wrong}";
+        }
+
+        return await DescribeOwnership(
+            broker.RecordOwnershipAsync(
+                agent,
+                new OwnershipAcceptance(statement, OwnershipSource.Composed, null, null),
+                token)).ConfigureAwait(false);
+    }
 
     /// <summary>Says what became of an accepted ownership line.</summary>
     /// <param name="action">The call.</param>
