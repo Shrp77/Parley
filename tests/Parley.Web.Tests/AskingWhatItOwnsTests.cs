@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text.RegularExpressions;
 using Parley.Web.Seating;
 using Xunit;
@@ -10,10 +10,12 @@ namespace Parley.Web.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Both of these are reached with no broker listening, and that is the point rather than a
+/// <b>Every one of these is reached with no broker listening, and that is the point rather than a
 /// compromise.</b> Each asserts a guard that must be applied <em>before</em> anything is sent or
 /// written — a seat that is not held, and an agent whose machine is not this one — so a console that
-/// deferred either check to the broker fails here, where the broker cannot answer at all.
+/// deferred either check to the broker fails here, where the broker cannot answer at all. The two that
+/// describe rather than act assert the same thing from the other side: a GET says what it would cost
+/// and only a POST spends it, so no link can spend a turn, least of all one per agent.
 /// </para>
 /// <para>
 /// <b>The machine rule is the one that carries real risk.</b> 005's review gate found a withdrawal
@@ -95,6 +97,47 @@ public sealed class AskingWhatItOwnsTests
 
         Assert.Contains("Not recorded", body, StringComparison.Ordinal);
         Assert.Contains("somebody-elses-laptop", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_bulk_ask_is_described_before_it_is_offered()
+    {
+        // FR-006 and FR-007 on this surface. A GET describes and only a POST sends, so no link can spend
+        // a turn on every agent in a project -- which is the version of this mistake that costs the most.
+        using var console = new DeadBrokerConsole();
+        using var client = console.CreateStubbornClient();
+
+        var body = await client.GetStringAsync(
+            new Uri(
+                $"/Projects/Act?project={DeadBrokerConsole.Project}"
+                + $"&action=askeveryownership&subject={DeadBrokerConsole.Project}",
+                UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains("costs each", body, StringComparison.Ordinal);
+        Assert.Contains("conversation of its own", body, StringComparison.Ordinal);
+        Assert.Contains("Nothing is written by asking", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_bulk_ask_with_no_seat_sends_nothing_and_says_why()
+    {
+        // The same guard as the single ask, and it must be applied before the roster is even read: with
+        // no broker listening, a version that read the registry first would report a transport failure
+        // instead of the sentence a person can act on.
+        using var console = new DeadBrokerConsole();
+        using var client = console.CreateStubbornClient();
+
+        using var response = await PostAsync(
+            client,
+            $"/Projects/Act?project={DeadBrokerConsole.Project}"
+            + $"&action=askeveryownership&subject={DeadBrokerConsole.Project}",
+            []);
+
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains("Nothing was asked", body, StringComparison.Ordinal);
+        Assert.Contains("no seat", body, StringComparison.Ordinal);
     }
 
     private static async Task<HttpResponseMessage> PostAsync(

@@ -77,6 +77,15 @@ public sealed class SettlingItByDiscussingTests : IDisposable
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    /// <summary>The registry row the write resolves its repository from.</summary>
+    /// <remarks>
+    /// The workspace comes from the registry because that is where it comes from in production -- what
+    /// the agent said about itself on attach -- which is exactly why the write reads the role back out
+    /// of the file before touching it. 005's gate found that being trusted too far.
+    /// </remarks>
+    private AgentRecord Registered() =>
+        new(Orders, "mcp", AgentTier.Pull, Workspace, null, null, false, AgentStatus.Active);
+
     private string? Written()
     {
         var root = JsonNode.Parse(File.ReadAllText(LaunchFile))!;
@@ -167,7 +176,7 @@ public sealed class SettlingItByDiscussingTests : IDisposable
             driving.App,
             new BrokerClient(directory.ClientFor(project)),
             discussion,
-            _ => (Workspace, null),
+            [Registered()],
             project.Name.Value,
             run => work.Add(run(Ct)),
             reported =>
@@ -255,7 +264,7 @@ public sealed class SettlingItByDiscussingTests : IDisposable
             driving.App,
             new BrokerClient(directory.ClientFor(project)),
             discussion,
-            _ => (Workspace, null),
+            [Registered()],
             project.Name.Value,
             run => abandoned.Add(run(Ct)),
             _ => Task.CompletedTask,

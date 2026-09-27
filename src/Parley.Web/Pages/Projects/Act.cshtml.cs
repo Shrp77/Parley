@@ -93,6 +93,14 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
             "instruct" => ($"'{Subject}' will be given your words as a turn. It may decline, which "
                          + "is not a failure. The instruction is recorded as yours.", false),
 
+            // The project-level form, which follows `prune` in taking its subject from whatever made the
+            // link. Named as a cost rather than as a risk: nothing is destroyed and nothing is written,
+            // and a person cannot un-spend a turn per agent.
+            "askeveryownership" => ("Every registered agent in this project will be asked what it owns, "
+                                  + "as one ordinary request each from your seat, and answering costs each "
+                                  + "of them a turn. Each answer arrives in a conversation of its own, "
+                                  + "named for the agent it is about. Nothing is written by asking.", false),
+
             // Named as a cost rather than as a risk. Nothing is destroyed and nothing is written, so
             // `Destroys` stays false -- but a turn is spent on the agent's side and a person cannot
             // un-spend it, which is the whole of what they are deciding.
@@ -144,6 +152,12 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
 
                 // prune acts on the whole project; its subject is only what made the page's link.
                 "prune" => DescribePrune(broker.PruneAsync(token)),
+
+                // **Above the name guard deliberately**, for the reason prune is: this acts on every
+                // agent the registry holds, so the subject in the URL is what made the link and not
+                // something to validate. Putting it below would refuse the whole project because one
+                // incidental subject was not a name.
+                "askeveryownership" => AskEveryOwnership(project, broker, token),
 
                 _ when !named => Task.FromResult(
                     $"'{Subject}' is not a name an agent can have, so there is nothing to act on."),
@@ -272,6 +286,64 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
 
         return said + " Its answer arrives in conversation " + conversation
              + ", which is where it is read and accepted.";
+    }
+
+    /// <summary>Asks every registered agent in a project what it owns (FR-006).</summary>
+    /// <param name="project">Which project's agents.</param>
+    /// <param name="broker">That project's broker, for the roster.</param>
+    /// <param name="token">Cancels the reads and the sends.</param>
+    /// <returns>What to put in front of the person.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>N ordinary Requests, each in its own conversation</b>, because a discussion is about one agent
+    /// and its identifier carries that agent's role. One shared conversation would put every argument in
+    /// one transcript and leave nothing able to find the one it wanted.
+    /// </para>
+    /// <para>
+    /// <b>Seats and retired agents are left out.</b> A seat is a person, and an ownership line is how
+    /// peers choose which <em>agent</em> to send work to; a retired agent is not routed to at all
+    /// (§10.2), so what it owns is no longer a question anybody acts on. Asking either would spend a
+    /// turn on a question that cannot apply.
+    /// </para>
+    /// </remarks>
+    private async Task<string> AskEveryOwnership(
+        ProjectSettings project, BrokerClient broker, CancellationToken token)
+    {
+        var here = SeatCookie.Read(Request);
+        var seated = here is null ? null : seats.Held(project.Name.Value, here);
+
+        if (seated is null)
+        {
+            return "Nothing was asked. An ask is a message, so it is sent as somebody, and no seat is "
+                 + "held here: take one on the inbox page and ask again.";
+        }
+
+        var registry = await broker.RegistryAsync(token).ConfigureAwait(false);
+
+        var asking = registry
+            .Where(record => record.Status != AgentStatus.Retired)
+            .Where(record => !string.Equals(record.Adapter, Seat.Adapter, StringComparison.Ordinal))
+            .Select(record => record.Name)
+            .ToList();
+
+        if (asking.Count == 0)
+        {
+            return "There is no agent in this project to ask. An agent appears once it has attached and "
+                 + "registered, which is its own act as it starts.";
+        }
+
+        var now = DateTimeOffset.UtcNow;
+
+        var said = await new SeatVoice(directory.AgentsFor(project), seated.Seat)
+            .RequestEachAsync(
+                seated,
+                asking,
+                OwnershipAsk.Text,
+                agent => OwnershipAsk.Conversation(agent, now),
+                token)
+            .ConfigureAwait(false);
+
+        return said + " Each answer arrives in its own conversation, named for the agent it is about.";
     }
 
     /// <summary>Says what became of an accepted ownership line.</summary>

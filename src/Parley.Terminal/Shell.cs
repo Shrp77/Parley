@@ -1,4 +1,4 @@
-using Parley.Setup;
+﻿using Parley.Setup;
 using System.Drawing;
 using System.Text;
 using Parley.Client;
@@ -1511,6 +1511,21 @@ internal sealed class Shell : Window
                         'a',
                         Ownership.AskTitle + ": " + told.Name,
                         AskWhatItOwns,
+                        Owing.Requesting),
+                }
+                : Array.Empty<RegionAction>(),
+
+            // **Offered while there is anybody to ask, and named with the count**, because it launches
+            // one exchange per agent and a person deciding is deciding about that number. Offered
+            // without a seat for the reason the single ask is: an action nobody can find is
+            // indistinguishable from one that does not exist.
+            .. Agents.Registry.Count > 0
+                ? new[]
+                {
+                    new RegionAction(
+                        'e',
+                        Ownership.AskEveryTitle,
+                        AskEveryoneWhatTheyOwn,
                         Owing.Requesting),
                 }
                 : Array.Empty<RegionAction>(),
@@ -3738,6 +3753,36 @@ internal sealed class Shell : Window
             });
     }
 
+    /// <summary>Asks every registered agent in this project what it owns.</summary>
+    /// <returns>When the dialog is open.</returns>
+    /// <remarks>
+    /// <b>The seats are excluded, because a seat is a person.</b> An ownership line is how peers decide
+    /// which agent to send work to, and somebody holding a seat is not routed to by a roster entry —
+    /// asking them would spend a turn on a question that cannot apply. Retired agents go too: §10.2's
+    /// retire stops them being routed to at all, so what they own is no longer a question anybody acts on.
+    /// </remarks>
+    private Task AskEveryoneWhatTheyOwn()
+    {
+        if (App is not { } app)
+        {
+            return Task.CompletedTask;
+        }
+
+        var asking = Agents.Registry
+            .Where(record => record.Status != AgentStatus.Retired)
+            .Where(record => !string.Equals(record.Adapter, Seat.Adapter, StringComparison.Ordinal))
+            .Select(record => record.Name)
+            .ToList();
+
+        return Ownership.AskEveryAsync(
+            app, Voice(), Held, asking, DateTimeOffset.UtcNow, Queue, said =>
+            {
+                Said = said;
+
+                return Task.CompletedTask;
+            });
+    }
+
     /// <summary>Asks the agent under the cursor what it owns.</summary>
     /// <returns>When the dialog is open.</returns>
     /// <remarks>
@@ -3786,7 +3831,7 @@ internal sealed class Shell : Window
             app,
             client,
             conversation,
-            Registered,
+            Agents.Registry,
             project.Name.Value,
             Queue,
             said =>

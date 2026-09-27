@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using System.Text.Json.Nodes;
 using Grpc.Core;
@@ -138,22 +138,62 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// if the sends are ordered.
     /// </para>
     /// </remarks>
-    public async Task<string> RequestEveryoneAsync(
+    public Task<string> RequestEveryoneAsync(
         SeatHold hold,
         IReadOnlyList<AgentName> peers,
         string? ask,
         string? conversationId,
+        CancellationToken cancellationToken = default) =>
+        RequestEachAsync(hold, peers, ask, _ => conversationId, cancellationToken);
+
+    /// <summary>Sends every participant the same Request, each in a conversation of its own.</summary>
+    /// <param name="hold">The seat to send under, re-read before every send.</param>
+    /// <param name="peers">Who to send it to, resolved by the surface from its own roster.</param>
+    /// <param name="ask">What is wanted, in the person's own words (§5.1).</param>
+    /// <param name="conversationFor">
+    /// The conversation each peer's exchange belongs to, or null from it for a new one. Asked per peer
+    /// rather than taken once, which is the whole difference from <see cref="RequestEveryoneAsync"/>.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the sends.</param>
+    /// <returns>A sentence saying what happened, in counts.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="peers"/>, <paramref name="hold"/> or <paramref name="conversationFor"/> is null.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// <b>One body, two entry points, because the report is the expensive part to get right.</b> Grouping
+    /// refusals by reason and abbreviating names after four is 0.25.1's finding — a report that ran off
+    /// the screen at the half naming what to do about it — and a second bulk send with its own reporting
+    /// would be that lesson learned once and applied in one place.
+    /// </para>
+    /// <para>
+    /// <b>Asking several agents what each of them owns is why this exists.</b> Those are not one
+    /// conversation: each discussion is about one agent and its identifier carries that agent's role, so
+    /// a shared conversation would put nineteen unrelated arguments in one transcript and leave no
+    /// surface able to find the one it wanted.
+    /// </para>
+    /// </remarks>
+    public async Task<string> RequestEachAsync(
+        SeatHold hold,
+        IReadOnlyList<AgentName> peers,
+        string? ask,
+        Func<AgentName, string?> conversationFor,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(hold);
         ArgumentNullException.ThrowIfNull(peers);
+        ArgumentNullException.ThrowIfNull(conversationFor);
 
         if (peers.Count == 0)
         {
             return NobodyToAsk;
         }
 
-        if (Unsendable(ask, conversationId) is { } wrong)
+        // Checked against the first peer's conversation, because the rule being applied is about the
+        // *ask* -- whether it is blank, and whether the identifier is one a conversation may carry. A
+        // caller deriving an illegal identifier for a later peer is refused by the broker on that send
+        // and named in the report, which is where a per-peer fault belongs.
+        if (Unsendable(ask, conversationFor(peers[0])) is { } wrong)
         {
             return wrong;
         }
@@ -172,7 +212,10 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         var turnedAway = new List<TurnedAway>();
         var sent = 0;
         var stopped = false;
-        var conversation = conversationId;
+        // **Carried forward only when the caller gave none.** A bulk send with no identifier is one
+        // conversation, the first send naming it and the rest joining; a caller that derives one per peer
+        // gets exactly what it derived, and nothing leaks from one peer's discussion into the next.
+        string? carried = null;
 
         foreach (var peer in peers)
         {
@@ -181,6 +224,8 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
                 stopped = true;
                 break;
             }
+
+            var conversation = conversationFor(peer) ?? carried;
 
             Wire.RequestOutcome outcome;
 
@@ -204,7 +249,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
                 continue;
             }
 
-            conversation ??= outcome.ConversationId;
+            carried ??= outcome.ConversationId;
             sent++;
 
             if (outcome.Wake == Wire.WakeOutcome.Unreachable)

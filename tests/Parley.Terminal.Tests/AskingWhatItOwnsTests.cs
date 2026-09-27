@@ -1,4 +1,4 @@
-﻿using Grpc.Net.Client;
+using Grpc.Net.Client;
 using Parley.Cli.Tests;
 using Parley.Client;
 using Parley.Client.Seating;
@@ -355,7 +355,7 @@ public sealed class AskingWhatItOwnsTests
             driving.App,
             new BrokerClient(directory.ClientFor(directory.Projects[0])),
             discussion,
-            _ => (null, null),
+            [],
             directory.Projects[0].Name.Value,
             _ => { },
             reported =>
@@ -435,6 +435,57 @@ public sealed class AskingWhatItOwnsTests
         Assert.Equal(
             OwnershipSource.Proposed,
             Ownership.Chosen("  Orders and invoicing.  ", "Orders and invoicing."));
+    }
+
+    [Fact]
+    public void What_the_others_already_claim_is_shown_beside_the_proposal()
+    {
+        // **FR-017.** A person deciding whether a line is right is deciding it against what is already
+        // claimed, and they will not remember nineteen lines. Must fail against a screen that shows the
+        // proposal alone.
+        var reviewed = Ownership.Reviewed(
+            Orders,
+            null,
+            new OwnershipProposal(Proposed("Orders and invoicing."), "Orders and invoicing."),
+            [("inventory@test", "Stock and shipping."), ("billing@test", "Invoicing.")]);
+
+        Assert.Contains("What the others already say they own", reviewed, StringComparison.Ordinal);
+        Assert.Contains("inventory@test: Stock and shipping.", reviewed, StringComparison.Ordinal);
+        Assert.Contains("billing@test: Invoicing.", reviewed, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_overlap_is_shown_without_a_word_about_which_is_right()
+    {
+        // **FR-030 and Principle II.** `billing` claims invoicing and so does the proposal. Must fail
+        // against a screen that flags a clash, ranks the claims or warns -- no agent has authority over
+        // another, and a person is reading this precisely so they can decide.
+        var reviewed = Ownership.Reviewed(
+            Orders,
+            null,
+            new OwnershipProposal(Proposed("Orders and invoicing."), "Orders and invoicing."),
+            [("billing@test", "Invoicing.")]);
+
+        Assert.Contains("billing@test: Invoicing.", reviewed, StringComparison.Ordinal);
+
+        foreach (var verdict in new[] { "conflict", "overlap", "clash", "already claimed by", "instead" })
+        {
+            Assert.DoesNotContain(verdict, reviewed, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public void A_project_with_no_other_lines_says_nothing_about_neighbours()
+    {
+        // The first agent asked in a deployment has no neighbours, and an empty heading would read as a
+        // list that failed to load.
+        var reviewed = Ownership.Reviewed(
+            Orders,
+            null,
+            new OwnershipProposal(Proposed("Orders and invoicing."), "Orders and invoicing."),
+            []);
+
+        Assert.DoesNotContain("What the others", reviewed, StringComparison.Ordinal);
     }
 
     [Fact]

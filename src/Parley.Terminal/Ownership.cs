@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using Parley.Client;
+using Parley.Client.Rendering;
 using Parley.Client.Seating;
 using Parley.Core;
 using Parley.Setup;
@@ -66,6 +67,22 @@ internal static class Ownership
 
     /// <summary>Said when the person declines.</summary>
     internal const string Left = "Nothing was asked and nothing was spent.";
+
+    /// <summary>The door asking every agent passes through.</summary>
+    internal const string AskEveryTitle = "Ask every agent what it owns";
+
+    /// <summary>The choice that asks all of them.</summary>
+    internal const string AskThem = "Ask them all, and spend the turns";
+
+    /// <summary>Said when there is nobody to ask.</summary>
+    /// <remarks>
+    /// Distinguished from a refusal, because a deployment with no agents registered yet is an ordinary
+    /// first afternoon rather than a fault — and telling somebody nothing could be asked would send
+    /// them looking for a broken broker.
+    /// </remarks>
+    internal const string NobodyToAsk =
+        "There is no agent in this project to ask. An agent appears here once it has attached and "
+        + "registered, which is its own act as it starts.";
 
     /// <summary>The door the restart offer passes through.</summary>
     internal const string RestartTitle = "Make this the line peers read";
@@ -181,6 +198,134 @@ internal static class Ownership
         return Task.CompletedTask;
     }
 
+    /// <summary>Asks every agent in the project what it owns, each in its own discussion.</summary>
+    /// <param name="app">The application the dialog opens in.</param>
+    /// <param name="voice">The seat to ask from, or null when none is held.</param>
+    /// <param name="hold">The seat itself, re-read before every send.</param>
+    /// <param name="agents">Who to ask.</param>
+    /// <param name="now">When the asks are being made, which names each conversation.</param>
+    /// <param name="queue">Runs the sends, so the caller can wait for them.</param>
+    /// <param name="done">Told what to say when it is over.</param>
+    /// <returns>When the dialog is open, or the refusal has been said.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>N ordinary Requests and no new operation</b> (FR-006), which is §5.5's shape — and each one is
+    /// its own conversation rather than one shared, because a discussion is about one agent and its
+    /// identifier carries that agent's role. Nineteen arguments in one transcript would leave no surface
+    /// able to find the one it wanted.
+    /// </para>
+    /// <para>
+    /// <b>The cost is stated and answered before the first Request is sent</b> (FR-007). A turn per agent
+    /// cannot be un-spent, so a person who would have said no has to be able to say it while it is still
+    /// worth saying.
+    /// </para>
+    /// <para>
+    /// <b>Nothing is waited on per agent, which is what 0.25.1's rule asks for here.</b> That rule was
+    /// written about starting processes, where thirty seconds each over nineteen agents is nine and a
+    /// half minutes on a serialised queue. An ask has no wait at all — a send is one round trip and the
+    /// answers arrive later as ordinary messages — so the rule is satisfied by there being nothing to
+    /// defer, rather than by deferring it. A version that waited for each answer before asking the next
+    /// would be the defect, and it would turn one keystroke into an afternoon.
+    /// </para>
+    /// </remarks>
+    internal static Task AskEveryAsync(
+        IApplication app,
+        SeatVoice? voice,
+        SeatHold? hold,
+        IReadOnlyList<AgentName> agents,
+        DateTimeOffset now,
+        Action<Func<CancellationToken, Task>> queue,
+        Func<string, Task> done)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(agents);
+        ArgumentNullException.ThrowIfNull(queue);
+        ArgumentNullException.ThrowIfNull(done);
+
+        if (voice is null || hold is null)
+        {
+            _ = done(NoSeat);
+
+            return Task.CompletedTask;
+        }
+
+        if (agents.Count == 0)
+        {
+            _ = done(NobodyToAsk);
+
+            return Task.CompletedTask;
+        }
+
+        var asking = Prompting.Choose(AskEveryTitle, Costing(agents), [Leave, AskThem]);
+        var open = Prompting.Open(app, asking);
+
+        asking.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, open);
+
+            if (!string.Equals(chosen, AskThem, StringComparison.Ordinal))
+            {
+                _ = done(Left);
+
+                return;
+            }
+
+            queue(async t =>
+            {
+                var said = await voice.RequestEachAsync(
+                    hold,
+                    agents,
+                    OwnershipAsk.Text,
+                    agent => OwnershipAsk.Conversation(agent, now),
+                    t).ConfigureAwait(false);
+
+                await done(Reports.Sentences([
+                    Safe.Text(said),
+                    "Each answer arrives in its own conversation, named for the agent it is about.",
+                ])).ConfigureAwait(false);
+            });
+        };
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>What the person reads before spending a turn on each of them.</summary>
+    /// <param name="agents">Who will be asked.</param>
+    /// <returns>The description.</returns>
+    /// <remarks>
+    /// Names them as well as counting them, up to a point: a count alone is a number somebody has to
+    /// trust, and the list is what tells them the set is the one they meant. Abbreviated after a handful
+    /// for the reason 0.25.1 records — a report naming nineteen agents ran off the screen at the half
+    /// that said what to do about it.
+    /// </remarks>
+    internal static string Costing(IReadOnlyList<AgentName> agents)
+    {
+        ArgumentNullException.ThrowIfNull(agents);
+
+        var named = agents.Take(Named).Select(a => Safe.Text(a.Value));
+
+        var who = agents.Count <= Named
+            ? string.Join(", ", named)
+            : string.Join(", ", named) + $" and {agents.Count - Named} more";
+
+        return $"""
+                {who}
+
+                {Safe.Lines(OwnershipAsk.Costs(agents.Count))}
+
+                Each is asked separately, in a conversation of its own named for that agent, and each
+                answer comes back for you to accept or argue with. Nothing is written by asking.
+                """;
+    }
+
+    /// <summary>How many agents are named before the rest are counted.</summary>
+    /// <remarks>
+    /// Four, as every other list on this surface uses — the number is 0.25.1's, and the reason it is
+    /// stated here rather than shared is that <c>SeatVoice</c>'s copy is private to the report it writes.
+    /// If a third place needs it, it moves.
+    /// </remarks>
+    private const int Named = 4;
+
     /// <summary>What the person reads before the ask is sent.</summary>
     /// <param name="agent">Who will be asked.</param>
     /// <param name="conversation">The conversation it will open.</param>
@@ -295,8 +440,9 @@ internal static class Ownership
     /// <param name="client">The operator's client for this project.</param>
     /// <param name="conversationId">The discussion, which is recorded with the acceptance.</param>
     /// <param name="roster">
-    /// What the registry says about an agent: the repository holding its line, and the line peers
-    /// read today. Asked only once the discussion has said whose line it is.
+    /// The project's registry as it was last read. It supplies three things once the discussion has said
+    /// whose line it is: the repository the write lands in, the line peers read today, and what the other
+    /// agents already claim (FR-017).
     /// </param>
     /// <param name="project">The project whose launch entry carries the line.</param>
     /// <param name="queue">Runs the acceptance, so the caller can wait for it.</param>
@@ -328,7 +474,7 @@ internal static class Ownership
         IApplication app,
         BrokerClient client,
         string conversationId,
-        Func<AgentName, (string? Workspace, string? Live)> roster,
+        IReadOnlyList<AgentRecord> roster,
         string? project,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done,
@@ -368,7 +514,9 @@ internal static class Ownership
             return;
         }
 
-        var (workspace, live) = roster(agent);
+        var known = roster.FirstOrDefault(record => record.Name == agent);
+        var workspace = known?.Workspace;
+        var live = known?.Owns;
 
         if (OwnershipProposal.Latest(read.Value.Messages, agent) is not { } proposal)
         {
@@ -379,7 +527,7 @@ internal static class Ownership
 
         var typing = Prompting.Text(
             AcceptTitle,
-            Reviewed(agent, live, proposal),
+            Reviewed(agent, live, proposal, Roster.Neighbours(roster, agent)),
             proposal.Statement,
             problem: typed => OwnershipStatement.IsValid(typed, out var wrong) ? null : wrong);
 
@@ -417,6 +565,7 @@ internal static class Ownership
     /// <param name="agent">Whose line it is.</param>
     /// <param name="live">What peers read today.</param>
     /// <param name="proposal">What the agent said.</param>
+    /// <param name="neighbours">What the other agents in the project already claim.</param>
     /// <returns>The description.</returns>
     /// <remarks>
     /// <b>Attributed, and marked as the agent's own words</b> (FR-013). The sender and the time are
@@ -424,7 +573,11 @@ internal static class Ownership
     /// a model's sentence from a person's — and a screen that showed the text alone would make the
     /// record of <c>proposed</c> versus <c>composed</c> a claim nobody could check.
     /// </remarks>
-    internal static string Reviewed(AgentName agent, string? live, OwnershipProposal proposal)
+    internal static string Reviewed(
+        AgentName agent,
+        string? live,
+        OwnershipProposal proposal,
+        IReadOnlyList<(string Name, string Owns)>? neighbours = null)
     {
         ArgumentNullException.ThrowIfNull(proposal);
 
@@ -445,7 +598,40 @@ internal static class Ownership
                 Enter accepts it as it stands. Editing it first records it as yours rather than as
                 the agent's. Either way it reaches peers when the agent next starts, because the
                 line comes from its launch configuration.
+                {Beside(neighbours)}
                 """;
+    }
+
+    /// <summary>What the other agents already claim, for reading beside a proposal.</summary>
+    /// <param name="neighbours">Their names and lines, or null when they were not read.</param>
+    /// <returns>The block to draw, or an empty string when there is nothing to say.</returns>
+    /// <remarks>
+    /// <b>Shown and never judged</b> (FR-030, Principle II). An overlap is a real state of a deployment
+    /// and it is the person's to settle or to leave -- a screen that flagged a clash, ranked the claims or
+    /// refused the line would be arbitration arriving where nobody would look for it, and no agent has
+    /// authority over another.
+    /// </remarks>
+    private static string Beside(IReadOnlyList<(string Name, string Owns)>? neighbours)
+    {
+        if (neighbours is null || neighbours.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var lines = neighbours
+            .Take(Named)
+            .Select(peer => $"  {Safe.Text(peer.Name)}: {Safe.Text(peer.Owns)}");
+
+        var rest = neighbours.Count > Named
+            ? $"{Environment.NewLine}  and {neighbours.Count - Named} more."
+            : string.Empty;
+
+        return Environment.NewLine
+             + Environment.NewLine
+             + "What the others already say they own:"
+             + Environment.NewLine
+             + string.Join(Environment.NewLine, lines)
+             + rest;
     }
 
     /// <summary>Whose words an accepted line is, decided by comparing them.</summary>

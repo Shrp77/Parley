@@ -54,6 +54,44 @@ public static class Roster
         return !string.IsNullOrWhiteSpace(agent.Owns);
     }
 
+    /// <summary>What the other agents in a project say they own, for reading beside a proposal.</summary>
+    /// <param name="registry">The project's registry, as it was last read.</param>
+    /// <param name="about">The agent whose line is being decided, which is left out.</param>
+    /// <returns>The others that have stated a line, by name, in roster order.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="registry"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>Shown so a person can see an overlap, and nothing here decides anything about it</b> (FR-017,
+    /// FR-030). Two agents both claiming the same area is a real state of a deployment and it is the
+    /// person's to settle, or to leave: Principle II gives no agent authority over another, so a helper
+    /// that refused an overlapping line, ranked the claims, or marked one as the winner would be
+    /// arbitration arriving in the one place nobody would look for it.
+    /// </para>
+    /// <para>
+    /// <b>Agents with no line are left out rather than listed as blank.</b> The point of reading the
+    /// neighbours is to see what is already claimed; a list of names saying nothing is noise, and on this
+    /// screen noise costs the rows a person needs for the proposal itself.
+    /// </para>
+    /// <para>
+    /// The live line rather than an accepted one, because what a neighbour's peers read is what actually
+    /// competes with the line being decided. A pending line is a decision that has not reached anybody.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<(string Name, string Owns)> Neighbours(
+        IEnumerable<AgentRecord> registry, AgentName about)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+
+        return
+        [
+            .. registry
+                .Where(agent => agent.Name != about)
+                .Where(agent => agent.Status != AgentStatus.Retired)
+                .Where(HasStatedWhatItOwns)
+                .Select(agent => (agent.Name.Value, agent.Owns!)),
+        ];
+    }
+
     /// <summary>The marker put beside a line a person accepted that peers do not read yet.</summary>
     /// <param name="agent">The agent, as the registry described it.</param>
     /// <returns>The marker, or an empty string when the two halves agree.</returns>
