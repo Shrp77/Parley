@@ -918,7 +918,35 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   ours alone. Walking into it cost one recorded gotcha: a `--` inside an XML comment in the csproj, which
   makes MSBuild reject the whole file, and which this file already warns about.
 
-  **Still owed**: the ask itself, the discussion, the bulk ask, and the neighbours column.
+  **The ask and the proposal are built, in `Parley.Client`, and no surface sends one yet.** They are the
+  vocabulary rather than the screen: `OwnershipAsk` holds the text, the derived identifier
+  `owns-<role>-<yyyyMMdd-HHmmss>` and the cost sentence, and `OwnershipProposal` reads an agent's answer
+  back out of the discussion. **One implementation, because an answer given to the terminal would have
+  been given to the web UI** — a promise about what an agent was told is a promise nobody checks unless
+  the words live in one place.
+
+  **It adds nothing to the protocol**: the ask goes through the existing `SeatVoice.RequestAsync`, as one
+  ordinary Request opening one ordinary exchange, and **a surface recognises an ownership discussion by
+  the conversation's identifier and never by a marker in the payload.** §13 tells a receiver a payload is
+  inert data and 017's chip rule is what has kept that true, so `Nothing_in_the_ask_is_a_marker_a_surface_could_parse`
+  asserts the identifier's own prefix never appears in the words — which fails the moment somebody
+  helpfully puts it there, and that is the tempting implementation.
+
+  **Using the role rather than the whole agent name makes the identifier legal by construction**, which
+  is worth knowing rather than relying on: a role is `^[a-z][a-z0-9-]{0,31}$` and every one of those
+  characters is inside `ConversationName`'s set, so no legal role can produce an illegal identifier. It
+  is the *machine* half that carries dots, and it is deliberately left out. A first draft of that test
+  tried `north-star.9` as an awkward role and `AgentName` rejected it outright — roles cannot contain a
+  dot at all.
+
+  **The proposal is the *latest* thing the agent said, which is 0.30.1's rule reused for its own reason**
+  — an exchange can hold a Request, a Clarify and then a revision, so an agent that argued and changed
+  its mind has said two statements and the one to accept is the later. Taking the first would put the
+  sentence somebody had just talked the agent out of in front of them, and then write it.
+  **Mutation-checked**: swapping the ordering fails two tests, including the one that seeds the
+  transcript out of order so an implementation trusting the caller's sort fails too.
+
+  **Still owed**: the ask on a screen, the discussion, the bulk ask, and the neighbours column.
 
   **An ask is recognised by the conversation it opens, never by a marker in a payload** — §13 promises a
   receiver that a payload is inert data, and 017's chip rule is what keeps that true. The identifier is
