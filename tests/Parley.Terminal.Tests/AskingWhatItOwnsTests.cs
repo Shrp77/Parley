@@ -438,6 +438,51 @@ public sealed class AskingWhatItOwnsTests
     }
 
     [Fact]
+    public void The_restart_offer_says_what_it_costs_and_leaving_it_is_a_complete_answer()
+    {
+        // **FR-019, and the reason it is offered rather than done.** SPEC.md §12 says what stopping an
+        // agent costs: the process is what held everything it had learned. Accepting a sentence about
+        // scope is not a reason to spend that silently.
+        //
+        // Must fail against a description that presents leaving it as a failure, or that omits the
+        // cost -- either would make the safe answer look like the wrong one.
+        var said = Ownership.Restarted(Orders);
+
+        Assert.Contains("do not read it yet", said, StringComparison.Ordinal);
+        Assert.Contains("next start", said, StringComparison.Ordinal);
+        Assert.Contains("everything it has learned", said, StringComparison.Ordinal);
+        Assert.Contains("leaving it is", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_answer_that_changes_nothing_is_the_one_under_the_cursor()
+    {
+        // Every dialog on this surface opens on the answer that does nothing, and the restart is the
+        // one here that costs a running session.
+        Assert.StartsWith("Leave", Ownership.LeaveIt, StringComparison.Ordinal);
+        Assert.Contains("Restart it now", Ownership.RestartIt, StringComparison.Ordinal);
+        Assert.NotEqual(Ownership.LeaveIt, Ownership.RestartIt);
+        Assert.Contains("peers read", Ownership.RestartTitle, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_restart_reports_what_was_asked_for_rather_than_claiming_the_line_is_live()
+    {
+        // **`Operators.Start` asks a node to start a role.** Whether the agent attaches, reaches this
+        // broker and registers is a different question, and the registry is the only thing that
+        // answers it -- 0.25.2 records a screen predicting a registration instead of checking one.
+        //
+        // Must fail against "peers now read it", which is a sentence about the next few seconds
+        // printed as a result.
+        Assert.Contains("Asked its node", Ownership.Restarting, StringComparison.Ordinal);
+        Assert.DoesNotContain("peers now read", Ownership.Restarting, StringComparison.Ordinal);
+
+        // Declining says what is true of the deployment, and names where the fact stays visible.
+        Assert.Contains("until the agent next starts", Ownership.NotRestarted, StringComparison.Ordinal);
+        Assert.Contains("roster", Ownership.NotRestarted, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Nothing_to_accept_and_nobody_to_accept_it_from_are_different_sentences()
     {
         // Two states a first draft would collapse: the agent has not answered, and the discussion

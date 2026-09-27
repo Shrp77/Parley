@@ -1,4 +1,4 @@
-using Parley.Core;
+﻿using Parley.Core;
 using Parley.Store;
 using Wire = Parley.Transport;
 
@@ -477,7 +477,13 @@ internal static class Conversions
             Workspace = record.Workspace ?? string.Empty,
             SessionRef = record.SessionRef ?? string.Empty,
             Owns = record.Owns ?? string.Empty,
-            Connected = record.Connected
+            Connected = record.Connected,
+
+            // **Both halves travel rather than a `pending` flag.** A surface says the line is pending
+            // by comparing what a person accepted with what peers read, so it can also show the two
+            // side by side and say which is which -- a flag would carry the comparison and lose the
+            // thing being compared.
+            OwnsAccepted = record.OwnsAccepted ?? string.Empty
         };
     }
 

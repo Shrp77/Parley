@@ -74,9 +74,15 @@ public sealed class AgentRepository(SqliteConnection connection)
                        a.owns           AS Owns,
                        a.connected      AS Connected,
                        COALESCE(n.connected, 0) AS NodeConnected,
-                       a.status         AS Status
+                       a.status         AS Status,
+                       o.statement      AS OwnsAccepted
                 FROM agents AS a
                 LEFT JOIN nodes AS n ON n.machine = a.machine
+                -- **Left joined, because most agents have no accepted line and that is not a
+                -- deficiency.** What this column adds is the other half of one comparison: `owns` is
+                -- what peers read and this is what a person agreed to, and a surface says the line is
+                -- pending when they differ. Neither is a flag, so there is no third state to clear.
+                LEFT JOIN agent_ownership_accepted AS o ON o.agent = a.name
                 ORDER BY a.name;
                 """,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -1285,6 +1291,9 @@ public sealed class AgentRepository(SqliteConnection connection)
 
         public string Status { get; init; } = "";
 
+        /// <summary>What a person accepted, or null when nobody has.</summary>
+        public string? OwnsAccepted { get; init; }
+
         /// <summary>Parses a stored tier token.</summary>
         /// <param name="value">The token read from storage.</param>
         /// <returns>The corresponding tier.</returns>
@@ -1335,6 +1344,7 @@ public sealed class AgentRepository(SqliteConnection connection)
             Connected != 0,
             ParseStatus(Status),
             Owns,
-            AgentLiveness.Read(NodeConnected != 0, Connected != 0));
+            AgentLiveness.Read(NodeConnected != 0, Connected != 0),
+            OwnsAccepted);
     }
 }

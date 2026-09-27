@@ -67,6 +67,24 @@ internal static class Ownership
     /// <summary>Said when the person declines.</summary>
     internal const string Left = "Nothing was asked and nothing was spent.";
 
+    /// <summary>The door the restart offer passes through.</summary>
+    internal const string RestartTitle = "Make this the line peers read";
+
+    /// <summary>The choice that restarts the agent so peers read the line.</summary>
+    internal const string RestartIt = "Restart it now, so peers read it";
+
+    /// <summary>The choice that leaves the line waiting for the agent's next start.</summary>
+    internal const string LeaveIt = "Leave it until it next starts";
+
+    /// <summary>Said when the restart was asked for and the node took it.</summary>
+    internal const string Restarting =
+        "Asked its node to start it. It registers as it attaches, and the line peers read is "
+        + "whatever its launch configuration carries by then.";
+
+    /// <summary>Said when the restart was declined.</summary>
+    internal const string NotRestarted =
+        "Left as it is. Peers read the old line until the agent next starts, and the roster says so.";
+
     /// <summary>The door accepting what an agent proposed passes through.</summary>
     internal const string AcceptTitle = "Accept what this agent proposed";
 
@@ -235,12 +253,14 @@ internal static class Ownership
             }
 
             queue(t => AcceptAsync(
+                app,
                 client,
                 agent,
                 workspace,
                 project,
                 new OwnershipAcceptance(statement, OwnershipSource.Composed, null, null),
                 t,
+                queue,
                 done));
         };
 
@@ -388,7 +408,8 @@ internal static class Ownership
                 proposal.Statement.Length,
                 conversationId);
 
-            queue(t => AcceptAsync(client, agent, workspace, project, acceptance, t, done));
+            queue(t => AcceptAsync(
+                app, client, agent, workspace, project, acceptance, t, queue, done));
         };
     }
 
@@ -480,12 +501,14 @@ internal static class Ownership
     /// </para>
     /// </remarks>
     private static async Task AcceptAsync(
+        IApplication app,
         BrokerClient client,
         AgentName agent,
         string? workspace,
         string? project,
         OwnershipAcceptance acceptance,
         CancellationToken cancellationToken,
+        Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done)
     {
         var wrong = await OwnershipLine
@@ -515,7 +538,90 @@ internal static class Ownership
         }
 
         await done(Said(outcome.Value!)).ConfigureAwait(false);
+
+        // **Offered only when it would change something.** A line that already agrees with what peers
+        // read needs no restart, and offering one anyway would spend SPEC.md §12's cost -- the process
+        // holds everything the agent has learned -- to achieve nothing.
+        if (outcome.Value!.Recorded && outcome.Value.Pending)
+        {
+            Restart(app, client, agent, queue, done);
+        }
     }
+
+    /// <summary>Offers the restart that makes an accepted line the one peers read (FR-019).</summary>
+    /// <param name="app">The application the dialog opens in.</param>
+    /// <param name="client">The operator's client for this project.</param>
+    /// <param name="agent">Whose line it is.</param>
+    /// <param name="queue">Runs the start, so the caller can wait for it.</param>
+    /// <param name="done">Told what to say when it is over.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Offered rather than done.</b> SPEC.md §12 says what stopping an agent costs: the process is
+    /// what held everything it had learned. Accepting a sentence about scope is not a reason to spend
+    /// that without asking, so the safe answer is first and leaving it is a complete outcome rather
+    /// than a failure -- the roster carries the pending mark until the agent comes back on its own.
+    /// </para>
+    /// <para>
+    /// <b>It starts rather than stops.</b> <c>Operators.Start</c> is what this surface has, and 006
+    /// established it launches a catalogued role without a registry lookup. An agent already running
+    /// is asked for a turn instead, which is why the report says what was asked for rather than
+    /// claiming the line is now live.
+    /// </para>
+    /// </remarks>
+    private static void Restart(
+        IApplication app,
+        BrokerClient client,
+        AgentName agent,
+        Action<Func<CancellationToken, Task>> queue,
+        Func<string, Task> done)
+    {
+        var asking = Prompting.Choose(RestartTitle, Restarted(agent), [LeaveIt, RestartIt]);
+        var open = Prompting.Open(app, asking);
+
+        asking.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, open);
+
+            if (!string.Equals(chosen, RestartIt, StringComparison.Ordinal))
+            {
+                _ = done(NotRestarted);
+
+                return;
+            }
+
+            // **On the surface's own work queue and never a bare Task.Run.** `Shell.Settled` is what
+            // makes every driven test deterministic, and 005's gate found work escaping that chain --
+            // a guarantee that holds only because of where its callers happen to sit is one nothing
+            // enforces. This handler runs on the main loop, so queueing from it is the ordinary route.
+            queue(async t =>
+            {
+                var read = await BrokerDirectory.ReadAsync(
+                    async () => await client
+                        .StartAsync(agent, "a person accepted what it owns", t)
+                        .ConfigureAwait(false))
+                    .ConfigureAwait(false);
+
+                await done(read.Reachable
+                    ? Restarting
+                    : $"Not restarted: {Safe.Text(read.Problem!)}").ConfigureAwait(false);
+            });
+        };
+    }
+
+    /// <summary>What the person reads before the restart.</summary>
+    /// <param name="agent">Whose line it is.</param>
+    /// <returns>The description.</returns>
+    internal static string Restarted(AgentName agent) =>
+        $"""
+         {Safe.Text(agent.Value)}
+
+         The line is recorded, and peers do not read it yet: the registry is filled from an agent's
+         launch configuration when it attaches, so it takes effect at its next start.
+
+         Starting it now makes that happen immediately. It costs whatever that session had in
+         progress -- an agent's process is what holds everything it has learned -- so leaving it is
+         an ordinary answer, and the roster marks the line as accepted until the two agree.
+         """;
 
     /// <summary>What to put on the message line.</summary>
     /// <param name="record">What came back.</param>

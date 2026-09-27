@@ -53,4 +53,35 @@ public static class Roster
 
         return !string.IsNullOrWhiteSpace(agent.Owns);
     }
+
+    /// <summary>The marker put beside a line a person accepted that peers do not read yet.</summary>
+    /// <param name="agent">The agent, as the registry described it.</param>
+    /// <returns>The marker, or an empty string when the two halves agree.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="agent"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>One implementation, because FR-020 is a promise every surface makes.</b> A person who
+    /// accepted a line and sees it in a roster will read the roster as the deployment — so a surface
+    /// that showed the accepted line plainly would be saying peers route by something they have never
+    /// read. What is shown stays the <em>live</em> line, which is what the roster is for, and this is
+    /// appended to say a newer one is waiting.
+    /// </para>
+    /// <para>
+    /// <b>Short on purpose.</b> 0.20.2 records the state scrolling off the end of a row in a
+    /// half-width pane, which cut the one fact somebody had opened the screen to read. The sentence
+    /// explaining what to do about it belongs in the dialog that accepted the line, where there is
+    /// room for it.
+    /// </para>
+    /// </remarks>
+    public static string PendingMark(AgentRecord agent)
+    {
+        ArgumentNullException.ThrowIfNull(agent);
+
+        // Worded to be true of both cases. A first draft said "a newer line is accepted", which reads
+        // as nonsense beside an agent that has stated nothing at all -- there is no older line for the
+        // accepted one to be newer than, and that is the commonest way this state is reached.
+        return agent.OwnsPending
+            ? " (a line is accepted and peers do not read it yet)"
+            : string.Empty;
+    }
 }

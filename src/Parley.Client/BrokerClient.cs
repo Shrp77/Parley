@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Parley.Core;
 using Wire = Parley.Transport;
 
@@ -45,7 +45,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             row.Connected,
             Status(row.Status),
             string.IsNullOrEmpty(row.Owns) ? null : row.Owns,
-            Presence(row.Presence)))];
+            Presence(row.Presence),
+            string.IsNullOrEmpty(row.OwnsAccepted) ? null : row.OwnsAccepted))];
     }
 
     /// <inheritdoc/>

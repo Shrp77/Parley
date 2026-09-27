@@ -1022,10 +1022,49 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   compromise.** Each asserts a guard applied *before* anything is sent or written, so a console that deferred
   either check downstream reports a transport failure instead of the sentence asserted.
 
-  **Still owed**: the accept driven through an attached agent, asserting the row in
-  `agent_ownership_accepted` rather than `Chosen` in isolation — that needs an agent-attachment fixture of
-  `FileLocationFixture`'s size, so it is its own increment rather than a rushed end to this one — the restart
-  offer and the pending mark (T035, T037), the discussion, the bulk ask, and the neighbours column.
+  **The acceptance is driven end to end over a socket, and the fixture for it already existed.** I recorded it
+  as owed and needing a fixture the size of `FileLocationFixture`; `Parley.Server.Tests` has `LoopbackBroker` and
+  `AttachedClient`, which is where T027 said the whole acceptance belonged. The agent proposes through `Agents`,
+  the person records through `Operators`, and **nothing opens a store** — everything is read back through the
+  wire, which is the stronger assertion anyway: a row nobody can read through the protocol is not evidence the
+  protocol records anything. **The fixture gained an `owns` on the attach**, because that is the only route a
+  line has into the registry (§12.3) — a test needing an agent whose peers already read one has to attach as
+  one.
+
+  **`AgentsCannotSetTheirOwnLineTests` holds §10.2's boundary structurally.** It matches the *words*
+  `Ownership`/`Owns` rather than an exact method name, because the mistake being guarded is an operation added
+  under a name nobody predicted — a test naming only `RecordOwnership` passes against `SetOwns`. **Mutation-checked
+  by putting the rpc on `Agents`**: both new guards fail, and so does
+  `BrokerV1Tests.An_agent_cannot_reach_the_operator_surface`, which already covered reachability where these cover
+  the name on the generated client. Complementary rather than redundant, which is worth knowing rather than
+  assuming.
+
+  **A pending line is now visible, and that needed the registry read to carry both halves.** `registry()` returns
+  the accepted line beside the live one, because the surfaces reach no store and a comparison needs two things to
+  compare. `AgentRecord.OwnsPending` is the comparison; `Roster.PendingMark` is the one sentence both surfaces
+  append. **Both halves travel rather than a `pending` flag** — a flag carries the comparison and loses the thing
+  compared, and is a third state somebody has to clear. **The roster goes on showing the live line**, because it
+  is what peers route by; showing the accepted one would tell a reader that peers route by a sentence they have
+  never read. **The mark clears itself**: an agent that comes back carrying the line makes the two agree, with no
+  event and no bookkeeping.
+
+  **The restart is offered and not taken.** §12 says the process is what held everything the agent had learned,
+  so accepting a sentence about scope is not a reason to spend that silently; leaving it is a complete answer and
+  the safe one is under the cursor. It reports **what was asked for** rather than claiming the line is live, since
+  `Operators.Start` asks a node to start a role and whether the agent attaches and registers is a different
+  question — 0.25.2 records a screen predicting a registration instead of checking one.
+
+  **And it fixes a defect the ask shipped with.** `Shell.Registered` read the drawn row's ownership cell, which is
+  a sentence for a person — `not stated` where an agent has said nothing. The review dialog would have told
+  somebody peers were reading the words *not stated*, and accepting would have written them into a launch
+  configuration. It asks the registry record now, which is why the agents region keeps the records it is given and
+  not only the rows it drew. **A row is what a person reads and never what a decision is made from.** The restart
+  also goes on the surface's own work queue rather than a bare `Task.Run`, because `Shell.Settled` is what makes
+  every driven test deterministic and 005's gate found work escaping that chain.
+
+  **Still owed**: the discussion (US2), the bulk ask (US3), the neighbours column (US4), and Phase 7's polish —
+  the refusals sweep, enrolment no longer asking for a line, the quickstart walk, and asking this repository's own
+  agent what it owns.
 
   **An ask is recognised by the conversation it opens, never by a marker in a payload** — §13 promises a
   receiver that a payload is inert data, and 017's chip rule is what keeps that true. The identifier is

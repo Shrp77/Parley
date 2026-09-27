@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Xunit;
@@ -389,5 +389,69 @@ public sealed class OwnershipTests : IDisposable
 
         Assert.Equal("Invoicing and tax.", listed.Single(a => a.Name == Billing).Owns);
         Assert.Null(listed.Single(a => a.Name == Orders).Owns);
+    }
+
+    [Fact]
+    public async Task The_registry_carries_what_a_person_accepted_beside_what_peers_read()
+    {
+        // **Both halves, because "pending" is the two differing** (research.md R5). The surfaces reach
+        // no store, so if this read did not carry the accepted line no surface could ever say a line
+        // was waiting -- which is FR-020, and is the half a person needs in order to know the
+        // deployment has not changed yet.
+        //
+        // Must fail against the read returning only `owns`, which is what it did before 020: every
+        // agent would look settled the moment it was accepted for.
+        await Register(Billing, null);
+
+        await _agents.RecordOwnershipAsync(
+            Billing,
+            new OwnershipAcceptance("Invoicing and tax.", OwnershipSource.Composed, null, null),
+            DateTimeOffset.UnixEpoch,
+            Ct);
+
+        var loaded = await Load(Billing);
+
+        Assert.Equal("Invoicing and tax.", loaded.OwnsAccepted);
+        Assert.Null(loaded.Owns);
+        Assert.True(loaded.OwnsPending);
+    }
+
+    [Fact]
+    public async Task An_agent_nobody_accepted_for_carries_no_accepted_line()
+    {
+        // The left join's other side. Must fail against an inner join, which would drop every agent
+        // nobody has accepted a line for -- so a roster would lose most of its rows the day this
+        // shipped, and the ones it kept would be the ones somebody had used the feature on.
+        await Register(Orders, "Orders and invoicing.");
+
+        var loaded = await Load(Orders);
+
+        Assert.Null(loaded.OwnsAccepted);
+        Assert.False(loaded.OwnsPending);
+    }
+
+    [Fact]
+    public async Task An_agent_that_comes_back_carrying_the_accepted_line_is_no_longer_pending()
+    {
+        // The restart, as the store sees it: the adapter states the line on attach and `owns` becomes
+        // what was accepted. Nothing clears the acceptance, and nothing should -- the record of who
+        // agreed to what is worth keeping, and FR-011 wants it traceable afterwards.
+        await Register(Orders, null);
+
+        await _agents.RecordOwnershipAsync(
+            Orders,
+            new OwnershipAcceptance("Orders and invoicing.", OwnershipSource.Composed, null, null),
+            DateTimeOffset.UnixEpoch,
+            Ct);
+
+        Assert.True((await Load(Orders)).OwnsPending);
+
+        // Re-registering is what an attach does.
+        await Register(Orders, "Orders and invoicing.");
+
+        var loaded = await Load(Orders);
+
+        Assert.False(loaded.OwnsPending);
+        Assert.Equal("Orders and invoicing.", loaded.OwnsAccepted);
     }
 }

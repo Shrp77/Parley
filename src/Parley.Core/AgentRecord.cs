@@ -55,6 +55,14 @@ namespace Parley.Core;
 /// <see cref="OwnershipStatement"/>, and <c>AgentRepository.RefreshOwnershipAsync</c>
 /// for why it is refreshed on every launch while the configuration around it is not.
 /// </param>
+/// <param name="OwnsAccepted">
+/// What a person accepted as this agent's line, which is not what peers read until the agent
+/// restarts. Null when nobody has accepted one. Held beside <paramref name="Owns"/> rather than
+/// replacing it, because the two differing is the whole of what "pending" means here — see
+/// <see cref="OwnsPending"/>. Defaulted for the reason <paramref name="Presence"/> is: a caller
+/// constructing a record in order to save it is stating what the agent said about itself, and
+/// what a person agreed to is somebody else's fact, written by a different operation.
+/// </param>
 /// <remarks>
 /// Credentials are deliberately not a field here, and should not become one. This record is
 /// what <c>AgentRepository.UpsertAsync</c> writes from a manifest reload, and anything
@@ -75,8 +83,29 @@ public sealed record AgentRecord(
     bool Connected,
     AgentStatus Status,
     string? Owns = null,
-    AgentPresence Presence = AgentPresence.Stranded)
+    AgentPresence Presence = AgentPresence.Stranded,
+    string? OwnsAccepted = null)
 {
+    /// <summary>Whether a person has accepted a line that peers do not read yet.</summary>
+    /// <value><see langword="true"/> while the accepted line and the live one differ.</value>
+    /// <remarks>
+    /// <para>
+    /// <b>A comparison of two facts rather than a flag anybody maintains.</b> <see cref="Owns"/> is
+    /// filled from the launch environment when the agent attaches (SPEC.md §12.3) and no operation
+    /// writes it; <see cref="OwnsAccepted"/> is what a person agreed to. They differ until the agent
+    /// next starts, at which point they agree and this goes away on its own — so there is no third
+    /// state and nothing to clear, which is the failure mode a flag has.
+    /// </para>
+    /// <para>
+    /// A line accepted for an agent that never restarts is pending for ever, visibly. That is the
+    /// intended behaviour: the alternative is a surface that stops mentioning a line peers have
+    /// still never read.
+    /// </para>
+    /// </remarks>
+    public bool OwnsPending =>
+        OwnershipStatement.Read(OwnsAccepted) is { } accepted
+        && !string.Equals(accepted, OwnershipStatement.Read(Owns), StringComparison.Ordinal);
+
     /// <summary>What this agent is for, from its name.</summary>
     public string Role => Name.Role;
 

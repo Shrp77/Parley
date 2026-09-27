@@ -1,4 +1,4 @@
-using Parley.Client.Rendering;
+﻿using Parley.Client.Rendering;
 using Parley.Core;
 
 namespace Parley.Client.Views;
@@ -175,7 +175,8 @@ public static class Standing
                 startable,
                 retired,
                 agent.Tier.ToString().ToLowerInvariant(),
-                Roster.HasStatedWhatItOwns(agent) ? agent.Owns ?? string.Empty : "not stated",
+                (Roster.HasStatedWhatItOwns(agent) ? agent.Owns ?? string.Empty : "not stated")
+                    + Roster.PendingMark(agent),
                 agent.Workspace ?? "—",
                 seat));
         }

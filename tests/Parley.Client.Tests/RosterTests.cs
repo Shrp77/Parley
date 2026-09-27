@@ -1,4 +1,4 @@
-using Grpc.Net.Client;
+﻿using Grpc.Net.Client;
 using Parley.Core;
 using Parley.Client.Rendering;
 using Xunit;
@@ -121,5 +121,53 @@ public sealed class RosterTests
         Assert.Null(directory.Find("beta"));
         Assert.Null(directory.Find("Alpha"));
         Assert.Null(directory.Find(null));
+    }
+
+    [Fact]
+    public void A_line_a_person_accepted_is_marked_until_peers_read_it()
+    {
+        // **FR-020, in the one place both surfaces read it from.** A person who accepts a line and then
+        // sees it in a roster will read the roster as the deployment -- so what is shown stays the
+        // *live* line and this says a newer one is waiting.
+        //
+        // Must fail against showing the accepted line plainly, which would tell somebody peers route
+        // by a sentence they have never read.
+        var pending = Agent("orders@alpha", owns: "the orders ledger") with
+        {
+            OwnsAccepted = "Orders and invoicing. Not stock.",
+        };
+
+        Assert.NotEmpty(Roster.PendingMark(pending));
+        Assert.Contains("peers do not read it yet", Roster.PendingMark(pending), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_agent_whose_line_peers_already_read_carries_no_mark()
+    {
+        // The mark has to go away on its own when the agent comes back carrying the line, because
+        // nothing clears it: it is a comparison. A mark that stayed would be a surface insisting a
+        // line is pending after peers had begun reading it.
+        var settled = Agent("orders@alpha", owns: "Orders and invoicing.") with
+        {
+            OwnsAccepted = "Orders and invoicing.",
+        };
+
+        Assert.Empty(Roster.PendingMark(settled));
+        Assert.Empty(Roster.PendingMark(Agent("orders@alpha")));
+    }
+
+    [Fact]
+    public void The_mark_reads_correctly_beside_an_agent_that_has_stated_nothing()
+    {
+        // The commonest way this state is reached -- an agent enrolled without a line, asked, and
+        // answered. A first draft said "a newer line is accepted", which is nonsense here: there is no
+        // older line for it to be newer than.
+        var pending = Agent("orders@alpha", owns: null) with
+        {
+            OwnsAccepted = "Orders and invoicing.",
+        };
+
+        Assert.DoesNotContain("newer", Roster.PendingMark(pending), StringComparison.Ordinal);
+        Assert.NotEmpty(Roster.PendingMark(pending));
     }
 }

@@ -3802,17 +3802,25 @@ internal sealed class Shell : Window
     /// <param name="agent">The agent.</param>
     /// <returns>Its workspace and the line peers read today, either of which may be absent.</returns>
     /// <remarks>
+    /// <para>
     /// Matched on the whole name rather than the role, because two machines running one role is an
     /// ordinary deployment and the workspace returned is what decides which file gets written —
     /// 005's gate found a withdrawal deleting a different agent's launch configuration by being
     /// looser than this.
+    /// </para>
+    /// <para>
+    /// <b>Read from the registry record and not from the drawn row, which is a defect this method
+    /// shipped with for one commit.</b> A row's ownership cell is a sentence for a person to read and
+    /// says <c>not stated</c> where an agent has said nothing — so asking the row put those two words
+    /// in front of somebody as the line their peers were reading, and would have written them into a
+    /// launch configuration had they been accepted.
+    /// </para>
     /// </remarks>
     private (string? Workspace, string? Live) Registered(AgentName agent)
     {
-        var row = Agents.Rows.FirstOrDefault(
-            r => !r.Seat && string.Equals(r.Name, agent.Value, StringComparison.Ordinal));
+        var record = Agents.Registry.FirstOrDefault(r => r.Name == agent);
 
-        return row is null ? (null, null) : (row.Workspace, row.Owns);
+        return record is null ? (null, null) : (record.Workspace, record.Owns);
     }
 
     /// <summary>Lists the selected project's files, and what can be done with each.</summary>

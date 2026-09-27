@@ -152,6 +152,17 @@ internal sealed class AgentsRegion : FrameView
     /// <summary>The rows as drawn, in order.</summary>
     internal IReadOnlyList<AgentRow> Rows => _rows;
 
+    /// <summary>The registry behind those rows, as it was last read.</summary>
+    /// <remarks>
+    /// <b>Kept because a row is what a person reads and not what a decision may be made from.</b> A
+    /// row's ownership cell is a sentence — <c>"not stated"</c> where an agent has said nothing — so
+    /// anything acting on the line itself has to ask the record, or it ends up writing the words
+    /// <c>not stated</c> into somebody's launch configuration. Held as one reference and replaced
+    /// wholesale for the reason <c>GuardedList</c> exists: a reader sees the rows as they were or as
+    /// they now are, never a half-swapped pair.
+    /// </remarks>
+    internal IReadOnlyList<AgentRecord> Registry { get; private set; } = [];
+
     /// <summary>Whichever row the person is on, or null when they are on a heading.</summary>
     /// <remarks>
     /// Read through <see cref="_at"/> rather than by arithmetic. Headings and a broker's complaint
@@ -212,7 +223,8 @@ internal sealed class AgentsRegion : FrameView
                 Safe.Text(agent.Name.Value),
                 state,
                 agent.Tier.ToString().ToLowerInvariant(),
-                Roster.HasStatedWhatItOwns(agent) ? Safe.Text(agent.Owns) : "not stated",
+                (Roster.HasStatedWhatItOwns(agent) ? Safe.Text(agent.Owns) : "not stated")
+                    + Roster.PendingMark(agent),
                 Safe.Text(agent.Workspace ?? "—"),
                 seat));
         }
@@ -265,6 +277,9 @@ internal sealed class AgentsRegion : FrameView
         // reading its rows from another -- and `Selected` would name an agent by an offset
         // belonging to the previous read, which in this region is what a purge acts on.
         var rows = Join(registry, catalogue, project);
+
+        Registry = registry ?? [];
+
         var standing = Standing.Join(
             registry,
             new HashSet<string>(catalogue.Announceable(project).Names, StringComparer.Ordinal),

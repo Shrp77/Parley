@@ -675,6 +675,13 @@ message RegistryRow {
   string session_ref = 7;
   string owns = 8;
   bool connected = 9;
+  // What a person accepted, which is not what peers read until the agent restarts: the registry's
+  // `owns` is filled from the launch environment on attach (section 12.3) and no operation writes it.
+  // Empty when nobody has accepted a line, and equal to `owns` once the agent has come back with it.
+  //
+  // Both halves travel rather than a `pending` flag, so a surface can show the two lines side by side
+  // and say which is which. A flag would carry the comparison and lose the thing being compared.
+  string owns_accepted = 10;
 }
 
 message RefusalsReply {
