@@ -194,7 +194,12 @@ public sealed class WaitingOnScreenTests : IDisposable
 
     private static BrokerDirectory Directory(LoopbackOperator broker) =>
         new(
-            [new ProjectSettings(ProjectName.Create("acme"), "unused.db", broker.Address, null)],
+            // **`Walking.Alpha`, not a name of its own, and that is not cosmetic.** `Walking.GoAsync`
+            // places the shell in `alpha`; a directory holding some other name put the surface in a
+            // project view for a project the directory does not contain, which is a state production
+            // cannot produce -- the only route in is selecting a row that came from the directory. It
+            // went unnoticed while the seat read the list's selection instead of the view's project.
+            [new ProjectSettings(Walking.Alpha, "unused.db", broker.Address, null)],
             _ => GrpcChannel.ForAddress(broker.Address));
 
     private static async Task<Shell> SeatedAsync(

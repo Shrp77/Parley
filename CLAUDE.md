@@ -946,6 +946,34 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   **Mutation-checked**: swapping the ordering fails two tests, including the one that seeds the
   transcript out of order so an implementation trusting the caller's sort fails too.
 
+  **A seat now speaks from the view's project rather than the list's selection, and probing it changed
+  what the fix was.** Found by reading the seat path while wiring the ask: `Shell.Voice()` and
+  `Shell.Tick()` both asked `Projects.Selected` which project to speak into, and `Shell.Current` exists
+  for exactly this — *"the view's project, falling back to the list's selection … reading the list made
+  those actions depend on a region nobody is looking at"*. **This is the fifth appearance of the shape
+  CLAUDE.md already records four of.** It was latent rather than live, because the one route a person
+  has into a project view is selecting a row, so the list is always filled first — a guarantee resting
+  on navigation rather than on the seat, and **021's menu bar is the next thing that could reach a view
+  another way.**
+
+  **`Current` has its own failure mode, and finding it is why a blind swap would have been wrong.** It
+  resolves the place's project through the directory, so a place naming a project the directory does not
+  hold returns null where the list would have returned something. The swap turned **seven tests red**,
+  and every one was a fixture that put the shell in a project view for a project its directory did not
+  contain — a state production cannot produce. Two of them were simply inconsistent with
+  `Walking.GoAsync`, which places the shell in `alpha` while they named `acme`; they are
+  production-shaped now rather than merely passing. **That null is correct behaviour**: a project removed
+  while somebody is inside it is exactly when speaking must stop, because acting on the wrong project is
+  the one mistake this surface cannot take back — the transcript records it.
+
+  **What was wrong was never the refusal; it was the sentence.** Every send that found no voice said
+  *"Your seat was released"* — a statement about the seat, printed at a moment when the seat is
+  demonstrably held two lines above. **0.29.1 records that exact sentence being the defect.**
+  `Shell.SeatWithoutProject` says what is true, what to press, and that it is a defect worth reporting
+  rather than anything the person did. `SendLine`'s first guard had also collapsed three different
+  absences — no seat, no draft, no conversation — into the seat's. **Mutation-checked**: putting
+  `Projects.Selected` back fails the probe.
+
   **Still owed**: the ask on a screen, the discussion, the bulk ask, and the neighbours column.
 
   **An ask is recognised by the conversation it opens, never by a marker in a payload** — §13 promises a

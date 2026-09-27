@@ -63,7 +63,11 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
     }
 
     private ProjectSettings Project() =>
-        new(ProjectName.Create("acme"), "unused.db", _broker.Address, null);
+        // `Walking.Alpha` rather than a name of its own: `Walking.GoAsync` places the shell in `alpha`,
+        // and a directory holding a different name is a project view for a project the directory does
+        // not contain -- which production cannot produce, since the only route in is a row that came
+        // from the directory.
+        new(Walking.Alpha, "unused.db", _broker.Address, null);
 
     private BrokerDirectory Directory() =>
         new([Project()], _ => GrpcChannel.ForAddress(_broker.Address));

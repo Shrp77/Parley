@@ -176,7 +176,11 @@ internal sealed class Shell : Window
     {
         if (Held is not { } hold || Drafting is not { } draft || _place.Title is not { } conversation)
         {
-            Said = Released;
+            // **Three different absences, and only one of them is the seat.** This said `Released`
+            // for all three, which is a statement about the seat — and told somebody holding one that
+            // it had gone. A draft or a conversation that is missing is this surface's own fault and
+            // is worth saying so; 0.29.1 records what the collapsed version costs.
+            Said = Held is null ? Released : SeatWithoutProject;
 
             return Task.CompletedTask;
         }
@@ -203,7 +207,9 @@ internal sealed class Shell : Window
         {
             if (Voice() is not { } voice)
             {
-                Said = Released;
+                // `hold` is non-null by the guard above, so the seat is not what is missing here and
+                // saying it was released would be provably false at the moment it is printed.
+                Said = SeatWithoutProject;
 
                 return;
             }
@@ -1746,7 +1752,12 @@ internal sealed class Shell : Window
     /// </remarks>
     internal void Tick(DateTimeOffset now)
     {
-        if (Seats is null || Projects.Selected is not { } project)
+        // **`Current` rather than `Projects.Selected`, for the reason `Voice` now uses it too.** This is
+        // what touches a held seat, so a view where the list's selection was absent would neither keep
+        // the seat alive nor release it — frozen rather than merely unreadable. Two readers of "which
+        // project is this" on different accessors is how they come to disagree, which is this
+        // repository's most-repeated defect and the whole argument for `Current` existing.
+        if (Seats is null || Current is not { } project)
         {
             return;
         }
@@ -2991,9 +3002,37 @@ internal sealed class Shell : Window
     /// one mistake on this surface that cannot be taken back: the transcript would record it.
     /// </remarks>
     internal SeatVoice? Voice() =>
-        Held is null || Projects.Selected is not { } project
+        Held is null || Current is not { } project
             ? null
             : new SeatVoice(_directory.AgentsFor(project), Held.Seat);
+
+    /// <summary>
+    /// Said when a seat is held and no project can be resolved to speak into — a state this surface
+    /// should never be in.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It exists because the alternative was a lie.</b> Every path that speaks checks
+    /// <see cref="Voice"/> and, finding nothing, said <see cref="Released"/> — *"Your seat was
+    /// released"* — which is a statement about the seat, and the seat is right there. 0.29.1 records
+    /// exactly that sentence being the defect: a console told somebody they were seated nowhere while
+    /// two Results waited for the name whose seat they held.
+    /// </para>
+    /// <para>
+    /// <b>Not reachable today, and that is the reason to say it rather than to assume it.</b>
+    /// <see cref="Voice"/> read <c>Projects.Selected</c> until 020, which is null in a project view and
+    /// is the shape CLAUDE.md records appearing four times. It was latent only because the one route a
+    /// person has into a project view is through the list, so the list is always filled first — a
+    /// guarantee resting on navigation rather than on the seat. It now reads <see cref="Current"/>,
+    /// which is the view's own project; this message is what says so out loud if the state ever
+    /// happens anyway, instead of blaming the seat.
+    /// </para>
+    /// </remarks>
+    internal const string SeatWithoutProject =
+        "Your seat is held, but this view resolves no project to speak into, so nothing was sent. " +
+        "That should not be possible: press Escape back to the projects list and open the project " +
+        "again, which rebuilds both. If it keeps happening, it is a defect worth reporting rather " +
+        "than anything you did.";
 
     /// <summary>Takes delivery of what is waiting, after saying what that does.</summary>
     /// <returns>When the dialog has been opened.</returns>
