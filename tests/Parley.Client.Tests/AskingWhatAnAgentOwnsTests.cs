@@ -1,4 +1,4 @@
-using Parley.Core;
+﻿using Parley.Core;
 using Xunit;
 
 namespace Parley.Client.Tests;
@@ -180,5 +180,53 @@ public sealed class AskingWhatAnAgentOwnsTests
 
         Assert.Contains("19", said, StringComparison.Ordinal);
         Assert.Contains("costs that agent a turn", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void One_agents_discussions_are_findable_among_everybody_elses()
+    {
+        // **FR-011's other half.** The record of an acceptance names the conversation, and the store's
+        // foreign key makes that identifier point at something real -- but a person coming back later
+        // starts from a list of conversations, so the identifier also has to be enough to pick one
+        // agent's discussions out of a deployment's whole history.
+        //
+        // Must fail against matching on the prefix alone, which would offer `billing`'s discussion as
+        // `orders`'s -- and what follows is a write to a launch configuration, so the wrong one is not
+        // a cosmetic mistake.
+        var orders = AgentName.Create("orders@test");
+        var billing = AgentName.Create("billing@test");
+
+        string[] history =
+        [
+            "release-notes",
+            OwnershipAsk.Conversation(orders, new DateTimeOffset(2026, 9, 27, 9, 0, 0, TimeSpan.Zero)),
+            OwnershipAsk.Conversation(billing, new DateTimeOffset(2026, 9, 27, 9, 5, 0, TimeSpan.Zero)),
+            OwnershipAsk.Conversation(orders, new DateTimeOffset(2026, 9, 27, 11, 0, 0, TimeSpan.Zero)),
+        ];
+
+        var theirs = history.Where(id => OwnershipAsk.Recognises(id, orders)).ToList();
+
+        Assert.Equal(2, theirs.Count);
+        Assert.DoesNotContain(theirs, id => id.Contains("billing", StringComparison.Ordinal));
+
+        // **And the later one is the one that produced the line somebody is reading**, which is why the
+        // identifier carries a sortable timestamp at all. Ordinal sorting is enough because the format
+        // is fixed width -- a reader never parses it back.
+        Assert.Equal(theirs.OrderBy(id => id, StringComparer.Ordinal).Last(), theirs[1]);
+    }
+
+    [Fact]
+    public void A_role_that_is_a_prefix_of_another_is_not_confused_with_it()
+    {
+        // `infra` is a prefix of `infrastructure`, which this repository has already been bitten by --
+        // 018 records a role query matching on a substring. The separator after the role is what stops
+        // it here, so it is asserted rather than assumed.
+        var infra = AgentName.Create("infra@test");
+        var longer = AgentName.Create("infrastructure@test");
+
+        var theirs = OwnershipAsk.Conversation(longer, DateTimeOffset.UnixEpoch);
+
+        Assert.True(OwnershipAsk.Recognises(theirs, longer));
+        Assert.False(OwnershipAsk.Recognises(theirs, infra));
     }
 }
