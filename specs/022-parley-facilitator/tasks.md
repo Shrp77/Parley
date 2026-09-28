@@ -42,7 +42,7 @@ what the probe of them is worth. **Every guard task names what it must fail agai
 
 ## Phase 1: Setup — the documents first (blocks everything)
 
-- [ ] T001 Amend `.specify/memory/constitution.md` to **4.0.0 (MAJOR)** in its own commit, with a Sync Impact
+- [X] T001 Amend `.specify/memory/constitution.md` to **4.0.0 (MAJOR)** in its own commit, with a Sync Impact
   Report: Principle II names the facilitator as a second asymmetry beside the operator — neither agent nor
   person, may ask, reply with a person's words and agree its own conversation done, and nothing else;
   Principle III names the one identity not fixed by a launch (the facilitator's, fixed by the broker for its own

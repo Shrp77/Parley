@@ -1,4 +1,34 @@
 <!--
+Sync Impact Report — 2026-09-28
+Version change: 3.0.0 → 4.0.0 (MAJOR)
+  Three redefinitions for specs/022 (Parley as facilitator), amended BEFORE any of its code, as
+  governance requires. research.md finding 1 found that 022 changes what Principles II and III
+  permit; finding 2 found that SPEC.md says, in four places, that the broker is not a participant.
+  - Principle II. The operator was "the one asymmetry". A second is added: the facilitator, a
+    participant the broker provides in every project. It is neither an agent nor a person. It may
+    ask a question, send a reply a person wrote (attributed to that person), and propose and agree
+    that its own conversation is done. It may do nothing else, and in particular it may not assign,
+    direct, prioritise, close or override anybody's work, or choose where an agent's work goes.
+  - Principle III. "An agent's name comes from the environment its server was started with and
+    from nowhere else." The facilitator is not an agent. Its identity is fixed by the broker, for
+    the broker's own store, and no launch and no call can claim it. Storage enforces this.
+  - Principle IV. Auto Accept is recorded as a further reduction in the ownership control, on top
+    of 3.0.0's removed bound: with it on, an agent's own answer becomes its line with no person in
+    the loop. What replaces the person is truthful provenance (`automatic`) and a review.
+  MAJOR by this file's own rule: each of the three changes what a principle permits.
+Modified principles: II, III, IV, as above.
+Modified sections: none beyond those principles. Added sections: none. Removed sections: none.
+Templates and dependent documents:
+  ✅ CLAUDE.md — the standing constraint "No agent has authority over another" names the facilitator
+     and what it may never do, in the same commit, since an amendment not made there too is a defect
+  ✅ specs/022-parley-facilitator/plan.md — its Constitution Check is re-run against 4.0.0 (T052)
+  ⚠️ SPEC.md §3, §5, §9.3, §10.1, §11.1, §11.3, §12.3, §14, §17 q2 and q10, §18, principle 2.10 —
+     NOT yet amended. They are 022's T002–T008 and come before any code (Principle I)
+  ✅ .specify/templates/ — no principle-driven sections affected
+Deferred TODOs: SPEC.md, as above. It is the feature's own task, not this amendment's.
+-->
+
+<!--
 Sync Impact Report — 2026-09-26
 Version change: 2.0.0 → 3.0.0 (MAJOR)
   One backward-incompatible redefinition, amended BEFORE the feature that needs it is implemented —
@@ -91,6 +121,21 @@ operations exist on a separate type, in a separate binary, so an adapter has not
 accident, and a person may close a conversation whatever its participants have voted. Any design
 that introduces authority between agents contradicts the premise.
 
+**The second asymmetry is the facilitator** (from specs/022). It is a participant the broker
+provides in every project, and it is neither an agent nor a person. It exists so that questions
+nobody would otherwise remember to ask, such as what an agent owns, are asked. **It may do exactly
+three things:**
+
+- ask a question;
+- send a reply that a person wrote, recorded as that person's words and never as its own;
+- propose and agree that its own conversation is done.
+
+It holds no operator operation. It is never the person seated. It is never a recipient of anybody's
+work. It may not assign, direct, prioritise, close or override any work, or decide which
+conversation an agent's own work belongs to. What it adds is *who* asks, never what asking can do.
+A facilitator that gained one operation more would be the orchestrator this principle forbids, and
+any such change is argued here first.
+
 ### III. Identity is fixed by the launch, never by a call
 
 An agent's name comes from the environment its server was started with and from nowhere
@@ -98,6 +143,12 @@ else. No operation takes a sender parameter, so no call can change who the calle
 is what makes "a sender cannot forge the agent it claims to be" a structural guarantee
 rather than a model's good behaviour, and no feature may reintroduce a caller-supplied
 identity by another name.
+
+**The facilitator's identity is the one that no launch fixes** (from specs/022), because the
+facilitator is not an agent and nothing launches it. The broker fixes its identity for the broker's
+own store. It is a reserved role that storage refuses to every other adapter, and every attach,
+seat and enrolment refuses it too. So the guarantee still holds in both directions: no agent can
+become the facilitator, and the facilitator cannot become an agent.
 
 ### IV. Terseness is a security control
 
@@ -140,6 +191,20 @@ lengths people accept are recorded, so a bound can later be chosen the way the m
 was — from `parley refusals` and SPEC.md §17 question 16 — rather than from judgement. **Until that
 evidence exists, a roster may be the largest thing an agent reads.** Move the number on that
 record, not because a statement did not fit.
+
+**Auto Accept is a further reduction in the same control, and is recorded as one** (from
+specs/022, the owner's decision of 2026-09-28). With a project's Auto Accept on, which it is by
+default, the facilitator asks an agent what it owns and the agent's answer becomes its line, with
+no person in the loop. Before this, SPEC.md §17 question 10 required a person's affirmative act.
+Two things stand in its place:
+
+- **Provenance that says truthfully who decided each line.** `automatic` is a route of its own,
+  beside the three a person takes.
+- **A review on every surface,** where any line can be checked and corrected at any time.
+
+The answer's words are the agent's own. Only runs of whitespace are collapsed, and anything that
+would change a word is a person's decision. The character class is **not** relaxed: an answer that
+breaks it waits for a person, whatever the switch says.
 
 ### V. Invariants live in storage
 
@@ -228,4 +293,4 @@ removed or redefined, MINOR for one added or materially expanded, PATCH for word
 amendment that changes what a principle permits is MAJOR even when its title is unchanged** —
 0.26.0's redefinition of Principle II shipped without a version change, and 2.0.0 records it.
 
-**Version**: 3.0.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-09-26
+**Version**: 4.0.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-09-28

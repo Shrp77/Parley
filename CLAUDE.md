@@ -607,6 +607,21 @@ implementation detail, and needs to be argued rather than assumed.
   agent reads.**
 - **No agent has authority over another.** There is no orchestrator and no lead. Any design
   that introduces one contradicts the premise.
+
+  **The facilitator is the second asymmetry, beside the operator, and the constitution was amended to
+  4.0.0 to say so** (the owner's call of 2026-09-28, for 022). Every project has Parley, a participant
+  the broker provides. It is neither an agent nor a person. It may do three things and nothing else:
+  ask a question; send a reply a person wrote, recorded as that person's words; and propose and agree
+  that its own conversation is done. It has no operator operation. It is never the person seated and
+  never receives anybody's work. It may not assign, direct, prioritise, close or override work, or
+  decide which conversation an agent's own work goes into. **What it adds is who asks, never what
+  asking can do.** One more operation would make it the orchestrator this line forbids.
+
+  Its identity is the one no launch fixes. The broker fixes it for its own store, as a reserved role
+  that storage refuses to every other adapter. **Auto Accept**, on by default, makes an agent's answer
+  its ownership line with no person in the loop. That is a further reduction in the ownership control
+  above, recorded as one. In its place are truthful provenance (`automatic`) and a review on every
+  surface.
 - **Credentials are references, never values.** `env:`, `keychain:`, `file:`. The broker
   resolves them at invocation and never persists or logs them. This is what makes the
   manifest safe to commit.
